@@ -40,7 +40,9 @@ function credentialIdentity(entry: WssIssuedTokenEntry): string {
   const credential = entry.credential;
   if (credential.kind === 'username') return `u:${credential.username}`;
   if (credential.kind === 'certificate') return `c:${credential.keystoreRef}:${credential.alias ?? ''}`;
-  return `k:${credential.spn}:${credential.principal ?? ''}:${credential.username ?? ''}`;
+  return `k:${credential.spn}:${credential.principal ?? ''}:${credential.username ?? ''}${
+    credential.domain !== undefined && credential.domain !== '' ? `:${credential.domain}` : ''
+  }`;
 }
 
 /**
@@ -72,6 +74,12 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
   const tokens = new Map<string, IssuedToken>();
   const inFlight = new Map<string, Promise<IssuedToken>>();
   const errors = new Map<string, string>();
+  /** Bumped by clear and reject, so a fetch already under way cannot cache after one. */
+  const generations = new Map<string, number>();
+  const generationOf = (key: string): number => generations.get(key) ?? 0;
+  const bump = (key: string): void => {
+    generations.set(key, generationOf(key) + 1);
+  };
   const fresh = (token: IssuedToken | undefined): token is IssuedToken =>
     token?.expiresAt !== undefined && token.expiresAt.getTime() - ISSUED_TOKEN_REFRESH_MARGIN_MS > now().getTime();
 
@@ -82,19 +90,23 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
       if (fresh(cached)) return cached;
       const pending = inFlight.get(key);
       if (pending !== undefined) return await pending;
+      const startedAt = generationOf(key);
       const fetching = (async () => {
         try {
           // Deferred a tick, so a synchronous throw cannot clear inFlight before it is set.
           const fetched = await Promise.resolve().then(() => request(entry, target, deps));
           const token: IssuedToken = { ...fetched, cacheKey: key };
           options.onSecretValue?.(token.assertionXml);
+          if (generationOf(key) !== startedAt) return token;
           errors.delete(key);
           if (token.expiresAt !== undefined) tokens.set(key, token);
           else tokens.delete(key);
           return token;
         } catch (error) {
-          errors.set(key, error instanceof Error ? error.message : String(error));
-          tokens.delete(key);
+          if (generationOf(key) === startedAt) {
+            errors.set(key, error instanceof Error ? error.message : String(error));
+            tokens.delete(key);
+          }
           throw error;
         } finally {
           inFlight.delete(key);
@@ -108,6 +120,7 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
       return fresh(cached) ? cached : undefined;
     },
     reject(token) {
+      bump(token.cacheKey);
       if (tokens.get(token.cacheKey)?.assertionXml === token.assertionXml) tokens.delete(token.cacheKey);
     },
     status(entry, target) {
@@ -125,6 +138,7 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
     },
     clear(entry, target) {
       const key = issuedCacheKey(entry, target);
+      bump(key);
       tokens.delete(key);
       errors.delete(key);
     },

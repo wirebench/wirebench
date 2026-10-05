@@ -103,4 +103,59 @@ describe('createIssuedTokenSource', () => {
       issuedCacheKey({ ...entry, credential: { kind: 'username', username: 'alice', passwordRef: 'other' } }, target),
     ).toBe(base);
   });
+
+  it('a stale reject leaves a newer cached token in place', async () => {
+    let now = new Date('2026-10-05T10:00:00Z');
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(token('2026-10-05T10:30:00Z', '_old'))
+      .mockResolvedValueOnce(token('2026-10-05T12:00:00Z', '_new'));
+    const source = createIssuedTokenSource({ now: () => now, request });
+    const old = await source.get(entry, target, deps);
+    now = new Date('2026-10-05T10:29:30Z');
+    await source.get(entry, target, deps);
+    source.reject(old);
+    expect(source.peek(entry, target)?.assertionId).toBe('_new');
+  });
+
+  it('a different expansion is a different key and a fresh fetch', async () => {
+    const request = vi.fn().mockResolvedValue(token('2026-10-05T11:00:00Z'));
+    const source = createIssuedTokenSource({ now: () => new Date('2026-10-05T10:00:00Z'), request });
+    const withVars = { ...entry, stsUrl: 'https://${host}/trust' };
+    const dev = { ...target, expand: (t: string) => t.replace('${host}', 'dev.test') };
+    const prod = { ...target, expand: (t: string) => t.replace('${host}', 'prod.test') };
+    expect(issuedCacheKey(withVars, dev)).not.toBe(issuedCacheKey(withVars, prod));
+    await source.get(withVars, dev, deps);
+    await source.get(withVars, prod, deps);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries after a failed request', async () => {
+    const request = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue(token('2026-10-05T11:00:00Z'));
+    const source = createIssuedTokenSource({ now: () => new Date('2026-10-05T10:00:00Z'), request });
+    await expect(source.get(entry, target, deps)).rejects.toThrow('down');
+    await expect(source.get(entry, target, deps)).resolves.toMatchObject({ assertionId: '_t1' });
+    expect(source.peek(entry, target)).toBeDefined();
+  });
+
+  it('clear during a fetch leaves nothing cached, yet the caller gets its token', async () => {
+    let release: (t: IssuedToken) => void = () => undefined;
+    const request = vi.fn().mockReturnValue(new Promise<IssuedToken>((resolve) => (release = resolve)));
+    const source = createIssuedTokenSource({ now: () => new Date('2026-10-05T10:00:00Z'), request });
+    const pending = source.get(entry, target, deps);
+    await Promise.resolve();
+    source.clear(entry, target);
+    release(token('2026-10-05T11:00:00Z'));
+    await expect(pending).resolves.toMatchObject({ assertionId: '_t1' });
+    expect(source.peek(entry, target)).toBeUndefined();
+    expect(source.status(entry, target).state).toBe('none');
+  });
+
+  it('keys Kerberos credentials apart by domain', () => {
+    const kerberos = (domain?: string): WssIssuedTokenEntry => ({
+      ...entry,
+      credential: { kind: 'kerberos', spn: 'host/sts.corp', ...(domain !== undefined ? { domain } : {}) },
+    });
+    expect(issuedCacheKey(kerberos('A'), target)).not.toBe(issuedCacheKey(kerberos('B'), target));
+  });
 });
