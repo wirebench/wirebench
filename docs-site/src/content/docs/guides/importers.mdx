@@ -347,8 +347,9 @@ kept as text, then lists the environments and project properties added and the s
   [HAR captures](#har-captures). A Bearer token or API key made only of `{{variables}}` is kept as
   the header or query row it sends.
 - **gRPC definitions.** For a folder collection, the `.proto` files the gRPC items name are read
-  from beside it, without following their imports. Otherwise, or when they cannot be loaded, the
-  gRPC API has no definition yet, and the report says so.
+  from beside it, with the files they import from inside the collection's folder. Otherwise, or
+  when they cannot be loaded, the gRPC API has no definition yet, and the report says so, naming an
+  import that is not there.
 - **Refused.** A collection with no requests and no environments, such as one holding only
   variables or scripts, is refused and no project is created.
 - **Limits.** A document larger than 50 MB is refused, picked or pasted. A folder is refused past

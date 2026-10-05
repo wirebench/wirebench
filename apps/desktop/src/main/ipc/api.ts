@@ -56,7 +56,7 @@ import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
 import { allowsReadPath, checkedCompanionPaths, checkedImportSource, readCompanionFile } from '../path-access.js';
-import { checkedOpenCollectionRoot, readCompanionTexts, readOpenCollectionTree } from '../opencollection-tree.js';
+import { checkedOpenCollectionRoot, readCompanionProtos, readOpenCollectionTree } from '../opencollection-tree.js';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
@@ -945,29 +945,42 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   };
 
   /**
-   * The `.proto` files a directory collection's gRPC items name, read beside its root through the
-   * companion rule (ADR-0005) and checked to load, so the gRPC API can be placed with its definition.
-   * `protos` is absent when none could be used; the report says why.
+   * The `.proto` files a directory collection's gRPC items name, and the files they import, read
+   * beside its root through the companion rule (ADR-0005) and checked to load, so the gRPC API can
+   * be placed with its definition. `protos` is absent when none could be used; the report says why.
    */
   const readOpenCollectionProtos = async (
     rootFile: string,
     grpcName: string,
     names: readonly string[],
-  ): Promise<{ readonly protos?: Map<string, string>; readonly warnings: string[]; readonly notes: string[] }> => {
+  ): Promise<{
+    readonly protos?: { readonly sources: Map<string, string>; readonly roots: readonly string[] };
+    readonly warnings: string[];
+    readonly notes: string[];
+  }> => {
     const warnings: string[] = [];
     const notes: string[] = [];
-    let protos: Map<string, string> | undefined;
+    let protos: { readonly sources: Map<string, string>; readonly roots: readonly string[] } | undefined;
     try {
-      const read = await readCompanionTexts(rootFile, deps.projectDirs(), deps.picks, names);
+      const read = await readCompanionProtos(rootFile, deps.projectDirs(), deps.picks, names);
       const base = dirname(rootFile);
+      const listed = new Set(read.roots);
       for (const name of names) {
-        if (!read.has(relative(base, resolve(base, name)).split(sep).join('/'))) {
+        if (!listed.has(relative(base, resolve(base, name)).split(sep).join('/'))) {
           notes.push(`${grpcName}: ${name} was not found beside the collection.`);
         }
       }
-      if (read.size > 0) {
-        loadProtoSet(read);
-        protos = read;
+      for (const { name, importedBy } of read.missing) {
+        warnings.push(`${grpcName}: ${importedBy} imports ${name}, which was not found in the collection's folder.`);
+      }
+      if (read.missingMore > 0) {
+        warnings.push(
+          `${grpcName}: and ${String(read.missingMore)} more missing import${read.missingMore === 1 ? '' : 's'}.`,
+        );
+      }
+      if (read.roots.length > 0 && read.missing.length === 0) {
+        loadProtoSet(read.sources, { roots: read.roots });
+        protos = { sources: read.sources, roots: read.roots };
       }
     } catch (error) {
       warnings.push(
@@ -1025,15 +1038,15 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       }
       if (mapped.grpc !== undefined) {
         const protos = proto.protos;
-        const first = protos?.keys().next().value;
+        const first = protos?.roots[0];
         placed(
           protos !== undefined && first !== undefined && checkedSource.kind === 'file'
             ? await router.addGrpcApi(projectId, {
                 api: mapped.grpc,
-                roots: [...protos.keys()],
+                roots: protos.roots,
                 source: join(dirname(checkedSource.path), ...first.split('/')),
                 kind: 'proto',
-                sources: protos,
+                sources: protos.sources,
               })
             : await router.importGrpcApi(projectId, { api: mapped.grpc }),
         );
