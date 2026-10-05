@@ -1,6 +1,7 @@
 /**
  * Reading an OpenCollection directory for the importer: every YAML file under the picked root
- * document's folder, and the companion files (its `.proto` files) the collection names.
+ * document's folder, and the companion files the collection names: its `.proto` files and the files
+ * they import.
  *
  * The walk reads files the renderer never named, so it is held to more than the picked-path check
  * (ADR-0005): the root must pass {@link checkedImportSource}, no symbolic link is followed — a file
@@ -8,13 +9,13 @@
  * walk stops at {@link OC_TREE_LIMITS}. The root document and its own folder must not be links either.
  */
 
-import { constants } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
+import { lstat, readdir, realpath } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { OpenCollectionError, WirebenchError } from '@wirebench/engine';
+import { OpenCollectionError, protoPathSegments, WirebenchError } from '@wirebench/engine';
 import type { ReadPicks } from './dialog-picks.js';
-import { checkedCompanionPaths, checkedImportSource } from './path-access.js';
+import { checkedCompanionPaths, checkedImportSource, readCompanionFile, readNoFollow } from './path-access.js';
 import { isInsideReal } from './path-containment.js';
+import { protoImportsOf } from './proto-imports-of.js';
 
 /** The limits of one directory walk. */
 export interface OcTreeLimits {
@@ -39,8 +40,6 @@ export const OC_TREE_LIMITS: OcTreeLimits = {
 const YAML_FILE = /\.ya?ml$/i;
 /** Folders no collection keeps its items in, and that can hold more entries than the whole cap. */
 const SKIPPED_FOLDERS = new Set(['node_modules', '.git']);
-/** Read-only, never through a link, never blocking on a FIFO; Windows defines neither extra flag. */
-const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
 
 function tooLarge(bytes: number): OpenCollectionError {
   return new OpenCollectionError('oc-too-large', `The collection is larger than ${formatBytes(bytes)}`);
@@ -56,33 +55,6 @@ function tooManyFiles(limit: number): OpenCollectionError {
 
 function posixRelative(base: string, path: string): string {
   return relative(base, path).split(sep).join('/');
-}
-
-/**
- * The bytes of the regular file `path`, opened without following a link and checked to be the file
- * `lstat` saw, so a swap between the check and the read is refused rather than followed.
- * `undefined` when it is no longer a regular file. `budget` is the most it may hold; `limit` is the
- * whole cap, for the message.
- */
-async function readRegularFile(path: string, budget: number, limit: number): Promise<Buffer | undefined> {
-  const seen = await lstat(path);
-  if (!seen.isFile()) return undefined;
-  if (seen.size > budget) throw tooLarge(limit);
-  const handle = await open(path, OPEN_FLAGS).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === 'ELOOP') return undefined;
-    throw error;
-  });
-  if (handle === undefined) return undefined;
-  try {
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.dev !== seen.dev || opened.ino !== seen.ino) return undefined;
-    const bytes = await handle.readFile();
-    // The file may have grown since the `lstat`: what was read is what counts.
-    if (bytes.length > budget) throw tooLarge(limit);
-    return bytes;
-  } finally {
-    await handle.close();
-  }
 }
 
 /**
@@ -162,7 +134,8 @@ async function walk(base: string, limits: OcTreeLimits): Promise<Map<string, str
   let bytes = 0;
   let entriesSeen = 0;
   const queue: { dir: string; depth: number }[] = [{ dir: base, depth: 0 }];
-  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+  for (let at = 0; at < queue.length; at += 1) {
+    const next = queue[at]!;
     const { dir, depth } = next;
     if (depth > limits.depth) {
       throw new OpenCollectionError(
@@ -188,7 +161,7 @@ async function walk(base: string, limits: OcTreeLimits): Promise<Map<string, str
         queue.push({ dir: path, depth: depth + 1 });
         continue;
       }
-      const read = await readRegularFile(path, limits.bytes - bytes, limits.bytes);
+      const read = await readNoFollow(path, limits.bytes - bytes, () => tooLarge(limits.bytes));
       if (read === undefined) continue;
       bytes += read.length;
       files.set(posixRelative(base, path), read.toString('utf8'));
@@ -197,30 +170,119 @@ async function walk(base: string, limits: OcTreeLimits): Promise<Map<string, str
   return files;
 }
 
+/** The `.proto` files of a folder collection's gRPC API, as {@link readCompanionProtos} read them. */
+export interface CompanionProtos {
+  /** Every file read, the named ones and those they import, keyed by POSIX path relative to the root's folder. */
+  readonly sources: Map<string, string>;
+  /** The keys of the named files that were there: the files a load starts from. */
+  readonly roots: string[];
+  /**
+   * Imports found nowhere in the collection's folder, each with the key of the file that names it:
+   * the first {@link MISSING_IMPORTS_LISTED}, in the order met.
+   */
+  readonly missing: { readonly name: string; readonly importedBy: string }[];
+  /** How many more distinct missing imports there were past those listed. */
+  readonly missingMore: number;
+}
+
+/** The most missing imports {@link readCompanionProtos} lists; any one already leaves the API without a definition. */
+export const MISSING_IMPORTS_LISTED = 20;
+
+/** The folder part of a POSIX key, with its trailing `/`; empty for a key at the top. */
+function keyDir(key: string): string {
+  const slash = key.lastIndexOf('/');
+  return slash === -1 ? '' : key.slice(0, slash + 1);
+}
+
 /**
- * Exactly the named files beside the root (its `.proto` files), read through
- * {@link checkedCompanionPaths}: relative names only, inside the root's folder, no links. A name with
- * nothing at it is left out, so the caller can say which were missing.
+ * The named `.proto` files beside the root, and — transitively — every file they import, as a
+ * compiler run from the collection's folder would find them: an import is looked for first
+ * relative to that folder (the import-root reading), then relative to the importing file's folder.
+ * The bundled `google/protobuf/*` imports are left to the engine.
  *
- * @returns each file's text, keyed by POSIX path relative to the root's folder
- * @throws WirebenchError `import-path-refused` when the root is not readable or a name is refused
- * @throws OpenCollectionError `oc-too-large` when the files together pass the byte limit
+ * Every file goes through {@link checkedCompanionPaths} — relative names only, inside the root's
+ * folder, no links — and is read through {@link readCompanionFile}, so a file swapped after its check
+ * is not read. An import that is not a plain relative path (a `..` or `.` segment, a leading `/`, a
+ * backslash) is refused before anything is read for it. Each file is read once, which also ends a
+ * cycle, and the walk stops at the file and byte limits, and at the entry limit counting each path
+ * looked for. A named file with nothing at it is left out of `roots`, so the caller can say which
+ * were missing; an import with nothing at it is listed in `missing`, up to a cap, and counted past it. Keys are paths relative to the
+ * root's folder: under the import-root reading that is the import string itself, and under the
+ * importer-relative one it is the path the engine's loader tries second, so it finds either without
+ * two importers' same-named neighbours colliding. `limits` exists for tests; callers pass nothing.
+ *
+ * @throws WirebenchError `import-path-refused` when the root is not readable, a name or import is
+ *   refused, or a file changed after it was checked
+ * @throws OpenCollectionError `oc-too-many-files` or `oc-too-large` past the limits
  */
-export async function readCompanionTexts(
+export async function readCompanionProtos(
   rootFile: string,
   roots: readonly string[],
   picks: ReadPicks | undefined,
   names: readonly string[],
-): Promise<Map<string, string>> {
+  limits: Pick<OcTreeLimits, 'files' | 'bytes' | 'entries'> = OC_TREE_LIMITS,
+): Promise<CompanionProtos> {
   const base = dirname(resolve(rootFile));
-  const paths = await checkedCompanionPaths(roots, picks, rootFile, names);
-  const texts = new Map<string, string>();
-  let bytes = 0;
-  for (const path of paths) {
-    const read = await readRegularFile(path, OC_TREE_LIMITS.bytes - bytes, OC_TREE_LIMITS.bytes);
-    if (read === undefined) continue;
-    bytes += read.length;
-    texts.set(posixRelative(base, path), read.toString('utf8'));
+  const sources = new Map<string, string>();
+  const missing: { name: string; importedBy: string }[] = [];
+  const missingSeen = new Set<string>();
+  const queue: { readonly key: string; readonly path: string }[] = [];
+  const seen = new Set<string>();
+  // Paths looked for and not there, so a name imported again is not looked for again; together
+  // with the files found, held to the entry limit so a file of many imports cannot cost a lookup each.
+  const absent = new Set<string>();
+  const enqueue = (key: string, path: string): void => {
+    seen.add(key);
+    queue.push({ key, path });
+  };
+  for (const path of await checkedCompanionPaths(roots, picks, rootFile, names)) {
+    const key = posixRelative(base, path);
+    if (!seen.has(key)) enqueue(key, path);
   }
-  return texts;
+  const listed = [...seen];
+  let bytes = 0;
+  for (let at = 0; at < queue.length; at += 1) {
+    const next = queue[at]!;
+    if (sources.size >= limits.files) throw tooManyFiles(limits.files);
+    const read = await readCompanionFile(next.path, limits.bytes - bytes, () => tooLarge(limits.bytes));
+    bytes += read.length;
+    const text = read.toString('utf8');
+    sources.set(next.key, text);
+    for (const name of protoImportsOf(text)) {
+      if (name.startsWith('google/protobuf/')) continue;
+      try {
+        protoPathSegments(name);
+      } catch {
+        throw new WirebenchError(
+          'import-path-refused',
+          `"${name}", imported by ${next.key}, is not a relative path inside the collection's folder`,
+          { details: { path: name, importedBy: next.key } },
+        );
+      }
+      // Root-relative first, then beside the importer: the first that is there wins, whatever order
+      // the walk met the files in.
+      let found = false;
+      for (const candidate of new Set([name, `${keyDir(next.key)}${name}`])) {
+        if (seen.has(candidate)) {
+          found = true;
+          break;
+        }
+        if (absent.has(candidate)) continue;
+        if (seen.size + absent.size >= limits.entries) throw tooManyFiles(limits.entries);
+        const [path] = await checkedCompanionPaths(roots, picks, rootFile, [candidate]);
+        if (path !== undefined) {
+          enqueue(candidate, path);
+          found = true;
+          break;
+        }
+        absent.add(candidate);
+      }
+      const pair = `${next.key}\u0000${name}`;
+      if (!found && !missingSeen.has(pair)) {
+        missingSeen.add(pair);
+        if (missing.length < MISSING_IMPORTS_LISTED) missing.push({ name, importedBy: next.key });
+      }
+    }
+  }
+  return { sources, roots: listed, missing, missingMore: missingSeen.size - missing.length };
 }

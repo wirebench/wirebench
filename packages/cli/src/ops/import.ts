@@ -18,6 +18,7 @@ import {
   generateSoapRequest,
   importWsdl,
   importOpenApi,
+  nextApiOrder,
   qnameToString,
   saveProject,
   takenContainerSlugs,
@@ -254,7 +255,7 @@ async function addOpenApi(
     {
       fetchDocument,
       webhooks: false,
-      order: project.interfaces.length + project.apis.length,
+      order: nextApiOrder(project),
       ...(name !== undefined ? { name } : {}),
     },
   );

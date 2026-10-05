@@ -23,8 +23,11 @@ import type { CodeShell } from '../state/ui-state.js';
 /** Long enough that a burst of keystrokes is one IPC round trip, short enough to feel live. */
 const DEBOUNCE_MS = 300;
 
-/** Must match `REDACTED_MARKER` in `main/redact.ts` — the renderer may not import from main. */
-const REDACTED_MARKER = '<redacted>';
+/**
+ * Must match `REDACTED_MARKER` and `REDACTED_XML_MARKER` in the engine — the renderer may not import
+ * from main. A SOAP envelope's masked password carries the XML form.
+ */
+const REDACTED_MARKERS = ['<redacted>', '&lt;redacted&gt;'];
 
 /**
  * How each span of the command is painted. Only the flags carry the accent: in a command that is
@@ -347,7 +350,7 @@ export function CodePanel() {
             ))}
       </pre>
 
-      {command.includes(REDACTED_MARKER) && (
+      {REDACTED_MARKERS.some((marker) => command.includes(marker)) && (
         <p className="text-xs text-fg-subtle">Secrets are masked unless Show secrets is on.</p>
       )}
 

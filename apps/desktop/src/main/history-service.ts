@@ -277,9 +277,10 @@ const MAX_HISTORY_BODY_CHARS = 256 * 1024;
 /**
  * A body as stored: itself when small, or its first characters with a marker naming what was cut —
  * either way with every secret value a send was handed masked, since History is written to disk.
+ * An XML body (by `contentType`) gets the escaped marker, as `redactXml` writes it.
  */
-function storedBody(body: string): string {
-  const text = redactSecretValues(body);
+function storedBody(body: string, contentType?: string): string {
+  const text = redactSecretValues(body, { xml: isXmlType(contentType) });
   if (text.length <= MAX_HISTORY_BODY_CHARS) {
     return text;
   }
@@ -347,11 +348,14 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
     durationMs: record.durationMs,
     // A 3xx that was not followed is a perfectly good answer, so "ok" is anything but 4xx/5xx.
     ok: status !== undefined && status >= 200 && status < 400,
-    request: { envelopeXml: storedBody(record.requestBody), headers },
+    request: {
+      envelopeXml: storedBody(record.requestBody, headerValueOf(Object.entries(record.requestHeaders), 'content-type')),
+      headers,
+    },
     ...(exchange !== undefined
       ? {
           response: {
-            envelopeXml: storedBody(exchange.text),
+            envelopeXml: storedBody(exchange.text, headerValueOf(exchange.http.rawHeaders, 'content-type')),
             rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
             status: exchange.http.status,
             statusText: exchange.http.statusText,
@@ -417,6 +421,11 @@ function withoutCookies(
 
 function contentTypeOf(pairs: readonly { readonly name: string; readonly value: string }[]): string | undefined {
   return pairs.find((pair) => pair.name.toLowerCase() === 'content-type')?.value;
+}
+
+/** The value of the first header named `name` (lower-case) among `[name, value]` pairs. */
+function headerValueOf(pairs: readonly (readonly [string, string])[], name: string): string | undefined {
+  return pairs.find(([key]) => key.toLowerCase() === name)?.[1];
 }
 
 /** True for an XML media type: `text/xml`, `application/xml`, or any `+xml` suffix. */
@@ -588,7 +597,9 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
               : {}),
           }
         : {}),
-      requestMessages: exchange?.requestMessages.map(storedBody) ?? [storedBody(record.requestMessage)],
+      requestMessages: exchange?.requestMessages.map((message) => storedBody(message)) ?? [
+        storedBody(record.requestMessage),
+      ],
       // `storedBody` masks text; a message that did not decode is base64, masked as bytes first.
       responseMessages:
         exchange?.responseMessages.map((message) => storedBody(message.json ?? redactSecretBytes(message.base64))) ??

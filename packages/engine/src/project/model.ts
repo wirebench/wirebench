@@ -534,6 +534,22 @@ export function takenContainerSlugs(project: Project, dir: ContainerDir): Readon
   ]);
 }
 
+/**
+ * The order a newly placed API (REST, gRPC or WebSocket) takes: one past the highest order any
+ * interface or API holds, 0 when there is none. The explorer sorts them all together, so an API
+ * placement must look at all of them; and a count would repeat an order still held once one was
+ * deleted. Interface placements keep their own rule.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export function nextApiOrder(project: Project): number {
+  let highest = -1;
+  for (const container of [...project.interfaces, ...project.apis, ...project.grpcApis, ...project.wsApis]) {
+    if (container.order > highest) highest = container.order;
+  }
+  return highest + 1;
+}
+
 /** Generates entity ids; injectable so tests can produce deterministic projects. */
 export type IdGenerator = () => string;
 

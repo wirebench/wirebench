@@ -1,8 +1,8 @@
 /**
  * The credential rule every request importer applies to what it writes into a project (spec §3.4,
  * §11): a literal value under a credential-looking name is blanked, or dropped from the headers,
- * while a value made only of references stays. Shared by the `.http` and OpenCollection mappers.
- * Pure, and free of Node.
+ * while a value made only of references stays. Shared by the `.http`, OpenCollection and HAR
+ * mappers. Pure, and free of Node.
  */
 
 import type { KeyValueEntry } from '../http/entries.js';

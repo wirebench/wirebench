@@ -49,7 +49,10 @@ traversal segment.
 
 A file the user picked also vouches for named companion files beside it, and for the tree under
 a picked collection root. Only exact relative names are read; no symbolic link is followed;
-nothing outside the picked file's folder is read (`checkedCompanionPaths`). An import format
+nothing outside the picked file's folder is read (`checkedCompanionPaths`). A companion, like a
+file of the tree below, is read through a handle opened without following a link and checked to be
+the same file (device and inode) that was checked, so one swapped in between is not read
+(`readNoFollow`, `readCompanionFile`). An import format
 needs this when its source is several files: `.http` environment files, an OpenCollection
 directory. The directory is read by `readOpenCollectionTree`: the root document and its own folder
 must not be links, YAML files only, every link below skipped, `node_modules` and `.git` not

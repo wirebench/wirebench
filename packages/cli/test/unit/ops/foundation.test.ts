@@ -1,4 +1,11 @@
-import { awaitCallbacks, HttpError, prepareCallbacks, ProjectError, REDACTED_MARKER } from '@wirebench/engine';
+import {
+  awaitCallbacks,
+  HttpError,
+  prepareCallbacks,
+  ProjectError,
+  REDACTED_MARKER,
+  REDACTED_XML_MARKER,
+} from '@wirebench/engine';
 import type {
   AssertionResult,
   CallbackAssertion,
@@ -398,7 +405,7 @@ describe('redactBaseline', () => {
 
     expect(report.changes?.[0]).toEqual({ kind: 'changed', path: '/name', expected: '"Rex"', actual: '"Fido"' });
     expect(JSON.parse(report.changes?.[1]?.actual ?? '')).toEqual({ token: REDACTED_MARKER, user: 'ann' });
-    expect(report.changes?.[2]?.expected).toContain(`<Password>${REDACTED_MARKER}</Password>`);
+    expect(report.changes?.[2]?.expected).toContain(`<Password>${REDACTED_XML_MARKER}</Password>`);
     expect(report.changes?.[3]).toMatchObject({ expected: '1', actual: '2' });
     expect(report.error).toContain('example.test');
     expect(JSON.stringify(report)).not.toContain(SECRET);

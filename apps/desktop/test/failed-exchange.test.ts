@@ -118,7 +118,7 @@ describe('failedExchangeOf', () => {
 
       expect(raw.startsWith('PUT /pets/7?page=2&token=%3Credacted%3E HTTP/1.1\r\n')).toBe(true);
       expect(raw).toContain('authorization: <redacted>');
-      expect(raw).toContain('<wsse:Password><redacted></wsse:Password>');
+      expect(raw).toContain('<wsse:Password>&lt;redacted&gt;</wsse:Password>');
       expect(JSON.stringify(failure)).not.toContain('tok-secret');
       expect(raw).not.toContain('tok-secret');
       expect(raw).not.toContain('hunter-two');

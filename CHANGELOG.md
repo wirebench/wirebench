@@ -48,9 +48,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **OpenCollection proto imports.** A folder collection's gRPC API now arrives with its definition
+  when its `.proto` files import other files from the collection's folder: each import is read,
+  under the folder first and then beside the importing file. An import that is not there still
+  leaves the API with no definition, and the warning now names the import and the file that imports
+  it (#247).
 - **Imported legacy-project scripts.** Importing a legacy SOAP project no longer overwrites a script
   that already exists under `imported-scripts/`: a clash is saved as `-2`, `-3`, … and the import
   report says so (#64).
+- **One XML redaction marker.** History, the HTTP log and copied commands now write a masked XML
+  value, such as a WS-Security password or a secret value found in an XML body, as
+  `&lt;redacted&gt;`, as a masked XML example already did, so a redacted XML document stays well
+  formed. Other redaction keeps `<redacted>`. An XML History entry recorded before this change still
+  shows `<redacted>`, so a diff against a newer entry shows that line as changed (#252).
 
 ## [3.1.0] - 2026-10-04
 

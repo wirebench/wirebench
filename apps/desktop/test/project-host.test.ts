@@ -1449,6 +1449,30 @@ describe('ProjectHost.importGrpcApi', () => {
   });
 });
 
+describe('ProjectHost.addGrpcApi', () => {
+  it('orders a new gRPC API after the WebSocket APIs too, so no two APIs share an order', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Mixed Project');
+    await service.create({ dir, name: 'Mixed Project' });
+    await service.importWsApi({ api: createWsApi('Chat', { url: 'wss://chat.test' }) });
+    await service.importGrpcApi({ api: createGrpcApi('Pets', { target: 'localhost:50051' }) });
+
+    const added = await service.addGrpcApi({
+      api: createGrpcApi('Store', { target: 'localhost:50052' }),
+      roots: ['store.proto'],
+      source: '/protos/store.proto',
+      cache: false,
+      kind: 'proto',
+      sources: new Map([['store.proto', 'syntax = "proto3";']]),
+    });
+
+    const orders = [...added.project.wsApis, ...added.project.grpcApis].map((api) => api.order);
+    expect(new Set(orders).size).toBe(orders.length);
+    expect(added.project.grpcApis.find((api) => api.id === added.apiId)?.order).toBe(2);
+    await service.close();
+  });
+});
+
 describe('ProjectHost.importWsApi', () => {
   it('places a mapped WebSocket API with no definition, under a free slug, and saves', async () => {
     const service = newService();

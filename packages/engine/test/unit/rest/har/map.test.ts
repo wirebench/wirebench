@@ -238,21 +238,58 @@ describe('mapHar', () => {
         },
       }),
     );
+    // Blanked in place, so the body keeps the formatting it was recorded with.
     expect(json.apis[0]!.requests[0]!.body).toMatchObject({
       kind: 'raw',
-      text: '{\n  "user": "a",\n  "profile": {\n    "Password": ""\n  }\n}',
+      text: '{\n  "user": "a",\n  "profile": { "Password": "" }\n}',
     });
     expect(JSON.stringify(json.apis)).not.toContain('hunter2');
   });
 
-  it('keeps a JSON body with no secret, or one that does not parse, exactly as recorded', () => {
-    for (const text of ['{ "name" :  "Rex" }', '{"password": "x"']) {
-      const mapped = mapHar(
-        oneEntry({ request: { method: 'POST', postData: { mimeType: 'application/json', text } } }),
-      );
-      expect(mapped.apis[0]!.requests[0]!.body).toMatchObject({ kind: 'raw', text });
-      expect(mapped.report.warnings).toEqual([]);
-    }
+  it('keeps a JSON body with no secret exactly as recorded', () => {
+    const text = '{ "name" :  "Rex" }';
+    const mapped = mapHar(oneEntry({ request: { method: 'POST', postData: { mimeType: 'application/json', text } } }));
+    expect(mapped.apis[0]!.requests[0]!.body).toMatchObject({ kind: 'raw', text });
+    expect(mapped.report.warnings).toEqual([]);
+  });
+
+  it('blanks a credential in a JSON body that does not parse, in place, as the other importers do', () => {
+    const mapped = mapHar(
+      oneEntry({ request: { method: 'POST', postData: { mimeType: 'application/json', text: '{"password": "x"' } } }),
+    );
+    expect(mapped.apis[0]!.requests[0]!.body).toMatchObject({ kind: 'raw', text: '{"password": ""' });
+    expect(mapped.report.warnings).toEqual([
+      'POST /x: the recorded value of password was not imported; set it on the request.',
+    ]);
+  });
+
+  it('keeps a value made only of references, and blanks multipart text recorded without its parts', () => {
+    const refs = mapHar(
+      oneEntry({
+        request: {
+          method: 'POST',
+          url: 'https://api.test/x?token={{token}}',
+          queryString: [{ name: 'token', value: '{{token}}' }],
+          postData: { mimeType: 'application/json', text: '{"password": "${secret}"}' },
+        },
+      }),
+    );
+    expect(refs.apis[0]!.requests[0]!.body).toMatchObject({ kind: 'raw', text: '{"password": "${secret}"}' });
+    expect(refs.apis[0]!.requests[0]!.query).toEqual([entry('token', '{{token}}')]);
+    expect(refs.report.warnings).toEqual([]);
+
+    const multipart = mapHar(
+      oneEntry({
+        request: {
+          method: 'POST',
+          postData: {
+            mimeType: 'multipart/form-data; boundary=b',
+            text: '--b\nContent-Disposition: form-data; name="password"\n\nhunter2\n--b--',
+          },
+        },
+      }),
+    );
+    expect(JSON.stringify(multipart.apis)).not.toContain('hunter2');
   });
 
   it('maps JSON and form bodies', () => {
