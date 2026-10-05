@@ -968,12 +968,14 @@ async function wsCommand(
   resolved: WsPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
-  const resolvedAuth = show
-    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-    : placeholderAuth(resolved.auth);
-  // A Negotiate token is made per handshake and cannot be written into a command line.
-  const kerberos = resolvedAuth?.type === 'kerberos';
-  const auth = kerberos ? undefined : resolvedAuth;
+  // A Negotiate token is made per handshake and cannot be written into a command line, so a
+  // Kerberos request is noted from its configuration, with no secret read for it.
+  const kerberos = resolved.auth.type === 'kerberos';
+  const auth = kerberos
+    ? undefined
+    : show
+      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+      : placeholderAuth(resolved.auth);
   const material: WsSessionMaterial = { ...(auth !== undefined ? { auth } : {}) };
   const options = toWsSessionOptions(resolved.input, material);
   const command = wsToCommand(options, { shell: request.shell });
