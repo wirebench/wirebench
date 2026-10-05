@@ -160,7 +160,7 @@ export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | 
 export type SoapOwnerAuth = Exclude<AuthConfig, InheritAuth>;
 
 /**
- * How a definition document is fetched: Basic, a bearer token or an API key. Secrets are keychain
+ * How a definition document is fetched: Basic, a bearer token, an API key or Kerberos. Secrets are keychain
  * references, as everywhere else. Separate from the API's own `auth`, which is what its requests send.
  */
 export type DefinitionAuth = (EndpointAuth & { readonly type: 'basic' }) | BearerAuth | ApiKeyAuth | KerberosAuth;

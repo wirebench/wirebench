@@ -306,7 +306,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     ...(cookieHook !== undefined ? { cookies: cookieHook } : {}),
   };
 
-  // Basic and NTLM may need a round trip of their own; every other scheme is already in `headers`.
+  // Basic, NTLM and Kerberos may need a round trip of their own; every other scheme is already in `headers`.
   const authenticated = await sendWithAuth(httpRequest, applied.transportAuth);
   return {
     ...decodeRestResponse(authenticated.http, methodFor(request.method), sseState),

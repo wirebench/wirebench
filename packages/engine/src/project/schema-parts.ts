@@ -169,7 +169,7 @@ export const soapOwnerAuthSchema = z.union([
 ]);
 
 /**
- * A definition's fetch credentials: Basic, Bearer or API key, each as references only. The Basic arm
+ * A definition's fetch credentials: Basic, Bearer, API key or Kerberos, each as references only. The Basic arm
  * takes the full plaintext-key rejection too, not only `endpointAuthSchema`'s `password`, so a `token`
  * or `apiKey` written beside `type: basic` is refused rather than ignored.
  */

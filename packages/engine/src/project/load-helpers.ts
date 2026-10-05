@@ -134,7 +134,7 @@ export function authConfig(parsed: Record<string, unknown>): AuthConfig {
 
 /**
  * A definition's fetch credentials as loaded, through {@link authConfig}. `definitionAuthSchema` has
- * already refused every scheme but Basic, Bearer and API key, so the narrowing cast only restates
+ * already refused every scheme but Basic, Bearer, API key and Kerberos, so the narrowing cast only restates
  * what parsing proved.
  */
 export function definitionAuth(parsed: Record<string, unknown> | undefined): DefinitionAuth | undefined {
