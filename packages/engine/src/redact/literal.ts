@@ -39,13 +39,18 @@ function encodedForms(value: string): string[] {
 
 /**
  * Builds a function that replaces every occurrence of `values` — and the base64, percent-, form-,
- * XML- and JSON-escaped forms of each — with the redaction marker.
+ * XML- and JSON-escaped forms of each — with the redaction marker: {@link REDACTED_MARKER}, or
+ * `options.marker` (`REDACTED_XML_MARKER` for XML text, so a masked document stays well formed).
  *
  * Every match is found on the original text and overlapping or touching matches are merged before
  * anything is replaced. Masking one needle first would hide the start of another that overlaps it
  * (`token` inside a cut `token-abcdef-12…`), leaving the rest of that one in the output.
  */
-export function createSecretMasker(values: readonly string[]): (text: string) => string {
+export function createSecretMasker(
+  values: readonly string[],
+  options?: { readonly marker?: string },
+): (text: string) => string {
+  const marker = options?.marker ?? REDACTED_MARKER;
   const plain = values.filter((value) => value.length >= MIN_MASKED_LENGTH);
   const needles = new Set<string>();
   for (const value of plain) {
@@ -58,11 +63,11 @@ export function createSecretMasker(values: readonly string[]): (text: string) =>
     }
   }
   return (text) =>
-    replaceRanges(text, [
-      ...basicCredentialRanges(text, plain),
-      ...needleRanges(text, needles),
-      ...cutPrefixRanges(text, needles),
-    ]);
+    replaceRanges(
+      text,
+      [...basicCredentialRanges(text, plain), ...needleRanges(text, needles), ...cutPrefixRanges(text, needles)],
+      marker,
+    );
 }
 
 /** A span of the original text to mask, `start` inclusive and `end` exclusive. */
@@ -71,8 +76,8 @@ interface Range {
   end: number;
 }
 
-/** Replaces each run of overlapping or touching ranges with one marker. */
-function replaceRanges(text: string, ranges: Range[]): string {
+/** Replaces each run of overlapping or touching ranges with one `marker`. */
+function replaceRanges(text: string, ranges: Range[], marker: string): string {
   if (ranges.length === 0) {
     return text;
   }
@@ -84,12 +89,12 @@ function replaceRanges(text: string, ranges: Range[]): string {
     if (range.start <= current.end) {
       current.end = Math.max(current.end, range.end);
     } else {
-      out += text.slice(kept, current.start) + REDACTED_MARKER;
+      out += text.slice(kept, current.start) + marker;
       kept = current.end;
       current = { ...range };
     }
   }
-  return out + text.slice(kept, current.start) + REDACTED_MARKER + text.slice(current.end);
+  return out + text.slice(kept, current.start) + marker + text.slice(current.end);
 }
 
 /** Every occurrence of every needle, overlapping ones included. */

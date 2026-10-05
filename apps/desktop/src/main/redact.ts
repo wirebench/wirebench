@@ -15,6 +15,7 @@
 import {
   createSecretBytesMasker,
   createSecretMasker,
+  REDACTED_XML_MARKER,
   redactHeaderPairs as redactHeaderPairsByName,
   redactHeaders as redactHeadersByName,
   redactRawHttp as redactRawHttpByPattern,
@@ -28,6 +29,8 @@ export { REDACTED_MARKER, SECRET_BODY_KEYS, containsRedaction, redactResponseAtt
 
 const recorded = new Set<string>();
 let masker: ((text: string) => string) | undefined;
+/** The same, for XML text: it writes the marker escaped, so the document stays well formed. */
+let xmlMasker: ((text: string) => string) | undefined;
 /** The same, over a base64 run of raw bytes: each value's UTF-8 bytes, wherever they sit. */
 let byteMasker: ((base64: string) => string) | undefined;
 
@@ -36,6 +39,7 @@ export function recordSecretValue(value: string): void {
   if (!recorded.has(value)) {
     recorded.add(value);
     masker = undefined;
+    xmlMasker = undefined;
     byteMasker = undefined;
   }
 }
@@ -71,10 +75,18 @@ export function recordAuthValues(auth: SendAuth | undefined): void {
   }
 }
 
-/** `text` with every recorded value (and its escaped forms) replaced by the redaction marker. */
-function maskRecorded(text: string): string {
+/**
+ * `text` with every recorded value (and its escaped forms) replaced by the redaction marker: the
+ * escaped `&lt;redacted&gt;` when `xml` says the text is XML, as `redactXml` writes it, so XML
+ * shows one marker however a value was masked.
+ */
+function maskRecorded(text: string, xml = false): string {
   if (recorded.size === 0) {
     return text;
+  }
+  if (xml) {
+    xmlMasker ??= createSecretMasker([...recorded], { marker: REDACTED_XML_MARKER });
+    return xmlMasker(text);
   }
   masker ??= createSecretMasker([...recorded]);
   return masker(text);
@@ -91,10 +103,11 @@ export function containsRecordedSecret(value: string): boolean {
 
 /**
  * `text` with every recorded value masked, whatever the show-secrets toggle says: for what is
- * written to disk (a History body), which is always redacted.
+ * written to disk (a History body), which is always redacted. With `xml`, the marker is written
+ * escaped, as in any XML.
  */
-export function redactSecretValues(text: string): string {
-  return maskRecorded(text);
+export function redactSecretValues(text: string, opts?: { xml?: boolean }): string {
+  return maskRecorded(text, opts?.xml === true);
 }
 
 /**
@@ -152,7 +165,7 @@ export function redactUrl(url: string, opts?: { show?: boolean; extraParams?: re
 /** See the engine's `redactXml`; recorded values are masked anywhere in the document too. */
 export function redactXml(text: string, opts?: { show?: boolean }): string {
   const out = redactXmlByElement(text, opts);
-  return opts?.show === true ? out : maskRecorded(out);
+  return opts?.show === true ? out : maskRecorded(out, true);
 }
 
 /** See the engine's `redactStructuredBody`; recorded values are masked anywhere in the body too. */
