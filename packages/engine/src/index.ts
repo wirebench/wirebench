@@ -767,9 +767,18 @@ export { importHttpFile } from './import/http-file/import.js';
 export type { HttpFileSource, ImportHttpFileOptions } from './import/http-file/import.js';
 export { mapHttpFile } from './import/http-file/map.js';
 export type { MapHttpFileOptions, MappedHttpFile } from './import/http-file/map.js';
-// OpenCollection: reading a single document or a directory into typed shapes.
-export { isOpenCollection, parseOpenCollection } from './import/opencollection/index.js';
+// OpenCollection: reading a single document or a directory into typed shapes, and mapping them.
+export {
+  isOpenCollection,
+  mapOcAuth,
+  mapOcOAuth2,
+  mapOpenCollection,
+  parseOpenCollection,
+} from './import/opencollection/index.js';
 export type {
+  MapOpenCollectionOptions,
+  MappedOcAuth,
+  MappedOpenCollection,
   OcAssertion,
   OcCollection,
   OcEnvironment,

@@ -185,6 +185,22 @@ export function splitQuery(url: string): { readonly path: string; readonly query
 }
 
 /**
+ * {@link splitQuery}, but a `${#System#X}` reference is not mistaken for a fragment: every `${…}`
+ * is shielded while the URL is split. For an importer, whose URLs carry rewritten references.
+ */
+export function splitQueryKeepingReferences(url: string): { path: string; query: KeyValueEntry[] } {
+  const refs: string[] = [];
+  const shielded = url.replace(/\$\{[^{}]*\}/g, (m) => {
+    refs.push(m);
+    return `\u0000${refs.length - 1}\u0000`;
+  });
+  const restore = (text: string): string =>
+    text.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => refs[Number(i)] ?? '');
+  const { path, query } = splitQuery(shielded);
+  return { path: restore(path), query: query.map((q) => ({ ...q, name: restore(q.name), value: restore(q.value) })) };
+}
+
+/**
  * The inverse of {@link splitQuery}: puts enabled rows back onto `path` as its query string.
  *
  * Values are written exactly as given — this is the editor's URL field, not the wire — so

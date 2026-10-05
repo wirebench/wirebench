@@ -7,12 +7,12 @@
  */
 
 import { isCredentialName } from '../../import/credentials.js';
+import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../../import/examples.js';
 import type { ImportReport } from '../../import/report.js';
 import { ReportBuilder } from '../../import/report.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { uniqueSlug } from '../../project/paths.js';
-import { REDACTED_MARKER, redactStructuredBody } from '../../redact/index.js';
 import type { RawLanguage, RestApi, RestBody, RestRequestDef, RestResponseExample } from '../model.js';
 import { NO_BODY, createApi, createRestRequest, entry } from '../model.js';
 import type { HarEntryIn, HarLogIn, HarNameValue, HarPostData } from './model.js';
@@ -77,11 +77,8 @@ const DROPPED_HEADERS = new Set([
   'authorization',
 ]);
 /** Response headers an example never keeps: the cookie jar, not the example, owns cookies. */
-const DROPPED_EXAMPLE_HEADERS = new Set(['set-cookie', 'cookie']);
 const TEXTUAL = /^(text\/|application\/(json|xml|[\w.+-]+\+(json|xml)|x-www-form-urlencoded|javascript))/i;
 const MAX_EXAMPLES = 5;
-/** An example body's cap, in characters: the one History puts on a recorded body. */
-const MAX_EXAMPLE_BODY_CHARS = 256 * 1024;
 
 function isStatic(e: HarEntryIn, url: URL): boolean {
   return (
@@ -258,13 +255,6 @@ function mapPostData(
   };
 }
 
-const ENCODED_MARKER = encodeURIComponent(REDACTED_MARKER);
-
-/** How many masked values `text` holds: the marker as written in JSON, or percent-encoded in a form. */
-function markers(text: string): number {
-  return text.split(REDACTED_MARKER).length + text.split(ENCODED_MARKER).length - 2;
-}
-
 /**
  * A recorded response as an example. Cookies are dropped; headers and JSON or form body values
  * whose name looks like a credential are masked, so no literal credential is saved. A body over
@@ -272,28 +262,16 @@ function markers(text: string): number {
  */
 function exampleOf(e: HarEntryIn, id: string, label: string, report: ReportBuilder): RestResponseExample {
   const { content } = e.response;
-  let masked = false;
-  const headers = e.response.headers
-    .filter((h) => !DROPPED_EXAMPLE_HEADERS.has(h.name.toLowerCase()))
-    .map((h) => {
-      if (!isCredentialName(h.name)) return entry(h.name, h.value);
-      masked = true;
-      return entry(h.name, REDACTED_MARKER);
-    });
-  let body = bodyText(content);
-  if (body === undefined && content.text !== undefined) {
+  const recorded = bodyText(content);
+  if (recorded === undefined && content.text !== undefined) {
     report.note(`${label}: a binary response body was left out of the example.`);
   }
-  if (body !== undefined) {
-    const redacted = redactStructuredBody(body, content.mimeType !== '' ? content.mimeType : undefined, {
-      isSecretKey: isCredentialName,
-    });
-    // Re-serialising may reformat JSON, so the redacted text replaces the body only when it masked something.
-    if (markers(redacted) > markers(body)) {
-      body = redacted;
-      masked = true;
-    }
-  }
+  const {
+    headers,
+    body: maskedBody,
+    masked,
+  } = maskRecordedResponse(e.response.headers, recorded, content.mimeType !== '' ? content.mimeType : undefined);
+  let body = maskedBody;
   if (masked) report.note(`${label}: credentials in a recorded response were masked in its example.`);
   if (body !== undefined && body.length > MAX_EXAMPLE_BODY_CHARS) {
     body = body.slice(0, MAX_EXAMPLE_BODY_CHARS);

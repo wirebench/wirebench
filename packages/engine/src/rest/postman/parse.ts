@@ -6,7 +6,7 @@
  */
 
 import { PostmanError } from '../../errors.js';
-import { rewriteMustache } from '../../import/templates.js';
+import { colonPathParams, rewriteMustache } from '../../import/templates.js';
 import type {
   PostmanAuth,
   PostmanAuthAttribute,
@@ -68,7 +68,7 @@ export function translatePostmanVariables(text: string, dynamic?: Set<string>): 
 
 /** Normalizes Postman's `:param` path segment syntax to Wirebench's `{param}` format. */
 export function normalizePostmanPath(path: string): string {
-  return path.replace(/(^|\/):([a-zA-Z0-9_-]+)(?=\/|\?|#|\.|$)/g, '$1{$2}');
+  return colonPathParams(path);
 }
 
 export function extractDescription(desc: unknown): string | undefined {
