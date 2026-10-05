@@ -100,19 +100,24 @@ stays readable.
 ### Holder-of-key and signing over a token
 
 A Signature entry can refer to a SAML token and cover it. Both options sit on the Signature entry,
-and the token has to come earlier in the list.
+and the token has to come earlier in the list. When several tokens come earlier, the nearest one
+before the Signature entry is the one used.
 
 - **Key identifier: SAML token reference.** The signature's `ds:KeyInfo` points at the SAML assertion
   with a `wsse:SecurityTokenReference` instead of naming a certificate. Use it for **holder-of-key**:
   the signature must be made with the proof key the assertion names, so pick the keystore and alias
-  of that key. A signature made with any other key is refused by a receiver.
+  of that key. When Wirebench knows the proof certificate (a token built from the form with a proof
+  keystore), it refuses a mismatched key itself, with `wss-proof-key-mismatch`, instead of sending a
+  signature the receiver would reject.
 - **Cover the SAML token (STR-Transform).** Adds a part that signs the assertion through a
   `wsse:SecurityTokenReference` and the STR-Transform, without altering it: the assertion keeps no
   `wsu:Id` and its own issuer signature stays valid. The part does not appear in the parts table; the
   checkbox adds and removes it.
 
 **Sender vouches** is a signature by your own key over the message body and the token: keep the
-usual certificate key identifier, add the Body part and tick **Cover the SAML token (STR-Transform)**.
+usual certificate key identifier and tick **Cover the SAML token (STR-Transform)**. A new Signature
+entry's default parts already cover the Body and the Timestamp, so the signature then covers the
+Body, the Timestamp and the token.
 
 <Aside type="note">
 WS-Addressing headers are added automatically when the imported WSDL declares
