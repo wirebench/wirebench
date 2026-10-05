@@ -18,6 +18,14 @@ All notable changes to this project are documented here. The format follows
   unless **Include static assets** is ticked, static assets are skipped. Recorded responses can be
   left out, written to History at the time they were recorded, or saved as examples. Recorded
   credentials and cookies are never imported (#64).
+- **`.http` files.** **Import…** reads `.http` and `.rest` request files (**Import .http File…**)
+  into a REST API, with a WebSocket API for `WEBSOCKET` requests. `@variables` become project
+  properties, response handlers are kept as text under `imported-scripts/` and never run, and
+  `GRAPHQL` and `GRPC` requests are skipped with a warning. When a picked file has
+  `http-client.env.json` or `http-client.private.env.json` beside it, the dialog offers to import
+  those environments too; **Import HTTP Client Environments…** imports them on their own. Private
+  values and credential-named literals become secrets, and an imported environment is never made
+  active (#64).
 - **Response examples.** A REST request can keep recorded responses as examples, up to 5 from a HAR
   import, one per status. The response pane's **Examples** menu shows one read-only under a banner,
   and **Delete example** removes it (#64).
@@ -26,6 +34,12 @@ All notable changes to this project are documented here. The format follows
 
 - **Project format 7.** Response examples are saved with the project, so the project format is now 7:
   an older Wirebench cannot open a project saved by this one.
+
+### Fixed
+
+- **Imported legacy-project scripts.** Importing a legacy SOAP project no longer overwrites a script
+  that already exists under `imported-scripts/`: a clash is saved as `-2`, `-3`, … and the import
+  report says so (#64).
 
 ## [3.1.0] - 2026-10-04
 

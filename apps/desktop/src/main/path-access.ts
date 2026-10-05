@@ -9,10 +9,11 @@
  * here means a fix to either reaches every caller at once.
  */
 
-import { resolve } from 'node:path';
+import { lstat, realpath } from 'node:fs/promises';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { ImportSourceWire } from '../shared/wire-types.js';
-import { isInsideAny } from './path-containment.js';
+import { isInsideAny, isInsideReal } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 
 /**
@@ -63,4 +64,75 @@ export async function checkedImportSource(
     );
   }
   return { kind: 'file', path: resolved };
+}
+
+/** Whether `rel`, a `path.relative` result, names something strictly below the folder it was taken from. */
+function isBelow(rel: string): boolean {
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+}
+
+/**
+ * Files beside a file the user picked (or one inside a project folder), read only because that
+ * file was: exact names, no links, nothing outside its folder (ADR-0005).
+ *
+ * The anchor must pass {@link allowsReadPath} itself. Each name is resolved against the anchor's
+ * folder and refused when it leaves that folder, is a symbolic link, or is reached through one; a
+ * name with nothing at it, or a folder at it, is dropped rather than refused, since a companion is
+ * optional.
+ *
+ * @returns the absolute paths of the companions that exist, in the order asked for
+ * @throws WirebenchError `import-path-refused` when the anchor is not readable or a name is refused
+ */
+export async function checkedCompanionPaths(
+  roots: readonly string[],
+  picks: ReadPicks | undefined,
+  anchorFile: string,
+  names: readonly string[],
+): Promise<string[]> {
+  const anchor = resolve(anchorFile);
+  if (!(await allowsReadPath(roots, picks, anchor))) {
+    throw new WirebenchError(
+      'import-path-refused',
+      `Wirebench will not read beside "${anchorFile}": use Browse… to pick it`,
+      { details: { path: anchorFile } },
+    );
+  }
+  const base = dirname(anchor);
+  const refuse = (name: string, why: string): never => {
+    throw new WirebenchError('import-path-refused', `"${name}" ${why}`, { details: { path: name } });
+  };
+  const allowed: string[] = [];
+  for (const name of names) {
+    const target = resolve(base, name);
+    if (!isBelow(relative(base, target))) {
+      refuse(name, `is outside the folder of "${anchorFile}"`);
+    }
+    let info;
+    try {
+      info = await lstat(target);
+    } catch {
+      continue;
+    }
+    if (info.isSymbolicLink()) {
+      refuse(name, 'is a symbolic link and is not followed');
+    }
+    // A linked folder between the anchor's folder and the file would leave it without the leaf being a link.
+    let baseReal: string;
+    let parentReal: string;
+    try {
+      [baseReal, parentReal] = await Promise.all([realpath(base), realpath(dirname(target))]);
+    } catch (error) {
+      // The folder went away since the `lstat`: the companion is as missing as one never there.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw new WirebenchError('import-path-refused', `"${name}" could not be checked and was not read`, {
+        details: { path: name },
+        cause: error,
+      });
+    }
+    if (!isInsideReal(baseReal, parentReal)) {
+      refuse(name, `is reached through a symbolic link and is not followed`);
+    }
+    if (info.isFile()) allowed.push(target);
+  }
+  return allowed;
 }

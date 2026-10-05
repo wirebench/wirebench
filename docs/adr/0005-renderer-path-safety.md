@@ -47,6 +47,12 @@ segments only through `slugify` (`packages/engine/src/project/paths.ts`), which 
 characters illegal on any supported OS, refuses Windows device names, and cannot produce a
 traversal segment.
 
+A file the user picked also vouches for named companion files beside it, and for the tree under
+a picked collection root. Only exact relative names are read; no symbolic link is followed;
+nothing outside the picked file's folder is read (`checkedCompanionPaths`). An import format
+needs this when its source is several files: `.http` environment files, an OpenCollection
+directory.
+
 ## Rationale
 
 - **Capabilities, not paths.** "The user picked this file" and "this file is inside the

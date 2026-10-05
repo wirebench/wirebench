@@ -8,7 +8,7 @@
  * for a location the API's own manifest lists, so the channel can never be turned into a read of an
  * arbitrary file.
  */
-import { readFileSync } from 'node:fs';
+import { copyFileSync, readFileSync } from 'node:fs';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -216,6 +216,8 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       grpcFields: vi.fn(),
       grpcRefresh: vi.fn(),
       grpcSample: vi.fn(),
+      writeImportedScripts: vi.fn().mockResolvedValue({ written: [], renamed: [], skipped: [] }),
+      importWsApi: vi.fn().mockResolvedValue({ project: PROJECT, apiId: 'ws-1' }),
     },
     imports: { run, cancel: vi.fn().mockReturnValue({ cancelled: true }), readOpenApi: vi.fn() },
     addProject: vi.fn().mockResolvedValue({ projectId: 'p-new' }),
@@ -848,5 +850,281 @@ describe('api.importHar', () => {
     await failure('api.importHar', { target: { newProjectName: 'Cap' }, source: { kind: 'text', text: SESSION_HAR } });
 
     expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+  });
+});
+
+/** The crafted `.http` fixture and its two environment files; the private one holds the password `pw`. */
+const HTTP_FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/http-file/crafted');
+
+describe('the .http channels', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-http-ipc-')));
+    for (const name of ['api.http', 'http-client.env.json', 'http-client.private.env.json']) {
+      copyFileSync(join(HTTP_FIXTURES, name), join(dir, name));
+    }
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Channels over stubs with the `.http` file (or `picked`) remembered as an Open-dialog pick. */
+  const setupPicked = (picked = 'api.http', overrides: Partial<ApiChannelDeps> = {}) => {
+    const picks = new DialogPicks();
+    picks.rememberRead(join(dir, picked));
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    const stubs = setup({ picks, variablesPorts, ...overrides });
+    return { ...stubs, fake, variablesPorts };
+  };
+
+  it('api.inspectHttpFile answers with the environment names beside the file, and no value', async () => {
+    setupPicked();
+
+    const res = await invoke('api.inspectHttpFile', { path: join(dir, 'api.http') });
+
+    expect(res).toEqual({ ok: true, value: { environments: ['dev', 'prod'] } });
+    expect(JSON.stringify(res)).not.toContain('pw');
+  });
+
+  it('api.inspectHttpFile answers with no environments when there are no files beside it', async () => {
+    await rm(join(dir, 'http-client.env.json'));
+    await rm(join(dir, 'http-client.private.env.json'));
+    setupPicked();
+
+    expect(await value('api.inspectHttpFile', { path: join(dir, 'api.http') })).toEqual({ environments: [] });
+  });
+
+  it('api.inspectHttpFile refuses a file the user neither picked nor keeps in a project', async () => {
+    setup();
+
+    expect(await failure('api.inspectHttpFile', { path: join(dir, 'api.http') })).toMatchObject({
+      code: 'import-path-refused',
+    });
+  });
+
+  it('api.importHttpFile places both APIs, writes the scripts, and imports the environments beside it', async () => {
+    const { addApi, deps, fake, variablesPorts } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockResolvedValueOnce({
+      written: ['imported-scripts/api/createpet.handler.js'],
+      renamed: [],
+      skipped: [],
+    });
+
+    const res = await invoke('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(JSON.stringify(res)).not.toContain('pw');
+    const response = (res as { value: { apiIds: string[]; counts: unknown; variables?: { secretsStored: number } } })
+      .value;
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      source: join(dir, 'api.http'),
+      declaredVersion: 'http-file',
+      cache: false,
+      documents: [],
+    });
+    const wsCall = vi.mocked(deps.router.importWsApi).mock.calls[0];
+    expect(wsCall?.[0]).toBe('p1');
+    expect(wsCall?.[1].api.name).toBe('api (WebSocket)');
+    expect(response.apiIds).toEqual(['api-1', 'ws-1']);
+    expect(response.counts).toEqual({ requests: 4, websocket: 1, skipped: 1, scripts: 1 });
+    expect(deps.router.writeImportedScripts).toHaveBeenCalledWith('p1', [
+      { path: 'imported-scripts/api/createpet.handler.js', source: 'client.global.set("petId", response.body.id);' },
+    ]);
+    expect(variablesPorts).toHaveBeenCalledWith('p1');
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['dev', 'prod']);
+    // Every private value (dev password and user, prod token) went to the secret store, behind a reference.
+    expect(fake.environments[0]?.properties['password']).toBe('${secret:sec_1}');
+    expect(response.variables?.secretsStored).toBe(3);
+    // `@vars` first, then the environment files' `$shared`.
+    expect(fake.projectMerges).toEqual([
+      { properties: { host: '${baseUrl}/v1', user: 'alice', version: 'v1' }, disabled: [] },
+    ]);
+  });
+
+  it('api.importHttpFile with includeEnvironments: false adds no environment', async () => {
+    const addEnvironment = vi.fn();
+    const fake = fakeVariablesPorts({});
+    setupPicked('api.http', {
+      variablesPorts: () => ({ ...fake.ports, workspace: { ...fake.ports.workspace, addEnvironment } }),
+    });
+
+    const res = await invoke('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+      includeEnvironments: false,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(addEnvironment).toHaveBeenCalledTimes(0);
+    expect(fake.projectMerges).toEqual([{ properties: { host: '${baseUrl}/v1', user: 'alice' }, disabled: [] }]);
+  });
+
+  it('api.importHttpFile notes a script it had to save under another name', async () => {
+    const { deps } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockResolvedValueOnce({
+      written: ['imported-scripts/api/createpet-2.handler.js'],
+      renamed: [
+        { from: 'imported-scripts/api/createpet.handler.js', to: 'imported-scripts/api/createpet-2.handler.js' },
+      ],
+      skipped: [],
+    });
+
+    const response = await value<{ notes: string[]; reportText: string }>('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+    });
+
+    const note =
+      'A script already existed at imported-scripts/api/createpet.handler.js, so this one was saved as imported-scripts/api/createpet-2.handler.js.';
+    expect(response.notes).toContain(note);
+    expect(response.reportText).toContain(note);
+  });
+
+  it('api.importHttpFile counts only the scripts it wrote, and warns about one it skipped', async () => {
+    const { deps } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockResolvedValueOnce({
+      written: [],
+      renamed: [],
+      skipped: ['imported-scripts/api/createpet.handler.js'],
+    });
+
+    const response = await value<{ counts: { scripts: number }; warnings: string[] }>('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+    });
+
+    expect(response.counts.scripts).toBe(0);
+    expect(response.warnings).toContain(
+      'The script imported-scripts/api/createpet.handler.js would have been saved outside imported-scripts/ and was not written.',
+    );
+  });
+
+  it("api.importHttpFile names the private file for a private $shared value the file's @variable outranks", async () => {
+    await writeFile(join(dir, 'http-client.private.env.json'), '{ "$shared": { "user": "shh" } }');
+    await writeFile(join(dir, 'http-client.env.json'), '{ "$shared": { "host": "h" } }');
+    setupPicked();
+
+    const response = await value<{ notes: string[] }>('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+    });
+
+    expect(response.notes).toContain(
+      'Project properties: "user" is defined more than once (http-client.private.env.json); the first value was kept.',
+    );
+    expect(response.notes).toContain(
+      'Project properties: "host" is defined more than once (http-client.env.json); the first value was kept.',
+    );
+  });
+
+  it('api.importHttpFile takes back a project it created when writing the scripts fails', async () => {
+    const { deps } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockRejectedValueOnce(
+      new WirebenchError('project-save-failed', 'disk full'),
+    );
+
+    expect(
+      await failure('api.importHttpFile', {
+        target: { newProjectName: 'Pets' },
+        source: { kind: 'file', path: join(dir, 'api.http') },
+      }),
+    ).toMatchObject({ code: 'project-save-failed' });
+    expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+  });
+
+  it('api.importHttpFile refuses an unpicked file before creating a project', async () => {
+    const { deps } = setup();
+
+    expect(
+      await failure('api.importHttpFile', {
+        target: { newProjectName: 'Pets' },
+        source: { kind: 'file', path: join(dir, 'api.http') },
+      }),
+    ).toMatchObject({ code: 'import-path-refused' });
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+
+  it('api.importHttpFile reads a pasted file with no environments', async () => {
+    const { variablesPorts } = setupPicked();
+
+    const response = await value<{ apiIds: string[] }>('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: 'GET https://example.com/a' },
+    });
+
+    expect(response.apiIds).toEqual(['api-1']);
+    expect(variablesPorts).not.toHaveBeenCalled();
+  });
+
+  it('api.importHttpEnv applies a picked private file with its public partner to the workspace', async () => {
+    const { fake, variablesPorts } = setupPicked('http-client.private.env.json');
+
+    const res = await invoke('api.importHttpEnv', {
+      source: { kind: 'file', path: join(dir, 'http-client.private.env.json') },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(variablesPorts).toHaveBeenCalledWith(undefined);
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['dev', 'prod']);
+    expect(fake.environments[0]?.properties).toMatchObject({
+      host: 'http://localhost:8080',
+      password: '${secret:sec_1}',
+      user: '${secret:sec_2}',
+    });
+  });
+
+  it('api.importHttpEnv reads pasted text as the public file', async () => {
+    const { fake } = setupPicked();
+
+    const response = await value<{ summary: { environments: { name: string }[] } }>('api.importHttpEnv', {
+      source: { kind: 'text', text: '{"local": {"host": "http://localhost"}}' },
+    });
+
+    expect(response.summary.environments.map((environment) => environment.name)).toEqual(['local']);
+    expect(fake.environments).toEqual([{ name: 'local', properties: { host: 'http://localhost' }, disabled: [] }]);
+  });
+
+  it('api.importHttpEnv reads text dropped from the private file as private, whatever its case', async () => {
+    const { fake } = setupPicked();
+
+    const res = await invoke('api.importHttpEnv', {
+      source: {
+        kind: 'text',
+        text: '{"dev": {"password": "pw", "host": "h"}}',
+        location: 'dropped:HTTP-Client.Private.Env.json',
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(fake.environments).toEqual([
+      { name: 'dev', properties: { password: '${secret:sec_1}', host: '${secret:sec_2}' }, disabled: [] },
+    ]);
+  });
+
+  it('api.importHttpEnv reads text dropped from any other file as the public file', async () => {
+    const { fake } = setupPicked();
+
+    await value('api.importHttpEnv', {
+      source: { kind: 'text', text: '{"dev": {"host": "h"}}', location: 'dropped:http-client.env.json' },
+    });
+
+    expect(fake.environments).toEqual([{ name: 'dev', properties: { host: 'h' }, disabled: [] }]);
+  });
+
+  it('api.importHttpFile names the API after a dropped file', async () => {
+    const { addApi } = setupPicked();
+
+    await value('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: 'GET https://example.com/a', location: 'dropped:orders.HTTP' },
+    });
+
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'orders' }, source: 'inline:http' });
   });
 });

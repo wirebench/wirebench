@@ -68,6 +68,16 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['importLegacyProject']>
   ): ReturnType<ProjectHost['importLegacyProject']>;
+  /** Writes an importer's scripts under the addressed project's `imported-scripts/`, never overwriting a file. */
+  writeImportedScripts(
+    projectId: string,
+    ...args: Parameters<ProjectHost['writeImportedScripts']>
+  ): ReturnType<ProjectHost['writeImportedScripts']>;
+  /** Places a WebSocket API mapped from a non-contract file (a `.http` file) in one project. */
+  importWsApi(
+    projectId: string,
+    ...args: Parameters<ProjectHost['importWsApi']>
+  ): ReturnType<ProjectHost['importWsApi']>;
   /** Adds the imported properties the addressed project does not have yet; existing names keep their value. */
   importProperties(
     projectId: string,

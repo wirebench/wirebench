@@ -395,7 +395,7 @@ is **REST: Import HAR…**.
 | Kind | Rule | Confidence |
 | --- | --- | --- |
 | `http-file` | file name `*.http` or `*.rest` | definite |
-| `http-file` | text whose first non-comment line is a request line, with `###` separators or more than one request line | probable |
+| `http-file` | text whose first line after comments and `@name = value` lines is a request line with a written method and an `http(s)://`, `ws(s)://` or `{{` target; or a bare URL followed, after a `###`, by such a line | probable |
 | `http-env` | file name `http-client.env.json` or `http-client.private.env.json` | definite |
 | `http-env` | a JSON object whose every value is an object of scalars, with no other format's markers | probable |
 

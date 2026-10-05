@@ -40,6 +40,11 @@ import {
   apiImportOpenApiResponseSchema,
   apiImportHarRequestSchema,
   apiImportHarResponseSchema,
+  apiImportHttpEnvRequestSchema,
+  apiImportHttpFileRequestSchema,
+  apiImportHttpFileResponseSchema,
+  apiInspectHttpFileRequestSchema,
+  apiInspectHttpFileResponseSchema,
   apiImportPostmanRequestSchema,
   apiImportPostmanResponseSchema,
   apiImportPostmanVariablesRequestSchema,
@@ -691,6 +696,21 @@ export const channels = {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
     importHar: defineChannel('api.importHar', apiImportHarRequestSchema, apiImportHarResponseSchema),
+    inspectHttpFile: defineChannel(
+      'api.inspectHttpFile',
+      apiInspectHttpFileRequestSchema,
+      apiInspectHttpFileResponseSchema,
+    ),
+    importHttpFile: defineChannel(
+      'api.importHttpFile',
+      apiImportHttpFileRequestSchema,
+      apiImportHttpFileResponseSchema,
+    ),
+    importHttpEnv: defineChannel(
+      'api.importHttpEnv',
+      apiImportHttpEnvRequestSchema,
+      apiImportPostmanVariablesResponseSchema,
+    ),
     importPostmanEnvironment: defineChannel(
       'api.importPostmanEnvironment',
       apiImportPostmanVariablesRequestSchema,

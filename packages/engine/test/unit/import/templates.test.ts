@@ -21,3 +21,13 @@ describe('rewriteMustache', () => {
     expect(rewriteMustache('a{{}}b')).toBe('a{{}}b');
   });
 });
+
+describe('rewriteMustache, hostile input', () => {
+  it('rewrites a long space run inside braces in linear time', () => {
+    const run = ' '.repeat(100_000);
+    const started = performance.now();
+    rewriteMustache(`{{${run}x y`);
+    expect(rewriteMustache(`{{${run}a${run}}}`)).toBe('${a}');
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+});

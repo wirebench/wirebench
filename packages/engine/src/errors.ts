@@ -119,6 +119,14 @@ export class HarError extends WirebenchError {
   }
 }
 
+/** Thrown when a `.http` request file cannot be read, or is not one. */
+export class HttpFileError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'HttpFileError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

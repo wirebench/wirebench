@@ -9,6 +9,8 @@
  * - Protocol Buffers `.proto` files (gRPC)
  * - Legacy single-XML SOAP projects (a whole project: interfaces, requests, environments)
  * - HAR 1.1 / 1.2 captures (recorded traffic), as one REST API per origin
+ * - `.http` request files, as a REST API (and a WebSocket one), with the environment files beside them
+ * - `.http` client environment files on their own, as workspace environments
  *
  * Provides URL, File (with drag-and-drop), and Paste input sources,
  * automatic format detection with manual override, target project selection,
@@ -23,6 +25,7 @@ import type {
   ApiAsyncApiServersRequest,
   ApiImportHarRequest,
   ApiImportHarResponse,
+  ApiImportHttpFileResponse,
   ApiImportOpenApiResponse,
   AsyncApiImportSummaryWire,
   AuthConfigWire,
@@ -151,13 +154,19 @@ export type UnifiedImportResult =
   | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire }
   | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string }
   | { readonly kind: 'variables'; readonly summary: ImportVariablesSummaryWire; readonly reportText: string }
-  | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses };
+  | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses }
+  | { readonly kind: 'http-file'; readonly value: ApiImportHttpFileResponse };
 
 /**
- * Formats that land in the workspace, not in a project: a Postman environment becomes a workspace
- * environment and Postman globals merge into Globals, so the dialog asks for no target project.
+ * Formats that land in the workspace, not in a project: a Postman environment or a `.http` client
+ * environment file becomes workspace environments and Postman globals merge into Globals, so the
+ * dialog asks for no target project.
  */
-const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>(['postman-environment', 'postman-globals']);
+const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>([
+  'postman-environment',
+  'postman-globals',
+  'http-env',
+]);
 
 /** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
@@ -166,11 +175,20 @@ const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman-globals',
 ]);
 
-/** The formats that start on the File tab: an export or a capture is a file on disk. */
-const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([...POSTMAN_FORMATS, 'har', 'legacy-soap-project']);
+/** The formats that start on the File tab: an export, a capture or a request file is a file on disk. */
+const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([
+  ...POSTMAN_FORMATS,
+  'har',
+  'http-file',
+  'http-env',
+  'legacy-soap-project',
+]);
 
-/** The formats with nothing to fetch from a URL, so no URL tab: a variables export and a HAR capture. */
-const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([...WORKSPACE_ONLY, 'har']);
+/**
+ * The formats with nothing to fetch from a URL, so no URL tab: a variables export, a HAR capture and
+ * a `.http` file (whose environment files are found beside it on disk).
+ */
+const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([...WORKSPACE_ONLY, 'har', 'http-file']);
 
 type HarResponses = ApiImportHarRequest['responses'];
 
@@ -224,6 +242,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   // HAR: keep images, scripts and the like as requests too, and what becomes of the recorded responses.
   const [harIncludeStatic, setHarIncludeStatic] = useState(false);
   const [harResponses, setHarResponses] = useState<HarResponses>('drop');
+
+  // .http: the environments found beside the picked file, and whether to bring them along.
+  const [httpEnvNames, setHttpEnvNames] = useState<readonly string[]>([]);
+  const [httpIncludeEnvs, setHttpIncludeEnvs] = useState(true);
+  // Why the environment files beside the picked file could not be read; the requests still import.
+  const [httpEnvsError, setHttpEnvsError] = useState<string | undefined>(undefined);
 
   // OpenAPI and AsyncAPI by URL: the credentials the document is fetched with, as references.
   const [definitionAuth, setDefinitionAuth] = useState<AuthConfigWire>(NO_DEFINITION_AUTH);
@@ -358,6 +382,40 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     };
   }, [open, asyncApiSourceKey]);
 
+  /*
+   * A picked `.http` file may have environment files beside it. Main is asked which, shortly after
+   * the path settles; an answer for a path that has since changed is dropped. A dropped or pasted
+   * file has no folder, so there is nothing to ask.
+   */
+  const httpFilePath =
+    open && effectiveFormat === 'http-file' && tab === 'file' && dropped === undefined ? filePath : '';
+
+  useEffect(() => {
+    setHttpEnvNames([]);
+    setHttpIncludeEnvs(true);
+    setHttpEnvsError(undefined);
+    if (httpFilePath === '') {
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      void ipc()
+        .api.inspectHttpFile({ path: httpFilePath })
+        .then((res) => {
+          if (!current) return; // A newer path has its own inspection under way.
+          if (res.ok) setHttpEnvNames(res.value.environments);
+          else setHttpEnvsError(res.error.message);
+        })
+        .catch((error: unknown) => {
+          if (current) setHttpEnvsError(error instanceof Error ? error.message : String(error));
+        });
+    }, 200);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [httpFilePath]);
+
   /** Asks for the servers again, with the form's credentials, for the URL as it stands now. */
   async function loadServersWithAuth(): Promise<void> {
     const key = asyncApiSourceKey;
@@ -406,6 +464,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setDefinitionAuth(NO_DEFINITION_AUTH);
     setHarIncludeStatic(false);
     setHarResponses('drop');
+    setHttpEnvNames([]);
+    setHttpIncludeEnvs(true);
+    setHttpEnvsError(undefined);
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -437,32 +498,36 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           ]
         : effectiveFormat === 'postman'
           ? [{ name: 'Postman Collection', extensions: ['json'] }]
-          : WORKSPACE_ONLY.has(effectiveFormat)
-            ? [{ name: 'Postman export', extensions: ['json'] }]
-            : effectiveFormat === 'har'
-              ? [{ name: 'HAR', extensions: ['har', 'json'] }]
-              : effectiveFormat === 'proto'
-                ? [
-                    { name: 'Protocol Buffers', extensions: ['proto'] },
-                    { name: 'All Files', extensions: ['*'] },
-                  ]
-                : effectiveFormat === 'openapi'
-                  ? [
-                      { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
-                      { name: 'All Files', extensions: ['*'] },
-                    ]
-                  : effectiveFormat === 'asyncapi'
+          : effectiveFormat === 'http-file'
+            ? [{ name: '.http file', extensions: ['http', 'rest'] }]
+            : effectiveFormat === 'http-env'
+              ? [{ name: 'HTTP client environment file', extensions: ['json'] }]
+              : WORKSPACE_ONLY.has(effectiveFormat)
+                ? [{ name: 'Postman export', extensions: ['json'] }]
+                : effectiveFormat === 'har'
+                  ? [{ name: 'HAR', extensions: ['har', 'json'] }]
+                  : effectiveFormat === 'proto'
                     ? [
-                        { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                        { name: 'Protocol Buffers', extensions: ['proto'] },
                         { name: 'All Files', extensions: ['*'] },
                       ]
-                    : [
-                        {
-                          name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                          extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                        },
-                        { name: 'All Files', extensions: ['*'] },
-                      ];
+                    : effectiveFormat === 'openapi'
+                      ? [
+                          { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                          { name: 'All Files', extensions: ['*'] },
+                        ]
+                      : effectiveFormat === 'asyncapi'
+                        ? [
+                            { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                            { name: 'All Files', extensions: ['*'] },
+                          ]
+                        : [
+                            {
+                              name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                              extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                            },
+                            { name: 'All Files', extensions: ['*'] },
+                          ];
     const title =
       effectiveFormat === 'legacy-soap-project'
         ? 'Import Legacy SOAP Project'
@@ -474,13 +539,17 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               ? 'Import Postman Globals'
               : effectiveFormat === 'har'
                 ? 'Import HAR'
-                : effectiveFormat === 'proto'
-                  ? 'Import .proto'
-                  : effectiveFormat === 'openapi'
-                    ? 'Import OpenAPI Specification'
-                    : effectiveFormat === 'asyncapi'
-                      ? 'Import AsyncAPI Document'
-                      : 'Import Definition';
+                : effectiveFormat === 'http-file'
+                  ? 'Import .http File'
+                  : effectiveFormat === 'http-env'
+                    ? 'Import HTTP Client Environments'
+                    : effectiveFormat === 'proto'
+                      ? 'Import .proto'
+                      : effectiveFormat === 'openapi'
+                        ? 'Import OpenAPI Specification'
+                        : effectiveFormat === 'asyncapi'
+                          ? 'Import AsyncAPI Document'
+                          : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -526,7 +595,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           ? 'Imported gRPC API'
           : format === 'har' || effectiveFormat === 'har'
             ? 'Imported traffic'
-            : 'Imported API';
+            : format === 'http-file' || effectiveFormat === 'http-file'
+              ? 'Imported requests'
+              : 'Imported API';
 
   const sourceName = nameFromSource(previewSource, defaultName);
   const newProjectName = name.trim().length > 0 ? name.trim() : sourceName;
@@ -624,22 +695,40 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   /**
-   * A Postman environment or globals export lands in the workspace: main reads it, stores its
-   * secrets and answers with what it made. There is no project to pick and nothing to cancel.
+   * A Postman environment or globals export, or a `.http` client environment file, lands in the
+   * workspace: main reads it, stores its secrets and answers with what it made. There is no project
+   * to pick and nothing to cancel.
    */
   async function importVariables(
-    kind: 'postman-environment' | 'postman-globals',
+    kind: 'postman-environment' | 'postman-globals' | 'http-env',
     source: ImportSourceWire,
   ): Promise<void> {
     if (source.kind === 'url') {
-      setImportError('Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.');
+      setImportError(
+        kind === 'http-env'
+          ? 'Import from a URL is not supported for environment files. Pick the file or paste its JSON.'
+          : 'Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.',
+      );
       return;
     }
     setImporting(true);
     try {
-      const call = kind === 'postman-environment' ? ipc().api.importPostmanEnvironment : ipc().api.importPostmanGlobals;
+      const call =
+        kind === 'http-env'
+          ? ipc().api.importHttpEnv
+          : kind === 'postman-environment'
+            ? ipc().api.importPostmanEnvironment
+            : ipc().api.importPostmanGlobals;
       const res = await call({
-        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        source:
+          source.kind === 'file'
+            ? { kind: 'file', path: source.path }
+            : // A dropped `.http` environment file says which file it was: the private one's values are secrets.
+              {
+                kind: 'text',
+                text: source.text,
+                ...(kind === 'http-env' && source.location !== undefined ? { location: source.location } : {}),
+              },
       });
       if (!res.ok) {
         setImportError(res.error.message);
@@ -684,6 +773,47 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * A `.http` file becomes a REST API (and a WebSocket one) in the chosen project; for a picked file
+   * main also reads the environment files beside it, when asked to. The reply's project snapshot is
+   * not used: the project's own change broadcast refreshes the explorer.
+   */
+  async function importHttp(source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for .http files. Pick the file or paste its text.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importHttpFile({
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        // A dropped file's name goes along, so the API is named after it as a picked file's is.
+        source:
+          source.kind === 'file'
+            ? { kind: 'file', path: source.path }
+            : {
+                kind: 'text',
+                text: source.text,
+                ...(source.location !== undefined ? { location: source.location } : {}),
+              },
+        // Only when the checkbox was offered and is ticked: a failed inspection, or a submit before
+        // it answered, offered nothing to bring along.
+        includeEnvironments: source.kind === 'file' && httpEnvNames.length > 0 && httpIncludeEnvs,
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'http-file', value: res.value });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -703,7 +833,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? 'Pick a .json file to import'
             : effectiveFormat === 'har'
               ? 'Pick a .har file to import'
-              : 'Pick a file to import',
+              : effectiveFormat === 'http-file'
+                ? 'Pick a .http file to import'
+                : effectiveFormat === 'http-env'
+                  ? 'Pick an environment file to import'
+                  : 'Pick a file to import',
         );
       } else {
         setImportError(
@@ -713,13 +847,21 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               ? 'Paste the exported .json to import'
               : effectiveFormat === 'har'
                 ? 'Paste the HAR JSON to import'
-                : 'Paste a definition to import',
+                : effectiveFormat === 'http-file'
+                  ? 'Paste the .http requests to import'
+                  : effectiveFormat === 'http-env'
+                    ? 'Paste the environment JSON to import'
+                    : 'Paste a definition to import',
         );
       }
       return;
     }
 
-    if (effectiveFormat === 'postman-environment' || effectiveFormat === 'postman-globals') {
+    if (
+      effectiveFormat === 'postman-environment' ||
+      effectiveFormat === 'postman-globals' ||
+      effectiveFormat === 'http-env'
+    ) {
       await importVariables(effectiveFormat, source);
       return;
     }
@@ -731,6 +873,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
     if (effectiveFormat === 'har') {
       await importHar(source);
+      return;
+    }
+
+    if (effectiveFormat === 'http-file') {
+      await importHttp(source);
       return;
     }
 
@@ -1001,7 +1148,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                                 ? 'Import Postman Globals'
                                 : format === 'har'
                                   ? 'Import HAR'
-                                  : 'Import API or Service'}
+                                  : format === 'http-file'
+                                    ? 'Import .http File'
+                                    : format === 'http-env'
+                                      ? 'Import HTTP Client Environments'
+                                      : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -1043,6 +1194,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <option value="postman-environment">Postman environment</option>
                     <option value="postman-globals">Postman globals</option>
                     <option value="har">HAR (recorded traffic)</option>
+                    <option value="http-file">.http file</option>
+                    <option value="http-env">HTTP client environment file</option>
                     <option value="wsdl">WSDL (SOAP)</option>
                     <option value="proto">Protocol Buffers (gRPC)</option>
                     <option value="legacy-soap-project">Legacy SOAP project</option>
@@ -1499,6 +1652,23 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </>
               )}
 
+              {effectiveFormat === 'http-file' && tab === 'file' && httpEnvNames.length > 0 && (
+                <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
+                  <input
+                    type="checkbox"
+                    data-testid="import-http-include-envs"
+                    checked={httpIncludeEnvs}
+                    onChange={(e) => setHttpIncludeEnvs(e.target.checked)}
+                  />
+                  {`Also import ${String(httpEnvNames.length)} environment${httpEnvNames.length === 1 ? '' : 's'} found beside the file (${httpEnvNames.join(', ')})`}
+                </label>
+              )}
+              {effectiveFormat === 'http-file' && tab === 'file' && httpEnvsError !== undefined && (
+                <p data-testid="import-http-envs-error" className="mt-2 text-xs text-fg-subtle">
+                  The environment files beside it were not read: {httpEnvsError}
+                </p>
+              )}
+
               {progress !== undefined && (
                 <p data-testid="import-openapi-progress" className="mt-3 truncate text-sm text-fg-subtle">
                   {progress}
@@ -1600,7 +1770,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                     ? 'import-variables-summary'
                     : result.kind === 'har'
                       ? 'import-har-summary'
-                      : 'import-summary'
+                      : result.kind === 'http-file'
+                        ? 'import-http-summary'
+                        : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -1758,6 +1930,8 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
 
       {result.kind === 'har' && <HarSummary value={result.value} responses={result.responses} />}
 
+      {result.kind === 'http-file' && <HttpFileSummary value={result.value} />}
+
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
           <p className="font-medium text-sm text-fg-default">{result.name}</p>
@@ -1894,44 +2068,91 @@ function VariablesSummary({
   return (
     <>
       <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
-        {summary.environments.length > 0 && (
-          <ul data-testid="import-variables-environments" className="flex flex-col gap-0.5">
-            {summary.environments.map((environment) => (
-              <li key={environment.name}>
-                {environment.name} ({plural(environment.variables, 'variable')})
-                {environment.renamedFrom !== undefined && (
-                  <span className="text-xs text-fg-subtle"> — was {environment.renamedFrom}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {summary.globals !== undefined && (
-          <MergeLine outcome={summary.globals} word="global" testId="import-variables-globals" />
-        )}
-        {summary.workspaceProperties !== undefined && (
-          <MergeLine
-            outcome={summary.workspaceProperties}
-            word="workspace property"
-            many="workspace properties"
-            testId="import-variables-workspace-properties"
-          />
-        )}
-        {summary.projectProperties !== undefined && (
-          <MergeLine
-            outcome={summary.projectProperties}
-            word="project property"
-            many="project properties"
-            testId="import-variables-project-properties"
-          />
-        )}
-        <p className="mt-1 text-xs text-fg-subtle">{plural(summary.secretsStored, 'secret')} stored</p>
+        <VariablesLines summary={summary} testId="import-variables" />
       </div>
       <ImportReportView
         warnings={summary.warnings}
         notes={summary.notes}
         reportText={reportText}
         testId="import-variables-summary"
+      />
+    </>
+  );
+}
+
+/**
+ * The environments made (and the names they were renamed from), what merged into Globals and
+ * properties, and the secrets stored. The test ids start with `testId`.
+ */
+function VariablesLines({
+  summary,
+  testId,
+}: {
+  readonly summary: ImportVariablesSummaryWire;
+  readonly testId: string;
+}) {
+  return (
+    <>
+      {summary.environments.length > 0 && (
+        <ul data-testid={`${testId}-environments`} className="flex flex-col gap-0.5">
+          {summary.environments.map((environment) => (
+            <li key={environment.name}>
+              {environment.name} ({plural(environment.variables, 'variable')})
+              {environment.renamedFrom !== undefined && (
+                <span className="text-xs text-fg-subtle"> — was {environment.renamedFrom}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {summary.globals !== undefined && (
+        <MergeLine outcome={summary.globals} word="global" testId={`${testId}-globals`} />
+      )}
+      {summary.workspaceProperties !== undefined && (
+        <MergeLine
+          outcome={summary.workspaceProperties}
+          word="workspace property"
+          many="workspace properties"
+          testId={`${testId}-workspace-properties`}
+        />
+      )}
+      {summary.projectProperties !== undefined && (
+        <MergeLine
+          outcome={summary.projectProperties}
+          word="project property"
+          many="project properties"
+          testId={`${testId}-project-properties`}
+        />
+      )}
+      <p className="mt-1 text-xs text-fg-subtle">{plural(summary.secretsStored, 'secret')} stored</p>
+    </>
+  );
+}
+
+/**
+ * What a `.http` import made: the requests, the WebSocket requests, what was skipped and the
+ * response handlers kept as text; then the environments and properties it added, and the report
+ * (which already carries the variables' own lines).
+ */
+function HttpFileSummary({ value }: { readonly value: ApiImportHttpFileResponse }) {
+  const { counts, variables } = value;
+  const parts = [
+    plural(counts.requests, 'request'),
+    ...(counts.websocket > 0 ? [plural(counts.websocket, 'WebSocket request')] : []),
+    ...(counts.skipped > 0 ? [`${String(counts.skipped)} skipped`] : []),
+    ...(counts.scripts > 0 ? [`${plural(counts.scripts, 'handler')} kept in imported-scripts/`] : []),
+  ];
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        <p data-testid="import-http-counts">{parts.join(', ')}</p>
+        {variables !== undefined && <VariablesLines summary={variables} testId="import-http" />}
+      </div>
+      <ImportReportView
+        warnings={value.warnings}
+        notes={value.notes}
+        reportText={value.reportText}
+        testId="import-http-summary"
       />
     </>
   );

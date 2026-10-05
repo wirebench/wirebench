@@ -8,17 +8,27 @@
  */
 
 import { createHash } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import {
   formatImportReport,
+  HTTP_ENV_FILE,
+  HTTP_PRIVATE_ENV_FILE,
+  HttpFileError,
   importHar,
+  importHttpFile,
   importPostmanCollection,
   importPostmanVariables,
+  MAX_HTTP_FILE_BYTES,
+  parseHttpEnvFiles,
+  ReportBuilder,
+  VariableSetBuilder,
   webhookItemsOf,
   WirebenchError,
 } from '@wirebench/engine';
 import type {
   AsyncApiOpRef,
+  ImportedVariables,
   AsyncApiUpdatePlan,
   DefinitionAuth,
   OpenApiSource,
@@ -41,8 +51,8 @@ import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
-import { allowsReadPath, checkedImportSource } from '../path-access.js';
-import { resolve } from 'node:path';
+import { allowsReadPath, checkedCompanionPaths, checkedImportSource } from '../path-access.js';
+import { basename, resolve } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
 import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
@@ -74,6 +84,8 @@ export interface ApiChannelDeps {
     | 'grpcFields'
     | 'grpcRefresh'
     | 'grpcSample'
+    | 'writeImportedScripts'
+    | 'importWsApi'
   >;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel' | 'readOpenApi'>;
   /**
@@ -255,6 +267,41 @@ async function checkedProtoSource(
     return { kind: 'files', paths };
   }
   return source;
+}
+
+/** A `.http` environment file's text, refused past the `.http` size cap rather than read whole. */
+async function readHttpEnvText(path: string): Promise<string> {
+  if ((await stat(path)).size > MAX_HTTP_FILE_BYTES) {
+    throw new HttpFileError(
+      'http-file-too-large',
+      `${basename(path)} is larger than ${String(MAX_HTTP_FILE_BYTES / (1024 * 1024))} MB`,
+    );
+  }
+  return await readFile(path, 'utf8');
+}
+
+/** The `$shared` names of an environment file that `parseHttpEnvFiles` has already accepted. */
+function sharedNamesOf(text: string): string[] {
+  const shared = (JSON.parse(text) as Record<string, unknown>)['$shared'];
+  return typeof shared === 'object' && shared !== null && !Array.isArray(shared) ? Object.keys(shared) : [];
+}
+
+/** How the import dialog marks text that came from a dropped file: `dropped:<file name>`. */
+const DROPPED_PREFIX = 'dropped:';
+
+/**
+ * The file name a dropped file's text came from, read from its `dropped:<name>` location, or
+ * `undefined` for pasted text. Only the last path segment is kept: a drop names no folder.
+ */
+function droppedFileName(source: PostmanSourceWire): string | undefined {
+  if (source.kind !== 'text' || source.location?.startsWith(DROPPED_PREFIX) !== true) return undefined;
+  const name = source.location.slice(DROPPED_PREFIX.length).split(/[\\/]/).at(-1)?.trim() ?? '';
+  return name === '' ? undefined : name;
+}
+
+/** True for the private `.http` environment file's name, in any case. */
+function isPrivateHttpEnvName(name: string): boolean {
+  return name.toLowerCase() === HTTP_PRIVATE_ENV_FILE;
 }
 
 /** Registers the `api.*` IPC channels. */
@@ -696,6 +743,171 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  /**
+   * The environment files beside `file` that exist, read through the companion rule (ADR-0005):
+   * `[public, private]`, each `undefined` when it is not there.
+   */
+  const readHttpEnvCompanions = async (
+    file: string,
+    names: readonly string[] = [HTTP_ENV_FILE, HTTP_PRIVATE_ENV_FILE],
+  ): Promise<[string | undefined, string | undefined]> => {
+    const found = await checkedCompanionPaths(deps.projectDirs(), deps.picks, file, names);
+    const textOf = async (name: string) => {
+      const path = found.find((candidate) => basename(candidate) === name);
+      return path === undefined ? undefined : await readHttpEnvText(path);
+    };
+    return [await textOf(HTTP_ENV_FILE), await textOf(HTTP_PRIVATE_ENV_FILE)];
+  };
+
+  /** The environment names beside a `.http` file, so the import dialog can offer them. Never a value. */
+  registerHandler(channels.api.inspectHttpFile, async (request) => {
+    const checked = await checkedPostmanSource({ kind: 'file', path: request.path });
+    if (checked.kind !== 'file') {
+      throw new WirebenchError('invalid-argument', 'Expected a file source');
+    }
+    const [publicText, privateText] = await readHttpEnvCompanions(checked.path);
+    if (publicText === undefined && privateText === undefined) return { environments: [] };
+    return {
+      environments: parseHttpEnvFiles(publicText, privateText, 'project').environments.map((set) => set.name),
+    };
+  });
+
+  /**
+   * A `.http` request file: a REST API (and a WebSocket API for its `WEBSOCKET` requests) in the
+   * target project, its response handlers written under `imported-scripts/` and never run, its
+   * `@variables` as project properties, and — for a picked file — the environment files beside it as
+   * workspace environments. Everything is read and parsed before a project is created; a project
+   * created for the import is taken back when anything after it fails.
+   */
+  registerHandler(channels.api.importHttpFile, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    // A dropped file names its API after the file, as a picked one does; pasted text has no name.
+    const droppedName = droppedFileName(request.source)?.replace(/\.(?:http|rest)$/i, '');
+    const mapped = await importHttpFile(
+      checkedSource.kind === 'text' && droppedName !== undefined && droppedName !== ''
+        ? { ...checkedSource, name: droppedName }
+        : checkedSource,
+    );
+    const [publicText, privateText] =
+      request.includeEnvironments && checkedSource.kind === 'file'
+        ? await readHttpEnvCompanions(checkedSource.path)
+        : [undefined, undefined];
+    const env =
+      publicText === undefined && privateText === undefined
+        ? undefined
+        : parseHttpEnvFiles(publicText, privateText, 'project');
+    // Which `$shared` names came from the private file, so a clash note names the file it lost from.
+    const privateShared = new Set(privateText === undefined ? [] : sharedNamesOf(privateText));
+
+    // `@variables` first, so a name the file sets wins over the environment files' `$shared` one.
+    const mergeReport = new ReportBuilder();
+    const properties = new VariableSetBuilder('Project properties', mergeReport);
+    for (const variable of mapped.projectProperties.variables) properties.add(variable);
+    for (const variable of env?.projectProperties?.variables ?? []) {
+      properties.add(variable, privateShared.has(variable.name) ? HTTP_PRIVATE_ENV_FILE : HTTP_ENV_FILE);
+    }
+    const merged = mergeReport.build();
+    const plan: ImportedVariables = {
+      environments: env?.environments ?? [],
+      ...(properties.size > 0 ? { projectProperties: properties.build() } : {}),
+      report: {
+        warnings: [...(env?.report.warnings ?? []), ...merged.warnings],
+        notes: [...(env?.report.notes ?? []), ...merged.notes],
+      },
+    };
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:http';
+
+    const placeIn = async (projectId: string) => {
+      let { project, apiId } = await router.addApi(projectId, {
+        api: mapped.rest,
+        documents: [],
+        source,
+        declaredVersion: 'http-file',
+        cache: false,
+      });
+      const apiIds = [apiId];
+      if (mapped.websocket !== undefined) {
+        ({ project, apiId } = await router.importWsApi(projectId, { api: mapped.websocket }));
+        apiIds.push(apiId);
+      }
+      const scriptNotes: string[] = [];
+      const scriptWarnings: string[] = [];
+      let scriptsWritten = 0;
+      if (mapped.scripts.length > 0) {
+        const { written, renamed, skipped } = await router.writeImportedScripts(projectId, mapped.scripts);
+        scriptsWritten = written.length;
+        for (const { from, to } of renamed) {
+          scriptNotes.push(`A script already existed at ${from}, so this one was saved as ${to}.`);
+        }
+        for (const path of skipped) {
+          scriptWarnings.push(
+            `The script ${path} would have been saved outside imported-scripts/ and was not written.`,
+          );
+        }
+      }
+      const variables =
+        plan.environments.length > 0 || plan.projectProperties !== undefined
+          ? await applyImportedVariables(plan, deps.variablesPorts(projectId))
+          : undefined;
+      // The apply result repeats the plan's own report, so the env and merge lines come from it.
+      const report = {
+        warnings: [...mapped.report.warnings, ...scriptWarnings, ...(variables?.warnings ?? [])],
+        notes: [...mapped.report.notes, ...scriptNotes, ...(variables?.notes ?? [])],
+      };
+      return {
+        projectId,
+        project,
+        apiIds,
+        counts: { ...mapped.counts, scripts: scriptsWritten },
+        ...(variables !== undefined ? { variables } : {}),
+        ...report,
+        reportText: formatImportReport(report),
+      };
+    };
+
+    if ('projectId' in request.target) {
+      return await placeIn(request.target.projectId);
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  /**
+   * `.http` environment files on their own, applied to the open workspace: environments under a free
+   * name (never activated), `$shared` into workspace properties, private values into the secret
+   * store. A picked file brings its partner from beside it; pasted text is read as the public file,
+   * and dropped text as the file it was dropped from.
+   */
+  registerHandler(channels.api.importHttpEnv, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    let publicText: string | undefined;
+    let privateText: string | undefined;
+    if (checkedSource.kind === 'text') {
+      // Dropped from the private file, the text is private: its values must become secrets.
+      const dropped = droppedFileName(request.source);
+      if (dropped !== undefined && isPrivateHttpEnvName(dropped)) privateText = checkedSource.text;
+      else publicText = checkedSource.text;
+    } else {
+      const picked = await readHttpEnvText(checkedSource.path);
+      if (isPrivateHttpEnvName(basename(checkedSource.path))) {
+        privateText = picked;
+        [publicText] = await readHttpEnvCompanions(checkedSource.path, [HTTP_ENV_FILE]);
+      } else {
+        publicText = picked;
+        [, privateText] = await readHttpEnvCompanions(checkedSource.path, [HTTP_PRIVATE_ENV_FILE]);
+      }
+    }
+    const plan = parseHttpEnvFiles(publicText, privateText, 'workspace-properties');
+    const summary = await applyImportedVariables(plan, deps.variablesPorts(undefined));
+    return { summary, reportText: formatImportReport({ warnings: summary.warnings, notes: summary.notes }) };
   });
 
   /**

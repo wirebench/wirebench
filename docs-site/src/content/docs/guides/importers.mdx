@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-HAR capture of recorded traffic, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `.http` request file, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -17,6 +17,8 @@ smaller one.
 | Postman Collection | Import dialog | File or pasted JSON |
 | Postman environment or globals | Import dialog | File or pasted JSON |
 | HAR (recorded traffic) | Import dialog | File or pasted JSON |
+| .http file | Import dialog | File or pasted text |
+| HTTP client environment file | Import dialog | File or pasted JSON |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -33,12 +35,12 @@ smaller one.
    **Server**, asks a running server to describe itself instead of reading a document.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
-   Collection**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **WSDL
-   (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   Collection**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **.http file**, **HTTP client
+   environment file**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
 4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
-   globals land in the workspace, so the dialog does not ask.
+   globals, and HTTP client environment files, land in the workspace, so the dialog does not ask.
 
 5. Choose **Import**.
 
@@ -46,8 +48,8 @@ smaller one.
 
 <Aside type="tip" title="Dedicated commands">
 **Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>), **Import Postman Collection…**,
-**Import Postman Environment…**, **Import Postman Globals…** and **Import HAR…** open the same
-dialog pinned to that format. **Import Legacy SOAP Project…**, from the command
+**Import Postman Environment…**, **Import Postman Globals…**, **Import HAR…**, **Import .http
+File…** and **Import HTTP Client Environments…** open the same dialog pinned to that format. **Import Legacy SOAP Project…**, from the command
 palette, pins it to the legacy format.
 </Aside>
 
@@ -249,6 +251,57 @@ not fit. An exchange with no valid time is not written to History, and a warning
   History uses, and a note says which.
 - **Nothing to import.** A capture with no HTTP requests left after the skips is refused, and no
   project is created.
+
+## .http files
+
+A `.http` (or `.rest`) file is the plain-text request format that editors embed: requests separated
+by `###` lines, with `{{variables}}` filled in from environment files beside it. Wirebench turns its
+requests into one REST API, plus a WebSocket API when the file has `WEBSOCKET` requests.
+Auto-detect recognizes a `.http` or `.rest` file name, or text whose first request line names its
+method and an `http(s)://` or `ws(s)://` URL or a `{{variable}}`, such as `GET {{host}}/pets`.
+Comments and `@name = value` lines may come before it. A file name that settles the format wins over
+text that only looks like another format.
+
+<Steps>
+
+1. Open **Import…** and pick **.http file**, or run **Import .http File…**.
+
+2. Provide the file on the **File** tab, by picking or dropping it, or paste its text on the
+   **Paste** tab. There is no URL tab.
+
+3. When you picked a file, Wirebench looks beside it for `http-client.env.json` and
+   `http-client.private.env.json`. If either is there, **Also import N environments found beside
+   the file (…)** appears, ticked by default. Untick it to import only the requests.
+
+4. Choose the target project and **Import**.
+
+</Steps>
+
+The summary counts the requests, the WebSocket requests, what was skipped and the response handlers
+kept, then lists the environments and project properties added and the secrets stored. **Things to
+look at**, **Notes** and **Copy report** work as they do for a legacy project.
+
+- **Variables.** `@name = value` lines become project properties, and `{{name}}` becomes `${name}`.
+  A name the project already has keeps its value.
+- **Environment files.** Each environment becomes a workspace environment, renamed when the name is
+  taken and **never made active**. Every value in `http-client.private.env.json` becomes a secret in
+  the [secret store](/wirebench/docs/guides/secrets/), and so does a value in
+  `http-client.env.json` whose name looks like a credential, unless it is made only of
+  `{{variables}}`. A user name and password in a URL are cut from it. `$shared` becomes project
+  properties.
+- **On their own.** Pick **HTTP client environment file**, or run **Import HTTP Client
+  Environments…**, to import environment files without a `.http` file. There is no project to pick:
+  `$shared` goes to workspace properties. A picked file brings its public or private partner from
+  beside it; a dropped file is read as the file it is, by its name; pasted JSON is read as the public
+  file.
+- **Response handlers** written inline are saved as text under `imported-scripts/` and never run.
+- **Credentials** are never imported as plain text, under the same rule as
+  [HAR captures](#har-captures): a literal `Authorization` header sets the auth type without its
+  credential, and other credential-looking values are dropped or emptied.
+- **Limits.** A file larger than 10 MB, or with more than 5,000 requests, is refused.
+
+See [From .http files](/wirebench/docs/switching/http-files/) for every rule, and what does not come
+across.
 
 ## cURL commands
 

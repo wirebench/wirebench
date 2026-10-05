@@ -61,6 +61,8 @@ export type ImportDialogFormat =
   | 'postman-environment'
   | 'postman-globals'
   | 'har'
+  | 'http-file'
+  | 'http-env'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

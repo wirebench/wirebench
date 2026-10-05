@@ -1,0 +1,45 @@
+@host = {{baseUrl}}/v1
+@host = ignored
+@user = alice
+
+### List pets
+GET {{host}}/pets
+    ?limit=10
+    &sort=name
+Accept: application/json
+
+###
+# @name createPet
+# @no-redirect
+# @timeout 5
+POST {{host}}/pets HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{"name": "Rex", "id": "{{$uuid}}"}
+
+> {%
+  client.global.set("petId", response.body.id);
+%}
+
+### Upload
+POST {{host}}/pets/{{createPet.response.body.$.id}}/photo
+Content-Type: application/octet-stream
+
+< ./photo.png
+
+>> out/photo-response.json
+
+###
+GET https://example.com/env/{{$processEnv HOME}}
+
+###
+WEBSOCKET wss://example.com/ws
+Content-Type: application/json
+
+{"hello": "world"}
+
+###
+GRAPHQL https://example.com/graphql
+
+query { pets { id } }

@@ -301,6 +301,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'REST: Import HAR…',
     category: 'Definition',
   },
+  'rest.importHttpFile': {
+    id: 'rest.importHttpFile',
+    label: 'REST: Import .http File…',
+    category: 'Definition',
+  },
+  'workspace.importHttpEnv': {
+    id: 'workspace.importHttpEnv',
+    label: 'Import HTTP Client Environments…',
+    category: 'Definition',
+  },
   'rest.newApi': {
     id: 'rest.newApi',
     label: 'REST: New API',

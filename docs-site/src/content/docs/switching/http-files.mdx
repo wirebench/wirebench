@@ -1,0 +1,114 @@
+---
+title: From .http files
+description: What a .http request file and its environment files bring into Wirebench, what they leave behind, and where each part lives once imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A `.http` (or `.rest`) file is the plain-text request format that editors embed: requests written
+one after another, separated by `###` lines, with `{{variables}}` filled in from environment files
+kept beside it. It becomes **one REST API** in the project you choose:
+- requests become requests;
+- `@variables` become project properties;
+- `{{variables}}` become Wirebench properties;
+- the environment files beside it become workspace environments.
+
+Credentials do not come across. Response handlers are kept as text and never run. The import
+summary lists each of these, so you know what to set up before the first send.
+
+To run the import, see [`.http` files](/wirebench/docs/guides/importers/#http-files) in the
+importers guide. It takes a picked or dropped file, or pasted text.
+
+## What carries over
+
+| In the `.http` file | In Wirebench | More |
+| --- | --- | --- |
+| The file | A REST API named after the file, picked or dropped, without its `.http` or `.rest` extension. Pasted text has no file name, so its API is named "Imported requests" | [REST](/wirebench/docs/guides/rest-client/) |
+| A line starting with `###` | The end of one request and the start of the next. Text after `###` names the next request | |
+| `# @name x` or `// @name x` before a request | The request's name, which wins over the `###` text. A request with neither is named like `GET /pets` | |
+| Other `#` and `//` lines | Ignored | |
+| `@name = value`, before or between requests | A project property. When a name is defined twice, the first value is kept and the notes say so. A name the project already has keeps its value | [Environments and properties](/wirebench/docs/guides/environments/) |
+| A request line, `[METHOD] URL [HTTP/x.y]` | A request with that method and URL. The method defaults to `GET`. The query string becomes rows in the **Params** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
+| Indented lines starting with `?` or `&` straight below the request line | More of the URL's query | |
+| Header lines, up to the first blank line | Rows in the **Headers** table. A response handler, output redirect or `< ./path` body may follow them without a blank line. Any other line among them is ignored, and the notes give its line number | |
+| A body after the blank line | A body chosen by its `Content-Type`: JSON and XML become a raw body in that language, `application/x-www-form-urlencoded` becomes a form body, anything else (or no `Content-Type`) a raw text body. Credential-looking values are emptied in a body with no `Content-Type` that starts with `{` or `[`, as in a JSON one. A multipart body is kept as raw text with its `Content-Type`, and the notes say so | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| A body of `< ./path` | A binary body pointing at that file, resolved against the `.http` file's folder. The file is not copied. A file that is not there gets a note. An absolute path, or one that leaves the `.http` file's folder, is not looked for, and a note says it was not checked. Pasted or dropped text has no folder, so the path stays as written and a warning asks you to check it | |
+| Every request starting with the same origin, or the same leading `{{var}}` | The API's **Base URL**. Request URLs become paths relative to it | [REST](/wirebench/docs/guides/rest-client/#create-an-api-and-a-request) |
+| `# @no-redirect` | The request's **Follow redirects** setting switched off | |
+| `# @timeout N` | The request's timeout. `N` may end in `ms`, `s` or `m`; a bare number below 1000 is seconds, and any other bare number is milliseconds | |
+| A response handler written inline, `> {% … %}` | Saved as text under `imported-scripts/` in the project folder, and never run. The notes say where each one went | |
+| A `WEBSOCKET` request | A WebSocket request, in a second API named after the file with "(WebSocket)" added. A message written below it becomes one saved message | [WebSocket](/wirebench/docs/guides/websocket/) |
+| `{{name}}` anywhere in a URL, header, body or variable | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `{{$processEnv NAME}}` | `${#System#NAME}`, read from the process environment at send time | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+
+### Environment files
+
+When you pick a `.http` file, Wirebench looks beside it for `http-client.env.json` and
+`http-client.private.env.json`, and for nothing else. When either is there, the dialog offers
+**Also import N environments found beside the file**, ticked by default. You can also import an
+environment file on its own, as the **HTTP client environment file** format; a picked file then
+brings its public or private partner from beside it. A dropped file is read by its name, so a
+dropped `http-client.private.env.json` is private; pasted JSON is read as the public file.
+
+| In the environment files | In Wirebench | More |
+| --- | --- | --- |
+| Each top-level key other than `$shared` | A workspace environment. A name the workspace already uses is imported as "dev 2", "dev 3" and so on. The imported environment is **never made active** | [Environments and properties](/wirebench/docs/guides/environments/) |
+| A string, number or boolean value | A variable of that environment, with `{{name}}` and `{{$processEnv NAME}}` rewritten as in the `.http` file. A user name and password in a URL are cut from it, with a warning | |
+| Any value in `http-client.private.env.json` | A secret in the [secret store](/wirebench/docs/guides/secrets/). When both files set the same name, the private value wins | [Secrets](/wirebench/docs/guides/secrets/) |
+| A value in `http-client.env.json` whose name looks like a credential | A secret too, so it never reaches a workspace file, unless the value is made only of `{{variables}}`. The notes say which | [Secrets](/wirebench/docs/guides/secrets/) |
+| `$shared` | Project properties of the target project, which an environment variable of the same name outranks. A name the `.http` file's own `@variables` set keeps the file's value. Imported on their own, the files put `$shared` into workspace properties instead | |
+
+## What does not carry over
+
+| In the `.http` file | What happens | What to do |
+| --- | --- | --- |
+| A literal `Authorization` header | Not copied. A Bearer or Basic header sets the request's auth type with no token or password (Basic keeps the user name), and a warning asks for the credential. Any other scheme imports as auth **none** | Enter the credential on the request's or API's **Auth** tab |
+| Other headers, query parameters, form fields, multipart text parts and JSON keys with a credential-looking name and a literal value | The header is dropped; the others are imported with an empty value. A warning names them. A value made only of `{{variables}}` is kept | Set the value on the request, or point it at a secret |
+| A user name and password in a URL, or in an `@variable` holding one | Cut from the URL, with a warning. In a request URL, the request's auth becomes Basic with the user name | Enter the password on the **Auth** tab |
+| A response handler file, `> ./handler.js` | Not copied. The notes name the file | Copy it into the project yourself if you want to keep it |
+| Output redirects, `>>` and `>>!` | Ignored. The notes count them | Nothing: Wirebench keeps the response in [History](/wirebench/docs/guides/history/) |
+| Any other `# @directive` | Ignored. The notes name it. On a `WEBSOCKET` request every directive is ignored | Set the equivalent request setting by hand, if there is one |
+| `GRAPHQL` and `GRPC` requests | Skipped. A warning names the line | Import the service's `.proto` for gRPC |
+| A WebSocket message read from a file, `< ./path` | Not imported. The notes name the file | Paste the message into a saved message |
+| `{{$dotenv NAME}}`, `{{$uuid}}` and other `{{$…}}` dynamic variables | Kept as written, and nothing generates a value. One warning names them all | Replace each with a property, or with a value a script sets |
+| A request-chaining reference, `{{login.response.body.token}}` | Kept as written. A warning lists each one | Capture the value with a script, or a [sequence](/wirebench/docs/guides/sequences/) transfer |
+| The `HTTP/x.y` version on a request line | Dropped | Nothing |
+| An object value in an environment file, such as SSL settings | Skipped. The notes name it | Set the equivalent up by hand, if you need it |
+| A `.http` file by URL | Not supported | Download the file, or paste its text |
+
+<Aside type="caution" title="Companion files are read only as they are">
+Only `http-client.env.json` and `http-client.private.env.json` in the picked file's own folder are
+read. If either is a symbolic link, or cannot be read for another reason, the environment files are
+not read and the dialog says why under the file. The requests still import.
+</Aside>
+
+## Limits
+
+- A `.http` file or an environment file larger than 10 MB is refused, and so is pasted text longer
+  than about 10 million characters.
+- A file with more than 5,000 requests is refused.
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys the warnings name, on each **Auth** tab. See
+   [Secrets](/wirebench/docs/guides/secrets/).
+
+3. Pick one of the imported environments to make it active. Import never switches environments for
+   you. See [Environments and properties](/wirebench/docs/guides/environments/).
+
+4. Read the response handlers under `imported-scripts/`, and rewrite the ones you need as
+   [scripts](/wirebench/docs/guides/scripts/).
+
+5. Check the API's **Base URL**, then send one request to confirm the setup.
+
+</Steps>
+
+## Related
+
+- [Importing APIs](/wirebench/docs/guides/importers/): the Import dialog and every format it reads.
+- [Property expansion syntax](/wirebench/docs/reference/property-syntax/): how `${name}` resolves.
+- [Secrets](/wirebench/docs/guides/secrets/): where credentials live and why no import copies them.

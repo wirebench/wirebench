@@ -3684,10 +3684,18 @@ export const apiImportWebhooksResponseSchema = z.object({
 });
 export type ApiImportWebhooksResponse = z.infer<typeof apiImportWebhooksResponseSchema>;
 
-/** Source for Postman collection import: file path or pasted JSON text. */
+/**
+ * Source for Postman collection import: file path or pasted JSON text. A dropped file is text too,
+ * with `location` `dropped:<file name>` as for {@link importSourceSchema}; only the file name is
+ * read from it, never a path.
+ */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
-  z.object({ kind: z.literal('text'), text: z.string().max(MAX_IMPORT_TEXT_CHARS) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string().max(MAX_IMPORT_TEXT_CHARS),
+    location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
 ]);
 export type PostmanSourceWire = z.infer<typeof postmanSourceSchema>;
 
@@ -3731,7 +3739,7 @@ export const importVariablesSummarySchema = z.object({
 export type ImportVariablesSummaryWire = z.infer<typeof importVariablesSummarySchema>;
 
 /** Response payload for `api.importPostman`. */
-export const apiImportPostmanResponseSchema = z.object({
+const apiImportPostmanResponseObject = z.object({
   projectId: z.string(),
   project: projectWireSchema,
   apiId: z.string(),
@@ -3739,7 +3747,16 @@ export const apiImportPostmanResponseSchema = z.object({
   /** What became of the collection's variables; absent when it had none. */
   variables: importVariablesSummarySchema.optional(),
 });
-export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
+/** Spelled out as an interface for the same reason as {@link ApiImportHarResponse}. */
+export interface ApiImportPostmanResponse {
+  projectId: string;
+  project: ProjectWire;
+  apiId: string;
+  summary: PostmanImportSummaryWire;
+  variables?: ImportVariablesSummaryWire | undefined;
+}
+/** Response payload for `api.importPostman`. */
+export const apiImportPostmanResponseSchema: z.ZodType<ApiImportPostmanResponse> = apiImportPostmanResponseObject;
 
 /** Request payload for `api.importHar`: a browser capture, read as REST APIs. */
 export const apiImportHarRequestSchema = z.object({
@@ -3805,6 +3822,64 @@ type AssertTrue<T extends true> = T;
 export type ApiImportHarResponseInSync = AssertTrue<
   TypesEqual<z.infer<typeof apiImportHarResponseObject>, ApiImportHarResponse>
 >;
+export type ApiImportPostmanResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportPostmanResponseObject>, ApiImportPostmanResponse>
+>;
+
+/** Request payload for `api.inspectHttpFile`: a `.http` file whose environment files are looked for beside it. */
+export const apiInspectHttpFileRequestSchema = z.object({ path: z.string().max(MAX_IMPORT_LOCATION_CHARS) });
+export type ApiInspectHttpFileRequest = z.infer<typeof apiInspectHttpFileRequestSchema>;
+
+/** Response payload for `api.inspectHttpFile`: the environment names beside the file, never a value. */
+export const apiInspectHttpFileResponseSchema = z.object({ environments: z.array(z.string()).readonly() });
+export type ApiInspectHttpFileResponse = z.infer<typeof apiInspectHttpFileResponseSchema>;
+
+/** Request payload for `api.importHttpFile`: a `.http` request file, read as a REST API (and a WebSocket one). */
+export const apiImportHttpFileRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+  /** For a file source, also import the environment files beside it. */
+  includeEnvironments: z.boolean().default(true),
+});
+export type ApiImportHttpFileRequest = z.infer<typeof apiImportHttpFileRequestSchema>;
+
+const apiImportHttpFileResponseObject = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  /** The REST API, then the WebSocket API when the file had a `WEBSOCKET` request. */
+  apiIds: z.array(z.string()).readonly(),
+  counts: z.object({ requests: z.number(), websocket: z.number(), skipped: z.number(), scripts: z.number() }),
+  /** What became of the file's variables and its environment files; absent when there were none. */
+  variables: importVariablesSummarySchema.optional(),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+/** Spelled out as an interface for the same reason as {@link ApiImportHarResponse}. */
+export interface ApiImportHttpFileResponse {
+  projectId: string;
+  project: ProjectWire;
+  apiIds: readonly string[];
+  counts: { requests: number; websocket: number; skipped: number; scripts: number };
+  variables?: ImportVariablesSummaryWire | undefined;
+  warnings: readonly string[];
+  notes: readonly string[];
+  reportText: string;
+}
+/** Response payload for `api.importHttpFile`. */
+export const apiImportHttpFileResponseSchema: z.ZodType<ApiImportHttpFileResponse> = apiImportHttpFileResponseObject;
+export type ApiImportHttpFileResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportHttpFileResponseObject>, ApiImportHttpFileResponse>
+>;
+
+/**
+ * Request payload for `api.importHttpEnv`: a `.http` environment file on its own, applied to the
+ * workspace. A picked file brings its public or private partner beside it; text is the public file,
+ * unless it was dropped from a file named `http-client.private.env.json`.
+ */
+export const apiImportHttpEnvRequestSchema = z.object({ source: postmanSourceSchema });
+export type ApiImportHttpEnvRequest = z.infer<typeof apiImportHttpEnvRequestSchema>;
 
 /** Request payload for `api.importPostmanEnvironment` and `api.importPostmanGlobals`. */
 export const apiImportPostmanVariablesRequestSchema = z.object({ source: postmanSourceSchema });

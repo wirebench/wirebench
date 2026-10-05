@@ -13,12 +13,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
-import { isInsideAny } from './path-containment.js';
+import { isInsideAny, isInsideReal, realpathOfPrefix } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import { resolveProxy, resolveTrustAnchors } from './network-options.js';
 import {
@@ -2601,16 +2601,19 @@ export class ProjectHost {
       };
     });
 
-    const scriptsRoot = resolvePath(open.dir, IMPORTED_SCRIPTS_DIR);
-    for (const script of mapped.scripts) {
-      const target = resolvePath(open.dir, ...script.path.split('/'));
-      // `mapLegacyProject` slugifies every segment; this guards that promise against a symlink too.
-      if (!(await isInsideAny([scriptsRoot], target))) {
-        continue;
-      }
-      await mkdir(resolvePath(target, '..'), { recursive: true });
-      await writeFileAtomic(nodeFs, target, Buffer.from(script.source, 'utf8'));
-    }
+    const scripts = await this.writeImportedScripts(mapped.scripts);
+    const scriptItems = [
+      ...scripts.renamed.map(({ from, to }) => ({
+        severity: 'info' as const,
+        path: '',
+        message: `A script already existed at ${from}, so this one was saved as ${to}.`,
+      })),
+      ...scripts.skipped.map((path) => ({
+        severity: 'warning' as const,
+        path: '',
+        message: `The script ${path} would have been saved outside ${IMPORTED_SCRIPTS_DIR}/ and was not written.`,
+      })),
+    ];
 
     open.project = {
       ...open.project,
@@ -2625,9 +2628,95 @@ export class ProjectHost {
     await this.save({ reason: 'import' });
     return {
       project: this.snapshot() as ProjectWire,
-      report: mapped.report,
+      report: { ...mapped.report, items: [...mapped.report.items, ...scriptItems] },
       environmentNames: mapped.environments.map((environment) => environment.name),
     };
+  }
+
+  /**
+   * Writes an importer's scripts under the open project's `imported-scripts/`, where nothing reads
+   * them. A path that resolves outside that folder — a `..` segment, a symlink below it — is skipped
+   * and reported. An existing file is never overwritten: the script goes to the first free `-2`,
+   * `-3`, … name, inserted before the first `.` of the file name, and the move is reported.
+   *
+   * @returns the project-relative paths written, each `{ from, to }` a clash moved, and the paths skipped
+   * @throws ProjectError `import-path-refused` when `imported-scripts` is a symbolic link or not a folder
+   */
+  async writeImportedScripts(
+    scripts: readonly { readonly path: string; readonly source: string }[],
+  ): Promise<{ written: string[]; renamed: { from: string; to: string }[]; skipped: string[] }> {
+    const open = this.require();
+    const scriptsRoot = resolvePath(open.dir, IMPORTED_SCRIPTS_DIR);
+    const exists = (path: string) =>
+      lstat(path).then(
+        () => true,
+        () => false,
+      );
+    // `isInsideAny` realpaths the root too, so a linked root would vouch for wherever it points.
+    const rootInfo = await lstat(scriptsRoot).catch(() => undefined);
+    if (rootInfo !== undefined && (rootInfo.isSymbolicLink() || !rootInfo.isDirectory())) {
+      throw new ProjectError(
+        'import-path-refused',
+        `${IMPORTED_SCRIPTS_DIR} in the project folder is ${
+          rootInfo.isSymbolicLink() ? 'a symbolic link' : 'not a folder'
+        }, so no imported script was written`,
+        { details: { path: scriptsRoot } },
+      );
+    }
+    const realScriptsRoot = resolvePath(await realpath(open.dir), IMPORTED_SCRIPTS_DIR);
+    const contained = async (target: string) =>
+      (await isInsideAny([scriptsRoot], target)) && isInsideReal(realScriptsRoot, await realpathOfPrefix(target));
+    const written: string[] = [];
+    const renamed: { from: string; to: string }[] = [];
+    const skipped: string[] = [];
+    for (const script of scripts) {
+      const segments = script.path.split('/');
+      const fileName = segments.pop() ?? '';
+      const dot = fileName.indexOf('.');
+      const stem = dot <= 0 ? fileName : fileName.slice(0, dot);
+      const tail = dot <= 0 ? '' : fileName.slice(dot);
+      let path = script.path;
+      let target = resolvePath(open.dir, ...path.split('/'));
+      // Importers slugify every segment; this guards that promise against `..` and a symlink too.
+      if (!(await contained(target))) {
+        skipped.push(script.path);
+        continue;
+      }
+      for (let n = 2; await exists(target); n += 1) {
+        path = [...segments, `${stem}-${String(n)}${tail}`].join('/');
+        target = resolvePath(open.dir, ...path.split('/'));
+      }
+      await mkdir(resolvePath(target, '..'), { recursive: true });
+      await writeFileAtomic(nodeFs, target, Buffer.from(script.source, 'utf8'));
+      written.push(path);
+      if (path !== script.path) renamed.push({ from: script.path, to: path });
+    }
+    return { written, renamed, skipped };
+  }
+
+  /**
+   * Places a WebSocket API an importer mapped from a file that is not a contract (a `.http` file):
+   * only the slug and the order are settled here, and it records no definition, so nothing offers to
+   * update it from one. Saves immediately, as every import does.
+   */
+  async importWsApi(input: { readonly api: WsApi }): Promise<{ project: ProjectWire; apiId: string }> {
+    const open = this.require();
+    const project = open.project;
+    if (input.api.definition !== undefined) {
+      // A contract-backed API carries its cache and source; `importAsyncApi` is the way in for one.
+      throw new ProjectError('invalid-argument', 'A WebSocket API with a definition is placed by importAsyncApi', {
+        details: { id: input.api.id },
+      });
+    }
+    const api: WsApi = {
+      ...input.api,
+      slug: uniqueSlug(input.api.name, takenApiSlugs(project)),
+      order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+    };
+    open.project = { ...project, wsApis: [...project.wsApis, api] };
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return { project: this.snapshot() as ProjectWire, apiId: api.id };
   }
 
   /** Adds the properties whose names the project does not have yet (imports never overwrite), then saves. */

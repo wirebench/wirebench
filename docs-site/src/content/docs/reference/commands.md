@@ -53,6 +53,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | REST: Import Postman Environment… | — | — |
 | REST: Import Postman Globals… | — | — |
 | REST: Import HAR… | — | — |
+| REST: Import .http File… | — | — |
+| Import HTTP Client Environments… | — | — |
 | gRPC: Import .proto… | — | — |
 
 ## Project
