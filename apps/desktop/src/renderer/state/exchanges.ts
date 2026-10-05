@@ -123,6 +123,22 @@ export function sendIdOf(entry: LogEntry): string {
   return entry.kind === 'exchange' ? entry.exchange.sendId : entry.failure.sendId;
 }
 
+/** Whether the row is a token request a send (or Fetch now) made, not a send of the saved request itself. */
+export function isStsRow(entry: LogEntry): boolean {
+  return entry.kind === 'exchange' && 'auxiliary' in entry.exchange && entry.exchange.auxiliary === 'sts';
+}
+
+/** The send id of the newest token-request row in the log; what tells a status line one landed. */
+export function lastStsSendIdOf(log: readonly LogEntry[]): string | undefined {
+  for (let index = log.length - 1; index >= 0; index -= 1) {
+    const entry = log[index];
+    if (entry !== undefined && isStsRow(entry)) {
+      return sendIdOf(entry);
+    }
+  }
+  return undefined;
+}
+
 /** The newest finished exchange in the log, skipping failures — what the status bar's "last:" reads. */
 export function lastExchangeOf(log: readonly LogEntry[]): AnyExchangeSummary | undefined {
   for (let index = log.length - 1; index >= 0; index -= 1) {

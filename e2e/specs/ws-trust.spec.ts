@@ -116,15 +116,8 @@ test.describe('ws-trust issued token', () => {
     await expect(stsRows.first()).toContainText('STS · Request 1');
     expect(sts.requests).toHaveLength(1);
 
-    // --- the entry's status line reads the cached token (re-open the entry to re-read it) -----
-    // Clicking the active view closes it, so only click when the section is not showing.
-    if (!(await page.getByTestId('wss-section').isVisible())) {
-      await page.getByRole('button', { name: 'WS-Security' }).click();
-    }
+    // --- the entry's status line, open all along, updates in place once the send cached a token --
     await expect(page.getByTestId('wss-section')).toBeVisible();
-    if (!(await editor.isVisible())) {
-      await row.getByRole('button', { expanded: false }).click();
-    }
     await expect(page.getByTestId('issued-token-state')).toContainText('Valid until', { timeout: 10_000 });
 
     // --- Clear drops it, and the next send asks the token service again ---------------------

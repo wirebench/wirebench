@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { nameOf } from '../../src/renderer/features/console/log-name.js';
-import { isStsRow, rowActions } from '../../src/renderer/features/console/log-row-actions.js';
+import { rowActions } from '../../src/renderer/features/console/log-row-actions.js';
+import { isStsRow } from '../../src/renderer/state/exchanges.js';
 import { logExchange, makeExchange } from '../mocks/exchange-fixtures.js';
 
 const sources = {

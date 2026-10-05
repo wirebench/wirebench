@@ -154,15 +154,26 @@ export async function clientIdentityFor(
   return { cert: identity.cert, key: identity.key };
 }
 
-/** Identity, then the only two trust opt-outs a run honours: `--insecure` and the file's own flag. */
+/**
+ * Identity, then the only two trust opt-outs a run honours: `--insecure` and the file's own flag.
+ * `ownKeystoreOnly` asks the host for an identity only when `keystoreId` names one, so a host's
+ * fallback (the desktop's Preferences client keystore) is never presented: a token service gets the
+ * entry's own keystore or no certificate at all (spec §3.2).
+ */
 export async function tlsFor(
   context: RunContext,
   keystoreId: string | undefined,
   trustInvalid: boolean,
+  options: { readonly ownKeystoreOnly?: boolean } = {},
 ): Promise<TlsOptions | undefined> {
   const { tls } = context.host;
+  const named = keystoreId !== undefined && keystoreId.length > 0;
   const identity =
-    tls?.identityFor !== undefined ? await tls.identityFor(keystoreId) : await clientIdentityFor(context, keystoreId);
+    options.ownKeystoreOnly === true && !named
+      ? undefined
+      : tls?.identityFor !== undefined
+        ? await tls.identityFor(keystoreId)
+        : await clientIdentityFor(context, keystoreId);
   const skipVerify = context.insecure === true || trustInvalid;
   const anchors = tls?.anchors;
   if (identity === undefined && !skipVerify && anchors === undefined) return undefined;
@@ -203,9 +214,13 @@ export function dropRejectedIssuedToken(
   used: readonly IssuedToken[],
   fault: SoapFault | undefined,
 ): void {
-  if (fault === undefined || used.length === 0) return;
+  // Without a source the host lends (or the run shares), a token lived in a throwaway source that
+  // nothing will ask again: there is nothing to drop.
+  const source = context.host.issuedTokens;
+  if (source === undefined || fault === undefined || used.length === 0) return;
+  // Matched lexically: SoapFault keeps only a code's lexical QName, so `wsse:` is whatever prefix the
+  // service bound, and the local name is what is compared.
   if (![fault.code, ...fault.subcodes].some((code) => TOKEN_REFUSED.test(code))) return;
-  const source = issuedTokenSourceOf(context);
   for (const token of used) source.reject(token);
 }
 

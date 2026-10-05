@@ -37,17 +37,32 @@ interface Service {
   readonly bodies: string[];
   /** 1-based ordinals of the requests to answer with an InvalidSecurityToken fault. */
   readonly refuse: Set<number>;
+  /** Answer refusals as a SOAP 1.2 fault whose Subcode names the refusal, rather than SOAP 1.1. */
+  soap12: boolean;
   close(): Promise<void>;
 }
 
 async function startService(): Promise<Service> {
   const bodies: string[] = [];
   const refuse = new Set<number>();
+  const state = { soap12: false };
   const server: Server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on('data', (chunk: Buffer) => chunks.push(chunk));
     request.on('end', () => {
       bodies.push(Buffer.concat(chunks).toString('utf8'));
+      if (refuse.has(bodies.length) && state.soap12) {
+        response.writeHead(500, { 'content-type': 'application/soap+xml' });
+        response.end(
+          '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"' +
+            ' xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+            '<soap:Body><soap:Fault><soap:Code><soap:Value>soap:Sender</soap:Value>' +
+            '<soap:Subcode><soap:Value>wsse:InvalidSecurityToken</soap:Value></soap:Subcode></soap:Code>' +
+            '<soap:Reason><soap:Text xml:lang="en">refused</soap:Text></soap:Reason>' +
+            '</soap:Fault></soap:Body></soap:Envelope>',
+        );
+        return;
+      }
       if (refuse.has(bodies.length)) {
         response.writeHead(500, { 'content-type': 'text/xml' });
         response.end(
@@ -69,6 +84,12 @@ async function startService(): Promise<Service> {
     url: `http://127.0.0.1:${String(port)}/svc`,
     bodies,
     refuse,
+    get soap12() {
+      return state.soap12;
+    },
+    set soap12(value: boolean) {
+      state.soap12 = value;
+    },
     close: () =>
       new Promise((resolve) => {
         server.close(() => resolve());
@@ -176,6 +197,61 @@ describe('runRequests with an issued SAML token', () => {
     expect(service.bodies).toHaveLength(3);
     // The first two sends share a token; the refusal drops it; the third fetches a new one.
     expect(sts.requests).toHaveLength(2);
+  });
+
+  it('drops the token after a SOAP 1.2 fault whose Subcode is wsse:InvalidSecurityToken', async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const project = projectFor(entryFor(sts.url));
+    service.soap12 = true;
+    service.refuse.add(1);
+    await runRequests(requestsOf(project, 2), contextFor(project));
+    expect(service.bodies).toHaveLength(2);
+    expect(sts.requests).toHaveLength(2);
+  });
+
+  it('presents no client certificate to the STS unless the entry names its own keystore', async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const asked: (string | undefined)[] = [];
+    const identityFor = (ref: string | undefined) => {
+      asked.push(ref);
+      return Promise.resolve({ cert: `cert-of-${ref ?? 'preferences'}`, key: 'key' });
+    };
+    const entry = entryFor(sts.url);
+    const project = projectFor(entry);
+    const context = contextFor(project, { tls: { anchors: [sts.caPem], identityFor } });
+    const [one] = selectRequests(project, []).selected;
+    const selected = soapItemFor(project, one!.request.id)!;
+
+    const { target } = await soapIssuedTokenTarget(selected, context, entry);
+    expect(target.tls?.cert).toBeUndefined();
+    expect(target.tls?.key).toBeUndefined();
+    expect(target.tls?.ca).toEqual([sts.caPem]);
+    expect(asked).toEqual([]);
+
+    const own = await soapIssuedTokenTarget(selected, context, { ...entry, tlsKeystoreRef: 'ks-sts' });
+    expect(own.target.tls?.cert).toBe('cert-of-ks-sts');
+    expect(asked).toEqual(['ks-sts']);
+  });
+
+  it('sends with a cached token without loading the STS keystore', async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const project = projectFor(entryFor(sts.url, { tlsKeystoreRef: 'ks-sts' }));
+    const issuedTokens = createIssuedTokenSource();
+    const working = () => Promise.resolve(undefined);
+    await runRequests(
+      requestsOf(project, 1),
+      contextFor(project, { issuedTokens, tls: { anchors: [sts.caPem], identityFor: working } }),
+    );
+    // Only the STS keystore is broken; the request's own TLS still asks for its (absent) identity.
+    const broken = (ref: string | undefined) =>
+      ref === 'ks-sts' ? Promise.reject(new Error('keystore unreadable')) : Promise.resolve(undefined);
+    const result = await runRequests(
+      requestsOf(project, 1),
+      contextFor(project, { issuedTokens, tls: { anchors: [sts.caPem], identityFor: broken } }),
+    );
+    expect(JSON.stringify(result)).not.toContain('keystore unreadable');
+    expect(service.bodies).toHaveLength(2);
+    expect(sts.requests).toHaveLength(1);
   });
 
   it('refuses the send when the STS answers a fault, without leaking the password', async () => {

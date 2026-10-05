@@ -15,7 +15,7 @@ that needs it.
 
 <Steps>
 
-1. Open the **WSS** view and add or open an outgoing configuration.
+1. Open the **WS-Security** view in the activity bar and add or open an outgoing configuration.
 2. Choose **Issued Token (WS-Trust)** in **Add entry…**.
 3. Fill in the **Token service**, **Token** and **Credential** groups below.
 4. Select the configuration as **Outgoing WSS** on the request's **Auth** inspector tab, and send.
@@ -79,7 +79,9 @@ together.
 ## The cache, status, Fetch now and Clear
 
 Under the fields, a status line reads the session's cache for the entry: `Valid until 14:32 · SAML
-2.0 · bearer`, `Expired` or `No token cached`, followed by the STS host.
+2.0 · bearer`, `Expired` or `No token cached`, followed by the STS host. When the service gave no
+expiry, it says `Used once — the token service gave no expiry`. The line updates by itself after a
+send or a **Fetch now**.
 
 - **Fetch now** asks the STS immediately, for the request you are editing, and shows a failure as a
   toast. The error also stays on the status line, with a pointer to the STS row in the HTTP Log.
@@ -111,7 +113,11 @@ The errors you may see:
 
 Each request to the STS is one row in the HTTP Log named `STS · <request name>`, so it is easy to tell
 from the send it belongs to. A send that used the cached token makes no row. The row is a log row
-only: it does not appear in History. A failed request shows as a failed row with the STS's fault.
+only: it does not appear in History. When the STS answers with a fault, an error status or a
+redirect, its row shows that answer, and the send that needed the token fails with
+`ws-trust-sts-fault`. When the STS cannot be reached at all (the connection is refused, TLS fails or
+the request times out), there is no answer to log, so there is no STS row: the failure shows as the
+send's own failed row.
 
 The assertion's signature values and encrypted content are masked, and so are Kerberos tokens, unless
 you choose to show secrets. The issuer, subject and conditions stay readable, since they are usually

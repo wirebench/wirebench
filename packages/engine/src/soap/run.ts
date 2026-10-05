@@ -170,7 +170,8 @@ async function issuedTargetFor(
   expandText: (text: string) => string,
   entry: WssIssuedTokenEntry,
 ): Promise<IssuedTokenTarget> {
-  const tls = await tlsFor(context, entry.tlsKeystoreRef, false);
+  // The request's TLS settings never carry over, nor does a host's default client identity.
+  const tls = await tlsFor(context, entry.tlsKeystoreRef, false, { ownKeystoreOnly: true });
   return {
     endpointUrl,
     expand: expandText,
@@ -275,9 +276,14 @@ function wssFor(
     ...base,
     issuedTokens: {
       get: async (entry) => {
-        const token = await source.get(entry, await issuedTargetFor(context, endpointUrl, expandText, entry), {
-          ctx: base,
-        });
+        // The connection half (the entry's keystore) is built only when the token service is
+        // asked: a cached token needs none, so a keystore problem cannot fail its send.
+        const target: IssuedTokenTarget = {
+          endpointUrl,
+          expand: expandText,
+          connection: () => issuedTargetFor(context, endpointUrl, expandText, entry),
+        };
+        const token = await source.get(entry, target, { ctx: base });
         used.push(token);
         return token;
       },

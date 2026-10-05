@@ -19,6 +19,11 @@ export interface IssuedTokenStatus {
   readonly stsHost?: string;
   /** The last failure's message for this key, until a fetch succeeds. */
   readonly lastError?: string;
+  /**
+   * With `state: 'none'`: the last fetch succeeded, but the token service gave no expiry, so its
+   * token was used once and not kept. Cleared by Clear, a failure, or a later token that is kept.
+   */
+  readonly singleUse?: true;
 }
 
 export interface IssuedTokenSource {
@@ -74,6 +79,8 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
   const tokens = new Map<string, IssuedToken>();
   const inFlight = new Map<string, Promise<IssuedToken>>();
   const errors = new Map<string, string>();
+  /** The last token fetched for a key that had no expiry, so was used once and never cached. */
+  const singleUse = new Map<string, IssuedToken>();
   /** Bumped by clear and reject, so a fetch already under way cannot cache after one. */
   const generations = new Map<string, number>();
   const generationOf = (key: string): number => generations.get(key) ?? 0;
@@ -99,13 +106,19 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
           options.onSecretValue?.(token.assertionXml);
           if (generationOf(key) !== startedAt) return token;
           errors.delete(key);
-          if (token.expiresAt !== undefined) tokens.set(key, token);
-          else tokens.delete(key);
+          if (token.expiresAt !== undefined) {
+            tokens.set(key, token);
+            singleUse.delete(key);
+          } else {
+            tokens.delete(key);
+            singleUse.set(key, token);
+          }
           return token;
         } catch (error) {
           if (generationOf(key) === startedAt) {
             errors.set(key, error instanceof Error ? error.message : String(error));
             tokens.delete(key);
+            singleUse.delete(key);
           }
           throw error;
         } finally {
@@ -127,7 +140,19 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
       const key = issuedCacheKey(entry, target);
       const token = tokens.get(key);
       const lastError = errors.get(key);
-      if (token === undefined) return { state: 'none', ...(lastError !== undefined ? { lastError } : {}) };
+      if (token === undefined) {
+        const once = singleUse.get(key);
+        // What the single-use token was, without the assertion itself; there is no expiry to show.
+        return once === undefined
+          ? { state: 'none', ...(lastError !== undefined ? { lastError } : {}) }
+          : {
+              state: 'none',
+              singleUse: true,
+              samlVersion: once.samlVersion,
+              keyType: once.keyType,
+              stsHost: once.stsHost,
+            };
+      }
       return {
         state: fresh(token) ? 'valid' : 'expired',
         ...(token.expiresAt !== undefined ? { expiresAt: token.expiresAt.toISOString() } : {}),
@@ -141,6 +166,7 @@ export function createIssuedTokenSource(options: IssuedTokenSourceOptions = {}):
       bump(key);
       tokens.delete(key);
       errors.delete(key);
+      singleUse.delete(key);
     },
   };
 }

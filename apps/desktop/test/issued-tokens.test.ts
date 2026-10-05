@@ -101,6 +101,15 @@ describe('IssuedTokensService', () => {
     expect((await tokens.status(locator, true)).lastError).toBe('denied for pw-quoted-by-the-fault');
   });
 
+  it('says a token with no expiry was used once', async () => {
+    const tokens = service(() => {
+      const noExpiry: { expiresAt?: Date } & Omit<IssuedToken, 'expiresAt'> = issued();
+      delete noExpiry.expiresAt;
+      return Promise.resolve(noExpiry);
+    });
+    expect(await tokens.fetch(locator, false)).toMatchObject({ state: 'none', singleUse: true, stsHost: 'sts.test' });
+  });
+
   it('fetches anew on Fetch now even while a token is cached', async () => {
     const request = vi.fn(() => Promise.resolve(issued()));
     const tokens = service(request);

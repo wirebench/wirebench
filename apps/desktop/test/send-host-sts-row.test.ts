@@ -12,7 +12,7 @@ import type { LogEntryWire } from '../src/shared/wire-types.js';
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
-const { desktopSendHost } = await import('../src/main/send/host.js');
+const { desktopSendHost, stsLogEntry } = await import('../src/main/send/host.js');
 const { IssuedTokensService } = await import('../src/main/issued-tokens.js');
 
 type DesktopSendDeps = import('../src/main/send/host.js').DesktopSendDeps;
@@ -177,6 +177,33 @@ describe('the STS log row', () => {
     expect(raw.startsWith(head)).toBe(true);
     expect(raw).toContain('&lt;redacted&gt;');
     expect(raw).not.toContain(SIGNATURE_VALUE);
+  });
+
+  it('ships only the redacted body when a compressed raw response has no head to keep', async () => {
+    const gzipped = gzipSync(Buffer.from(RSTR, 'utf8'));
+    const { host, rows, trustDeps } = await hostWith(false, {
+      ...fakeExchange,
+      rawBody: new Uint8Array(gzipped),
+      rawResponse: new Uint8Array(gzipped),
+    });
+    await host.issuedTokens!.get(entry, target, trustDeps);
+    const row = rows[0]!;
+    if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
+    expect(row.exchange.http.rawResponseBase64).toBe(row.exchange.http.bodyBase64);
+    expect(textOf(row.exchange.http.rawResponseBase64)).toContain('&lt;redacted&gt;');
+  });
+
+  it('gives two STS rows in the same millisecond different send ids', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      const first = stsLogEntry(fakeExchange, { show: false, causedBy: 'send-7' });
+      const second = stsLogEntry(fakeExchange, { show: false, causedBy: 'send-7' });
+      if (first.kind !== 'exchange' || second.kind !== 'exchange') throw new Error('not exchange rows');
+      expect(first.exchange.sendId).not.toBe(second.exchange.sendId);
+      expect(first.exchange.sendId.startsWith('send-7:sts:')).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('leaves the send intact when the row cannot be written', async () => {

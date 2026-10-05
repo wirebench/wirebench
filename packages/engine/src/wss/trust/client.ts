@@ -19,6 +19,12 @@ export interface IssuedTokenTarget {
   readonly proxy?: (url: string) => Promise<ProxyOptions | undefined>;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * The connection half (`tls`, `proxy`, `timeoutMs`, `signal`) built on demand: asked for only
+   * when the token service is contacted, so a cached token never loads the entry's keystore. Its
+   * answer stands in for those four fields; the key fields (`endpointUrl`, `expand`) stay as given.
+   */
+  readonly connection?: () => Promise<Omit<IssuedTokenTarget, 'endpointUrl' | 'expand' | 'connection'>>;
 }
 
 export type KerberosTokenFn = (
@@ -57,6 +63,20 @@ export async function proofCertOf(entry: WssIssuedTokenEntry, ctx: WssContext): 
   return selectAlias(keystore, entry.proofAlias).certPem;
 }
 
+/** The target's connection half: built now when the target defers it, else its own fields. */
+async function connectionOf(target: IssuedTokenTarget): Promise<IssuedTokenTarget> {
+  if (target.connection === undefined) return target;
+  const built = await target.connection();
+  return {
+    endpointUrl: target.endpointUrl,
+    expand: target.expand,
+    ...(built.tls !== undefined ? { tls: built.tls } : {}),
+    ...(built.proxy !== undefined ? { proxy: built.proxy } : {}),
+    ...(built.timeoutMs !== undefined ? { timeoutMs: built.timeoutMs } : {}),
+    ...(built.signal !== undefined ? { signal: built.signal } : {}),
+  };
+}
+
 /** @throws WssError `ws-trust-*`, `wss-*`, `kerberos-unavailable`, or the transport's own error */
 export async function requestIssuedToken(
   entry: WssIssuedTokenEntry,
@@ -89,7 +109,8 @@ export async function requestIssuedToken(
     ...(proofCertPem !== undefined ? { proofCertPem } : {}),
     ...(kerberosToken !== undefined ? { kerberosToken } : {}),
   });
-  const proxy = await target.proxy?.(stsUrl);
+  const connected = await connectionOf(target);
+  const proxy = await connected.proxy?.(stsUrl);
   const send = deps.send ?? sendHttp;
   const exchange = await send({
     url: stsUrl,
@@ -99,11 +120,11 @@ export async function requestIssuedToken(
       ...(entry.soapVersion === '1.1' ? { soapaction: `"${rst.action}"` } : {}),
     },
     body: new TextEncoder().encode(rst.xml),
-    timeoutMs: target.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: connected.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     followRedirects: false,
-    ...(target.tls !== undefined ? { tls: target.tls } : {}),
+    ...(connected.tls !== undefined ? { tls: connected.tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
-    ...(target.signal !== undefined ? { signal: target.signal } : {}),
+    ...(connected.signal !== undefined ? { signal: connected.signal } : {}),
   });
   deps.onExchange?.(exchange);
   if (exchange.status >= 300 && exchange.status < 400) {

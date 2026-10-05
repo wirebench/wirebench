@@ -3,7 +3,7 @@
  * `runRowAction` (log-row-menu.tsx) carries it out.
  */
 import { decodeBase64Text } from '../../lib/format-size.js';
-import type { LogEntry } from '../../state/exchanges.js';
+import { isStsRow, type LogEntry } from '../../state/exchanges.js';
 import { useProjectStore } from '../../state/project.js';
 import { protocolOf, stageOf, type LogProtocol } from './log-filter.js';
 
@@ -41,11 +41,6 @@ function isSseExchange(entry: LogEntry): boolean {
     'stream' in entry.exchange &&
     entry.exchange.stream !== undefined
   );
-}
-
-/** Whether the row is a token request a send made, not a send of the saved request itself. */
-export function isStsRow(entry: LogEntry): boolean {
-  return entry.kind === 'exchange' && 'auxiliary' in entry.exchange && entry.exchange.auxiliary === 'sts';
 }
 
 const RESEND_HINT = 'Sends the saved request as it is now';

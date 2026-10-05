@@ -65,26 +65,30 @@ describe('requestIssuedToken', () => {
     expect(sts.requests[0]?.body).toContain('<wsa:Address>urn:realm</wsa:Address>');
   });
 
-  it('refuses a redirect instead of following it', async () => {
+  it('refuses a redirect instead of following it, still reporting the exchange', async () => {
     sts = await startTestSts(() => ({ status: 302, body: '', headers: { location: 'https://elsewhere.test/' } }));
+    const seen: number[] = [];
     await expect(
       requestIssuedToken(
         entry(sts.url),
         { endpointUrl: 'https://s/', expand: (t) => t, tls: { ca: [sts.caPem] } },
-        { ctx },
+        { ctx, onExchange: (exchange) => seen.push(exchange.status) },
       ),
     ).rejects.toMatchObject({ code: 'ws-trust-sts-fault' });
+    expect(seen).toEqual([302]);
   });
 
-  it('passes a fault through as ws-trust-sts-fault', async () => {
+  it('passes a fault through as ws-trust-sts-fault, still reporting the exchange', async () => {
     sts = await startTestSts(() => ({ status: 500, body: fixture('fault-1.2.xml') }));
+    const seen: number[] = [];
     await expect(
       requestIssuedToken(
         entry(sts.url),
         { endpointUrl: 'https://s/', expand: (t) => t, tls: { ca: [sts.caPem] } },
-        { ctx },
+        { ctx, onExchange: (exchange) => seen.push(exchange.status) },
       ),
     ).rejects.toMatchObject({ code: 'ws-trust-sts-fault' });
+    expect(seen).toEqual([500]);
   });
 
   it('refuses a Kerberos credential with kerberos-unavailable when no seam is lent', async () => {

@@ -55,7 +55,39 @@ describe('createIssuedTokenSource', () => {
     await source.get(entry, target, deps);
     await source.get(entry, target, deps);
     expect(request).toHaveBeenCalledTimes(2);
-    expect(source.status(entry, target)).toMatchObject({ state: 'none' });
+    expect(source.status(entry, target)).toEqual({
+      state: 'none',
+      singleUse: true,
+      samlVersion: '2.0',
+      keyType: 'bearer',
+      stsHost: 'sts.test',
+    });
+  });
+
+  it('forgets the single-use mark on clear, on a later cached fetch and on a failure', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(token(undefined))
+      .mockResolvedValueOnce(token('2026-10-05T11:00:00Z'))
+      .mockResolvedValueOnce(token(undefined))
+      .mockRejectedValueOnce(new Error('refused'));
+    let now = new Date('2026-10-05T10:00:00Z');
+    const source = createIssuedTokenSource({ now: () => now, request });
+    await source.get(entry, target, deps);
+    expect(source.status(entry, target).singleUse).toBe(true);
+    source.clear(entry, target);
+    expect(source.status(entry, target)).toEqual({ state: 'none' });
+
+    await source.get(entry, target, deps);
+    await source.get(entry, target, deps);
+    expect(source.status(entry, target)).toMatchObject({ state: 'valid' });
+    expect(source.status(entry, target).singleUse).toBeUndefined();
+
+    now = new Date('2026-10-05T12:00:00Z');
+    await source.get(entry, target, deps);
+    expect(source.status(entry, target).singleUse).toBe(true);
+    await expect(source.get(entry, target, deps)).rejects.toThrow('refused');
+    expect(source.status(entry, target)).toEqual({ state: 'none', lastError: 'refused' });
   });
 
   it('never caches a failure, and keeps its message for status', async () => {

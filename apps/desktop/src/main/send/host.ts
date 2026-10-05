@@ -9,6 +9,7 @@
  * Every member is a port of what the desktop's own send paths did before every send went through
  * the engine, so a send logs, masks and checks exactly as the desktop always has.
  */
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX } from '@wirebench/engine';
 import type {
@@ -227,7 +228,8 @@ export function stsLogEntry(
     kind: 'exchange',
     ...(opts.requestId !== undefined ? { requestId: opts.requestId } : {}),
     exchange: {
-      sendId: `${opts.causedBy ?? 'fetch'}:sts:${String(Date.now())}`,
+      // Unique per row: the log drops a second row with a send id it already holds.
+      sendId: `${opts.causedBy ?? 'fetch'}:sts:${randomUUID()}`,
       durationMs: http.timings.totalMs,
       http: {
         ...wire,
@@ -244,12 +246,16 @@ export function stsLogEntry(
   };
 }
 
-/** Raw response bytes with their body replaced by `body` (both base64); the head is kept as it is. */
+/**
+ * Raw response bytes with their body replaced by `body` (both base64); the head is kept as it is.
+ * With no head/body boundary to find, nothing of the raw bytes is known to be head, so only the
+ * redacted body ships rather than compressed bytes the redaction never read.
+ */
 function withBody(rawBase64: string, body: string): string {
   const raw = Buffer.from(rawBase64, 'base64');
   const end = raw.indexOf('\r\n\r\n');
-  const head = end < 0 ? raw : raw.subarray(0, end + 4);
-  return Buffer.concat([head, Buffer.from(body, 'base64')]).toString('base64');
+  if (end < 0) return body;
+  return Buffer.concat([raw.subarray(0, end + 4), Buffer.from(body, 'base64')]).toString('base64');
 }
 
 /** A token service's reply body, its XML secrets and recorded values masked unless `show`. */

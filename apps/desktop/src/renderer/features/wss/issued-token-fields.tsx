@@ -304,7 +304,13 @@ export function IssuedTokenFields({ entry, onChange, projectId, configId, entryI
           </>
         )}
       </Group>
-      <IssuedTokenStatus projectId={projectId} configId={configId} entryIndex={entryIndex} requestId={requestId} />
+      <IssuedTokenStatus
+        projectId={projectId}
+        configId={configId}
+        entryIndex={entryIndex}
+        requestId={requestId}
+        revision={JSON.stringify(entry)}
+      />
     </div>
   );
 }

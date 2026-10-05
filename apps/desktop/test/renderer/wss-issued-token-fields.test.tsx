@@ -6,6 +6,8 @@ import { IssuedTokenFields } from '../../src/renderer/features/wss/issued-token-
 import { OutgoingConfigEditor } from '../../src/renderer/features/wss/outgoing-config-editor.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
+import type { LogEntry } from '../../src/renderer/state/exchanges.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { ProjectWire, WssEntryWire } from '../../src/shared/wire-types.js';
 
@@ -24,6 +26,8 @@ const fresh: IssuedEntry = {
 
 afterEach(() => {
   cleanup();
+  useExchangesStore.getState().reset();
+  useExchangesStore.setState({ log: [], byRequest: {} });
   useProjectStore.getState().reset();
   useUiStore.setState({ selection: undefined });
 });
@@ -141,6 +145,96 @@ describe('IssuedTokenFields', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     await screen.findByText('No token cached');
     expect(issuedTokens.clear).toHaveBeenCalled();
+  });
+});
+
+describe('IssuedTokenStatus refresh', () => {
+  const VALID = { state: 'valid', expiresAt: '2026-10-05T14:32:00.000Z', samlVersion: '2.0', keyType: 'bearer' };
+
+  function stsRow(sendId: string): LogEntry {
+    return {
+      kind: 'exchange',
+      requestId: 'r1',
+      exchange: { sendId, auxiliary: 'sts', causedBy: 's1', durationMs: 1, problems: [] },
+    } as unknown as LogEntry;
+  }
+
+  it('reads again when a send logs an STS row, so the line updates in place', async () => {
+    const status = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: { state: 'none' } })
+      .mockResolvedValue({ ok: true, value: VALID });
+    api({ status });
+    fields(undefined, fresh, 'r1');
+    await screen.findByText('No token cached');
+    expect(status).toHaveBeenCalledTimes(1);
+    useExchangesStore.getState().appendLoggedEntry(stsRow('s1:sts:a'));
+    await screen.findByText(/Valid until/);
+    expect(status).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads again when the request's send settles, which covers a cache hit and a dropped token", async () => {
+    const status = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: VALID })
+      .mockResolvedValue({ ok: true, value: { state: 'none' } });
+    api({ status });
+    fields(undefined, fresh, 'r1');
+    await screen.findByText(/Valid until/);
+    useExchangesStore.setState({ byRequest: { r1: { status: 'sending', sendId: 's2' } } });
+    useExchangesStore.setState({ byRequest: { r1: { status: 'error', sendId: 's2' } } });
+    await screen.findByText('No token cached');
+  });
+
+  it("reads again when the entry's fields change", async () => {
+    const status = vi.fn().mockResolvedValue({ ok: true, value: { state: 'none' } });
+    api({ status });
+    const view = render(
+      <IssuedTokenFields entry={fresh} onChange={vi.fn()} projectId="p1" configId="w1" entryIndex={2} />,
+    );
+    await waitFor(() => {
+      expect(status).toHaveBeenCalledTimes(1);
+    });
+    view.rerender(
+      <TooltipPrimitive.Provider>
+        <IssuedTokenFields
+          entry={{ ...fresh, stsUrl: 'https://sts.test/other' }}
+          onChange={vi.fn()}
+          projectId="p1"
+          configId="w1"
+          entryIndex={2}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    await waitFor(() => {
+      expect(status).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('keeps the newest answer when an older read answers last', async () => {
+    let answerFirst: (value: unknown) => void = () => undefined;
+    const status = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerFirst = resolve;
+          }),
+      )
+      .mockResolvedValue({ ok: true, value: VALID });
+    api({ status });
+    fields(undefined, fresh, 'r1');
+    useExchangesStore.getState().appendLoggedEntry(stsRow('s1:sts:b'));
+    await screen.findByText(/Valid until/);
+    answerFirst({ ok: true, value: { state: 'none' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('issued-token-state').textContent).toMatch(/Valid until/);
+  });
+
+  it('says a token with no expiry is used once', async () => {
+    api({ status: vi.fn().mockResolvedValue({ ok: true, value: { state: 'none', singleUse: true } }) });
+    fields();
+    await screen.findByText('Used once — the token service gave no expiry');
   });
 });
 

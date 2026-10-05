@@ -4,9 +4,10 @@
  * never the token service: main reads the entry from its own model, so the renderer cannot point a
  * fetch at another service with the user's credentials.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
+import { lastStsSendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { IssuedTokenStatusWire } from '../../../shared/wire-types.js';
 
@@ -20,10 +21,21 @@ export interface IssuedTokenStatusProps {
    * the configuration.
    */
   readonly requestId?: string | undefined;
+  /**
+   * Changes whenever the entry's fields do (its JSON, say): main reads the saved entry, so an edit
+   * can change the key the token is cached under, and the line reads again.
+   */
+  readonly revision?: string | undefined;
 }
 
-/** `Valid until 14:32 · SAML 2.0 · bearer`, `Expired` or `No token cached`. */
+/** What the line says for a token the service gave no expiry: it was sent once and not kept. */
+export const SINGLE_USE_LINE = 'Used once — the token service gave no expiry';
+
+/** `Valid until 14:32 · SAML 2.0 · bearer`, `Expired`, `No token cached` or {@link SINGLE_USE_LINE}. */
 export function statusLine(status: IssuedTokenStatusWire | undefined): string {
+  if (status?.state === 'none' && status.singleUse === true) {
+    return SINGLE_USE_LINE;
+  }
   if (status === undefined || status.state === 'none') {
     return 'No token cached';
   }
@@ -43,25 +55,35 @@ export function statusLine(status: IssuedTokenStatusWire | undefined): string {
     .join(' · ');
 }
 
-export function IssuedTokenStatus({ projectId, configId, entryIndex, requestId }: IssuedTokenStatusProps) {
+export function IssuedTokenStatus({ projectId, configId, entryIndex, requestId, revision }: IssuedTokenStatusProps) {
   const [status, setStatus] = useState<IssuedTokenStatusWire | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  /** Bumped by every read and every answer that replaces the status, so an older answer never wins. */
+  const sequence = useRef(0);
   const locator = {
     projectId,
     configId,
     entryIndex,
     ...(requestId !== undefined ? { requestId } : {}),
   };
-  const key = `${projectId}\u0000${configId}\u0000${String(entryIndex)}\u0000${requestId ?? ''}`;
+  // A token request landed in the HTTP Log: a send or Fetch now asked the token service.
+  const lastStsRow = useExchangesStore((state) => lastStsSendIdOf(state.log));
+  // The request's send settled: a cache hit asks no service, and a refusal drops the token.
+  const settledSend = useExchangesStore((state) => {
+    const send = requestId === undefined ? undefined : state.byRequest[requestId];
+    return send === undefined || send.status === 'sending' ? undefined : send;
+  });
 
   const read = useCallback(async (): Promise<void> => {
+    sequence.current += 1;
+    const mine = sequence.current;
     const result = await ipc().issuedTokens.status({
       projectId,
       configId,
       entryIndex,
       ...(requestId !== undefined ? { requestId } : {}),
     });
-    if (result.ok) {
+    if (result.ok && mine === sequence.current) {
       setStatus(result.value);
     }
     // A failure is "this entry is not saved yet" or "the request does not select it": the line
@@ -70,15 +92,21 @@ export function IssuedTokenStatus({ projectId, configId, entryIndex, requestId }
 
   useEffect(() => {
     void read();
-    // `key` stands for the locator's parts, which `read` already depends on.
-  }, [read, key]);
+    // The triggers are not read here: each change is a reason to ask main again.
+  }, [read, revision, lastStsRow, settledSend]);
+
+  /** Shows an answer of Fetch now or Clear, which is newer than any read still under way. */
+  function replace(value: IssuedTokenStatusWire): void {
+    sequence.current += 1;
+    setStatus(value);
+  }
 
   async function onFetch(): Promise<void> {
     setBusy(true);
     try {
       const result = await ipc().issuedTokens.fetch(locator);
       if (result.ok) {
-        setStatus(result.value);
+        replace(result.value);
       } else {
         showToast(result.error.message);
         await read();
@@ -91,7 +119,7 @@ export function IssuedTokenStatus({ projectId, configId, entryIndex, requestId }
   async function onClear(): Promise<void> {
     const result = await ipc().issuedTokens.clear(locator);
     if (result.ok) {
-      setStatus(result.value);
+      replace(result.value);
     }
   }
 

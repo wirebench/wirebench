@@ -516,6 +516,8 @@ export const issuedTokenStatusSchema = z.object({
   keyType: z.enum(['bearer', 'public-key']).optional(),
   stsHost: z.string().optional(),
   lastError: z.string().optional(),
+  /** With `state: 'none'`: the last token had no expiry, so it was used once and not kept. */
+  singleUse: z.literal(true).optional(),
   /** Only with show-secrets on. */
   assertion: z.string().optional(),
 });
