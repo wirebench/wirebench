@@ -65,6 +65,34 @@ An incoming configuration validates a response: select it as **Incoming WSS** on
 tab, and the response's **WSS** inspector tab reports whether the signature or encryption checked
 out.
 
+### SAML tokens
+
+Choose **SAML Token** in **Add entry…** to place a SAML assertion in the `wsse:Security` header.
+The assertion lands in entry order, so add it before a Signature that should cover it. Pick **Form**
+to have Wirebench build the assertion, or **XML** to supply one you already have.
+
+**Form** fields:
+
+- **SAML version**: 2.0 or 1.1.
+- **Issuer** and **Subject**, with an optional **Subject format** URI.
+- **Confirmation**: **Bearer**, **Holder of key** or **Sender vouches**. Holder of key adds a
+  **Proof keystore** (and alias) whose certificate the assertion names as the key holder.
+- **Audience**: an optional audience restriction.
+- **Lifetime (s)**: how long the assertion is valid, from now.
+- **Authentication context**: an optional context class URI.
+- **Attributes**: a name and comma-separated values per row.
+- **Sign as issuer**: signs the assertion with an **Issuer keystore**, alias and **Issuer key
+  password** (set through the masked field), using RSA-SHA256 or RSA-SHA1. Leave it off for an
+  unsigned assertion.
+
+**XML** takes the assertion inline or from a project file. **Expand properties** is off by default:
+expanding `${...}` inside a signed assertion changes the bytes the signature covers and breaks it.
+
+Wirebench places a supplied assertion into the header unchanged. It never gives the assertion a
+`wsu:Id` and never edits its attributes or children, so a signature it carries stays valid. In the
+HTTP Log, the assertion's signature value is masked unless secrets are shown; the rest of the token
+stays readable.
+
 <Aside type="note">
 WS-Addressing headers are added automatically when the imported WSDL declares
 `wsaw:UsingAddressing` — no separate configuration step. Each send gets a fresh `wsa:MessageID`.
