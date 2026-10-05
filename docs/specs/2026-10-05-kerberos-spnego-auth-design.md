@@ -1,6 +1,6 @@
 # Kerberos/SPNEGO authentication — design
 
-**Issue:** #40 · **Date:** 2026-10-05 · **Status:** draft (under review)
+**Issue:** #40 · **Date:** 2026-10-05 · **Status:** approved 2026-10-05; amended with the plan (see _Amendments_)
 
 Builds on: [ADR-0019](../adr/0019-kerberos-uses-an-optional-native-module.md) (the native-module ruling),
 ADR-0004 (secrets outside project files), the SOAP owner auth design
@@ -50,7 +50,7 @@ Checked against `kerberos@7.0.0`, the version to pin:
 
 - The package is Apache-2.0 and N-API v9. Its prebuilds cover `darwin-x64`, `darwin-arm64`, `linux-x64`,
   `linux-arm64` and `win32-x64`. There is **no `win32-arm64` prebuild**.
-- `initializeClient(service, { mechOID, gssFlag, principal, user, pass })` creates the client.
+- `initializeClient(service, options, callback)` creates the client. The binary reads the options `mechOID`, `flags`, `principal` (Unix), `user`, `domain` and `password` (Windows); the package's `index.d.ts` calls two of them `gssFlag` and `pass`, which the C++ ignores.
   `client.step(challengeBase64)` returns the next token; `contextComplete` reports when the handshake is
   done.
 - `mechOID: GSS_MECH_OID_KRB5` (9) maps to the SSPI package `L"Kerberos"` on Windows
@@ -275,9 +275,8 @@ not an error: the user sees what came back.
   free from the existing header masker. Check it, and add `Negotiate` to the scheme list if the masker keys on
   the scheme.
 - **CLI runner and MCP.** `run/prepare.ts` (`prepareSoap`, and the REST path) resolve the arm with the
-  others, `passwordEnv` included. An unavailable provider makes that request **error** (exit 2 territory),
-  not fail, and leaves the rest of the run to continue. `wirebench --version --verbose` prints the Kerberos
-  availability line.
+  others, `passwordEnv` included. An unavailable provider makes that request **error** (the run exits 3),
+  not fail, and leaves the rest of the run to continue.
 - **Definition fetch.** `document-fetch.ts` attaches Kerberos **preemptively** on each same-origin hop, the
   way it attaches Basic, with a fresh token per hop. `soap/import.ts` drops `withBasicAuth` for a small
   `withTransportAuth` that takes `basic | kerberos` and uses the same per-hop rule. The import dialog and
@@ -299,12 +298,11 @@ not an error: the user sees what came back.
   `passwordRef` or `passwordEnv` is resolved only when a `username` is set. A dangling reference is
   `secret-missing`, before any network traffic. #41 resolves its STS Kerberos credential through the same
   function, so both features read a credential the same way.
-- `apps/desktop/src/main` creates one provider at start-up with the vendored `bindingPath` (D7) and passes it
-  to every engine call that sends. These are the same sites that pass `dispatcher` and `network` today:
-  `engine-service.ts`, `send-with-history.ts`, `openapi-import.ts`, the WSDL import, `ws` and `grpc`
-  services.
-- The cURL export (`ipc/request.ts`) emits `--negotiate -u :`, or `--negotiate -u 'DOMAIN\user'` with the
-  password left out, as it already does for NTLM.
+- `apps/desktop/src/main` creates one provider at start-up with the vendored `bindingPath` (D7), and
+  `main/index.ts` installs it process-wide with `configureKerberos` (amended). Every send path picks it up
+  from there: REST, SOAP, WebSocket and gRPC through `desktopSendHost`, and definition fetches.
+- The cURL export (`ipc/request.ts`) emits `--negotiate --user :`, or `--negotiate --user 'DOMAIN\user:'`, never with a password
+  (amended: the export has no NTLM output to mirror).
 
 ### D6. Wire and renderer
 
@@ -326,12 +324,12 @@ not an error: the user sees what came back.
 ### D7. Packaging
 
 - `kerberos` goes in `packages/engine/package.json` `optionalDependencies` at the exact version `7.0.0`. Its
-  `install` script runs `prebuild-install`; pnpm's `onlyBuiltDependencies` needs `kerberos` added. A failed
+  `install` script runs `prebuild-install`. pnpm 9 runs it by default. A failed
   install leaves the module absent and the engine working.
-- New `apps/desktop/scripts/vendor-kerberos.ts`, run by the `package:*` scripts before electron-builder:
+- New `scripts/vendor-kerberos.ts`, run by the `package:*` scripts before electron-builder:
   - It downloads `kerberos-v7.0.0-napi-v9-<platform>-<arch>.tar.gz` from the package's GitHub release, for
     every architecture of the target platform that has a prebuild.
-  - It checks each tarball against SHA-256s committed in `apps/desktop/scripts/kerberos-prebuilds.json`. A
+  - It checks each tarball against SHA-256s committed in `scripts/kerberos-prebuilds.json`. A
     mismatch fails the build.
   - It extracts `kerberos.node` to `apps/desktop/build-resources/kerberos/<platform>-<arch>/`.
 - `electron-builder.yml` copies that folder through `extraResources` (outside the asar, so no `asarUnpack`
@@ -392,7 +390,7 @@ not an error: the user sees what came back.
   only.
 - The cURL export.
 
-**Integration (CI, `ubuntu-latest`, new job `kerberos-integration`):** a containerised MIT KDC, with a realm,
+**Integration (CI, `ubuntu-latest`, new job `kerberos-integration`):** an apt-installed MIT KDC (amended), with a realm,
 a user and an `HTTP/localhost` keytab, and a small Negotiate-protected HTTP server built on
 `KerberosServer` from the same package. The test runs `kinit` with a test keytab, then:
 
@@ -451,9 +449,29 @@ Evidence rows go in `docs/success-criteria.md` as SC-K1–SC-K10.
 - `docs/release.md`: native module, vendoring, and the manual Windows checklist.
 - `CHANGELOG.md`, _Unreleased / Added_.
 
+## Amendments (2026-10-05, with the plan)
+
+The plan, `docs/plans/2026-10-05-kerberos-spnego-auth-plan.md`, lists thirteen amendments where the code disagreed
+with this spec. The ones that change the design are:
+
+- **The provider is process-wide.** `configureKerberos` is called once by the desktop app, and once per test.
+  `startKerberosContext(…, { provider })` still overrides it. `kerberosToken`'s signature is unchanged.
+- **One-request paths make a bearer first.** WebSocket, gRPC and definition fetches turn Kerberos into
+  `Authorization: Negotiate <token>` with `negotiateBearer`/`withNegotiate` before their synchronous header
+  builders run. The WebSocket `101` reply is not verified.
+- **WSDL fetches.** A Kerberos WSDL is fetched through the origin-scoped document fetcher. The import dialog
+  offers the signed-in ticket and an SPN only.
+- **Masking.** `WWW-Authenticate: Negotiate <token>` is masked, as well as `Authorization`.
+- **UI.** The only auth summary in the UI is the SOAP status note, and it becomes Kerberos-aware. The cURL
+  export gains `--negotiate`. The availability channel also returns the platform.
+- **Packaging.** The vendoring and check scripts live in root `scripts/`. macOS ships one universal binary in
+  both architecture folders, listed under `mac.x64ArchFiles`. The licence script reads `optionalDependencies`.
+  The vendor check runs in the release jobs only.
+- **CI.** The KDC is apt-installed on the runner. No container image is pulled.
+
 ## Delivery
 
-There are three PRs, each green on its own.
+There are two PRs, each green on its own (amended: WebSocket and gRPC moved into the engine PR).
 
 1. **Engine and format:** D1 (the seam #41 waits for), D2, D3 and D4 for HTTP sends, the definition fetch,
    the CLI and MCP, plus the schema bump, the unit tests and the integration job. The desktop app is not
