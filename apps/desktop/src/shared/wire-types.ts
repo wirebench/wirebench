@@ -1418,6 +1418,7 @@ export const wssEntryWireSchema = z.discriminatedUnion('kind', [
       'SubjectKeyIdentifier',
       'X509KeyIdentifier',
       'Thumbprint',
+      'saml-token',
     ]),
     signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']),
     digestAlgorithm: z.enum(['sha256', 'sha1']),

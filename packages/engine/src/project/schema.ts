@@ -124,6 +124,7 @@ const wssPartSchema = z.looseObject({
   name: z.string(),
   namespace: z.string(),
   encode: z.enum(['Content', 'Element']),
+  token: z.literal(true).optional(),
 });
 
 /**
@@ -140,7 +141,14 @@ const wssSignatureEntrySchema = z.looseObject({
   alias: z.string().optional(),
   keyPasswordRef: z.string().optional(),
   keyIdentifierType: z
-    .enum(['BinarySecurityToken', 'IssuerSerial', 'SubjectKeyIdentifier', 'X509KeyIdentifier', 'Thumbprint'])
+    .enum([
+      'BinarySecurityToken',
+      'IssuerSerial',
+      'SubjectKeyIdentifier',
+      'X509KeyIdentifier',
+      'Thumbprint',
+      'saml-token',
+    ])
     .default('BinarySecurityToken'),
   signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']).default('rsa-sha256'),
   digestAlgorithm: z.enum(['sha256', 'sha1']).default('sha256'),
@@ -172,13 +180,98 @@ const wssEncryptionEntrySchema = z.looseObject({
     .default(DEFAULT_WSS_ENCRYPTION_PARTS as { name: string; namespace: string; encode: 'Content' | 'Element' }[]),
 });
 
+/** True when `value` holds a `password` key at any depth: secrets are references, everywhere. */
+function hasPlaintextPassword(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(hasPlaintextPassword);
+  return Object.entries(value).some(([key, inner]) => key === 'password' || hasPlaintextPassword(inner));
+}
+
+const stsCredentialSchema = z.discriminatedUnion('kind', [
+  z.looseObject({ kind: z.literal('username'), username: z.string(), passwordRef: z.string().optional() }),
+  z.looseObject({
+    kind: z.literal('certificate'),
+    keystoreRef: z.string().default(''),
+    alias: z.string().optional(),
+    keyPasswordRef: z.string().optional(),
+  }),
+  z.looseObject({
+    kind: z.literal('kerberos'),
+    spn: z.string(),
+    principal: z.string().optional(),
+    username: z.string().optional(),
+    domain: z.string().optional(),
+    passwordRef: z.string().optional(),
+  }),
+]);
+
+export const wssIssuedTokenEntrySchema = z.looseObject({
+  kind: z.literal('issued-token'),
+  stsUrl: z.string(),
+  soapVersion: z.enum(['1.1', '1.2']).default('1.2'),
+  trustVersion: z.enum(['1.3', '2005-02']).default('1.3'),
+  appliesTo: z.string().optional(),
+  tokenType: z.enum(['1.1', '2.0']).default('2.0'),
+  keyType: z.enum(['bearer', 'public-key']).default('bearer'),
+  proofKeystoreRef: z.string().optional(),
+  proofAlias: z.string().optional(),
+  credential: stsCredentialSchema,
+  requestedLifetimeSeconds: z.number().int().nonnegative().default(0),
+  claims: z.string().optional(),
+  tlsKeystoreRef: z.string().optional(),
+});
+
+const samlAttributeSchema = z.looseObject({
+  name: z.string(),
+  nameFormat: z.string().optional(),
+  values: z.array(z.string()),
+});
+
+export const wssSamlTokenEntrySchema = z.discriminatedUnion('source', [
+  z.looseObject({
+    kind: z.literal('saml-token'),
+    source: z.literal('form'),
+    version: z.enum(['1.1', '2.0']).default('2.0'),
+    issuer: z.string(),
+    subject: z.string(),
+    subjectFormat: z.string().optional(),
+    confirmation: z.enum(['bearer', 'holder-of-key', 'sender-vouches']).default('bearer'),
+    audience: z.string().optional(),
+    lifetimeSeconds: z.number().int().positive().default(300),
+    authnContext: z.string().optional(),
+    attributes: z.array(samlAttributeSchema).default([]),
+    sign: z
+      .looseObject({
+        keystoreRef: z.string(),
+        alias: z.string().optional(),
+        keyPasswordRef: z.string().optional(),
+        signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']).default('rsa-sha256'),
+      })
+      .optional(),
+    proofKeystoreRef: z.string().optional(),
+    proofAlias: z.string().optional(),
+  }),
+  z
+    .looseObject({
+      kind: z.literal('saml-token'),
+      source: z.literal('xml'),
+      xml: z.string().optional(),
+      file: z.string().optional(),
+      expandProperties: z.boolean().default(false),
+    })
+    .refine((value) => (value.xml === undefined) !== (value.file === undefined), {
+      message: 'a SAML token gives exactly one of "xml" and "file"',
+      path: ['xml'],
+    }),
+]);
+
 /**
  * One entry as *persisted*. Deliberately loose about the entry's own shape — a `signature`
  * entry written by a later build, or a document a foreign tool wrote, must survive a load/save
  * round trip through this build — but a plaintext `password` is rejected outright, wherever in
  * an entry it appears.
  */
-const wssStoredEntrySchema = z.looseObject({}).refine((value) => !('password' in value), {
+const wssStoredEntrySchema = z.looseObject({}).refine((value) => !hasPlaintextPassword(value), {
   message: 'a WS-Security entry must not contain a plaintext "password" field; use passwordRef',
   path: ['password'],
 });
@@ -189,6 +282,8 @@ export const wssEntrySchema = z.union([
   wssUsernameTokenEntrySchema,
   wssSignatureEntrySchema,
   wssEncryptionEntrySchema,
+  wssIssuedTokenEntrySchema,
+  wssSamlTokenEntrySchema,
 ]);
 
 /** `wss/outgoing/<name>.yaml`. */

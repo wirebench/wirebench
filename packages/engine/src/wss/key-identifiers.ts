@@ -143,7 +143,8 @@ function keyIdentifierElement(valueType: string, value: string): string {
  * @param type which of the five X.509 token profile forms to emit
  * @param input the signing certificate, its chain and the token id to use
  * @returns the KeyInfo XML, plus the binary security token when the form needs one
- * @throws WssError `wss-ski-missing` for `SubjectKeyIdentifier` on a certificate without one
+ * @throws WssError `wss-ski-missing` for `SubjectKeyIdentifier` on a certificate without one,
+ * `wss-entry-unsupported` for `saml-token`
  */
 export function buildKeyIdentifier(type: WssKeyIdentifierType, input: KeyIdentifierInput): KeyIdentifier {
   switch (type) {
@@ -186,5 +187,9 @@ export function buildKeyIdentifier(type: WssKeyIdentifierType, input: KeyIdentif
           keyIdentifierElement(WSS_TOKEN_TYPES.THUMBPRINT_SHA1, thumbprintSha1Base64(input.certPem)),
         ),
       };
+    case 'saml-token':
+      // A SAML reference names an assertion, not a certificate; the signature builder places it
+      // itself once SAML signing lands, so reaching this form with a certificate is a caller bug.
+      throw new WssError('wss-entry-unsupported', 'A saml-token key identifier is not an X.509 form.');
   }
 }

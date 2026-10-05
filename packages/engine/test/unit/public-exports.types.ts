@@ -36,6 +36,16 @@ export type Added = [
   Engine.StatusNames,
   Engine.SendHost,
   Engine.RunContext['host'],
+  Engine.WssIssuedTokenEntry,
+  Engine.WssSamlTokenEntry,
+  Engine.WssSamlFormEntry,
+  Engine.WssSamlXmlEntry,
+  Engine.StsCredential,
+  Engine.IssuedToken,
+  Engine.BoundIssuedTokens,
+  Engine.SamlVersion,
+  Engine.WsTrustVersion,
+  Engine.IssuedKeyType,
 ];
 
 /** Every type 3.0 renames, under its new name. */

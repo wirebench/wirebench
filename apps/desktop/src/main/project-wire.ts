@@ -329,12 +329,15 @@ function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
     ...(config.defaultPasswordRef !== undefined ? { defaultPasswordRef: config.defaultPasswordRef } : {}),
     ...(config.actor !== undefined ? { actor: config.actor } : {}),
     mustUnderstand: config.mustUnderstand,
-    entries: config.entries.map(toWssEntryWire),
+    // issued-token and saml-token entries have no wire form until the editor learns them.
+    entries: config.entries
+      .filter((entry) => entry.kind !== 'issued-token' && entry.kind !== 'saml-token')
+      .map(toWssEntryWire),
   };
 }
 
 /** One entry on the wire, field by field. */
-function toWssEntryWire(entry: WssEntry): WssEntryWire {
+function toWssEntryWire(entry: Exclude<WssEntry, { kind: 'issued-token' | 'saml-token' }>): WssEntryWire {
   if (entry.kind === 'timestamp') {
     return {
       kind: 'timestamp',
