@@ -2,7 +2,7 @@
  * A SAML token entry's fields: Form (build an assertion) or XML (supply one). The assertion
  * itself never crosses to main as anything but this entry: main builds or reads it at send.
  */
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
@@ -82,6 +82,38 @@ function SigningFields({
         }}
       />
     </>
+  );
+}
+
+/**
+ * A comma-separated values field. The raw text stays local while it is edited (so "Domain " keeps
+ * its space) and is split and trimmed on blur; it re-syncs when the values change from outside.
+ */
+function AttributeValuesInput(props: {
+  readonly label: string;
+  readonly values: readonly string[];
+  readonly onCommit: (values: string[]) => void;
+}) {
+  const joined = props.values.join(', ');
+  const [text, setText] = useState(joined);
+  useEffect(() => {
+    setText(joined);
+  }, [joined]);
+  return (
+    <input
+      aria-label={props.label}
+      placeholder="value, value"
+      className={WSS_FIELD_CLASS}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+      }}
+      onBlur={() => {
+        const values = text.split(',').map((value) => value.trim());
+        props.onCommit(values);
+        setText(values.join(', '));
+      }}
+    />
   );
 }
 
@@ -189,13 +221,10 @@ function FormFields({ entry, onChange }: Omit<Props, 'idPrefix'>) {
                 );
               }}
             />
-            <input
-              aria-label={`Attribute ${String(index + 1)} values`}
-              placeholder="value, value"
-              className={WSS_FIELD_CLASS}
-              value={attribute.values.join(', ')}
-              onChange={(event) => {
-                const values = event.target.value.split(',').map((value) => value.trim());
+            <AttributeValuesInput
+              label={`Attribute ${String(index + 1)} values`}
+              values={attribute.values}
+              onCommit={(values) => {
                 setAttributes(attributes.map((item, at) => (at === index ? { ...item, values } : item)));
               }}
             />

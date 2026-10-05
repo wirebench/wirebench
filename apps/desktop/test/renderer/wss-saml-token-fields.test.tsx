@@ -69,4 +69,21 @@ describe('SamlTokenFields', () => {
       expect.objectContaining({ sign: { keystoreRef: '', signatureAlgorithm: 'rsa-sha256' } }),
     );
   });
+
+  it('keeps typed spaces in attribute values and parses them on blur', () => {
+    installWirebenchApi({});
+    const onChange = vi.fn();
+    const withAttribute: SamlEntry = { ...formEntry, attributes: [{ name: 'groups', values: [''] }] };
+    render(<SamlTokenFields entry={withAttribute} onChange={onChange} idPrefix="e0" />);
+    const input = screen.getByLabelText<HTMLInputElement>('Attribute 1 values');
+    fireEvent.change(input, { target: { value: 'Domain ' } });
+    expect(input.value).toBe('Domain ');
+    fireEvent.change(input, { target: { value: 'Domain Users, Ops' } });
+    expect(input.value).toBe('Domain Users, Ops');
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ attributes: [{ name: 'groups', values: ['Domain Users', 'Ops'] }] }),
+    );
+  });
 });
