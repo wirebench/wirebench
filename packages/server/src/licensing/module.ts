@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { RateLimiter } from '../identity/rate-limit.js';
 import { PRODUCTION_PUBLIC_KEYS } from './keys.js';
+import * as repo from './repo.js';
 import { licenseRoutes } from './routes.js';
 import { createLicenseService } from './service.js';
 
@@ -28,14 +29,15 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
   return {
     name: 'licensing',
     migrationsDir: LICENSING_MIGRATIONS_DIR,
-    // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const service = createLicenseService({ db: ctx.db, publicKeys, now });
+      const serverId = await repo.serverId(ctx.db);
+      const service = createLicenseService({ db: ctx.db, publicKeys, now, serverId });
       ctx.license = service;
       licenseRoutes({
         db: ctx.db,
         publicKeys,
         now,
+        serverId,
         service,
         hooks: ctx.hooks,
         limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),

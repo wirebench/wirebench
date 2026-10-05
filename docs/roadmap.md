@@ -255,7 +255,7 @@ here needs a new parser; each item reuses the schema set, the definition cache o
 - **WS-Trust** (item 7). Request a SAML token from a security token service with a username, a certificate
   or Kerberos, cache it for its lifetime, and place it in the WS-Security header. Federated SOAP estates
   almost always front one.
-- **SAML tokens.** Form and XML variants in outgoing WS-Security; built as part of the WS-Trust pass.
+- **SAML tokens.** Form and XML variants in outgoing WS-Security; shipped with #41 PR 1 (the WS-Trust pass).
 - **OAuth2, Bearer and API keys.** Arrived with the REST client, for REST owners; done for SOAP owners
   2026-09-22 (issue #43, `docs/specs/2026-09-22-soap-owner-auth-design.md`). A SOAP interface, endpoint or
   request now holds any of the six schemes. The project format persists them under `soapOwnerAuthSchema`

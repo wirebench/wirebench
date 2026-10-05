@@ -12,6 +12,13 @@ All notable changes to this project are documented here. The format follows
   fetch can authenticate with your Windows sign-in or `kinit` ticket over HTTP Negotiate, with an
   optional SPN and, on Windows, another account. Kerberos only: nothing falls back to NTLM. The
   WebSocket upgrade and gRPC calls send it preemptively; the CLI and MCP send it too (#40).
+- **SAML tokens in outgoing WS-Security.** Built from a form (SAML 1.1 or 2.0, optionally signed as
+  issuer) or supplied as XML. Token signatures in the HTTP Log are masked (#41).
+- **License binding.** A license can be bound to one server. The server mints an id when its database
+  is first migrated, and a license that carries a different `serverId` is refused as `wrong-server`
+  with a message naming both ids. Licenses without the field keep working on any server. The id shows
+  as the first line of `wirebench-server admin license show` and as *Server id*, with a *Copy* button,
+  on the License tab (#203).
 - **Postman environments and globals.** **Import…** reads Postman environment and globals exports
   (**Import Postman Environment…**, **Import Postman Globals…**). An environment becomes a workspace
   environment, renamed when the name is taken and never made active; globals merge into Globals.

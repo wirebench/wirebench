@@ -13,7 +13,7 @@ import type { Keystore, KeystoreAlias } from '../../../../src/keystore/model.js'
 import type {
   WssEncryptionEntry,
   WssEntry,
-  WssKeyIdentifierType,
+  WssX509KeyIdentifierType,
   WssKeyTransportAlgorithm,
   WssOutgoingConfig,
   WssPart,
@@ -200,7 +200,7 @@ describe('encryptEnvelope', () => {
     expect(result.xml).toContain('aside');
   });
 
-  it.each<WssKeyIdentifierType>([
+  it.each<WssX509KeyIdentifierType>([
     'BinarySecurityToken',
     'IssuerSerial',
     'SubjectKeyIdentifier',

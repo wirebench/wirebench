@@ -20,7 +20,10 @@ export function isXmlBody(text: string, contentType: string | undefined): boolea
   return contentType?.toLowerCase().includes('xml') === true || text.trimStart().startsWith('<');
 }
 
-/** A body as an op returns it: a WS-Security password or a JSON/form secret key masked by pattern. */
+/**
+ * A body as an op returns it: a WS-Security password, SAML token signatures and Kerberos tokens, or a
+ * JSON/form secret key masked by pattern.
+ */
 export function redactBody(text: string, contentType: string | undefined): string {
   return isXmlBody(text, contentType)
     ? redactXml(text, { show: false })

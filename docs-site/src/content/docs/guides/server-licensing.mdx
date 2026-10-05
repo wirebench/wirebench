@@ -66,6 +66,18 @@ wirebench-server admin license remove
 
 `install` exits with code 2 when the file fails its check, and prints the reason.
 
+### Finding the server id
+
+Every server has an id, a lowercase UUID. The server makes it when its database is first migrated, and
+nothing changes it afterwards. To bind a license to this server, give the id on the order form. Find
+it in either place:
+
+- `wirebench-server admin license show` prints `Server id` as its first line, with or without a
+  license installed;
+- the **License** tab shows **Server id** first, with a **Copy** button.
+
+Only server admins can see the id.
+
 ## Expiry
 
 When a license passes its expiry date, it has 30 days of grace. The edition holds during grace, and
@@ -79,6 +91,20 @@ The tab's status reads *No license installed*, *Active*, *Expired, in its grace 
 
 The license is signed. The server checks the signature against a public key built into the server, so
 the check works offline. The server never contacts anyone about its license and sends no usage report.
+
+A license may carry a `serverId`; in the license payload the field is `serverId`, a lowercase UUID. If it does and it differs from this server's id, the license is not
+valid, with the reason `wrong-server`. The message names both ids: *This license was issued for server
+&lt;the id in the license&gt;. This server is &lt;server id&gt;. Ask for a license issued for this server.* Install refuses
+such a file, so it never replaces a working license. A license without a `serverId` works on any server,
+so every license issued before this field existed stays valid.
+
+A bound license needs Wirebench 3.2 or later. An older server does not know the field and
+reports the license as malformed.
+
+The id lives in the database, so a copy of the database carries it. A staging server built from a copy
+of production has the production id and runs the production license. Binding does not prevent that. If
+someone deletes the id row by hand, the server refuses to start rather than make a new id, because a
+new id would void every bound license.
 
 A stored license can stop passing the check. One cause is a server clock set before the license's issue
 date. Another is a server version that no longer carries the key the license was signed with. The

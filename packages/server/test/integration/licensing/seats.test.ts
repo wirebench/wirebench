@@ -9,6 +9,7 @@ import { license, licensingHarness, testKeys } from '../../helpers/licensing.js'
 import { call } from '../../helpers/teams.js';
 
 const keys = testKeys();
+const SERVER_ID = '0b6f3c2e-5d1a-4c7e-9f3b-2a8d4e6c1f90';
 const PASSWORD = 'correct horse battery staple';
 const secretOf = (url: string) => url.slice(url.lastIndexOf('/') + 1);
 
@@ -71,7 +72,12 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
         db: h.db,
         config,
         hooks: h.hooks,
-        license: createLicenseService({ db: h.db, publicKeys: [keys.publicKey], now: () => h.clock.now }),
+        license: createLicenseService({
+          db: h.db,
+          publicKeys: [keys.publicKey],
+          now: () => h.clock.now,
+          serverId: SERVER_ID,
+        }),
       },
       settings: identitySettings(config),
       now: () => h.clock.now,

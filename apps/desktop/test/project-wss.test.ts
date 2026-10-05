@@ -1,10 +1,11 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createProject } from '@wirebench/engine';
+import { createProject, toWssOutgoingConfig } from '@wirebench/engine';
+import { wssEntryWireSchema, type WssEntryWire } from '../src/shared/wire-types.js';
 import { EngineService } from '../src/main/engine-service.js';
 import {
   addWssIncoming,
@@ -191,6 +192,78 @@ describe('ProjectHost WS-Security', () => {
     expect(JSON.stringify(snapshot?.wssOutgoing)).not.toContain('hunter2');
   });
 
+  it('carries issued-token, saml-token and the SamlToken part across engine -> wire -> engine unchanged', async () => {
+    const dir = tempDir('proj');
+    const service = newService();
+    await service.create({ dir, name: 'Demo' });
+    const added = await service.mutate({ kind: 'add-wss-outgoing', name: 'Tokens' });
+    const configId = added.createdWssOutgoingId as string;
+    const entries: WssEntryWire[] = [
+      {
+        kind: 'issued-token',
+        stsUrl: 'https://sts.example/issue',
+        soapVersion: '1.2',
+        trustVersion: '1.3',
+        appliesTo: 'urn:svc',
+        tokenType: '2.0',
+        keyType: 'public-key',
+        proofKeystoreRef: 'ks1',
+        proofAlias: 'proof',
+        credential: { kind: 'username', username: 'bob', passwordRef: 'secret:pw' },
+        requestedLifetimeSeconds: 600,
+        claims: '<wst:Claims/>',
+        tlsKeystoreRef: 'ks2',
+      },
+      {
+        kind: 'saml-token',
+        source: 'form',
+        version: '2.0',
+        issuer: 'urn:i',
+        subject: 'alice',
+        subjectFormat: 'urn:fmt',
+        confirmation: 'holder-of-key',
+        audience: 'urn:aud',
+        lifetimeSeconds: 300,
+        authnContext: 'urn:ctx',
+        attributes: [{ name: 'role', nameFormat: 'urn:nf', values: ['a', 'b'] }],
+        sign: { keystoreRef: 'ks1', alias: 'k', keyPasswordRef: 'secret:kp', signatureAlgorithm: 'rsa-sha1' },
+        proofKeystoreRef: 'ks1',
+        proofAlias: 'proof',
+      },
+      { kind: 'saml-token', source: 'xml', xml: '<saml2:Assertion/>', expandProperties: true },
+      { kind: 'saml-token', source: 'xml', file: 'tokens/a.xml', expandProperties: false },
+      {
+        kind: 'signature',
+        keystoreRef: 'ks1',
+        keyIdentifierType: 'saml-token',
+        signatureAlgorithm: 'rsa-sha256',
+        digestAlgorithm: 'sha256',
+        canonicalization: 'exc-c14n',
+        useSingleCertificate: true,
+        parts: [
+          { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' },
+          { name: 'SamlToken', namespace: '', encode: 'Element', token: true },
+        ],
+      },
+    ];
+    const first = await service.mutate({ kind: 'update-wss-outgoing', configId, patch: { entries } });
+    const openOf = () => (service as unknown as { open: { project: Project } }).open.project;
+    const stored = toWssOutgoingConfig(openOf().wss.outgoing[0] as never).entries;
+
+    const wire = first.project.wssOutgoing[0]?.entries ?? [];
+    expect(wire).toHaveLength(entries.length);
+    for (const entry of wire) {
+      expect(wssEntryWireSchema.safeParse(entry).success).toBe(true);
+    }
+    expect(wire).toEqual(stored);
+
+    // And back: the renderer sends the mirrored entries again.
+    await service.mutate({ kind: 'update-wss-outgoing', configId, patch: { entries: [...wire] } });
+    const reread = toWssOutgoingConfig(openOf().wss.outgoing[0] as never).entries;
+    expect(reread).toEqual(stored);
+    expect(reread).toMatchObject(entries);
+  });
+
   it('builds the send-time WS-Security input, resolving the password inside main', async () => {
     const { service, requestId } = await openWithConfig();
     const wss = await service.wssFor(requestId);
@@ -223,6 +296,109 @@ describe('ProjectHost WS-Security', () => {
       envelope,
     );
     expect(inserted).toContain('<wsu:Expires>');
+  });
+
+  describe('SAML tokens from the project and its properties', () => {
+    const envelope =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+      '<soapenv:Body><Ping/></soapenv:Body></soapenv:Envelope>';
+    const assertion = (issuer: string) =>
+      '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a1" Version="2.0"' +
+      ` IssueInstant="2026-10-05T10:00:00Z"><saml2:Issuer>${issuer}</saml2:Issuer></saml2:Assertion>`;
+
+    async function openWithEntry(entry: WssEntryWire): Promise<{ service: ProjectHost; dir: string }> {
+      const dir = tempDir('proj');
+      const service = newService();
+      await service.create({ dir, name: 'Demo' });
+      const open = (service as unknown as { open: { project: Project } }).open;
+      const added = addWssOutgoing(open.project, { name: 'Tokens' });
+      const withRequest = projectWithRequest(added.project, added.configId);
+      open.project = { ...withRequest, properties: { ...withRequest.properties, issuer: 'urn:expanded' } };
+      await service.mutate({ kind: 'update-wss-outgoing', configId: added.configId, patch: { entries: [entry] } });
+      return { service, dir };
+    }
+
+    it('places a token read from a file in the project folder', async () => {
+      const { service, dir } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        file: 'tokens/a.xml',
+        expandProperties: false,
+      });
+      mkdirSync(join(dir, 'tokens'));
+      writeFileSync(join(dir, 'tokens', 'a.xml'), assertion('urn:from-file'));
+      const secured = await service.previewOutgoingWss('r1', envelope);
+      expect(secured).toContain('urn:from-file');
+    });
+
+    it('refuses a token file outside the project folder with saml-token-file-missing', async () => {
+      const { service, dir } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        file: '../outside.xml',
+        expandProperties: false,
+      });
+      writeFileSync(join(dir, '..', 'outside.xml'), assertion('urn:outside'));
+      dirs.push(join(dir, '..', 'outside.xml'));
+      await expect(service.previewOutgoingWss('r1', envelope)).rejects.toMatchObject({
+        code: 'saml-token-file-missing',
+        details: { file: '../outside.xml' },
+      });
+    });
+
+    it('refuses a missing token file with saml-token-file-missing', async () => {
+      const { service } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        file: 'tokens/none.xml',
+        expandProperties: false,
+      });
+      await expect(service.previewOutgoingWss('r1', envelope)).rejects.toMatchObject({
+        code: 'saml-token-file-missing',
+        details: { file: 'tokens/none.xml' },
+      });
+    });
+
+    it('expands the token against the project properties when it asks to', async () => {
+      const { service } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        xml: assertion('${#Project#issuer}'),
+        expandProperties: true,
+      });
+      const secured = await service.previewOutgoingWss('r1', envelope);
+      expect(secured).toContain('urn:expanded');
+      expect(secured).not.toContain('${');
+    });
+
+    it('refuses a token whose property references nothing resolves', async () => {
+      const { service } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        xml: assertion('${#Project#nope}'),
+        expandProperties: true,
+      });
+      await expect(service.previewOutgoingWss('r1', envelope)).rejects.toMatchObject({
+        code: 'unresolved-properties',
+        details: { unresolved: ['${#Project#nope}'] },
+      });
+    });
+
+    it('lends the same reader and expander to an ad-hoc entry', async () => {
+      const { service, dir } = await openWithEntry({
+        kind: 'timestamp',
+        timeToLiveSeconds: 60,
+        millisecondPrecision: false,
+      });
+      mkdirSync(join(dir, 'tokens'));
+      writeFileSync(join(dir, 'tokens', 'b.xml'), assertion('${#Project#issuer}'));
+      const inserted = await service.insertWssEntry(
+        'r1',
+        { kind: 'saml-token', source: 'xml', file: 'tokens/b.xml', expandProperties: true },
+        envelope,
+      );
+      expect(inserted).toContain('urn:expanded');
+    });
   });
 
   it('writes the configuration to wss/outgoing/<id>.yaml with a passwordRef and no password', async () => {
