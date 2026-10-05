@@ -74,11 +74,17 @@ describe('blankXmlText', () => {
     );
   });
 
+  it('blanks an unterminated credential attribute value or CDATA run to the end of the text', () => {
+    expect(blankXml('<a id="1" token="lit-1')).toEqual({ text: '<a id="1" token="', blanked: ['token'] });
+    expect(blankXml('<a><secret><![CDATA[lit-2')).toEqual({ text: '<a><secret><![CDATA[', blanked: ['secret'] });
+    expect(blankXml('<a token="${t}')).toEqual({ text: '<a token="${t}', blanked: [] });
+  });
+
   it('copies the rest as written from an unterminated tag, attribute, CDATA or comment', () => {
     for (const xml of [
       '<a><token>x</token><b c',
-      '<a><token>x</token><b token="unterminated',
-      '<a><token>x</token><secret><![CDATA[y',
+      '<a><token>x</token><b id="unterminated',
+      '<a><token>x</token><other><![CDATA[y',
       '<a><token>x</token><!-- <secret>y</secret>',
     ]) {
       const { text } = blankXml(xml);
@@ -101,6 +107,17 @@ describe('blankXmlText', () => {
       expect(
         timed(() => blankXml(input)),
         unit,
+      ).toBeLessThan(200);
+    }
+  });
+
+  it('is linear in a long element name times many runs below it', () => {
+    const name = 'a'.repeat(10_000);
+    for (const runs of ['x<b/>'.repeat(50_000), 'x<!---->'.repeat(50_000)]) {
+      const input = `<${name}>${runs}`;
+      expect(
+        timed(() => blankXml(input)),
+        runs.slice(0, 8),
       ).toBeLessThan(200);
     }
   });

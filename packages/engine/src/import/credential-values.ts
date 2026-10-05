@@ -280,11 +280,14 @@ function startsName(c: string): boolean {
  * comments, processing instructions and `<!DOCTYPE …>` (with an internal subset up to `]>`) are
  * skipped; a quoted attribute value jumps to its closing quote, so a `>` inside it is safe; the
  * element names are kept on a stack that tolerates a mismatched end tag by closing the innermost.
- * An unterminated construct ends the scan with the rest of the text copied as written. Pure.
+ * An unterminated construct ends the scan with the rest of the text copied as written, except that
+ * an unterminated credential attribute value or CDATA run is handed over first. Pure.
  */
 export function scanXml(text: string, onLiteral: (name: string, value: string) => string | undefined): string {
   const out: string[] = [];
   const stack: string[] = [];
+  /** Beside `stack`: whether each element's name looks like a credential, decided once when it opens. */
+  const credential: boolean[] = [];
   let copied = 0;
   /** Hands over `text[start, end)` under `name` when it is a literal credential. */
   const visit = (name: string, start: number, end: number): void => {
@@ -297,7 +300,7 @@ export function scanXml(text: string, onLiteral: (name: string, value: string) =
   };
   const visitRun = (start: number, end: number): void => {
     const name = stack[stack.length - 1];
-    if (end > start && name !== undefined && isCredentialName(localName(name))) visit(name, start, end);
+    if (end > start && name !== undefined && credential[credential.length - 1] === true) visit(name, start, end);
   };
   const n = text.length;
   let i = 0;
@@ -324,7 +327,11 @@ export function scanXml(text: string, onLiteral: (name: string, value: string) =
       i = end + 3;
     } else if (text.startsWith('<![CDATA[', lt)) {
       const end = text.indexOf(']]>', lt + 9);
-      if (end === -1) return finish(false);
+      if (end === -1) {
+        // An unterminated CDATA under a credential element still holds the credential.
+        visitRun(lt + 9, n);
+        return finish(false);
+      }
       visitRun(lt + 9, end);
       i = end + 3;
     } else if (next === '?') {
@@ -358,6 +365,7 @@ export function scanXml(text: string, onLiteral: (name: string, value: string) =
       const end = text.indexOf('>', lt + 2);
       if (end === -1) return finish(false);
       stack.pop();
+      credential.pop();
       i = end + 1;
     } else {
       let j = lt + 1;
@@ -389,9 +397,15 @@ export function scanXml(text: string, onLiteral: (name: string, value: string) =
         const quote = text.charAt(j);
         let valueStart = j;
         let valueEnd: number;
+        const declaration = attribute === 'xmlns' || attribute.startsWith('xmlns:');
+        const secret = !declaration && isCredentialName(localName(attribute));
         if (quote === '"' || quote === "'") {
           const close = text.indexOf(quote, j + 1);
-          if (close === -1) return finish(false);
+          if (close === -1) {
+            // An unterminated value runs to the end of the text, and is still a credential.
+            if (secret) visit(attribute, j + 1, n);
+            return finish(false);
+          }
           valueStart = j + 1;
           valueEnd = close;
           j = close + 1;
@@ -399,10 +413,12 @@ export function scanXml(text: string, onLiteral: (name: string, value: string) =
           while (j < n && !isSpace(text.charAt(j)) && text.charAt(j) !== '>') j += 1;
           valueEnd = j;
         }
-        const declaration = attribute === 'xmlns' || attribute.startsWith('xmlns:');
-        if (!declaration && isCredentialName(localName(attribute))) visit(attribute, valueStart, valueEnd);
+        if (secret) visit(attribute, valueStart, valueEnd);
       }
-      if (!selfClosing) stack.push(element);
+      if (!selfClosing) {
+        stack.push(element);
+        credential.push(isCredentialName(localName(element)));
+      }
       i = j + 1;
     }
     run = i;
