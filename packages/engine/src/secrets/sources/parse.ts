@@ -105,7 +105,10 @@ const kindSchemas = {
   }),
   aws: z.strictObject({
     kind: z.literal('aws'),
-    secretId: field(),
+    secretId: field(/^[A-Za-z0-9/_+=.@:-]+$/, 'must be a secret name or ARN').refine(
+      (value) => !value.includes('://'),
+      'must be a secret name or ARN',
+    ),
     jsonKey: field().optional(),
     region: field(/^[a-z0-9-]+$/, 'must be lower-case letters, digits and "-"').optional(),
     profile: field(SLUG).optional(),
@@ -148,6 +151,9 @@ export function parseSecretSource(raw: unknown): SharedSecretSource {
   return invalid(raw, fieldName !== undefined ? `${fieldName} ${message}` : message, fieldName);
 }
 
+/** Names that would set or shadow a prototype member of the plain-object maps. */
+const FORBIDDEN_NAMES: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
 function parseMap(
   raw: unknown,
   allowNone: boolean,
@@ -163,14 +169,16 @@ function parseMap(
   for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
     let entry: LocalSecretSource;
     const isNone = typeof value === 'object' && value !== null && (value as Record<string, unknown>)['kind'] === 'none';
-    if (!SECRET_NAME_PATTERN.test(name)) {
+    if (FORBIDDEN_NAMES.has(name)) {
+      entry = invalid(value, `"${name}" is not a usable name`);
+    } else if (!SECRET_NAME_PATTERN.test(name)) {
       entry = invalid(value, 'the name must be letters, digits and "_", not starting with a digit');
     } else if (allowNone && isNone) {
       entry = Object.keys(value).length === 1 ? { kind: 'none' } : invalid(value, 'none takes no other field');
     } else {
       entry = parseSecretSource(value);
     }
-    sources[name] = entry;
+    Object.defineProperty(sources, name, { value: entry, enumerable: true, writable: true, configurable: true });
     if (entry.kind === 'invalid') {
       issues.push({ name, reason: entry.reason, ...(entry.field !== undefined ? { field: entry.field } : {}) });
     }

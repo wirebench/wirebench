@@ -32,10 +32,24 @@ describe('parseSecretSource', () => {
     [{ kind: 'keychain', service: 'a\nb', account: 'me' }, 'service'],
     [{ kind: 'gcp', secret: 'x'.repeat(513) }, 'secret'],
     [{ kind: 'azure', vault: '', name: 'n' }, 'vault'],
+    [{ kind: 'aws', secretId: 'file:///etc/passwd' }, 'secretId'],
+    [{ kind: 'aws', secretId: 'fileb://x' }, 'secretId'],
+    [{ kind: 'aws', secretId: 'https://evil.example/x' }, 'secretId'],
+    [{ kind: 'aws', secretId: 'http://x' }, 'secretId'],
   ])('refuses %j on field %s', (raw, field) => {
     const parsed = parseSecretSource(raw);
     expect(parsed.kind).toBe('invalid');
     expect(parsed.kind === 'invalid' && parsed.field).toBe(field);
+  });
+
+  it('accepts an aws secret name and a full ARN', () => {
+    expect(parseSecretSource({ kind: 'aws', secretId: 'prod/api' }).kind).toBe('aws');
+    expect(
+      parseSecretSource({
+        kind: 'aws',
+        secretId: 'arn:aws:secretsmanager:eu-west-1:123456789012:secret:prod/api-AbCdEf',
+      }).kind,
+    ).toBe('aws');
   });
 
   it('refuses an unknown kind, a missing field and an unknown field', () => {
@@ -62,6 +76,16 @@ describe('parseSecretSources', () => {
     expect(sources['bad']?.kind).toBe('invalid');
     expect(sources['not a name']?.kind).toBe('invalid');
     expect(issues.map((issue) => issue.name).sort()).toEqual(['bad', 'not a name']);
+  });
+
+  it('reports a prototype name as invalid and never sets the prototype', () => {
+    const raw: unknown = JSON.parse(
+      '{"__proto__": {"kind":"gcp","secret":"s"}, "constructor": {"kind":"gcp","secret":"s"}}',
+    );
+    const { sources, issues } = parseSecretSources(raw);
+    expect(issues.map((issue) => issue.name).sort()).toEqual(['__proto__', 'constructor']);
+    expect(Object.getOwnPropertyDescriptor(sources, '__proto__')?.value).toMatchObject({ kind: 'invalid' });
+    expect(Object.getPrototypeOf(sources)).toBe(Object.prototype);
   });
 
   it('treats an absent map as empty and a non-mapping as one issue', () => {

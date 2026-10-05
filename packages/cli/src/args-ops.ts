@@ -93,7 +93,9 @@ export function parseCall(rest: readonly string[], values: OptionValues): CallAr
   refuseForeign(values, CALL_FLAGS, 'wirebench call');
   const [operation, ...extra] = rest;
   if (operation === undefined || extra.length > 0) {
-    throw new UsageError('usage: wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema]');
+    throw new UsageError(
+      'usage: wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]',
+    );
   }
   const historyDir = str(values, 'history-dir');
   const args = str(values, 'args');
@@ -172,10 +174,10 @@ wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <t
                        result exactly), --history-dir <dir> (default: the desktop's History folder).
                        Exit 0; 1 for a failed assertion or an invalid message; 2 for a refused call;
                        3 for a run error.
-wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--project <dir>]
+wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources] [--project <dir>]
                        Calls one contract operation with JSON arguments, as its MCP tool does, records it
                        in History, and prints the response.
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]
                        Serves these capabilities as MCP tools over stdio, or on 127.0.0.1 with --http
                        (see wirebench mcp --help).`;
 
@@ -213,7 +215,7 @@ Exit 1 when the message is invalid; a REST body that could not be checked prints
 
 <history-id|file>      A file when one exists at that path, else a History id.
 XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
-  call: `wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--project <dir>] [--history-dir <dir>] [--json]
+  call: `wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources] [--project <dir>] [--history-dir <dir>] [--json]
 
 <operation>            An operations reference (Interface/Operation, API/operationId, API/METHOD /path) or
                        the tool name operations shows.
@@ -221,9 +223,10 @@ XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
 -e, --env <name>       The environment; required when the project defines any.
 --schema               Print the arguments' JSON Schema and send nothing.
 Builds the request from the arguments, sends it under the interface's or API's endpoint, auth and
-secrets, records it in History, and prints the response (--json: the result as JSON). Exit 0 on any
+secrets, records it in History, and prints the response (--json: the result as JSON).
+--no-secret-sources, --trust-secret-sources, --trust-secret-sources-hash <hash> are as for send. Exit 0 on any
 response, a fault included; 2 for a refused call or bad arguments; 3 when nothing answered.`,
-  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
+  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]
 
 Serves the project's tools to an MCP client, over stdio unless --http is given: import, operations, generate, send,
 validate, query, history_list, history_diff, and one tool per operation of the imported contracts. stdout carries
@@ -238,6 +241,10 @@ only protocol frames.
                        made at start and printed once to stderr.
 --tools <a,b|none>     The interfaces and APIs whose operations are tools (default: all, at most 128
                        tools); none serves the tools above only.
+--no-secret-sources    Do not read the workspace's secret sources; secrets come from WIREBENCH_SECRET_<NAME> only.
+--trust-secret-sources, --trust-secret-sources-hash <hash>
+                       Run the workspace's shared secret sources without asking: all of them, or only the
+                       set whose hash this is (secrets list prints it).
 Secrets come from WIREBENCH_SECRET_<NAME> variables in the server's environment.`,
   history: `${USAGE.history_list} [--project <dir>] [--history-dir <dir>] [--json]
 ${USAGE.history_diff} [--project <dir>] [--history-dir <dir>] [--json]

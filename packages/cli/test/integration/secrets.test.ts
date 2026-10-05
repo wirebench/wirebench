@@ -205,6 +205,20 @@ describe('${secret:name} tokens', () => {
     }
   });
 
+  it('secrets list shows a token named like an object member as missing, not mapped', async () => {
+    const viaName = join(dir, '..', `${dir.split(/[\\/]/).pop()!}-member`);
+    await cp(dir, viaName, { recursive: true });
+    try {
+      const file = join(viaName, 'apis', 'demo', 'requests', 'secure.request.yaml');
+      await writeFile(file, (await readFile(file, 'utf8')).replace('${secret:demo_basic}', '${secret:constructor}'));
+      const { code, stdout } = await runCli(['secrets', 'list', viaName, '-e', 'local', 'demo/secure']);
+      expect(code).toBe(3);
+      expect(stdout).toMatch(/WIREBENCH_SECRET_CONSTRUCTOR\s+missing\s+—\s/);
+    } finally {
+      await rm(viaName, { recursive: true, force: true });
+    }
+  });
+
   it('secrets list does not count a variable the run never reads as set', async () => {
     // WIREBENCH_SECRET_SECRET_DEMO_BASIC is what the pseudo-ref would map to by the ref rule.
     const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure'], {

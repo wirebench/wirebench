@@ -36,7 +36,7 @@ export async function secretsListCommand(args: SecretsListArgs, io: CliIo): Prom
     const variables = envVariablesFor(need);
     const isSet = variables.some((variable) => (io.env[variable] ?? '').length > 0);
     const name = parseSecretPseudoRef(need.ref);
-    const mapped = name !== undefined ? shared[name] : undefined;
+    const mapped = name !== undefined && Object.hasOwn(shared, name) ? shared[name] : undefined;
     const source = isSet
       ? 'env'
       : mapped === undefined

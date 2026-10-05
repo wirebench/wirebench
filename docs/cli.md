@@ -763,7 +763,8 @@ you what to pass.
 
 On stdio, stdout carries protocol frames only; the startup line and every warning go to stderr.
 The server ends when stdin closes or when the client closes the transport. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the server's
-own environment, as for `run`, are masked in every result, and are never an input of any tool. Every
+own environment and from the workspace's secret sources (subject to `--no-secret-sources`,
+`--trust-secret-sources` and `--trust-secret-sources-hash`, as for `run`), are masked in every result, and are never an input of any tool. Every
 `WIREBENCH_SECRET_*` value of 8 characters or more that the server was started with is masked in every
 result, not only the ones a call used.
 
