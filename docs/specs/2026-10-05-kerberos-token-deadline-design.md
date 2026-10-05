@@ -126,7 +126,7 @@ async function bounded<T>(
 
 | Path | Limit passed to the seam | Signal | After the token |
 | --- | --- | --- | --- |
-| SOAP/REST, `kerberosHandshake` | `remaining()` for the context; `remaining()` again for `verify` | `request.signal` | leg 2 runs with `Math.max(1, remaining())` as today |
+| SOAP/REST, `kerberosHandshake` | `remaining()` for the context; `Math.max(1, remaining())` for `verify`, as the legs | `request.signal` | leg 2 runs with `Math.max(1, remaining())` as today |
 | WebSocket, `connectWs` | the handshake timeout | `connectWs`'s `signal` | the session's handshake timeout is reduced by the time the token took, so the token and the upgrade together never exceed it |
 | gRPC, `sendGrpc` | `input.timeoutMs` | `input.signal` | the deadline timer and the `grpc-timeout` header use what is left of `input.timeoutMs` |
 | Definition fetch, each hop | `TIMEOUT_MS` | the fetch's `signal` | the hop's fetch runs with what is left of `TIMEOUT_MS` |
