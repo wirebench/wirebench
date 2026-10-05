@@ -41,6 +41,18 @@ describe('redactXml on security tokens', () => {
     expect(redactXml(x509)).toContain('Y2VydA==');
   });
 
+  it("masks a proof token's binary secret and cipher value, keeping the markup", () => {
+    const proof =
+      '<wst:RequestedProofToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
+      '<wst:BinarySecret>S0VZQllURVM=</wst:BinarySecret></wst:RequestedProofToken>';
+    const out = redactXml(proof);
+    expect(out).not.toContain('S0VZQllURVM=');
+    expect(out).toContain(`<wst:BinarySecret>${REDACTED_XML_MARKER}</wst:BinarySecret></wst:RequestedProofToken>`);
+    const wrapped =
+      '<wst:RequestedProofToken xmlns:wst="x" xmlns:xenc="y"><xenc:CipherValue>cHJvb2Y=</xenc:CipherValue></wst:RequestedProofToken>';
+    expect(redactXml(wrapped)).not.toContain('cHJvb2Y=');
+  });
+
   it('masks nothing when show is set', () => {
     expect(redactXml(SIGNED, { show: true })).toBe(SIGNED);
   });

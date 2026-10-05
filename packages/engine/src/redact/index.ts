@@ -198,8 +198,8 @@ function isPasswordDigest(openTag: string): boolean {
 
 /** Open tags of the token containers whose secrets are masked (any prefix). */
 const TOKEN_OPEN_RE = /<(?:[\w-]+:)?(Assertion|EncryptedAssertion|RequestedProofToken)\b/g;
-/** Values inside a token that make it usable: its signature, or its ciphertext. */
-const TOKEN_SECRET_RE = /<((?:[\w-]+:)?(?:SignatureValue|CipherValue))\b/g;
+/** Values inside a token that make it usable: its signature, its ciphertext, or a proof key. */
+const TOKEN_SECRET_RE = /<((?:[\w-]+:)?(?:SignatureValue|CipherValue|BinarySecret))\b/g;
 /** A BinarySecurityToken's open tag start; the ValueType is tested on the whole tag afterwards. */
 const BST_OPEN_RE = /<((?:[\w-]+:)?BinarySecurityToken)\b/g;
 
