@@ -19,3 +19,4 @@ git-worktrees/
 release
 .serena/
 packages/*/LICENSE
+apps/desktop/build-resources/
