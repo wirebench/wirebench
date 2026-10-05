@@ -304,6 +304,13 @@ export function redactSecurityTokens(text: string): string {
     if (tagEnd === -1) {
       break;
     }
+    if (text.charAt(tagEnd - 1) === '/') {
+      // An empty container holds nothing to mask; looking for its close tag would swallow the
+      // next real token's and leave that one's secrets showing.
+      out += text.slice(from, tagEnd + 1);
+      from = tagEnd + 1;
+      continue;
+    }
     const end = closeOf(text, tagEnd + 1, found[1] ?? 'Assertion');
     if (end === -1) {
       break;

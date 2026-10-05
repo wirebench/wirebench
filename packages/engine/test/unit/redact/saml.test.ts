@@ -67,10 +67,26 @@ describe('redactXml on security tokens', () => {
     expect(redactXml(SIGNED, { show: true })).toBe(SIGNED);
   });
 
-  it('stays linear on an unclosed assertion in a large response', () => {
+  it('masks a signed assertion that follows a self-closing one', () => {
+    const out = redactXml(`<saml2:Assertion/>${SIGNED}`);
+    expect(out).not.toContain('c2lnbmF0dXJl');
+    expect(out.startsWith('<saml2:Assertion/>')).toBe(true);
+    expect(out).toContain('<saml2:NameID>alice</saml2:NameID>');
+  });
+
+  it('masks an unprefixed assertion', () => {
+    const unprefixed =
+      '<Assertion xmlns="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a2"><Issuer>urn:sts</Issuer>' +
+      '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo/><SignatureValue>dW5wcmVmaXhlZA==</SignatureValue>' +
+      '</Signature></Assertion>';
+    const out = redactXml(unprefixed);
+    expect(out).not.toContain('dW5wcmVmaXhlZA==');
+    expect(out).toContain(`<SignatureValue>${REDACTED_XML_MARKER}</SignatureValue>`);
+  });
+
+  it('leaves an unclosed assertion in a large response as it is', () => {
+    // Its timing is gated in test/perf/redact-saml.perf.test.ts.
     const text = '<saml2:Assertion>' + '<saml2:Assertion>'.repeat(2000) + 'x'.repeat(256 * 1024);
-    const started = performance.now();
-    redactXml(text);
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(redactXml(text)).toBe(text);
   });
 });
