@@ -25,7 +25,7 @@ import type {
 } from '@wirebench/engine';
 import { ProjectError } from '@wirebench/engine';
 import type { WsApiPatchWire, WsRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
-import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
+import { nextApiOrder, takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
 /** What a mutation produced: the next model, and the entity it created when it created one. */
 export interface WsMutationResult {
@@ -183,7 +183,7 @@ export function addWsApi(project: Project, input: { readonly name: string; reado
   const api = createWsApi(input.name, {
     slug: uniqueSlug(input.name, takenApiSlugs(project)),
     ...(input.url !== undefined ? { url: input.url } : {}),
-    order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+    order: nextApiOrder(project),
   });
   return { project: { ...project, wsApis: [...project.wsApis, api] }, createdId: api.id };
 }

@@ -12,7 +12,7 @@ import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor, uniq
 import type { AuthConfig, GrpcApi, GrpcFolder, GrpcRequestDef, GrpcRequestSettings, Project } from '@wirebench/engine';
 import { ProjectError } from '@wirebench/engine';
 import type { GrpcApiPatchWire, GrpcRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
-import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
+import { nextApiOrder, takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
 /** What a mutation produced: the next model, and the entity it created when it created one. */
 export interface GrpcMutationResult {
@@ -164,7 +164,7 @@ export function addGrpcApi(
     slug: uniqueSlug(input.name, takenApiSlugs(project)),
     target: input.target,
     ...(input.tls !== undefined ? { tls: input.tls } : {}),
-    order: project.interfaces.length + project.apis.length + project.grpcApis.length,
+    order: nextApiOrder(project),
   });
   return { project: { ...project, grpcApis: [...project.grpcApis, api] }, createdId: api.id };
 }

@@ -428,6 +428,15 @@ export function takenApiSlugs(project: Project, exceptApiId?: string): Set<strin
   return new Set([...takenContainerSlugs(others, 'apis'), ...takenContainerSlugs(others, 'interfaces')]);
 }
 
+/**
+ * The order a newly placed API takes: after every interface and every API the project already has,
+ * of all four kinds. The explorer sorts them all together, so every placement must count them all,
+ * or a new API can take an order an existing one already has.
+ */
+export function nextApiOrder(project: Project): number {
+  return project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length;
+}
+
 /** Adds an API to the project, ordered after every interface and API it already has. */
 export function addApi(
   project: Project,
@@ -436,7 +445,7 @@ export function addApi(
   const api = createApi(input.name, {
     slug: uniqueSlug(input.name, takenApiSlugs(project)),
     baseUrl: input.baseUrl,
-    order: project.interfaces.length + project.apis.length,
+    order: nextApiOrder(project),
   });
   return { project: { ...project, apis: [...project.apis, api] }, createdId: api.id };
 }

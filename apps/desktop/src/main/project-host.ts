@@ -195,7 +195,14 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import { findRestFolder, findRestRequest, mapFolder, restApiOwning, takenApiSlugs } from './project-rest-mutations.js';
+import {
+  findRestFolder,
+  findRestRequest,
+  mapFolder,
+  nextApiOrder,
+  restApiOwning,
+  takenApiSlugs,
+} from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
 import {
   addWebhookGroup,
@@ -1806,7 +1813,7 @@ export class ProjectHost {
     const api: GrpcApi = {
       ...input.api,
       slug,
-      order: open.project.interfaces.length + open.project.apis.length + open.project.grpcApis.length,
+      order: nextApiOrder(open.project),
       definition: {
         kind: input.kind === 'proto' ? 'proto' : 'reflection',
         source: input.source,
@@ -2579,7 +2586,7 @@ export class ProjectHost {
       environmentNames: new Set(open.project.environments.map((environment) => environment.name)),
       environmentSlugs: new Set(open.project.environments.map((environment) => environment.slug)),
       propertyNames: new Set(Object.keys(open.project.properties)),
-      firstInterfaceOrder: open.project.interfaces.length + open.project.apis.length + open.project.grpcApis.length,
+      firstInterfaceOrder: nextApiOrder(open.project),
       firstEnvironmentOrder: open.project.environments.length,
     });
 
@@ -2711,7 +2718,7 @@ export class ProjectHost {
     const api: WsApi = {
       ...input.api,
       slug: uniqueSlug(input.api.name, takenApiSlugs(project)),
-      order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+      order: nextApiOrder(project),
     };
     open.project = { ...project, wsApis: [...project.wsApis, api] };
     open.dirty = true;
@@ -2739,7 +2746,7 @@ export class ProjectHost {
     const api: GrpcApi = {
       ...input.api,
       slug: uniqueSlug(input.api.name, takenApiSlugs(project)),
-      order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+      order: nextApiOrder(project),
     };
     open.project = { ...project, grpcApis: [...project.grpcApis, api] };
     open.dirty = true;
@@ -2922,7 +2929,7 @@ export class ProjectHost {
     const api: RestApi = {
       ...input.api,
       slug,
-      order: open.project.interfaces.length + open.project.apis.length,
+      order: nextApiOrder(open.project),
       definition: {
         source: input.source,
         cache,
@@ -2980,7 +2987,7 @@ export class ProjectHost {
     const api: WsApi = {
       ...input.api,
       slug,
-      order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+      order: nextApiOrder(project),
       definition: {
         kind: 'asyncapi',
         source: input.source,

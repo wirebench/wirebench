@@ -4,7 +4,14 @@
  * inside its own API.
  */
 import { describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest, createProject, ProjectError } from '@wirebench/engine';
+import {
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
+  createProject,
+  createWsApi,
+  ProjectError,
+} from '@wirebench/engine';
 import type { GrpcApi, GrpcRequestDef, Project } from '@wirebench/engine';
 import {
   addGrpcApi,
@@ -23,6 +30,7 @@ import {
   updateGrpcRequest,
   withGrpcPatch,
 } from '../src/main/project-grpc-mutations.js';
+import { addApi } from '../src/main/project-rest-mutations.js';
 import { applyChange } from '../src/main/project-mutations.js';
 
 /** A project with one gRPC API: a root request and a `Greeter` folder with two requests. */
@@ -235,3 +243,17 @@ function updateGrpcRequestAssertions(project: Project, assertions: NonNullable<G
     ],
   };
 }
+
+describe('the order a new API takes', () => {
+  it('counts the WebSocket APIs, so a gRPC or REST API never shares an order with one', () => {
+    const project: Project = {
+      ...createProject('Mixed', { id: 'p1' }),
+      wsApis: [createWsApi('Chat', { id: 'w1', order: 0 })],
+    };
+    const withGrpc = addGrpcApi(project, { name: 'Pets', target: 'localhost:50051' }).project;
+    const withRest = addApi(withGrpc, { name: 'Shop', baseUrl: '' }).project;
+
+    const orders = [...withRest.wsApis, ...withRest.grpcApis, ...withRest.apis].map((api) => api.order);
+    expect(orders).toEqual([0, 1, 2]);
+  });
+});
