@@ -1,6 +1,6 @@
 # Secrets from external managers — design
 
-**Issue:** #37 · **Date:** 2026-10-05 · **Status:** approved 2026-10-05
+**Issue:** #37 · **Date:** 2026-10-05 · **Status:** approved 2026-10-05; amended with the plan (see _Amendments_)
 
 Builds on: [ADR-0020](../adr/0020-secret-sources-run-the-managers-own-cli.md) (the CLI-not-SDK ruling),
 [ADR-0004](../adr/0004-secrets-outside-project-files.md) (secrets outside project files),
@@ -161,8 +161,9 @@ Node-only. Of these files, only `parse.ts` may be reachable from `@wirebench/eng
 - **Desktop:** the approval dialog lists every shared name with its kind and locator fields, and marks entries
   added, changed or removed since the mapping in `secretSourcesApproved`. Approve writes the hash and the
   mapping; Cancel writes nothing. The send is not retried automatically.
-- **CLI:** `--trust-secret-sources` trusts the current shared mapping. `--trust-secret-sources=<hash>` trusts it
-  only if the hash matches; otherwise every shared entry is untrusted, and the error prints the current hash.
+- **CLI:** `--trust-secret-sources` trusts the current shared mapping. `--trust-secret-sources-hash <hash>` trusts
+  it only if the hash matches; otherwise every shared entry is untrusted, and the error prints the current hash
+  (amendment A2).
   The MCP server takes the same option at start-up.
 
 ### D5. Errors
@@ -210,7 +211,7 @@ warnings, without spawning anything.
 - `wirebench run`, the ops layer and the MCP server wrap `createEnvSecrets` with `sourceGetter` when the project
   sits in a workspace with a shared mapping; `onValue` is the env-secrets recorder. The cache lives for the
   process.
-- Flags: `--no-secret-sources` and `--trust-secret-sources[=<hash>]`.
+- Flags: `--no-secret-sources`, `--trust-secret-sources` and `--trust-secret-sources-hash <hash>` (A2).
 - `wirebench secrets list` gains a Source column (`env`, a kind, or `—`) and a Trusted column, and prints the
   mapping hash.
 
@@ -256,12 +257,49 @@ warnings, without spawning anything.
 - Wirebench writes no value to disk, and no IPC reply carries one.
 - `pnpm check` is green, and of the new modules only `parse.ts` is reachable from `engine/detect`.
 
+## Amendments (2026-10-05, with the plan)
+
+Made while writing `docs/plans/2026-10-05-secret-sources-plan.md`, from facts in the code.
+
+- **A1. Windows `.cmd` wrappers are unsupported in v1.** On Windows, `az` and `gcloud` install as
+  `az.cmd` and `gcloud.cmd`. Node refuses to `execFile` a `.cmd` or `.bat` without a shell
+  (CVE-2024-27980), and a shell is ruled out (ADR-0020). Tool discovery on win32 therefore accepts only
+  `.exe`.
+  - A kind whose tool is found only as `.cmd` or `.bat` is `secret-source-unsupported`, with a
+    message naming the wrapper.
+  - `vault`, `aws` and `op` ship `.exe` and work on Windows.
+  - Cost if wrong: Azure and GCP users on Windows map those secrets locally to another kind until a
+    safe launcher is designed.
+- **A2. The CLI trust flag is two flags.** Node's `parseArgs` cannot take a string option with an
+  optional value. The flags are:
+  - `--trust-secret-sources`: trust the current shared mapping.
+  - `--trust-secret-sources-hash <hash>`: trust it only if its hash matches.
+
+  Passing both is a usage error.
+- **A3. There is no workspace settings screen.** The Secret Sources table is its own dialog. It opens
+  from a new command, "Secret Sources…" (`workspace.secretSources`, category Workspace), from the
+  untrusted toast, and from the secret token dialog.
+- **A4. A toast holds one action.** `secret-missing` keeps "Set value…". The "Map to a source…" path
+  is a link inside the secret token dialog, which opens the Secret Sources dialog with the name filled
+  in.
+- **A5. Preferences docs are hand-written.** `secrets.sourceCacheSeconds` is documented in
+  `docs-site/src/content/docs/guides/preferences.mdx`. There is no generator.
+- **A6. Validation is done in main for the renderer.** The renderer must not import zod schemas
+  (the renderer wire-types CSP trap). `secretSources.setShared` and `setLocal` validate and return
+  issues instead. `parse.ts` still has no `node:` import, but nothing in the renderer imports it.
+- **A7. An invalid shared entry is kept, not dropped.** It loads as `{ kind: 'invalid', raw, reason }`
+  and is written back as `raw`. A send that needs it fails with `secret-source-invalid` rather than
+  falling through to the local store (D2, "no silent fallback").
+- **A8. `Workspace.secretSources` is optional** (absent means none), so existing constructors of
+  `Workspace` need no change.
+
 ## Docs
 
 - `docs-site/src/content/docs/guides/secrets.mdx` gains a "Secrets from external managers" section: the
   mapping, one example per kind, the resolution order, trust and approval, and the errors.
-- CLI reference: `--no-secret-sources`, `--trust-secret-sources[=<hash>]`, and the `secrets list` columns.
-- Generated preferences reference: `secrets.sourceCacheSeconds`.
+- CLI reference: `--no-secret-sources`, `--trust-secret-sources`, `--trust-secret-sources-hash`, and the
+  `secrets list` columns.
+- Preferences guide: `secrets.sourceCacheSeconds` (A5).
 - ADR-0020, `docs/roadmap.md` item 6, and the CHANGELOG.
 
 ## Delivery
