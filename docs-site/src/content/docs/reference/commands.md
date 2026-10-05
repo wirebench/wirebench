@@ -48,6 +48,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | --- | --- | --- |
 | Import… | <kbd>⌘I</kbd> | <kbd>Ctrl+I</kbd> |
 | Import Legacy SOAP Project… | — | — |
+| Import OpenCollection… | — | — |
 | REST: Import OpenAPI… | <kbd>⌘⇧I</kbd> | <kbd>Ctrl+Shift+I</kbd> |
 | REST: Import Postman Collection… | — | — |
 | REST: Import Postman Environment… | — | — |

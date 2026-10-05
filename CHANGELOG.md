@@ -26,6 +26,14 @@ All notable changes to this project are documented here. The format follows
   those environments too; **Import HTTP Client Environments…** imports them on their own. Private
   values and credential-named literals become secrets, and an imported environment is never made
   active (#64).
+- **OpenCollection.** **Import…** reads OpenCollection 1.x YAML (**Import OpenCollection…**), as one
+  document or as a folder picked by its `opencollection.yml`. HTTP and GraphQL items become a REST
+  API, gRPC items a gRPC API and WebSocket items a WebSocket API, with their folders. Variables
+  become project properties and environments workspace environments, never made active; secret and
+  credential-named values become secrets. Scripts are kept as text under `imported-scripts/` and
+  never run, status, response-time and JSON body assertions become request assertions, and a folder
+  collection's gRPC API gets the `.proto` files it names. A folder is read without following links,
+  up to 5,000 files and 50 MB (#64).
 - **Response examples.** A REST request can keep recorded responses as examples, up to 5 from a HAR
   import, one per status. The response pane's **Examples** menu shows one read-only under a banner,
   and **Delete example** removes it (#64).

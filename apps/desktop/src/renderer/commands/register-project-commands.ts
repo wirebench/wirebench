@@ -31,6 +31,12 @@ export function registerProjectCommands(): void {
       ui().openImportDialog('legacy-soap-project');
     },
   });
+  registerCommand({
+    ...catalogEntry('definition.importOpenCollection'),
+    run: () => {
+      ui().openImportDialog('opencollection');
+    },
+  });
   // `Mod+S` saves the tab in front of you; saving every project moved up to `Mod+Alt+S`. Both are
   // manual saves, so both review the project for plain-text secrets before writing.
   registerCommand({

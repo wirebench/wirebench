@@ -11,6 +11,7 @@
  * - HAR 1.1 / 1.2 captures (recorded traffic), as one REST API per origin
  * - `.http` request files, as a REST API (and a WebSocket one), with the environment files beside them
  * - `.http` client environment files on their own, as workspace environments
+ * - OpenCollection YAML, as one document or as a directory picked by its root `opencollection.yml`
  *
  * Provides URL, File (with drag-and-drop), and Paste input sources,
  * automatic format detection with manual override, target project selection,
@@ -27,6 +28,7 @@ import type {
   ApiImportHarResponse,
   ApiImportHttpFileResponse,
   ApiImportOpenApiResponse,
+  ApiImportOpenCollectionResponse,
   AsyncApiImportSummaryWire,
   AuthConfigWire,
   EngineProgressEvent,
@@ -155,7 +157,8 @@ export type UnifiedImportResult =
   | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string }
   | { readonly kind: 'variables'; readonly summary: ImportVariablesSummaryWire; readonly reportText: string }
   | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses }
-  | { readonly kind: 'http-file'; readonly value: ApiImportHttpFileResponse };
+  | { readonly kind: 'http-file'; readonly value: ApiImportHttpFileResponse }
+  | { readonly kind: 'opencollection'; readonly value: ApiImportOpenCollectionResponse };
 
 /**
  * Formats that land in the workspace, not in a project: a Postman environment or a `.http` client
@@ -181,14 +184,24 @@ const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([
   'har',
   'http-file',
   'http-env',
+  'opencollection',
   'legacy-soap-project',
 ]);
 
 /**
- * The formats with nothing to fetch from a URL, so no URL tab: a variables export, a HAR capture and
- * a `.http` file (whose environment files are found beside it on disk).
+ * The formats with nothing to fetch from a URL, so no URL tab: a variables export, a HAR capture, a
+ * `.http` file (whose environment files are found beside it on disk) and an OpenCollection (whose
+ * directory form is read from disk beside its root file).
  */
-const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([...WORKSPACE_ONLY, 'har', 'http-file']);
+const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([
+  ...WORKSPACE_ONLY,
+  'har',
+  'http-file',
+  'opencollection',
+]);
+
+/** The root document of an OpenCollection saved as a folder, which names nothing: the folder does. */
+const OC_ROOT_FILE = /(^|[\\/])opencollection\.ya?ml$/i;
 
 type HarResponses = ApiImportHarRequest['responses'];
 
@@ -502,32 +515,34 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? [{ name: '.http file', extensions: ['http', 'rest'] }]
             : effectiveFormat === 'http-env'
               ? [{ name: 'HTTP client environment file', extensions: ['json'] }]
-              : WORKSPACE_ONLY.has(effectiveFormat)
-                ? [{ name: 'Postman export', extensions: ['json'] }]
-                : effectiveFormat === 'har'
-                  ? [{ name: 'HAR', extensions: ['har', 'json'] }]
-                  : effectiveFormat === 'proto'
-                    ? [
-                        { name: 'Protocol Buffers', extensions: ['proto'] },
-                        { name: 'All Files', extensions: ['*'] },
-                      ]
-                    : effectiveFormat === 'openapi'
+              : effectiveFormat === 'opencollection'
+                ? [{ name: 'OpenCollection', extensions: ['yml', 'yaml'] }]
+                : WORKSPACE_ONLY.has(effectiveFormat)
+                  ? [{ name: 'Postman export', extensions: ['json'] }]
+                  : effectiveFormat === 'har'
+                    ? [{ name: 'HAR', extensions: ['har', 'json'] }]
+                    : effectiveFormat === 'proto'
                       ? [
-                          { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                          { name: 'Protocol Buffers', extensions: ['proto'] },
                           { name: 'All Files', extensions: ['*'] },
                         ]
-                      : effectiveFormat === 'asyncapi'
+                      : effectiveFormat === 'openapi'
                         ? [
-                            { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                            { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
                             { name: 'All Files', extensions: ['*'] },
                           ]
-                        : [
-                            {
-                              name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                              extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                            },
-                            { name: 'All Files', extensions: ['*'] },
-                          ];
+                        : effectiveFormat === 'asyncapi'
+                          ? [
+                              { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                              { name: 'All Files', extensions: ['*'] },
+                            ]
+                          : [
+                              {
+                                name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                                extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                              },
+                              { name: 'All Files', extensions: ['*'] },
+                            ];
     const title =
       effectiveFormat === 'legacy-soap-project'
         ? 'Import Legacy SOAP Project'
@@ -543,13 +558,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   ? 'Import .http File'
                   : effectiveFormat === 'http-env'
                     ? 'Import HTTP Client Environments'
-                    : effectiveFormat === 'proto'
-                      ? 'Import .proto'
-                      : effectiveFormat === 'openapi'
-                        ? 'Import OpenAPI Specification'
-                        : effectiveFormat === 'asyncapi'
-                          ? 'Import AsyncAPI Document'
-                          : 'Import Definition';
+                    : effectiveFormat === 'opencollection'
+                      ? 'Import OpenCollection'
+                      : effectiveFormat === 'proto'
+                        ? 'Import .proto'
+                        : effectiveFormat === 'openapi'
+                          ? 'Import OpenAPI Specification'
+                          : effectiveFormat === 'asyncapi'
+                            ? 'Import AsyncAPI Document'
+                            : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -597,9 +614,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? 'Imported traffic'
             : format === 'http-file' || effectiveFormat === 'http-file'
               ? 'Imported requests'
-              : 'Imported API';
+              : format === 'opencollection' || effectiveFormat === 'opencollection'
+                ? 'Imported collection'
+                : 'Imported API';
 
-  const sourceName = nameFromSource(previewSource, defaultName);
+  // A collection saved as a folder is picked by its `opencollection.yml`, so the folder names it.
+  const sourceName =
+    effectiveFormat === 'opencollection' && previewSource?.kind === 'file' && OC_ROOT_FILE.test(filePath)
+      ? nameFromSource({ kind: 'file', path: filePath.replace(OC_ROOT_FILE, '') }, defaultName)
+      : nameFromSource(previewSource, defaultName);
   const newProjectName = name.trim().length > 0 ? name.trim() : sourceName;
 
   /**
@@ -814,6 +837,38 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * An OpenCollection becomes a REST, a gRPC and a WebSocket API, each only when it has items of that
+   * kind, in the chosen project; its environments land in the workspace. A picked root
+   * `opencollection.yml` with no items of its own makes main read the folder around it. The reply's
+   * project snapshot is not used — it is absent when only environments were imported, and the
+   * project's own change broadcast refreshes the explorer either way.
+   */
+  async function importOpenCollection(source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for OpenCollection. Pick the file or paste its YAML.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importOpenCollection({
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'opencollection', value: res.value });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -837,7 +892,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 ? 'Pick a .http file to import'
                 : effectiveFormat === 'http-env'
                   ? 'Pick an environment file to import'
-                  : 'Pick a file to import',
+                  : effectiveFormat === 'opencollection'
+                    ? 'Pick a collection .yml file, or the opencollection.yml of a collection folder'
+                    : 'Pick a file to import',
         );
       } else {
         setImportError(
@@ -851,7 +908,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   ? 'Paste the .http requests to import'
                   : effectiveFormat === 'http-env'
                     ? 'Paste the environment JSON to import'
-                    : 'Paste a definition to import',
+                    : effectiveFormat === 'opencollection'
+                      ? 'Paste the collection YAML to import'
+                      : 'Paste a definition to import',
         );
       }
       return;
@@ -878,6 +937,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
     if (effectiveFormat === 'http-file') {
       await importHttp(source);
+      return;
+    }
+
+    if (effectiveFormat === 'opencollection') {
+      await importOpenCollection(source);
       return;
     }
 
@@ -1152,7 +1216,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                                     ? 'Import .http File'
                                     : format === 'http-env'
                                       ? 'Import HTTP Client Environments'
-                                      : 'Import API or Service'}
+                                      : format === 'opencollection'
+                                        ? 'Import OpenCollection'
+                                        : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -1196,6 +1262,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <option value="har">HAR (recorded traffic)</option>
                     <option value="http-file">.http file</option>
                     <option value="http-env">HTTP client environment file</option>
+                    <option value="opencollection">OpenCollection</option>
                     <option value="wsdl">WSDL (SOAP)</option>
                     <option value="proto">Protocol Buffers (gRPC)</option>
                     <option value="legacy-soap-project">Legacy SOAP project</option>
@@ -1358,6 +1425,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                         ? `Loaded: ${dropped.name}`
                         : 'Drop an OpenAPI, Postman, WSDL or .proto file here'}
                     </div>
+                    {effectiveFormat === 'opencollection' && (
+                      <p data-testid="import-opencollection-help" className="text-xs text-fg-subtle">
+                        For a collection saved as a folder, pick its opencollection.yml: the files beside it are read
+                        too.
+                      </p>
+                    )}
                   </>
                 )}
 
@@ -1772,7 +1845,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                       ? 'import-har-summary'
                       : result.kind === 'http-file'
                         ? 'import-http-summary'
-                        : 'import-summary'
+                        : result.kind === 'opencollection'
+                          ? 'import-opencollection-summary'
+                          : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -1931,6 +2006,8 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
       {result.kind === 'har' && <HarSummary value={result.value} responses={result.responses} />}
 
       {result.kind === 'http-file' && <HttpFileSummary value={result.value} />}
+
+      {result.kind === 'opencollection' && <OpenCollectionSummary value={result.value} />}
 
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
@@ -2153,6 +2230,42 @@ function HttpFileSummary({ value }: { readonly value: ApiImportHttpFileResponse 
         notes={value.notes}
         reportText={value.reportText}
         testId="import-http-summary"
+      />
+    </>
+  );
+}
+
+/**
+ * What an OpenCollection import made: the APIs, requests and folders, how many assertions came
+ * across, the scripts kept as text; then the environments and properties it added, and the report
+ * (which already carries the variables' own lines).
+ */
+function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollectionResponse }) {
+  const { counts, variables } = value;
+  const assertions = counts.assertions + counts.assertionsSkipped;
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        <p data-testid="import-opencollection-counts">
+          {plural(value.apiIds.length, 'API')}, {plural(counts.requests, 'request')}, {plural(counts.folders, 'folder')}
+        </p>
+        {assertions > 0 && (
+          <p data-testid="import-opencollection-assertions" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.assertions, 'assertion')} mapped, {String(counts.assertionsSkipped)} not
+          </p>
+        )}
+        {counts.scripts > 0 && (
+          <p data-testid="import-opencollection-scripts" className="mt-1 text-xs text-fg-subtle">
+            {plural(counts.scripts, 'script')} kept as text, never run
+          </p>
+        )}
+        {variables !== undefined && <VariablesLines summary={variables} testId="import-opencollection" />}
+      </div>
+      <ImportReportView
+        warnings={value.warnings}
+        notes={value.notes}
+        reportText={value.reportText}
+        testId="import-opencollection-summary"
       />
     </>
   );
