@@ -161,6 +161,11 @@ export interface FromRestCurlResult {
    * nothing in the model holds a credential value (ADR-0004).
    */
   readonly basic?: { readonly username: string; readonly password?: string };
+  /**
+   * `--negotiate`: Kerberos, in place of `basic`. The `-u` user part, when there is one, is the
+   * account (`DOMAIN\user`); its password, which curl never needs for a ticket, is dropped.
+   */
+  readonly kerberos?: { readonly type: 'kerberos'; readonly username?: string; readonly domain?: string };
   /** What the command said that this client has no field for, in the order it was met. */
   readonly problems: readonly string[];
 }
@@ -225,6 +230,8 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
   let rawData: string | undefined;
   let binaryPath: string | undefined;
   let basic: { username: string; password?: string } | undefined;
+  // Read after the loop: `--negotiate` turns a `-u` on either side of it into a Kerberos account.
+  let negotiate = false;
   const settings: { trustInvalid?: boolean; followRedirects?: boolean; maxRedirects?: number } = {};
   // `-G` sends the `-d` data as the query of a GET; `-I` asks for HEAD. Both are read after the loop,
   // because the flag may come before or after the data it changes.
@@ -258,6 +265,11 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
       const colon = next.indexOf(':');
       basic = colon === -1 ? { username: next } : { username: next.slice(0, colon), password: next.slice(colon + 1) };
       index += 2;
+      continue;
+    }
+    if (token === '--negotiate') {
+      negotiate = true;
+      index += 1;
       continue;
     }
     if (token === '-F' || token === '--form') {
@@ -366,6 +378,10 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
   if (head) {
     method ??= 'HEAD';
   }
+  const kerberos = negotiate ? kerberosFrom(basic?.username ?? '') : undefined;
+  if (negotiate) {
+    basic = undefined;
+  }
   const body = bodyFrom({ parts, formFields, rawData, binaryPath, headers });
   const split = url === undefined ? undefined : splitAgainstBase(url, options.baseUrl);
   const pathParams = split === undefined ? [] : paramRows(split.path);
@@ -382,7 +398,20 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
       ...(Object.keys(settings).length > 0 ? { settings } : {}),
     },
     ...(basic !== undefined ? { basic } : {}),
+    ...(kerberos !== undefined ? { kerberos } : {}),
     problems,
+  };
+}
+
+/** A `--negotiate` command's account, from its `-u` user part: `DOMAIN\user`, `user`, or empty for the ticket. */
+function kerberosFrom(user: string): NonNullable<FromRestCurlResult['kerberos']> {
+  const slash = user.indexOf('\\');
+  const username = slash === -1 ? user : user.slice(slash + 1);
+  const domain = slash === -1 ? '' : user.slice(0, slash);
+  return {
+    type: 'kerberos',
+    ...(username !== '' ? { username } : {}),
+    ...(domain !== '' ? { domain } : {}),
   };
 }
 

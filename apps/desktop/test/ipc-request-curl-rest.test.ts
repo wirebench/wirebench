@@ -360,6 +360,26 @@ describe('request.importCurl into an API', () => {
     expect(changes[1]).toMatchObject({ patch: { auth: { type: 'basic', username: 'ada', preemptive: true } } });
   });
 
+  it('records --negotiate as Kerberos with the account, never Basic, and stores no password', async () => {
+    const changes: ProjectChange[] = [];
+    const stored: { value: string; label: string }[] = [];
+    setup({ changes, stored });
+
+    const result = unwrap<{ basicUsername?: string; passwordStored?: boolean }>(
+      await invoke('request.importCurl', {
+        command: `curl --negotiate --user 'CORP\\ada:' https://api.test/pets`,
+        target: { kind: 'rest', apiId: 'api-1' },
+        passwordRef: 'sec_42',
+      }),
+    );
+
+    expect(stored).toEqual([]);
+    expect(result.basicUsername).toBeUndefined();
+    expect(result.passwordStored).toBeUndefined();
+    expect(changes[1]).toMatchObject({ patch: { auth: { type: 'kerberos', username: 'ada', domain: 'CORP' } } });
+    expect(JSON.stringify(changes)).not.toContain('sec_42');
+  });
+
   it('reports the flags it could not use', async () => {
     setup({});
 

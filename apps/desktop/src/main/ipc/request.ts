@@ -827,19 +827,24 @@ async function importCurlAsRest(
   // A password in the command goes straight to the keychain; the model only ever holds its ref.
   const password = parsed.basic?.password;
   const passwordRef =
-    request.passwordRef ??
-    (parsed.basic !== undefined && password !== undefined && password !== '' && deps.storeSecret !== undefined
-      ? await deps.storeSecret(password, `cURL import: ${parsed.basic.username}`)
-      : undefined);
-  const auth =
-    parsed.basic === undefined
+    parsed.kerberos !== undefined
       ? undefined
-      : {
-          type: 'basic' as const,
-          username: parsed.basic.username,
-          ...(passwordRef !== undefined ? { passwordRef } : {}),
-          preemptive: true,
-        };
+      : (request.passwordRef ??
+        (parsed.basic !== undefined && password !== undefined && password !== '' && deps.storeSecret !== undefined
+          ? await deps.storeSecret(password, `cURL import: ${parsed.basic.username}`)
+          : undefined));
+  // `--negotiate` reads as Kerberos (the parser drops `basic` then): the ticket needs no password.
+  const auth =
+    parsed.kerberos !== undefined
+      ? parsed.kerberos
+      : parsed.basic === undefined
+        ? undefined
+        : {
+            type: 'basic' as const,
+            username: parsed.basic.username,
+            ...(passwordRef !== undefined ? { passwordRef } : {}),
+            preemptive: true,
+          };
   await project.projectMutate(owner, {
     kind: 'update-rest-request',
     requestId,
