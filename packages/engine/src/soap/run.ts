@@ -477,6 +477,35 @@ function outgoingNeeds(project: Project, config: WssOutgoingConfig): SecretNeed[
       }
     } else if (entry.kind === 'encryption') {
       needs.push(...keystoreNeeds(project, entry.keystoreRef));
+    } else if (entry.kind === 'issued-token') {
+      const { credential } = entry;
+      if (credential.kind === 'username' && present(credential.passwordRef)) {
+        needs.push({ ref: credential.passwordRef, purpose: `STS password for "${credential.username}"` });
+      }
+      if (credential.kind === 'kerberos' && present(credential.passwordRef)) {
+        needs.push({
+          ref: credential.passwordRef,
+          purpose: `Kerberos password for "${credential.username ?? credential.spn}"`,
+        });
+      }
+      if (credential.kind === 'certificate') {
+        needs.push(...keystoreNeeds(project, credential.keystoreRef));
+        if (present(credential.keyPasswordRef)) {
+          needs.push({
+            ref: credential.keyPasswordRef,
+            purpose: `STS client certificate key password ("${config.name}")`,
+          });
+        }
+      }
+      needs.push(...keystoreNeeds(project, entry.proofKeystoreRef), ...keystoreNeeds(project, entry.tlsKeystoreRef));
+    } else if (entry.kind === 'saml-token' && entry.source === 'form') {
+      if (entry.sign !== undefined) {
+        needs.push(...keystoreNeeds(project, entry.sign.keystoreRef));
+        if (present(entry.sign.keyPasswordRef)) {
+          needs.push({ ref: entry.sign.keyPasswordRef, purpose: `SAML issuer key password ("${config.name}")` });
+        }
+      }
+      needs.push(...keystoreNeeds(project, entry.proofKeystoreRef));
     }
   }
   return needs;
