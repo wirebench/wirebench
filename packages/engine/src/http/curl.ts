@@ -42,6 +42,8 @@ export interface CurlCommand {
   readonly body?: CurlBody;
   /** `-u user:password`. The password is the caller's to redact before it gets here. */
   readonly basic?: { readonly username: string; readonly password: string };
+  /** `--negotiate`: curl asks the OS for the ticket; no password is ever part of the command. */
+  readonly negotiate?: { readonly username?: string; readonly domain?: string };
   /** `-k`: send even when the certificate does not verify. */
   readonly insecure?: boolean;
   /** `-L`, with `--max-redirs` when a limit is set. */
@@ -100,6 +102,11 @@ export function toCurl(command: CurlCommand, options: ToCurlOptions = {}): strin
   }
   if (command.basic !== undefined) {
     args.push(`--user ${quote(`${command.basic.username}:${command.basic.password}`)}`);
+  }
+  if (command.negotiate !== undefined) {
+    const { username, domain } = command.negotiate;
+    const user = username !== undefined ? `${domain !== undefined ? `${domain}\\` : ''}${username}` : '';
+    args.push(`--negotiate --user ${quote(`${user}:`)}`);
   }
   if (command.insecure === true) {
     args.push('--insecure');

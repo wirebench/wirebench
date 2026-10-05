@@ -8,11 +8,12 @@
  */
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import { AuthFields } from '../../components/auth-fields.js';
+import { AuthFields, WEBHOOK_AUTH_TYPES } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
+import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
 import type { AuthConfigWire } from '../../../shared/wire-types.js';
 
 /** The dialog, mounted once by the shell and driven by the UI store's `folderAuthId`. */
@@ -59,6 +60,7 @@ export function FolderAuthDialog() {
               <AuthFields
                 scope="Folder"
                 inheritable
+                {...(isWebhookApiId(folder.apiId) ? { types: WEBHOOK_AUTH_TYPES } : {})}
                 auth={folder.auth === undefined || folder.auth.type === 'inherit' ? undefined : folder.auth}
                 onChange={(auth: AuthConfigWire | null) => {
                   void updateFolder(folderId, { auth: auth ?? { type: 'inherit' } });

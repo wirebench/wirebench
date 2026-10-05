@@ -459,6 +459,18 @@ export const channels = {
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
   },
+  auth: {
+    /** Whether this build can do Kerberos/SPNEGO here, and why not when it cannot. */
+    kerberosAvailability: defineChannel(
+      'auth.kerberosAvailability',
+      z.undefined(),
+      z.object({
+        available: z.boolean(),
+        reason: z.string().optional(),
+        platform: z.enum(['win32', 'darwin', 'linux']),
+      }),
+    ),
+  },
   search: {
     /**
      * Project-wide find. Runs in main so cached definition documents are searched where they

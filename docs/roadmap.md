@@ -59,7 +59,7 @@ is picked up.
 | 4 | MCP server over the engine, with CLI parity | Dev | S | **shipped 2026-09-29** (#32); contract operations as tools **shipped** (#33) | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step, now shipped, exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
 | 5 | Snapshot regression across environments ✚ | Both | S–M | Snapshot tab shipped (#34); the runner replays goldens with `--baseline` (#36) | Send one request to several environments at once, diff the responses semantically with ignore rules for volatile fields, commit the golden responses, and let the runner replay them. Mostly wiring over history's re-send and diff. |
 | 6 | Secrets from external managers; encrypted team secrets | Ent | M | new | A secret scope resolved at send time from a vault, a cloud secret manager, a password manager's CLI or the keychain, so nothing sensitive is on disk anywhere; team secrets encrypted to member keys in a shared workspace. The follow-up the shared-workspaces spec names. |
-| 7 | Enterprise authentication: Kerberos/SPNEGO and WS-Trust (STS-issued SAML tokens) | Ent | M + M | spec 1.1 + new | Windows-integrated auth and a security token service front most internal SOAP estates, and the same buyer asks for both. Kerberos needs a native module, so it needs an explicit ruling. |
+| 7 | Enterprise authentication: Kerberos/SPNEGO and WS-Trust (STS-issued SAML tokens) | Ent | M + M | Kerberos shipped (#40, [spec](specs/2026-10-05-kerberos-spnego-auth-design.md)); WS-Trust next | Windows-integrated auth and a security token service front most internal SOAP estates, and the same buyer asks for both. Kerberos needs a native module, so it needs an explicit ruling. |
 | — | REST client, minimum viable | Dev | L | **shipped in 2.0.0** | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. Done, with OpenAPI 3 import and OAuth2; item 8 is what it left out. |
 | — | Importers: OpenAPI 3.2, Swagger 1.x/2.0, Postman Collections | Dev | M | **shipped in 2.1.0** | Switching cost is the moat, and anyone with saved requests elsewhere judges a client by whether it can bring them along. One Import… dialog detects the format; what it cannot map is reported rather than dropped. |
 | 8 | REST follow-ups and contract validation | Dev | S–M each | new; HTML preview (#48) and cookie jar with current values (#44) shipped | Each follow-up is a gap a user hits within a day of real use, and none needs a format change. Responses validated against the OpenAPI schema match what SOAP already does against XSD. |
@@ -250,8 +250,8 @@ here needs a new parser; each item reuses the schema set, the definition cache o
 
 ### Authentication
 
-- **Kerberos/SPNEGO** (item 7). Requires the native `kerberos` module as an optional dependency, which the
-  v1 boundaries make an ask-first decision.
+- **Kerberos/SPNEGO** (item 7). Shipped (#40): HTTP Negotiate with the signed-in ticket and, on Windows, another
+  account, through an optional native module ([ADR-0019](adr/0019-kerberos-uses-an-optional-native-module.md)).
 - **WS-Trust** (item 7). Request a SAML token from a security token service with a username, a certificate
   or Kerberos, cache it for its lifetime, and place it in the WS-Security header. Federated SOAP estates
   almost always front one.

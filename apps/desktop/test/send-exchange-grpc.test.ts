@@ -587,6 +587,26 @@ describe('request.curl for a gRPC request', () => {
   });
 });
 
+describe('request.curl for a Kerberos gRPC request', () => {
+  it.each([false, true])(
+    'notes that Kerberos is not expressible with show-secrets %s, and reads no secret for it',
+    async (shown) => {
+      const getSecret = vi.fn(secrets);
+      const project = seeded();
+      const api = project.grpcApis[0]!;
+      const kerberos: Project = {
+        ...project,
+        grpcApis: [{ ...api, auth: { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'sec_pw' } }],
+      };
+      registerOver(kerberos, { getSecret, showSecrets: { get: () => shown } });
+      const reply = unwrap<RequestCurlResponse>(await invoke('request.curl', { requestId: 'q-1', shell: 'posix' }));
+      expect(reply.notes).toContain('Kerberos is not expressible in this command; no authorization is shown.');
+      expect(reply.command).not.toContain('sec_pw');
+      expect(getSecret).not.toHaveBeenCalledWith('sec_pw');
+    },
+  );
+});
+
 describe('ExchangeRegistry.halfClose', () => {
   function kept(halfClose: () => void): ExchangeRegistry {
     const registry = new ExchangeRegistry();

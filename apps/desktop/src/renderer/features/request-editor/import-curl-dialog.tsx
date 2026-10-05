@@ -35,6 +35,13 @@ function PreviewRow({ label, value }: { readonly label: string; readonly value: 
   );
 }
 
+/** What a REST import does with the auth flags: `--negotiate` makes `-u` a Kerberos account. */
+function authPreview(preview: CurlPreview): string {
+  const user = preview.basicUsername !== undefined && preview.basicUsername !== '' ? preview.basicUsername : undefined;
+  if (preview.negotiate) return user === undefined ? 'Kerberos' : `Kerberos, as “${user}”`;
+  return preview.basicUsername === undefined ? '—' : `Basic, as “${preview.basicUsername}”`;
+}
+
 function Preview({ preview, target }: { readonly preview: CurlPreview; readonly target: 'soap' | 'rest' }) {
   const headers = preview.headers.length === 0 ? '—' : preview.headers.join(', ');
   return (
@@ -47,10 +54,7 @@ function Preview({ preview, target }: { readonly preview: CurlPreview; readonly 
           <PreviewRow label="Request" value={`${preview.method} ${preview.endpoint ?? '—'}`} />
           <PreviewRow label="Headers" value={headers} />
           <PreviewRow label="Body" value={preview.bodyKind ?? '—'} />
-          <PreviewRow
-            label="Auth"
-            value={preview.basicUsername === undefined ? '—' : `Basic, as “${preview.basicUsername}”`}
-          />
+          <PreviewRow label="Auth" value={authPreview(preview)} />
         </>
       ) : (
         <>

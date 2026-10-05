@@ -16,7 +16,9 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button } from './button.js';
 import { SecretField } from './secret-field.js';
+import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
 import type { AuthConfigWire, SoapOwnerAuthWire } from '../../shared/wire-types.js';
 
@@ -31,7 +33,13 @@ const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: 
   { value: 'bearer', label: 'Bearer token' },
   { value: 'api-key', label: 'API key' },
   { value: 'oauth2', label: 'OAuth2' },
+  { value: 'kerberos', label: 'Kerberos' },
 ];
+
+/** Every scheme but Kerberos: what a webhook delivery can be given. */
+export const WEBHOOK_AUTH_TYPES: readonly AuthConfigWire['type'][] = TYPES.map((option) => option.value).filter(
+  (value) => value !== 'kerberos',
+);
 
 /**
  * The schemes a SOAP interface, endpoint or request may hold: all six, but never *Inherit*.
@@ -46,6 +54,7 @@ export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
   'bearer',
   'api-key',
   'oauth2',
+  'kerberos',
 ];
 
 /**
@@ -108,6 +117,7 @@ export function AuthFields({
   registerFlush,
   newSecretRefs = false,
 }: AuthFieldsProps) {
+  const kerberos = useKerberosAvailability();
   const offered = types === undefined ? TYPES : TYPES.filter((option) => types.includes(option.value));
   const type = auth?.type ?? 'none';
   const patch = (next: Partial<AuthConfigWire>): void => {
@@ -207,7 +217,9 @@ export function AuthFields({
       | 'tokenUrl'
       | 'authorizationUrl'
       | 'clientId'
-      | 'audience',
+      | 'audience'
+      | 'spn'
+      | 'principal',
     label: string,
     placeholder?: string,
   ): ReactNode => (
@@ -257,12 +269,26 @@ export function AuthFields({
               onChange({ type: 'api-key', name: '', in: 'header' });
               return;
             }
+            if (value === 'kerberos') {
+              // A fresh Kerberos configuration carries nothing over from another scheme, whatever the
+              // platform: a leftover username or password would be refused by the engine off Windows.
+              onChange({
+                type: 'kerberos',
+                ...(auth?.spn !== undefined ? { spn: auth.spn } : {}),
+                ...(auth?.principal !== undefined ? { principal: auth.principal } : {}),
+              });
+              return;
+            }
             patch({ type: value as AuthConfigWire['type'] });
           }}
         >
           <option value="inherit">{inheritable ? 'Inherit' : 'Not configured'}</option>
           {offered.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option
+              key={option.value}
+              value={option.value}
+              disabled={option.value === 'kerberos' && kerberos?.available === false}
+            >
               {option.label}
             </option>
           ))}
@@ -287,6 +313,47 @@ export function AuthFields({
               />
               Send credentials preemptively (do not wait for a 401)
             </label>
+          )}
+        </>
+      )}
+
+      {auth !== undefined && type === 'kerberos' && (
+        <>
+          {kerberos?.available === false && kerberos.reason !== undefined && kerberos.reason !== '' && (
+            <p className="text-xs text-fg-subtle">{kerberos.reason}</p>
+          )}
+          {text('spn', 'SPN', 'HTTP/<host of the request>')}
+          <p className="text-xs text-fg-subtle">Leave empty unless the service is registered under another name.</p>
+          {kerberos !== undefined && kerberos.platform !== 'win32' && text('principal', 'Principal', 'user@REALM')}
+          {kerberos !== undefined &&
+            kerberos.platform !== 'win32' &&
+            (auth.username !== undefined || auth.passwordRef !== undefined || auth.domain !== undefined) && (
+              // An account made on Windows, which this platform cannot use: every send would be refused,
+              // and the fields that name it are Windows-only, so say so and offer the way out here.
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-fg-subtle">
+                  This configuration names a Windows account, which macOS and Linux refuse.
+                </p>
+                <Button
+                  onClick={() => {
+                    onChange({
+                      type: 'kerberos',
+                      ...(auth.spn !== undefined ? { spn: auth.spn } : {}),
+                      ...(auth.principal !== undefined ? { principal: auth.principal } : {}),
+                    });
+                  }}
+                >
+                  Clear account
+                </Button>
+              </div>
+            )}
+          {kerberos?.platform === 'win32' && (
+            <details open={auth.username !== undefined}>
+              <summary className="text-xs">Use another account</summary>
+              {text('username', 'Username')}
+              {text('domain', 'Domain')}
+              {secret('passwordRef', 'Password')}
+            </details>
           )}
         </>
       )}

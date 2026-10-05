@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Kerberos authentication.** A request, an API, a SOAP interface or endpoint, and a definition
+  fetch can authenticate with your Windows sign-in or `kinit` ticket over HTTP Negotiate, with an
+  optional SPN and, on Windows, another account. Kerberos only: nothing falls back to NTLM. The
+  WebSocket upgrade and gRPC calls send it preemptively; the CLI and MCP send it too (#40).
 - **SAML tokens in outgoing WS-Security.** Built from a form (SAML 1.1 or 2.0, optionally signed as
   issuer) or supplied as XML. Token signatures in the HTTP Log are masked (#41).
 - Signatures can refer to a SAML token (holder-of-key) and cover it through the STR-Transform (#41).

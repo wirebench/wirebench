@@ -1,8 +1,9 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { renderThirdPartyLicenses } from './third-party-licenses.js';
+import { collect, renderThirdPartyLicenses } from './third-party-licenses.js';
 
 const target = fileURLToPath(new URL('../THIRD-PARTY-LICENSES.md', import.meta.url));
 const rendererDir = fileURLToPath(new URL('../apps/desktop/src/renderer', import.meta.url));
@@ -139,6 +140,11 @@ describe('THIRD-PARTY-LICENSES.md', () => {
     expect(committed).not.toContain('| UNKNOWN |');
   });
 
+  it('attributes the engine optional dependencies', async () => {
+    const rendered = await renderThirdPartyLicenses();
+    expect(rendered).toMatch(/\| `kerberos` \| 7\.0\.0 \| Apache-2\.0 \|/);
+  });
+
   it('attributes the server image dependencies', async () => {
     const rendered = await renderThirdPartyLicenses();
     for (const name of ['fastify', 'pg', 'openid-client', 'jose', 'oauth4webapi']) {
@@ -200,5 +206,33 @@ describe('bareImportsOf', () => {
       "const lazy = await import('immer');",
     ].join('\n');
     expect(bareImportsOf(source).sort()).toEqual(['@radix-ui/react-dialog', 'immer', 'monaco-editor', 'react-dom']);
+  });
+});
+
+describe('collect', () => {
+  async function project(installed: Record<string, object>): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'licenses-'));
+    for (const [name, extra] of Object.entries(installed)) {
+      await mkdir(join(dir, 'node_modules', name), { recursive: true });
+      await writeFile(
+        join(dir, 'node_modules', name, 'package.json'),
+        JSON.stringify({ name, version: '2.0.0', license: 'MIT', ...extra }),
+      );
+    }
+    return dir;
+  }
+
+  it('skips an optional dependency that is not installed', async () => {
+    const dir = await project({
+      holder: { optionalDependencies: { absent: '1.0.0', present: '1.0.0' } },
+      present: {},
+    });
+    const found = await collect([{ name: 'holder', from: dir }]);
+    expect(found.map((entry) => entry.name)).toEqual(['holder', 'present']);
+  });
+
+  it('still throws for a regular dependency that is not installed', async () => {
+    const dir = await project({ holder: { dependencies: { absent: '1.0.0' } } });
+    await expect(collect([{ name: 'holder', from: dir }])).rejects.toThrow(/Cannot resolve "absent"/);
   });
 });
