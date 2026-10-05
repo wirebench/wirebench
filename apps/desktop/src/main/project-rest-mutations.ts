@@ -34,7 +34,7 @@ import type {
   WebhookFolder,
   WebhookSigning,
 } from '@wirebench/engine';
-import { ProjectError } from '@wirebench/engine';
+import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type {
   ApiPatchWire,
   AuthConfigWire,
@@ -428,15 +428,6 @@ export function takenApiSlugs(project: Project, exceptApiId?: string): Set<strin
   return new Set([...takenContainerSlugs(others, 'apis'), ...takenContainerSlugs(others, 'interfaces')]);
 }
 
-/**
- * The order a newly placed API takes: after every interface and every API the project already has,
- * of all four kinds. The explorer sorts them all together, so every placement must count them all,
- * or a new API can take an order an existing one already has.
- */
-export function nextApiOrder(project: Project): number {
-  return project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length;
-}
-
 /** Adds an API to the project, ordered after every interface and API it already has. */
 export function addApi(
   project: Project,
@@ -499,10 +490,12 @@ export function cleanUndefined<T extends object>(value: { readonly [K in keyof T
 /** Removes an API and everything in it; the saver deletes its folder and definition cache. */
 export function removeApi(project: Project, apiId: string): RestMutationResult {
   requireApi(project, apiId);
+  // The others keep their orders: APIs of every kind share one order, so renumbering one kind would
+  // give an API an order another kind holds. A gap is harmless; `nextApiOrder` goes past the highest.
   return {
     project: {
       ...project,
-      apis: renumber(project.apis.filter((api) => api.id !== apiId)),
+      apis: project.apis.filter((api) => api.id !== apiId),
       ...(project.webhooks !== undefined ? { webhooks: unlinkWebhookSource(project.webhooks, apiId) } : {}),
     },
   };

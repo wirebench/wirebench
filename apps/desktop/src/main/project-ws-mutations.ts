@@ -23,9 +23,9 @@ import type {
   WsRequestSettings,
   WsSavedMessage,
 } from '@wirebench/engine';
-import { ProjectError } from '@wirebench/engine';
+import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type { WsApiPatchWire, WsRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
-import { nextApiOrder, takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
+import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
 /** What a mutation produced: the next model, and the entity it created when it created one. */
 export interface WsMutationResult {
@@ -221,7 +221,9 @@ export function updateWsApi(project: Project, apiId: string, patch: WsApiPatchWi
 /** Removes a WebSocket API and everything in it. */
 export function removeWsApi(project: Project, apiId: string): WsMutationResult {
   requireWsApi(project, apiId);
-  return { project: { ...project, wsApis: renumber(project.wsApis.filter((api) => api.id !== apiId)) } };
+  // The others keep their orders: APIs of every kind share one order, so renumbering one kind would
+  // give an API an order another kind holds. A gap is harmless; `nextApiOrder` goes past the highest.
+  return { project: { ...project, wsApis: project.wsApis.filter((api) => api.id !== apiId) } };
 }
 
 /** Adds a folder to a WebSocket API's root or to another of its folders. */

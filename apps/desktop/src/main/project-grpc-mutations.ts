@@ -10,9 +10,9 @@
 
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor, uniqueSlug } from '@wirebench/engine';
 import type { AuthConfig, GrpcApi, GrpcFolder, GrpcRequestDef, GrpcRequestSettings, Project } from '@wirebench/engine';
-import { ProjectError } from '@wirebench/engine';
+import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type { GrpcApiPatchWire, GrpcRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
-import { nextApiOrder, takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
+import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
 /** What a mutation produced: the next model, and the entity it created when it created one. */
 export interface GrpcMutationResult {
@@ -207,7 +207,9 @@ export function updateGrpcApi(project: Project, apiId: string, patch: GrpcApiPat
 /** Removes a gRPC API and everything in it; the saver deletes its folder and definition cache. */
 export function removeGrpcApi(project: Project, apiId: string): GrpcMutationResult {
   requireGrpcApi(project, apiId);
-  return { project: { ...project, grpcApis: renumber(project.grpcApis.filter((api) => api.id !== apiId)) } };
+  // The others keep their orders: APIs of every kind share one order, so renumbering one kind would
+  // give an API an order another kind holds. A gap is harmless; `nextApiOrder` goes past the highest.
+  return { project: { ...project, grpcApis: project.grpcApis.filter((api) => api.id !== apiId) } };
 }
 
 /** Adds a folder to a gRPC API's root or to another of its folders. */

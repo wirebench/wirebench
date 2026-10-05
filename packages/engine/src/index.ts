@@ -439,6 +439,7 @@ export {
   createRequest,
   defaultContentId,
   generateId,
+  nextApiOrder,
   takenContainerSlugs,
 } from './project/model.js';
 export type {

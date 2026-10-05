@@ -256,4 +256,19 @@ describe('the order a new API takes', () => {
     const orders = [...withRest.wsApis, ...withRest.grpcApis, ...withRest.apis].map((api) => api.order);
     expect(orders).toEqual([0, 1, 2]);
   });
+
+  it('never repeats an order still held after an API was deleted', () => {
+    const project: Project = {
+      ...createProject('Mixed', { id: 'p1' }),
+      wsApis: [createWsApi('Chat', { id: 'w1', order: 0 })],
+    };
+    const first = addGrpcApi(project, { name: 'Pets', target: 'localhost:50051' });
+    const second = addGrpcApi(first.project, { name: 'Shop', target: 'localhost:50052' });
+    const removed = removeGrpcApi(second.project, first.createdId!).project;
+    const added = addApi(removed, { name: 'Store', baseUrl: '' }).project;
+
+    const orders = [...added.wsApis, ...added.grpcApis, ...added.apis].map((api) => api.order);
+    expect(orders).toEqual([0, 2, 3]);
+    expect(new Set(orders).size).toBe(orders.length);
+  });
 });

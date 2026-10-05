@@ -273,12 +273,13 @@ describe('move-node', () => {
 });
 
 describe('remove-api', () => {
-  it('removes the API and renumbers the rest', () => {
+  it('removes the API and leaves the order of the rest alone', () => {
     const two = addApi(seeded(), { name: 'Orders', baseUrl: 'x' });
     const { project } = removeApi(two.project, 'api-1');
 
+    // Every kind of API shares one order, so renumbering REST alone could take another kind's.
     expect(project.apis.map((entry) => entry.name)).toEqual(['Orders']);
-    expect(project.apis[0]!.order).toBe(0);
+    expect(project.apis[0]!.order).toBe(two.project.apis[1]!.order);
   });
 });
 

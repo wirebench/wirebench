@@ -186,7 +186,7 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
-import { isEndpointAuth } from '@wirebench/engine';
+import { isEndpointAuth, nextApiOrder } from '@wirebench/engine';
 import type { DefinitionAuth, EndpointAuth, JsonSchema, RunWorkspace, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
@@ -195,14 +195,7 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import {
-  findRestFolder,
-  findRestRequest,
-  mapFolder,
-  nextApiOrder,
-  restApiOwning,
-  takenApiSlugs,
-} from './project-rest-mutations.js';
+import { findRestFolder, findRestRequest, mapFolder, restApiOwning, takenApiSlugs } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
 import { writeNewFile } from './write-new-file.js';
 import {
