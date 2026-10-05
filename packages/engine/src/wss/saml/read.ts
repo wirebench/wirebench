@@ -6,6 +6,7 @@ import type { Element } from '@xmldom/xmldom';
 import { WssError } from '../../errors.js';
 import { parseXml } from '../../xml/parse.js';
 import { NS } from '../../xml/namespaces.js';
+import { SAML_CONFIRMATION_METHOD } from './uris.js';
 import type { SamlVersion } from '../model.js';
 
 export interface ReadAssertion {
@@ -32,6 +33,23 @@ function pemOf(base64: string): string {
   return `-----BEGIN CERTIFICATE-----\n${body.trimEnd()}\n-----END CERTIFICATE-----\n`;
 }
 
+/** The first `SubjectConfirmation` whose method is holder-of-key (the `Method` attribute in 2.0, the `ConfirmationMethod` child in 1.1). */
+function holderOfKeyConfirmation(root: Element, version: SamlVersion): Element | undefined {
+  const namespace = version === '2.0' ? NS.SAML2 : NS.SAML1;
+  const wanted = SAML_CONFIRMATION_METHOD[version]['holder-of-key'];
+  const all = root.getElementsByTagNameNS(namespace, 'SubjectConfirmation');
+  for (let index = 0; index < all.length; index += 1) {
+    const candidate = all.item(index);
+    if (candidate === null) continue;
+    const method =
+      version === '2.0'
+        ? candidate.getAttribute('Method')
+        : firstDescendant(candidate, namespace, 'ConfirmationMethod')?.textContent?.trim();
+    if (method === wanted) return candidate;
+  }
+  return undefined;
+}
+
 /**
  * @throws WssError `saml-token-invalid` when the text does not parse or its root is not
  * `saml:Assertion`, `saml2:Assertion` or `saml2:EncryptedAssertion`
@@ -55,7 +73,7 @@ export function readAssertion(xml: string): ReadAssertion {
         : undefined;
   if (version === undefined) throw invalid(`its root is <${root.nodeName}>`);
   const id = root.getAttribute(version === '2.0' ? 'ID' : 'AssertionID') ?? '';
-  const confirmation = firstDescendant(root, version === '2.0' ? NS.SAML2 : NS.SAML1, 'SubjectConfirmation');
+  const confirmation = holderOfKeyConfirmation(root, version);
   const certificate = confirmation === undefined ? undefined : firstDescendant(confirmation, NS.DS, 'X509Certificate');
   const certText = certificate?.textContent?.trim();
   return {

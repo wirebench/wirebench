@@ -1,4 +1,7 @@
+import { createPrivateKey } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
+import type { Keystore } from '../../../../src/keystore/model.js';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
 import { createWssContext } from '../../../../src/wss/model.js';
 import type { WssOutgoingConfig } from '../../../../src/wss/model.js';
@@ -137,5 +140,55 @@ describe('placing a supplied SAML assertion', () => {
         createWssContext(),
       ),
     ).rejects.toMatchObject({ code: 'wss-proof-key-missing' });
+  });
+});
+
+describe('placing a signed form assertion', () => {
+  const ca = generateTestCa();
+  const signer = generateSigningCert(ca);
+  const encryptedKey = createPrivateKey(signer.keyPem).export({
+    type: 'pkcs8',
+    format: 'pem',
+    cipher: 'aes-256-cbc',
+    passphrase: 'pw',
+  }) as string;
+  const keystore = {
+    type: 'pem',
+    aliases: [{ alias: 'me', certPem: signer.certPem, keyPem: encryptedKey, chainPem: [], hasPrivateKey: true }],
+  } as unknown as Keystore;
+  const signed = {
+    kind: 'saml-token',
+    source: 'form',
+    version: '2.0',
+    issuer: 'urn:test',
+    subject: 'alice',
+    confirmation: 'bearer',
+    lifetimeSeconds: 60,
+    attributes: [],
+    sign: { keystoreRef: 'issuer', keyPasswordRef: 'kp', signatureAlgorithm: 'rsa-sha256' },
+  } as const;
+
+  it('resolves the keystore and gets the key password through ctx.secrets', async () => {
+    const asked: string[] = [];
+    const xml = await applyOutgoingWss(
+      SOAP11,
+      config([signed]),
+      createWssContext({
+        keystores: (ref) => Promise.resolve(ref === 'issuer' ? keystore : undefined),
+        secrets: (ref) => {
+          asked.push(ref);
+          return Promise.resolve(ref === 'kp' ? 'pw' : undefined);
+        },
+        uuid: () => 'u1',
+      }),
+    );
+    expect(asked).toEqual(['kp']);
+    expect(xml).toContain('<ds:SignatureValue>');
+  });
+
+  it('refuses wss-keystore-missing when the issuer keystore is not available', async () => {
+    await expect(applyOutgoingWss(SOAP11, config([signed]), createWssContext())).rejects.toMatchObject({
+      code: 'wss-keystore-missing',
+    });
   });
 });

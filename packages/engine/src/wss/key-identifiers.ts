@@ -13,6 +13,8 @@ import forge from 'node-forge';
 import { WssError } from '../errors.js';
 import { NS } from '../xml/namespaces.js';
 import { renderDnRfc2253 } from '../keystore/certificate.js';
+import { SAML_KEY_IDENTIFIER_VALUE_TYPE, SAML_TOKEN_TYPE } from './saml/uris.js';
+import type { PlacedSamlToken } from './outgoing/saml.js';
 import type { WssKeyIdentifierType } from './model.js';
 
 /** `ValueType`/`EncodingType` URIs from the WS-Security X.509 token profile. */
@@ -137,6 +139,37 @@ function keyIdentifierElement(valueType: string, value: string): string {
 }
 
 /**
+ * A `wsse:SecurityTokenReference` to a SAML token placed earlier in the same header: the RSTR's
+ * own attached reference when it gave one, else a `KeyIdentifier` naming the assertion's id
+ * (WSS SAML token profile 1.1 §3.4) with the `wsse11:TokenType` that profile requires.
+ *
+ * @throws WssError `wss-saml-token-missing` for a token with neither (an encrypted assertion
+ * whose service sent no reference)
+ */
+export function samlTokenReference(token: PlacedSamlToken, options: { readonly id?: string } = {}): string {
+  if (token.attachedReferenceXml !== undefined) {
+    if (options.id === undefined) return token.attachedReferenceXml;
+    return token.attachedReferenceXml.replace(
+      /^<([\w-]+:)?SecurityTokenReference\b/,
+      (open) => `${open} xmlns:wsu="${NS.WSU}" wsu:Id="${options.id}"`,
+    );
+  }
+  if (token.assertionId === undefined) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      'The SAML token has no id to refer to; an encrypted assertion needs the token service to send a reference.',
+    );
+  }
+  const idAttribute = options.id !== undefined ? ` wsu:Id="${options.id}"` : '';
+  return (
+    `<wsse:SecurityTokenReference xmlns:wsse="${NS.WSSE}" xmlns:wsu="${NS.WSU}" xmlns:wsse11="${NS.WSSE11}"` +
+    `${idAttribute} wsse11:TokenType="${SAML_TOKEN_TYPE[token.version]}">` +
+    `<wsse:KeyIdentifier ValueType="${SAML_KEY_IDENTIFIER_VALUE_TYPE[token.version]}">${escapeXml(token.assertionId)}</wsse:KeyIdentifier>` +
+    `</wsse:SecurityTokenReference>`
+  );
+}
+
+/**
  * Builds the `ds:KeyInfo` content (and any `wsse:BinarySecurityToken`) for one key identifier
  * form.
  *
@@ -144,7 +177,7 @@ function keyIdentifierElement(valueType: string, value: string): string {
  * @param input the signing certificate, its chain and the token id to use
  * @returns the KeyInfo XML, plus the binary security token when the form needs one
  * @throws WssError `wss-ski-missing` for `SubjectKeyIdentifier` on a certificate without one,
- * `wss-entry-unsupported` for `saml-token`
+ * `wss-saml-token-missing` for `saml-token` (built by `samlTokenReference` instead)
  */
 export function buildKeyIdentifier(type: WssKeyIdentifierType, input: KeyIdentifierInput): KeyIdentifier {
   switch (type) {
@@ -188,8 +221,7 @@ export function buildKeyIdentifier(type: WssKeyIdentifierType, input: KeyIdentif
         ),
       };
     case 'saml-token':
-      // A SAML reference names an assertion, not a certificate; the signature builder places it
-      // itself once SAML signing lands, so reaching this form with a certificate is a caller bug.
-      throw new WssError('wss-entry-unsupported', 'A saml-token key identifier is not an X.509 form.');
+      // signEnvelope builds this form itself from the placed tokens; it never reaches here.
+      throw new WssError('wss-saml-token-missing', 'A SAML token reference needs the token it refers to.');
   }
 }

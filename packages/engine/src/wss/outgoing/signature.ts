@@ -18,7 +18,8 @@ import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
 import { serializeXml } from '../../xml/serialize.js';
 import { detectEnvelopeVersion, envelopeNamespace } from '../../soap/envelope.js';
-import { buildKeyIdentifier } from '../key-identifiers.js';
+import { buildKeyIdentifier, samlTokenReference, thumbprintSha1Base64 } from '../key-identifiers.js';
+import type { KeyIdentifier } from '../key-identifiers.js';
 import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
 import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
@@ -46,7 +47,7 @@ export interface ResolvedSigningKey {
   readonly alias: KeystoreAlias;
   /** The actor/role of the `wsse:Security` block the signature belongs in. */
   readonly actor?: string;
-  /** SAML tokens placed before this signature, in order (used once signatures can refer to them). */
+  /** SAML tokens placed before this signature, in order (a `saml-token` key identifier refers to the nearest). */
   readonly placedTokens?: readonly PlacedSamlToken[];
 }
 
@@ -114,6 +115,30 @@ export function privateKeyOf(alias: KeystoreAlias, passphrase: string | undefine
 }
 
 /**
+ * The SAML token placed most recently before this signature entry.
+ *
+ * @throws WssError `wss-saml-token-missing` when there is none, `wss-proof-key-mismatch` when a
+ * holder-of-key token binds a certificate other than the signing one
+ */
+function nearestToken(resolved: ResolvedSigningKey, signingCertPem: string): PlacedSamlToken {
+  const token = resolved.placedTokens?.at(-1);
+  if (token === undefined) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      'This signature refers to a SAML token, but no SAML entry comes before it.',
+    );
+  }
+  if (
+    token.confirmation === 'holder-of-key' &&
+    token.proofCertPem !== undefined &&
+    thumbprintSha1Base64(token.proofCertPem) !== thumbprintSha1Base64(signingCertPem)
+  ) {
+    throw new WssError('wss-proof-key-mismatch', 'A holder-of-key SAML token must be signed with its proof key.');
+  }
+  return token;
+}
+
+/**
  * Signs the parts `entry` names and appends the `<ds:Signature>` to the `wsse:Security` block
  * addressed to `resolved.actor`, mutating `doc` in place.
  *
@@ -166,12 +191,15 @@ export async function signEnvelope(
     references.push({ id, element });
   }
 
-  const keyIdentifier = buildKeyIdentifier(entry.keyIdentifierType, {
-    certPem: resolved.alias.certPem,
-    chainPem: resolved.alias.chainPem,
-    useSingleCertificate: entry.useSingleCertificate,
-    tokenId: `X509-${ctx.uuid()}`,
-  });
+  const keyIdentifier: KeyIdentifier =
+    entry.keyIdentifierType === 'saml-token'
+      ? { keyInfoXml: samlTokenReference(nearestToken(resolved, resolved.alias.certPem)) }
+      : buildKeyIdentifier(entry.keyIdentifierType, {
+          certPem: resolved.alias.certPem,
+          chainPem: resolved.alias.chainPem,
+          useSingleCertificate: entry.useSingleCertificate,
+          tokenId: `X509-${ctx.uuid()}`,
+        });
   if (keyIdentifier.binarySecurityTokenXml !== undefined) {
     const token = parseXml(keyIdentifier.binarySecurityTokenXml, { location: 'envelope' }).documentElement;
     if (token !== null) {
