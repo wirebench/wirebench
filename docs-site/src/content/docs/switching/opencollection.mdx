@@ -198,18 +198,23 @@ No literal credential is written into a project or workspace file.
 
 A gRPC API needs its `.proto` files to send. In a collection picked as a folder, Wirebench reads
 the files that the gRPC items name in `protoFilePath`, resolved against the collection's folder, and
-places the API with them as its definition. Only those files are read: an `import` in them is not
-followed to another file beside them. When a named file imports one that is not among them, or a
-file cannot be read, the API is placed with no definition and a warning gives the reason. A file
-that is not there gets a note. Only a folder collection's protos are read: the gRPC API of a
-single document, or of pasted YAML, has no definition. Each of these cases gets a note that the API
-still needs one.
+places the API with them as its definition. Each `import` in them is followed, and in the files
+those import, in turn: an imported path is looked for first under the collection's folder, then
+beside the file that imports it. The bundled `google/protobuf/` files need nothing on disk. An
+import must be a plain relative path: one with a `..` or `.` part, or that starts with `/`, is
+refused and not read. When an imported file is not there, the API is placed with no definition and
+a warning names the import and the file that imports it; past 20, the rest are counted in one more
+warning. When a file cannot be read, the API is placed with no definition and a warning gives the
+reason. A named file that is not there gets a note. Only a folder collection's protos are read: the
+gRPC API of a single document, or of pasted YAML, has no definition. Each of these cases gets a note
+that the API still needs one.
 
 <Aside type="caution" title="A folder collection is read only within its folder">
 Only `.yml` and `.yaml` files under the folder that holds `opencollection.yml` are read. Symbolic
 links are not followed, and the root file and its folder must not be links themselves. The
-`node_modules` and `.git` folders are skipped. A `.proto` file is read only by a relative path that
-stays inside the collection's folder.
+`node_modules` and `.git` folders are skipped. A `.proto` file, named or imported, is read only by a
+relative path that stays inside the collection's folder. The `.proto` files read for one collection
+are held to the same 5,000-file and 50 MB limits.
 </Aside>
 
 ## Limits

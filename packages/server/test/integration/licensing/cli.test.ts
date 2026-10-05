@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { runAdmin } from '../../../src/identity/cli.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { newId } from '../../../src/identity/tokens.js';
+import { MISSING_SERVER_ID } from '../../../src/licensing/repo.js';
 import { main } from '../../../src/main.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
@@ -51,6 +52,7 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     const before = io();
     expect(await runAdmin({ command: 'admin-license-show' }, before.io, options)).toBe(0);
     expect(before.stdout()).toContain('Community (none)');
+    expect(before.stdout()).toMatch(/^Server id   [0-9a-f-]{36}\n/);
 
     const install = io();
     expect(
@@ -87,6 +89,21 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     expect(show.stdout()).toContain('Team (active)');
   });
 
+  it('refuses a license bound to another server with exit 2', async () => {
+    const wrong = io();
+    expect(
+      await runAdmin(
+        {
+          command: 'admin-license-install',
+          file: await file('wrong.lic', license(keys, { serverId: '11111111-2222-4333-8444-555555555555' })),
+        },
+        wrong.io,
+        options,
+      ),
+    ).toBe(2);
+    expect(wrong.stderr()).toMatch(/^licensing-invalid: This license was issued for server /);
+  });
+
   it('exits 2 when the file cannot be read', async () => {
     const missing = io();
     expect(await runAdmin({ command: 'admin-license-install', file: join(dir, 'nope.lic') }, missing.io, options)).toBe(
@@ -114,5 +131,20 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     expect(
       await runAdmin({ command: 'admin-invite', email: 'sixth@example.com', serverAdmin: false }, io().io, options),
     ).toBe(0);
+  });
+
+  it('a missing server_identity row is one stderr line, not a stack trace', async () => {
+    await db.query('delete from server_identity');
+    const out = io();
+    const code = await runAdmin({ command: 'admin-license-show' }, out.io, options);
+    expect(code).not.toBe(0);
+    expect(out.stderr()).toBe(`${MISSING_SERVER_ID}\n`);
+    expect(out.stderr()).not.toContain('    at ');
+  });
+
+  it('audit export still runs with the server_identity row deleted', async () => {
+    await db.query('delete from server_identity');
+    const exported = io();
+    expect(await runAdmin({ command: 'admin-audit-export' }, exported.io, options)).toBe(0);
   });
 });

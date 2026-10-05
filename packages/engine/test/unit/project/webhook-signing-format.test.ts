@@ -51,8 +51,8 @@ function signedProject(): Project {
 }
 
 describe('signing in the webhooks/ tree (§5.1)', () => {
-  it('is saved at format 7', () => {
-    expect(FORMAT_VERSION).toBe(7);
+  it('is saved at format 8', () => {
+    expect(FORMAT_VERSION).toBe(8);
   });
 
   it('writes signing at every level, references only', () => {

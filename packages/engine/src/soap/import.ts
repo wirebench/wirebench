@@ -16,6 +16,8 @@ import type {
   WsdlImportSource,
 } from './types.js';
 import { readDefinitionCache, writeDefinitionCache } from '../wsdl/cache.js';
+import type { KerberosSendAuth } from '../http/auth/kerberos-token.js';
+import { createHttpFetchDocument } from '../http/document-fetch.js';
 import { createDefaultFetchDocument } from '../http/fetch-document.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { DefinitionBundle, DefinitionSource, FetchDocument } from '../wsdl/resolver.js';
@@ -60,6 +62,24 @@ function withBasicAuth(fetchDocument: FetchDocument, auth: { username: string; p
     const bytes = new Uint8Array(await response.arrayBuffer());
     return { location: response.url, bytes, text: new TextDecoder('utf-8').decode(bytes) };
   };
+}
+
+/** True only for the Kerberos arm: a Basic `SendAuth` carrying `type: 'basic'` is never narrowed to it. */
+function isKerberos(
+  auth: { readonly username: string; readonly password: string } | KerberosSendAuth,
+): auth is KerberosSendAuth {
+  return 'type' in auth && auth.type === 'kerberos';
+}
+
+/**
+ * Kerberos for a WSDL fetch goes through the origin-scoped document fetcher, so a token reaches only
+ * the WSDL's own origin; `file:` locations and inline sources fall back to `base`. http(s) targets
+ * bypass `options.fetchDocument`, so a host fetcher's proxy and TLS do not apply under Kerberos.
+ */
+function kerberosFetch(base: FetchDocument, auth: KerberosSendAuth, location: string): FetchDocument {
+  if (!/^https?:/i.test(location)) return base;
+  const web = createHttpFetchDocument({ auth, authOrigin: new URL(location).origin });
+  return (target, signal) => (/^https?:/i.test(target) ? web(target, signal) : base(target, signal));
 }
 
 /** Resolves from the network, honoring the optional abort signal. */
@@ -157,13 +177,19 @@ async function resolveWithCache(
  * fetched at all.
  *
  * @param source where the WSDL comes from
- * @param options fetch override, Basic auth for fetching, abort signal, progress callback, definition cache
+ * @param options fetch override, Basic or Kerberos auth for fetching, abort signal, progress callback, definition cache
  */
 export async function importWsdl(source: WsdlImportSource, options?: WsdlImportOptions): Promise<WsdlImportResult> {
   const signal = options?.signal;
   const baseFetch = options?.fetchDocument ?? createDefaultFetchDocument();
-  const fetchDocument = options?.auth !== undefined ? withBasicAuth(baseFetch, options.auth) : baseFetch;
   const definitionSource = toDefinitionSource(source);
+  const auth = options?.auth;
+  const fetchDocument =
+    auth === undefined
+      ? baseFetch
+      : isKerberos(auth)
+        ? kerberosFetch(baseFetch, auth, definitionSource.location)
+        : withBasicAuth(baseFetch, auth);
 
   options?.onProgress?.({ phase: 'fetch', location: definitionSource.location });
   const cacheProblems: WsdlImportProblem[] = [];

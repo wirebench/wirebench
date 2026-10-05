@@ -415,6 +415,28 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(reply.command).toContain(`${server.url}/echo`);
   });
 
+  it.each([false, true])(
+    'request.curl notes Kerberos with show-secrets %s, and reads no secret for it',
+    async (shown) => {
+      const read: string[] = [];
+      const getSecret = (ref: string) => {
+        read.push(ref);
+        return Promise.resolve('pw');
+      };
+      const kerberos = locatedAt('/echo', {
+        auth: { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'sec_pw' } as never,
+      });
+      register({ getSecret, showSecrets: { get: () => shown } }, { runContextFor: kerberos });
+      const reply = unwrap<{ command: string; notes: string[] }>(
+        await invoke('request.curl', { requestId: 'ws-1', shell: 'posix' as const }),
+      );
+      expect(reply.notes).toContain(
+        'Kerberos is not expressible in this command; the upgrade is shown without authorization.',
+      );
+      expect(read).toEqual([]);
+    },
+  );
+
   it('the HTTP Log row exists (through onExchange) the moment the handshake settles — before the session closes', async () => {
     const onExchange = vi.fn<(entry: LogEntryWire) => void>();
     register({ onExchange });

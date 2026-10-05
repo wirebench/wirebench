@@ -9,6 +9,7 @@
 import type { AssertionSubject } from '../assert/model.js';
 import { HttpError, WsError } from '../errors.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
+import { withNegotiate } from '../http/auth/kerberos-token.js';
 import type { AuthConfig, Project } from '../project/model.js';
 import { DEFAULT_PREFERENCES } from '../project/preferences.js';
 import type { Preferences } from '../project/preferences.js';
@@ -164,7 +165,7 @@ function attemptedOf(input: WsCallInput): AttemptedRequest {
  * session opens with.
  *
  * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing` |
- * `ws-auth-unsupported` | `ws-bad-url`
+ * `ws-auth-unsupported` | `ws-bad-url` | `kerberos-*` when Kerberos cannot make a token
  */
 async function connectWs(
   selected: WsSelected,
@@ -176,8 +177,12 @@ async function connectWs(
   const tls = await tlsFor(context, settings.sslKeystoreRef, settings.trustInvalid === true);
   const proxy = await context.host.proxyFor?.(dialledUrl(input).replace(/^ws/, 'http'));
   const auth = await authFor(wsEffectiveAuth(selected), selected.path, context, tls);
+  // A handshake is one request: Kerberos goes on preemptively as a Negotiate header. The URL is
+  // resolved first, so a malformed one fails as ws-bad-url rather than as Kerberos's SPN error.
+  const url = resolveWsUrl(input.serverUrl, input.request.url, input.request.query);
+  const sendAuth = await withNegotiate(auth, url.replace(/^ws/, 'http'));
   return toWsSessionOptions(input, {
-    ...(auth !== undefined ? { auth } : {}),
+    ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
     ...(tls !== undefined ? { tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
     signal,

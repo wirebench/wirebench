@@ -17,7 +17,8 @@ const STATUS = {
 
 /**
  * The License tab (licensing spec §3.8), for server admins. Edition, status, customer, seats and dates;
- * a pasted or chosen license; *Remove license…* behind a confirmation. No other text.
+ * a pasted or chosen license; *Remove license…* behind a confirmation. No other text. The server id comes first,
+ * with a *Copy*, for the order form (license-binding spec §3.4).
  */
 export function LicenseTab({ url }: { readonly url: string }) {
   const { state, error, busy, load, install, remove } = useLicenseStore();
@@ -52,6 +53,24 @@ export function LicenseTab({ url }: { readonly url: string }) {
     <div data-testid="license-tab" className="flex flex-col gap-3 text-sm">
       {state !== undefined && (
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
+          {state.serverId !== undefined && (
+            <>
+              <dt className="text-fg-subtle">Server id</dt>
+              <dd className="flex items-center gap-2">
+                <span data-testid="license-server-id" className="font-mono text-xs">
+                  {state.serverId}
+                </span>
+                <Button
+                  variant="ghost"
+                  data-testid="license-copy-server-id"
+                  aria-label="Copy server id"
+                  onClick={() => void navigator.clipboard.writeText(state.serverId ?? '')}
+                >
+                  Copy
+                </Button>
+              </dd>
+            </>
+          )}
           <dt className="text-fg-subtle">Edition</dt>
           <dd data-testid="license-edition">{EDITION[state.edition]}</dd>
           <dt className="text-fg-subtle">Status</dt>

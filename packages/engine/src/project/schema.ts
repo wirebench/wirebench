@@ -38,6 +38,7 @@ export {
   definitionAuthSchema,
   endpointAuthSchema,
   hookLinkSchema,
+  kerberosAuthSchema,
   keyValueEntrySchema,
   parseFile,
   restFolderFileSchema,

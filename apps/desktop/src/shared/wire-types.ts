@@ -770,7 +770,7 @@ export type EndpointSourceWire = z.infer<typeof endpointSourceSchema>;
 export const requestAuthSourceSchema = z.object({
   /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
   source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -818,7 +818,7 @@ export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSc
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });
@@ -974,12 +974,15 @@ export const endpointAuthSchema = z.object({
 export type EndpointAuthWire = z.infer<typeof endpointAuthSchema>;
 
 /**
- * Authentication as it crosses the bridge: the same seven schemes the engine models, with every
+ * Authentication as it crosses the bridge: the same eight schemes the engine models, with every
  * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
  * renderer can configure a token it can never read back.
  */
 export const authConfigWireSchema = z.object({
-  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  /** Kerberos: the service principal, and the ticket-cache principal to pick. */
+  spn: z.string().optional(),
+  principal: z.string().optional(),
   username: z.string().optional(),
   passwordRef: z.string().optional(),
   /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
@@ -3370,6 +3373,16 @@ export const definitionAuthWireSchema = z.discriminatedUnion('type', [
       name: z.string().min(1),
       in: z.enum(['header', 'query']),
       valueRef: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('kerberos'),
+      spn: z.string().optional(),
+      principal: z.string().optional(),
+      username: z.string().optional(),
+      domain: z.string().optional(),
+      passwordRef: z.string().optional(),
     })
     .strict(),
 ]);
@@ -6527,6 +6540,7 @@ export const licenseStateWireSchema = z.object({
   status: z.enum(['none', 'active', 'grace', 'expired', 'invalid']),
   seats: z.object({ used: z.number(), limit: z.number().nullable() }),
   features: z.array(z.string()),
+  serverId: z.string().optional(),
   licenseId: z.string().optional(),
   customer: z.string().optional(),
   issuedAt: z.string().optional(),

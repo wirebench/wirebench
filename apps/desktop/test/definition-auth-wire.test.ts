@@ -9,6 +9,7 @@ import {
   apiImportAsyncApiRequestSchema,
   apiImportOpenApiRequestSchema,
   apiRestPlanUpdateRequestSchema,
+  authConfigWireSchema,
   definitionAuthWireSchema,
 } from '../src/shared/wire-types.js';
 
@@ -34,6 +35,8 @@ describe('definitionAuthWireSchema', () => {
     ['bearer', { type: 'bearer', tokenRef: 'ref-t', scheme: 'Token' }],
     ['a header API key', { type: 'api-key', name: 'X-Api-Key', in: 'header', valueRef: 'ref-v' }],
     ['a query API key', { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'ref-v' }],
+    ['signed-in Kerberos', { type: 'kerberos', spn: 'HTTP/svc.corp', principal: 'alice@CORP' }],
+    ['Kerberos with an account', { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'ref-p' }],
   ])('accepts %s as references', (_label, auth) => {
     expect(definitionAuthWireSchema.safeParse(auth).success).toBe(true);
   });
@@ -45,8 +48,24 @@ describe('definitionAuthWireSchema', () => {
     ['NTLM', { type: 'ntlm', username: 'ada', passwordRef: 'ref-p' }],
     ['OAuth2', { type: 'oauth2', grant: 'client-credentials', tokenUrl: 'https://t.test', clientId: 'c' }],
     ['an API key with no name', { type: 'api-key', name: '', in: 'header', valueRef: 'ref-v' }],
+    ['a plaintext Kerberos password', { type: 'kerberos', username: 'alice', password: 'hunter2' }],
   ])('refuses %s', (_label, auth) => {
     expect(definitionAuthWireSchema.safeParse(auth).success).toBe(false);
+  });
+});
+
+describe('authConfigWireSchema', () => {
+  it('carries a Kerberos configuration with its fields, so a project holding one crosses the bridge', () => {
+    const auth = {
+      type: 'kerberos',
+      spn: 'HTTP/svc.corp',
+      principal: 'alice@CORP',
+      username: 'alice',
+      domain: 'CORP',
+      passwordRef: 'ref-p',
+      passwordEnv: 'KRB_PW',
+    };
+    expect(authConfigWireSchema.parse(auth)).toEqual(auth);
   });
 });
 

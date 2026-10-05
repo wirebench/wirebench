@@ -1,7 +1,9 @@
 /**
  * Offline license verification (licensing spec §3.1, §3.2). Pure: no clock of its own, no I/O. The
  * signature covers the payload segment's text exactly as received, so nothing is re-serialised, and one
- * license line has exactly one valid signature even though base64url decoding is lenient.
+ * license line has exactly one valid signature even though base64url decoding is lenient. A license that
+ * names a server verifies only on that server, checked after the signature and before the clock
+ * (license-binding spec §3.3).
  */
 import { verify, type KeyObject } from 'node:crypto';
 import {
@@ -31,7 +33,7 @@ function signedBy(segment: string, signature: Buffer, publicKeys: readonly KeyOb
 }
 
 /** Expiry is state, not validity (§3.2): a license past `expiresAt` still verifies. */
-export function verifyLicense(text: string, publicKeys: readonly KeyObject[], now: Date): Verified {
+export function verifyLicense(text: string, publicKeys: readonly KeyObject[], now: Date, serverId: string): Verified {
   const parts = text.trim().split('.');
   if (parts.length !== 3 || parts[0] !== LICENSE_FORMAT) {
     return malformed('This is not a Wirebench license. A license is one line that starts with "wbl1.".');
@@ -58,6 +60,13 @@ export function verifyLicense(text: string, publicKeys: readonly KeyObject[], no
   const license = parsed.data;
   if (Date.parse(license.expiresAt) <= Date.parse(license.issuedAt)) {
     return malformed('The license expires before it was issued.');
+  }
+  if (license.serverId !== undefined && license.serverId !== serverId) {
+    return {
+      ok: false,
+      reason: 'wrong-server',
+      message: `This license was issued for server ${license.serverId}. This server is ${serverId}. Ask for a license issued for this server.`,
+    };
   }
   if (Date.parse(license.issuedAt) > now.getTime()) {
     return {
