@@ -44,12 +44,15 @@ export type ImportSourceWire = z.infer<typeof importSourceSchema>;
  * absent from this schema — zod strips/rejects it, so a plaintext password sent by mistake
  * fails validation rather than silently reaching a project file or a log.
  */
-export const importAuthSchema = z
-  .object({ username: z.string(), passwordRef: z.string() })
+export const importAuthSchema = z.union([
   // `.strict()`: an unknown key is a hard error, not silently stripped — so a caller that
   // sends a plaintext `password` fails validation loudly instead of having it quietly dropped
   // (or, worse, one day passed through to a project file).
-  .strict();
+  z.object({ username: z.string(), passwordRef: z.string() }).strict(),
+  // Kerberos with the signed-in ticket; an explicit account is set on the interface afterwards.
+  z.object({ type: z.literal('kerberos'), spn: z.string().optional() }).strict(),
+]);
+export type ImportAuthWire = z.infer<typeof importAuthSchema>;
 
 /** Request payload for `definition.import`. */
 export const definitionImportRequestSchema = z.object({
@@ -821,6 +824,7 @@ export const authSummaryWireSchema = z.object({
   scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  spn: z.string().optional(),
 });
 export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
 

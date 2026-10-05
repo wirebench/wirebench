@@ -47,6 +47,7 @@ describe('buildApi', () => {
       'app',
       'attachments',
       'audit',
+      'auth',
       'ciTokens',
       'cookies',
       'currentValues',

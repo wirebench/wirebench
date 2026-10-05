@@ -86,6 +86,12 @@ function deferredWriteFs(): { fs: FsLike; arm: () => void; release: () => void }
   };
 }
 
+function withoutAuth<T extends { auth?: unknown }>(input: T): Omit<T, 'auth'> {
+  const copy = { ...input };
+  delete copy.auth;
+  return copy;
+}
+
 beforeEach(async () => {
   server = await startTestSoapServer({ fixture: 'calculator' });
   root = tempDir('userdata');
@@ -129,6 +135,109 @@ describe('ProjectHost', () => {
     });
     expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
   });
+
+  it('imports and re-hydrates through Kerberos, saving it on the interface and never as a Basic shape', async () => {
+    const dir = join(tempDir('project'), 'Kerberos Project');
+    const secrets = { get: (ref: string) => Promise.resolve(ref === 'sec_pw' ? 's3cret!' : undefined) };
+    const addEngine = new EngineService((ref) => secrets.get(ref));
+    const seen: unknown[] = [];
+    // The test server issues no challenge to answer, so the ticket is not asked for: record the
+    // auth main hands the engine and import without it.
+    const original = addEngine.importForProject.bind(addEngine);
+    vi.spyOn(addEngine, 'importForProject').mockImplementation((input, hooks) => {
+      seen.push(input.auth);
+      return original(withoutAuth(input), hooks);
+    });
+    const service = new ProjectHost(addEngine, {}, undefined, undefined, secrets);
+
+    await service.create({ dir, name: 'Kerberos Project' });
+    const { project, interfaceId } = await service.addInterface({
+      source: { kind: 'url', url: server!.wsdlUrl },
+      auth: { type: 'kerberos', spn: 'HTTP/wsdl.example.test' },
+      useForRequests: true,
+    });
+    expect(seen[0]).toEqual({ type: 'kerberos', spn: 'HTTP/wsdl.example.test' });
+    expect(project.interfaces.find((i) => i.id === interfaceId)?.auth).toMatchObject({
+      type: 'kerberos',
+      spn: 'HTTP/wsdl.example.test',
+    });
+    await service.close();
+
+    const engine = new EngineService((ref) => secrets.get(ref));
+    const hydrateOriginal = engine.importForProject.bind(engine);
+    const hydrated: unknown[] = [];
+    vi.spyOn(engine, 'importForProject').mockImplementation((input, hooks) => {
+      hydrated.push(input.auth);
+      return hydrateOriginal(withoutAuth(input), hooks);
+    });
+    const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+    await reopened.openProject(dir);
+    await reopened.whenHydrated();
+
+    const auth = hydrated[0];
+    expect(auth).toEqual({ type: 'kerberos', spn: 'HTTP/wsdl.example.test' });
+    expect(auth).not.toHaveProperty('username');
+    expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
+  });
+
+  it('drops a blank SPN rather than saving or sending it', async () => {
+    const dir = join(tempDir('project'), 'Blank SPN Project');
+    const engine = new EngineService();
+    const seen: unknown[] = [];
+    const original = engine.importForProject.bind(engine);
+    vi.spyOn(engine, 'importForProject').mockImplementation((input, hooks) => {
+      seen.push(input.auth);
+      return original(withoutAuth(input), hooks);
+    });
+    const service = new ProjectHost(engine, {});
+
+    await service.create({ dir, name: 'Blank SPN Project' });
+    const { project, interfaceId } = await service.addInterface({
+      source: { kind: 'url', url: server!.wsdlUrl },
+      auth: { type: 'kerberos', spn: '   ' },
+      useForRequests: true,
+    });
+
+    expect(seen[0]).toEqual({ type: 'kerberos' });
+    expect(project.interfaces.find((i) => i.id === interfaceId)?.auth).toEqual({ type: 'kerberos' });
+  });
+
+  // Off Windows an explicit Kerberos account is refused by the engine whatever its password, so a
+  // reopen must not read the keychain for it (nor fail when the secret is not on this machine).
+  it.skipIf(process.platform === 'win32')(
+    'hydrates a Kerberos interface naming a Windows account without reading its password, off Windows',
+    async () => {
+      const dir = join(tempDir('project'), 'Windows Account Project');
+      const getSecret = vi.fn<(ref: string) => Promise<string | undefined>>(() => Promise.resolve(undefined));
+      const secrets = { get: getSecret };
+      const service = new ProjectHost(new EngineService(getSecret), {}, undefined, undefined, secrets);
+      await service.create({ dir, name: 'Windows Account Project' });
+      const { interfaceId } = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+      await service.mutate({
+        kind: 'update-interface-auth',
+        interfaceId,
+        auth: { type: 'kerberos', spn: 'HTTP/svc', username: 'ada', domain: 'CORP', passwordRef: 'sec_missing' },
+      });
+      await service.save();
+      await service.close();
+
+      const engine = new EngineService(getSecret);
+      const hydrated: unknown[] = [];
+      const original = engine.importForProject.bind(engine);
+      vi.spyOn(engine, 'importForProject').mockImplementation((input, hooks) => {
+        hydrated.push(input.auth);
+        return original(input, hooks);
+      });
+      getSecret.mockClear();
+      const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      expect(getSecret).not.toHaveBeenCalled();
+      expect(hydrated[0]).toEqual({ type: 'kerberos', spn: 'HTTP/svc', username: 'ada', domain: 'CORP' });
+      expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
+    },
+  );
 
   it("persists a REST API definition's auth to disk and carries it through a reopen", async () => {
     const dir = join(tempDir('project'), 'Pets Project');

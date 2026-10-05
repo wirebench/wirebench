@@ -23,6 +23,7 @@ describe('toDefinitionAuthWire', () => {
       in: 'query',
       valueRef: 'ref-v',
     });
+    expect(toDefinitionAuthWire({ type: 'kerberos', spn: 'HTTP/x' })).toEqual({ type: 'kerberos', spn: 'HTTP/x' });
   });
 
   it('sends nothing for None, or for a credential whose secret or name is missing', () => {

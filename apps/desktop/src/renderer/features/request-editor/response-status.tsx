@@ -88,12 +88,23 @@ export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
           SOAP Fault: {fault.code}
         </span>
       )}
-      {exchange.auth?.challenged === true && (
-        <span data-testid="auth-challenge-note" className="text-fg-subtle">
-          {' · '}
-          Authenticated after 401 challenge
-        </span>
-      )}
+      {exchange.auth?.scheme === 'kerberos'
+        ? // A token went out only after a Negotiate challenge, which is the second attempt: an
+          // unchallenged send, or a 401 that offered no Negotiate (one attempt), carried none.
+          exchange.auth.challenged &&
+          exchange.auth.attempts === 2 && (
+            <span data-testid="auth-challenge-note" className="text-fg-subtle">
+              {' · '}
+              Authenticated with Kerberos
+              {exchange.auth.spn !== undefined ? ` as ${exchange.auth.spn}` : ''}
+            </span>
+          )
+        : exchange.auth?.challenged === true && (
+            <span data-testid="auth-challenge-note" className="text-fg-subtle">
+              {' · '}
+              Authenticated after 401 challenge
+            </span>
+          )}
       {exchange.http.truncated && <span className="text-status-warning"> · truncated</span>}
     </p>
   );

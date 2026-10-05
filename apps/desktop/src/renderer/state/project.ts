@@ -27,6 +27,7 @@ import type {
   OpenApiImportSummaryWire,
   EnvironmentPatchWire,
   EnvironmentWire,
+  ImportAuthWire,
   ImportSourceWire,
   InterfaceWire,
   KeystorePatchWire,
@@ -191,7 +192,7 @@ export interface ProjectStore extends ProjectSnapshot {
     target: ProjectAddInterfaceTarget,
     source: ImportSourceWire,
     options?: {
-      readonly auth?: { readonly username: string; readonly passwordRef: string };
+      readonly auth?: ImportAuthWire;
       readonly useForRequests?: boolean;
     },
     token?: string,

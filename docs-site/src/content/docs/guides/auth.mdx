@@ -23,6 +23,7 @@ their own auth. Every scheme below is available at all six levels.
 | Bearer token | Token, and the scheme word sent before it (default `Bearer`) |
 | API key | Name, value, and whether it's sent as a header or a query parameter |
 | OAuth 2 | See below |
+| Kerberos | Your Windows sign-in or `kinit` ticket; optional SPN; on Windows, another account |
 
 <Steps>
 
@@ -88,6 +89,56 @@ stored refresh token.
 The CLI runner (`wirebench run`) obtains a client-credentials token itself, for REST, gRPC and
 SOAP alike, reading the client secret from the request's environment variable. It refuses the
 authorization-code grant, since a pipeline has no browser to sign in with.
+
+### Kerberos
+
+Kerberos gives single sign-on to servers that use HTTP Negotiate: Wirebench sends the ticket of the
+account you are signed in with, and you type no password. On Windows that is your domain sign-in.
+On macOS and Linux, get a ticket first with `kinit user@REALM`; Wirebench reads the ticket cache
+the same way any other Kerberos client on the machine does.
+
+How the token is sent depends on where it goes:
+
+- **REST and SOAP requests** use two legs on one connection. Wirebench sends the request, and only
+  after the server answers with a `Negotiate` challenge does it send the token. When the server's
+  answer carries a reply token, Wirebench verifies it (mutual authentication). There is no
+  preemptive mode for these requests. Once a challenge succeeded, a SOAP response line reads
+  "Authenticated with Kerberos as" and the SPN, in the platform's form (`HTTP/host` on Windows,
+  `HTTP@host` elsewhere); the REST status line does not change.
+- **Definition fetches** (OpenAPI, AsyncAPI, WSDL) send one preemptive token, to the definition's
+  own origin only, never to a redirect target on another origin.
+- **WebSocket upgrades and gRPC calls** send one preemptive token.
+- **Webhooks** do not offer Kerberos.
+
+**Service principal name (SPN).** Leave it blank and Wirebench asks for `HTTP` plus the URL's host
+name, without the port. Set it when the URL is an alias (a load-balancer name or a CNAME), or when
+the service is registered under another name; use the name the service is registered under. Write
+it as `HTTP/host`. Wirebench converts it to the form the platform expects (`HTTP/host` on Windows,
+`HTTP@host` elsewhere), and on macOS and Linux an `HTTP/host@REALM` is accepted with the realm
+dropped.
+
+**Use another account** (Windows only). Fill in a username, a domain and a password, which is kept
+in the secret store like any other. Blank fields count as unset. macOS and Linux refuse an explicit
+account with `kerberos-explicit-credentials-unsupported`; run `kinit user@REALM` there instead.
+
+Kerberos is the only mechanism. Nothing falls back to NTLM, so if the server needs NTLM, choose
+NTLM instead. Kerberos is not available on Windows on ARM. On Linux, Kerberos needs the deb, rpm
+or AppImage build. Where the Kerberos support cannot load, the type is shown disabled with the
+reason.
+
+A cURL export of a REST or SOAP request uses `curl --negotiate -u :`. A gRPC or WebSocket command
+export leaves Kerberos out and says so in a note.
+
+| Code | Message | Fix |
+| --- | --- | --- |
+| `kerberos-unavailable` | The reason Kerberos support could not load. | Use a build for a supported platform (not Windows on ARM; on Linux the deb, rpm or AppImage build). |
+| `kerberos-explicit-credentials-unsupported` | Explicit Kerberos credentials are Windows-only. Run `kinit user@REALM` and leave username and password empty. | Clear the username and password, and run `kinit`. |
+| `kerberos-no-credentials` | No Kerberos ticket. Sign in to the domain, or run `kinit`. | Sign in to the domain, or run `kinit user@REALM`, then send again. |
+| `kerberos-unknown-spn` | The KDC does not know the SPN. Set the SPN to the name the service is registered under. Also shown for a blank or unparseable SPN. | Set the SPN to the registered name, or clear it to use the default. |
+| `kerberos-clock-skew` | This machine's clock differs from the domain's by more than allowed. | Sync the system clock. |
+| `kerberos-mutual-auth-failed` | The server's Kerberos reply could not be verified. | Check that the server is the service the SPN names. |
+| `kerberos-rejected` | The server refused the Kerberos token (HTTP 401). | Ask the service owner whether your account may use it. |
+| `kerberos-failed` | Kerberos failed, with the operating system's own text. | Read the text; it is what the OS reported. |
 
 ## WS-Security (SOAP)
 

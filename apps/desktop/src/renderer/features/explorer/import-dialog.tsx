@@ -49,6 +49,7 @@ import { Button } from '../../components/button.js';
 import { DefinitionAuthFields, NO_DEFINITION_AUTH, toDefinitionAuthWire } from '../../components/definition-auth.js';
 import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
+import { useKerberosAvailability } from '../../lib/use-kerberos-availability.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
@@ -243,7 +244,17 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [loadingServers, setLoadingServers] = useState(false);
 
   // WSDL Basic Auth fields
-  const [useAuth, setUseAuth] = useState(false);
+  const [authMode, setAuthMode] = useState<'none' | 'basic' | 'kerberos'>('none');
+  const [spn, setSpn] = useState('');
+  const kerberosAvailability = useKerberosAvailability();
+  // Kerberos can be picked before availability is known; once main says it is unavailable, a
+  // Kerberos choice could only fail, so it falls back to no authentication.
+  const kerberosUnavailable = kerberosAvailability?.available === false;
+  useEffect(() => {
+    if (kerberosUnavailable) {
+      setAuthMode((mode) => (mode === 'kerberos' ? 'none' : mode));
+    }
+  }, [kerberosUnavailable]);
   const [username, setUsername] = useState('');
   const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
   const passwordFlushRef = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
@@ -986,10 +997,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
       if (targetFormat === 'wsdl') {
         const flushedRef = (await passwordFlushRef.current?.()) ?? passwordRef;
-        const options =
-          useAuth && username.length > 0 && flushedRef !== undefined
-            ? { auth: { username, passwordRef: flushedRef }, useForRequests }
-            : undefined;
+        const auth =
+          authMode === 'kerberos'
+            ? { type: 'kerberos' as const, ...(spn.trim() !== '' ? { spn: spn.trim() } : {}) }
+            : authMode === 'basic' && username.length > 0 && flushedRef !== undefined
+              ? { username, passwordRef: flushedRef }
+              : undefined;
+        const options = auth !== undefined ? { auth, useForRequests } : undefined;
 
         const summary = await useProjectStore.getState().importDefinition(into, source, options, token);
         if (cancelledTokensRef.current.has(token)) {
@@ -1341,11 +1355,43 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
                     {(effectiveFormat === 'wsdl' || effectiveFormat === 'unknown') && (
                       <>
-                        <label className="mt-1 flex items-center gap-2 text-sm text-fg-subtle">
-                          <input type="checkbox" checked={useAuth} onChange={(e) => setUseAuth(e.target.checked)} />
-                          Use Basic auth
-                        </label>
-                        {useAuth && (
+                        <select
+                          aria-label="Definition authentication"
+                          value={authMode}
+                          onChange={(e) => setAuthMode(e.target.value as 'none' | 'basic' | 'kerberos')}
+                          className="mt-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                        >
+                          <option value="none">None</option>
+                          <option value="basic">Basic</option>
+                          <option value="kerberos" disabled={kerberosAvailability?.available === false}>
+                            Kerberos (signed-in ticket)
+                          </option>
+                        </select>
+                        {kerberosAvailability?.available === false &&
+                          kerberosAvailability.reason !== undefined &&
+                          kerberosAvailability.reason !== '' && (
+                            <p className="text-xs text-fg-subtle">{kerberosAvailability.reason}</p>
+                          )}
+                        {authMode === 'kerberos' && (
+                          <>
+                            <input
+                              aria-label="Definition SPN"
+                              placeholder="HTTP/<host of the WSDL>"
+                              value={spn}
+                              onChange={(e) => setSpn(e.target.value)}
+                              className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
+                            />
+                            <label className="flex items-center gap-2 text-sm text-fg-subtle">
+                              <input
+                                type="checkbox"
+                                checked={useForRequests}
+                                onChange={(e) => setUseForRequests(e.target.checked)}
+                              />
+                              Use these credentials for requests too
+                            </label>
+                          </>
+                        )}
+                        {authMode === 'basic' && (
                           <>
                             <div className="flex gap-2">
                               <input

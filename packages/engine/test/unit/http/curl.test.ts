@@ -43,6 +43,22 @@ describe('toCurl', () => {
   });
 });
 
+describe('toCurl with --negotiate', () => {
+  it('asks curl for the OS ticket with an empty user', () => {
+    const cmd = soapToCurl({ ...INPUT, negotiate: {} });
+    expect(cmd).toContain("--negotiate --user ':'");
+  });
+
+  it('names the account as DOMAIN\\user and carries no password', () => {
+    const cmd = soapToCurl({ ...INPUT, negotiate: { username: 'u', domain: 'D' } });
+    expect(cmd).toContain("--negotiate --user 'D\\u:'");
+  });
+
+  it('adds nothing without a negotiate input', () => {
+    expect(soapToCurl(INPUT)).not.toContain('--negotiate');
+  });
+});
+
 describe('fromCurl', () => {
   it('round-trips endpoint/envelope/headers/soapAction through toCurl', () => {
     const cmd = soapToCurl(INPUT);

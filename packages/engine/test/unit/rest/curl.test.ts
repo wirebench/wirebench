@@ -138,6 +138,12 @@ describe('restToCurl', () => {
     expect(restToCurl(basic)).toContain(`--user 'ada:${CURL_REDACTED}'`);
     expect(restToCurl(basic, { redactSecrets: false })).toContain("--user 'ada:hunter2'");
 
+    // Kerberos is the OS ticket: the command asks curl for it and never carries a password.
+    const kerberos = input({ auth: { type: 'kerberos', username: 'ada', domain: 'D', password: 'hunter2' } });
+    expect(restToCurl(kerberos)).toContain("--negotiate --user 'D\\ada:'");
+    expect(restToCurl(kerberos, { redactSecrets: false })).not.toContain('hunter2');
+    expect(restToCurl(input({ auth: { type: 'kerberos' } }))).toContain("--negotiate --user ':'");
+
     // A key in the query is part of the URL, so it is redacted there rather than in a header.
     const query = input({ auth: { type: 'api-key', name: 'api_key', value: 'k-1', in: 'query' } });
     expect(restToCurl(query)).toContain(`api_key=${CURL_REDACTED}`);
@@ -340,24 +346,41 @@ describe('heredoc scan', () => {
     expect(result.request.body).toMatchObject({ kind: 'raw', text: '{\r\n  "a": 1\r\n}' });
   });
 
-  describe('flags that take no value', () => {
-    it.each([
-      '--ntlm',
-      '--digest',
-      '--basic',
-      '--anyauth',
-      '--negotiate',
-      '-O',
-      '--compressed',
-      '-S',
-      '--http1.0',
-      '--tlsv1.2',
-    ])('%s does not swallow the token after it', (flag) => {
-      const result = fromRestCurl(`curl ${flag} -u ada:pw https://api.test/pets`);
-      expect(result.request.url).toBe('https://api.test/pets');
-      expect(result.basic).toEqual({ username: 'ada', password: 'pw' });
-      expect(result.problems).toContain(`Ignored ${flag}`);
+  describe('--negotiate', () => {
+    it('reads an exported Kerberos command back as Kerberos, with the account, never as Basic', () => {
+      const exported = restToCurl(
+        input({ auth: { type: 'kerberos', username: 'ada', domain: 'CORP', password: 'pw' } }),
+      );
+      const result = fromRestCurl(exported);
+      expect(result.kerberos).toEqual({ type: 'kerberos', username: 'ada', domain: 'CORP' });
+      expect(result.basic).toBeUndefined();
+      expect(result.problems).not.toContain('Ignored --negotiate');
     });
+
+    it('reads the signed-in ticket form (an empty user) back as plain Kerberos', () => {
+      const result = fromRestCurl(restToCurl(input({ auth: { type: 'kerberos' } })));
+      expect(result.kerberos).toEqual({ type: 'kerberos' });
+      expect(result.basic).toBeUndefined();
+    });
+
+    it('takes the account without a domain, and the flag after -u as well as before it', () => {
+      const result = fromRestCurl("curl -u 'ada:' --negotiate https://api.test/pets");
+      expect(result.kerberos).toEqual({ type: 'kerberos', username: 'ada' });
+      expect(result.basic).toBeUndefined();
+      expect(result.request.url).toBe('https://api.test/pets');
+    });
+  });
+
+  describe('flags that take no value', () => {
+    it.each(['--ntlm', '--digest', '--basic', '--anyauth', '-O', '--compressed', '-S', '--http1.0', '--tlsv1.2'])(
+      '%s does not swallow the token after it',
+      (flag) => {
+        const result = fromRestCurl(`curl ${flag} -u ada:pw https://api.test/pets`);
+        expect(result.request.url).toBe('https://api.test/pets');
+        expect(result.basic).toEqual({ username: 'ada', password: 'pw' });
+        expect(result.problems).toContain(`Ignored ${flag}`);
+      },
+    );
 
     it('splits bundled value-less short flags and applies the ones it knows', () => {
       const result = fromRestCurl('curl -sSkL https://api.test/pets');

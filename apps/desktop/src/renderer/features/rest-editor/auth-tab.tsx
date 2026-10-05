@@ -22,6 +22,7 @@ const TYPE_LABEL: Readonly<Record<string, string>> = {
   bearer: 'Bearer token',
   'api-key': 'API key',
   oauth2: 'OAuth2',
+  kerberos: 'Kerberos',
 };
 
 /** How one scheme reads wherever a source line names it. */
@@ -38,11 +39,13 @@ export interface RestAuthTabProps {
    * API that configures something, already resolved by the caller.
    */
   readonly inheritedFrom?: { readonly label: string; readonly type: string } | undefined;
+  /** The schemes offered, when the request cannot hold all of them (a webhook item: no Kerberos). */
+  readonly types?: readonly AuthConfigWire['type'][];
   readonly onChange: (auth: AuthConfigWire) => void;
 }
 
 /** The Auth tab. */
-export function RestAuthTab({ requestId, auth, inheritedFrom, onChange }: RestAuthTabProps) {
+export function RestAuthTab({ requestId, auth, inheritedFrom, types, onChange }: RestAuthTabProps) {
   return (
     <div data-testid="rest-auth" className="flex flex-col gap-3 overflow-auto p-3">
       <p data-testid="rest-auth-source" className="text-sm text-fg-muted">
@@ -56,6 +59,7 @@ export function RestAuthTab({ requestId, auth, inheritedFrom, onChange }: RestAu
       <AuthFields
         scope="Request"
         inheritable
+        {...(types !== undefined ? { types } : {})}
         auth={auth.type === 'inherit' ? undefined : auth}
         onChange={(next) => {
           onChange(next ?? { type: 'inherit' });

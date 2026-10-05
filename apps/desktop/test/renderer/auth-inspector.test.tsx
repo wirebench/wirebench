@@ -177,7 +177,7 @@ describe('AuthInspector', () => {
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value);
     // The first option is "Not configured", which clears the request back to its defaults.
-    expect(values).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']);
+    expect(values).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']);
     expect(within(select).getByRole('option', { name: 'Not configured' })).toBeDefined();
     expect(within(select).queryByRole('option', { name: 'Inherit' })).toBeNull();
   });
