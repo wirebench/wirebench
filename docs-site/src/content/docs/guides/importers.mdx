@@ -349,9 +349,9 @@ kept as text, then lists the environments and project properties added and the s
   gRPC API has no definition yet, and the report says so.
 - **Refused.** A collection with no requests and no environments, such as one holding only
   variables or scripts, is refused and no project is created.
-- **Limits.** A document larger than 50 MB is refused. A folder is refused past 5,000 YAML files, 64
-  levels of folders or 50 MB in total; links are not followed, and `node_modules` and `.git` are
-  skipped.
+- **Limits.** A document larger than 50 MB is refused, picked or pasted. A folder is refused past
+  5,000 YAML files, 64 levels of folders or 50 MB in total. Sizes are counted in bytes of UTF-8
+  text. Links are not followed, and `node_modules` and `.git` are skipped.
 
 See [From OpenCollection](/wirebench/docs/switching/opencollection/) for every rule, and what does
 not come across.
