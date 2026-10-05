@@ -53,6 +53,16 @@ describe('redactXml on security tokens', () => {
     expect(redactXml(wrapped)).not.toContain('cHJvb2Y=');
   });
 
+  it("masks an entropy's binary secret beside the proof token, keeping the markup", () => {
+    const rstr =
+      '<wst:RequestSecurityTokenResponse xmlns:wst="x"><wst:Entropy><wst:BinarySecret Type="n">ZW50cm9weQ==</wst:BinarySecret></wst:Entropy>' +
+      '<wst:Lifetime>soon</wst:Lifetime></wst:RequestSecurityTokenResponse>';
+    const out = redactXml(rstr);
+    expect(out).not.toContain('ZW50cm9weQ==');
+    expect(out).toContain(`<wst:BinarySecret Type="n">${REDACTED_XML_MARKER}</wst:BinarySecret></wst:Entropy>`);
+    expect(out).toContain('<wst:Lifetime>soon</wst:Lifetime>');
+  });
+
   it('masks nothing when show is set', () => {
     expect(redactXml(SIGNED, { show: true })).toBe(SIGNED);
   });
