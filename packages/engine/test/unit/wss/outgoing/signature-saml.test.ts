@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
 import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
-import { createWssContext } from '../../../../src/wss/model.js';
+import { createWssContext, SAML_TOKEN_PART } from '../../../../src/wss/model.js';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
 import type { Keystore } from '../../../../src/keystore/model.js';
 import type { WssContext, WssOutgoingConfig, WssSignatureEntry } from '../../../../src/wss/model.js';
@@ -71,6 +71,22 @@ describe('the saml-token key identifier', () => {
     const xml = await applyOutgoingWss(SOAP11, holderOfKey('user', 'user'), context());
     expect(xml).toMatch(/<ds:KeyInfo>.*<wsse:SecurityTokenReference[^>]*wsse11:TokenType="[^"]*#SAMLV2\.0"/s);
     expect(xml).toMatch(/ValueType="[^"]*#SAMLID"[^>]*>_u\d+<\/wsse:KeyIdentifier>/);
+    expect(verifySignature(xml, { certPem: user.certPem }).ok).toBe(true);
+  });
+
+  it('also covers the holder-of-key token itself through the STR-Transform, and verifies', async () => {
+    const config = holderOfKey('user', 'user');
+    const [token, sig] = config.entries;
+    const signed: WssOutgoingConfig = {
+      ...config,
+      entries: [
+        token!,
+        { ...(sig as WssSignatureEntry), parts: [...(sig as WssSignatureEntry).parts, SAML_TOKEN_PART] },
+      ],
+    };
+    const xml = await applyOutgoingWss(SOAP11, signed, context());
+    expect(xml).toContain('#STR-Transform"><wsse:TransformationParameters');
+    expect(xml).not.toMatch(/<saml2:Assertion[^>]*wsu:Id/);
     expect(verifySignature(xml, { certPem: user.certPem }).ok).toBe(true);
   });
 

@@ -12,6 +12,8 @@ import { createHash } from 'node:crypto';
 import forge from 'node-forge';
 import { WssError } from '../errors.js';
 import { NS } from '../xml/namespaces.js';
+import { parseXml } from '../xml/parse.js';
+import { serializeXml } from '../xml/serialize.js';
 import { renderDnRfc2253 } from '../keystore/certificate.js';
 import { SAML_KEY_IDENTIFIER_VALUE_TYPE, SAML_TOKEN_TYPE } from './saml/uris.js';
 import type { PlacedSamlToken } from './outgoing/saml.js';
@@ -139,6 +141,32 @@ function keyIdentifierElement(valueType: string, value: string): string {
 }
 
 /**
+ * `referenceXml` (a token service's attached reference) with its root `wsu:Id` set to `id`.
+ *
+ * Parsed rather than patched as text, so leading whitespace or comments, an existing `wsu:Id`
+ * (replaced: each copy of the reference in one message needs its own id) or an existing
+ * `xmlns:wsu` binding never produce a duplicate attribute.
+ *
+ * @throws WssError `wss-saml-token-missing` when the reference is not a `wsse:SecurityTokenReference`
+ */
+function withWsuId(referenceXml: string, id: string): string {
+  const root = parseXml(referenceXml, { location: 'envelope' }).documentElement;
+  if (root === null || root.namespaceURI !== NS.WSSE || root.localName !== 'SecurityTokenReference') {
+    throw new WssError(
+      'wss-saml-token-missing',
+      "The token service's attached reference is not a wsse:SecurityTokenReference.",
+    );
+  }
+  // Reuse a prefix already bound to WS-Utility; never rebind a `wsu` the reference uses for something else.
+  const prefix = root.lookupPrefix(NS.WSU) ?? (root.lookupNamespaceURI('wsu') === null ? 'wsu' : 'wsu0');
+  if (root.lookupNamespaceURI(prefix) !== NS.WSU) {
+    root.setAttributeNS('http://www.w3.org/2000/xmlns/', `xmlns:${prefix}`, NS.WSU);
+  }
+  root.setAttributeNS(NS.WSU, `${prefix}:Id`, id);
+  return serializeXml(root);
+}
+
+/**
  * A `wsse:SecurityTokenReference` to a SAML token placed earlier in the same header: the RSTR's
  * own attached reference when it gave one, else a `KeyIdentifier` naming the assertion's id
  * (WSS SAML token profile 1.1 §3.4) with the `wsse11:TokenType` that profile requires.
@@ -149,10 +177,7 @@ function keyIdentifierElement(valueType: string, value: string): string {
 export function samlTokenReference(token: PlacedSamlToken, options: { readonly id?: string } = {}): string {
   if (token.attachedReferenceXml !== undefined) {
     if (options.id === undefined) return token.attachedReferenceXml;
-    return token.attachedReferenceXml.replace(
-      /^<([\w-]+:)?SecurityTokenReference\b/,
-      (open) => `${open} xmlns:wsu="${NS.WSU}" wsu:Id="${options.id}"`,
-    );
+    return withWsuId(token.attachedReferenceXml, options.id);
   }
   if (token.assertionId === undefined) {
     throw new WssError(
@@ -160,7 +185,7 @@ export function samlTokenReference(token: PlacedSamlToken, options: { readonly i
       'The SAML token has no id to refer to; an encrypted assertion needs the token service to send a reference.',
     );
   }
-  const idAttribute = options.id !== undefined ? ` wsu:Id="${options.id}"` : '';
+  const idAttribute = options.id !== undefined ? ` wsu:Id="${escapeXml(options.id)}"` : '';
   return (
     `<wsse:SecurityTokenReference xmlns:wsse="${NS.WSSE}" xmlns:wsu="${NS.WSU}" xmlns:wsse11="${NS.WSSE11}"` +
     `${idAttribute} wsse11:TokenType="${SAML_TOKEN_TYPE[token.version]}">` +

@@ -24,6 +24,8 @@ import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
 import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { PlacedSamlToken } from './saml.js';
+import { registerStrTransform } from './str-transform.js';
+import { STR_TRANSFORM } from '../saml/uris.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
@@ -170,7 +172,18 @@ export async function signEnvelope(
   }
 
   const references: { readonly id: string; readonly element: Element }[] = [];
+  const strReferences: string[] = [];
   for (const part of entry.parts) {
+    if (part.token === true) {
+      // The assertion itself is never given a wsu:Id: an STR naming it is, and the STR-Transform
+      // digests the assertion through it.
+      const token = nearestToken(resolved, resolved.alias.certPem);
+      const strId = `STR-${ctx.uuid()}`;
+      const str = parseXml(samlTokenReference(token, { id: strId }), { location: 'envelope' }).documentElement;
+      if (str !== null) security.appendChild(doc.importNode(str, true));
+      strReferences.push(strId);
+      continue;
+    }
     const element = resolvePart(root, part, envelopeNs);
     if (element === undefined) {
       throw new WssError('wss-part-missing', `The message has no "${part.name}" element to sign.`, {
@@ -230,6 +243,14 @@ export async function signEnvelope(
       transforms: [EXC_C14N],
       digestAlgorithm: DIGEST_ALGORITHM_URIS[entry.digestAlgorithm],
       inclusiveNamespacesPrefixList: inclusiveNamespacePrefixList(element, envPrefix),
+    });
+  }
+  if (strReferences.length > 0) registerStrTransform(signer);
+  for (const id of strReferences) {
+    signer.addReference({
+      xpath: `//*[@*[local-name(.)='Id']='${id}']`,
+      transforms: [STR_TRANSFORM],
+      digestAlgorithm: DIGEST_ALGORITHM_URIS[entry.digestAlgorithm],
     });
   }
   // The index and the XPath must count the same node set — direct `wsse:Security` children of
@@ -316,6 +337,8 @@ export function verifySignature(xml: string, options: VerifySignatureOptions): V
     // Trust the caller's certificate, never the one the document brought with it.
     getCertFromKeyInfo: () => null,
   });
+  // Does nothing to a signature without an STR-Transform reference.
+  registerStrTransform(verifier);
   try {
     verifier.loadSignature(serializeXml(signature));
     const ok = verifier.checkSignature(xml);
