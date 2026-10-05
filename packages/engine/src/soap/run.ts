@@ -36,7 +36,9 @@ import type { SentRequest } from '../run/run.js';
 import {
   authFor,
   dropRefusedToken,
+  dropRejectedIssuedToken,
   insideProject,
+  issuedTokenSourceOf,
   keystoreFor,
   keystoreNeeds,
   originOf,
@@ -47,6 +49,8 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
+import type { IssuedToken, WssIssuedTokenEntry } from '../wss/model.js';
+import type { IssuedTokenTarget } from '../wss/trust/client.js';
 import type { AttemptedRequest } from '../run/host.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
@@ -161,7 +165,6 @@ function wssFor(
   scopes: PropertyScopes,
   endpointUrl: string,
 ): SoapSendWss | undefined {
-  void endpointUrl; // lent to the issued-token source by a later task
   const { request } = selected;
   const pick = (id: string | undefined): string | undefined => (id === undefined || id.length === 0 ? undefined : id);
   const outgoingId = pick(request.wssOutgoingRef);
@@ -189,25 +192,53 @@ function wssFor(
   const incoming =
     incomingId === undefined ? undefined : find(context.project.wss.incoming, incomingId, toWssIncomingConfig);
   const { properties } = request;
+  const used: IssuedToken[] = [];
+  const source = issuedTokenSourceOf(context);
+  const expandText = (text: string): string => expandOrRefuse(text, scopes, 'WS-Security issued token');
+  /** The STS's own TLS (mutual TLS from the entry's keystore), proxy and limits; never the endpoint's. */
+  const targetFor = async (entry: WssIssuedTokenEntry): Promise<IssuedTokenTarget> => {
+    const tls = await tlsFor(context, entry.tlsKeystoreRef, false);
+    return {
+      endpointUrl,
+      expand: expandText,
+      ...(tls !== undefined ? { tls } : {}),
+      ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
+      ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+      ...(context.signal !== undefined ? { signal: context.signal } : {}),
+    };
+  };
+  const base = createWssContext({
+    keystores: (ref) => keystoreFor(context, ref),
+    secrets: (ref) => requiredSecret(ref, context.host.getSecret),
+    expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
+    projectFile: async (path) => {
+      const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
+      try {
+        return await readFile(absolute, 'utf8');
+      } catch (cause) {
+        throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
+          details: { file: path },
+          cause,
+        });
+      }
+    },
+  });
+  const ctx = createWssContext({
+    ...base,
+    issuedTokens: {
+      get: async (entry) => {
+        const token = await source.get(entry, await targetFor(entry), { ctx: base });
+        used.push(token);
+        return token;
+      },
+      peek: (entry) => source.peek(entry, { endpointUrl, expand: expandText }),
+    },
+  });
   return {
     ...(outgoing !== undefined ? { outgoing } : {}),
     ...(incoming !== undefined ? { incoming } : {}),
-    ctx: createWssContext({
-      keystores: (ref) => keystoreFor(context, ref),
-      secrets: (ref) => requiredSecret(ref, context.host.getSecret),
-      expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
-      projectFile: async (path) => {
-        const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
-        try {
-          return await readFile(absolute, 'utf8');
-        } catch (cause) {
-          throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
-            details: { file: path },
-            cause,
-          });
-        }
-      },
-    }),
+    ctx,
+    issuedUsed: used,
     requestProperties: {
       ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
       ...(properties.wssTimeToLive !== undefined ? { wssTimeToLive: properties.wssTimeToLive } : {}),
@@ -623,6 +654,7 @@ async function sendSoapItem(
     throw error;
   }
   dropRefusedToken(context, connected.auth, exchange.http.status === 401);
+  dropRejectedIssuedToken(context, connected.wss?.issuedUsed ?? [], exchange.response?.fault);
   const sent: SentRequest = {
     subject: soapSubject(exchange, loaded, selected),
     raw: exchange.http,

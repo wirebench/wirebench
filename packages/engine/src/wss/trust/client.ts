@@ -14,6 +14,7 @@ export interface IssuedTokenTarget {
   /** The request's endpoint: the default AppliesTo. */
   readonly endpointUrl: string;
   readonly expand: (text: string) => string;
+  /** Mutual TLS to the STS: the caller builds it from `entry.tlsKeystoreRef`, never from the endpoint's own TLS. */
   readonly tls?: TlsOptions;
   readonly proxy?: (url: string) => Promise<ProxyOptions | undefined>;
   readonly timeoutMs?: number;

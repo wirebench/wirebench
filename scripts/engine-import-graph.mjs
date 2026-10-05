@@ -62,6 +62,8 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'project/schema.ts', to: 'wss/model.ts', until: 'phase 3' },
   { from: 'run/issued-token.ts', to: 'wss/model.ts', typeOnly: true, until: 'the SOAP send moves out of run (#184)' },
   { from: 'run/issued-token.ts', to: 'wss/trust/client.ts', until: 'the SOAP send moves out of run (#184)' },
+  { from: 'run/send-helpers.ts', to: 'soap/fault.ts', typeOnly: true, until: 'the SOAP send moves out of run (#184)' },
+  { from: 'run/send-helpers.ts', to: 'wss/model.ts', typeOnly: true, until: 'the SOAP send moves out of run (#184)' },
   { from: 'project/model.ts', to: 'rest/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'project/model.ts', to: 'grpc/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'project/model.ts', to: 'ws/model.ts', typeOnly: true, until: 'phase 3' },
