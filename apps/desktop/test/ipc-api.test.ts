@@ -1327,6 +1327,26 @@ describe('api.importOpenCollection', () => {
     expect(response.notes).toContain('Pets (gRPC): needs a definition: import its .proto or use server reflection.');
   });
 
+  it('names at most 20 missing imports, and counts the rest in one more warning', async () => {
+    const names = Array.from({ length: 25 }, (_, index) => `gone/${String(index)}.proto`);
+    await writeFile(
+      join(dir, 'protos', 'pets.proto'),
+      `syntax = "proto3"; package pets.v1; ${names.map((name) => `import "${name}";`).join(' ')}`,
+    );
+    const { deps } = setupPicked();
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+    const grpcWarnings = response.warnings.filter((warning) => warning.startsWith('Pets (gRPC)'));
+    expect(grpcWarnings).toHaveLength(21);
+    expect(grpcWarnings[19]).toContain('imports gone/19.proto,');
+    expect(grpcWarnings[20]).toBe('Pets (gRPC): and 5 more missing imports.');
+  });
+
   it('refuses an import that leaves the folder, and places the gRPC API with no definition', async () => {
     await writeFile(
       join(dir, 'protos', 'pets.proto'),

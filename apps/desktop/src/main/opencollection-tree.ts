@@ -134,7 +134,8 @@ async function walk(base: string, limits: OcTreeLimits): Promise<Map<string, str
   let bytes = 0;
   let entriesSeen = 0;
   const queue: { dir: string; depth: number }[] = [{ dir: base, depth: 0 }];
-  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+  for (let at = 0; at < queue.length; at += 1) {
+    const next = queue[at]!;
     const { dir, depth } = next;
     if (depth > limits.depth) {
       throw new OpenCollectionError(
@@ -175,9 +176,17 @@ export interface CompanionProtos {
   readonly sources: Map<string, string>;
   /** The keys of the named files that were there: the files a load starts from. */
   readonly roots: string[];
-  /** Each import found nowhere in the collection's folder, with the key of the file that names it. */
+  /**
+   * Imports found nowhere in the collection's folder, each with the key of the file that names it:
+   * the first {@link MISSING_IMPORTS_LISTED}, in the order met.
+   */
   readonly missing: { readonly name: string; readonly importedBy: string }[];
+  /** How many more distinct missing imports there were past those listed. */
+  readonly missingMore: number;
 }
+
+/** The most missing imports {@link readCompanionProtos} lists; any one already leaves the API without a definition. */
+export const MISSING_IMPORTS_LISTED = 20;
 
 /** The folder part of a POSIX key, with its trailing `/`; empty for a key at the top. */
 function keyDir(key: string): string {
@@ -197,7 +206,7 @@ function keyDir(key: string): string {
  * backslash) is refused before anything is read for it. Each file is read once, which also ends a
  * cycle, and the walk stops at the file and byte limits, and at the entry limit counting each path
  * looked for. A named file with nothing at it is left out of `roots`, so the caller can say which
- * were missing; an import with nothing at it is listed in `missing`. Keys are paths relative to the
+ * were missing; an import with nothing at it is listed in `missing`, up to a cap, and counted past it. Keys are paths relative to the
  * root's folder: under the import-root reading that is the import string itself, and under the
  * importer-relative one it is the path the engine's loader tries second, so it finds either without
  * two importers' same-named neighbours colliding. `limits` exists for tests; callers pass nothing.
@@ -216,6 +225,7 @@ export async function readCompanionProtos(
   const base = dirname(resolve(rootFile));
   const sources = new Map<string, string>();
   const missing: { name: string; importedBy: string }[] = [];
+  const missingSeen = new Set<string>();
   const queue: { readonly key: string; readonly path: string }[] = [];
   const seen = new Set<string>();
   // Paths looked for and not there, so a name imported again is not looked for again; together
@@ -231,7 +241,8 @@ export async function readCompanionProtos(
   }
   const listed = [...seen];
   let bytes = 0;
-  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+  for (let at = 0; at < queue.length; at += 1) {
+    const next = queue[at]!;
     if (sources.size >= limits.files) throw tooManyFiles(limits.files);
     const read = await readCompanionFile(next.path, limits.bytes - bytes, () => tooLarge(limits.bytes));
     bytes += read.length;
@@ -248,24 +259,30 @@ export async function readCompanionProtos(
           { details: { path: name, importedBy: next.key } },
         );
       }
-      const candidates = [...new Set([name, `${keyDir(next.key)}${name}`])];
-      let found = candidates.some((candidate) => seen.has(candidate));
-      for (const candidate of candidates) {
-        if (found) break;
+      // Root-relative first, then beside the importer: the first that is there wins, whatever order
+      // the walk met the files in.
+      let found = false;
+      for (const candidate of new Set([name, `${keyDir(next.key)}${name}`])) {
+        if (seen.has(candidate)) {
+          found = true;
+          break;
+        }
         if (absent.has(candidate)) continue;
         if (seen.size + absent.size >= limits.entries) throw tooManyFiles(limits.entries);
         const [path] = await checkedCompanionPaths(roots, picks, rootFile, [candidate]);
         if (path !== undefined) {
           enqueue(candidate, path);
           found = true;
-        } else {
-          absent.add(candidate);
+          break;
         }
+        absent.add(candidate);
       }
-      if (!found && !missing.some((entry) => entry.name === name && entry.importedBy === next.key)) {
-        missing.push({ name, importedBy: next.key });
+      const pair = `${next.key}\u0000${name}`;
+      if (!found && !missingSeen.has(pair)) {
+        missingSeen.add(pair);
+        if (missing.length < MISSING_IMPORTS_LISTED) missing.push({ name, importedBy: next.key });
       }
     }
   }
-  return { sources, roots: listed, missing };
+  return { sources, roots: listed, missing, missingMore: missingSeen.size - missing.length };
 }

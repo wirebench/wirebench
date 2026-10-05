@@ -973,6 +973,11 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       for (const { name, importedBy } of read.missing) {
         warnings.push(`${grpcName}: ${importedBy} imports ${name}, which was not found in the collection's folder.`);
       }
+      if (read.missingMore > 0) {
+        warnings.push(
+          `${grpcName}: and ${String(read.missingMore)} more missing import${read.missingMore === 1 ? '' : 's'}.`,
+        );
+      }
       if (read.roots.length > 0 && read.missing.length === 0) {
         loadProtoSet(read.sources, { roots: read.roots });
         protos = { sources: read.sources, roots: read.roots };

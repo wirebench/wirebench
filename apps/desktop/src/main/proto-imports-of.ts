@@ -22,8 +22,9 @@ function isIdentPart(code: number): boolean {
   return isIdentStart(code) || (code >= 48 && code <= 57) || code === 46;
 }
 
+/** Whitespace, and the byte-order mark an editor may leave at the start of a file. */
 function isSpace(code: number): boolean {
-  return code === 32 || (code >= 9 && code <= 13);
+  return code === 32 || (code >= 9 && code <= 13) || code === 0xfeff;
 }
 
 /** The tokens of `text`, with whitespace and comments dropped. */

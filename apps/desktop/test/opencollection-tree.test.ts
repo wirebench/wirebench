@@ -12,8 +12,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadProtoSet } from '@wirebench/engine';
-import { OC_TREE_LIMITS, readCompanionProtos, readOpenCollectionTree } from '../src/main/opencollection-tree.js';
+import { loadProtoSet, readProtoDefinitionCache, writeProtoDefinitionCache } from '@wirebench/engine';
+import {
+  MISSING_IMPORTS_LISTED,
+  OC_TREE_LIMITS,
+  readCompanionProtos,
+  readOpenCollectionTree,
+} from '../src/main/opencollection-tree.js';
 
 const TREE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/opencollection/crafted/tree');
 const PICKED = { hasRead: () => true };
@@ -223,6 +228,49 @@ describe('readCompanionProtos', () => {
     ]);
   });
 
+  it('prefers the root-relative file whatever order the walk meets the files in', async () => {
+    const { root } = await collection({
+      'protos/a.proto': imports('types.proto'),
+      'protos/types.proto': 'beside',
+      'types.proto': 'at the root',
+    });
+    const read = await readCompanionProtos(root, [], PICKED, ['protos/a.proto', 'protos/types.proto']);
+    expect(read.sources.get('types.proto')).toBe('at the root');
+    expect(read.sources.get('protos/types.proto')).toBe('beside');
+    expect(read.roots).toEqual(['protos/a.proto', 'protos/types.proto']);
+  });
+
+  it("keeps two folders' same-named neighbours apart, and both load", async () => {
+    const { root } = await collection({
+      'a/x.proto': ROOTLESS + 'package a; import "common.proto"; message X { Common c = 1; }',
+      'a/common.proto': ROOTLESS + 'package a; message Common { string a = 1; }',
+      'b/y.proto': ROOTLESS + 'package b; import "common.proto"; message Y { Common c = 1; }',
+      'b/common.proto': ROOTLESS + 'package b; message Common { int32 b = 1; }',
+    });
+    const read = await readCompanionProtos(root, [], PICKED, ['a/x.proto', 'b/y.proto']);
+    expect([...read.sources.keys()].sort()).toEqual(['a/common.proto', 'a/x.proto', 'b/common.proto', 'b/y.proto']);
+    const set = loadProtoSet(read.sources, { roots: read.roots });
+    expect(set.root.lookupType('a.Common').fields['a']).toBeDefined();
+    expect(set.root.lookupType('b.Common').fields['b']).toBeDefined();
+  });
+
+  it('loads the same from the definition cache as at import', async () => {
+    const { dir, root } = await collection({
+      'protos/pets.proto':
+        ROOTLESS + 'package p; import "types.proto"; import "shared/s.proto"; message P { T t = 1; S s = 2; }',
+      'protos/types.proto': ROOTLESS + 'package p; message T { string t = 1; }',
+      'shared/s.proto': ROOTLESS + 'package p; message S { string s = 1; }',
+    });
+    const read = await readCompanionProtos(root, [], PICKED, ['protos/pets.proto']);
+    const cacheDir = join(dir, 'cache');
+    await writeProtoDefinitionCache(read.sources, cacheDir, { source: root, roots: read.roots });
+    const cached = await readProtoDefinitionCache(cacheDir);
+    expect(cached.manifest.roots).toEqual(['protos/pets.proto']);
+    const reloaded = loadProtoSet(cached.sources, { roots: cached.manifest.roots });
+    expect(reloaded.files).toEqual(loadProtoSet(read.sources, { roots: read.roots }).files);
+    expect(reloaded.root.lookupType('p.P').fieldsArray.map((field) => field.name)).toEqual(['t', 's']);
+  });
+
   it('reads each file of a cycle once', async () => {
     const { root } = await collection({ 'a.proto': imports('b.proto'), 'b.proto': imports('a.proto') });
     const read = await readCompanionProtos(root, [], PICKED, ['a.proto']);
@@ -234,7 +282,24 @@ describe('readCompanionProtos', () => {
     const { root } = await collection({ 'protos/pets.proto': imports('shared/gone.proto', 'shared/gone.proto') });
     const read = await readCompanionProtos(root, [], PICKED, ['protos/pets.proto']);
     expect(read.missing).toEqual([{ name: 'shared/gone.proto', importedBy: 'protos/pets.proto' }]);
+    expect(read.missingMore).toBe(0);
     expect([...read.sources.keys()]).toEqual(['protos/pets.proto']);
+  });
+
+  it('lists the first missing imports and counts the rest, quickly, for many importers of many names', async () => {
+    // 20 importers × 1,000 missing names in short statements, about 220 KB: 20,000 pairs, each noted
+    // once without a scan of the pairs already noted, which alone would take seconds.
+    const statements = Array.from({ length: 1000 }, (_, index) => `import"${String(index)}";`).join('');
+    const files: Record<string, string> = {};
+    for (let index = 0; index < 20; index += 1) files[`i${String(index)}.proto`] = statements;
+    const { root } = await collection(files);
+    const start = performance.now();
+    const read = await readCompanionProtos(root, [], PICKED, Object.keys(files));
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(1000);
+    expect(read.missing).toHaveLength(MISSING_IMPORTS_LISTED);
+    expect(read.missing[0]).toEqual({ name: '0', importedBy: 'i0.proto' });
+    expect(read.missingMore).toBe(20 * 1000 - MISSING_IMPORTS_LISTED);
   });
 
   it('refuses an import that is not a plain relative path, before reading it', async () => {
