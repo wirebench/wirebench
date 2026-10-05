@@ -66,9 +66,10 @@ authentication uses.
 - **Ambient ticket**: by default the ticket of the signed-in user is used: the Windows logon, or the
   ticket cache that `kinit user@REALM` fills on macOS and Linux. **Principal** picks one ticket from
   the cache when it holds several (macOS and Linux only).
-- **Explicit credentials**: a **Username**, **Domain** and **Password** are Windows-only. Elsewhere a
-  send with them is refused with `kerberos-explicit-credentials-unsupported`; run `kinit` and leave
-  them empty.
+- **Explicit credentials**: a **Username** and **Password** (with an optional **Domain**) are
+  Windows-only. Elsewhere a send with a Username or Password is refused with
+  `kerberos-explicit-credentials-unsupported`, and a Domain on its own is ignored; run `kinit` and
+  leave them empty.
 
 Kerberos failures keep their own codes: `kerberos-no-credentials` (no ticket), `kerberos-unknown-spn`,
 `kerberos-clock-skew` and `kerberos-failed`. `wirebench run` and the MCP server can use the Kerberos
