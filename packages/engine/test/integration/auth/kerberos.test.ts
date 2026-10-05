@@ -143,8 +143,10 @@ describe('Kerberos over HTTP Negotiate', () => {
     const pending = sendWithAuth({ ...post(server.url), signal: controller.signal }, { type: 'kerberos' });
     // `inits` grows once the server's 401 has arrived and the token wait has started.
     while (provider.inits.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    const abortedAt = Date.now();
     controller.abort();
     await expect(pending).rejects.toMatchObject({ code: 'aborted' });
+    expect(Date.now() - abortedAt).toBeLessThan(1000);
     provider.release();
   });
 });

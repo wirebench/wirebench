@@ -114,8 +114,10 @@ describe('sendGrpc', () => {
     configureKerberos(provider);
     const controller = new AbortController();
     const pending = sendGrpc(input({ auth: { type: 'kerberos' }, signal: controller.signal }));
+    const abortedAt = Date.now();
     setTimeout(() => controller.abort(), 20);
     await expect(pending).rejects.toMatchObject({ code: 'aborted' });
+    expect(Date.now() - abortedAt).toBeLessThan(1000);
     provider.release();
   });
 

@@ -4,6 +4,7 @@
  * refusal of a reference nothing resolves, a cancel, the host's proxy, the handshake told to the
  * host, and a run's open that sends the saved messages.
  */
+import { createServer, type Server as NetServer, type Socket } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createProject, DEFAULT_PREFERENCES } from '../../../src/index.js';
 import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
@@ -565,6 +566,34 @@ describe('WebSocket through openExchange', () => {
     expect(frame).toMatchObject({ direction: 'sent', text: 'a' });
     handle.close(1000, 'done');
     await handle.result;
+  });
+
+  it('gives the upgrade only what the token left of the handshake timeout (#267)', async () => {
+    // A server that accepts and never answers: the upgrade can only end at its own timeout.
+    const sockets: Socket[] = [];
+    const silent: NetServer = createServer((socket) => sockets.push(socket));
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    try {
+      const port = (silent.address() as { port: number }).port;
+      const provider = fakeKerberos({ hang: 'init' });
+      configureKerberos(provider);
+      setTimeout(() => provider.release(), 200);
+      const started = Date.now();
+      const handle = open(
+        build('/echo', {
+          serverUrl: `ws://127.0.0.1:${String(port)}`,
+          auth: { type: 'kerberos' },
+          settings: { handshakeTimeoutMs: 300 },
+        }),
+      );
+      // A handshake that never completes settles as a status-0 exchange, not a rejection.
+      await expect(handle.result).resolves.toMatchObject({ subject: { protocol: 'websocket', status: 0 } });
+      // Token ~200 ms + the ~100 ms left; without the reduction the upgrade would wait 300 ms more (~500 ms).
+      expect(Date.now() - started).toBeLessThan(430);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => silent.close(() => resolve()));
+    }
   });
 
   it('stops a hung Kerberos token on Cancel (#267)', async () => {

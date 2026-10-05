@@ -451,7 +451,7 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
       stream?.close(http2.constants.NGHTTP2_CANCEL);
       finish({
         status: 4,
-        message: `Deadline of ${formatGrpcTimeout(timeoutMs)} exceeded before the server answered`,
+        message: `Deadline of ${formatGrpcTimeout(input.timeoutMs)} exceeded before the server answered`,
       });
     }, timeoutMs);
     if (input.signal?.aborted === true) {

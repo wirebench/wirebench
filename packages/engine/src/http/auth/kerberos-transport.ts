@@ -51,8 +51,8 @@ export async function kerberosHandshake(
   const startedAt = now();
   const remaining = (): number => request.timeoutMs - (now() - startedAt);
   // The token wait spends the same budget as the legs, and the send's Cancel stops it (#267).
-  const wait = () => ({
-    timeoutMs: remaining(),
+  const wait = (floor = false) => ({
+    timeoutMs: floor ? Math.max(1, remaining()) : remaining(),
     ...(request.signal !== undefined ? { signal: request.signal } : {}),
   });
   const spnWanted = kerberosField(auth.spn) ?? defaultSpn(request.url);
@@ -98,7 +98,7 @@ export async function kerberosHandshake(
       });
     }
     const reply = negotiateToken(headerValue(final.headers, 'www-authenticate'));
-    if (reply !== undefined) await context.verify(reply, wait());
+    if (reply !== undefined) await context.verify(reply, wait(true));
     return { http: final, attempts: 2, challenged: true, durationMs, spn: context.spn };
   } finally {
     if (ownDispatcher !== undefined) await ownDispatcher.close().catch(() => undefined);

@@ -136,6 +136,7 @@ describe('Kerberos on definition fetches', () => {
     const controller = new AbortController();
     const fetch = createHttpFetchDocument({ auth: { type: 'kerberos' }, authOrigin: new URL(doc.url).origin });
     const pending = fetch(doc.url, controller.signal).catch((error: unknown) => error);
+    while (provider.inits.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
     controller.abort();
     const error = await pending;
     expect(error).toBe(controller.signal.reason);
