@@ -38,6 +38,12 @@ const ADDED = [
   'secretSourceError',
   'withSource',
   'TOOL_INSTALL_PAGES',
+  'SOURCE_TIMEOUT_MS',
+  'SOURCE_STDOUT_MAX',
+  'SOURCE_STDERR_MAX',
+  'SOURCE_STDERR_SHOWN',
+  'findSourceTool',
+  'runSourceTool',
 ] as const;
 
 /** 2.x name, 3.0 name. */
