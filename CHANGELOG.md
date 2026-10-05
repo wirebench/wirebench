@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **WS-Trust.** Request SAML tokens from a security token service with a username or a client
+  certificate, cached for their lifetime; each token request shows in the HTTP Log. `wirebench run
+  --verbose` reports each token request by host and status, never the token. A Kerberos credential
+  follows with #40 (#41).
 - **SAML tokens in outgoing WS-Security.** Built from a form (SAML 1.1 or 2.0, optionally signed as
   issuer) or supplied as XML. Token signatures in the HTTP Log are masked (#41).
 - Signatures can refer to a SAML token (holder-of-key) and cover it through the STR-Transform (#41).

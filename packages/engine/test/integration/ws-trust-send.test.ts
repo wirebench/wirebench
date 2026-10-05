@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RunContext } from '../../src/run/context.js';
+import { loadKeystore } from '../../src/keystore/index.js';
 import { createIssuedTokenSource } from '../../src/run/issued-token.js';
 import { runRequests } from '../../src/run/run.js';
 import { selectRequests } from '../../src/run/select.js';
@@ -16,6 +17,7 @@ import { soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from '..
 import type { Project } from '../../src/project/model.js';
 import type { WssIssuedTokenEntry } from '../../src/wss/model.js';
 import { projectWithWss } from '../helpers/fixtures.js';
+import { generateSigningCert, generateTestCa } from '../helpers/test-certs.js';
 import { testHost } from '../helpers/send-host.js';
 import { startTestSts } from '../helpers/test-sts-server.js';
 import type { TestSts } from '../helpers/test-sts-server.js';
@@ -183,6 +185,24 @@ describe('runRequests with an issued SAML token', () => {
     expect(JSON.stringify(result)).toContain('ws-trust-sts-fault');
     expect(JSON.stringify(result)).not.toContain('hunter2');
     expect(service.bodies).toHaveLength(0);
+  });
+
+  it('signs the RST with a certificate credential (SC-WT2) and sends the token it buys', async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const signer = generateSigningCert(generateTestCa());
+    const keystore = loadKeystore(Buffer.from(`${signer.certPem}\n${signer.keyPem}`), { type: 'pem' });
+    const project = projectFor(entryFor(sts.url, { credential: { kind: 'certificate', keystoreRef: 'ks-issuer' } }));
+    const result = await runRequests(
+      requestsOf(project, 1),
+      contextFor(project, { keystoreFor: (id) => Promise.resolve(id === 'ks-issuer' ? keystore : undefined) }),
+    );
+    expect(result.summary).toMatchObject({ total: 1 });
+    expect(sts.requests).toHaveLength(1);
+    const rst = sts.requests[0]?.body ?? '';
+    expect(rst).toContain('BinarySecurityToken');
+    expect(rst).toContain('<ds:Signature');
+    expect(rst).not.toContain('UsernameToken');
+    expect(service.bodies[0]).toContain('ID="_fixture-2.0"');
   });
 
   it('refuses a Kerberos credential with kerberos-unavailable', async () => {

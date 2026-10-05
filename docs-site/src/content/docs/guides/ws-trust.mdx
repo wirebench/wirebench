@@ -1,0 +1,125 @@
+---
+title: WS-Trust tokens
+description: Ask a security token service for a SAML token, cache it for its lifetime, and send it in WS-Security.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Many SOAP services do not take a password. They want a SAML token issued by a **security token
+service** (STS), and the STS in turn wants proof of who is asking. Wirebench does the exchange for
+you: an **Issued Token** entry in an outgoing WS-Security configuration sends a WS-Trust request to
+the STS, caches the token it gets back, and places it in the `wsse:Security` header of every send
+that needs it.
+
+## Add an Issued Token entry
+
+<Steps>
+
+1. Open the **WSS** view and add or open an outgoing configuration.
+2. Choose **Issued Token (WS-Trust)** in **Add entry…**.
+3. Fill in the **Token service**, **Token** and **Credential** groups below.
+4. Select the configuration as **Outgoing WSS** on the request's **Auth** inspector tab, and send.
+
+</Steps>
+
+The first send asks the STS; later sends use the cached token. The assertion lands in entry order,
+like a SAML Token entry, so add it before a Signature that should cover it.
+
+**Token service**
+
+- **URL**: the STS endpoint. `${...}` references expand, so each environment can name its own.
+- **SOAP version** and **WS-Trust** version: 1.3 or the February 2005 edition, to match the service.
+- **Applies to**: the address the token is for. Left empty, it is the request's endpoint.
+- **Mutual TLS keystore**: a client certificate to present to the STS at the TLS level.
+
+**Token**
+
+- **SAML version**: 2.0 or 1.1.
+- **Key type**: **Bearer** or **Public key** (see below).
+- **Lifetime (s)**: how long to ask the STS for. `0` leaves it to the service.
+- **Claims**: an optional `Claims` block to request specific attributes.
+
+## Credentials
+
+The credential proves who is asking. STS endpoints usually come in one shape per credential, named
+for what they expect, for example:
+
+- `…/trust/13/usernamemixed`: a **Username** and password, sent in a `UsernameToken` over HTTPS.
+  Wirebench refuses a username credential on a plain `http:` address.
+- `…/trust/13/certificatemixed`: a **Certificate** from a keystore. The request carries the
+  certificate and is signed with its key, so the STS knows the key is yours. Add the **Key password**
+  if the keystore needs one.
+- `…/trust/13/windowstransport`: the **Kerberos** credential, which asks with a ticket from the
+  operating system instead of a secret. It needs Kerberos support, which is pending #40; until
+  then the option is listed but a send with it is refused.
+
+Passwords are secrets: they are set through the masked field, kept in the secret store, and the
+project file holds only a reference. See [Secrets](/wirebench/docs/guides/secrets/).
+
+## Bearer or public key
+
+A **Bearer** token proves nothing beyond the token itself: whoever holds it can use it.
+
+A **Public key** token is bound to a key you hold. Pick a **Proof keystore** (and alias); its
+certificate goes into the request, and the STS names it in the token as the key holder. To use the
+token, sign the message with that same key and refer to the token from the signature. That is
+holder-of-key signing, described under
+[Holder-of-key and signing over a token](/wirebench/docs/guides/soap-wsdl/#holder-of-key-and-signing-over-a-token)
+in the SOAP guide.
+
+## Claims
+
+A **Claims** block is placed into the request as you wrote it, inside the `wst` prefix of the
+WS-Trust version you chose, so its prefix must be `wst` and its namespace must match that version:
+`http://docs.oasis-open.org/ws-sx/ws-trust/200512` for 1.3, `http://schemas.xmlsoap.org/ws/2005/02/trust`
+for the February 2005 edition. A block written for the other version is sent as is, and the STS will
+usually answer with a fault, which you can read in the HTTP Log. Change **WS-Trust** and **Claims**
+together.
+
+## The cache, status, Fetch now and Clear
+
+Under the fields, a status line reads the session's cache for the entry: `Valid until 14:32 · SAML
+2.0 · bearer`, `Expired` or `No token cached`, followed by the STS host.
+
+- **Fetch now** asks the STS immediately, for the request you are editing, and shows a failure as a
+  message here.
+- **Clear** drops the cached token, so the next send asks again.
+
+A token is cached for its lifetime, less a minute. Two sends that need the same token at the same
+time share one request to the STS. A token with no lifetime is used once. A failure is never cached.
+If the service refuses a token, Wirebench drops it and the next send asks for a new one; it never
+re-sends on its own.
+
+The cache lives in memory for the session. Change a password or a keystore and use **Clear**, because
+the cache does not look at secrets.
+
+## In the HTTP Log
+
+Each request to the STS is one row in the HTTP Log named `STS · <request name>`, so it is easy to tell
+from the send it belongs to. A send that used the cached token makes no row. The row is a log row
+only: it does not appear in History. A failed request shows as a failed row with the STS's fault.
+
+The assertion's signature values and encrypted content are masked, and so are Kerberos tokens, unless
+you choose to show secrets. The issuer, subject and conditions stay readable, since they are usually
+why a token is refused. A certificate in the request is public and stays visible.
+
+## Run it headless
+
+`wirebench run` and the MCP server send through the same path, so a request with an Issued Token entry
+needs nothing extra to select.
+
+- The cache lasts one run. A suite that sends many requests with the same token asks the STS once.
+- Secrets come from the environment: a username password or a key password is read from
+  `WIREBENCH_SECRET_<REF>`, as for any WS-Security secret. `wirebench secrets list` shows the names.
+- `--verbose` prints one line per token request to stderr: the host, the status when the STS was
+  asked, and when the token expires (UTC), and nothing that could be replayed.
+
+```text
+STS sts.example.test 200 fetched, valid until 14:32
+STS sts.example.test cached, valid until 14:32
+```
+
+<Aside type="note">
+The cache and the log row hold a token only while the app or run is open. Nothing about a fetched token
+is written to the project, to History or to a report.
+</Aside>
