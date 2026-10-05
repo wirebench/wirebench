@@ -60,6 +60,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Kerberos ticket wait.** A slow or unreachable Kerberos server no longer holds a send or a
+  Cancel: the wait counts against the request's timeout (the handshake timeout for a WebSocket, the
+  deadline for gRPC), Cancel stops it at once, and it fails with `timeout` and a message naming the
+  SPN (#267).
 - **OpenCollection proto imports.** A folder collection's gRPC API now arrives with its definition
   when its `.proto` files import other files from the collection's folder: each import is read,
   under the folder first and then beside the importing file. An import that is not there still

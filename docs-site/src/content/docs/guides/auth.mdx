@@ -129,6 +129,10 @@ reason.
 A cURL export of a REST or SOAP request uses `curl --negotiate -u :`. A gRPC or WebSocket command
 export leaves Kerberos out and says so in a note.
 
+Waiting for a ticket counts against the request's own timeout, and Cancel stops the wait at once.
+For a WebSocket, that is the handshake timeout. For gRPC it is the deadline, and for a definition
+download, the 20-second limit on each request.
+
 | Code | Message | Fix |
 | --- | --- | --- |
 | `kerberos-unavailable` | The reason Kerberos support could not load. | Use a build for a supported platform (not Windows on ARM; on Linux the deb, rpm or AppImage build). |
@@ -139,6 +143,8 @@ export leaves Kerberos out and says so in a note.
 | `kerberos-mutual-auth-failed` | The server's Kerberos reply could not be verified. | Check that the server is the service the SPN names. |
 | `kerberos-rejected` | The server refused the Kerberos token (HTTP 401). | Ask the service owner whether your account may use it. |
 | `kerberos-failed` | Kerberos failed, with the operating system's own text. | Read the text; it is what the OS reported. |
+| `timeout` | Timed out waiting for a Kerberos ticket for the SPN. | Check that this machine can reach the domain's KDC, or raise the request's timeout. |
+| `kerberos-failed` (busy) | Kerberos is still waiting on earlier requests to the Kerberos server; try again shortly. | Wait for the KDC to answer or time out, then send again. |
 
 ## WS-Security (SOAP)
 
