@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 - **SAML tokens in outgoing WS-Security.** Built from a form (SAML 1.1 or 2.0, optionally signed as
   issuer) or supplied as XML. Token signatures in the HTTP Log are masked (#41).
+- Signatures can refer to a SAML token (holder-of-key) and cover it through the STR-Transform (#41).
 - **License binding.** A license can be bound to one server. The server mints an id when its database
   is first migrated, and a license that carries a different `serverId` is refused as `wrong-server`
   with a message naming both ids. Licenses without the field keep working on any server. The id shows

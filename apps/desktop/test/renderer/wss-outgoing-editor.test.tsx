@@ -166,6 +166,62 @@ describe('OutgoingConfigEditor', () => {
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [{ ...signature, parts: [] }] });
   });
 
+  it('refers to a SAML token and covers it without listing the token part', () => {
+    const signature: WssEntryWire = {
+      kind: 'signature',
+      keystoreRef: 'ks1',
+      keyIdentifierType: 'BinarySecurityToken',
+      signatureAlgorithm: 'rsa-sha256',
+      digestAlgorithm: 'sha256',
+      canonicalization: 'exc-c14n',
+      useSingleCertificate: true,
+      parts: [{ name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' }],
+    };
+    const tokenPart = { name: 'SamlToken', namespace: '', encode: 'Element', token: true } as const;
+    const { updateWssOutgoing } = setUp([{ ...config, entries: [signature] }]);
+    expand();
+
+    fireEvent.change(screen.getByLabelText('Key identifier type'), { target: { value: 'saml-token' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, keyIdentifierType: 'saml-token' }],
+    });
+
+    fireEvent.click(screen.getByLabelText('Cover the SAML token (STR-Transform)'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, parts: [...signature.parts, tokenPart] }],
+    });
+  });
+
+  it('keeps the token part out of the parts table and in what it writes back', () => {
+    const tokenPart = { name: 'SamlToken', namespace: '', encode: 'Element', token: true } as const;
+    const signature: WssEntryWire = {
+      kind: 'signature',
+      keystoreRef: 'ks1',
+      keyIdentifierType: 'saml-token',
+      signatureAlgorithm: 'rsa-sha256',
+      digestAlgorithm: 'sha256',
+      canonicalization: 'exc-c14n',
+      useSingleCertificate: true,
+      parts: [tokenPart, { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' }],
+    };
+    const { updateWssOutgoing } = setUp([{ ...config, entries: [signature] }]);
+    expand();
+
+    expect(screen.getAllByTestId('wss-part-row')).toHaveLength(1);
+    expect(screen.getByLabelText<HTMLInputElement>('Part 1 name').value).toBe('Body');
+    expect(screen.getByLabelText<HTMLInputElement>('Cover the SAML token (STR-Transform)').checked).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Part 1 name'), { target: { value: 'Echo' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, parts: [{ ...signature.parts[1], name: 'Echo' }, tokenPart] }],
+    });
+
+    fireEvent.click(screen.getByLabelText('Cover the SAML token (STR-Transform)'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, parts: [signature.parts[1]] }],
+    });
+  });
+
   it('edits an encryption entry and its parts', () => {
     const encryption: WssEntryWire = {
       kind: 'encryption',

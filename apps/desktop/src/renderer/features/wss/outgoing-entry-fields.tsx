@@ -139,7 +139,14 @@ interface PartsTableProps {
 }
 
 /** The Parts table both the Signature and the Encryption entries edit. */
-function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
+function PartsTable({ label, empty, parts: allParts, onChange }: PartsTableProps) {
+  // The SAML token part is edited by its own checkbox, not as a row: it has no name or namespace
+  // a user should change. It stays in the list this table writes back.
+  const tokenParts = allParts.filter((part) => part.token === true);
+  const parts = allParts.filter((part) => part.token !== true);
+  const write = (visible: readonly WssPartWire[]): void => {
+    onChange([...visible, ...tokenParts]);
+  };
   return (
     <>
       <div className="mt-1 flex items-center gap-1">
@@ -148,7 +155,7 @@ function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
           label="Add part"
           data-testid="wss-part-add"
           onClick={() => {
-            onChange([...parts, { name: '', namespace: '', encode: 'Content' }]);
+            write([...parts, { name: '', namespace: '', encode: 'Content' }]);
           }}
         >
           <Plus size={12} aria-hidden="true" />
@@ -163,7 +170,7 @@ function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
               className={WSS_FIELD_CLASS}
               value={part.name}
               onChange={(event) => {
-                onChange(
+                write(
                   parts.map((candidate, at) => (at === index ? { ...candidate, name: event.target.value } : candidate)),
                 );
               }}
@@ -173,7 +180,7 @@ function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
               className={WSS_FIELD_CLASS}
               value={part.namespace}
               onChange={(event) => {
-                onChange(
+                write(
                   parts.map((candidate, at) =>
                     at === index ? { ...candidate, namespace: event.target.value } : candidate,
                   ),
@@ -185,7 +192,7 @@ function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
               className={WSS_FIELD_CLASS}
               value={part.encode}
               onChange={(event) => {
-                onChange(
+                write(
                   parts.map((candidate, at) =>
                     at === index ? { ...candidate, encode: event.target.value as WssPartWire['encode'] } : candidate,
                   ),
@@ -198,7 +205,7 @@ function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
             <IconButton
               label={`Remove part ${String(index + 1)}`}
               onClick={() => {
-                onChange(parts.filter((_candidate, at) => at !== index));
+                write(parts.filter((_candidate, at) => at !== index));
               }}
             >
               <Trash2 size={12} aria-hidden="true" />
@@ -211,7 +218,7 @@ function PartsTable({ label, empty, parts, onChange }: PartsTableProps) {
 }
 
 /** The five X.509 token profile forms, with the label the editor shows for each. */
-const KEY_IDENTIFIER_OPTIONS: readonly (readonly [WssSignatureEntry['keyIdentifierType'], string])[] = [
+const KEY_IDENTIFIER_OPTIONS: readonly (readonly [WssEncryptionEntry['keyIdentifierType'], string])[] = [
   ['BinarySecurityToken', 'Binary Security Token'],
   ['IssuerSerial', 'Issuer Name and Serial Number'],
   ['SubjectKeyIdentifier', 'Subject Key Identifier'],
@@ -324,6 +331,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
   const setParts = (parts: readonly WssPartWire[]): void => {
     onChange({ ...entry, parts: [...parts] });
   };
+  const coversToken = entry.parts.some((part) => part.token === true);
 
   return (
     <div className="mt-1 flex flex-col gap-1" data-testid="wss-signature-fields">
@@ -396,6 +404,7 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
               {label}
             </option>
           ))}
+          <option value="saml-token">SAML token reference</option>
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-fg-subtle">
@@ -444,6 +453,21 @@ export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
         parts={entry.parts}
         onChange={setParts}
       />
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <input
+          type="checkbox"
+          aria-label="Cover the SAML token (STR-Transform)"
+          checked={coversToken}
+          onChange={(event) => {
+            setParts(
+              event.target.checked
+                ? [...entry.parts, { name: 'SamlToken', namespace: '', encode: 'Element', token: true }]
+                : entry.parts.filter((part) => part.token !== true),
+            );
+          }}
+        />
+        Cover the SAML token (STR-Transform)
+      </label>
     </div>
   );
 }

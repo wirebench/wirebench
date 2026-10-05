@@ -33,3 +33,35 @@ describe('readAssertion', () => {
     expect(() => readAssertion('not xml <')).toThrow(expect.objectContaining({ code: 'saml-token-invalid' }));
   });
 });
+
+describe('readAssertion confirmation selection', () => {
+  const cert = (body: string) =>
+    `<ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>${body}</ds:X509Certificate></ds:X509Data></ds:KeyInfo>`;
+  const saml2 = (confirmations: string) =>
+    '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a1" Version="2.0">' +
+    `<saml2:Subject>${confirmations}</saml2:Subject></saml2:Assertion>`;
+  const sc2 = (method: string, key: string) =>
+    `<saml2:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:${method}"><saml2:SubjectConfirmationData>${key}</saml2:SubjectConfirmationData></saml2:SubjectConfirmation>`;
+  const saml1 = (confirmations: string) =>
+    '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" AssertionID="_b1" MajorVersion="1" MinorVersion="1">' +
+    `<saml:AuthenticationStatement><saml:Subject>${confirmations}</saml:Subject></saml:AuthenticationStatement></saml:Assertion>`;
+  const sc1 = (method: string, key: string) =>
+    `<saml:SubjectConfirmation><saml:ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:${method}</saml:ConfirmationMethod>` +
+    `<saml:SubjectConfirmationData>${key}</saml:SubjectConfirmationData></saml:SubjectConfirmation>`;
+
+  it('picks the holder-of-key confirmation when a bearer one comes first (2.0)', () => {
+    const read = readAssertion(saml2(sc2('bearer', cert('QkVBUkVS')) + sc2('holder-of-key', cert('SE9L'))));
+    expect(read.holderOfKeyCertPem).toContain('SE9L');
+    expect(read.holderOfKeyCertPem).not.toContain('QkVBUkVS');
+  });
+
+  it('picks the holder-of-key confirmation when a bearer one comes first (1.1)', () => {
+    const read = readAssertion(saml1(sc1('bearer', cert('QkVBUkVS')) + sc1('holder-of-key', cert('SE9L'))));
+    expect(read.holderOfKeyCertPem).toContain('SE9L');
+  });
+
+  it('does not report a certificate under a bearer confirmation', () => {
+    expect(readAssertion(saml2(sc2('bearer', cert('QkVBUkVS')))).holderOfKeyCertPem).toBeUndefined();
+    expect(readAssertion(saml1(sc1('bearer', cert('QkVBUkVS')))).holderOfKeyCertPem).toBeUndefined();
+  });
+});

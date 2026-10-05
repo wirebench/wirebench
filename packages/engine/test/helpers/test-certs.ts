@@ -49,12 +49,19 @@ function serial(): string {
   return `01${serialCounter.toString(16).padStart(16, '0')}`;
 }
 
-function newCertificate(publicKey: forge.pki.PublicKey, commonName: string): forge.pki.Certificate {
+/** How long a fixture that is checked in (and so outlives any test run) stays valid: 20 years. */
+export const LONG_VALIDITY_MS = 20 * 365 * 24 * 60 * 60 * 1000;
+
+function newCertificate(
+  publicKey: forge.pki.PublicKey,
+  commonName: string,
+  validityMs: number = VALIDITY_MS,
+): forge.pki.Certificate {
   const cert = forge.pki.createCertificate();
   cert.publicKey = publicKey;
   cert.serialNumber = serial();
   cert.validity.notBefore = new Date(Date.now() - SKEW_MS);
-  cert.validity.notAfter = new Date(Date.now() + VALIDITY_MS);
+  cert.validity.notAfter = new Date(Date.now() + validityMs);
   cert.setSubject(attributes(commonName));
   return cert;
 }
@@ -65,10 +72,13 @@ const cachedCas = new Map<string, TestCertificate & { readonly commonName: strin
  * The self-signed CA every other certificate here is issued by. Memoised: the
  * first call pays for one RSA-2048 key pair, later calls are free.
  *
+ * @param options `validityMs` for a CA whose certificates are checked in as fixtures
  * @returns the CA's PEM certificate and private key
  */
-export function generateTestCa(): TestCertificate & { readonly commonName: string } {
-  return generateCa('Wirebench Test CA');
+export function generateTestCa(options?: { readonly validityMs?: number }): TestCertificate & {
+  readonly commonName: string;
+} {
+  return generateCa('Wirebench Test CA', options?.validityMs ?? VALIDITY_MS);
 }
 
 /**
@@ -78,14 +88,15 @@ export function generateTestCa(): TestCertificate & { readonly commonName: strin
  * @returns the second CA's PEM certificate and private key
  */
 export function generateSecondTestCa(): TestCertificate & { readonly commonName: string } {
-  return generateCa('Wirebench Second Test CA');
+  return generateCa('Wirebench Second Test CA', VALIDITY_MS);
 }
 
-function generateCa(commonName: string): TestCertificate & { readonly commonName: string } {
-  const cachedCa = cachedCas.get(commonName);
+function generateCa(commonName: string, validityMs: number): TestCertificate & { readonly commonName: string } {
+  const cacheKey = `${commonName}|${String(validityMs)}`;
+  const cachedCa = cachedCas.get(cacheKey);
   if (cachedCa !== undefined) return cachedCa;
   const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
-  const cert = newCertificate(keys.publicKey, commonName);
+  const cert = newCertificate(keys.publicKey, commonName, validityMs);
   cert.setIssuer(attributes(commonName));
   cert.setExtensions([
     { name: 'basicConstraints', cA: true, critical: true },
@@ -97,7 +108,7 @@ function generateCa(commonName: string): TestCertificate & { readonly commonName
     keyPem: forge.pki.privateKeyToPem(keys.privateKey),
     commonName,
   };
-  cachedCas.set(commonName, ca);
+  cachedCas.set(cacheKey, ca);
   return ca;
 }
 
@@ -182,19 +193,22 @@ let cachedSigningCert: TestCertificate | undefined;
  * deliberately lacks, so the "no SKI" path stays testable). Memoised per test process.
  *
  * @param ca the issuing authority, from {@link generateTestCa}
+ * @param options `validityMs` for a certificate that is checked in as a fixture; such a call is
+ * not memoised, so it never changes what the default (short-lived) call returns
  * @returns the signer's PEM certificate and private key
  */
-export function generateSigningCert(ca: TestCertificate): TestCertificate {
-  if (cachedSigningCert !== undefined) return cachedSigningCert;
+export function generateSigningCert(ca: TestCertificate, options?: { readonly validityMs?: number }): TestCertificate {
+  if (options?.validityMs === undefined && cachedSigningCert !== undefined) return cachedSigningCert;
   const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
-  const cert = newCertificate(keys.publicKey, 'wirebench-signer');
+  const cert = newCertificate(keys.publicKey, 'wirebench-signer', options?.validityMs);
   cert.setExtensions([
     { name: 'basicConstraints', cA: false, critical: true },
     { name: 'keyUsage', digitalSignature: true, nonRepudiation: true, critical: true },
     { name: 'subjectKeyIdentifier' },
   ]);
-  cachedSigningCert = issue(ca, cert, keys.privateKey);
-  return cachedSigningCert;
+  const issued = issue(ca, cert, keys.privateKey);
+  if (options?.validityMs === undefined) cachedSigningCert = issued;
+  return issued;
 }
 
 /**

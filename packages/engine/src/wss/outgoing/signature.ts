@@ -18,11 +18,14 @@ import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
 import { serializeXml } from '../../xml/serialize.js';
 import { detectEnvelopeVersion, envelopeNamespace } from '../../soap/envelope.js';
-import { buildKeyIdentifier } from '../key-identifiers.js';
+import { buildKeyIdentifier, samlTokenReference, thumbprintSha1Base64 } from '../key-identifiers.js';
+import type { KeyIdentifier } from '../key-identifiers.js';
 import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
 import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { PlacedSamlToken } from './saml.js';
+import { assertionsWithId, referencedId, registerStrTransform } from './str-transform.js';
+import { STR_TRANSFORM } from '../saml/uris.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
@@ -46,7 +49,7 @@ export interface ResolvedSigningKey {
   readonly alias: KeystoreAlias;
   /** The actor/role of the `wsse:Security` block the signature belongs in. */
   readonly actor?: string;
-  /** SAML tokens placed before this signature, in order (used once signatures can refer to them). */
+  /** SAML tokens placed before this signature, in order (a `saml-token` key identifier refers to the nearest). */
   readonly placedTokens?: readonly PlacedSamlToken[];
 }
 
@@ -114,6 +117,57 @@ export function privateKeyOf(alias: KeystoreAlias, passphrase: string | undefine
 }
 
 /**
+ * The SAML token placed most recently before this signature entry.
+ *
+ * @throws WssError `wss-saml-token-missing` when there is none, `wss-proof-key-mismatch` when a
+ * holder-of-key token binds a certificate other than the signing one
+ */
+function nearestToken(resolved: ResolvedSigningKey, signingCertPem: string): PlacedSamlToken {
+  const token = resolved.placedTokens?.at(-1);
+  if (token === undefined) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      'This signature refers to a SAML token, but no SAML entry comes before it.',
+    );
+  }
+  if (
+    token.confirmation === 'holder-of-key' &&
+    token.proofCertPem !== undefined &&
+    thumbprintSha1Base64(token.proofCertPem) !== thumbprintSha1Base64(signingCertPem)
+  ) {
+    throw new WssError('wss-proof-key-mismatch', 'A holder-of-key SAML token must be signed with its proof key.');
+  }
+  return token;
+}
+
+/**
+ * Checks, before xml-crypto runs, that the STR names exactly one assertion in `doc`, by the rule
+ * the STR-Transform itself dereferences with: inside xml-crypto a failure there is a plain Error.
+ *
+ * @throws WssError `wss-saml-token-missing` when the STR names no id or the id matches ≠ 1 assertions
+ */
+function assertTokenResolvable(doc: Document, str: Element): void {
+  let id: string;
+  try {
+    id = referencedId(str);
+  } catch (cause) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      'The SAML token reference names no assertion this build can sign over.',
+      { cause },
+    );
+  }
+  const count = assertionsWithId(doc, id).length;
+  if (count !== 1) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      `The SAML token reference matches ${String(count)} assertions in the message, not one.`,
+      { details: { id, matches: count } },
+    );
+  }
+}
+
+/**
  * Signs the parts `entry` names and appends the `<ds:Signature>` to the `wsse:Security` block
  * addressed to `resolved.actor`, mutating `doc` in place.
  *
@@ -124,7 +178,8 @@ export function privateKeyOf(alias: KeystoreAlias, passphrase: string | undefine
  * @param entry the signature configuration
  * @param resolved the keystore alias to sign with, and the Security block's actor
  * @param ctx the injected secret/uuid capabilities
- * @throws WssError `wss-not-an-envelope`, `wss-part-missing`, `wss-ski-missing`, `wss-signing-key-missing`
+ * @throws WssError `wss-not-an-envelope`, `wss-part-missing`, `wss-ski-missing`, `wss-signing-key-missing`,
+ * `wss-saml-token-missing`, `wss-proof-key-mismatch`
  */
 export async function signEnvelope(
   doc: Document,
@@ -145,7 +200,21 @@ export async function signEnvelope(
   }
 
   const references: { readonly id: string; readonly element: Element }[] = [];
+  const strReferences: string[] = [];
   for (const part of entry.parts) {
+    if (part.token === true) {
+      // The assertion itself is never given a wsu:Id: an STR naming it is, and the STR-Transform
+      // digests the assertion through it.
+      const token = nearestToken(resolved, resolved.alias.certPem);
+      const strId = `STR-${ctx.uuid()}`;
+      const str = parseXml(samlTokenReference(token, { id: strId }), { location: 'envelope' }).documentElement;
+      if (str !== null) {
+        assertTokenResolvable(doc, str);
+        security.appendChild(doc.importNode(str, true));
+      }
+      strReferences.push(strId);
+      continue;
+    }
     const element = resolvePart(root, part, envelopeNs);
     if (element === undefined) {
       throw new WssError('wss-part-missing', `The message has no "${part.name}" element to sign.`, {
@@ -166,12 +235,15 @@ export async function signEnvelope(
     references.push({ id, element });
   }
 
-  const keyIdentifier = buildKeyIdentifier(entry.keyIdentifierType, {
-    certPem: resolved.alias.certPem,
-    chainPem: resolved.alias.chainPem,
-    useSingleCertificate: entry.useSingleCertificate,
-    tokenId: `X509-${ctx.uuid()}`,
-  });
+  const keyIdentifier: KeyIdentifier =
+    entry.keyIdentifierType === 'saml-token'
+      ? { keyInfoXml: samlTokenReference(nearestToken(resolved, resolved.alias.certPem)) }
+      : buildKeyIdentifier(entry.keyIdentifierType, {
+          certPem: resolved.alias.certPem,
+          chainPem: resolved.alias.chainPem,
+          useSingleCertificate: entry.useSingleCertificate,
+          tokenId: `X509-${ctx.uuid()}`,
+        });
   if (keyIdentifier.binarySecurityTokenXml !== undefined) {
     const token = parseXml(keyIdentifier.binarySecurityTokenXml, { location: 'envelope' }).documentElement;
     if (token !== null) {
@@ -202,6 +274,14 @@ export async function signEnvelope(
       transforms: [EXC_C14N],
       digestAlgorithm: DIGEST_ALGORITHM_URIS[entry.digestAlgorithm],
       inclusiveNamespacesPrefixList: inclusiveNamespacePrefixList(element, envPrefix),
+    });
+  }
+  if (strReferences.length > 0) registerStrTransform(signer);
+  for (const id of strReferences) {
+    signer.addReference({
+      xpath: `//*[@*[local-name(.)='Id']='${id}']`,
+      transforms: [STR_TRANSFORM],
+      digestAlgorithm: DIGEST_ALGORITHM_URIS[entry.digestAlgorithm],
     });
   }
   // The index and the XPath must count the same node set — direct `wsse:Security` children of
@@ -288,6 +368,8 @@ export function verifySignature(xml: string, options: VerifySignatureOptions): V
     // Trust the caller's certificate, never the one the document brought with it.
     getCertFromKeyInfo: () => null,
   });
+  // Does nothing to a signature without an STR-Transform reference.
+  registerStrTransform(verifier);
   try {
     verifier.loadSignature(serializeXml(signature));
     const ok = verifier.checkSignature(xml);

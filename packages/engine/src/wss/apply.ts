@@ -210,7 +210,7 @@ export async function applyOutgoingWss(
 ): Promise<string> {
   const { doc, version } = parseEnvelope(envelopeXml);
   const placed: PlacedSamlToken[] = [];
-  for (const entry of config.entries) {
+  async function applyEntry(entry: WssEntry): Promise<void> {
     // The header is re-resolved every iteration because signing re-serializes the whole
     // document (xml-crypto only speaks strings), which invalidates any element held across it.
     const root = doc.documentElement;
@@ -224,7 +224,7 @@ export async function applyOutgoingWss(
       const assertion = parseXml(token.assertionXml, { location: 'saml-token' }).documentElement;
       if (assertion !== null) security.appendChild(doc.importNode(assertion, true));
       placed.push(token.placed);
-      continue;
+      return;
     }
     if (entry.kind === 'signature') {
       await signEnvelope(
@@ -233,13 +233,27 @@ export async function applyOutgoingWss(
         { ...(await resolveKeystoreAlias(entry, config, ctx)), placedTokens: placed },
         ctx,
       );
-      continue;
+      return;
     }
     if (entry.kind === 'encryption') {
       encryptEnvelope(doc, entry, await resolveKeystoreAlias(entry, config, ctx), ctx);
-      continue;
+      return;
     }
     security.appendChild(doc.importNode(await buildEntry(entry, config, ctx, options?.requestProperties), true));
+  }
+  for (const [index, entry] of config.entries.entries()) {
+    try {
+      await applyEntry(entry);
+    } catch (error) {
+      if (error instanceof WssError) {
+        // Name the configuration and the entry's position so the user can find what to fix.
+        throw new WssError(error.code, error.message, {
+          details: { ...error.details, configuration: config.name, entry: index },
+          ...(error.cause !== undefined ? { cause: error.cause } : {}),
+        });
+      }
+      throw error;
+    }
   }
   if (config.entries.length === 0) {
     const root = doc.documentElement;
