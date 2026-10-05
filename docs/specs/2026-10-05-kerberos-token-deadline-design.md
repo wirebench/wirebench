@@ -135,8 +135,8 @@ async function bounded<T>(
   starts, and a token that lands exactly at the limit.
 - **Definition fetches:** a Kerberos `aborted` is rethrown as the signal's own abort reason, so a cancelled
   import stays a cancel, as it does today.
-- **gRPC:** a token `timeout` is reported like the call's own deadline. The `HttpError` from the seam is
-  passed through unchanged.
+- **gRPC:** a token `timeout` is not turned into a `DEADLINE_EXCEEDED` result. `sendGrpc` rejects with the
+  seam's `HttpError` unchanged, as it does for every `kerberos-*` failure.
 
 ### D4. The cap on abandoned calls
 
@@ -217,21 +217,21 @@ KDC that was slow, rather than seeing an unexplained 401.
 
 ## Success criteria
 
-- **SC-T1.** A SOAP or REST send whose KDC never answers fails with `timeout` and the Kerberos message within
+- **SC-KT1.** A SOAP or REST send whose KDC never answers fails with `timeout` and the Kerberos message within
   its own `timeoutMs`, not the krb5 or SSPI retry period.
-- **SC-T2.** Cancel during a token wait returns at once on SOAP, REST, WebSocket, gRPC and definition
+- **SC-KT2.** Cancel during a token wait returns at once on SOAP, REST, WebSocket, gRPC and definition
   fetches.
-- **SC-T3.** The WebSocket upgrade and gRPC calls never exceed their configured timeout, token included.
-- **SC-T4.** With 2 abandoned token calls still running, a new send fails at once with `kerberos-failed`, and
+- **SC-KT3.** The WebSocket upgrade and gRPC calls never exceed their configured timeout, token included.
+- **SC-KT4.** With 2 abandoned token calls still running, a new send fails at once with `kerberos-failed`, and
   sends work again once those calls end.
-- **SC-T5.** A caller that passes no options behaves exactly as before.
+- **SC-KT5.** A caller that passes no options behaves exactly as before.
 
 ## Docs
 
 - **Auth guide** (`docs-site/src/content/docs/guides/auth.mdx`): a row in the Kerberos error table for the
   `timeout` message and one for the busy message. One sentence saying the ticket wait counts against the
   request's timeout and that Cancel stops it.
-- **`docs/success-criteria.md`:** rows SC-T1–SC-T5.
+- **`docs/success-criteria.md`:** rows SC-KT1–SC-KT5 (`SC-T` is taken by team secrets).
 - **`CHANGELOG.md`:** under `### Fixed`, "A slow or unreachable Kerberos server no longer holds a send or a
   Cancel (#267)."
 
