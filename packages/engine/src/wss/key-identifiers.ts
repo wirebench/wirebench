@@ -16,6 +16,7 @@ import { parseXml } from '../xml/parse.js';
 import { serializeXml } from '../xml/serialize.js';
 import { renderDnRfc2253 } from '../keystore/certificate.js';
 import { SAML_KEY_IDENTIFIER_VALUE_TYPE, SAML_TOKEN_TYPE } from './saml/uris.js';
+import type { Element } from '@xmldom/xmldom';
 import type { PlacedSamlToken } from './outgoing/saml.js';
 import type { WssKeyIdentifierType } from './model.js';
 
@@ -141,6 +142,22 @@ function keyIdentifierElement(valueType: string, value: string): string {
 }
 
 /**
+ * Parses `referenceXml` and returns its root.
+ *
+ * @throws WssError `wss-saml-token-missing` when the root is not a `wsse:SecurityTokenReference`
+ */
+function assertSecurityTokenReference(referenceXml: string): Element {
+  const root = parseXml(referenceXml, { location: 'envelope' }).documentElement;
+  if (root === null || root.namespaceURI !== NS.WSSE || root.localName !== 'SecurityTokenReference') {
+    throw new WssError(
+      'wss-saml-token-missing',
+      "The token service's attached reference is not a wsse:SecurityTokenReference.",
+    );
+  }
+  return root;
+}
+
+/**
  * `referenceXml` (a token service's attached reference) with its root `wsu:Id` set to `id`.
  *
  * Parsed rather than patched as text, so leading whitespace or comments, an existing `wsu:Id`
@@ -150,13 +167,7 @@ function keyIdentifierElement(valueType: string, value: string): string {
  * @throws WssError `wss-saml-token-missing` when the reference is not a `wsse:SecurityTokenReference`
  */
 function withWsuId(referenceXml: string, id: string): string {
-  const root = parseXml(referenceXml, { location: 'envelope' }).documentElement;
-  if (root === null || root.namespaceURI !== NS.WSSE || root.localName !== 'SecurityTokenReference') {
-    throw new WssError(
-      'wss-saml-token-missing',
-      "The token service's attached reference is not a wsse:SecurityTokenReference.",
-    );
-  }
+  const root = assertSecurityTokenReference(referenceXml);
   // Reuse a prefix already bound to WS-Utility; never rebind a `wsu` the reference uses for something else.
   const prefix = root.lookupPrefix(NS.WSU) ?? (root.lookupNamespaceURI('wsu') === null ? 'wsu' : 'wsu0');
   if (root.lookupNamespaceURI(prefix) !== NS.WSU) {
@@ -176,7 +187,11 @@ function withWsuId(referenceXml: string, id: string): string {
  */
 export function samlTokenReference(token: PlacedSamlToken, options: { readonly id?: string } = {}): string {
   if (token.attachedReferenceXml !== undefined) {
-    if (options.id === undefined) return token.attachedReferenceXml;
+    // withWsuId parses and checks the root; without an id the text is used as given, so check it here too.
+    if (options.id === undefined) {
+      assertSecurityTokenReference(token.attachedReferenceXml);
+      return token.attachedReferenceXml;
+    }
     return withWsuId(token.attachedReferenceXml, options.id);
   }
   if (token.assertionId === undefined) {

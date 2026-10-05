@@ -55,4 +55,14 @@ describe('samlTokenReference with an id', () => {
   it('keeps the attached reference verbatim without an id', () => {
     expect(samlTokenReference(attached(ATTACHED))).toBe(ATTACHED);
   });
+
+  it('refuses an attached reference that is not a SecurityTokenReference, id or not', () => {
+    const wrong = `<wsse:Other xmlns:wsse="${NS.WSSE}"/>`;
+    expect(() => samlTokenReference(attached(wrong))).toThrowError(
+      expect.objectContaining({ code: 'wss-saml-token-missing' }),
+    );
+    expect(() => samlTokenReference(attached(wrong), { id: 'STR-1' })).toThrowError(
+      expect.objectContaining({ code: 'wss-saml-token-missing' }),
+    );
+  });
 });

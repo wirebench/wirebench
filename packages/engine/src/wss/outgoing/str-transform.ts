@@ -29,23 +29,39 @@ function elementsNamed(root: Node, localName: string): Element[] {
   return found;
 }
 
-/** The id the STR names: a KeyIdentifier's text, or a `wsse:Reference`'s `#id`. */
-function referencedId(str: Element): string {
+/**
+ * The id the STR names: a KeyIdentifier's text, or a `wsse:Reference`'s `#id`.
+ *
+ * @throws Error when the STR names nothing this build can dereference (including an empty id)
+ */
+export function referencedId(str: Element): string {
   const identifier = elementsNamed(str, 'KeyIdentifier')[0];
-  if (identifier !== undefined) return (identifier.textContent ?? '').trim();
-  const uri = elementsNamed(str, 'Reference')[0]?.getAttribute('URI') ?? '';
-  if (uri.startsWith('#')) return uri.slice(1);
-  throw new Error('The SecurityTokenReference names no token this build can dereference.');
+  let id = '';
+  if (identifier !== undefined) {
+    id = (identifier.textContent ?? '').trim();
+  } else {
+    const reference = elementsNamed(str, 'Reference')[0];
+    // xmldom 0.8 answers '' for an absent attribute, so absence is asked for explicitly.
+    const uri = reference?.hasAttribute('URI') === true ? reference.getAttribute('URI') : null;
+    if (uri !== null && uri.startsWith('#')) id = uri.slice(1);
+  }
+  if (id === '') throw new Error('The SecurityTokenReference names no token this build can dereference.');
+  return id;
 }
 
-/** The one assertion in `doc` whose `ID`/`AssertionID`/`wsu:Id` is `id`; more than one is an attack. */
-function dereference(doc: Node, id: string): Element {
-  const matches = elementsNamed(doc, 'Assertion').filter(
+/** Every assertion in `doc` whose `ID`/`AssertionID`/`wsu:Id` is `id`, in document order. */
+export function assertionsWithId(doc: Node, id: string): Element[] {
+  return elementsNamed(doc, 'Assertion').filter(
     (assertion) =>
-      assertion.getAttribute('ID') === id ||
-      assertion.getAttribute('AssertionID') === id ||
-      assertion.getAttributeNS(NS.WSU, 'Id') === id,
+      (assertion.hasAttribute('ID') && assertion.getAttribute('ID') === id) ||
+      (assertion.hasAttribute('AssertionID') && assertion.getAttribute('AssertionID') === id) ||
+      (assertion.hasAttributeNS(NS.WSU, 'Id') && assertion.getAttributeNS(NS.WSU, 'Id') === id),
   );
+}
+
+/** The one assertion in `doc` whose id is `id`; more than one is an attack. */
+function dereference(doc: Node, id: string): Element {
+  const matches = assertionsWithId(doc, id);
   const [only] = matches;
   if (matches.length !== 1 || only === undefined) {
     throw new Error(`The SecurityTokenReference matches ${String(matches.length)} tokens, not one.`);
@@ -89,9 +105,16 @@ export function registerStrTransform(signed: SignedXml): void {
   target.createReferences = (doc, prefix) => {
     // xml-crypto 6 passes the bare prefix ('ds') and adds the colon itself.
     const qualified = prefix !== undefined && prefix !== '' ? `${prefix}:` : '';
-    return original(doc, prefix).replaceAll(
+    const emitted = original(doc, prefix);
+    const replaced = emitted.replaceAll(
       `<${qualified}Transform Algorithm="${STR_TRANSFORM}" />`,
       `<${qualified}Transform Algorithm="${STR_TRANSFORM}">${PARAMETERS}</${qualified}Transform>`,
     );
+    // A transform xml-crypto wrote in a shape the replacement does not know would go out without
+    // its parameters, silently; refuse instead.
+    if (replaced === emitted && emitted.includes(`Algorithm="${STR_TRANSFORM}"`)) {
+      throw new Error('The STR-Transform was emitted in a form that could not be given its parameters.');
+    }
+    return replaced;
   };
 }

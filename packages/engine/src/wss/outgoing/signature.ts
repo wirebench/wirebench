@@ -24,7 +24,7 @@ import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
 import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { PlacedSamlToken } from './saml.js';
-import { registerStrTransform } from './str-transform.js';
+import { assertionsWithId, referencedId, registerStrTransform } from './str-transform.js';
 import { STR_TRANSFORM } from '../saml/uris.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
@@ -141,6 +141,33 @@ function nearestToken(resolved: ResolvedSigningKey, signingCertPem: string): Pla
 }
 
 /**
+ * Checks, before xml-crypto runs, that the STR names exactly one assertion in `doc`, by the rule
+ * the STR-Transform itself dereferences with: inside xml-crypto a failure there is a plain Error.
+ *
+ * @throws WssError `wss-saml-token-missing` when the STR names no id or the id matches ≠ 1 assertions
+ */
+function assertTokenResolvable(doc: Document, str: Element): void {
+  let id: string;
+  try {
+    id = referencedId(str);
+  } catch (cause) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      'The SAML token reference names no assertion this build can sign over.',
+      { cause },
+    );
+  }
+  const count = assertionsWithId(doc, id).length;
+  if (count !== 1) {
+    throw new WssError(
+      'wss-saml-token-missing',
+      `The SAML token reference matches ${String(count)} assertions in the message, not one.`,
+      { details: { id, matches: count } },
+    );
+  }
+}
+
+/**
  * Signs the parts `entry` names and appends the `<ds:Signature>` to the `wsse:Security` block
  * addressed to `resolved.actor`, mutating `doc` in place.
  *
@@ -151,7 +178,8 @@ function nearestToken(resolved: ResolvedSigningKey, signingCertPem: string): Pla
  * @param entry the signature configuration
  * @param resolved the keystore alias to sign with, and the Security block's actor
  * @param ctx the injected secret/uuid capabilities
- * @throws WssError `wss-not-an-envelope`, `wss-part-missing`, `wss-ski-missing`, `wss-signing-key-missing`
+ * @throws WssError `wss-not-an-envelope`, `wss-part-missing`, `wss-ski-missing`, `wss-signing-key-missing`,
+ * `wss-saml-token-missing`, `wss-proof-key-mismatch`
  */
 export async function signEnvelope(
   doc: Document,
@@ -180,7 +208,10 @@ export async function signEnvelope(
       const token = nearestToken(resolved, resolved.alias.certPem);
       const strId = `STR-${ctx.uuid()}`;
       const str = parseXml(samlTokenReference(token, { id: strId }), { location: 'envelope' }).documentElement;
-      if (str !== null) security.appendChild(doc.importNode(str, true));
+      if (str !== null) {
+        assertTokenResolvable(doc, str);
+        security.appendChild(doc.importNode(str, true));
+      }
       strReferences.push(strId);
       continue;
     }

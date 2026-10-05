@@ -1,4 +1,3 @@
-// packages/engine/test/unit/wss/outgoing/str-transform.test.ts
 import { describe, expect, it } from 'vitest';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
 import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
@@ -72,5 +71,67 @@ describe('the STR-Transform', () => {
     const result = verifySignature(wrapped, { certPem: user.certPem });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/matches 2 tokens/);
+  });
+
+  it('fails verification when the KeyIdentifier naming the token is emptied', async () => {
+    const xml = await applyOutgoingWss(SOAP11, senderVouches, ctx());
+    const emptied = xml.replace(/(<wsse:KeyIdentifier[^>]*>)_a1(<\/wsse:KeyIdentifier>)/, '$1$2');
+    expect(emptied).not.toBe(xml);
+    expect(verifySignature(emptied, { certPem: user.certPem }).ok).toBe(false);
+  });
+
+  it('refuses at signing, with a WssError, when two saml-token entries carry the same assertion', async () => {
+    const [token, sig] = senderVouches.entries;
+    const twice: WssOutgoingConfig = { ...senderVouches, entries: [token!, token!, sig!] };
+    await expect(applyOutgoingWss(SOAP11, twice, ctx())).rejects.toMatchObject({
+      name: 'WssError',
+      code: 'wss-saml-token-missing',
+      details: { configuration: 'SV', entry: 2 },
+    });
+  });
+
+  it('refuses at signing when the attached reference names no plain assertion in the message', async () => {
+    const attached =
+      '<wsse:SecurityTokenReference xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+      '<wsse:KeyIdentifier ValueType="urn:attached">_inner</wsse:KeyIdentifier></wsse:SecurityTokenReference>';
+    const context = createWssContext({
+      keystores: () => Promise.resolve(keystore),
+      uuid: () => 'u',
+      clock: () => new Date('2026-10-05T10:00:00Z'),
+      issuedTokens: {
+        get: () =>
+          Promise.resolve({
+            assertionXml: '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_outer"/>',
+            assertionId: '_outer',
+            attachedReferenceXml: attached,
+            samlVersion: '2.0',
+            keyType: 'bearer',
+            stsHost: 'sts.test',
+            cacheKey: 'k',
+          }),
+        peek: () => undefined,
+      },
+    });
+    const [, sig] = senderVouches.entries;
+    const config: WssOutgoingConfig = {
+      ...senderVouches,
+      entries: [
+        {
+          kind: 'issued-token',
+          stsUrl: 'https://sts.test',
+          soapVersion: '1.2',
+          trustVersion: '1.3',
+          tokenType: '2.0',
+          keyType: 'bearer',
+          credential: { kind: 'username', username: 'a' },
+          requestedLifetimeSeconds: 0,
+        },
+        sig!,
+      ],
+    };
+    await expect(applyOutgoingWss(SOAP11, config, context)).rejects.toMatchObject({
+      code: 'wss-saml-token-missing',
+      details: { configuration: 'SV', entry: 1 },
+    });
   });
 });

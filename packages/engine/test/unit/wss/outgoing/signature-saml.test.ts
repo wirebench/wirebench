@@ -1,4 +1,3 @@
-// packages/engine/test/unit/wss/outgoing/signature-saml.test.ts
 import { describe, expect, it } from 'vitest';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
 import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
