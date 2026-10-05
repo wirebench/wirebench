@@ -35,6 +35,11 @@ const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: 
   { value: 'kerberos', label: 'Kerberos' },
 ];
 
+/** Every scheme but Kerberos: what a webhook delivery can be given. */
+export const WEBHOOK_AUTH_TYPES: readonly AuthConfigWire['type'][] = TYPES.map((option) => option.value).filter(
+  (value) => value !== 'kerberos',
+);
+
 /**
  * The schemes a SOAP interface, endpoint or request may hold: all six, but never *Inherit*.
  *
@@ -263,6 +268,16 @@ export function AuthFields({
               onChange({ type: 'api-key', name: '', in: 'header' });
               return;
             }
+            if (value === 'kerberos') {
+              // A fresh Kerberos configuration carries nothing over from another scheme, whatever the
+              // platform: a leftover username or password would be refused by the engine off Windows.
+              onChange({
+                type: 'kerberos',
+                ...(auth?.spn !== undefined ? { spn: auth.spn } : {}),
+                ...(auth?.principal !== undefined ? { principal: auth.principal } : {}),
+              });
+              return;
+            }
             patch({ type: value as AuthConfigWire['type'] });
           }}
         >
@@ -303,7 +318,9 @@ export function AuthFields({
 
       {auth !== undefined && type === 'kerberos' && (
         <>
-          {kerberos?.available === false && <p className="text-xs text-fg-subtle">{kerberos.reason}</p>}
+          {kerberos?.available === false && kerberos.reason !== undefined && kerberos.reason !== '' && (
+            <p className="text-xs text-fg-subtle">{kerberos.reason}</p>
+          )}
           {text('spn', 'SPN', 'HTTP/<host of the request>')}
           <p className="text-xs text-fg-subtle">Leave empty unless the service is registered under another name.</p>
           {kerberos !== undefined && kerberos.platform !== 'win32' && text('principal', 'Principal', 'user@REALM')}

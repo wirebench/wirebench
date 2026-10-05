@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AuthFields } from '../../src/renderer/components/auth-fields.js';
+import { resetKerberosAvailability } from '../../src/renderer/lib/use-kerberos-availability.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+
+beforeEach(() => {
+  resetKerberosAvailability();
+});
 
 afterEach(() => {
   cleanup();
@@ -32,5 +37,26 @@ describe('Kerberos in AuthFields', () => {
     render(<AuthFields scope="API" auth={{ type: 'kerberos' }} onChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole('option', { name: 'Kerberos' })).toHaveProperty('disabled', true));
     expect(screen.getByText('Kerberos is not available on Windows on ARM.')).toBeTruthy();
+  });
+
+  it('starts a switch to Kerberos clean, keeping only spn and principal', () => {
+    availability({ available: true, platform: 'linux' });
+    const onChange = vi.fn();
+    render(
+      <AuthFields
+        scope="API"
+        auth={{ type: 'basic', username: 'ada', passwordRef: 'ref-p', preemptive: false }}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('API authentication type'), { target: { value: 'kerberos' } });
+    expect(onChange).toHaveBeenCalledWith({ type: 'kerberos' });
+  });
+
+  it('settles to unavailable, with a reason, when the IPC call rejects', async () => {
+    installWirebenchApi({ auth: { kerberosAvailability: vi.fn().mockRejectedValue(new Error('boom')) } });
+    render(<AuthFields scope="API" auth={{ type: 'kerberos' }} onChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Kerberos availability could not be checked.')).toBeTruthy());
+    expect(screen.getByRole('option', { name: 'Kerberos' })).toHaveProperty('disabled', true);
   });
 });
