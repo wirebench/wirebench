@@ -8,7 +8,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import type { AssertionSubject } from '../assert/model.js';
-import { WirebenchError } from '../errors.js';
+import { WirebenchError, WssError } from '../errors.js';
 import { createFileAttachmentResolver } from '../project/attachments-cache.js';
 import { effectiveAuth } from '../project/endpoints.js';
 import { resolveAuthEndpoint, resolveEndpoint } from '../project/environments.js';
@@ -24,6 +24,7 @@ import type {
 } from '../project/model.js';
 import { definitionCacheDir } from '../project/paths.js';
 import { expandSendInput } from './expand.js';
+import { expand } from '../project/properties.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../wss/configs.js';
 import type { ProtocolRun, RunScope, ScriptedSend } from '../protocol/module.js';
@@ -139,8 +140,28 @@ function wsaFor(selected: SoapSelected, context: RunContext): SoapSendInput['wsa
   return config.enabled ? { config, defaultAction: context.defaultWsaActionFor?.(selected) ?? '' } : undefined;
 }
 
+/** `text` with `${…}` expanded; an unresolved reference refuses rather than sending it literally. */
+function expandOrRefuse(text: string, scopes: PropertyScopes, what: string): string {
+  const result = expand(text, scopes);
+  if (result.unresolved.length > 0) {
+    const exprs = result.unresolved.map((ref) => ref.expr);
+    throw new WirebenchError(
+      'unresolved-properties',
+      `The ${what} has property references nothing resolves: ${exprs.join(', ')}`,
+      { details: { unresolved: exprs } },
+    );
+  }
+  return result.text;
+}
+
 /** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
-function wssFor(selected: SoapSelected, context: RunContext): SoapSendWss | undefined {
+function wssFor(
+  selected: SoapSelected,
+  context: RunContext,
+  scopes: PropertyScopes,
+  endpointUrl: string,
+): SoapSendWss | undefined {
+  void endpointUrl; // lent to the issued-token source by a later task
   const { request } = selected;
   const pick = (id: string | undefined): string | undefined => (id === undefined || id.length === 0 ? undefined : id);
   const outgoingId = pick(request.wssOutgoingRef);
@@ -174,6 +195,18 @@ function wssFor(selected: SoapSelected, context: RunContext): SoapSendWss | unde
     ctx: createWssContext({
       keystores: (ref) => keystoreFor(context, ref),
       secrets: (ref) => requiredSecret(ref, context.host.getSecret),
+      expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
+      projectFile: async (path) => {
+        const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
+        try {
+          return await readFile(absolute, 'utf8');
+        } catch (cause) {
+          throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
+            details: { file: path },
+            cause,
+          });
+        }
+      },
     }),
     requestProperties: {
       ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
@@ -264,7 +297,7 @@ export async function resolveSoap(selected: SoapSelected, context: RunContext): 
   });
   const scopes = scopesFor(context);
   const wsa = wsaFor(selected, context);
-  const wss = wssFor(selected, context);
+  const wss = wssFor(selected, context, scopes, resolved.url);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,

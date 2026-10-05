@@ -22,6 +22,7 @@ import { buildKeyIdentifier } from '../key-identifiers.js';
 import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
 import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
+import type { PlacedSamlToken } from './saml.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
@@ -45,6 +46,8 @@ export interface ResolvedSigningKey {
   readonly alias: KeystoreAlias;
   /** The actor/role of the `wsse:Security` block the signature belongs in. */
   readonly actor?: string;
+  /** SAML tokens placed before this signature, in order (used once signatures can refer to them). */
+  readonly placedTokens?: readonly PlacedSamlToken[];
 }
 
 /** The outcome of {@link verifySignature}. */
