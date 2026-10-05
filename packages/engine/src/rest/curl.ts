@@ -119,12 +119,21 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
       ? { username: transport.username, password: redact ? CURL_REDACTED : transport.password }
       : undefined;
 
+  const negotiate =
+    transport?.type === 'kerberos'
+      ? {
+          ...(transport.username !== undefined ? { username: transport.username } : {}),
+          ...(transport.domain !== undefined ? { domain: transport.domain } : {}),
+        }
+      : undefined;
+
   const command: CurlCommand = {
     method: input.request.method,
     url,
     headers,
     body: curlBody(input.request.body),
     ...(basic !== undefined ? { basic } : {}),
+    ...(negotiate !== undefined ? { negotiate } : {}),
     ...(input.tls?.rejectUnauthorized === false ? { insecure: true } : {}),
     ...(input.settings.followRedirects ? { followRedirects: true } : {}),
     ...(input.settings.followRedirects && input.settings.maxRedirects !== undefined

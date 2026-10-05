@@ -8,14 +8,14 @@
 
 import { expandBundles, takesNoValue } from '../http/curl-flags.js';
 import { toCurl } from '../http/curl.js';
-import type { CurlHeader, ToCurlOptions } from '../http/curl.js';
+import type { CurlCommand, CurlHeader, ToCurlOptions } from '../http/curl.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
 import { soapActionHeaders } from './soap-action.js';
 import type { SoapSendInput } from './types.js';
 
 /** Builds a `curl` command reproducing a SOAP send — headers, envelope and all. */
 export function soapToCurl(
-  input: SoapSendInput & { readonly contentType?: string },
+  input: SoapSendInput & { readonly contentType?: string; readonly negotiate?: CurlCommand['negotiate'] },
   options: ToCurlOptions = {},
 ): string {
   const actionHeaders = soapActionHeaders(
@@ -35,7 +35,13 @@ export function soapToCurl(
   }
 
   return toCurl(
-    { method: 'POST', url: input.endpoint, headers, body: { kind: 'raw', text: input.envelopeXml } },
+    {
+      method: 'POST',
+      url: input.endpoint,
+      headers,
+      body: { kind: 'raw', text: input.envelopeXml },
+      ...(input.negotiate !== undefined ? { negotiate: input.negotiate } : {}),
+    },
     options,
   );
 }

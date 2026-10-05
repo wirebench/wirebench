@@ -465,7 +465,7 @@ describe('ImportOpenApiDialog — a document behind authentication', () => {
     await userEvent.selectOptions(screen.getByTestId('import-format-select'), 'wsdl');
 
     expect(screen.queryByTestId('definition-auth')).toBeNull();
-    expect(screen.getByText('Use Basic auth')).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Basic' })).toBeTruthy();
   });
 
   it('stores a typed password in the keychain on Import and sends only its reference', async () => {

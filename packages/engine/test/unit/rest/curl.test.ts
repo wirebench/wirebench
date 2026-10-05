@@ -138,6 +138,12 @@ describe('restToCurl', () => {
     expect(restToCurl(basic)).toContain(`--user 'ada:${CURL_REDACTED}'`);
     expect(restToCurl(basic, { redactSecrets: false })).toContain("--user 'ada:hunter2'");
 
+    // Kerberos is the OS ticket: the command asks curl for it and never carries a password.
+    const kerberos = input({ auth: { type: 'kerberos', username: 'ada', domain: 'D', password: 'hunter2' } });
+    expect(restToCurl(kerberos)).toContain("--negotiate --user 'D\\ada:'");
+    expect(restToCurl(kerberos, { redactSecrets: false })).not.toContain('hunter2');
+    expect(restToCurl(input({ auth: { type: 'kerberos' } }))).toContain("--negotiate --user ':'");
+
     // A key in the query is part of the URL, so it is redacted there rather than in a header.
     const query = input({ auth: { type: 'api-key', name: 'api_key', value: 'k-1', in: 'query' } });
     expect(restToCurl(query)).toContain(`api_key=${CURL_REDACTED}`);

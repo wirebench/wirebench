@@ -113,6 +113,32 @@ describe('request.curl with a SOAP token owner auth', () => {
     expect(redacted.command).not.toContain('my key');
   });
 
+  it.each([false, true])(
+    'a Kerberos owner exports --negotiate with show-secrets %s, and reads no secret',
+    async (shown) => {
+      showSecrets = shown;
+      auth = { type: 'kerberos', username: 'u', domain: 'D', passwordRef: 'r' };
+      const getSecret = vi.fn((ref: string) => Promise.resolve(secrets[ref]));
+      handlers.clear();
+      registerRequestChannels(new EngineService(), {
+        project: {
+          projectId: () => 'p1',
+          runContextFor: (id: string) =>
+            id === 'req-1' ? { project: model(auth), projectDir: '/tmp/none' } : undefined,
+        } as unknown as RequestChannelDeps['project'],
+        showSecrets: { get: () => showSecrets },
+        getSecret,
+      });
+
+      const result = await curl();
+
+      expect(result.command).toContain("--negotiate --user 'D\\u:'");
+      expect(result.command).not.toContain('Authorization');
+      expect(result.notes?.join(' ')).toContain('Kerberos');
+      expect(getSecret).not.toHaveBeenCalled();
+    },
+  );
+
   it('an OAuth2 owner uses a cached token, and never fetches one', async () => {
     auth = OAUTH2;
     showSecrets = true;

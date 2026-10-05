@@ -88,12 +88,21 @@ export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
           SOAP Fault: {fault.code}
         </span>
       )}
-      {exchange.auth?.challenged === true && (
-        <span data-testid="auth-challenge-note" className="text-fg-subtle">
-          {' · '}
-          Authenticated after 401 challenge
-        </span>
-      )}
+      {exchange.auth?.scheme === 'kerberos'
+        ? // An unchallenged Kerberos send carried no token, so there is nothing to claim then.
+          exchange.auth.challenged && (
+            <span data-testid="auth-challenge-note" className="text-fg-subtle">
+              {' · '}
+              Authenticated with Kerberos
+              {exchange.auth.spn !== undefined ? ` as ${exchange.auth.spn}` : ''}
+            </span>
+          )
+        : exchange.auth?.challenged === true && (
+            <span data-testid="auth-challenge-note" className="text-fg-subtle">
+              {' · '}
+              Authenticated after 401 challenge
+            </span>
+          )}
       {exchange.http.truncated && <span className="text-status-warning"> · truncated</span>}
     </p>
   );

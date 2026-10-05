@@ -409,6 +409,21 @@ async function recreate(
   return { envelopeXml, kept: merged.kept, added: merged.added, removed: merged.removed };
 }
 
+/** The note under a Kerberos export: the ticket is the OS's to supply, so none is in the command. */
+const KERBEROS_CURL_NOTE =
+  'Kerberos: curl asks the operating system for the ticket (--negotiate); no password is in the command.';
+
+/** The names a Kerberos configuration contributes to a cURL export: never a password. */
+function kerberosNames(auth: { readonly username?: string | undefined; readonly domain?: string | undefined }): {
+  readonly username?: string;
+  readonly domain?: string;
+} {
+  return {
+    ...(auth.username !== undefined ? { username: auth.username } : {}),
+    ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+  };
+}
+
 /**
  * A credential's shape with no value in it, for an export that will redact it anyway.
  *
@@ -458,9 +473,14 @@ async function restCurl(
   const show = deps.showSecrets?.get() ?? false;
   // With show-secrets off no secret is read at all: the command needs the *shape* of the credential,
   // not its value, so a stand-in is both sufficient and the safer thing to ask the keychain for.
-  const auth = show
-    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-    : placeholderAuth(resolved.auth);
+  // Kerberos is decided from the configuration, never from a resolved credential: the command only
+  // asks curl for the OS ticket (`--negotiate`), so a keychain secret is not read in either mode.
+  const kerberos = resolved.auth.type === 'kerberos';
+  const auth = kerberos
+    ? { type: 'kerberos' as const, ...kerberosNames(resolved.auth) }
+    : show
+      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+      : placeholderAuth(resolved.auth);
   const command = restToCurl(
     { ...resolved.input, ...(auth !== undefined ? { auth } : {}) },
     { shell: request.shell, redactSecrets: !show },
@@ -474,6 +494,9 @@ async function restCurl(
         .map((reference) => reference.expr)
         .join(', ')}.`,
     );
+  }
+  if (kerberos) {
+    notes.push(KERBEROS_CURL_NOTE);
   }
   if (resolved.auth.type === 'oauth2') {
     // The access token lives in main's memory for the session and is never written into a command:
@@ -520,6 +543,7 @@ async function curl(
   const { auth } = soap;
   const show = deps.showSecrets?.get() ?? false;
   const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
+  const kerberos = auth?.type === 'kerberos';
   const effective = await soapCurlInput(deps, soap.input, auth, show, accessToken);
   const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
   // A header API key may be called anything, so its header is masked by name as well.
@@ -534,6 +558,7 @@ async function curl(
       ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
       headers,
       ...(effective.skipSoapAction !== undefined ? { skipSoapAction: effective.skipSoapAction } : {}),
+      ...(kerberos ? { negotiate: kerberosNames(auth) } : {}),
     },
     { shell: request.shell },
   );
@@ -548,6 +573,9 @@ async function curl(
   const comments: string[] = [];
   if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
     notes.push('WS-Security is not included in the cURL command.');
+  }
+  if (kerberos) {
+    notes.push(KERBEROS_CURL_NOTE);
   }
   if (auth?.type === 'oauth2' && accessToken === undefined) {
     notes.push('No OAuth2 access token is cached, so the Authorization header is not included; press Get new token.');
@@ -598,13 +626,17 @@ async function soapCurlInput(
   show: boolean,
   accessToken: string | undefined,
 ): Promise<SoapSendInput> {
-  const auth = show
-    ? await resolveSoapAuth(
-        owner,
-        (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
-        accessToken !== undefined ? { accessToken } : {},
-      )
-    : placeholderSoapAuth(owner, accessToken);
+  // A Kerberos owner is exported as `--negotiate` from its configuration: no secret is read for it.
+  const auth =
+    owner?.type === 'kerberos'
+      ? undefined
+      : show
+        ? await resolveSoapAuth(
+            owner,
+            (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
+            accessToken !== undefined ? { accessToken } : {},
+          )
+        : placeholderSoapAuth(owner, accessToken);
   const basic =
     auth?.type === 'basic' &&
     auth.preemptive !== false &&
@@ -934,9 +966,13 @@ async function grpcCommand(
   resolved: GrpcPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
-  const auth = show
-    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-    : placeholderAuth(resolved.auth);
+  // Kerberos has no grpcurl form (the token is made per call), so it is dropped, with no secret read.
+  const kerberos = resolved.auth.type === 'kerberos';
+  const auth = kerberos
+    ? undefined
+    : show
+      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+      : placeholderAuth(resolved.auth);
   // A definition discovered by reflection has no .proto files on disk to name, and grpcurl asks the
   // server itself when it is given none — so the flags are dropped rather than pointing at nothing.
   const { definition } = resolved.item.api;
@@ -952,6 +988,7 @@ async function grpcCommand(
     fromFiles
       ? 'The .proto files are named by import path; pass their folder with -import-path.'
       : 'No .proto files are named: this API was discovered by server reflection, which grpcurl uses by default.',
+    ...(kerberos ? ['Kerberos is not expressible in this command; no authorization is shown.'] : []),
     ...(asTyped ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
   ];
   return { command, notes };
