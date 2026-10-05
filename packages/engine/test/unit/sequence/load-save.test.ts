@@ -29,7 +29,7 @@ const FOREIGN = {
 };
 
 describe('sequences in a project folder', () => {
-  it('load back as saved, in order, with formatVersion unchanged', async () => {
+  it('load back as saved, in order, at the current formatVersion', async () => {
     const dir = await tempProjectDir();
     await saveProject(withSequences('Checkout', 'Refund'), dir);
     expect(await listTree(dir)).toEqual(

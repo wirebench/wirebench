@@ -97,7 +97,7 @@ guessing:
 
 > Project was created by a newer version of Wirebench (format N, this build supports M)
 
-The project format is currently **version 7**:
+The project format is currently **version 8**:
 
 1. **Version 1** — the original layout described above, without APIs or per-variable disabling.
 2. **Version 2** — every property scope gained a per-variable `disabled` list, so a variable can be
@@ -113,6 +113,7 @@ The project format is currently **version 7**:
    post-response scripts in files beside it, and a WebSocket request can carry `assertions`.
 7. **Version 7** — a REST request can carry `examples`: saved responses, each with its body in a
    file beside the request, under `<slug>.examples/<id>.body.<ext>`.
+8. **Version 8** — auth can be Kerberos (`type: kerberos`), on a request or wherever auth is inherited from; a version-7 project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it

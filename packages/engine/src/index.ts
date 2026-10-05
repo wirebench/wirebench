@@ -393,6 +393,34 @@ export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './
 export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from './http/failed-request.js';
 export type { FailedRequest } from './http/failed-request.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
+export {
+  GSS_C_MUTUAL_FLAG,
+  GSS_MECH_OID_KRB5,
+  configureKerberos,
+  kerberosProvider,
+  loadKerberosProvider,
+} from './http/auth/kerberos-native.js';
+export type {
+  KerberosAvailability,
+  KerberosClientLike,
+  KerberosInitInput,
+  KerberosProvider,
+} from './http/auth/kerberos-native.js';
+export {
+  defaultSpn,
+  kerberosToken,
+  negotiateBearer,
+  normaliseSpn,
+  startKerberosContext,
+  withNegotiate,
+} from './http/auth/kerberos-token.js';
+export type {
+  KerberosContext,
+  KerberosCredentials,
+  KerberosOptions,
+  KerberosSendAuth,
+  NegotiateBearer,
+} from './http/auth/kerberos-token.js';
 export type {
   HttpErrorCode,
   HttpExchange,
@@ -461,6 +489,7 @@ export type {
   IdGenerator,
   InheritAuth,
   Interface,
+  KerberosAuth,
   OAuth2Auth,
   OperationDef,
   Project,
@@ -932,6 +961,7 @@ export {
   environmentFileSchema,
   keyValueEntrySchema,
   soapOwnerAuthSchema,
+  kerberosAuthSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,

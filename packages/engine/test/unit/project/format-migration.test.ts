@@ -110,7 +110,7 @@ describe('loading a version-2 project folder', () => {
 });
 
 describe('loading a version-3 project folder', () => {
-  it('loads at version 4 with no problems', async () => {
+  it('loads at the current version with no problems', async () => {
     const { project, problems } = await loadProject(V3_DIR);
     expect(problems).toEqual([]);
     expect(project.formatVersion).toBe(8);
