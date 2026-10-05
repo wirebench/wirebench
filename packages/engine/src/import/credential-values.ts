@@ -10,11 +10,16 @@ import { entry } from '../http/entries.js';
 import type { AuthConfig } from '../project/model.js';
 import { isCredentialName } from './credentials.js';
 import type { ReportBuilder } from './report.js';
-import { REFERENCE, referencesOnly } from './values.js';
+import { REFERENCE, referencesOnly, stripUserinfo } from './values.js';
 
 const AUTH_REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:Bearer|Basic)\s+(?:${REFERENCE}\s*)+$`, 'i');
-/** A `"key": value` pair whose value is a string, number or boolean, for blanking JSON in place. */
-const JSON_PAIR = /"((?:[^"\\\n]|\\.)*)"(\s*:\s*)("(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false)/g;
+/**
+ * A JSON string, and when it is a key, its `: value` (a string, number or boolean), for blanking
+ * JSON in place. Everything after the opening quote's run is optional, so the first attempt at a
+ * quote always matches and an unterminated string full of escapes is read once, not once per
+ * backtrack: the caller blanks only when the closing quote and the separator both matched.
+ */
+const JSON_PAIR = /"((?:[^"\\\n]|\\.)*)("?)(?:(\s*:\s*)("(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false))?/g;
 
 /** `value` unless it is a literal credential under a credential-looking `name`; then `''`, with `name` added to `blanked`. */
 export function blankIfLiteral(name: string, value: string, blanked: Set<string>): string {
@@ -148,7 +153,8 @@ export function blankJsonText(text: string, blanked: Set<string>): string {
   } catch {
     parseable = false;
   }
-  const inPlace = text.replace(JSON_PAIR, (match, key: string, sep: string, value: string) => {
+  const inPlace = text.replace(JSON_PAIR, (match, key: string, close: string, sep?: string, value?: string) => {
+    if (close !== '"' || sep === undefined || value === undefined) return match;
     const bare = value.startsWith('"') ? value.slice(1, -1) : value;
     if (blankIfLiteral(key, bare, blanked) === bare) return match;
     return `"${key}"${sep}""`;
@@ -179,6 +185,28 @@ export function blankFormText(text: string, blanked: Set<string>): string {
       return blankIfLiteral(decoded, value, blanked) === value ? pair : `${name}=`;
     })
     .join('&');
+}
+
+/**
+ * A URL with its literal user info cut and the literal credential values of its query blanked,
+ * each name added to `blanked`. Every `${…}` is shielded while the query and the fragment are
+ * found, so a `#` inside a reference is not read as the fragment.
+ */
+export function blankUrlCredentials(url: string, blanked: Set<string>): { url: string; stripped: boolean } {
+  const { url: withoutUser, stripped } = stripUserinfo(url);
+  const refs: string[] = [];
+  const shielded = withoutUser.replace(/\$\{[^{}]*\}/g, (m) => {
+    refs.push(m);
+    return `\u0000${refs.length - 1}\u0000`;
+  });
+  const restore = (text: string): string =>
+    text.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => refs[Number(i)] ?? '');
+  const hash = shielded.indexOf('#');
+  const end = hash === -1 ? shielded.length : hash;
+  const mark = shielded.indexOf('?');
+  if (mark === -1 || mark > end) return { url: withoutUser, stripped };
+  const search = blankFormText(restore(shielded.slice(mark + 1, end)), blanked);
+  return { url: restore(shielded.slice(0, mark + 1)) + search + restore(shielded.slice(end)), stripped };
 }
 
 /**
@@ -227,19 +255,184 @@ export function blankMultipartText(text: string, contentType: string, blanked: S
   return out.join('\n');
 }
 
+/** The part of a qualified XML name after its last `:`. */
+function localName(name: string): string {
+  return name.slice(name.lastIndexOf(':') + 1);
+}
+
+function isSpace(c: string): boolean {
+  return c === ' ' || c === '\t' || c === '\n' || c === '\r';
+}
+
+/** True for a character an element name may start with, so a lone `<` in text is not read as a tag. */
+function startsName(c: string): boolean {
+  return /[A-Za-z_:]/.test(c) || c > '\u007f';
+}
+
+/**
+ * Hands each literal credential in an XML text to `onLiteral` and returns the text with each value
+ * it answers with put in place; `undefined` keeps the value. A literal credential is an attribute
+ * whose local name looks like a credential (never an `xmlns` declaration), or a text or CDATA run
+ * whose innermost element's local name does; a value made only of references, or of nothing but
+ * white space, is never handed over.
+ *
+ * One forward scan driven by `indexOf`, so its time is linear in the text whatever it holds:
+ * comments, processing instructions and `<!DOCTYPE …>` (with an internal subset up to `]>`) are
+ * skipped; a quoted attribute value jumps to its closing quote, so a `>` inside it is safe; the
+ * element names are kept on a stack that tolerates a mismatched end tag by closing the innermost.
+ * An unterminated construct ends the scan with the rest of the text copied as written. Pure.
+ */
+export function scanXml(text: string, onLiteral: (name: string, value: string) => string | undefined): string {
+  const out: string[] = [];
+  const stack: string[] = [];
+  let copied = 0;
+  /** Hands over `text[start, end)` under `name` when it is a literal credential. */
+  const visit = (name: string, start: number, end: number): void => {
+    const value = text.slice(start, end);
+    if (value.trim() === '' || referencesOnly(value)) return;
+    const replacement = onLiteral(name, value);
+    if (replacement === undefined || replacement === value) return;
+    out.push(text.slice(copied, start), replacement);
+    copied = end;
+  };
+  const visitRun = (start: number, end: number): void => {
+    const name = stack[stack.length - 1];
+    if (end > start && name !== undefined && isCredentialName(localName(name))) visit(name, start, end);
+  };
+  const n = text.length;
+  let i = 0;
+  let run = 0;
+  /** The text with the replacements in; a `complete` scan hands over the last text run first. */
+  const finish = (complete: boolean): string => {
+    if (complete) visitRun(run, n);
+    out.push(text.slice(copied));
+    return out.join('');
+  };
+  while (i < n) {
+    const lt = text.indexOf('<', i);
+    if (lt === -1) break;
+    const next = text.charAt(lt + 1);
+    if (next !== '!' && next !== '?' && next !== '/' && !startsName(next)) {
+      // A `<` that opens no markup is part of the text run.
+      i = lt + 1;
+      continue;
+    }
+    visitRun(run, lt);
+    if (text.startsWith('<!--', lt)) {
+      const end = text.indexOf('-->', lt + 4);
+      if (end === -1) return finish(false);
+      i = end + 3;
+    } else if (text.startsWith('<![CDATA[', lt)) {
+      const end = text.indexOf(']]>', lt + 9);
+      if (end === -1) return finish(false);
+      visitRun(lt + 9, end);
+      i = end + 3;
+    } else if (next === '?') {
+      const end = text.indexOf('?>', lt + 2);
+      if (end === -1) return finish(false);
+      i = end + 2;
+    } else if (next === '!') {
+      // A declaration: `>` ends it, unless an internal subset opens first, which `]>` ends.
+      let j = lt + 2;
+      for (;;) {
+        if (j >= n) return finish(false);
+        const c = text.charAt(j);
+        if (c === '>') {
+          i = j + 1;
+          break;
+        }
+        if (c === '[') {
+          const end = text.indexOf(']>', j + 1);
+          if (end === -1) return finish(false);
+          i = end + 2;
+          break;
+        }
+        if (c === '"' || c === "'") {
+          const close = text.indexOf(c, j + 1);
+          if (close === -1) return finish(false);
+          j = close;
+        }
+        j += 1;
+      }
+    } else if (next === '/') {
+      const end = text.indexOf('>', lt + 2);
+      if (end === -1) return finish(false);
+      stack.pop();
+      i = end + 1;
+    } else {
+      let j = lt + 1;
+      while (j < n && !isSpace(text.charAt(j)) && text.charAt(j) !== '>' && text.charAt(j) !== '/') j += 1;
+      const element = text.slice(lt + 1, j);
+      let selfClosing = false;
+      for (;;) {
+        while (j < n && isSpace(text.charAt(j))) j += 1;
+        if (j >= n) return finish(false);
+        const c = text.charAt(j);
+        if (c === '>') break;
+        if (c === '/') {
+          if (text.charAt(j + 1) === '>') {
+            selfClosing = true;
+            j += 1;
+            break;
+          }
+          j += 1;
+          continue;
+        }
+        const nameStart = j;
+        while (j < n && !isSpace(text.charAt(j)) && !'=>/'.includes(text.charAt(j))) j += 1;
+        const attribute = text.slice(nameStart, j);
+        while (j < n && isSpace(text.charAt(j))) j += 1;
+        if (text.charAt(j) !== '=') continue;
+        j += 1;
+        while (j < n && isSpace(text.charAt(j))) j += 1;
+        if (j >= n) return finish(false);
+        const quote = text.charAt(j);
+        let valueStart = j;
+        let valueEnd: number;
+        if (quote === '"' || quote === "'") {
+          const close = text.indexOf(quote, j + 1);
+          if (close === -1) return finish(false);
+          valueStart = j + 1;
+          valueEnd = close;
+          j = close + 1;
+        } else {
+          while (j < n && !isSpace(text.charAt(j)) && text.charAt(j) !== '>') j += 1;
+          valueEnd = j;
+        }
+        const declaration = attribute === 'xmlns' || attribute.startsWith('xmlns:');
+        if (!declaration && isCredentialName(localName(attribute))) visit(attribute, valueStart, valueEnd);
+      }
+      if (!selfClosing) stack.push(element);
+      i = j + 1;
+    }
+    run = i;
+  }
+  return finish(true);
+}
+
+/** An XML text with each literal credential value blanked, its element or attribute name added to `blanked`. */
+export function blankXmlText(text: string, blanked: Set<string>): string {
+  return scanXml(text, (name) => {
+    blanked.add(name);
+    return '';
+  });
+}
+
 /**
  * Text with literal credentials blanked by its `Content-Type`. Without one, text that opens like
  * JSON (`{` or `[`) is blanked as JSON, in place when it does not parse (a rewritten `${n}` breaks
- * it), and text that does not is kept as written.
+ * it), text that opens like XML (`<`) is blanked as XML, and any other text is kept as written.
  */
 export function blankText(text: string, contentType: string | undefined, blanked: Set<string>): string {
   const mime = contentType?.toLowerCase() ?? '';
   if (mime.includes('json')) return blankJsonText(text, blanked);
+  if (mime.includes('xml')) return blankXmlText(text, blanked);
   if (mime.includes('x-www-form-urlencoded')) return blankFormText(text, blanked);
   if (mime.startsWith('multipart/') && contentType !== undefined) return blankMultipartText(text, contentType, blanked);
   if (contentType === undefined) {
     const first = text.trimStart().charAt(0);
-    return first === '{' || first === '[' ? blankJsonText(text, blanked) : text;
+    if (first === '{' || first === '[') return blankJsonText(text, blanked);
+    if (first === '<') return blankXmlText(text, blanked);
   }
   return text;
 }

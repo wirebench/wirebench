@@ -1376,7 +1376,7 @@ describe('api.importOpenCollection', () => {
         target: { newProjectName: 'Empty' },
         source: {
           kind: 'text',
-          text: 'opencollection: "1.0.0"\ninfo: {name: E}\nrequest:\n  variables:\n    - {name: a, value: b}\n',
+          text: 'opencollection: "1.0.0"\ninfo: {name: E}\nitems: []\nrequest:\n  variables:\n    - {name: a, value: b}\n',
         },
       }),
     ).toMatchObject({ code: 'oc-nothing-to-import' });

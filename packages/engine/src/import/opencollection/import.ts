@@ -10,7 +10,7 @@ import { OpenCollectionError } from '../../errors.js';
 import type { MapOpenCollectionOptions, MappedOpenCollection } from './map.js';
 import { mapOpenCollection } from './map.js';
 import { MAX_OPENCOLLECTION_BYTES } from './model.js';
-import { parseOpenCollection } from './parse.js';
+import { isFolderRoot, parseOpenCollection } from './parse.js';
 
 /** Where a collection comes from: a single document on disk or in memory, or a directory's files. */
 export type OpenCollectionSource =
@@ -61,21 +61,26 @@ export async function readOpenCollectionFile(path: string): Promise<string> {
  * Reads, parses and maps an OpenCollection. A file's body file paths resolve beside it unless
  * `options.rootDir` says otherwise; text has no folder, so they stay relative.
  *
- * @throws OpenCollectionError `oc-too-large`, `oc-read-failed`, the parser's codes, or
- *   `oc-nothing-to-import` when the collection has no request and no environment.
+ * @throws OpenCollectionError `oc-too-large`, `oc-read-failed`, the parser's codes,
+ *   `oc-folder-root` when a single document with nothing to import is a folder collection's root
+ *   (it has no `items`), or `oc-nothing-to-import` when the collection has no request and no
+ *   environment.
  */
 export async function importOpenCollection(
   source: OpenCollectionSource,
   options: MapOpenCollectionOptions = {},
 ): Promise<MappedOpenCollection> {
   let mapped: MappedOpenCollection;
+  /** A single document's text, so an empty result can be told apart from a folder's root. */
+  let single: string | undefined;
   if (source.kind === 'file') {
     const path = resolve(source.path);
-    const text = await readOpenCollectionFile(path);
-    mapped = mapOpenCollection(parseOpenCollection(text), { ...options, rootDir: options.rootDir ?? dirname(path) });
+    single = await readOpenCollectionFile(path);
+    mapped = mapOpenCollection(parseOpenCollection(single), { ...options, rootDir: options.rootDir ?? dirname(path) });
   } else if (source.kind === 'text') {
     if (source.text.length > MAX_OPENCOLLECTION_BYTES) throw tooLarge();
-    mapped = mapOpenCollection(parseOpenCollection(source.text), options);
+    single = source.text;
+    mapped = mapOpenCollection(parseOpenCollection(single), options);
   } else {
     let total = source.rootText.length;
     for (const text of source.files.values()) total += text.length;
@@ -83,6 +88,12 @@ export async function importOpenCollection(
     mapped = mapOpenCollection(parseOpenCollection(source.rootText, source.files, source.rootKey), options);
   }
   if (mapped.counts.requests === 0 && mapped.variables.environments.length === 0) {
+    if (single !== undefined && isFolderRoot(single)) {
+      throw new OpenCollectionError(
+        'oc-folder-root',
+        'This is the root of a folder collection: pick opencollection.yml from its folder; a dropped file is read as a single document.',
+      );
+    }
     throw new OpenCollectionError(
       'oc-nothing-to-import',
       'The OpenCollection has no requests and no environments to import.',

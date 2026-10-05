@@ -17,7 +17,8 @@ All notable changes to this project are documented here. The format follows
   origin, one request per method, path and set of query names. CORS preflights, non-HTTP URLs and,
   unless **Include static assets** is ticked, static assets are skipped. Recorded responses can be
   left out, written to History at the time they were recorded, or saved as examples. Recorded
-  credentials and cookies are never imported (#64).
+  credentials and cookies are never imported: credential-named values are emptied from request
+  bodies and masked in examples, in JSON, form and XML alike (#64).
 - **`.http` files.** **Import…** reads `.http` and `.rest` request files (**Import .http File…**)
   into a REST API, with a WebSocket API for `WEBSOCKET` requests. `@variables` become project
   properties, response handlers are kept as text under `imported-scripts/` and never run, and
@@ -25,7 +26,7 @@ All notable changes to this project are documented here. The format follows
   `http-client.env.json` or `http-client.private.env.json` beside it, the dialog offers to import
   those environments too; **Import HTTP Client Environments…** imports them on their own. Private
   values and credential-named literals become secrets, and an imported environment is never made
-  active (#64).
+  active. Credential-named literals in JSON, form and XML bodies are emptied (#64).
 - **OpenCollection.** **Import…** reads OpenCollection 1.x YAML (**Import OpenCollection…**), as one
   document or as a folder picked by its `opencollection.yml`. HTTP and GraphQL items become a REST
   API, gRPC items a gRPC API and WebSocket items a WebSocket API, with their folders. Variables
@@ -33,7 +34,9 @@ All notable changes to this project are documented here. The format follows
   credential-named values become secrets. Scripts are kept as text under `imported-scripts/` and
   never run, status, response-time and JSON body assertions become request assertions, and a folder
   collection's gRPC API gets the `.proto` files it names. A folder is read without following links,
-  up to 5,000 files and 50 MB (#64).
+  up to 5,000 files and 50 MB. Literal credentials are emptied from bodies, XML included, and from
+  the OAuth 2 URLs; a folder's root dropped on its own is refused with a message saying to pick it
+  from its folder (#64).
 - **Response examples.** A REST request can keep recorded responses as examples, up to 5 from a HAR
   import, one per status. The response pane's **Examples** menu shows one read-only under a banner,
   and **Delete example** removes it (#64).

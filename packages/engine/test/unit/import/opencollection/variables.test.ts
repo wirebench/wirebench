@@ -272,9 +272,7 @@ ${item('Off', '        - { expression: res.body.password, operator: eq, value: "
       'Header: the assertion on res.headers.authorization compares a recorded credential and was not imported.',
     );
     const ref = m.rest?.requests.find((r) => r.name === 'Ref');
-    expect(ref?.assertions).toEqual([
-      { type: 'match', language: 'jsonpath', expression: '$.token', equals: '{{tok}}' },
-    ]);
+    expect(ref?.assertions).toEqual([{ type: 'match', language: 'jsonpath', expression: '$.token', equals: '${tok}' }]);
   });
 
   it('does not repeat the value of an unmapped assertion on a credential-named target', () => {

@@ -598,3 +598,110 @@ describe('mapOpenCollection — fix round 1', () => {
     ]);
   });
 });
+
+describe('mapOpenCollection — final fix wave', () => {
+  it('blanks literal credentials in xml and text bodies, keeping references', () => {
+    const m = mapText(
+      collection(`  - info: { name: X, type: http }
+    http: { method: POST, url: "https://h", body: { type: xml, data: "<l><user>u</user><password>hunter2</password><key>{{k}}</key></l>" } }
+  - info: { name: T, type: http }
+    http: { method: POST, url: "https://h", body: { type: text, data: "<call apiKey='zzz' id='1'/>" } }
+`),
+    );
+    expect(m.rest!.requests.map((r) => rawText(r.body))).toEqual([
+      '<l><user>u</user><password></password><key>${k}</key></l>',
+      "<call apiKey='' id='1'/>",
+    ]);
+    expect(JSON.stringify(m)).not.toMatch(/hunter2|zzz/);
+    expect(m.report.warnings).toEqual(
+      expect.arrayContaining([
+        'X: the recorded value of password was not imported; set it on the request.',
+        'T: the recorded value of apiKey was not imported; set it on the request.',
+      ]),
+    );
+  });
+
+  it('blanks literal credentials in an XML WebSocket message', () => {
+    const m = mapText(
+      collection(`  - info: { name: W, type: websocket }
+    websocket:
+      url: "wss://h/ws"
+      message: { type: text, data: "<m><secret>s-1</secret></m>" }
+`),
+    );
+    expect(m.websocket?.requests[0]?.messages.map((x) => x.content)).toEqual(['<m><secret></secret></m>']);
+    expect(m.report.warnings).toContain('W: the recorded value of secret was not imported; set it on the request.');
+  });
+
+  it('masks credentials in an XML example', () => {
+    const { request } = only(
+      collection(`  - info: { name: E, type: http }
+    http: { method: GET, url: "https://h" }
+    examples:
+      - response:
+          status: 200
+          body: { type: xml, data: "<r><token>leak</token><id>1</id></r>" }
+`),
+    );
+    expect(request.examples?.[0]?.contentType).toBe('application/xml');
+    expect(request.examples?.[0]?.body).toBe('<r><token>&lt;redacted&gt;</token><id>1</id></r>');
+  });
+
+  it('keeps a URL query row the params already list once, and each new name once', () => {
+    const { request } = only(
+      collection(`  - info: { name: Q, type: http }
+    http:
+      method: GET
+      url: "https://h/p?a=url&b=1&b=2"
+      params: [{ name: a, value: listed, type: query }]
+`),
+    );
+    expect(request.query.map((q) => `${q.name}=${q.value}`)).toEqual(['a=listed', 'b=1']);
+  });
+
+  it('rewrites assertion values, reporting each dynamic name once', () => {
+    const m = mapText(
+      collection(`  - info: { name: A, type: http }
+    http: { method: GET, url: "https://h/{{$guid}}" }
+    runtime:
+      assertions:
+        - { expression: res.body.name, operator: eq, value: "{{expected}}" }
+        - { expression: res.body.id, operator: eq, value: "{{$guid}}" }
+        - { expression: res.body.token, operator: eq, value: "{{tok}}" }
+`),
+    );
+    expect(m.rest?.requests[0]?.assertions).toEqual([
+      { type: 'match', language: 'jsonpath', expression: '$.name', equals: '${expected}' },
+      { type: 'match', language: 'jsonpath', expression: '$.id', equals: '{{$guid}}' },
+      { type: 'match', language: 'jsonpath', expression: '$.token', equals: '${tok}' },
+    ]);
+    expect(m.report.warnings.filter((w) => w.startsWith('Dynamic'))).toEqual([
+      'Dynamic variables are kept as written and not expanded: $guid',
+    ]);
+  });
+
+  it('cuts user info and blanks literal credential query values from the OAuth 2 URLs, with a warning', () => {
+    const report = new ReportBuilder();
+    const auth = mapOcAuth(
+      {
+        type: 'oauth2',
+        flow: 'authorization_code',
+        authorizationUrl: 'https://idp/authorize?client_secret=lit-1&prompt=login',
+        accessTokenUrl: 'https://app:pw-2@idp/token?api_key={{key}}',
+        refreshTokenUrl: 'https://idp/refresh?token=lit-3',
+        credentials: { clientId: 'app' },
+      },
+      'O',
+      report,
+    ).auth;
+    expect(auth).toMatchObject({
+      tokenUrl: 'https://idp/token?api_key=${key}',
+      authorizationUrl: 'https://idp/authorize?client_secret=&prompt=login',
+    });
+    expect(JSON.stringify(auth)).not.toMatch(/lit-1|pw-2|lit-3/);
+    expect(report.build().warnings).toEqual([
+      'O: the credential in an OAuth 2 URL was not imported; set it on the request or API.',
+      'O: the recorded value of client_secret in an OAuth 2 URL was not imported; set it on the request or API.',
+    ]);
+  });
+});

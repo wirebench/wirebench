@@ -517,8 +517,11 @@ class Mapper {
     const pathParams = params.filter((p) => p.type === 'path').map(param);
     const query = params.filter((p) => p.type !== 'path').map(param);
     // The URL may repeat the query the params list: a param of the same name wins.
+    const listed = new Set(query.map((p) => p.name));
     for (const q of split.query) {
-      if (!query.some((p) => p.name === q.name)) query.push(entry(q.name, blankIfLiteral(q.name, q.value, blanked)));
+      if (listed.has(q.name)) continue;
+      listed.add(q.name);
+      query.push(entry(q.name, blankIfLiteral(q.name, q.value, blanked)));
     }
 
     const own = rows(details['headers']).map((h) => ({
@@ -577,12 +580,15 @@ class Mapper {
   /** The request's assertions that have a Wirebench equivalent; each one left out is counted and reported. */
   private assertionsOf(item: OcItem, label: string): Assertion[] {
     const out: Assertion[] = [];
-    for (const a of item.runtime?.assertions ?? []) {
+    for (const raw of item.runtime?.assertions ?? []) {
+      // The expected value is rewritten once, here, so `{{name}}` reads as `${name}` and a dynamic
+      // name joins the collection's one report of them.
+      const a = raw.value !== undefined ? { ...raw, value: this.rewrite(raw.value) } : raw;
       const credential = isCredentialName(assertionTarget(a.expression));
-      // A recorded credential is not written to the request file as an expected value, even on a
-      // disabled assertion: disabled ones are written too.
+      // Checked before anything else, so an assertion comparing a recorded credential is reported
+      // as such whether or not it is enabled; mapOcAssertion leaves out every disabled one.
       if (credential && a.value !== undefined && a.value !== '') {
-        if (!referencesOnly(rewriteMustache(a.value))) {
+        if (!referencesOnly(a.value)) {
           this.assertionsSkipped += 1;
           this.report.warn(
             `${label}: the assertion on ${a.expression} compares a recorded credential and was not imported.`,
@@ -599,7 +605,7 @@ class Mapper {
       } else {
         this.assertionsSkipped += 1;
         this.report.warn(
-          `${label}: the assertion "${a.expression} ${a.operator} ${credential ? '<value not shown>' : (a.value ?? '')}" has no Wirebench equivalent and was not imported.`,
+          `${label}: the assertion "${a.expression} ${a.operator} ${credential ? '<value not shown>' : (raw.value ?? '')}" has no Wirebench equivalent and was not imported.`,
         );
       }
     }
@@ -640,7 +646,7 @@ class Mapper {
       case 'json':
         return { kind: 'raw', language: 'json', text: blankJsonText(this.rewrite(str(data)), blanked) };
       case 'xml':
-        return { kind: 'raw', language: 'xml', text: this.rewrite(str(data)) };
+        return { kind: 'raw', language: 'xml', text: blankText(this.rewrite(str(data)), 'application/xml', blanked) };
       case 'text':
         return { kind: 'raw', language: 'text', text: blankText(this.rewrite(str(data)), undefined, blanked) };
       case 'sparql':

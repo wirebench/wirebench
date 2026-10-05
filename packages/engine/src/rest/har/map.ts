@@ -6,6 +6,7 @@
  * Not browser-safe (`Buffer`): format detection imports `parse.ts` only, never this module.
  */
 
+import { blankXmlText } from '../../import/credential-values.js';
 import { isCredentialName } from '../../import/credentials.js';
 import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../../import/examples.js';
 import type { ImportReport } from '../../import/report.js';
@@ -76,7 +77,6 @@ const DROPPED_HEADERS = new Set([
   'cookie',
   'authorization',
 ]);
-/** Response headers an example never keeps: the cookie jar, not the example, owns cookies. */
 const TEXTUAL = /^(text\/|application\/(json|xml|[\w.+-]+\+(json|xml)|x-www-form-urlencoded|javascript))/i;
 const MAX_EXAMPLES = 5;
 
@@ -204,9 +204,9 @@ function requestHeaders(headers: readonly HarNameValue[], label: string, report:
 }
 
 /**
- * The request body. Form fields, multipart text parts and JSON values (at any depth) whose name
- * looks like a credential are blanked, each name added to `blanked`; any other body is kept as
- * recorded.
+ * The request body. Form fields, multipart text parts, JSON values (at any depth) and XML
+ * elements and attributes whose name looks like a credential are blanked, each name added to
+ * `blanked`; any other body is kept as recorded.
  */
 function mapPostData(
   post: HarPostData | undefined,
@@ -251,13 +251,14 @@ function mapPostData(
     kind: 'raw',
     language,
     ...(post.mimeType !== '' ? { contentType: post.mimeType } : {}),
-    text: language === 'json' ? blankJsonText(text, blanked) : text,
+    text: language === 'json' ? blankJsonText(text, blanked) : language === 'xml' ? blankXmlText(text, blanked) : text,
   };
 }
 
 /**
- * A recorded response as an example. Cookies are dropped; headers and JSON or form body values
- * whose name looks like a credential are masked, so no literal credential is saved. A body over
+ * A recorded response as an example. Cookies are dropped; headers, JSON or form body values and
+ * XML elements and attributes whose name looks like a credential are masked, so no literal
+ * credential is saved. A body over
  * History's 256 KB cap is cut to it, after masking, so the JSON still parsed while it was masked.
  */
 function exampleOf(e: HarEntryIn, id: string, label: string, report: ReportBuilder): RestResponseExample {

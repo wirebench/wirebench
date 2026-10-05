@@ -32,8 +32,9 @@ importers guide. It takes a picked or dropped file, or pasted YAML.
 
 2. On the **File** tab, pick the collection:
    - for a single document, pick that file, or drop it;
-   - for a collection saved as a folder, pick its `opencollection.yml`. Wirebench reads the files
-     beside it too. There is no folder picker.
+   - for a collection saved as a folder, pick its `opencollection.yml`. When it holds no items
+     itself, Wirebench reads the files beside it too. There is no folder picker. A folder's root
+     dropped or pasted on its own is refused, with a message saying to pick it from its folder.
 
    Or paste a single document on the **Paste** tab. There is no URL tab.
 
@@ -75,7 +76,7 @@ importers guide. It takes a picked or dropped file, or pasted YAML.
 | A body given as a list of variants | The selected variant, else the first. A note names the others | |
 | `auth` | The request's auth: `inherit`, `none`, Basic (user name only), Bearer, API key (name and placement), NTLM (user name and domain) and OAuth 2 with the client credentials or authorization code grant. See [Credentials](#credentials) for what happens to the secrets | [Auth](/wirebench/docs/guides/auth/) |
 | `settings.timeout`, `followRedirects`, `maxRedirects`, `encodeUrl` | The matching request settings. Any other setting is ignored, with a note | |
-| `examples` with a numeric response status | [Response examples](/wirebench/docs/guides/rest-client/#examples) on the request, masked as every import masks a recorded response: credential-named headers and body fields are masked, and cookies are dropped. A binary example body is left out, and a body over 256 KB is cut | |
+| `examples` with a numeric response status | [Response examples](/wirebench/docs/guides/rest-client/#examples) on the request, masked as every import masks a recorded response: credential-named headers, JSON and form body fields, and XML elements and attributes are masked, and cookies are dropped. A binary example body is left out, and a body over 256 KB is cut | |
 | `runtime.assertions` | Request assertions, when they fit the table under [Assertions](#assertions) | [Assertions](/wirebench/docs/guides/assertions/) |
 
 ### GraphQL items
@@ -142,7 +143,8 @@ where each script went.
 | `res.body.<path>` | `contains` | A JSONPath match against the value, taken literally |
 
 A disabled assertion is skipped with a note. Any other expression or operator is skipped, and a
-warning lists its expression, operator and value. Assertions on gRPC and WebSocket items are not
+warning lists its expression, operator and value; the value is withheld when the target looks like
+a credential. Assertions on gRPC and WebSocket items are not
 imported; a note says so. The summary counts the assertions mapped and those that were not.
 
 ## Credentials
@@ -161,10 +163,14 @@ No literal credential is written into a project or workspace file.
   whose name looks like a credential and whose value is a literal are dropped.
 - **Values.** Query and path parameters, form fields, multipart text parts, JSON bodies, GraphQL
   variables and gRPC messages have each literal value under a credential-looking name emptied, and
-  so do text bodies and WebSocket messages that start like JSON. One warning per request names
-  them. XML and SPARQL bodies are kept as written.
+  so do text bodies and WebSocket messages that start like JSON. In XML bodies, and in text bodies
+  and WebSocket messages that start with `<`, the text of an element and the value of an attribute
+  whose name looks like a credential are emptied. One warning per request names them. SPARQL bodies
+  are kept as written.
 - **URLs.** A user name and password in a URL are cut from it, with a warning. An HTTP request with
-  no auth of its own and no `Authorization` header then gets Basic auth with that user name.
+  no auth of its own and no `Authorization` header then gets Basic auth with that user name. The
+  OAuth 2 token and authorization URLs lose their user info the same way, and a literal query value
+  under a credential-looking name is emptied, with a warning.
 - **Assertions.** An assertion whose target looks like a credential, such as
   `res.body.token`, is skipped when it compares a literal value, enabled or not, and a warning says
   so without the value.
@@ -174,6 +180,7 @@ No literal credential is written into a project or workspace file.
 | In the collection | What happens | What to do |
 | --- | --- | --- |
 | A collection with no requests and no environments, such as one holding only variables or scripts | Refused. No project is created | Nothing to import |
+| A folder collection's root, dropped or pasted on its own | Refused, with a message: a document with no `items` is read as a folder's root | Pick its `opencollection.yml` on the **File** tab |
 | A collection of another major version than 1 | Refused, with a message naming the version | |
 | `App` items and unknown item types | Skipped, with a warning naming each | |
 | `runtime.variables` on a single request | Not imported. A warning names them, with the request: Wirebench has no request-level property scope | Add them as project properties, or set them from a script |
@@ -194,8 +201,9 @@ the files that the gRPC items name in `protoFilePath`, resolved against the coll
 places the API with them as its definition. Only those files are read: an `import` in them is not
 followed to another file beside them. When a named file imports one that is not among them, or a
 file cannot be read, the API is placed with no definition and a warning gives the reason. A file
-that is not there gets a note. A single document, or pasted YAML, has no folder, so its gRPC API
-has no definition. Each of these cases gets a note that the API still needs one.
+that is not there gets a note. Only a folder collection's protos are read: the gRPC API of a
+single document, or of pasted YAML, has no definition. Each of these cases gets a note that the API
+still needs one.
 
 <Aside type="caution" title="A folder collection is read only within its folder">
 Only `.yml` and `.yaml` files under the folder that holds `opencollection.yml` are read. Symbolic

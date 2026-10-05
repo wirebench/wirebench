@@ -1,20 +1,31 @@
 /**
  * The redaction a recorded response gets before it is kept as a request example (spec §3.7): the
  * cookie headers are dropped, credential-looking headers are masked, and the values under
- * credential-looking keys of a JSON or form body are masked. Shared by every importer that keeps
- * examples. Pure, and free of Node.
+ * credential-looking keys of a JSON or form body, and under credential-looking elements and
+ * attributes of an XML body, are masked. Shared by every importer that keeps examples. Pure, and
+ * free of Node.
  */
 
 import type { KeyValueEntry } from '../http/entries.js';
 import { entry } from '../http/entries.js';
 import { REDACTED_MARKER, redactStructuredBody } from '../redact/index.js';
+import { scanXml } from './credential-values.js';
 import { isCredentialName } from './credentials.js';
 
 /** An example body's cap, in characters: the one History puts on a recorded body. */
 export const MAX_EXAMPLE_BODY_CHARS = 256 * 1024;
 
+/** Response headers an example never keeps: the cookie jar, not the example, owns cookies. */
 const DROPPED_EXAMPLE_HEADERS = new Set(['set-cookie', 'cookie']);
 const ENCODED_MARKER = encodeURIComponent(REDACTED_MARKER);
+/** The marker as XML text, so a masked XML body stays well formed: `&lt;redacted&gt;` reads as the marker. */
+const XML_MARKER = REDACTED_MARKER.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** True when a body is XML: its content type says so, or it names none and opens with `<`. */
+function isXmlBody(text: string, contentType: string | undefined): boolean {
+  if (contentType === undefined) return text.trimStart().startsWith('<');
+  return contentType.toLowerCase().includes('xml');
+}
 
 function markers(text: string): number {
   return text.split(REDACTED_MARKER).length + text.split(ENCODED_MARKER).length - 2;
@@ -35,7 +46,13 @@ export function maskRecordedResponse(
       return entry(h.name, REDACTED_MARKER);
     });
   let text = body;
-  if (text !== undefined) {
+  if (text !== undefined && isXmlBody(text, contentType)) {
+    const redacted = scanXml(text, () => XML_MARKER);
+    if (redacted !== text) {
+      text = redacted;
+      masked = true;
+    }
+  } else if (text !== undefined) {
     const redacted = redactStructuredBody(text, contentType, { isSecretKey: isCredentialName });
     // Re-serialising may reformat JSON, so the redacted text replaces the body only when it masked something.
     if (markers(redacted) > markers(text)) {

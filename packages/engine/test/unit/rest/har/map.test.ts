@@ -473,6 +473,39 @@ describe('mapHar', () => {
       expect(formBody).toContain('name=Rex');
       expect(JSON.stringify(form.apis)).not.toContain('ef-ss-1');
     });
+
+    it('masks example XML bodies under credential-looking elements and attributes', () => {
+      const mapped = mapHar(
+        oneEntry({
+          response: {
+            content: { mimeType: 'text/xml', text: '<r session="ex-ss-1"><token>ex-tk-2</token><name>Rex</name></r>' },
+          },
+        }),
+        { responses: 'examples' },
+      );
+      expect(mapped.apis[0]!.requests[0]!.examples![0]!.body).toBe(
+        '<r session="&lt;redacted&gt;"><token>&lt;redacted&gt;</token><name>Rex</name></r>',
+      );
+      expect(JSON.stringify(mapped.apis)).not.toMatch(/ex-ss-1|ex-tk-2/);
+      expect(mapped.report.notes).toContain('GET /x: credentials in a recorded response were masked in its example.');
+    });
+
+    it('blanks literal credentials in an XML request body', () => {
+      const mapped = mapHar(
+        oneEntry({
+          request: {
+            method: 'POST',
+            postData: { mimeType: 'application/soap+xml', text: '<l><user>u</user><password>xb-pw-1</password></l>' },
+          },
+        }),
+      );
+      expect(mapped.apis[0]!.requests[0]!.body).toMatchObject({
+        kind: 'raw',
+        language: 'xml',
+        text: '<l><user>u</user><password></password></l>',
+      });
+      expect(JSON.stringify(mapped.apis)).not.toContain('xb-pw-1');
+    });
   });
 
   it('cuts an example body larger than 256 KB, with a note', () => {

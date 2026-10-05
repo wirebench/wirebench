@@ -202,6 +202,24 @@ describe('mapHttpFile shape', () => {
     expect(m.report.notes).toContain('GET /b: the "@no-log" directive has no Wirebench equivalent and was ignored.');
   });
 
+  it('blanks literal credentials in an XML body, keeping references', () => {
+    const m = mapText(
+      [
+        'POST https://x.example.com/a',
+        'Content-Type: text/xml',
+        '',
+        '<l><user>u</user><password>hx-pw-1</password><token>{{t}}</token><a key="hx-k-2"/></l>',
+      ].join('\n'),
+    );
+    expect(m.rest.requests[0]?.body).toMatchObject({
+      kind: 'raw',
+      language: 'xml',
+      text: '<l><user>u</user><password></password><token>${t}</token><a key=""/></l>',
+    });
+    expect(JSON.stringify(m.rest)).not.toMatch(/hx-pw-1|hx-k-2/);
+    expect(m.report.warnings.some((w) => w.includes('password, key'))).toBe(true);
+  });
+
   it('maps XML, multipart and other bodies to raw text', () => {
     const m = mapText(
       [

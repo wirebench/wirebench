@@ -8,7 +8,14 @@
  * never imports it: detection reaches `rest/http-file/parse.ts` only.
  */
 
-import { blankIfLiteral, blankJsonText, blankText, headersAndAuth, resolvePath } from '../credential-values.js';
+import {
+  blankIfLiteral,
+  blankJsonText,
+  blankText,
+  blankXmlText,
+  headersAndAuth,
+  resolvePath,
+} from '../credential-values.js';
 import { isCredentialName } from '../credentials.js';
 import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
@@ -85,7 +92,7 @@ function headerValue(headers: readonly KeyValueEntry[], name: string): string | 
   return headers.find((h) => h.name.toLowerCase() === name)?.value;
 }
 
-/** The request body, from its `Content-Type`. Literal credential values in JSON and form bodies are blanked. */
+/** The request body, from its `Content-Type`. Literal credential values in JSON, XML and form bodies are blanked. */
 function mapBody(
   request: HttpFileRequest,
   contentType: string | undefined,
@@ -111,7 +118,7 @@ function mapBody(
   const text = rewriteHttpValue(body.text, ctx);
   const mime = contentType?.toLowerCase() ?? '';
   if (mime.includes('json')) return { kind: 'raw', language: 'json', text: blankJsonText(text, blanked) };
-  if (mime.includes('xml')) return { kind: 'raw', language: 'xml', text };
+  if (mime.includes('xml')) return { kind: 'raw', language: 'xml', text: blankXmlText(text, blanked) };
   if (mime.includes('x-www-form-urlencoded')) {
     return {
       kind: 'form',

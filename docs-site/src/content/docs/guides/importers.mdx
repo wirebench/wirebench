@@ -239,11 +239,12 @@ not fit. An exchange with no valid time is not written to History, and a warning
   - With no `Authorization` header, an `X-Api-Key` header makes the request's auth **API key**, in a
     header of the recorded name, with no value: set the key on the request or API.
   - Every other header with a credential-looking name is dropped, with the same warning.
-  - Query parameters, form fields, multipart text parts and JSON keys at any depth with a
-    credential-looking name are imported with an empty value, and a warning names them.
-  - In a saved example, headers with a credential-looking name, and the values under such keys in a
-    JSON or form body, are masked, and `Set-Cookie` is dropped; the notes say which examples were
-    masked.
+  - Query parameters, form fields, multipart text parts, JSON keys at any depth and XML elements
+    and attributes with a credential-looking name are imported with an empty value, and a warning
+    names them.
+  - In a saved example, headers with a credential-looking name, the values under such keys in a
+    JSON or form body, and such elements and attributes in an XML body, are masked, and
+    `Set-Cookie` is dropped; the notes say which examples were masked.
 - **Cookies are dropped.** The [cookie jar](/wirebench/docs/guides/rest-client/#cookies) handles
   them at send time.
 - **Binary bodies.** A binary response body is left out of its example. A multipart file part
@@ -318,8 +319,8 @@ only when the collection has items of that kind. Auto-detect recognizes a docume
 1. Open **Import…** and pick **OpenCollection**, or run **Import OpenCollection…**.
 
 2. On the **File** tab, pick or drop a single-document collection. For a collection saved as a
-   folder, pick its `opencollection.yml`: the files beside it are read too. You can also paste a
-   single document on the **Paste** tab. There is no URL tab.
+   folder, pick its `opencollection.yml`: when it holds no items itself, the files beside it are
+   read too. You can also paste a single document on the **Paste** tab. There is no URL tab.
 
 3. Choose the target project and **Import**.
 

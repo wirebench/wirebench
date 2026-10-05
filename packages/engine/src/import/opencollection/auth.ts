@@ -8,6 +8,7 @@
 import type { KeyValueEntry } from '../../http/entries.js';
 import { entry } from '../../http/entries.js';
 import type { AuthConfig, OAuth2Auth } from '../../project/model.js';
+import { blankUrlCredentials } from '../credential-values.js';
 import type { ReportBuilder } from '../report.js';
 import { rewriteMustache } from '../templates.js';
 import { referencesOnly } from '../values.js';
@@ -33,7 +34,9 @@ export interface MappedOcAuth {
 
 /**
  * The OAuth 2 grants Wirebench runs (client credentials, authorization code); any other flow is
- * `none` with a warning. The client secret and the resource owner's password are never carried.
+ * `none` with a warning. The client secret and the resource owner's password are never carried,
+ * and neither is literal user info or a literal credential in the query of the token or
+ * authorization URL. A refresh URL has no Wirebench field, so it is never written.
  */
 export function mapOcOAuth2(a: Rec, where: string, report: ReportBuilder, dynamic?: Set<string>): AuthConfig {
   const flow = text(a, 'flow');
@@ -49,18 +52,33 @@ export function mapOcOAuth2(a: Rec, where: string, report: ReportBuilder, dynami
   }
   const authCode = flow === 'authorization_code';
   const rewrite = (value: string): string => rewriteMustache(value, dynamic);
+  const blanked = new Set<string>();
+  let stripped = false;
+  const endpoint = (value: string): string => {
+    const cleaned = blankUrlCredentials(rewrite(value), blanked);
+    stripped ||= cleaned.stripped;
+    return cleaned.url;
+  };
   const authorizationUrl = text(a, 'authorizationUrl');
   const pkce = isRecord(a['pkce']) ? a['pkce'] : undefined;
   const auth: OAuth2Auth = {
     type: 'oauth2',
     grant: authCode ? 'authorization-code' : 'client-credentials',
-    tokenUrl: rewrite(text(a, 'accessTokenUrl')),
-    ...(authCode && authorizationUrl !== '' ? { authorizationUrl: rewrite(authorizationUrl) } : {}),
+    tokenUrl: endpoint(text(a, 'accessTokenUrl')),
+    ...(authCode && authorizationUrl !== '' ? { authorizationUrl: endpoint(authorizationUrl) } : {}),
     clientId: rewrite(text(credentials, 'clientId')),
     scopes: text(a, 'scope').split(/\s+/).filter(Boolean),
     clientAuth: text(credentials, 'placement') === 'body' ? 'body' : 'basic',
     pkce: authCode && pkce?.['disabled'] !== true,
   };
+  if (stripped) {
+    report.warn(`${where}: the credential in an OAuth 2 URL was not imported; set it on the request or API.`);
+  }
+  if (blanked.size > 0) {
+    report.warn(
+      `${where}: the recorded value of ${[...blanked].join(', ')} in an OAuth 2 URL was not imported; set it on the request or API.`,
+    );
+  }
   return auth;
 }
 

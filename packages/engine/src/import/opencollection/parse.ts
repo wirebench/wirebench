@@ -296,6 +296,19 @@ function buildTree(files: ReadonlyMap<string, string>, rootKey: string | undefin
 }
 
 /**
+ * True when `rootText` is a document without an `items` list: the root of a collection saved as a
+ * folder, whose items are the files beside it. False for anything that does not parse.
+ */
+export function isFolderRoot(rootText: string): boolean {
+  try {
+    const root = parseDocument(rootText);
+    return isRecord(root) && !Array.isArray(root['items']);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Reads an OpenCollection 1.x collection. `files` maps root-relative POSIX paths to text for the
  * directory form (the root document, with no `items`, is `rootText`) and is absent for a single
  * document. `rootKey` names the root's own key in `files`, so a differently cased root is not read

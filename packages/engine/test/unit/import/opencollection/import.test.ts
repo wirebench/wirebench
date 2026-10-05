@@ -64,8 +64,22 @@ describe('importOpenCollection', () => {
 
   it('refuses a collection with nothing to import', async () => {
     expect(
-      await codeOf(importOpenCollection({ kind: 'text', text: 'opencollection: "1.0.0"\ninfo: { name: E }\n' })),
+      await codeOf(
+        importOpenCollection({ kind: 'text', text: 'opencollection: "1.0.0"\ninfo: { name: E }\nitems: []\n' }),
+      ),
     ).toBe('oc-nothing-to-import');
+  });
+
+  it('refuses a folder collection root read as a single document, saying how to pick it', async () => {
+    const root = 'opencollection: "1.0.0"\ninfo: { name: Folder }\nrequest:\n  headers: [{ name: X-A, value: b }]\n';
+    const dropped = importOpenCollection({ kind: 'text', text: root });
+    await expect(dropped).rejects.toMatchObject({ code: 'oc-folder-root' });
+    await expect(importOpenCollection({ kind: 'text', text: root })).rejects.toThrow(
+      /root of a folder collection: pick opencollection\.yml from its folder/,
+    );
+    const path = join(scratch, 'opencollection.yml');
+    writeFileSync(path, root);
+    expect(await codeOf(importOpenCollection({ kind: 'file', path }))).toBe('oc-folder-root');
   });
 
   it('refuses text or a file that is too large, and a file that cannot be read', async () => {
