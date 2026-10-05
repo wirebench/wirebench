@@ -103,25 +103,11 @@ export const findSourceTool: FindSourceTool = (tool, options = {}) => {
 export const runSourceTool: RunSourceTool = (path, args, options = {}) =>
   new Promise((resolve, reject) => {
     const timeoutMs = options.timeoutMs ?? SOURCE_TIMEOUT_MS;
-    const windows = (options.platform ?? process.platform) === 'win32';
-    const pathSep = windows ? ';' : ':';
-    let env: NodeJS.ProcessEnv;
-    if (options.env === undefined) {
-      env = process.env;
-    } else {
-      env = { ...process.env, ...options.env };
-      const pathKey = windows ? 'Path' : 'PATH';
-      const providedPath = options.env[pathKey];
-      const systemPath = process.env[pathKey];
-      if (providedPath && systemPath) {
-        env[pathKey] = `${providedPath}${pathSep}${systemPath}`;
-      }
-    }
     const child = execFile(
       path,
       [...args],
       {
-        env,
+        env: options.env ?? process.env,
         timeout: timeoutMs,
         maxBuffer: SOURCE_STDOUT_MAX,
         windowsHide: true,

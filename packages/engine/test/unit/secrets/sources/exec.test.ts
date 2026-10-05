@@ -17,7 +17,7 @@ async function toolDir(scripts: Record<string, string>): Promise<string> {
 describe.skipIf(process.platform === 'win32')('exec', () => {
   it('finds a tool on PATH and runs it with the arguments as given', async () => {
     const dir = await toolDir({ vault: 'printf "%s|" "$@"' });
-    const env = { PATH: dir };
+    const env = { PATH: `${dir}:/usr/bin:/bin` };
     const path = await findSourceTool('vault', { env });
     expect(path).toBe(join(dir, 'vault'));
     expect(await runSourceTool(path, ['kv', 'get', 'a b', '$(x)'], { env })).toEqual({
@@ -29,13 +29,13 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
 
   it('passes the environment through', async () => {
     const dir = await toolDir({ op: 'printf "%s" "$VAULT_ADDR"' });
-    const env = { PATH: dir, VAULT_ADDR: 'https://v.example' };
+    const env = { PATH: `${dir}:/usr/bin:/bin`, VAULT_ADDR: 'https://v.example' };
     expect((await runSourceTool(await findSourceTool('op', { env }), [], { env })).stdout).toBe('https://v.example');
   });
 
   it('reports a non-zero exit with its stderr', async () => {
     const dir = await toolDir({ aws: 'echo "not logged in" >&2; exit 3' });
-    const env = { PATH: dir };
+    const env = { PATH: `${dir}:/usr/bin:/bin` };
     expect(await runSourceTool(await findSourceTool('aws', { env }), [], { env })).toEqual({
       stdout: '',
       stderr: 'not logged in\n',
@@ -44,8 +44,8 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
   });
 
   it('fails a tool that runs past the timeout', async () => {
-    const dir = await toolDir({ gcloud: 'sleep 5' });
-    const env = { PATH: dir };
+    const dir = await toolDir({ gcloud: '/bin/sleep 5' });
+    const env = { PATH: `${dir}:/usr/bin:/bin` };
     await expect(runSourceTool(await findSourceTool('gcloud', { env }), [], { env, timeoutMs: 200 })).rejects.toMatchObject({
       code: 'secret-source-failed',
     });
@@ -53,10 +53,26 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
 
   it('fails output over the cap', async () => {
     const dir = await toolDir({ az: 'head -c 70000 /dev/zero | tr "\\0" a' });
-    const env = { PATH: dir };
+    const env = { PATH: `${dir}:/usr/bin:/bin` };
     await expect(runSourceTool(await findSourceTool('az', { env }), [], { env })).rejects.toMatchObject({
       code: 'secret-source-failed',
     });
+  });
+
+  it('does not leak process.env variables to the tool', async () => {
+    const dir = await toolDir({ probe: 'printf "%s" "${WB_EXEC_LEAK_PROBE-unset}"' });
+    const env = { PATH: `${dir}:/usr/bin:/bin` };
+    const oldValue = process.env.WB_EXEC_LEAK_PROBE;
+    try {
+      process.env.WB_EXEC_LEAK_PROBE = 'leaked';
+      expect((await runSourceTool(await findSourceTool('probe', { env }), [], { env })).stdout).toBe('unset');
+    } finally {
+      if (oldValue === undefined) {
+        delete process.env.WB_EXEC_LEAK_PROBE;
+      } else {
+        process.env.WB_EXEC_LEAK_PROBE = oldValue;
+      }
+    }
   });
 
   it('says which tool is missing and where to get it', async () => {
