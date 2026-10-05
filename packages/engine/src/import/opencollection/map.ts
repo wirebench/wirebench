@@ -16,7 +16,8 @@ import type { ImportedScriptFile } from '../scripts.js';
 import { colonPathParams, rewriteMustache } from '../templates.js';
 import type { ImportedVariables } from '../variables.js';
 import { warnCredentialLookingNames } from '../variables.js';
-import { stripUserinfo } from '../values.js';
+import { referencesOnly, stripUserinfo } from '../values.js';
+import { isCredentialName } from '../credentials.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import { entry } from '../../http/entries.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
@@ -107,6 +108,19 @@ const METHOD_KINDS: Readonly<Record<string, GrpcMethodKind>> = {
 };
 const GRPC_METHOD = /^\/?([\w.]+)\/(\w+)$/;
 const ITEM_TYPES = new Set(['http', 'graphql', 'grpc', 'websocket']);
+
+/** The name an assertion checks: the last step of `res.body.a.token` or `res.headers.authorization`, any `[n]` dropped. */
+function assertionTarget(expression: string): string {
+  let end = expression.length;
+  // Walked by hand: a `$`-anchored regex would rescan the tail from every `[`.
+  while (end > 0 && expression[end - 1] === ']') {
+    const open = expression.lastIndexOf('[', end - 1);
+    if (open === -1 || !/^\d+$/.test(expression.slice(open + 1, end - 1))) break;
+    end = open;
+  }
+  const path = expression.slice(0, end);
+  return path.slice(path.lastIndexOf('.') + 1);
+}
 
 function isRecord(value: unknown): value is Rec {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -388,6 +402,7 @@ class Mapper {
 
   private grpcRequest(item: OcItem, slug: string, order: number): GrpcRequestDef | undefined {
     const label = item.info.name;
+    this.noteProtocolAssertions(item, label);
     const details = item.grpc ?? {};
     const method = GRPC_METHOD.exec(str(details['method']));
     const service = method?.[1];
@@ -444,6 +459,7 @@ class Mapper {
 
   private wsRequest(item: OcItem, slug: string, order: number): WsRequestDef {
     const label = item.info.name;
+    this.noteProtocolAssertions(item, label);
     const details = item.websocket ?? {};
     const blanked = new Set<string>();
     const { url: withoutUser, stripped } = stripUserinfo(this.rewrite(str(details['url'])));
@@ -562,6 +578,17 @@ class Mapper {
   private assertionsOf(item: OcItem, label: string): Assertion[] {
     const out: Assertion[] = [];
     for (const a of item.runtime?.assertions ?? []) {
+      const credential = isCredentialName(assertionTarget(a.expression));
+      // A recorded credential is not written to the request file as an expected value.
+      if (credential && a.disabled !== true && a.value !== undefined && a.value !== '') {
+        if (!referencesOnly(rewriteMustache(a.value))) {
+          this.assertionsSkipped += 1;
+          this.report.warn(
+            `${label}: the assertion on ${a.expression} compares a recorded credential and was not imported.`,
+          );
+          continue;
+        }
+      }
       const mapped = mapOcAssertion(a);
       if (mapped !== undefined) {
         out.push(mapped);
@@ -571,11 +598,20 @@ class Mapper {
       } else {
         this.assertionsSkipped += 1;
         this.report.warn(
-          `${label}: the assertion "${a.expression} ${a.operator} ${a.value ?? ''}" has no Wirebench equivalent and was not imported.`,
+          `${label}: the assertion "${a.expression} ${a.operator} ${credential ? '<value not shown>' : (a.value ?? '')}" has no Wirebench equivalent and was not imported.`,
         );
       }
     }
     return out;
+  }
+
+  /** A note for a gRPC or WebSocket item's assertions, which only HTTP requests carry (spec §7.4). */
+  private noteProtocolAssertions(item: OcItem, label: string): void {
+    if ((item.runtime?.assertions ?? []).length > 0) {
+      this.report.note(
+        `${label}: its assertions were not imported; Wirebench imports assertions on HTTP requests only.`,
+      );
+    }
   }
 
   /** A body file path, rewritten and resolved against the collection folder when there is one. */

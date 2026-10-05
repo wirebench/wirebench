@@ -39,7 +39,11 @@ function valueOf(v: OcVariable, where: string, report: ReportBuilder): string | 
       return String(picked);
     }
   }
-  report.note(`${where}: "${v.name}" has an object value and was skipped.`);
+  report.note(
+    Array.isArray(raw)
+      ? `${where}: the variant value of "${v.name}" was unreadable and was skipped.`
+      : `${where}: "${v.name}" has an object value and was skipped.`,
+  );
   return undefined;
 }
 
@@ -56,12 +60,15 @@ function importedVariable(
 ): ImportedVariable | undefined {
   const raw = valueOf(v, where, report);
   if (raw === undefined) return undefined;
-  const text = rewriteMustache(raw, dynamic);
+  // Dynamic names are collected aside and kept only for a plain value: nothing of a secret's text reaches the report.
+  const seen = new Set<string>();
+  const text = rewriteMustache(raw, seen);
   const enabled = v.disabled !== true;
   if (v.secret === true) {
     return { name: v.name, value: '', enabled, secret: true, ...(text !== '' ? { secretValue: text } : {}) };
   }
   const { variable, madeSecret, userinfoCut } = credentialSafeVariable(v.name, text, enabled);
+  if (!variable.secret) for (const name of seen) dynamic.add(name);
   if (madeSecret) {
     report.note(
       `${where}: "${v.name}" looks like a credential, so its value was imported as a secret rather than plain text.`,

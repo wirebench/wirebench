@@ -66,7 +66,7 @@ export async function importOpenCollection(
   if (source.kind === 'file') {
     const path = resolve(source.path);
     const text = await readSource(path);
-    mapped = mapOpenCollection(parseOpenCollection(text), { rootDir: dirname(path), ...options });
+    mapped = mapOpenCollection(parseOpenCollection(text), { ...options, rootDir: options.rootDir ?? dirname(path) });
   } else if (source.kind === 'text') {
     if (source.text.length > MAX_OPENCOLLECTION_BYTES) throw tooLarge();
     mapped = mapOpenCollection(parseOpenCollection(source.text), options);

@@ -247,3 +247,82 @@ describe('OpenCollection directory form', () => {
     expect(m.scripts.map((s) => s.path)).toEqual(['imported-scripts/crafted/get user.tests.js']);
   });
 });
+
+describe('OpenCollection assertions on credentials, and fix-round details', () => {
+  const item = (name: string, assertions: string, type = 'http'): string =>
+    `  - info: { name: ${name}, type: ${type} }\n    ${type === 'http' ? 'http: { method: GET, url: "https://h/x" }' : type === 'grpc' ? 'grpc: { url: "grpc://h:1", method: /a.B/C }' : 'websocket: { url: "wss://h/ws" }'}\n    runtime:\n      assertions:\n${assertions}`;
+
+  it('skips an assertion that compares a literal credential in the body or a header, and keeps a reference', () => {
+    const m = mapText(`${head}items:
+${item('Body', '        - { expression: res.body.data.token, operator: eq, value: "LIT-BODY-1" }\n')}
+${item('Header', '        - { expression: res.headers.authorization, operator: contains, value: "LIT-HEAD-2" }\n')}
+${item('Indexed', '        - { expression: "res.body.tokens[0]", operator: eq, value: "LIT-IDX-3" }\n')}
+${item('Ref', '        - { expression: res.body.token, operator: eq, value: "{{tok}}" }\n')}
+`);
+    const serialised = JSON.stringify(m);
+    for (const literal of ['LIT-BODY-1', 'LIT-HEAD-2', 'LIT-IDX-3']) expect(serialised).not.toContain(literal);
+    expect(m.counts).toMatchObject({ assertions: 1, assertionsSkipped: 3 });
+    expect(m.report.warnings).toContain(
+      'Body: the assertion on res.body.data.token compares a recorded credential and was not imported.',
+    );
+    expect(m.report.warnings).toContain(
+      'Header: the assertion on res.headers.authorization compares a recorded credential and was not imported.',
+    );
+    const ref = m.rest?.requests.find((r) => r.name === 'Ref');
+    expect(ref?.assertions).toEqual([
+      { type: 'match', language: 'jsonpath', expression: '$.token', equals: '{{tok}}' },
+    ]);
+  });
+
+  it('does not repeat the value of an unmapped assertion on a credential-named target', () => {
+    const m = mapText(`${head}items:
+${item('Neq', '        - { expression: res.headers.x-api-key, operator: neq, value: "{{k}}" }\n')}
+`);
+    expect(m.report.warnings).toContain(
+      'Neq: the assertion "res.headers.x-api-key neq <value not shown>" has no Wirebench equivalent and was not imported.',
+    );
+    expect(JSON.stringify(m.report)).not.toContain('{{k}}');
+  });
+
+  it('keeps every part of a secret value out of the report', () => {
+    const m = mapText(`${head}config:
+  environments:
+    - name: dev
+      variables:
+        - { name: sealed, value: "{{$secretish}}x", secret: true }
+        - { name: password, value: "{{$alsosecret}}pw" }
+        - { name: plain, value: "{{$guid}}" }
+items: []
+`);
+    const report = JSON.stringify([m.report, m.variables.report]);
+    expect(report).not.toContain('secretish');
+    expect(report).not.toContain('alsosecret');
+    expect(m.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $guid');
+  });
+
+  it('notes the assertions of gRPC and WebSocket items as not imported', () => {
+    const m = mapText(`${head}items:
+${item('Call', '        - { expression: res.status, operator: eq, value: "0" }\n', 'grpc')}
+${item('Sock', '        - { expression: res.status, operator: eq, value: "101" }\n', 'websocket')}
+`);
+    expect(m.report.notes).toEqual(
+      expect.arrayContaining([
+        'Call: its assertions were not imported; Wirebench imports assertions on HTTP requests only.',
+        'Sock: its assertions were not imported; Wirebench imports assertions on HTTP requests only.',
+      ]),
+    );
+  });
+
+  it('reports an unreadable variant value as such', () => {
+    const m = mapText(`${head}config:
+  environments:
+    - name: dev
+      variables:
+        - name: region
+          value:
+            - { title: eu, selected: true, value: { a: 1 } }
+items: []
+`);
+    expect(m.variables.report.notes).toContain('dev: the variant value of "region" was unreadable and was skipped.');
+  });
+});

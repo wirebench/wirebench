@@ -79,3 +79,21 @@ describe('importOpenCollection', () => {
     );
   });
 });
+
+describe('importOpenCollection options', () => {
+  it('lets options.rootDir override the file folder', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oc-rootdir-'));
+    try {
+      const path = join(dir, 'c.yml');
+      writeFileSync(
+        path,
+        'opencollection: "1.0.0"\ninfo: { name: F }\nitems:\n  - info: { name: Up, type: http }\n    http:\n      method: POST\n      url: "https://h/u"\n      body: { type: file, data: [{ filePath: a.bin }] }\n',
+      );
+      const other = join(dir, 'other');
+      const mapped = await importOpenCollection({ kind: 'file', path }, { rootDir: other });
+      expect(mapped.rest?.requests[0]?.body).toMatchObject({ source: { path: join(other, 'a.bin') } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
