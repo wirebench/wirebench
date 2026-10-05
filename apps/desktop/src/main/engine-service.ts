@@ -14,7 +14,7 @@ import {
 } from '@wirebench/engine';
 import type { GenerateOptions, WsdlImportProgress, WsdlImportResult, WsdlImportSource, QName } from '@wirebench/engine';
 import { secretMissingMessage } from './secret-resolver.js';
-import type { FetchDocument } from '@wirebench/engine';
+import type { FetchDocument, KerberosSendAuth } from '@wirebench/engine';
 import {
   createRestContractChecker,
   DEFAULT_REST_CHECK_DEADLINE_MS,
@@ -134,18 +134,22 @@ export class EngineService {
       this.imports.set(request.token, controller);
     }
     const wireAuth = request.options?.auth;
-    const password = wireAuth !== undefined ? await this.getSecret?.(wireAuth.passwordRef) : undefined;
-    if (wireAuth !== undefined && password === undefined) {
-      throw new WirebenchError('secret-missing', secretMissingMessage(wireAuth.username), {
-        details: { ref: wireAuth.passwordRef },
-      });
+    let auth: { readonly username: string; readonly password: string } | KerberosSendAuth | undefined;
+    if (wireAuth !== undefined && 'type' in wireAuth) {
+      auth = { type: 'kerberos', ...(wireAuth.spn !== undefined ? { spn: wireAuth.spn } : {}) };
+    } else if (wireAuth !== undefined) {
+      const password = await this.getSecret?.(wireAuth.passwordRef);
+      if (password === undefined) {
+        throw new WirebenchError('secret-missing', secretMissingMessage(wireAuth.username), {
+          details: { ref: wireAuth.passwordRef },
+        });
+      }
+      auth = { username: wireAuth.username, password };
     }
     let result: WsdlImportResult;
     try {
       result = await engineImportDefinition(toEngineSource(request.source), {
-        ...(wireAuth !== undefined && password !== undefined
-          ? { auth: { username: wireAuth.username, password } }
-          : {}),
+        ...(auth !== undefined ? { auth } : {}),
         signal: controller.signal,
         onProgress: (progress) => {
           // The final 'done' event is re-emitted below once the interface id is known, so the
@@ -187,7 +191,7 @@ export class EngineService {
    */
   async importPreview(
     source: ImportSourceWire,
-    auth?: { readonly username: string; readonly password: string },
+    auth?: { readonly username: string; readonly password: string } | KerberosSendAuth,
     signal?: AbortSignal,
   ): Promise<WsdlImportResult> {
     return engineImportDefinition(toEngineSource(source), {
@@ -206,7 +210,7 @@ export class EngineService {
       readonly interfaceId: string;
       readonly source: ImportSourceWire;
       readonly cache: { readonly dir: string; readonly mode: 'prefer-cache' | 'refresh' | 'none' };
-      readonly auth?: { readonly username: string; readonly password: string };
+      readonly auth?: { readonly username: string; readonly password: string } | KerberosSendAuth;
       readonly token?: string;
       /**
        * Where every document is read from, in place of the network. Main-side only — it never

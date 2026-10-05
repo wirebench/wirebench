@@ -86,6 +86,12 @@ function deferredWriteFs(): { fs: FsLike; arm: () => void; release: () => void }
   };
 }
 
+function withoutAuth<T extends { auth?: unknown }>(input: T): Omit<T, 'auth'> {
+  const copy = { ...input };
+  delete copy.auth;
+  return copy;
+}
+
 beforeEach(async () => {
   server = await startTestSoapServer({ fixture: 'calculator' });
   root = tempDir('userdata');
@@ -127,6 +133,50 @@ describe('ProjectHost', () => {
       cache: { mode: 'prefer-cache' },
       auth: { username: 'alice', password: 's3cret!' },
     });
+    expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
+  });
+
+  it('imports and re-hydrates through Kerberos, saving it on the interface and never as a Basic shape', async () => {
+    const dir = join(tempDir('project'), 'Kerberos Project');
+    const secrets = { get: (ref: string) => Promise.resolve(ref === 'sec_pw' ? 's3cret!' : undefined) };
+    const addEngine = new EngineService((ref) => secrets.get(ref));
+    const seen: unknown[] = [];
+    // The test server issues no challenge to answer, so the ticket is not asked for: record the
+    // auth main hands the engine and import without it.
+    const original = addEngine.importForProject.bind(addEngine);
+    vi.spyOn(addEngine, 'importForProject').mockImplementation((input, hooks) => {
+      seen.push(input.auth);
+      return original(withoutAuth(input), hooks);
+    });
+    const service = new ProjectHost(addEngine, {}, undefined, undefined, secrets);
+
+    await service.create({ dir, name: 'Kerberos Project' });
+    const { project, interfaceId } = await service.addInterface({
+      source: { kind: 'url', url: server!.wsdlUrl },
+      auth: { type: 'kerberos', spn: 'HTTP/wsdl.example.test' },
+      useForRequests: true,
+    });
+    expect(seen[0]).toEqual({ type: 'kerberos', spn: 'HTTP/wsdl.example.test' });
+    expect(project.interfaces.find((i) => i.id === interfaceId)?.auth).toMatchObject({
+      type: 'kerberos',
+      spn: 'HTTP/wsdl.example.test',
+    });
+    await service.close();
+
+    const engine = new EngineService((ref) => secrets.get(ref));
+    const hydrateOriginal = engine.importForProject.bind(engine);
+    const hydrated: unknown[] = [];
+    vi.spyOn(engine, 'importForProject').mockImplementation((input, hooks) => {
+      hydrated.push(input.auth);
+      return hydrateOriginal(withoutAuth(input), hooks);
+    });
+    const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+    await reopened.openProject(dir);
+    await reopened.whenHydrated();
+
+    const auth = hydrated[0];
+    expect(auth).toEqual({ type: 'kerberos', spn: 'HTTP/wsdl.example.test' });
+    expect(auth).not.toHaveProperty('username');
     expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
   });
 

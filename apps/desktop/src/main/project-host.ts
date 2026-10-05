@@ -187,14 +187,21 @@ import type {
   UpdatePlanWire,
 } from '../shared/wire-types.js';
 import { isEndpointAuth, nextApiOrder } from '@wirebench/engine';
-import type { DefinitionAuth, EndpointAuth, JsonSchema, RunWorkspace, SoapOwnerAuth } from '@wirebench/engine';
+import type {
+  DefinitionAuth,
+  EndpointAuth,
+  JsonSchema,
+  KerberosSendAuth,
+  RunWorkspace,
+  SoapOwnerAuth,
+} from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
-import { resolveEndpointAuth } from './secret-resolver.js';
+import { resolveAuthConfig, resolveEndpointAuth } from './secret-resolver.js';
 import { findRestFolder, findRestRequest, mapFolder, restApiOwning, takenApiSlugs } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
 import { writeNewFile } from './write-new-file.js';
@@ -2379,7 +2386,7 @@ export class ProjectHost {
   async addInterface(input: {
     source: ImportSourceWire;
     /** `password` never appears here: the caller sends a `secretRef`, resolved just below. */
-    auth?: { username: string; passwordRef: string };
+    auth?: { username: string; passwordRef: string } | { type: 'kerberos'; spn?: string | undefined };
     /** When true, the resolved auth (by ref, never plaintext) is saved onto the interface. */
     useForRequests?: boolean;
     token?: string;
@@ -2390,13 +2397,16 @@ export class ProjectHost {
     // that API (`api-slug-conflict`), and the save after it would delete its folder.
     const taken = takenApiSlugs(open.project);
 
-    const resolvedAuth =
-      input.auth !== undefined
-        ? await resolveEndpointAuth(
-            { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef },
-            (ref) => this.getSecret(ref),
-          )
-        : undefined;
+    const importAuth: { username: string; password: string } | KerberosSendAuth | undefined =
+      input.auth === undefined
+        ? undefined
+        : 'type' in input.auth
+          ? { type: 'kerberos', ...(input.auth.spn !== undefined ? { spn: input.auth.spn } : {}) }
+          : await this.basicImportAuth({
+              type: 'basic',
+              username: input.auth.username,
+              passwordRef: input.auth.passwordRef,
+            });
 
     // The interface's name (and therefore its slug) comes from the WSDL, which is only known
     // once the import has run — so the cache is written to a staging folder outside the project
@@ -2413,9 +2423,7 @@ export class ProjectHost {
           interfaceId,
           source: input.source,
           cache: { dir: stagedCache, mode: 'refresh' },
-          ...(resolvedAuth?.username !== undefined && resolvedAuth.password !== undefined
-            ? { auth: { username: resolvedAuth.username, password: resolvedAuth.password } }
-            : {}),
+          ...(importAuth !== undefined ? { auth: importAuth } : {}),
           ...(input.token !== undefined ? { token: input.token } : {}),
         },
         { onProgress: (event) => this.hooks.onProgress?.(event) },
@@ -2438,10 +2446,12 @@ export class ProjectHost {
     }
 
     const endpoints = endpointsFrom(summary);
-    const savedAuth: EndpointAuth | undefined =
-      input.useForRequests === true && input.auth !== undefined
-        ? { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef, preemptive: true }
-        : undefined;
+    const savedAuth: EndpointAuth | AuthConfig | undefined =
+      input.useForRequests !== true || input.auth === undefined
+        ? undefined
+        : 'type' in input.auth
+          ? { type: 'kerberos', ...(input.auth.spn !== undefined ? { spn: input.auth.spn } : {}) }
+          : { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef, preemptive: true };
     const iface: Interface = {
       ...createInterface(summary.name, {
         id: interfaceId,
@@ -2799,13 +2809,25 @@ export class ProjectHost {
     return { kind: 'file', path };
   }
 
-  /** The Basic credentials an interface's own auth resolves to, for re-fetching its WSDL. */
-  private async importAuthFor(iface: Interface): Promise<{ username: string; password: string } | undefined> {
-    // WSDL import/re-fetch keeps Basic (the import dialog offers nothing else); an interface
-    // whose own auth is a token scheme resolves to no re-fetch credentials.
-    const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
-    const resolved =
-      basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
+  /**
+   * What an interface's own auth resolves to for re-fetching its WSDL: Basic credentials, or a
+   * Kerberos auth (the engine resolves the keychain secret only when a username is set). Any other
+   * scheme resolves to no re-fetch credentials.
+   */
+  private async importAuthFor(
+    iface: Interface,
+  ): Promise<{ username: string; password: string } | KerberosSendAuth | undefined> {
+    if (iface.auth?.type === 'kerberos') {
+      const resolved = await resolveAuthConfig(iface.auth, (ref) => this.getSecret(ref));
+      return resolved?.type === 'kerberos' ? resolved : undefined;
+    }
+    return this.basicImportAuth(iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined);
+  }
+
+  private async basicImportAuth(
+    auth: EndpointAuth | undefined,
+  ): Promise<{ username: string; password: string } | undefined> {
+    const resolved = auth !== undefined ? await resolveEndpointAuth(auth, (ref) => this.getSecret(ref)) : undefined;
     return resolved?.username !== undefined && resolved.password !== undefined
       ? { username: resolved.username, password: resolved.password }
       : undefined;
@@ -3677,19 +3699,15 @@ export class ProjectHost {
       }
       try {
         // The interface's own auth must be resolved for hydration exactly as it is for the
-        // first import: a WSDL behind Basic auth is otherwise re-fetched anonymously and the
-        // whole interface fails to hydrate on reopen. WSDL import/re-fetch keeps Basic, so a
-        // token-scheme owner resolves to no re-fetch credentials, same as `importAuthFor`.
-        const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
-        const resolvedAuth =
-          basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
+        // first import: a WSDL behind Basic or Kerberos auth is otherwise re-fetched anonymously
+        // and the whole interface fails to hydrate on reopen. A token-scheme owner resolves to
+        // no re-fetch credentials, same as `importAuthFor`.
+        const importAuth = await this.importAuthFor(iface);
         const summary = await this.engine.importForProject({
           interfaceId: iface.id,
           source: { kind: 'url', url: iface.definitionUrl },
           cache: { dir: definitionCacheDir(open.dir, iface.slug), mode: 'prefer-cache' },
-          ...(resolvedAuth?.username !== undefined && resolvedAuth.password !== undefined
-            ? { auth: { username: resolvedAuth.username, password: resolvedAuth.password } }
-            : {}),
+          ...(importAuth !== undefined ? { auth: importAuth } : {}),
         });
         open.runtime.set(iface.id, { hydration: 'ready', summary });
         this.hooks.onHydration?.({ interfaceId: iface.id, status: 'ready' });

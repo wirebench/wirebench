@@ -372,6 +372,7 @@ export function toRestExchangeSummary(
             scheme: exchange.auth.scheme,
             challenged: exchange.auth.challenged,
             attempts: exchange.auth.attempts,
+            ...(exchange.auth.spn !== undefined ? { spn: exchange.auth.spn } : {}),
           },
         }
       : {}),
@@ -643,6 +644,7 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
             scheme: exchange.auth.scheme,
             challenged: exchange.auth.challenged,
             attempts: exchange.auth.attempts,
+            ...(exchange.auth.spn !== undefined ? { spn: exchange.auth.spn } : {}),
           },
         }
       : {}),
