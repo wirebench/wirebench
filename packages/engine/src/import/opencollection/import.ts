@@ -32,7 +32,13 @@ function tooLarge(): OpenCollectionError {
   );
 }
 
-async function readSource(path: string): Promise<string> {
+/**
+ * One OpenCollection document's text from disk, refused past {@link MAX_OPENCOLLECTION_BYTES}
+ * rather than read whole.
+ *
+ * @throws OpenCollectionError `oc-too-large` or `oc-read-failed`
+ */
+export async function readOpenCollectionFile(path: string): Promise<string> {
   let size: number | undefined;
   try {
     size = (await stat(path)).size;
@@ -65,7 +71,7 @@ export async function importOpenCollection(
   let mapped: MappedOpenCollection;
   if (source.kind === 'file') {
     const path = resolve(source.path);
-    const text = await readSource(path);
+    const text = await readOpenCollectionFile(path);
     mapped = mapOpenCollection(parseOpenCollection(text), { ...options, rootDir: options.rootDir ?? dirname(path) });
   } else if (source.kind === 'text') {
     if (source.text.length > MAX_OPENCOLLECTION_BYTES) throw tooLarge();

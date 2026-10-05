@@ -3,7 +3,8 @@
  * The OpenCollection directory walk and its companion reads. The walk is the one main-side read of
  * many renderer-unnamed files, so its limits matter more than its happy path: it starts only at a
  * root the user picked (or keeps in a project), never follows a link, never leaves the root's
- * folder, and stops at the file, depth and byte caps.
+ * folder, and stops at the file, entry, depth and byte caps. The caps are tested small, through the
+ * limits a test may pass; the production values are asserted once.
  */
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
@@ -16,6 +17,19 @@ import { OC_TREE_LIMITS, readCompanionTexts, readOpenCollectionTree } from '../s
 const TREE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/opencollection/crafted/tree');
 const PICKED = { hasRead: () => true };
 const ROOT_DOC = 'opencollection: "1.0.0"\ninfo: {name: x}\n';
+const SMALL = { files: 10, depth: 3, bytes: 4096, entries: 50 };
+
+const canSymlink = ((): boolean => {
+  const probe = mkdtempSync(join(tmpdir(), 'wirebench-symlink-probe-'));
+  try {
+    symlinkSync(join(probe, 'target'), join(probe, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 const dirs: string[] = [];
 async function tempDir(): Promise<string> {
@@ -48,7 +62,7 @@ describe('readOpenCollectionTree', () => {
     expect(files.has('Users/get-user.yml')).toBe(true);
   });
 
-  it('skips symbolic links to files and folders, and never reads outside the root', async () => {
+  it.skipIf(!canSymlink)('skips symbolic links to files and folders, and never reads outside the root', async () => {
     const dir = await tempDir();
     const outside = await tempDir();
     writeFileSync(join(outside, 'secret.yml'), 'token: leaked\n');
@@ -65,39 +79,80 @@ describe('readOpenCollectionTree', () => {
     expect([...files.values()].join('')).not.toContain('leaked');
   });
 
-  it('skips symbolic links and stops past the file limit', async () => {
+  it('stops past the file limit', async () => {
     const dir = await tempDir();
-    symlinkSync(tmpdir(), join(dir, 'link'));
-    for (let i = 0; i < OC_TREE_LIMITS.files + 1; i += 1) writeFileSync(join(dir, `r${i}.yml`), 'info: {name: r}\n');
-    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED)).rejects.toMatchObject({
+    for (let i = 0; i < SMALL.files; i += 1) writeFileSync(join(dir, `r${i}.yml`), 'info: {name: r}\n');
+    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED, SMALL)).rejects.toMatchObject({
       name: 'OpenCollectionError',
       code: 'oc-too-many-files',
     });
-  }, 60_000);
+  });
+
+  it('stops past the entry limit, counting files it does not read', async () => {
+    const dir = await tempDir();
+    for (let i = 0; i < SMALL.entries; i += 1) writeFileSync(join(dir, `n${i}.txt`), 'x');
+    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED, SMALL)).rejects.toMatchObject({
+      code: 'oc-too-many-files',
+    });
+  });
+
+  it('does not walk node_modules or .git', async () => {
+    const dir = await tempDir();
+    for (const skipped of ['node_modules', '.git']) {
+      mkdirSync(join(dir, skipped));
+      for (let i = 0; i < SMALL.entries; i += 1) writeFileSync(join(dir, skipped, `p${i}.yml`), 'x: 1\n');
+    }
+    const files = await readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED, SMALL);
+    expect([...files.keys()]).toEqual(['opencollection.yml']);
+  });
 
   it('stops past the depth limit', async () => {
     const dir = await tempDir();
     let current = dir;
-    for (let i = 0; i <= OC_TREE_LIMITS.depth; i += 1) {
+    for (let i = 0; i <= SMALL.depth; i += 1) {
       current = join(current, 'd');
       mkdirSync(current);
     }
     writeFileSync(join(current, 'leaf.yml'), 'info: {name: leaf}\n');
-    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED)).rejects.toMatchObject({
+    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED, SMALL)).rejects.toMatchObject({
       code: 'oc-too-deep',
     });
   });
 
   it('stops past the byte limit, counting the bytes on disk', async () => {
     const dir = await tempDir();
-    // Multi-byte text: the cap counts bytes, so this is over it though it is under it in characters.
-    const half = '€'.repeat(Math.ceil(OC_TREE_LIMITS.bytes / 3 / 2) + 1);
+    // Multi-byte text: over the cap in bytes, though under it in characters.
+    const half = '€'.repeat(Math.ceil(SMALL.bytes / 3 / 2) + 1);
     writeFileSync(join(dir, 'a.yml'), half);
     writeFileSync(join(dir, 'b.yml'), half);
-    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED)).rejects.toMatchObject({
+    expect(half.length * 2).toBeLessThan(SMALL.bytes);
+    await expect(readOpenCollectionTree(join(dir, 'opencollection.yml'), [], PICKED, SMALL)).rejects.toMatchObject({
       code: 'oc-too-large',
     });
-  }, 60_000);
+  });
+
+  it('keeps the production limits', () => {
+    expect(OC_TREE_LIMITS).toEqual({ files: 5000, depth: 64, bytes: 50 * 1024 * 1024, entries: 50_000 });
+  });
+
+  it.skipIf(!canSymlink)('refuses a root document that is a symbolic link', async () => {
+    const dir = await tempDir();
+    const outside = await tempDir();
+    symlinkSync(join(outside, 'opencollection.yml'), join(dir, 'collection.yml'));
+    await expect(readOpenCollectionTree(join(dir, 'collection.yml'), [], PICKED)).rejects.toMatchObject({
+      code: 'import-path-refused',
+    });
+  });
+
+  it.skipIf(!canSymlink)('refuses a root document whose own folder is a symbolic link', async () => {
+    const parent = await tempDir();
+    const outside = await tempDir();
+    writeFileSync(join(outside, 'secret.yml'), 'token: leaked\n');
+    symlinkSync(outside, join(parent, 'linked'));
+    await expect(
+      readOpenCollectionTree(join(parent, 'linked', 'opencollection.yml'), [], PICKED),
+    ).rejects.toMatchObject({ code: 'import-path-refused' });
+  });
 });
 
 describe('readCompanionTexts', () => {
@@ -115,7 +170,7 @@ describe('readCompanionTexts', () => {
     expect([...texts.keys()]).toEqual(['protos/pets.proto']);
   });
 
-  it('refuses a name outside the root, a symbolic link, and an unpicked root', async () => {
+  it.skipIf(!canSymlink)('refuses a name outside the root, a symbolic link, and an unpicked root', async () => {
     const dir = await tempDir();
     const outside = await tempDir();
     writeFileSync(join(outside, 'x.proto'), 'syntax = "proto3";');

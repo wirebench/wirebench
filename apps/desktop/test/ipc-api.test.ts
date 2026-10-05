@@ -8,7 +8,7 @@
  * for a location the API's own manifest lists, so the channel can never be turned into a read of an
  * arbitrary file.
  */
-import { copyFileSync, cpSync, readFileSync, symlinkSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -1131,6 +1131,19 @@ describe('the .http channels', () => {
 });
 
 /** The crafted OpenCollection directory: REST, GraphQL, gRPC (with `protos/pets.proto`) and WebSocket items. */
+/** Whether this machine lets a test make a symbolic link (Windows without Developer Mode does not). */
+const canSymlink = ((): boolean => {
+  const probe = mkdtempSync(join(tmpdir(), 'wirebench-symlink-probe-'));
+  try {
+    symlinkSync(join(probe, 'target'), join(probe, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
 const OC_TREE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/opencollection/crafted/tree');
 
 describe('api.importOpenCollection', () => {
@@ -1166,7 +1179,17 @@ describe('api.importOpenCollection', () => {
   };
 
   it('places the REST, gRPC and WebSocket APIs of a directory, with the .proto definition, and its scripts', async () => {
-    const { addApi, deps, fake, variablesPorts } = setupPicked();
+    // Every member of the workspace port the import touches, so the test can say none activates anything.
+    const touched = new Set<string>();
+    const fake = fakeVariablesPorts({});
+    const workspace = new Proxy(fake.ports.workspace, {
+      get: (target, key, receiver) => {
+        touched.add(String(key));
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    const variablesPorts = vi.fn().mockReturnValue({ ...fake.ports, workspace });
+    const { addApi, deps } = setupPicked('opencollection.yml', { variablesPorts });
     vi.mocked(deps.router.writeImportedScripts).mockImplementationOnce((_projectId, scripts) =>
       Promise.resolve({ written: scripts.map((script) => script.path), renamed: [], skipped: [] }),
     );
@@ -1208,7 +1231,33 @@ describe('api.importOpenCollection', () => {
     expect(fake.environments.map((environment) => environment.name)).toEqual(['dev']);
     expect(response.variables?.environments.map((environment) => environment.name)).toEqual(['dev']);
     expect(fake.projectMerges).toEqual([{ properties: { tenant: 'acme' }, disabled: [] }]);
+    // The environment is added and never made active: the port offers no activation, and none was reached for.
+    expect(touched.has('addEnvironment')).toBe(true);
+    expect([...touched].filter((key) => /activ|select|current/i.test(key))).toEqual([]);
   });
+
+  it.skipIf(!canSymlink)(
+    'refuses a root folder that is a symbolic link before reading or creating anything',
+    async () => {
+      const parent = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-oc-link-')));
+      try {
+        symlinkSync(dir, join(parent, 'linked'));
+        const picks = new DialogPicks();
+        picks.rememberRead(join(parent, 'linked', 'opencollection.yml'));
+        const { deps } = setup({ picks });
+
+        expect(
+          await failure('api.importOpenCollection', {
+            target: { newProjectName: 'Pets' },
+            source: { kind: 'file', path: join(parent, 'linked', 'opencollection.yml') },
+          }),
+        ).toMatchObject({ code: 'import-path-refused' });
+        expect(deps.addProject).not.toHaveBeenCalled();
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('places the gRPC API with no definition, and says so, when its .proto file is missing', async () => {
     await rm(join(dir, 'protos'), { recursive: true });
@@ -1226,26 +1275,29 @@ describe('api.importOpenCollection', () => {
     expect(response.notes).toContain('Pets (gRPC): needs a definition: import its .proto or use server reflection.');
   });
 
-  it('does not follow a .proto file that is a symbolic link, and places the gRPC API with no definition', async () => {
-    const outside = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-oc-out-')));
-    try {
-      await rm(join(dir, 'protos', 'pets.proto'));
-      await writeFile(join(outside, 'pets.proto'), readFileSync(join(OC_TREE, 'protos', 'pets.proto')));
-      symlinkSync(join(outside, 'pets.proto'), join(dir, 'protos', 'pets.proto'));
-      const { deps } = setupPicked();
+  it.skipIf(!canSymlink)(
+    'does not follow a .proto file that is a symbolic link, and places the gRPC API with no definition',
+    async () => {
+      const outside = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-oc-out-')));
+      try {
+        await rm(join(dir, 'protos', 'pets.proto'));
+        await writeFile(join(outside, 'pets.proto'), readFileSync(join(OC_TREE, 'protos', 'pets.proto')));
+        symlinkSync(join(outside, 'pets.proto'), join(dir, 'protos', 'pets.proto'));
+        const { deps } = setupPicked();
 
-      const response = await value<OcResponse>('api.importOpenCollection', {
-        target: { projectId: 'p1' },
-        source: { kind: 'file', path: join(dir, 'opencollection.yml') },
-      });
+        const response = await value<OcResponse>('api.importOpenCollection', {
+          target: { projectId: 'p1' },
+          source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+        });
 
-      expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
-      expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
-      expect(response.warnings.some((warning) => warning.includes('symbolic link'))).toBe(true);
-    } finally {
-      await rm(outside, { recursive: true, force: true });
-    }
-  });
+        expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
+        expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+        expect(response.warnings.some((warning) => warning.includes('symbolic link'))).toBe(true);
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('never answers with a secret or a recorded credential', async () => {
     await writeFile(

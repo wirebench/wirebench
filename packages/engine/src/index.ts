@@ -779,7 +779,7 @@ export {
   mapOpenCollection,
   parseOpenCollection,
 } from './import/opencollection/index.js';
-export { importOpenCollection } from './import/opencollection/import.js';
+export { importOpenCollection, readOpenCollectionFile } from './import/opencollection/import.js';
 export type { OpenCollectionSource } from './import/opencollection/import.js';
 export type {
   MapOpenCollectionOptions,

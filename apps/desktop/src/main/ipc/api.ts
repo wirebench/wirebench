@@ -23,9 +23,8 @@ import {
   importPostmanVariables,
   loadProtoSet,
   MAX_HTTP_FILE_BYTES,
-  MAX_OPENCOLLECTION_BYTES,
-  OpenCollectionError,
   parseHttpEnvFiles,
+  readOpenCollectionFile,
   ReportBuilder,
   VariableSetBuilder,
   webhookItemsOf,
@@ -58,7 +57,7 @@ import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
 import { allowsReadPath, checkedCompanionPaths, checkedImportSource } from '../path-access.js';
-import { readCompanionTexts, readOpenCollectionTree } from '../opencollection-tree.js';
+import { checkedOpenCollectionRoot, readCompanionTexts, readOpenCollectionTree } from '../opencollection-tree.js';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
@@ -296,31 +295,6 @@ function sharedNamesOf(text: string): string[] {
 
 /** The root document of an OpenCollection directory, in any case. */
 const OC_ROOT_FILE = /^opencollection\.ya?ml$/i;
-
-/**
- * A picked OpenCollection root document's text, refused past the collection size cap rather than
- * read whole.
- *
- * @throws OpenCollectionError `oc-too-large` or `oc-read-failed`
- */
-async function readOpenCollectionRoot(path: string): Promise<string> {
-  try {
-    if ((await stat(path)).size > MAX_OPENCOLLECTION_BYTES) {
-      throw new OpenCollectionError(
-        'oc-too-large',
-        `The OpenCollection is larger than ${String(MAX_OPENCOLLECTION_BYTES / (1024 * 1024))} MB`,
-      );
-    }
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if (error instanceof OpenCollectionError) throw error;
-    throw new OpenCollectionError(
-      'oc-read-failed',
-      `Failed to read OpenCollection file "${path}": ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-}
 
 /**
  * Whether a root document holds its items itself, so its folder is not walked. Text that does not
@@ -937,7 +911,8 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   /**
    * A picked or pasted OpenCollection, read in the form it is in (spec §7.1). A picked
    * `opencollection.yml` whose document has no `items` is the directory form: every YAML file under
-   * its folder is read, never through a link. Any other file, and text, is a single document.
+   * its folder is read, never through a link — the root and its folder must not be links either.
+   * Any other file, and text, is a single document.
    */
   const readOpenCollection = async (
     source: { readonly kind: 'file'; readonly path: string } | { readonly kind: 'text'; readonly text: string },
@@ -945,7 +920,9 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     if (source.kind === 'text' || !OC_ROOT_FILE.test(basename(source.path))) {
       return { mapped: await importOpenCollection(source), tree: false };
     }
-    const rootText = await readOpenCollectionRoot(source.path);
+    // A linked root or root folder would point the walk at a folder the user never chose.
+    await checkedOpenCollectionRoot(source.path, deps.projectDirs(), deps.picks);
+    const rootText = await readOpenCollectionFile(source.path);
     const rootDir = dirname(source.path);
     if (holdsItsItems(rootText)) {
       return { mapped: await importOpenCollection({ kind: 'text', text: rootText }, { rootDir }), tree: false };
