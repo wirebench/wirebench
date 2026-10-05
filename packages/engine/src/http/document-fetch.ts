@@ -170,11 +170,9 @@ async function fetchHttp(
     // Kerberos makes a fresh token per same-origin hop; `credentialsFor` stays synchronous for the rest.
     const sameOrigin = options.authOrigin !== undefined && new URL(bare).origin === options.authOrigin;
     const hopOptions: DocumentFetchOptions =
-      options.auth?.type !== 'kerberos'
-        ? options
-        : sameOrigin
-          ? { ...options, auth: await negotiateBearer(options.auth, bare) }
-          : { ...(options.network !== undefined ? { network: options.network } : {}) };
+      options.auth?.type === 'kerberos' && sameOrigin
+        ? { ...options, auth: await negotiateBearer(options.auth, bare) }
+        : options;
     const { url, headers } = credentialsFor(bare, hopOptions);
     const credentialsSent = url !== bare || Object.keys(headers).length > 0;
     let exchange;
