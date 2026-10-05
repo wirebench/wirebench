@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -296,6 +296,109 @@ describe('ProjectHost WS-Security', () => {
       envelope,
     );
     expect(inserted).toContain('<wsu:Expires>');
+  });
+
+  describe('SAML tokens from the project and its properties', () => {
+    const envelope =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+      '<soapenv:Body><Ping/></soapenv:Body></soapenv:Envelope>';
+    const assertion = (issuer: string) =>
+      '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a1" Version="2.0"' +
+      ` IssueInstant="2026-10-05T10:00:00Z"><saml2:Issuer>${issuer}</saml2:Issuer></saml2:Assertion>`;
+
+    async function openWithEntry(entry: WssEntryWire): Promise<{ service: ProjectHost; dir: string }> {
+      const dir = tempDir('proj');
+      const service = newService();
+      await service.create({ dir, name: 'Demo' });
+      const open = (service as unknown as { open: { project: Project } }).open;
+      const added = addWssOutgoing(open.project, { name: 'Tokens' });
+      const withRequest = projectWithRequest(added.project, added.configId);
+      open.project = { ...withRequest, properties: { ...withRequest.properties, issuer: 'urn:expanded' } };
+      await service.mutate({ kind: 'update-wss-outgoing', configId: added.configId, patch: { entries: [entry] } });
+      return { service, dir };
+    }
+
+    it('places a token read from a file in the project folder', async () => {
+      const { service, dir } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        file: 'tokens/a.xml',
+        expandProperties: false,
+      });
+      mkdirSync(join(dir, 'tokens'));
+      writeFileSync(join(dir, 'tokens', 'a.xml'), assertion('urn:from-file'));
+      const secured = await service.previewOutgoingWss('r1', envelope);
+      expect(secured).toContain('urn:from-file');
+    });
+
+    it('refuses a token file outside the project folder with saml-token-file-missing', async () => {
+      const { service, dir } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        file: '../outside.xml',
+        expandProperties: false,
+      });
+      writeFileSync(join(dir, '..', 'outside.xml'), assertion('urn:outside'));
+      dirs.push(join(dir, '..', 'outside.xml'));
+      await expect(service.previewOutgoingWss('r1', envelope)).rejects.toMatchObject({
+        code: 'saml-token-file-missing',
+        details: { file: '../outside.xml' },
+      });
+    });
+
+    it('refuses a missing token file with saml-token-file-missing', async () => {
+      const { service } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        file: 'tokens/none.xml',
+        expandProperties: false,
+      });
+      await expect(service.previewOutgoingWss('r1', envelope)).rejects.toMatchObject({
+        code: 'saml-token-file-missing',
+        details: { file: 'tokens/none.xml' },
+      });
+    });
+
+    it('expands the token against the project properties when it asks to', async () => {
+      const { service } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        xml: assertion('${#Project#issuer}'),
+        expandProperties: true,
+      });
+      const secured = await service.previewOutgoingWss('r1', envelope);
+      expect(secured).toContain('urn:expanded');
+      expect(secured).not.toContain('${');
+    });
+
+    it('refuses a token whose property references nothing resolves', async () => {
+      const { service } = await openWithEntry({
+        kind: 'saml-token',
+        source: 'xml',
+        xml: assertion('${#Project#nope}'),
+        expandProperties: true,
+      });
+      await expect(service.previewOutgoingWss('r1', envelope)).rejects.toMatchObject({
+        code: 'unresolved-properties',
+        details: { unresolved: ['${#Project#nope}'] },
+      });
+    });
+
+    it('lends the same reader and expander to an ad-hoc entry', async () => {
+      const { service, dir } = await openWithEntry({
+        kind: 'timestamp',
+        timeToLiveSeconds: 60,
+        millisecondPrecision: false,
+      });
+      mkdirSync(join(dir, 'tokens'));
+      writeFileSync(join(dir, 'tokens', 'b.xml'), assertion('${#Project#issuer}'));
+      const inserted = await service.insertWssEntry(
+        'r1',
+        { kind: 'saml-token', source: 'xml', file: 'tokens/b.xml', expandProperties: true },
+        envelope,
+      );
+      expect(inserted).toContain('urn:expanded');
+    });
   });
 
   it('writes the configuration to wss/outgoing/<id>.yaml with a passwordRef and no password', async () => {

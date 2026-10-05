@@ -364,6 +364,29 @@ describe('prepareFor — SOAP', () => {
     });
   });
 
+  it("lends a SAML token's expander and project-folder reader to the send", async () => {
+    const outgoing: WssRef = {
+      id: 'wss-out',
+      name: 'Out',
+      file: 'wss/outgoing/out.yaml',
+      document: { id: 'wss-out', name: 'Out' },
+    };
+    const selecting = makeProject({ outgoing: [outgoing], soap: { wssOutgoingRef: 'wss-out' } });
+    const prepared = await prepareFor(soapOf(selecting), contextFor(selecting, { environmentId: 'env-test' }));
+    if (prepared.kind !== 'soap') throw new Error('expected soap');
+    const ctx = prepared.input.wss!.ctx;
+    expect(ctx.expand?.('issuer-${#Env#tenant}')).toBe('issuer-env-tenant');
+    expect(() => ctx.expand?.('${#Project#nope}')).toThrow(expect.objectContaining({ code: 'unresolved-properties' }));
+    mkdirSync(join(projectDir(), 'tokens'), { recursive: true });
+    writeFileSync(join(projectDir(), 'tokens', 'a.xml'), '<a/>');
+    await expect(ctx.projectFile?.('tokens/a.xml')).resolves.toBe('<a/>');
+    await expect(ctx.projectFile?.('../outside.xml')).rejects.toMatchObject({ code: 'saml-token-file-missing' });
+    await expect(ctx.projectFile?.('tokens/none.xml')).rejects.toMatchObject({
+      code: 'saml-token-file-missing',
+      details: { file: 'tokens/none.xml' },
+    });
+  });
+
   it("presents the request's client keystore, and refuses a missing one or its missing password", async () => {
     const client = generateClientCert(generateTestCa());
     mkdirSync(join(projectDir(), 'keys'), { recursive: true });

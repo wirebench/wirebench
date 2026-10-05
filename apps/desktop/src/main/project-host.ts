@@ -156,6 +156,7 @@ import {
   webhookFolders,
   webhookPath,
   WirebenchError,
+  WssError,
 } from '@wirebench/engine';
 import type {
   Keystore,
@@ -2070,15 +2071,63 @@ export class ProjectHost {
   }
 
   /**
-   * The {@link WssContext} every WS-Security operation runs against: keystores read through the
-   * same containment check every other read uses, and secrets decrypted through the secret
-   * store. Both closures stay inside main — a resolved password never crosses the bridge.
+   * The {@link WssContext} every WS-Security editor operation (the preview, "apply to editor" and
+   * the ad-hoc entries) runs against: keystores read through the same containment check every
+   * other read uses, and secrets decrypted through the secret store. Both closures stay inside
+   * main — a resolved password never crosses the bridge.
+   *
+   * A SAML token's `${…}` expands against the scopes a send of the open project reads under the
+   * active environment ({@link scopesFor}); a reference nothing resolves refuses with
+   * `unresolved-properties` rather than going out literally. Its file is read from the project
+   * folder only — a dialog pick does not widen it, as the engine's run does not — and any failure
+   * (outside the folder, missing, unreadable) refuses with `saml-token-file-missing`. The send
+   * itself goes through the engine's run, which lends the same two.
    */
   private wssContext(): WssContext {
     return createWssContext({
       keystores: async (ref) => await this.keystoreFor(ref),
       secrets: async (ref) => await this.secrets?.get(ref),
+      expand: (text) => {
+        const result = expand(text, this.scopesFor());
+        if (result.unresolved.length > 0) {
+          const exprs = result.unresolved.map((ref) => ref.expr);
+          throw new WirebenchError(
+            'unresolved-properties',
+            `The WS-Security SAML token has property references nothing resolves: ${exprs.join(', ')}`,
+            { details: { unresolved: exprs } },
+          );
+        }
+        return result.text;
+      },
+      projectFile: async (path) => await this.samlTokenFile(path),
     });
+  }
+
+  /**
+   * One SAML token file's text, from inside the open project's folder.
+   *
+   * @throws WssError `saml-token-file-missing` when no project is open, or the file is outside the
+   * folder, missing or unreadable
+   */
+  private async samlTokenFile(path: string): Promise<string> {
+    const missing = (message: string, cause?: unknown): WssError =>
+      new WssError('saml-token-file-missing', message, {
+        details: { file: path },
+        ...(cause !== undefined ? { cause } : {}),
+      });
+    if (this.open === undefined) {
+      throw missing(`The SAML token file "${path}" cannot be read: no project is open.`);
+    }
+    const dir = this.open.dir;
+    const resolved = resolvePath(dir, path);
+    if (!(await isInsideAny([dir], resolved))) {
+      throw missing(`The SAML token file "${path}" resolves outside the project folder.`);
+    }
+    try {
+      return await readFile(resolved, 'utf8');
+    } catch (cause) {
+      throw missing(`The SAML token file "${path}" could not be read.`, cause);
+    }
   }
 
   /**

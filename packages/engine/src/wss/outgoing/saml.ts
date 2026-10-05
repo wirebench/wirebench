@@ -47,7 +47,17 @@ async function xmlOf(entry: WssSamlXmlEntry, ctx: WssContext): Promise<string> {
   } else {
     text = entry.xml ?? '';
   }
-  return entry.expandProperties && ctx.expand !== undefined ? ctx.expand(text) : text;
+  if (!entry.expandProperties) {
+    return text;
+  }
+  if (ctx.expand === undefined) {
+    // Sending `${…}` literally would put a half-written token on the wire; refuse instead.
+    throw new WssError(
+      'unresolved-properties',
+      'This SAML token asks for property expansion, which is not available here.',
+    );
+  }
+  return ctx.expand(text);
 }
 
 async function aliasOf(keystoreRef: string, alias: string | undefined, config: WssOutgoingConfig, ctx: WssContext) {
@@ -75,7 +85,8 @@ async function formProofCertOf(entry: WssSamlFormEntry, config: WssOutgoingConfi
 }
 
 /**
- * @throws WssError `saml-token-invalid` | `saml-token-file-missing` | `ws-trust-unavailable`,
+ * @throws WssError `saml-token-invalid` | `saml-token-file-missing` | `unresolved-properties` |
+ * `ws-trust-unavailable`,
  * or what the issued-token source throws
  */
 export async function resolveSamlToken(

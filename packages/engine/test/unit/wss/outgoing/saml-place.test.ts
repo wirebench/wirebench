@@ -65,6 +65,17 @@ describe('placing a supplied SAML assertion', () => {
     expect(expanded).toContain('urn:expanded');
   });
 
+  it('refuses an entry that asks for expansion when the host lends no expander', async () => {
+    const templated = ASSERTION.replace('urn:test', '${issuer}');
+    await expect(
+      applyOutgoingWss(
+        SOAP11,
+        config([{ kind: 'saml-token', source: 'xml', xml: templated, expandProperties: true }]),
+        createWssContext(),
+      ),
+    ).rejects.toMatchObject({ code: 'unresolved-properties' });
+  });
+
   it('refuses an issued-token entry with ws-trust-unavailable when no source is lent', async () => {
     await expect(
       applyOutgoingWss(
