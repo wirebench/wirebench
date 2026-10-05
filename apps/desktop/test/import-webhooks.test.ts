@@ -101,6 +101,7 @@ beforeEach(async () => {
       grpcSample: unused,
       writeImportedScripts: unused,
       importWsApi: unused,
+      importGrpcApi: unused,
     },
     imports,
     addProject: unused,

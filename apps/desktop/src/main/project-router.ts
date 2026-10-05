@@ -78,6 +78,11 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['importWsApi']>
   ): ReturnType<ProjectHost['importWsApi']>;
+  /** Places a gRPC API mapped from a non-contract file, with no definition, in one project. */
+  importGrpcApi(
+    projectId: string,
+    ...args: Parameters<ProjectHost['importGrpcApi']>
+  ): ReturnType<ProjectHost['importGrpcApi']>;
   /** Adds the imported properties the addressed project does not have yet; existing names keep their value. */
   importProperties(
     projectId: string,

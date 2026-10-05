@@ -51,7 +51,9 @@ A file the user picked also vouches for named companion files beside it, and for
 a picked collection root. Only exact relative names are read; no symbolic link is followed;
 nothing outside the picked file's folder is read (`checkedCompanionPaths`). An import format
 needs this when its source is several files: `.http` environment files, an OpenCollection
-directory.
+directory. The directory is read by `readOpenCollectionTree`: YAML files only, every link skipped,
+each file and folder checked by real path to stay under the root's folder, and the walk stopped
+past 5,000 files, 64 folders deep or 50 MB on disk.
 
 ## Rationale
 

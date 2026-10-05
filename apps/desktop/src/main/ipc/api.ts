@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import {
   formatImportReport,
   HTTP_ENV_FILE,
@@ -17,9 +18,13 @@ import {
   HttpFileError,
   importHar,
   importHttpFile,
+  importOpenCollection,
   importPostmanCollection,
   importPostmanVariables,
+  loadProtoSet,
   MAX_HTTP_FILE_BYTES,
+  MAX_OPENCOLLECTION_BYTES,
+  OpenCollectionError,
   parseHttpEnvFiles,
   ReportBuilder,
   VariableSetBuilder,
@@ -31,6 +36,7 @@ import type {
   ImportedVariables,
   AsyncApiUpdatePlan,
   DefinitionAuth,
+  MappedOpenCollection,
   OpenApiSource,
   RestOpRef,
   RestUpdatePlan,
@@ -52,7 +58,8 @@ import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
 import { allowsReadPath, checkedCompanionPaths, checkedImportSource } from '../path-access.js';
-import { basename, resolve } from 'node:path';
+import { readCompanionTexts, readOpenCollectionTree } from '../opencollection-tree.js';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
 import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
@@ -86,6 +93,7 @@ export interface ApiChannelDeps {
     | 'grpcSample'
     | 'writeImportedScripts'
     | 'importWsApi'
+    | 'importGrpcApi'
   >;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel' | 'readOpenApi'>;
   /**
@@ -286,6 +294,47 @@ function sharedNamesOf(text: string): string[] {
   return typeof shared === 'object' && shared !== null && !Array.isArray(shared) ? Object.keys(shared) : [];
 }
 
+/** The root document of an OpenCollection directory, in any case. */
+const OC_ROOT_FILE = /^opencollection\.ya?ml$/i;
+
+/**
+ * A picked OpenCollection root document's text, refused past the collection size cap rather than
+ * read whole.
+ *
+ * @throws OpenCollectionError `oc-too-large` or `oc-read-failed`
+ */
+async function readOpenCollectionRoot(path: string): Promise<string> {
+  try {
+    if ((await stat(path)).size > MAX_OPENCOLLECTION_BYTES) {
+      throw new OpenCollectionError(
+        'oc-too-large',
+        `The OpenCollection is larger than ${String(MAX_OPENCOLLECTION_BYTES / (1024 * 1024))} MB`,
+      );
+    }
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (error instanceof OpenCollectionError) throw error;
+    throw new OpenCollectionError(
+      'oc-read-failed',
+      `Failed to read OpenCollection file "${path}": ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * Whether a root document holds its items itself, so its folder is not walked. Text that does not
+ * parse counts as a single document, which the engine then refuses with its own error.
+ */
+function holdsItsItems(rootText: string): boolean {
+  try {
+    const doc: unknown = parseYaml(rootText);
+    return typeof doc !== 'object' || doc === null || Array.isArray((doc as Record<string, unknown>)['items']);
+  } catch {
+    return true;
+  }
+}
+
 /** How the import dialog marks text that came from a dropped file: `dropped:<file name>`. */
 const DROPPED_PREFIX = 'dropped:';
 
@@ -320,6 +369,25 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       throw new WirebenchError('invalid-argument', 'Expected a file source');
     }
     return { kind: 'file', path: checked.path };
+  };
+
+  /**
+   * Writes an importer's scripts under `imported-scripts/`, never overwriting one: how many were
+   * written, a note for each saved under another name, and a warning for each that was not written.
+   */
+  const writeScriptsReported = async (
+    projectId: string,
+    scripts: readonly { readonly path: string; readonly source: string }[],
+  ): Promise<{ readonly written: number; readonly notes: string[]; readonly warnings: string[] }> => {
+    if (scripts.length === 0) return { written: 0, notes: [], warnings: [] };
+    const { written, renamed, skipped } = await router.writeImportedScripts(projectId, scripts);
+    return {
+      written: written.length,
+      notes: renamed.map(({ from, to }) => `A script already existed at ${from}, so this one was saved as ${to}.`),
+      warnings: skipped.map(
+        (path) => `The script ${path} would have been saved outside imported-scripts/ and was not written.`,
+      ),
+    };
   };
 
   registerHandler(channels.api.importOpenApi, async (request, sender) => {
@@ -832,35 +900,186 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         ({ project, apiId } = await router.importWsApi(projectId, { api: mapped.websocket }));
         apiIds.push(apiId);
       }
-      const scriptNotes: string[] = [];
-      const scriptWarnings: string[] = [];
-      let scriptsWritten = 0;
-      if (mapped.scripts.length > 0) {
-        const { written, renamed, skipped } = await router.writeImportedScripts(projectId, mapped.scripts);
-        scriptsWritten = written.length;
-        for (const { from, to } of renamed) {
-          scriptNotes.push(`A script already existed at ${from}, so this one was saved as ${to}.`);
-        }
-        for (const path of skipped) {
-          scriptWarnings.push(
-            `The script ${path} would have been saved outside imported-scripts/ and was not written.`,
-          );
-        }
-      }
+      const scripts = await writeScriptsReported(projectId, mapped.scripts);
       const variables =
         plan.environments.length > 0 || plan.projectProperties !== undefined
           ? await applyImportedVariables(plan, deps.variablesPorts(projectId))
           : undefined;
       // The apply result repeats the plan's own report, so the env and merge lines come from it.
       const report = {
-        warnings: [...mapped.report.warnings, ...scriptWarnings, ...(variables?.warnings ?? [])],
-        notes: [...mapped.report.notes, ...scriptNotes, ...(variables?.notes ?? [])],
+        warnings: [...mapped.report.warnings, ...scripts.warnings, ...(variables?.warnings ?? [])],
+        notes: [...mapped.report.notes, ...scripts.notes, ...(variables?.notes ?? [])],
       };
       return {
         projectId,
         project,
         apiIds,
-        counts: { ...mapped.counts, scripts: scriptsWritten },
+        counts: { ...mapped.counts, scripts: scripts.written },
+        ...(variables !== undefined ? { variables } : {}),
+        ...report,
+        reportText: formatImportReport(report),
+      };
+    };
+
+    if ('projectId' in request.target) {
+      return await placeIn(request.target.projectId);
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  /**
+   * A picked or pasted OpenCollection, read in the form it is in (spec §7.1). A picked
+   * `opencollection.yml` whose document has no `items` is the directory form: every YAML file under
+   * its folder is read, never through a link. Any other file, and text, is a single document.
+   */
+  const readOpenCollection = async (
+    source: { readonly kind: 'file'; readonly path: string } | { readonly kind: 'text'; readonly text: string },
+  ): Promise<{ readonly mapped: MappedOpenCollection; readonly tree: boolean }> => {
+    if (source.kind === 'text' || !OC_ROOT_FILE.test(basename(source.path))) {
+      return { mapped: await importOpenCollection(source), tree: false };
+    }
+    const rootText = await readOpenCollectionRoot(source.path);
+    const rootDir = dirname(source.path);
+    if (holdsItsItems(rootText)) {
+      return { mapped: await importOpenCollection({ kind: 'text', text: rootText }, { rootDir }), tree: false };
+    }
+    const files = await readOpenCollectionTree(source.path, deps.projectDirs(), deps.picks);
+    const rootKey = basename(source.path);
+    // The root is `rootText`; left in, it would count twice against the size cap.
+    files.delete(rootKey);
+    return {
+      mapped: await importOpenCollection({ kind: 'tree', rootText, files, rootKey }, { rootDir }),
+      tree: true,
+    };
+  };
+
+  /**
+   * The `.proto` files a directory collection's gRPC items name, read beside its root through the
+   * companion rule (ADR-0005) and checked to load, so the gRPC API can be placed with its definition.
+   * `protos` is absent when none could be used; the report says why.
+   */
+  const readOpenCollectionProtos = async (
+    rootFile: string,
+    grpcName: string,
+    names: readonly string[],
+  ): Promise<{ readonly protos?: Map<string, string>; readonly warnings: string[]; readonly notes: string[] }> => {
+    const warnings: string[] = [];
+    const notes: string[] = [];
+    let protos: Map<string, string> | undefined;
+    try {
+      const read = await readCompanionTexts(rootFile, deps.projectDirs(), deps.picks, names);
+      const base = dirname(rootFile);
+      for (const name of names) {
+        if (!read.has(relative(base, resolve(base, name)).split(sep).join('/'))) {
+          notes.push(`${grpcName}: ${name} was not found beside the collection.`);
+        }
+      }
+      if (read.size > 0) {
+        loadProtoSet(read);
+        protos = read;
+      }
+    } catch (error) {
+      warnings.push(
+        `${grpcName}: the .proto files could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (protos === undefined) {
+      notes.push(`${grpcName}: needs a definition: import its .proto or use server reflection.`);
+    }
+    return { ...(protos !== undefined ? { protos } : {}), warnings, notes };
+  };
+
+  /**
+   * An OpenCollection (spec §7): a REST API for its HTTP and GraphQL items, a gRPC API and a
+   * WebSocket API for theirs, its scripts under `imported-scripts/` (never run), its environments
+   * as workspace environments (never activated) and its variables as project properties. Secret
+   * values go to the secret store; none is in the response.
+   *
+   * Everything is read, parsed and mapped before a project is created, so a refusal — a path that
+   * was not picked, a collection past the limits, or one with no request and no environment (one
+   * holding only project properties or scripts is refused too) — changes nothing. A project created
+   * for the import is taken back when anything after it fails.
+   */
+  registerHandler(channels.api.importOpenCollection, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const { mapped, tree } = await readOpenCollection(checkedSource);
+    const proto =
+      tree && checkedSource.kind === 'file' && mapped.grpc !== undefined && mapped.protoFiles.length > 0
+        ? await readOpenCollectionProtos(checkedSource.path, mapped.grpc.name, mapped.protoFiles)
+        : mapped.grpc !== undefined && mapped.protoFiles.length > 0
+          ? {
+              warnings: [],
+              notes: [`${mapped.grpc.name}: needs a definition: import its .proto or use server reflection.`],
+            }
+          : { warnings: [], notes: [] };
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:opencollection';
+
+    const placeIn = async (projectId: string) => {
+      let project: Awaited<ReturnType<typeof router.addApi>>['project'] | undefined;
+      const apiIds: string[] = [];
+      const placed = (added: Awaited<ReturnType<typeof router.addApi>>) => {
+        project = added.project;
+        apiIds.push(added.apiId);
+      };
+      if (mapped.rest !== undefined) {
+        placed(
+          await router.addApi(projectId, {
+            api: mapped.rest,
+            documents: [],
+            source,
+            declaredVersion: 'opencollection-1',
+            cache: false,
+          }),
+        );
+      }
+      if (mapped.grpc !== undefined) {
+        const protos = proto.protos;
+        const first = protos?.keys().next().value;
+        placed(
+          protos !== undefined && first !== undefined && checkedSource.kind === 'file'
+            ? await router.addGrpcApi(projectId, {
+                api: mapped.grpc,
+                roots: [...protos.keys()],
+                source: join(dirname(checkedSource.path), ...first.split('/')),
+                kind: 'proto',
+                sources: protos,
+              })
+            : await router.importGrpcApi(projectId, { api: mapped.grpc }),
+        );
+      }
+      if (mapped.websocket !== undefined) {
+        placed(await router.importWsApi(projectId, { api: mapped.websocket }));
+      }
+      const scripts = await writeScriptsReported(projectId, mapped.scripts);
+      const plan = mapped.variables;
+      const variables =
+        plan.environments.length > 0 || plan.projectProperties !== undefined
+          ? await applyImportedVariables(plan, deps.variablesPorts(projectId))
+          : undefined;
+      // The apply result repeats the plan's own report; with nothing applied, the plan's report stands.
+      const variableReport = variables ?? plan.report;
+      const report = {
+        warnings: [...mapped.report.warnings, ...proto.warnings, ...scripts.warnings, ...variableReport.warnings],
+        notes: [...mapped.report.notes, ...proto.notes, ...scripts.notes, ...variableReport.notes],
+      };
+      return {
+        projectId,
+        ...(project !== undefined ? { project } : {}),
+        apiIds,
+        counts: {
+          requests: mapped.counts.requests,
+          folders: mapped.counts.folders,
+          assertions: mapped.counts.assertions,
+          assertionsSkipped: mapped.counts.assertionsSkipped,
+          scripts: scripts.written,
+        },
         ...(variables !== undefined ? { variables } : {}),
         ...report,
         reportText: formatImportReport(report),

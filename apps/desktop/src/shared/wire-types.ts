@@ -3874,6 +3874,56 @@ export type ApiImportHttpFileResponseInSync = AssertTrue<
 >;
 
 /**
+ * Request payload for `api.importOpenCollection`: an OpenCollection, as a picked file or as text. A
+ * picked `opencollection.yml` with no `items` is the directory form: main reads every YAML file
+ * under its folder. A collection with no request and no environment — one holding only project
+ * properties or scripts — is refused before any project is created.
+ */
+export const apiImportOpenCollectionRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+});
+export type ApiImportOpenCollectionRequest = z.infer<typeof apiImportOpenCollectionRequestSchema>;
+
+const apiImportOpenCollectionResponseObject = z.object({
+  projectId: z.string(),
+  /** Absent when the collection held only environments, so no API was placed in the project. */
+  project: projectWireSchema.optional(),
+  /** The REST API, then the gRPC API, then the WebSocket API, each only when the collection had its items. */
+  apiIds: z.array(z.string()).readonly(),
+  counts: z.object({
+    requests: z.number(),
+    folders: z.number(),
+    assertions: z.number(),
+    assertionsSkipped: z.number(),
+    scripts: z.number(),
+  }),
+  /** What became of the collection's environments and variables; absent when there were none. Never a value. */
+  variables: importVariablesSummarySchema.optional(),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+/** Spelled out as an interface for the same reason as {@link ApiImportHarResponse}. */
+export interface ApiImportOpenCollectionResponse {
+  projectId: string;
+  project?: ProjectWire | undefined;
+  apiIds: readonly string[];
+  counts: { requests: number; folders: number; assertions: number; assertionsSkipped: number; scripts: number };
+  variables?: ImportVariablesSummaryWire | undefined;
+  warnings: readonly string[];
+  notes: readonly string[];
+  reportText: string;
+}
+/** Response payload for `api.importOpenCollection`. */
+export const apiImportOpenCollectionResponseSchema: z.ZodType<ApiImportOpenCollectionResponse> =
+  apiImportOpenCollectionResponseObject;
+export type ApiImportOpenCollectionResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportOpenCollectionResponseObject>, ApiImportOpenCollectionResponse>
+>;
+
+/**
  * Request payload for `api.importHttpEnv`: a `.http` environment file on its own, applied to the
  * workspace. A picked file brings its public or private partner beside it; text is the public file,
  * unless it was dropped from a file named `http-client.private.env.json`.

@@ -43,6 +43,8 @@ import {
   apiImportHttpEnvRequestSchema,
   apiImportHttpFileRequestSchema,
   apiImportHttpFileResponseSchema,
+  apiImportOpenCollectionRequestSchema,
+  apiImportOpenCollectionResponseSchema,
   apiInspectHttpFileRequestSchema,
   apiInspectHttpFileResponseSchema,
   apiImportPostmanRequestSchema,
@@ -705,6 +707,11 @@ export const channels = {
       'api.importHttpFile',
       apiImportHttpFileRequestSchema,
       apiImportHttpFileResponseSchema,
+    ),
+    importOpenCollection: defineChannel(
+      'api.importOpenCollection',
+      apiImportOpenCollectionRequestSchema,
+      apiImportOpenCollectionResponseSchema,
     ),
     importHttpEnv: defineChannel(
       'api.importHttpEnv',

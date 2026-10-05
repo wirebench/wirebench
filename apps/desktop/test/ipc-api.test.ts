@@ -8,7 +8,7 @@
  * for a location the API's own manifest lists, so the channel can never be turned into a read of an
  * arbitrary file.
  */
-import { copyFileSync, readFileSync } from 'node:fs';
+import { copyFileSync, cpSync, readFileSync, symlinkSync } from 'node:fs';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -218,6 +218,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       grpcSample: vi.fn(),
       writeImportedScripts: vi.fn().mockResolvedValue({ written: [], renamed: [], skipped: [] }),
       importWsApi: vi.fn().mockResolvedValue({ project: PROJECT, apiId: 'ws-1' }),
+      importGrpcApi: vi.fn().mockResolvedValue({ project: PROJECT, apiId: 'grpc-1' }),
     },
     imports: { run, cancel: vi.fn().mockReturnValue({ cancelled: true }), readOpenApi: vi.fn() },
     addProject: vi.fn().mockResolvedValue({ projectId: 'p-new' }),
@@ -1126,5 +1127,257 @@ describe('the .http channels', () => {
     });
 
     expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'orders' }, source: 'inline:http' });
+  });
+});
+
+/** The crafted OpenCollection directory: REST, GraphQL, gRPC (with `protos/pets.proto`) and WebSocket items. */
+const OC_TREE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/opencollection/crafted/tree');
+
+describe('api.importOpenCollection', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-oc-ipc-')));
+    cpSync(OC_TREE, dir, { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Channels over stubs with `picked` (the root document by default) remembered as an Open-dialog pick. */
+  const setupPicked = (picked = 'opencollection.yml', overrides: Partial<ApiChannelDeps> = {}) => {
+    const picks = new DialogPicks();
+    picks.rememberRead(join(dir, picked));
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    const stubs = setup({ picks, variablesPorts, ...overrides });
+    vi.mocked(stubs.deps.router.addGrpcApi).mockResolvedValue({ project: PROJECT, apiId: 'grpc-1' });
+    return { ...stubs, fake, variablesPorts };
+  };
+
+  type OcResponse = {
+    projectId: string;
+    project?: unknown;
+    apiIds: string[];
+    counts: Record<string, number>;
+    variables?: { secretsStored: number; environments: { name: string }[] };
+    warnings: string[];
+    notes: string[];
+    reportText: string;
+  };
+
+  it('places the REST, gRPC and WebSocket APIs of a directory, with the .proto definition, and its scripts', async () => {
+    const { addApi, deps, fake, variablesPorts } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockImplementationOnce((_projectId, scripts) =>
+      Promise.resolve({ written: scripts.map((script) => script.path), renamed: [], skipped: [] }),
+    );
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(addApi).toHaveBeenCalledTimes(1);
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({
+      source: join(dir, 'opencollection.yml'),
+      declaredVersion: 'opencollection-1',
+      cache: false,
+      documents: [],
+    });
+    expect(deps.router.addGrpcApi).toHaveBeenCalledTimes(1);
+    const grpcCall = vi.mocked(deps.router.addGrpcApi).mock.calls[0];
+    expect(grpcCall?.[0]).toBe('p1');
+    expect(grpcCall?.[1]).toMatchObject({
+      kind: 'proto',
+      roots: ['protos/pets.proto'],
+      source: join(dir, 'protos', 'pets.proto'),
+    });
+    const grpcInput = grpcCall?.[1];
+    expect(grpcInput?.kind === 'proto' ? [...grpcInput.sources.keys()] : []).toEqual(['protos/pets.proto']);
+    expect(grpcInput?.api.name).toBe('Pets (gRPC)');
+    expect(deps.router.importGrpcApi).not.toHaveBeenCalled();
+    expect(deps.router.importWsApi).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deps.router.importWsApi).mock.calls[0]?.[1].api.name).toBe('Pets (WebSocket)');
+    expect(response.apiIds).toEqual(['api-1', 'grpc-1', 'ws-1']);
+
+    const scripts = vi.mocked(deps.router.writeImportedScripts).mock.calls[0]?.[1] ?? [];
+    expect(scripts).toHaveLength(2);
+    expect(response.counts).toMatchObject({ requests: 5, scripts: 2, assertions: 2 });
+
+    // The environment under `environments/` became a workspace environment; its secret has no value.
+    expect(variablesPorts).toHaveBeenCalledWith('p1');
+    expect(fake.environments.map((environment) => environment.name)).toEqual(['dev']);
+    expect(response.variables?.environments.map((environment) => environment.name)).toEqual(['dev']);
+    expect(fake.projectMerges).toEqual([{ properties: { tenant: 'acme' }, disabled: [] }]);
+  });
+
+  it('places the gRPC API with no definition, and says so, when its .proto file is missing', async () => {
+    await rm(join(dir, 'protos'), { recursive: true });
+    const { deps } = setupPicked();
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
+    expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deps.router.importGrpcApi).mock.calls[0]?.[1].api.definition).toBeUndefined();
+    expect(response.notes).toContain('Pets (gRPC): protos/pets.proto was not found beside the collection.');
+    expect(response.notes).toContain('Pets (gRPC): needs a definition: import its .proto or use server reflection.');
+  });
+
+  it('does not follow a .proto file that is a symbolic link, and places the gRPC API with no definition', async () => {
+    const outside = await realpath(await mkdtemp(join(tmpdir(), 'wirebench-oc-out-')));
+    try {
+      await rm(join(dir, 'protos', 'pets.proto'));
+      await writeFile(join(outside, 'pets.proto'), readFileSync(join(OC_TREE, 'protos', 'pets.proto')));
+      symlinkSync(join(outside, 'pets.proto'), join(dir, 'protos', 'pets.proto'));
+      const { deps } = setupPicked();
+
+      const response = await value<OcResponse>('api.importOpenCollection', {
+        target: { projectId: 'p1' },
+        source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+      });
+
+      expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
+      expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+      expect(response.warnings.some((warning) => warning.includes('symbolic link'))).toBe(true);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('never answers with a secret or a recorded credential', async () => {
+    await writeFile(
+      join(dir, 'environments', 'prod.yml'),
+      [
+        'name: prod',
+        'variables:',
+        '  - name: token',
+        '    value: "s3cret-token-value"',
+        '    secret: true',
+        '  - name: apiKey',
+        '    value: "literal-api-key-value"',
+      ].join('\n'),
+    );
+    const { fake } = setupPicked();
+
+    const res = await invoke('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(res.ok).toBe(true);
+    const text = JSON.stringify(res);
+    expect(text).not.toContain('s3cret-token-value');
+    expect(text).not.toContain('literal-api-key-value');
+    expect(text).not.toContain('secretValue');
+    const prod = fake.environments.find((environment) => environment.name === 'prod');
+    expect(prod?.properties['token']).toMatch(/^\$\{secret:sec_\d+\}$/);
+    expect(prod?.properties['apiKey']).toMatch(/^\$\{secret:sec_\d+\}$/);
+    expect((res as { value: OcResponse }).value.variables?.secretsStored).toBe(2);
+  });
+
+  it('reads an opencollection.yml that holds its items as one document, not its folder', async () => {
+    await writeFile(
+      join(dir, 'opencollection.yml'),
+      [
+        'opencollection: "1.0.0"',
+        'info: {name: Solo}',
+        'items:',
+        '  - info: {name: Ping, type: http}',
+        '    http: {method: GET, url: "https://example.com/ping"}',
+      ].join('\n'),
+    );
+    const { addApi, deps } = setupPicked();
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(response.counts['requests']).toBe(1);
+    expect(addApi).toHaveBeenCalledTimes(1);
+    expect(deps.router.importWsApi).not.toHaveBeenCalled();
+    expect(deps.router.importGrpcApi).not.toHaveBeenCalled();
+  });
+
+  it('reads pasted text as one document, recorded as inline', async () => {
+    const { addApi } = setupPicked();
+
+    await value('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: {
+        kind: 'text',
+        text: 'opencollection: "1.0.0"\ninfo: {name: T}\nitems:\n  - info: {name: A, type: http}\n    http: {method: GET, url: "https://e.test/a"}\n',
+      },
+    });
+
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ source: 'inline:opencollection', api: { name: 'T' } });
+  });
+
+  it('refuses a collection with nothing to import before creating a project', async () => {
+    const { deps } = setupPicked();
+
+    expect(
+      await failure('api.importOpenCollection', {
+        target: { newProjectName: 'Empty' },
+        source: {
+          kind: 'text',
+          text: 'opencollection: "1.0.0"\ninfo: {name: E}\nrequest:\n  variables:\n    - {name: a, value: b}\n',
+        },
+      }),
+    ).toMatchObject({ code: 'oc-nothing-to-import' });
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unpicked file before creating a project', async () => {
+    const { deps } = setup();
+
+    expect(
+      await failure('api.importOpenCollection', {
+        target: { newProjectName: 'Pets' },
+        source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+      }),
+    ).toMatchObject({ code: 'import-path-refused' });
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+
+  it('takes back a project it created when writing the scripts fails', async () => {
+    const { deps } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockRejectedValueOnce(
+      new WirebenchError('project-save-failed', 'disk full'),
+    );
+
+    expect(
+      await failure('api.importOpenCollection', {
+        target: { newProjectName: 'Pets' },
+        source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+      }),
+    ).toMatchObject({ code: 'project-save-failed' });
+    expect(deps.addProject).toHaveBeenCalledTimes(1);
+    expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+  });
+
+  it('counts only the scripts it wrote, warns about one it skipped and notes one it renamed', async () => {
+    const { deps } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockResolvedValueOnce({
+      written: ['imported-scripts/a-2.js'],
+      renamed: [{ from: 'imported-scripts/a.js', to: 'imported-scripts/a-2.js' }],
+      skipped: ['imported-scripts/b.js'],
+    });
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(response.counts['scripts']).toBe(1);
+    expect(response.warnings).toContain(
+      'The script imported-scripts/b.js would have been saved outside imported-scripts/ and was not written.',
+    );
+    expect(response.notes).toContain(
+      'A script already existed at imported-scripts/a.js, so this one was saved as imported-scripts/a-2.js.',
+    );
   });
 });
