@@ -52,6 +52,7 @@ function build(
     readonly headers?: readonly { name: string; value: string; enabled: boolean }[];
     readonly serverUrl?: string;
     readonly auth?: AuthConfig;
+    readonly settings?: { readonly handshakeTimeoutMs?: number };
   } = {},
 ): Built {
   const request = createWsRequest('Echo', {
@@ -60,6 +61,7 @@ function build(
     headers: extra.headers ?? [{ name: 'x-trace', value: 'abc', enabled: true }],
     messages: extra.messages ?? [],
     ...(extra.auth !== undefined ? { auth: extra.auth } : {}),
+    ...(extra.settings !== undefined ? { settings: extra.settings } : {}),
   });
   const api = createWsApi('Chat', {
     id: 'api-chat',
@@ -540,6 +542,39 @@ describe('WebSocket through openExchange', () => {
     const result = await runRequests(selectRequests(p, []).selected, context);
     expect(result.requests).toHaveLength(1);
     expect(result.requests[0]).toMatchObject({ outcome: 'errored', error: { code: 'ws-handshake-refused' } });
+  });
+
+  it('fails a hung Kerberos token with timeout inside the handshake timeout (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    const before = server.handshakes.length;
+    const started = Date.now();
+    const handle = open(build('/echo', { auth: { type: 'kerberos' }, settings: { handshakeTimeoutMs: 200 } }));
+    await expect(handle.result).rejects.toMatchObject({ code: 'timeout', details: { stage: 'kerberos' } });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(server.handshakes.length).toBe(before);
+    provider.release();
+  });
+
+  it('upgrades when the token takes part of the handshake timeout (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    setTimeout(() => provider.release(), 100);
+    const handle = open(build('/echo', { auth: { type: 'kerberos' }, settings: { handshakeTimeoutMs: 2000 } }));
+    const frame = (await handle.push({ text: 'a' })) as WsFrame;
+    expect(frame).toMatchObject({ direction: 'sent', text: 'a' });
+    handle.close(1000, 'done');
+    await handle.result;
+  });
+
+  it('stops a hung Kerberos token on Cancel (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    const handle = open(build('/echo', { auth: { type: 'kerberos' }, settings: { handshakeTimeoutMs: 10_000 } }));
+    await until(() => provider.inits.length > 0, 'the token wait');
+    expect(handle.cancel()).toBe(true);
+    await expect(settlesWithin(handle.result, 1000)).rejects.toMatchObject({ code: 'aborted' });
+    provider.release();
   });
 });
 

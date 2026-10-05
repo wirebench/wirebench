@@ -165,7 +165,8 @@ function attemptedOf(input: WsCallInput): AttemptedRequest {
  * session opens with.
  *
  * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing` |
- * `ws-auth-unsupported` | `ws-bad-url` | `kerberos-*` when Kerberos cannot make a token
+ * `ws-auth-unsupported` | `ws-bad-url` | `kerberos-*` when Kerberos cannot make a token | `timeout` |
+ * `aborted` when the Kerberos token wait runs out or is cancelled
  */
 async function connectWs(
   selected: WsSelected,
@@ -180,13 +181,22 @@ async function connectWs(
   // A handshake is one request: Kerberos goes on preemptively as a Negotiate header. The URL is
   // resolved first, so a malformed one fails as ws-bad-url rather than as Kerberos's SPN error.
   const url = resolveWsUrl(input.serverUrl, input.request.url, input.request.query);
-  const sendAuth = await withNegotiate(auth, url.replace(/^ws/, 'http'));
-  return toWsSessionOptions(input, {
+  // The token spends the handshake's budget, and the upgrade gets what is left, so together they
+  // never exceed it (#267). Only a Kerberos send changes; any other keeps its timeout exactly.
+  const handshakeTimeoutMs = input.request.settings.handshakeTimeoutMs;
+  const tokenStartedAt = Date.now();
+  const sendAuth = await withNegotiate(auth, url.replace(/^ws/, 'http'), {
+    signal,
+    ...(handshakeTimeoutMs !== undefined ? { timeoutMs: handshakeTimeoutMs } : {}),
+  });
+  const session = toWsSessionOptions(input, {
     ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
     ...(tls !== undefined ? { tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
     signal,
   });
+  if (sendAuth === auth || handshakeTimeoutMs === undefined) return session;
+  return { ...session, handshakeTimeoutMs: Math.max(1, handshakeTimeoutMs - (Date.now() - tokenStartedAt)) };
 }
 
 /** True when `text` is strictly valid base64, the empty string included: the app's own check. */
