@@ -11,7 +11,6 @@
  */
 
 import { createRequire } from 'node:module';
-import { promisify } from 'node:util';
 
 /** `GSS_MECH_OID_KRB5` in kerberos@7.0.0: the Kerberos mechanism (SSPI package `Kerberos` on Windows). */
 export const GSS_MECH_OID_KRB5 = 9;
@@ -41,7 +40,7 @@ export interface KerberosProvider {
 }
 
 interface RawClient {
-  step(challenge: string, callback: (error: Error | null, response?: string) => void): void;
+  step(challenge: string, callback: (error: Error | null, response?: string) => void): unknown;
   readonly contextComplete: boolean;
 }
 interface RawBinding {
@@ -49,7 +48,7 @@ interface RawBinding {
     service: string,
     options: Record<string, unknown>,
     callback: (error: Error | null, client?: RawClient) => void,
-  ): void;
+  ): unknown;
 }
 
 type Loaded = { readonly binding: RawBinding } | { readonly reason: string };
@@ -89,27 +88,61 @@ export function loadKerberosProvider(options: LoadKerberosOptions = {}): Kerbero
     async initClient(input) {
       const state = load();
       if (!('binding' in state)) throw new Error(state.reason);
-      const init = promisify(state.binding.initializeClient.bind(state.binding)) as (
-        service: string,
-        options: Record<string, unknown>,
-      ) => Promise<RawClient>;
-      const raw = await init(input.spn, {
-        mechOID: GSS_MECH_OID_KRB5,
-        flags: GSS_C_MUTUAL_FLAG,
-        ...(input.principal !== undefined ? { principal: input.principal } : {}),
-        ...(input.user !== undefined ? { user: input.user } : {}),
-        ...(input.domain !== undefined ? { domain: input.domain } : {}),
-        ...(input.password !== undefined ? { password: input.password } : {}),
-      });
-      const step = promisify(raw.step.bind(raw)) as (challenge: string) => Promise<string>;
+      const raw = await callNative<RawClient>((callback) =>
+        state.binding.initializeClient(
+          input.spn,
+          {
+            mechOID: GSS_MECH_OID_KRB5,
+            flags: GSS_C_MUTUAL_FLAG,
+            ...(input.principal !== undefined ? { principal: input.principal } : {}),
+            ...(input.user !== undefined ? { user: input.user } : {}),
+            ...(input.domain !== undefined ? { domain: input.domain } : {}),
+            ...(input.password !== undefined ? { password: input.password } : {}),
+          },
+          callback,
+        ),
+      );
       return {
-        step: (challenge) => step(challenge),
+        step: (challenge) => callNative<string>((callback) => raw.step(challenge, callback)),
         get contextComplete() {
           return raw.contextComplete;
         },
       };
     },
   };
+}
+
+/**
+ * Calls a binding function in either of its shapes. The N-API binding takes a callback, but once
+ * the `kerberos` package's lib/index.js loads anywhere in the process it replaces
+ * `KerberosClient.prototype.step` on the shared native class with an async function that ignores
+ * the callback. Promisifying alone then hangs, and the rejection goes unhandled.
+ */
+function callNative<T>(invoke: (callback: (error: Error | null, value?: T) => void) => unknown): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const settle = (error: unknown, value?: T): void => {
+      if (settled) return;
+      settled = true;
+      if (error !== null && error !== undefined) {
+        reject(error instanceof Error ? error : new Error('The Kerberos binding failed.', { cause: error }));
+      } else resolve(value as T);
+    };
+    try {
+      const returned = invoke((error, value) => settle(error, value));
+      if (isThenable<T>(returned))
+        returned.then(
+          (value) => settle(null, value),
+          (error: unknown) => settle(error),
+        );
+    } catch (error) {
+      settle(error);
+    }
+  });
+}
+
+function isThenable<T>(value: unknown): value is PromiseLike<T> {
+  return typeof (value as { then?: unknown } | null)?.then === 'function';
 }
 
 function reasonFor(error: unknown, platform: NodeJS.Platform, arch: string): string {

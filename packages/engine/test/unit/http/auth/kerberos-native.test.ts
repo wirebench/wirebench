@@ -11,6 +11,7 @@ import {
 } from '../../../../src/http/auth/kerberos-native.js';
 
 const FAKE = join(import.meta.dirname, '..', '..', '..', 'fixtures', 'kerberos', 'fake-binding.cjs');
+const PROMISE_ONLY = join(import.meta.dirname, '..', '..', '..', 'fixtures', 'kerberos', 'promise-binding.cjs');
 const ABSENT = join(import.meta.dirname, 'absent.node');
 
 afterEach(() => {
@@ -23,6 +24,14 @@ describe('loadKerberosProvider', () => {
     expect(provider.availability()).toEqual({ available: true });
     const client = await provider.initClient({ spn: 'HTTP@svc.corp' });
     await expect(client.step('')).resolves.toBe(Buffer.from('token-for:HTTP@svc.corp').toString('base64'));
+  });
+
+  it('works when the package has made the binding promise-only, and rejects rather than hangs', async () => {
+    const provider = loadKerberosProvider({ bindingPath: PROMISE_ONLY });
+    const client = await provider.initClient({ spn: 'HTTP@svc.corp' });
+    await expect(client.step('')).resolves.toBe(Buffer.from('token-for:HTTP@svc.corp').toString('base64'));
+    const failing = await provider.initClient({ spn: 'HTTP@fail-step' });
+    await expect(failing.step('')).rejects.toThrow('not found in Kerberos database');
   });
 
   it('passes the keys the binary reads: mechOID, flags, principal, user, domain, password', async () => {
