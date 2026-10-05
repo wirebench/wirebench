@@ -229,6 +229,10 @@ export function reportedAuth(auth: SendAuth | undefined, context: RunContext): S
     case 'basic':
       report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
       break;
+    case 'kerberos':
+      // The password never travels (SSPI uses it locally), but a server echoing it back is still masked.
+      if (auth.password !== undefined) report(auth.password);
+      break;
     default:
       break;
   }
