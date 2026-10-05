@@ -24,6 +24,7 @@ const team: LicenseStateWire = {
   expiresAt: '2027-09-01T00:00:00Z',
   graceUntil: '2027-10-01T00:00:00.000Z',
 };
+const SERVER = '3f2b8c1e-9d4a-4e7b-8a61-5c0d2f9b7e14';
 const ok = <T,>(value: T) => vi.fn().mockResolvedValue({ ok: true, value });
 
 function install(overrides: Record<string, unknown> = {}) {
@@ -44,6 +45,23 @@ describe('LicenseTab (licensing spec §3.8)', () => {
     expect(screen.getByTestId('license-status').textContent).toContain('No license installed');
     expect(screen.getByTestId('license-seats').textContent).toContain('3 of 5 seats in use');
     expect(screen.queryByTestId('license-remove')).toBeNull();
+  });
+
+  it('shows the server id first and copies it', async () => {
+    install({ get: ok({ ...community, serverId: SERVER }) });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<LicenseTab url={URL_} />);
+    expect((await screen.findByTestId('license-server-id')).textContent).toBe(SERVER);
+    fireEvent.click(screen.getByTestId('license-copy-server-id'));
+    expect(writeText).toHaveBeenCalledWith(SERVER);
+  });
+
+  it('hides the server id row when the server sends none', async () => {
+    install();
+    render(<LicenseTab url={URL_} />);
+    await screen.findByTestId('license-edition');
+    expect(screen.queryByTestId('license-server-id')).toBeNull();
   });
 
   it('refuses a paste that is not a license line before anything is sent', async () => {
