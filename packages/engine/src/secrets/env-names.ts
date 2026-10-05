@@ -49,6 +49,10 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
       return need(auth.valueRef, auth.valueEnv, `API key "${auth.name}"`);
     case 'oauth2':
       return need(auth.clientSecretRef, auth.clientSecretEnv, `OAuth2 client secret for "${auth.clientId}"`);
+    case 'kerberos':
+      return auth.username !== undefined
+        ? need(auth.passwordRef, auth.passwordEnv, `kerberos password for "${auth.username}"`)
+        : [];
     default:
       return [];
   }

@@ -10,6 +10,7 @@ import type { DefinitionBundle } from '../wsdl/resolver.js';
 import type { MimePartInfo, WsdlDefinition } from '../wsdl/model.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import type { AuthSummary, SendAuth } from '../http/auth/send-auth.js';
+import type { KerberosSendAuth } from '../http/auth/kerberos-token.js';
 import type { HttpExchange, ProxyOptions, TlsOptions } from '../http/types.js';
 import type { SoapEnvelopeVersion } from './envelope.js';
 import type { SoapFault } from './fault.js';
@@ -57,8 +58,11 @@ export interface WsdlImportCacheOptions {
 export interface WsdlImportOptions {
   /** Overrides the default `file://`/`http(s)://` fetcher, e.g. for tests. */
   readonly fetchDocument?: FetchDocument;
-  /** Basic auth credentials added to every `http(s)://` fetch made while importing. */
-  readonly auth?: { readonly username: string; readonly password: string };
+  /**
+   * Basic auth credentials added to every `http(s)://` fetch made while importing, or Kerberos, whose
+   * Negotiate token goes only to the WSDL's own origin.
+   */
+  readonly auth?: { readonly username: string; readonly password: string } | KerberosSendAuth;
   readonly signal?: AbortSignal;
   readonly onProgress?: (event: WsdlImportProgress) => void;
   /** Definition-cache behaviour; see {@link WsdlImportCacheOptions}. Omitted/absent means no caching. */

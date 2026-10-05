@@ -6,7 +6,7 @@
  * {@link applyAuth} takes credentials the host has already resolved (values, not `secretRef`s) and
  * says what to add to the headers or the query string.
  *
- * Basic and NTLM are deliberately *not* applied here: they may need a challenge round trip, which
+ * Basic, NTLM and Kerberos are deliberately *not* applied here: they may need a challenge round trip, which
  * is the transport's job (`http/auth/*`), and this module never touches the network.
  */
 
@@ -47,7 +47,7 @@ export interface AppliedAuth {
   readonly query: readonly KeyValueEntry[];
   /**
    * Credentials the transport has to handle itself, because they may need a challenge round trip:
-   * Basic and NTLM. Passed through to `sendHttp` untouched.
+   * Basic, NTLM and Kerberos. Passed through to `sendHttp` untouched.
    */
   readonly transportAuth?: SendAuth;
 }

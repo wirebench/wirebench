@@ -62,3 +62,5 @@ export {
   type TestWsHandshake,
 } from './test-ws-server.js';
 export { parseXmlDocument, validateAgainstXsd, type XsdValidationResult } from './xml-helpers.js';
+export { fakeKerberos, type FakeKerberos } from './fake-kerberos.js';
+export { startNegotiateServer, type NegotiateRecord, type NegotiateServer } from './negotiate-server.js';

@@ -174,6 +174,15 @@ function toDefinitionAuth(wire: DefinitionAuthWire): DefinitionAuth {
       return { type: 'bearer', tokenRef: wire.tokenRef, ...(wire.scheme !== undefined ? { scheme: wire.scheme } : {}) };
     case 'api-key':
       return { type: 'api-key', name: wire.name, in: wire.in, valueRef: wire.valueRef };
+    case 'kerberos':
+      return {
+        type: 'kerberos',
+        ...(wire.spn !== undefined ? { spn: wire.spn } : {}),
+        ...(wire.principal !== undefined ? { principal: wire.principal } : {}),
+        ...(wire.username !== undefined ? { username: wire.username } : {}),
+        ...(wire.domain !== undefined ? { domain: wire.domain } : {}),
+        ...(wire.passwordRef !== undefined ? { passwordRef: wire.passwordRef } : {}),
+      };
   }
 }
 

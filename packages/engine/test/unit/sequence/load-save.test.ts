@@ -29,13 +29,13 @@ const FOREIGN = {
 };
 
 describe('sequences in a project folder', () => {
-  it('load back as saved, in order, with formatVersion unchanged', async () => {
+  it('load back as saved, in order, at the current formatVersion', async () => {
     const dir = await tempProjectDir();
     await saveProject(withSequences('Checkout', 'Refund'), dir);
     expect(await listTree(dir)).toEqual(
       expect.arrayContaining(['sequences/Checkout.sequence.yaml', 'sequences/Refund.sequence.yaml']),
     );
-    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain('formatVersion: 7');
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain('formatVersion: 8');
 
     const { project, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
