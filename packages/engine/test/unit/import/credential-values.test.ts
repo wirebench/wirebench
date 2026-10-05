@@ -179,6 +179,17 @@ describe('blankJsonText', () => {
     const keyed = '{"token": "a' + '\\"'.repeat(200_000);
     expect(timed(() => blankJsonText(keyed, new Set()))).toBeLessThan(200);
   });
+
+  it('is linear on long whitespace runs after strings, with or without a colon', () => {
+    for (const input of [
+      '"a"' + ' '.repeat(400_000),
+      '"token"' + ' '.repeat(400_000) + ':',
+      ('"a"' + ' '.repeat(40)).repeat(10_000),
+    ]) {
+      expect(timed(() => blankJsonText(input, new Set()))).toBeLessThan(200);
+    }
+    expect(blankJsonText('{"token" :\n "abc", "n": 1}', new Set())).toBe('{"token" :\n "", "n": 1}');
+  });
 });
 
 describe('blankUrlCredentials', () => {

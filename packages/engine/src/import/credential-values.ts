@@ -14,12 +14,45 @@ import { REFERENCE, referencesOnly, stripUserinfo } from './values.js';
 
 const AUTH_REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:Bearer|Basic)\s+(?:${REFERENCE}\s*)+$`, 'i');
 /**
- * A JSON string, and when it is a key, its `: value` (a string, number or boolean), for blanking
- * JSON in place. Everything after the opening quote's run is optional, so the first attempt at a
- * quote always matches and an unterminated string full of escapes is read once, not once per
- * backtrack: the caller blanks only when the closing quote and the separator both matched.
+ * A JSON string, for blanking JSON in place. The closing quote is optional, so the first attempt at
+ * a quote always matches and an unterminated string full of escapes is read once, not once per
+ * backtrack. The `: value` after a key is scanned by hand (see {@link blankJsonPairs}), so no
+ * whitespace run is ever matched twice.
  */
-const JSON_PAIR = /"((?:[^"\\\n]|\\.)*)("?)(?:(\s*:\s*)("(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false))?/g;
+const JSON_STRING = /"((?:[^"\\\n]|\\.)*)("?)/g;
+/** A JSON value a key may be blanked for (a string, number or boolean), matched where it starts. */
+const JSON_SCALAR = /"(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false/y;
+
+function isJsonSpace(char: string | undefined): boolean {
+  return char === ' ' || char === '\t' || char === '\r' || char === '\n';
+}
+
+/** `text` with each `"key": value` whose key looks like a credential and whose value is a literal blanked to `""`. One pass. */
+function blankJsonPairs(text: string, blanked: Set<string>): string {
+  let out = '';
+  let copied = 0;
+  JSON_STRING.lastIndex = 0;
+  for (let m = JSON_STRING.exec(text); m !== null; m = JSON_STRING.exec(text)) {
+    const key = m[1] ?? '';
+    if (m[2] !== '"') continue;
+    let i = JSON_STRING.lastIndex;
+    while (isJsonSpace(text[i])) i += 1;
+    if (text[i] !== ':') continue;
+    i += 1;
+    while (isJsonSpace(text[i])) i += 1;
+    JSON_SCALAR.lastIndex = i;
+    const scalar = JSON_SCALAR.exec(text);
+    if (scalar === null) continue;
+    const value = scalar[0];
+    const bare = value.startsWith('"') ? value.slice(1, -1) : value;
+    const end = i + value.length;
+    JSON_STRING.lastIndex = end;
+    if (blankIfLiteral(key, bare, blanked) === bare) continue;
+    out += `${text.slice(copied, i)}""`;
+    copied = end;
+  }
+  return out + text.slice(copied);
+}
 
 /** `value` unless it is a literal credential under a credential-looking `name`; then `''`, with `name` added to `blanked`. */
 export function blankIfLiteral(name: string, value: string, blanked: Set<string>): string {
@@ -153,12 +186,7 @@ export function blankJsonText(text: string, blanked: Set<string>): string {
   } catch {
     parseable = false;
   }
-  const inPlace = text.replace(JSON_PAIR, (match, key: string, close: string, sep?: string, value?: string) => {
-    if (close !== '"' || sep === undefined || value === undefined) return match;
-    const bare = value.startsWith('"') ? value.slice(1, -1) : value;
-    if (blankIfLiteral(key, bare, blanked) === bare) return match;
-    return `"${key}"${sep}""`;
-  });
+  const inPlace = blankJsonPairs(text, blanked);
   if (!parseable) return inPlace;
   const found = new Set<string>();
   const out = blankJson(JSON.parse(inPlace), found);
