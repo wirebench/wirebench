@@ -145,6 +145,7 @@ export {
   PostmanError,
   HarError,
   HttpFileError,
+  OpenCollectionError,
   LegacyProjectError,
   ProtoError,
   GrpcError,
@@ -766,6 +767,19 @@ export { importHttpFile } from './import/http-file/import.js';
 export type { HttpFileSource, ImportHttpFileOptions } from './import/http-file/import.js';
 export { mapHttpFile } from './import/http-file/map.js';
 export type { MapHttpFileOptions, MappedHttpFile } from './import/http-file/map.js';
+// OpenCollection: reading a single document or a directory into typed shapes.
+export { isOpenCollection, parseOpenCollection } from './import/opencollection/index.js';
+export type {
+  OcAssertion,
+  OcCollection,
+  OcEnvironment,
+  OcInfo,
+  OcItem,
+  OcKeyValue,
+  OcRequestDefaults,
+  OcScript,
+  OcVariable,
+} from './import/opencollection/index.js';
 // Import helpers shared by every importer.
 export {
   formatImportReport,

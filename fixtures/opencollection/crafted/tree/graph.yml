@@ -1,0 +1,8 @@
+info:
+  name: Graph
+  type: graphql
+graphql:
+  url: "{{baseUrl}}/graphql"
+  body:
+    query: "{ pets { id } }"
+    variables: "{}"

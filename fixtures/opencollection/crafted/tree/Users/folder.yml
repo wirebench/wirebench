@@ -1,0 +1,10 @@
+info:
+  name: Users
+  type: folder
+request:
+  headers:
+    - name: X-Team
+      value: core
+  auth:
+    type: bearer
+    token: "{{token}}"

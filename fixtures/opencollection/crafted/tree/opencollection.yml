@@ -1,0 +1,10 @@
+opencollection: "1.0.0"
+info:
+  name: Pets
+config:
+  proxy:
+    hostname: proxy.example.com
+request:
+  variables:
+    - name: tenant
+      value: acme

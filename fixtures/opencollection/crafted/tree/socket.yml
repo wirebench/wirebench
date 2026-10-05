@@ -1,0 +1,8 @@
+info:
+  name: Socket
+  type: websocket
+websocket:
+  url: "wss://pets.example.com/ws"
+  message:
+    type: json
+    data: '{"hi":true}'

@@ -1,0 +1,9 @@
+info:
+  name: Pets gRPC
+  type: grpc
+grpc:
+  url: "grpc://localhost:50051"
+  method: /pets.v1.Pets/Get
+  methodType: unary
+  protoFilePath: protos/pets.proto
+  message: '{"id":1}'

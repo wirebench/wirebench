@@ -127,6 +127,14 @@ export class HttpFileError extends WirebenchError {
   }
 }
 
+/** Thrown when an OpenCollection document or directory cannot be read, or is not one. */
+export class OpenCollectionError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'OpenCollectionError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

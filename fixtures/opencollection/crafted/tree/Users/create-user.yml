@@ -1,0 +1,28 @@
+info:
+  name: Create User
+  type: http
+  seq: 1
+http:
+  method: POST
+  url: "{{baseUrl}}/users"
+  body:
+    - title: full
+      selected: true
+      body:
+        type: json
+        data: '{"name":"Rex"}'
+    - title: empty
+      body:
+        type: json
+        data: "{}"
+examples:
+  - name: created
+    response:
+      status: 201
+      statusText: Created
+      headers:
+        - name: Content-Type
+          value: application/json
+      body:
+        type: json
+        data: '{"id":1}'
