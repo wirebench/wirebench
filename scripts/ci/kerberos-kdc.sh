@@ -13,6 +13,9 @@ cat > "$KRB_DIR/krb5.conf" <<CONF
   dns_lookup_realm = false
   rdns = false
   dns_canonicalize_hostname = false
+  # Leave short names alone: MIT otherwise appends the runner's DNS search domain to "localhost",
+  # and the name then maps to a realm that does not exist.
+  qualify_shortname = ""
 [realms]
   $REALM = {
     kdc = 127.0.0.1:88

@@ -28,14 +28,15 @@ describeKerberos('Kerberos against a real KDC', () => {
         response.writeHead(401, { 'WWW-Authenticate': 'Negotiate' }).end();
         return;
       }
-      void kerberos.initializeServer('HTTP@localhost').then(
-        async (context) => {
+      // A failed accept answers 401 rather than leave the request open.
+      void kerberos
+        .initializeServer('HTTP@localhost')
+        .then(async (context) => {
           const reply = await context.step(header.slice('Negotiate '.length));
           users.push(context.username);
           response.writeHead(200, { 'WWW-Authenticate': `Negotiate ${reply}` }).end('ok');
-        },
-        () => response.writeHead(401).end(),
-      );
+        })
+        .catch(() => response.writeHead(401).end());
     });
     await new Promise<void>((resolve) => server?.listen(0, 'localhost', resolve));
     url = `http://localhost:${(server.address() as AddressInfo).port}/svc`;
