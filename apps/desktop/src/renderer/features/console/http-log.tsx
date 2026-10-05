@@ -12,6 +12,7 @@ import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogCompare } from './log-compare-view.js';
 import { LogFilterBar } from './log-filter-bar.js';
 import { nextSelection } from './log-selection.js';
+import { isStsRow } from './log-row-actions.js';
 import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
 import { nameOf, useNameSources, type NameSources } from './log-name.js';
 import { compileMatcher } from './log-search.js';
@@ -206,7 +207,10 @@ export function HttpLog() {
   // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has
   // no unredacted copy to fetch: it was redacted at emit and stays so, and main is not asked.
   // Keyed on the id, not the entry: the refresh swaps in a new entry object, which must not re-fire it.
-  const selectedExchangeId = selected?.kind === 'exchange' ? selected.exchange.sendId : undefined;
+  // A token-service row is not in main's exchange cache (it is logged, never kept), so there is no
+  // copy to re-fetch: it was redacted as it was emitted.
+  const selectedExchangeId =
+    selected?.kind === 'exchange' && !isStsRow(selected) ? selected.exchange.sendId : undefined;
   useEffect(() => {
     if (selectedExchangeId !== undefined) {
       void refreshExchange(selectedExchangeId);

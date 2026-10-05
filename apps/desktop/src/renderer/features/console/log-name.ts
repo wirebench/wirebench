@@ -45,6 +45,14 @@ function eventsSuffix(entry: LogEntry): string {
  * keeps a gRPC service's package (`pets.v1.PetService/GetPet`), for the cell's tooltip.
  */
 export function nameOf(entry: LogEntry, sources: NameSources, full = false): string {
+  const name = baseNameOf(entry, sources, full);
+  // The token request a send made first: named for the request it was made for, and marked.
+  return entry.kind === 'exchange' && 'auxiliary' in entry.exchange && entry.exchange.auxiliary === 'sts'
+    ? `STS · ${name}`
+    : name;
+}
+
+function baseNameOf(entry: LogEntry, sources: NameSources, full: boolean): string {
   const id = requestIdOf(entry);
   if (id !== undefined) {
     const protocol = protocolOf(entry);

@@ -43,6 +43,11 @@ function isSseExchange(entry: LogEntry): boolean {
   );
 }
 
+/** Whether the row is a token request a send made, not a send of the saved request itself. */
+export function isStsRow(entry: LogEntry): boolean {
+  return entry.kind === 'exchange' && 'auxiliary' in entry.exchange && entry.exchange.auxiliary === 'sts';
+}
+
 const RESEND_HINT = 'Sends the saved request as it is now';
 
 /** The saved request a row came from; absent for an ad-hoc send. */
@@ -91,6 +96,9 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
   let resend: RowAction;
   if (protocol === 'websocket') {
     resend = off('resend', 'Resend', 'A WebSocket session reconnects from the request');
+  } else if (isStsRow(entry)) {
+    // The saved request would be sent, not this token request, which main keeps no copy of to replay.
+    resend = off('resend', 'Resend', 'A token request is made again by sending the request it was made for');
   } else if (!exists) {
     resend = off('resend', 'Resend', missingReason);
   } else if (stageOf(entry) === 'prepare') {

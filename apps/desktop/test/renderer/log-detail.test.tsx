@@ -258,3 +258,16 @@ describe('LogDetail for a prepare-stage failure', () => {
     expect(screen.queryByText(/Connection reused/)).toBeNull();
   });
 });
+
+describe('LogDetail for an STS row (no parsed response)', () => {
+  it('opens on every tab without a response or an exchange cache entry', () => {
+    const stsExchange = makeExchange({ sendId: 'send-1:sts:1', auxiliary: 'sts', causedBy: 'send-1' });
+    delete stsExchange.response;
+    const entry = logExchange(stsExchange, 'r1');
+    for (const tab of ['headers', 'request', 'response', 'timing', 'connection'] as const) {
+      const { unmount } = render(<LogDetail entry={entry} tab={tab} onTabChange={vi.fn()} />);
+      expect(screen.getByTestId('log-detail')).toBeTruthy();
+      unmount();
+    }
+  });
+});

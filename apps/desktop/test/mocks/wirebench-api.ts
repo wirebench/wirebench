@@ -234,6 +234,12 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       tokens: vi.fn().mockResolvedValue({ ok: true, value: { tokens: [] } }),
       setValue: fail('secretScan.setValue'),
     },
+    // No token cached; a test that fetches or clears states its own answer.
+    issuedTokens: {
+      status: vi.fn().mockResolvedValue({ ok: true, value: { state: 'none' } }),
+      fetch: fail('issuedTokens.fetch'),
+      clear: fail('issuedTokens.clear'),
+    },
     teamSecrets: {
       status: vi.fn().mockResolvedValue({
         ok: true,
