@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { WorkspaceError } from '../../../src/errors.js';
+import { parseSecretSources } from '../../../src/secrets/sources/parse.js';
 import { loadWorkspace } from '../../../src/workspace/load.js';
 import { saveWorkspace } from '../../../src/workspace/save.js';
 import { workspaceFiles } from '../../../src/workspace/serialize.js';
@@ -40,7 +41,7 @@ describe('saveWorkspace', () => {
       description: Round-trip fixture
       disabled:
         - tier
-      formatVersion: 3
+      formatVersion: 4
       id: ID0005
       name: Demo Workspace
       projects:
@@ -262,11 +263,11 @@ describe('loadWorkspace', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
-    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 3', 'formatVersion: 4'));
+    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 4', 'formatVersion: 5'));
 
     const error = (await loadWorkspace(dir).catch((e: unknown) => e)) as WorkspaceError;
     expect(error.code).toBe('workspace-format-too-new');
-    expect(error.details).toMatchObject({ formatVersion: 4, supported: 3 });
+    expect(error.details).toMatchObject({ formatVersion: 5, supported: 4 });
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -275,7 +276,7 @@ describe('loadWorkspace', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
-    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 3', 'formatVersion: "1"'));
+    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 4', 'formatVersion: "1"'));
 
     const error = (await loadWorkspace(dir).catch((e: unknown) => e)) as WorkspaceError;
     expect(error.code).toBe('workspace-file-invalid');
@@ -417,14 +418,14 @@ describe('loadWorkspace', () => {
     const { workspace: loaded, legacy } = await loadWorkspace(dir);
     expect(legacy).toEqual({ activeEnvironmentId: 'ID0003' });
     expect(loaded.activeEnvironmentId).toBeUndefined();
-    expect(loaded.formatVersion).toBe(3);
+    expect(loaded.formatVersion).toBe(4);
 
     const files = workspaceFiles(loaded);
     const manifest = files.get('workspace.yaml') ?? '';
     expect(manifest).not.toContain('activeEnvironmentId');
     expect(manifest).not.toContain('writtenBy');
-    expect(manifest.startsWith('createdAt:') || manifest.includes('formatVersion: 3')).toBe(true);
-    expect(manifest).toContain('formatVersion: 3');
+    expect(manifest.startsWith('createdAt:') || manifest.includes('formatVersion: 4')).toBe(true);
+    expect(manifest).toContain('formatVersion: 4');
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -452,6 +453,38 @@ describe('loadWorkspace', () => {
     expect(problems).toEqual([]);
     expect(loaded.projects).toEqual([{ id: 'P1', slug: 'demo', source: 'linked', path: '/srv/demo' }]);
 
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('secretSources', () => {
+  it('round-trips secretSources, invalid entries included, at format 4', async () => {
+    const dir = await tempWorkspaceDir();
+    const parsed = parseSecretSources({
+      db_password: { kind: 'vault', path: 'kv/app', field: 'password' },
+      broken: { kind: 'vault', path: '-x', field: 'f' },
+    }).sources;
+    await saveWorkspace({ ...sampleWorkspace(), secretSources: parsed }, dir);
+    const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
+    expect(text).toContain('formatVersion: 4');
+    expect(text).toContain('secretSources:');
+    const loaded = await loadWorkspace(dir);
+    expect(loaded.workspace.secretSources?.['db_password']).toEqual({
+      kind: 'vault',
+      path: 'kv/app',
+      field: 'password',
+    });
+    expect(loaded.workspace.secretSources?.['broken']?.kind).toBe('invalid');
+    expect(loaded.problems).toContainEqual(
+      expect.objectContaining({ code: 'secret-source-invalid', file: 'workspace.yaml' }),
+    );
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('writes no secretSources key when there are none', async () => {
+    const dir = await tempWorkspaceDir();
+    await saveWorkspace(sampleWorkspace(), dir);
+    expect((await readBytes(dir, 'workspace.yaml')).toString('utf8')).not.toContain('secretSources');
     await rm(dir, { recursive: true, force: true });
   });
 });

@@ -16,7 +16,7 @@ describe('migrateWorkspace', () => {
   it('brings version 1 up to the current format version, lifting activeEnvironmentId into legacy', () => {
     const v1 = { formatVersion: 1, id: 'X', activeEnvironmentId: 'E1', writtenBy: 'wirebench' };
     expect(migrateWorkspace(v1, 'workspace.yaml')).toEqual({
-      manifest: { formatVersion: 3, id: 'X' },
+      manifest: { formatVersion: 4, id: 'X' },
       legacy: { activeEnvironmentId: 'E1' },
     });
   });
@@ -24,23 +24,32 @@ describe('migrateWorkspace', () => {
   it('brings version 2 up to the current format version, lifting activeEnvironmentId and dropping writtenBy', () => {
     const v2 = { formatVersion: 2, id: 'X', disabled: ['tier'], activeEnvironmentId: 'E2', writtenBy: 'wirebench' };
     expect(migrateWorkspace(v2, 'workspace.yaml')).toEqual({
-      manifest: { formatVersion: 3, id: 'X', disabled: ['tier'] },
+      manifest: { formatVersion: 4, id: 'X', disabled: ['tier'] },
       legacy: { activeEnvironmentId: 'E2' },
     });
   });
 
   it('passes a version-3 document through with no legacy fields, since it never had activeEnvironmentId', () => {
     const v3 = { formatVersion: 3, id: 'X', disabled: ['tier'] };
-    expect(migrateWorkspace(v3, 'workspace.yaml')).toEqual({ manifest: v3, legacy: {} });
+    expect(migrateWorkspace(v3, 'workspace.yaml')).toEqual({ manifest: { ...v3, formatVersion: 4 }, legacy: {} });
+  });
+
+  it('stamps a version-3 manifest as version 4 and keeps secretSources', () => {
+    expect(
+      migrateWorkspace(
+        { formatVersion: 3, id: 'X', secretSources: { a: { kind: 'gcp', secret: 's' } } },
+        'workspace.yaml',
+      ).manifest,
+    ).toEqual({ formatVersion: 4, id: 'X', secretSources: { a: { kind: 'gcp', secret: 's' } } });
   });
 
   it('rejects a newer format version as workspace-format-too-new', () => {
     try {
-      migrateWorkspace({ formatVersion: 4 }, 'workspace.yaml');
+      migrateWorkspace({ formatVersion: 5 }, 'workspace.yaml');
       throw new Error('expected to throw');
     } catch (error) {
       expect((error as WorkspaceError).code).toBe('workspace-format-too-new');
-      expect((error as WorkspaceError).details).toMatchObject({ formatVersion: 4, supported: 3 });
+      expect((error as WorkspaceError).details).toMatchObject({ formatVersion: 5, supported: 4 });
     }
   });
 });

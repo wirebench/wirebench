@@ -52,6 +52,8 @@ export const workspaceManifestSchema = z.looseObject({
   properties: propertyMapSchema,
   /** Names of `properties` entries switched off; absent means none. See `model.ts`. */
   disabled: z.array(z.string()).optional(),
+  /** Validated entry by entry in `load.ts`, so one bad entry never fails the manifest. */
+  secretSources: z.unknown().optional(),
   projects: z.array(workspaceProjectRefSchema),
 });
 
@@ -68,8 +70,12 @@ export const workspaceEnvironmentFileSchema = z.looseObject({
 
 /** `local.yaml`: machine-local state, never part of the shared tree. See `local-state.ts`. */
 export const workspaceLocalStateSchema = z.object({
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   activeEnvironmentId: z.string().optional(),
+  secretSources: z.unknown().optional(),
+  secretSourcesApproved: z
+    .object({ hash: z.string().regex(/^[0-9a-f]{64}$/), mapping: z.record(z.string(), z.unknown()) })
+    .optional(),
 });
 
 /** `share.yaml`'s `git` block: settings for a git-backed share. See `share.ts`. */

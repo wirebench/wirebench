@@ -1204,7 +1204,7 @@ export async function keepLegacyActiveEnvironment(
   }
   const local = await loadLocalState(dir, fsOption);
   if (local.activeEnvironmentId === undefined) {
-    await saveLocalState(dir, { version: 1, activeEnvironmentId: legacyId }, fsOption);
+    await saveLocalState(dir, { ...local, version: 2, activeEnvironmentId: legacyId }, fsOption);
   }
 }
 

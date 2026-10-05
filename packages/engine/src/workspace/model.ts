@@ -18,9 +18,10 @@
 import type { CreateOptions, PropertyMap } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
+import type { SharedSecretSources } from '../secrets/sources/parse.js';
 
 /** The on-disk format version written to (and required by) `workspace.yaml`. */
-export const WORKSPACE_FORMAT_VERSION = 3;
+export const WORKSPACE_FORMAT_VERSION = 4;
 
 /**
  * A pointer to one project inside a workspace. `internal` projects live under
@@ -71,6 +72,11 @@ export interface Workspace {
   readonly properties: PropertyMap;
   /** Names of {@link properties} entries switched off; see {@link WorkspaceEnvironment.disabledProperties}. */
   readonly disabledProperties: readonly string[];
+  /**
+   * Where `${secret:name}` tokens come from in external managers (secret sources spec D1): shared, so a
+   * team sets it once; each machine approves it before it is used (`local.yaml`). Absent: none.
+   */
+  readonly secretSources?: SharedSecretSources;
   /**
    * Id of the environment currently active for this workspace, if any. Machine-local: kept only
    * in memory while a workspace is open, and never serialised into `workspace.yaml` — see

@@ -11,6 +11,7 @@
 import type { PropertyMap } from '../project/model.js';
 import type { Workspace, WorkspaceProjectRef } from './model.js';
 import { assertPathSegment, WORKSPACE_ENVIRONMENTS_DIR, WORKSPACE_MANIFEST } from './paths.js';
+import { serializeSecretSources } from '../secrets/sources/parse.js';
 import { compact, stringifyYaml } from '../project/yaml.js';
 
 /** A workspace's files, keyed by path relative to the workspace root (always `/`-separated). */
@@ -56,6 +57,10 @@ export function workspaceFiles(workspace: Workspace): WorkspaceFiles {
         createdAt: workspace.createdAt,
         properties: { ...workspace.properties },
         disabled: disabledList(workspace.disabledProperties, workspace.properties),
+        secretSources:
+          workspace.secretSources !== undefined && Object.keys(workspace.secretSources).length > 0
+            ? serializeSecretSources(workspace.secretSources)
+            : undefined,
         projects: workspace.projects.map((ref) => projectRefDocument(ref)),
       }),
     ),

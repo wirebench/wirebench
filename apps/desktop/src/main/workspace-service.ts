@@ -27,7 +27,6 @@ import {
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
   shareSyncSettings,
-  EMPTY_LOCAL_STATE,
   isTeamSecretsPath,
   loadLocalState,
   loadProject,
@@ -58,6 +57,7 @@ import {
   assertRemoteUrl,
 } from '@wirebench/engine';
 import type {
+  WorkspaceLocalState,
   FsLike,
   GitCli,
   GitShareSettings,
@@ -298,6 +298,8 @@ interface OpenProjectEntry {
 /** The open workspace: its manifest, its folder and its project entries in manifest order. */
 interface OpenWorkspace {
   workspace: Workspace;
+  /** This machine's `local.yaml` as last read or written: a write keeps the fields it does not change. */
+  local: WorkspaceLocalState;
   /** The app-data directory: `<userData>/workspaces/<id>`. Never the tree — see `tree`. */
   readonly dir: string;
   /** Where the shared files (`workspace.yaml`, `environments/`, `projects/`) actually live:
@@ -782,7 +784,7 @@ export class WorkspaceService implements ProjectRouter {
         local.activeEnvironmentId === undefined &&
         loaded.environments.some((environment) => environment.id === legacy.activeEnvironmentId)
       ) {
-        local = { version: 1, activeEnvironmentId: legacy.activeEnvironmentId };
+        local = { ...local, version: 2, activeEnvironmentId: legacy.activeEnvironmentId };
         await saveLocalState(dir, local, this.fsOption());
       }
       // No `watcher.expect()` needed here: the workspace-level watcher below is not created
@@ -799,6 +801,7 @@ export class WorkspaceService implements ProjectRouter {
     const workspace: Workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
     const open: OpenWorkspace = {
       workspace,
+      local,
       dir,
       tree,
       share,
@@ -2637,11 +2640,18 @@ export class WorkspaceService implements ProjectRouter {
       // Machine-local: written to local.yaml, in the app-data dir, never to a tree file (see
       // local-state.ts) — so, unlike `mutate`/`rename`, there is nothing here for
       // `open.watcher` (which only watches the tree) to ever see or need pre-announcing.
-      await saveLocalState(
-        open.dir,
-        environmentId === null ? EMPTY_LOCAL_STATE : { version: 1, activeEnvironmentId: environmentId },
-        this.fsOption(),
-      );
+      if (environmentId === null) {
+        open.local = {
+          version: 2,
+          ...(open.local.secretSources !== undefined ? { secretSources: open.local.secretSources } : {}),
+          ...(open.local.secretSourcesApproved !== undefined
+            ? { secretSourcesApproved: open.local.secretSourcesApproved }
+            : {}),
+        };
+      } else {
+        open.local = { ...open.local, version: 2, activeEnvironmentId: environmentId };
+      }
+      await saveLocalState(open.dir, open.local, this.fsOption());
       this.requireStillOpen(open);
       this.deps.hooks?.onChanged?.(this.snapshot());
       return this.requireSnapshot();

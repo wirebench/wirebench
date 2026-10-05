@@ -1486,6 +1486,7 @@ export type { SecretMove, SecretMovesResult } from './secrets/scan/apply.js';
 export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
 
 export { SECRET_REF_PATTERN, secretRefsInValue } from './secrets/secret-refs.js';
+export * from './secrets/sources/index.js';
 
 // ---------------------------------------------------------------------------
 // Team secrets: machine keys, the access log and the vault (team-secrets spec §4, §5.2)
