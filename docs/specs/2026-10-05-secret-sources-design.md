@@ -212,8 +212,8 @@ warnings, without spawning anything.
   sits in a workspace with a shared mapping; `onValue` is the env-secrets recorder. The cache lives for the
   process.
 - Flags: `--no-secret-sources`, `--trust-secret-sources` and `--trust-secret-sources-hash <hash>` (A2).
-- `wirebench secrets list` gains a Source column (`env`, a kind, or `—`) and a Trusted column, and prints the
-  mapping hash.
+- `wirebench secrets list` gains a SOURCE column, which shows `env`, the kind, `kind (untrusted)`, `invalid` or `—`
+  (trust is shown there, not in a column of its own), and prints the mapping hash.
 
 ### D9. Security
 

@@ -45,6 +45,7 @@ export function opsBaseFor(
     cookies: jarCookieHost(new CookieJar()),
     secretSources: options.secretSources,
     secretSourceCache: createSourceCache(),
+    secretSourceValues: new Set<string>(),
   };
 }
 

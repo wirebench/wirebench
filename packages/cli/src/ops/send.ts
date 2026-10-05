@@ -293,6 +293,10 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
     for (const secret of known()) {
       context.revealed.add(secret);
     }
+    // The cache outlives this call, so the next call must mask what a source gave this one.
+    for (const secret of secrets.values()) {
+      context.secretSourceValues.add(secret);
+    }
   }
 }
 

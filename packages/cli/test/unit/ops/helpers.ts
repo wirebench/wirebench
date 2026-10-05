@@ -70,6 +70,7 @@ export async function emptyProject(): Promise<Fixture> {
       warn: (line) => warnings.push(line),
       secretSources: DEFAULT_CLI_SECRET_SOURCES,
       secretSourceCache: createSourceCache(),
+      secretSourceValues: new Set<string>(),
       ...overrides,
     }),
   };

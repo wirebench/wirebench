@@ -40,6 +40,11 @@ export interface OpsBase {
   readonly secretSources: CliSecretSourcesOptions;
   /** One cache for the process: a value is fetched once per run, call or MCP server. */
   readonly secretSourceCache: SourceCache;
+  /**
+   * Every value a secret source handed out so far in this process. Each call's masked set starts from it, so
+   * a later call that never resolved a cached value still masks it.
+   */
+  readonly secretSourceValues: Set<string>;
 }
 
 /** One call's context: the base, plus every secret value the call resolved, for the redaction step. */
@@ -85,7 +90,10 @@ function describeIssues(error: z.ZodError): string {
 export async function runOp<S extends z.ZodType, R>(op: Op<S, R>, raw: unknown, base: OpsBase): Promise<R> {
   // Defence in depth for an agent: every secret the server was started with is masked in every
   // tool's result, whether or not this call resolved it (a saved `${#System#…}` reads the env too).
-  const context: OpsContext = { ...base, revealed: new Set(base.origin === 'mcp' ? secretValuesIn(base.env) : []) };
+  const context: OpsContext = {
+    ...base,
+    revealed: new Set([...(base.origin === 'mcp' ? secretValuesIn(base.env) : []), ...base.secretSourceValues]),
+  };
   try {
     const parsed = op.input.safeParse(raw);
     if (!parsed.success) {

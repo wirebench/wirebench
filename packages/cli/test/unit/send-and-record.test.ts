@@ -1,9 +1,14 @@
+import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CookieJar,
   createApi,
   createProject,
   createRestRequest,
+  createWorkspace,
+  parseSecretSources,
   jarCookieHost,
   selectRequests,
 } from '@wirebench/engine';
@@ -38,6 +43,7 @@ async function hostFor(cookies: OpsContext['cookies']): Promise<RunContext['host
     warn: () => undefined,
     secretSources: DEFAULT_CLI_SECRET_SOURCES,
     secretSourceCache: createSourceCache(),
+    secretSourceValues: new Set<string>(),
     revealed: new Set(),
     ...(cookies !== undefined ? { cookies } : {}),
   };
@@ -64,5 +70,39 @@ describe('sendAndRecord', () => {
 
   it('lends no jar when the process has none', async () => {
     expect((await hostFor(undefined))?.cookies).toBeUndefined();
+  });
+
+  it.skipIf(process.platform === 'win32')('keeps a source value for later calls of the same base', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wb-send-src-'));
+    await writeFile(join(dir, 'vault'), '#!/bin/sh\necho from-vault-long-value\n');
+    await chmod(join(dir, 'vault'), 0o755);
+    const sources = parseSecretSources({ db: { kind: 'vault', path: 'kv/app', field: 'password' } }).sources;
+    const secretSourceValues = new Set<string>();
+    const context: OpsContext = {
+      projectDir: '.',
+      historyDir: '.',
+      env: { PATH: `${dir}:/usr/bin:/bin` },
+      gates: OPEN_GATES,
+      origin: 'mcp',
+      warn: () => undefined,
+      secretSources: { enabled: true, trust: { mode: 'any' } },
+      secretSourceCache: createSourceCache(),
+      secretSourceValues,
+      revealed: new Set(),
+    };
+    await sendAndRecord({
+      item,
+      opened: {
+        project,
+        workspace: { dir: '.', workspace: { ...createWorkspace('W'), secretSources: sources } },
+      } as never,
+      environment: undefined,
+      context,
+      before: async (runContext) => {
+        await runContext.host.getSecret('secret:db');
+        throw new Error('stop before sending');
+      },
+    }).catch(() => undefined);
+    expect([...secretSourceValues]).toContain('from-vault-long-value');
   });
 });
