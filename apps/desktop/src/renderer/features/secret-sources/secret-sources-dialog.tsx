@@ -90,6 +90,17 @@ export function SecretSourcesDialog() {
     };
   }, [open, target?.name]);
 
+  // A teammate's change pulled in while the dialog is open, or a switch of workspace, changes the
+  // mapping and what is trusted; read it again so the list and the banner do not go stale.
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    return window.wirebench.on('workspace.changed', () => {
+      void load();
+    });
+  }, [open]);
+
   // The approval dialog changes what is trusted; read it again when that dialog closes.
   const approvalWasOpen = useRef(false);
   useEffect(() => {

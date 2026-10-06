@@ -100,6 +100,40 @@ describe('SecretSourcesDialog', () => {
     expect(await screen.findByText('(overridden here)')).toBeTruthy();
   });
 
+  it('reloads its state when the workspace changes under it, and stops listening once closed', async () => {
+    const listeners: Array<() => void> = [];
+    const off = vi.fn();
+    const on = vi.fn((channel: string, listener: () => void) => {
+      if (channel === 'workspace.changed') {
+        listeners.push(listener);
+      }
+      return off;
+    });
+    installWirebenchApi({ secretSources: { get, setShared, setLocal, test }, on });
+    answer({ ...STATE, trusted: false });
+    render(<SecretSourcesDialog />);
+    openDialog();
+    await screen.findByRole('row', { name: 'Secret source db' });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(listeners).toHaveLength(1);
+
+    answer({ ...STATE, entries: STATE.entries.slice(1) });
+    act(() => {
+      listeners[0]?.();
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('row', { name: 'Secret source db' })).toBeNull();
+    });
+    expect(get).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      useUiStore.getState().setSecretSourcesDialog(null);
+    });
+    await waitFor(() => {
+      expect(off).toHaveBeenCalled();
+    });
+  });
+
   it('says so when no workspace is open', async () => {
     answer({ open: false, entries: [], trusted: true, changes: [] });
     render(<SecretSourcesDialog />);

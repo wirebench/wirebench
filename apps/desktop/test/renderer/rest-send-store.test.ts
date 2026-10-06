@@ -59,7 +59,7 @@ describe('sendRest', () => {
 
     await useExchangesStore.getState().sendRest('rest-1');
 
-    expect(preflightRest).toHaveBeenCalledWith({ requestId: 'rest-1' });
+    expect(preflightRest).toHaveBeenCalledWith({ requestId: 'rest-1', secretsOnly: true });
     expect(
       useProblemsStore
         .getState()

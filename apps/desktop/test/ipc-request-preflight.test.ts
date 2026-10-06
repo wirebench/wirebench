@@ -454,6 +454,28 @@ describe('preflight and secret sources', () => {
     ]);
   });
 
+  it('with secretsOnly, resolves nothing when no name is mapped, and still warns when one is', async () => {
+    const empty: SecretSourcesSnapshot = { shared: undefined, local: undefined, approvedHash: undefined };
+    for (const [channel, requestId] of [
+      ['request.preflightRest', 'rest-1'],
+      ['request.preflightGrpc', 'grpc-1'],
+      ['request.preflightWs', 'ws-1'],
+    ] as const) {
+      registerOver(seeded(), {}, () => empty);
+      // The empty answer, though the request exists: it was never resolved (a full preflight has an endpoint).
+      expect(await preflight(channel, { requestId, secretsOnly: true })).toEqual(NONE);
+      registerOver(seeded(), {}, () => undefined);
+      expect(await preflight(channel, { requestId, secretsOnly: true })).toEqual(NONE);
+      // Without the flag, the editor's badge still gets its full answer.
+      registerOver(seeded(), {}, () => empty);
+      expect(await preflight(channel, { requestId })).not.toEqual(NONE);
+    }
+    registerOver(seeded(), {}, () => snapshot(undefined));
+    expect(secretRefs(await preflight('request.preflightRest', { requestId: 'rest-1', secretsOnly: true }))).toEqual([
+      ['tok', 'secret-source-untrusted'],
+    ]);
+  });
+
   it('warns on gRPC and WebSocket too, and not without a snapshot', async () => {
     registerOver(seeded(), {}, () => snapshot(undefined));
     expect(secretRefs(await preflight('request.preflightGrpc', { requestId: 'grpc-1' }))).toEqual([

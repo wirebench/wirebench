@@ -2384,6 +2384,11 @@ export type RequestSendToEnvironmentsResponse = z.infer<typeof requestSendToEnvi
 export const requestPreflightRestRequestSchema = z.object({
   requestId: z.string(),
   draft: restRequestPatchSchema.optional(),
+  /**
+   * The caller wants the secret-source warnings only, as a send does beside itself. Main then answers
+   * the empty preflight, without resolving the request, when no `${secret:name}` is mapped.
+   */
+  secretsOnly: z.boolean().optional(),
 });
 
 /** One response message of a gRPC call: decoded JSON text when it decoded, its bytes as base64 always. */
@@ -2502,6 +2507,11 @@ export type RequestGrpcHalfCloseResponse = z.infer<typeof requestGrpcHalfCloseRe
 export const requestPreflightGrpcRequestSchema = z.object({
   requestId: z.string(),
   draft: grpcRequestPatchSchema.optional(),
+  /**
+   * The caller wants the secret-source warnings only, as a send does beside itself. Main then answers
+   * the empty preflight, without resolving the request, when no `${secret:name}` is mapped.
+   */
+  secretsOnly: z.boolean().optional(),
 });
 
 // ——— WebSocket session channels ————————————————————————————————————————————————————————————
@@ -2660,6 +2670,11 @@ export type RequestWsCloseResponse = z.infer<typeof requestWsCloseResponseSchema
 export const requestPreflightWsRequestSchema = z.object({
   requestId: z.string(),
   draft: wsRequestPatchSchema.optional(),
+  /**
+   * The caller wants the secret-source warnings only, as a send does beside itself. Main then answers
+   * the empty preflight, without resolving the request, when no `${secret:name}` is mapped.
+   */
+  secretsOnly: z.boolean().optional(),
 });
 
 /** Request payload for `request.curl`: which saved request, and which shell's quoting. */

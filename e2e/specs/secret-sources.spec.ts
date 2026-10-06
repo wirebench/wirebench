@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { logRows, selectLogRow } from '../helpers/http-log.js';
@@ -17,6 +18,12 @@ import { startTestRestServer, type TestRestServer } from '../helpers/test-server
 
 /** What `e2e/fixtures/fake-vault/vault` prints for `kv/app`. A test value, not a real secret. */
 const VAULT_VALUE = 'e2e-vault-value-7731';
+
+/**
+ * The fake `vault`'s folder, from this file rather than the process's cwd: CI runs the specs with the
+ * cwd at `<repo>/e2e`, where a cwd-relative `e2e/fixtures/...` does not exist.
+ */
+const FAKE_VAULT_DIR = fileURLToPath(new URL('../fixtures/fake-vault/', import.meta.url));
 
 /** Every file path under `dir`, recursively (files only). */
 function listFiles(dir: string): string[] {
@@ -77,7 +84,7 @@ test.describe('secret sources', () => {
     launched = await launchApp({
       userDataDir,
       keepUserDataDir: true,
-      extraEnv: { PATH: `${resolve('e2e/fixtures/fake-vault')}${delimiter}${process.env['PATH'] ?? ''}` },
+      extraEnv: { PATH: `${FAKE_VAULT_DIR}${delimiter}${process.env['PATH'] ?? ''}` },
     });
     const page = launched.window;
     const toast = page.getByTestId('toast-viewport');
@@ -140,7 +147,8 @@ test.describe('secret sources', () => {
     expect(leaks).toEqual([]);
 
     // The HTTP Log row for the send carries the request headers: the secret is masked there too.
-    const logRow = logRows(page).first();
+    // The log lists oldest first: the refused first send is row one, the 200 send is the last row.
+    const logRow = logRows(page).last();
     await expect(logRow).toBeVisible({ timeout: 20_000 });
     await selectLogRow(logRow);
     expect(await page.locator('body').innerText()).not.toContain(VAULT_VALUE);
@@ -148,6 +156,9 @@ test.describe('secret sources', () => {
     // --- the mapping changes on disk: approval is asked again -------------------------------------
     // The outside edit must really change the file, or the wait below would only time out.
     const before = readFileSync(manifest, 'utf8');
+    // The watcher drops events on a path for 2 s after the app's own write (SELF_WRITE_TTL_MS); wait past
+    // that window so the outside edit is seen however fast the steps above ran.
+    await page.waitForTimeout(2_100);
     const after = before.replace('path: kv/app', 'path: kv/other');
     expect(after).not.toBe(before);
     writeFileSync(manifest, after);

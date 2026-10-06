@@ -60,7 +60,7 @@ describe('sendGrpc', () => {
 
     await useExchangesStore.getState().sendGrpc('grpc-1');
 
-    expect(preflightGrpc).toHaveBeenCalledWith({ requestId: 'grpc-1' });
+    expect(preflightGrpc).toHaveBeenCalledWith({ requestId: 'grpc-1', secretsOnly: true });
     expect(
       useProblemsStore
         .getState()

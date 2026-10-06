@@ -923,6 +923,17 @@ function preflightSecretRefs(
   return wire;
 }
 
+/**
+ * True when a caller asked for the secret-source warnings only and no name is mapped: there is nothing
+ * to warn about, so the request is not resolved at all (the send that runs beside it resolves it once).
+ */
+function nothingToWarnAbout(
+  secretsOnly: boolean | undefined,
+  secretSources: SecretSourcesSnapshot | undefined,
+): boolean {
+  return secretsOnly === true && (secretSources === undefined || secretSourceContext(secretSources).sources.size === 0);
+}
+
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
 function isWebhookUrlSource(source: RestUrlSource): source is WebhookUrlSource {
   return source === 'target' || source === 'callback' || source === 'callback-fallback';
@@ -954,8 +965,15 @@ function preflightAuth(auth: AuthConfig): PreflightResult['auth'] {
 async function preflightRest(
   sendDeps: SendThroughEngineDeps,
   secretSources: SecretSourcesSnapshot | undefined,
-  request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
+  request: {
+    readonly requestId: string;
+    readonly draft?: RestRequestPatchWire | undefined;
+    readonly secretsOnly?: boolean | undefined;
+  },
 ): Promise<PreflightResult> {
+  if (nothingToWarnAbout(request.secretsOnly, secretSources)) {
+    return NO_PREFLIGHT;
+  }
   const resolved = await previewRest(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
     return NO_PREFLIGHT;
@@ -1085,8 +1103,15 @@ const GRPC_STREAM_UNKNOWN_MESSAGE = 'That call is no longer open for sending.';
 async function preflightGrpc(
   sendDeps: SendThroughEngineDeps,
   secretSources: SecretSourcesSnapshot | undefined,
-  request: { readonly requestId: string; readonly draft?: GrpcRequestPatchWire | undefined },
+  request: {
+    readonly requestId: string;
+    readonly draft?: GrpcRequestPatchWire | undefined;
+    readonly secretsOnly?: boolean | undefined;
+  },
 ): Promise<PreflightResult> {
+  if (nothingToWarnAbout(request.secretsOnly, secretSources)) {
+    return NO_PREFLIGHT;
+  }
   const resolved = await previewGrpc(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
     return NO_PREFLIGHT;
@@ -1238,8 +1263,15 @@ function isValidBase64(text: string): boolean {
 async function preflightWs(
   sendDeps: SendThroughEngineDeps,
   secretSources: SecretSourcesSnapshot | undefined,
-  request: { readonly requestId: string; readonly draft?: WsRequestPatchWire | undefined },
+  request: {
+    readonly requestId: string;
+    readonly draft?: WsRequestPatchWire | undefined;
+    readonly secretsOnly?: boolean | undefined;
+  },
 ): Promise<PreflightResult> {
+  if (nothingToWarnAbout(request.secretsOnly, secretSources)) {
+    return NO_PREFLIGHT;
+  }
   const resolved = await previewWs(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
     return NO_PREFLIGHT;

@@ -9,6 +9,7 @@ export function SecretsSection({ preferences, update }: SectionProps) {
         label="Secret source cache (seconds)"
         value={preferences.secrets.sourceCacheSeconds}
         min={0}
+        max={3600}
         testId="secrets-source-cache-seconds"
         onCommit={(sourceCacheSeconds) => {
           update({ secrets: { sourceCacheSeconds: sourceCacheSeconds ?? 300 } });

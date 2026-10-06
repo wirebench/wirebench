@@ -608,7 +608,12 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       void warnSecretSources(
         requestId,
         () => get().grpcByRequest[requestId]?.sendId === sendId,
-        () => ipc().request.preflightGrpc({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+        () =>
+          ipc().request.preflightGrpc({
+            requestId,
+            secretsOnly: true,
+            ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+          }),
       );
       const result = await ipc().request.sendGrpc({
         sendId,
@@ -752,7 +757,12 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       void warnSecretSources(
         requestId,
         () => get().wsByRequest[requestId]?.sendId === sendId,
-        () => ipc().request.preflightWs({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+        () =>
+          ipc().request.preflightWs({
+            requestId,
+            secretsOnly: true,
+            ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+          }),
       );
       const result = await ipc().request.openWs({
         sendId,
@@ -986,7 +996,12 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       void warnSecretSources(
         requestId,
         () => get().restByRequest[requestId]?.sendId === sendId,
-        () => ipc().request.preflightRest({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+        () =>
+          ipc().request.preflightRest({
+            requestId,
+            secretsOnly: true,
+            ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+          }),
       );
       const result = await ipc().request.sendRest({
         sendId,
