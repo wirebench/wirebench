@@ -1,4 +1,4 @@
-import { envVariablesFor, SECRET_ENV_PREFIX } from '@wirebench/engine';
+import { envVariablesFor, MIN_SEEDED_SECRET_LENGTH, SECRET_ENV_PREFIX } from '@wirebench/engine';
 import type { GetSecret, SecretNeed } from '@wirebench/engine';
 
 export interface EnvSecrets {
@@ -26,13 +26,6 @@ export function createEnvSecrets(needs: readonly SecretNeed[], env: NodeJS.Proce
 
 /** The variable `wirebench mcp --http` reads its bearer token from. */
 export const MCP_TOKEN_VARIABLE = 'WIREBENCH_MCP_TOKEN';
-
-/**
- * The shortest value {@link secretValuesIn} seeds. It masks a value whether or not a call used it, so
- * a short one (`1`, `true`) would mask ordinary text everywhere; a secret a call resolves keeps the
- * masker's own, lower floor.
- */
-export const MIN_SEEDED_SECRET_LENGTH = 8;
 
 /**
  * Every `WIREBENCH_SECRET_*` value in `env` of at least {@link MIN_SEEDED_SECRET_LENGTH} characters,

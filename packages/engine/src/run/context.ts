@@ -8,6 +8,7 @@ import type { Project, PropertyMap } from '../project/model.js';
 import type { HeldSoapDefinition } from '../protocols.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
+import { MIN_SEEDED_SECRET_LENGTH } from '../redact/literal.js';
 import type { RequestScripting } from '../script/request-scripts.js';
 import type { SecretPlaceholders } from '../script/send.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
@@ -111,9 +112,21 @@ export function scopesFor(context: RunContext): PropertyScopes {
           globals,
           system: process.env,
         });
+  const report = context.host.onSecretValue;
+  const { system } = scopes;
   return {
     ...scopes,
     env: { ...(scopes.env ?? {}), ...context.overrides },
+    // A `${#System#…}` value is masked like a secret once a request expands it (#181); a short one
+    // is left alone, so a common word is not masked everywhere.
+    ...(report !== undefined
+      ? {
+          onSystemRead: (name: string) => {
+            const value = system?.[name];
+            if (value !== undefined && value.length >= MIN_SEEDED_SECRET_LENGTH) report(value);
+          },
+        }
+      : {}),
     // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
     ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
   };

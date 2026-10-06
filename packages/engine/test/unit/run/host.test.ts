@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { createProject } from '../../../src/project/model.js';
 import type { AuthConfig } from '../../../src/project/model.js';
@@ -50,6 +50,52 @@ describe('RunContext.host', () => {
     const [item] = selectRequests(context.project, []).selected;
     await createRunSender(context)(item!).catch(() => undefined);
     expect(reported).toEqual(['bearer-1']);
+  });
+});
+
+describe('${#System#…} values', () => {
+  const LONG = 'WB_TEST_181_LONG';
+  const SHORT = 'WB_TEST_181_SHORT';
+  const UNUSED = 'WB_TEST_181_UNUSED';
+  const saved = { [LONG]: process.env[LONG], [SHORT]: process.env[SHORT], [UNUSED]: process.env[UNUSED] };
+  beforeEach(() => {
+    process.env[LONG] = 'sys-"value"-1234';
+    process.env[SHORT] = 'abc1234';
+    process.env[UNUSED] = 'never-referenced-value';
+  });
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it('tells the host each value a send expands, as it is set, when it is at least the seeding floor long', async () => {
+    const reported: string[] = [];
+    const api = createApi('A', {
+      baseUrl: 'http://127.0.0.1:1',
+      requests: [
+        createRestRequest('Post', {
+          method: 'POST',
+          url: `/x?s=\${#System#${SHORT}}`,
+          headers: [{ name: 'X-Sys', value: `\${#System#${LONG}}`, enabled: true }],
+          body: { kind: 'raw', language: 'json', text: `{"v":"\${#System#${LONG}}"}` },
+        }),
+      ],
+    });
+    const context: RunContext = {
+      project: { ...createProject('P'), apis: [api] },
+      projectDir: '/nowhere',
+      overrides: {},
+      host: testHost({}, { getSecret: () => Promise.resolve(undefined), onSecretValue: (v) => reported.push(v) }),
+    };
+    const [item] = selectRequests(context.project, []).selected;
+    await createRunSender(context)(item!).catch(() => undefined);
+    expect(new Set(reported)).toEqual(new Set(['sys-"value"-1234']));
+  });
+
+  it('adds no reporter to the scopes of a host that masks nothing', () => {
+    expect(scopesFor(contextWith({ type: 'none' })).onSystemRead).toBeUndefined();
   });
 });
 

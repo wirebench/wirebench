@@ -12,6 +12,14 @@ import { REDACTED_MARKER } from './index.js';
 const MIN_MASKED_LENGTH = 4;
 
 /**
+ * The shortest value masked although no secret store handed it out: one seeded from the
+ * environment up front (the MCP server's `WIREBENCH_SECRET_*` values), or one a `${#System#…}`
+ * reference put on the wire. Such a value may be any ordinary text, and a short one (`1`, `true`)
+ * would mask that text everywhere; a secret a send resolves keeps {@link MIN_MASKED_LENGTH}.
+ */
+export const MIN_SEEDED_SECRET_LENGTH = 8;
+
+/**
  * The forms a value takes on the wire besides itself — each one the engine (or its XML serializer,
  * or `URLSearchParams`) really writes somewhere:
  * - percent-encoded, as `encodeURIComponent` puts it in a URL;

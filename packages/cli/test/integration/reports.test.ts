@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startTestSoapServer } from '@wirebench/engine/test-helpers';
@@ -210,5 +210,69 @@ describe('junit and json report files', () => {
         expect(content.includes(form), `${name} contains ${form}`).toBe(false);
       }
     }
+  });
+  it('masks a ${#System#…} value the request expands in every report, but not a short one', async () => {
+    const dir = await tempDir();
+    const project = join(dir, 'project');
+    await cp(FIXTURE, project, { recursive: true });
+    const operation = join(project, 'interfaces', 'Echo', 'operations', 'Echo');
+    // The test server echoes the envelope back; a status the server never answers puts both in the reports.
+    await writeFile(
+      join(operation, 'Say hello.xml'),
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
+        '<e:Echo xmlns:e="urn:echo"><e:text>${#System#WB_SYS_181_LONG} ${#System#WB_SYS_181_SHORT}</e:text></e:Echo>' +
+        '</soapenv:Body></soapenv:Envelope>',
+    );
+    const requestFile = join(operation, 'Say hello.request.yaml');
+    await writeFile(
+      requestFile,
+      (await readFile(requestFile, 'utf8')).replace(
+        'assertions:\n',
+        'assertions:\n  - equals: 599\n    type: status\n',
+      ),
+    );
+    const junitFile = join(dir, 'r.xml');
+    const jsonFile = join(dir, 'r.json');
+    const htmlFile = join(dir, 'r.html');
+    const long = 'system-value-long-181';
+    const { code, stdout, stderr } = await runCli(
+      [
+        'run',
+        project,
+        '-e',
+        'local',
+        ...vars(),
+        '--var',
+        `soapUrl=${soap.url}/soap`,
+        '--verbose',
+        '--reporter',
+        `junit=${junitFile}`,
+        '--reporter',
+        `json=${jsonFile}`,
+        '--reporter',
+        `html=${htmlFile}`,
+        '--reporter',
+        'cli',
+        'Echo/Echo/Say hello',
+      ],
+      { WB_SYS_181_LONG: long, WB_SYS_181_SHORT: 'sys7chr', WB_SYS_181_UNUSED: 'unused-system-value-181' },
+    );
+    expect(code).toBe(1);
+    // The value really travelled.
+    expect(soap.requests.at(-1)?.body.toString('utf8')).toContain(`${long} sys7chr`);
+    const json = await readFile(jsonFile, 'utf8');
+    const outputs = {
+      junit: await readFile(junitFile, 'utf8'),
+      json,
+      html: await readFile(htmlFile, 'utf8'),
+      stdout,
+      stderr,
+    };
+    for (const [name, content] of Object.entries(outputs)) {
+      expect(content.includes(long), `${name} contains the System value`).toBe(false);
+    }
+    // Masked, not missing; and a value under the floor is left as it is.
+    expect(json).toContain('redacted');
+    expect(json).toContain('sys7chr');
   });
 });

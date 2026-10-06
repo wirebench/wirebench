@@ -35,6 +35,14 @@ export interface PropertyScopes {
   /** Defaults to `process.env` when omitted. */
   readonly system?: Readonly<Record<string, string | undefined>>;
   /**
+   * Told the name of each `${#System#name}` property {@link expand} substitutes, so a host can mask
+   * the value it put on the wire (`scopesFor` in `run/context.ts`). Only what an expansion actually
+   * reaches is named, never the rest of the environment, and a secret lookup that merely follows
+   * references names nothing. A protocol that escapes the scopes keeps this, so the host reads the
+   * value from its own map, unescaped.
+   */
+  readonly onSystemRead?: (name: string) => void;
+  /**
    * Secret values keyed by name, for the `${secret:name}` token. Resolved by the caller (main
    * from the keychain-backed store, the CLI from `WIREBENCH_SECRET_<NAME>`) and injected here so
    * expansion itself stays synchronous and pure.
@@ -361,6 +369,9 @@ function expandAt(
         continue;
       }
       ctx.used.push({ scope, name });
+      if (scope === 'System') {
+        ctx.scopes.onSystemRead?.(name);
+      }
       if (scope === 'Sequence') {
         // Literal: the value came from a response, and expanding it would let a server name any
         // property or secret for the next request to carry back (ADR-0015).

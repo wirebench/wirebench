@@ -132,6 +132,59 @@ describe('op send', () => {
     expect(history).toContain('"tags":["cli"]');
   });
 
+  it('masks a ${#System#…} value the request expands in the result and in History, but not a short one', async () => {
+    const LONG = 'WB_TEST_181_SEND_LONG';
+    const SHORT = 'WB_TEST_181_SEND_SHORT';
+    const UNUSED = 'WB_TEST_181_SEND_UNUSED';
+    const saved = { [LONG]: process.env[LONG], [SHORT]: process.env[SHORT], [UNUSED]: process.env[UNUSED] };
+    process.env[LONG] = 'system-value-long-181';
+    process.env[SHORT] = 'sys7chr';
+    process.env[UNUSED] = 'unused-system-value-181';
+    try {
+      const fixture = await restProject();
+      const pets = await server((request) => ({
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([
+          {
+            id: 1,
+            name: 'Rex',
+            sys: request.headers['x-sys'],
+            short: request.headers['x-short'],
+            other: 'unused-system-value-181',
+          },
+        ]),
+      }));
+      await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+      await updateRestRequest(fixture.dir, 'GET', '/pets', (request) => ({
+        ...request,
+        headers: [
+          ...request.headers,
+          { name: 'X-Sys', value: `\${#System#${LONG}}`, enabled: true },
+          { name: 'X-Short', value: `\${#System#${SHORT}}`, enabled: true },
+        ],
+      }));
+      const item = await restItem(fixture.dir, 'GET', '/pets');
+
+      const result = await runOp(sendOp, { item, environment: 'local' }, fixture.base({ origin: 'cli' }));
+
+      expect(pets.received[0]?.headers['x-sys']).toBe('system-value-long-181');
+      expect(result).toMatchObject({ kind: 'rest', status: 200, outcome: 'passed' });
+      expect(result.body).toContain(REDACTED_MARKER);
+      // Under the floor, and never expanded: left as they are.
+      expect(result.body).toContain('sys7chr');
+      expect(result.body).toContain('unused-system-value-181');
+      expect(JSON.stringify(result)).not.toContain('system-value-long-181');
+      const history = await historyText(fixture.historyDir);
+      expect(history).not.toContain('system-value-long-181');
+      expect(history).toContain('sys7chr');
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it('reports a failing assertion as failed, and takes a body without saving it', async () => {
     const fixture = await soapProject();
     const calculator = await server(() => ({

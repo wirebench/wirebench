@@ -124,6 +124,17 @@ elements and the JSON/form secret-key list (`SECRET_BODY_KEYS`) are always redac
 regardless of the value's length. Choose secret values of ordinary length (not four-character test
 placeholders) to get the literal-masking guarantee as well.
 
+## Values read from the process environment are masked too
+
+A request can read any process environment variable through `${#System#NAME}`, and nothing marks
+such a value as a secret. So once a send expands one, the value is masked by value like a resolved
+secret: in `wirebench run`'s reports (`cli`, `junit`, `json`, `html`), in `send` results (over MCP
+too), in History, and in the desktop's HTTP log and History, wherever a recorded secret is masked.
+Only a value a request actually expands is masked, never the rest of the environment, and only one
+of at least 8 characters — the same floor as the MCP server's seeded secrets — since a short value
+such as `1` or `true` would mask ordinary text everywhere. A shorter value is sent and shown as it
+is, so keep credentials in `${secret:…}` tokens rather than `${#System#…}` references.
+
 ## The MCP server is gated, redacted and local
 
 `wirebench mcp` (issue #32) lets a coding agent drive one project. What the agent can do is what the
@@ -601,7 +612,8 @@ Preferences → Devices & tokens. It is a `wbs_…` token with a narrower reach 
 - The token list shows each token's name, who created it and when it was last used, so an unused or
   unexpected one stands out.
 - Callback `equals` and `matches` values are expanded like other assertion values, `${#System#…}`
-  included, and can appear in a failure message. Keep credentials out of them.
+  included, and can appear in a failure message; a `${#System#…}` value of at least 8 characters is
+  masked there, a shorter one is not. Keep credentials out of them.
 
 ### Signature secrets
 
