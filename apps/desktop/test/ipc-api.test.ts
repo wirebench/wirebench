@@ -885,7 +885,7 @@ describe('the .http channels', () => {
     const res = await invoke('api.inspectHttpFile', { path: join(dir, 'api.http') });
 
     expect(res).toEqual({ ok: true, value: { environments: ['dev', 'prod'] } });
-    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(JSON.stringify(res).replaceAll(dir, '<dir>')).not.toContain('pw');
   });
 
   it('api.inspectHttpFile answers with no environments when there are no files beside it', async () => {
@@ -918,7 +918,7 @@ describe('the .http channels', () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(JSON.stringify(res).replaceAll(dir, '<dir>')).not.toContain('pw');
     const response = (res as { value: { apiIds: string[]; counts: unknown; variables?: { secretsStored: number } } })
       .value;
     expect(addApi.mock.calls[0]?.[1]).toMatchObject({
@@ -1069,7 +1069,7 @@ describe('the .http channels', () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(JSON.stringify(res).replaceAll(dir, '<dir>')).not.toContain('pw');
     expect(variablesPorts).toHaveBeenCalledWith(undefined);
     expect(fake.environments.map((environment) => environment.name)).toEqual(['dev', 'prod']);
     expect(fake.environments[0]?.properties).toMatchObject({
@@ -1102,7 +1102,7 @@ describe('the .http channels', () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(JSON.stringify(res).replaceAll(dir, '<dir>')).not.toContain('pw');
     expect(fake.environments).toEqual([
       { name: 'dev', properties: { password: '${secret:sec_1}', host: '${secret:sec_2}' }, disabled: [] },
     ]);
