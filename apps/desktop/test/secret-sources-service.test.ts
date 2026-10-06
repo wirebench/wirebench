@@ -6,13 +6,13 @@ import { SecretSourcesService, type SecretSourcesSnapshot } from '../src/main/se
 const shared = parseSecretSources({ db: { kind: 'vault', path: 'kv/app', field: 'password' } }).sources;
 const hash = secretSourcesHash(shared);
 
-function make(snapshot: SecretSourcesSnapshot | undefined, stdout = 'pw') {
+function make(snapshot: SecretSourcesSnapshot | undefined, stdout = 'pw', cacheSeconds: () => number = () => 300) {
   let current = snapshot;
   const run = vi.fn(() => Promise.resolve({ stdout, stderr: '', exitCode: 0 }));
   const values: string[] = [];
   const service = new SecretSourcesService({
     snapshot: () => current,
-    cacheSeconds: () => 300,
+    cacheSeconds,
     onValue: (value) => values.push(value),
     mask: (text) => text,
     platform: 'linux',
@@ -35,7 +35,8 @@ const approved = (): SecretSourcesSnapshot => ({ shared, local: undefined, appro
 describe('SecretSourcesService', () => {
   it('answers an approved mapping and passes everything else on', async () => {
     const { service, values } = make(approved());
-    const get = service.wrap((ref) => Promise.resolve(ref === 'secret:other' ? 'store' : undefined));
+    // `next` knows every name, the mapped one too: a mapped name must still never fall through to it.
+    const get = service.wrap(() => Promise.resolve('store'));
     expect(await get('secret:db')).toBe('pw');
     expect(await get('secret:other')).toBe('store');
     expect(values).toEqual(['pw']);
@@ -82,6 +83,19 @@ describe('SecretSourcesService', () => {
     service.noteChange();
     await service.wrap(() => Promise.resolve(undefined))('secret:db');
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the cacheSeconds preference on each call', async () => {
+    let seconds = 0;
+    const { service, run } = make(approved(), 'pw', () => seconds);
+    const get = service.wrap(() => Promise.resolve(undefined));
+    await get('secret:db');
+    await get('secret:db');
+    expect(run).toHaveBeenCalledTimes(2);
+    seconds = 300;
+    await get('secret:db');
+    await get('secret:db');
+    expect(run).toHaveBeenCalledTimes(3);
   });
 
   it('clear() drops cached values', async () => {

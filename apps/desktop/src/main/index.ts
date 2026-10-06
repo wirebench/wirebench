@@ -97,6 +97,7 @@ import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerSecretSourcesChannels } from './ipc/secret-sources.js';
 import { registerTeamSecretsChannels } from './ipc/team-secrets.js';
 import { registerSecretScanChannels } from './ipc/secret-scan.js';
 import { registerSnapshotChannels } from './ipc/snapshot.js';
@@ -875,6 +876,7 @@ void app.whenReady().then(() => {
   });
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(teamSecretStore, showSecretsFlag);
+  registerSecretSourcesChannels(workspaceService, secretSources);
   registerTeamSecretsChannels(teamSecrets);
   registerSecretScanChannels(secretScans);
   registerSnapshotChannels(

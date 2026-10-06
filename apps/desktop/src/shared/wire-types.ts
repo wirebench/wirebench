@@ -4357,6 +4357,73 @@ export const secretsSetShowSecretsRequestSchema = z.object({ show: z.boolean() }
 export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
 
 // ---------------------------------------------------------------------------
+// Secret sources (`secretSources.*`, secret sources spec D6): where a `${secret:name}` comes from in an
+// external manager. Locators cross the bridge; a value never does (ADR-0004). Writes are per entry, so an
+// entry the renderer cannot represent (an invalid raw one, A7) is never sent back, and a teammate's change
+// reloaded while the dialog is open is not overwritten.
+// ---------------------------------------------------------------------------
+
+/** One mapped name, shared (`workspace.yaml`) or this machine's (`local.yaml`). */
+export const secretSourceEntryWireSchema = z.object({
+  name: z.string(),
+  origin: z.enum(['shared', 'local']),
+  /** A kind, `invalid`, or (local only) `none`. */
+  kind: z.string(),
+  /** The entry's string locator fields; never a value. */
+  fields: z.record(z.string(), z.string()),
+  /** Why an `invalid` entry was refused. */
+  reason: z.string().optional(),
+  /** A shared entry that a local one replaces or unmaps. */
+  overridden: z.boolean(),
+});
+export type SecretSourceEntryWire = z.infer<typeof secretSourceEntryWireSchema>;
+
+/** Response for `secretSources.get` and `secretSources.approve`. */
+export const secretSourcesStateSchema = z.object({
+  open: z.boolean(),
+  entries: z.array(secretSourceEntryWireSchema),
+  /** The shared mapping's hash; absent when there is none to approve. */
+  hash: z.string().optional(),
+  /** True when there is no shared mapping, or this machine approved the current one. */
+  trusted: z.boolean(),
+  /** Shared names added, changed or removed since this machine's approval. */
+  changes: z.array(z.object({ name: z.string(), change: z.enum(['added', 'changed', 'removed']) })),
+  /** A `secretSources` value that is not a mapping, kept as read until an entry is written over it. */
+  problem: z.string().optional(),
+});
+export type SecretSourcesState = z.infer<typeof secretSourcesStateSchema>;
+
+/**
+ * Request for `secretSources.setShared` and `secretSources.setLocal`: one entry. `previousName` and `name` are
+ * removed first, then `entry` is written under `name`, or nothing is when it is `null`.
+ */
+export const secretSourcesSetRequestSchema = z.object({
+  name: z.string(),
+  previousName: z.string().optional(),
+  entry: z.record(z.string(), z.string()).nullable(),
+});
+export type SecretSourcesSetRequest = z.infer<typeof secretSourcesSetRequestSchema>;
+
+/** Response for `secretSources.setShared` and `secretSources.setLocal`: nothing is written when `ok` is false. */
+export const secretSourcesSetResponseSchema = z.object({
+  ok: z.boolean(),
+  issues: z.array(z.object({ name: z.string(), field: z.string().optional(), reason: z.string() })),
+});
+export type SecretSourcesSetResponse = z.infer<typeof secretSourcesSetResponseSchema>;
+
+/** Request for `secretSources.approve`: the hash the user reviewed. */
+export const secretSourcesApproveRequestSchema = z.object({ hash: z.string() });
+
+/** Request for `secretSources.test`. */
+export const secretSourcesTestRequestSchema = z.object({ name: z.string() });
+/** Response for `secretSources.test`: the value's length, or why it could not be read. Never the value. */
+export const secretSourcesTestResponseSchema = z.union([
+  z.object({ ok: z.literal(true), length: z.number() }),
+  z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
+]);
+export type SecretSourcesTestResponse = z.infer<typeof secretSourcesTestResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Secret scanning (`secretScan.*`): credentials found in plain text in a project, and moving them
 // into the store behind a `${secret:name}` token. A finding crosses the bridge as a masked
 // `preview` only — every schema here is `.strict()`, so a finding that carried its `value` (or a

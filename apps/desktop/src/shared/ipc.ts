@@ -233,6 +233,12 @@ import {
   secretsSetRequestSchema,
   secretsSetShowSecretsRequestSchema,
   secretsShowSecretsResponseSchema,
+  secretSourcesApproveRequestSchema,
+  secretSourcesSetRequestSchema,
+  secretSourcesSetResponseSchema,
+  secretSourcesStateSchema,
+  secretSourcesTestRequestSchema,
+  secretSourcesTestResponseSchema,
   secretScanHoldRequestSchema,
   secretScanHoldResponseSchema,
   secretScanKeepRequestSchema,
@@ -1012,6 +1018,16 @@ export const channels = {
       secretsShowSecretsResponseSchema,
     ),
     getShowSecrets: defineChannel('secrets.getShowSecrets', z.undefined(), secretsShowSecretsResponseSchema),
+  },
+  // Secret sources (secret sources spec D6). No reply carries a secret value: `test` answers with a length.
+  // `setShared` and `setLocal` write one entry and are validated in main (A6).
+  secretSources: {
+    get: defineChannel('secretSources.get', z.undefined(), secretSourcesStateSchema),
+    setShared: defineChannel('secretSources.setShared', secretSourcesSetRequestSchema, secretSourcesSetResponseSchema),
+    setLocal: defineChannel('secretSources.setLocal', secretSourcesSetRequestSchema, secretSourcesSetResponseSchema),
+    approve: defineChannel('secretSources.approve', secretSourcesApproveRequestSchema, secretSourcesStateSchema),
+    test: defineChannel('secretSources.test', secretSourcesTestRequestSchema, secretSourcesTestResponseSchema),
+    clearCache: defineChannel('secretSources.clearCache', z.undefined(), z.undefined()),
   },
   // Plain-text credentials in one project: found and moved in main. A finding crosses the bridge as
   // a masked preview; its value never does, in either direction. `setValue` is the one call that
