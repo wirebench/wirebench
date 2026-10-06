@@ -13,7 +13,9 @@ import {
   createRequest,
   DEFAULT_WSA_CONFIG,
   definitionCacheDir,
+  contractPorts,
   detectImportFormat,
+  endpointsFromContract,
   generateId,
   generateSoapRequest,
   importWsdl,
@@ -111,25 +113,9 @@ async function readSource(source: string, fetchDocument: FetchDocument): Promise
   return { text, location: pathToFileURL(path).href, source: path, filename: basename(path) };
 }
 
-/** Every distinct port address of the definition, as the interface's endpoints. */
+/** Every distinct port address of the definition, as the interface's endpoints (`${` escaped, #223). */
 function endpointsOf(result: WsdlImportResult): Endpoint[] {
-  const seen = new Set<string>();
-  const endpoints: Endpoint[] = [];
-  for (const service of result.definition.services) {
-    for (const port of service.ports) {
-      if (port.address === undefined || seen.has(port.address)) {
-        continue;
-      }
-      seen.add(port.address);
-      endpoints.push({
-        id: generateId(),
-        name: `${service.name.localName} ${port.name}`,
-        url: port.address,
-        authMode: 'complement',
-      });
-    }
-  }
-  return endpoints;
+  return endpointsFromContract(contractPorts(result.definition), generateId);
 }
 
 /** One operation per binding operation, each with a generated `Request 1`, as the desktop's import makes them. */

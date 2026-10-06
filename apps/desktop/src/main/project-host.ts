@@ -92,6 +92,7 @@ import {
   soapIssuedTokenKeyTarget,
   soapIssuedTokenTarget,
   soapItemFor,
+  endpointsFromContract,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
@@ -377,25 +378,18 @@ async function firstExistingCandidate(candidates: readonly string[]): Promise<st
   return undefined;
 }
 
-/** Every distinct port address of an imported definition, as project endpoints. */
+/** Every distinct port address of an imported definition, as project endpoints (`${` escaped, #223). */
 function endpointsFrom(summary: InterfaceSummary): Endpoint[] {
-  const seen = new Set<string>();
-  const endpoints: Endpoint[] = [];
-  for (const service of summary.services) {
-    for (const port of service.ports) {
-      if (port.address === undefined || seen.has(port.address)) {
-        continue;
-      }
-      seen.add(port.address);
-      endpoints.push({
-        id: generateId(),
-        name: `${service.name} ${port.name}`,
-        url: port.address,
-        authMode: 'complement',
-      });
-    }
-  }
-  return endpoints;
+  return endpointsFromContract(
+    summary.services.flatMap((service) =>
+      service.ports.map((port) => ({
+        service: service.name,
+        port: port.name,
+        ...(port.address !== undefined ? { address: port.address } : {}),
+      })),
+    ),
+    generateId,
+  );
 }
 
 /** One empty {@link OperationDef} per operation the definition exposes, with unique slugs. */

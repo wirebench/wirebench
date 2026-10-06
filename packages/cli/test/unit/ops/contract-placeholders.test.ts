@@ -5,6 +5,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { loadProject } from '@wirebench/engine';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { callOp } from '../../../src/ops/call.js';
 import { runOp } from '../../../src/ops/context.js';
@@ -163,6 +164,26 @@ describe('a ${ from the contract', () => {
 
     const [received] = server.received;
     expect(decodeURIComponent(received?.url ?? '')).toBe('/files/$p2?q=x');
+    expect(JSON.stringify(received)).not.toContain(LEAK);
+  });
+
+  it('import and send: a soap:address goes out literally, held escaped on the endpoint', async () => {
+    const server = await startServer(() => ({ headers: { 'Content-Type': 'text/xml' }, body: ADD_RESPONSE }));
+    servers.push(server);
+    const original = await readFile(CALCULATOR_WSDL, 'utf8');
+    const file = join(await tempDir(), 'calculator-address.wsdl');
+    await writeFile(file, original.replace('http://127.0.0.1:9/calculator', `${server.url}/calc/\${home}`));
+    const fixture = await emptyProject();
+    await runOp(importOp, { source: file }, fixture.base());
+    // A project property of the same name, which the address's `${home}` must not read.
+    await updateProject(fixture.dir, (project) => ({ ...project, properties: { ...project.properties, home: LEAK } }));
+
+    const { project } = await loadProject(fixture.dir);
+    expect(project.interfaces[0]?.endpoints.map((endpoint) => endpoint.url)).toEqual([`${server.url}/calc/$\${home}`]);
+
+    await runOp(sendOp, { item: SOAP_ITEM }, fixture.base());
+    const [received] = server.received;
+    expect(decodeURIComponent(received?.url ?? '')).toBe('/calc/${home}');
     expect(JSON.stringify(received)).not.toContain(LEAK);
   });
 });

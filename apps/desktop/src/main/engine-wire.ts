@@ -4,7 +4,7 @@
  * `ipcMain` imports so they can be unit-tested directly against real engine output.
  */
 
-import { capSseRows, findBinding, qnameToString, SSE_SUMMARY_LIMITS } from '@wirebench/engine';
+import { capSseRows, endpointUrlFromContract, findBinding, qnameToString, SSE_SUMMARY_LIMITS } from '@wirebench/engine';
 import {
   redactHeaderPairs,
   redactHeaders,
@@ -76,7 +76,9 @@ export function toInterfaceSummary(result: WsdlImportResult, id: string, definit
       const binding = findBinding(definition, port.binding);
       return {
         name: port.name,
-        ...(port.address !== undefined ? { address: port.address } : {}),
+        ...(port.address !== undefined
+          ? { address: port.address, endpointUrl: endpointUrlFromContract(port.address) }
+          : {}),
         binding: qnameToString(port.binding),
         soapVersion: binding?.soapVersion ?? 'none',
       };

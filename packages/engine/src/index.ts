@@ -1075,6 +1075,8 @@ export type {
   RestEventStreamLike,
 } from './project/history.js';
 export { enabledProperties, escapeExpansions, expand, hasExpansions, secretNamesIn } from './project/properties.js';
+export { contractPorts, endpointsFromContract, endpointUrlFromContract } from './wsdl/contract-endpoints.js';
+export type { ContractPort } from './wsdl/contract-endpoints.js';
 export { expandSendInput } from './soap/expand.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';

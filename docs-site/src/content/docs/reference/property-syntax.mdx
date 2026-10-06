@@ -69,16 +69,16 @@ left verbatim rather than expanded.
 ## Escaping
 
 `$${` is a literal `${` — the two characters before the brace are consumed by the escape, so
-`$${name}` produces the literal text `${name}`, unexpanded. A run of three or more `$` before a
-brace only ever has its first `$$` treated as an escape: `$$${x}` leaves a literal `$` followed by
-`${x}`, which then *is* eligible for expansion, matched left to right.
+`$${name}` produces the literal text `${name}`, unexpanded. In a run of three or more `$` before a
+brace, the last two and the brace form the escape and every `$` before them stays as it is. So
+`$$${x}` produces the literal text `$${x}`, and nothing in it is expanded.
 
 ### Text that comes from a contract
 
 A `${` in a definition's own text belongs to the definition, not to you. When Wirebench generates a
 request from a WSDL or an OpenAPI document, it writes every `${` it copies from there as `$${`. That
-covers an XSD `fixed` or `default` value, the SOAP action, an OpenAPI path, a server URL, and an
-example or default. A contract tool's call does the same. Each `${` then goes on the wire exactly as
+covers an XSD `fixed` or `default` value, the SOAP action, a WSDL `soap:address` (the endpoint it
+becomes), an OpenAPI path, a server URL, and an example or default. A contract tool's call does the same. Each `${` then goes on the wire exactly as
 the definition wrote it. It never reads a property, a secret, or an environment variable through
 `${#System#…}`. A `${…}` you type into the request later expands as usual.
 

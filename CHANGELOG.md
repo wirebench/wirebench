@@ -93,7 +93,8 @@ All notable changes to this project are documented here. The format follows
   shows `<redacted>`, so a diff against a newer entry shows that line as changed (#252).
 - **`${` from a contract is sent as written.** A request generated from a WSDL or an OpenAPI document
   now holds a `${…}` copied from the definition as `$${…}`. That covers an XSD `fixed` or `default`
-  value, the SOAP action, an OpenAPI path, a server URL, and an example or default. So the `${…}` goes
+  value, the SOAP action, a WSDL `soap:address` and the endpoint made from it, an OpenAPI path, a
+  server URL, and an example or default. So the `${…}` goes
   on the wire literally and never reads a property, a secret or an environment variable. This holds
   in the desktop, `send` and the contract tools. A request generated before this change keeps the
   unescaped text; regenerate it to get the new behaviour (#223).

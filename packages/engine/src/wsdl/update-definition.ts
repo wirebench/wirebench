@@ -17,6 +17,7 @@
  */
 
 import { generateSoapRequest } from '../soap/generate.js';
+import { endpointUrlFromContract } from './contract-endpoints.js';
 import { createRequest, generateId } from '../project/model.js';
 import type { Endpoint, IdGenerator, Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
@@ -71,13 +72,16 @@ function refOf(summary: SoapOperationSummary): OperationRef {
   return { bindingName: summary.bindingName, operationName: summary.operationName };
 }
 
-/** Every `soap:address` the definition exposes, deduplicated, in document order. */
+/**
+ * Every `soap:address` the definition exposes as the endpoint URL it becomes (`${` escaped, #223),
+ * deduplicated, in document order — so the plan compares and names what an endpoint holds.
+ */
 function addressesOf(summary: readonly SoapOperationSummary[]): string[] {
   const seen = new Set<string>();
   for (const operation of summary) {
     for (const port of operation.ports) {
       if (port.address !== undefined) {
-        seen.add(port.address);
+        seen.add(endpointUrlFromContract(port.address));
       }
     }
   }
@@ -270,9 +274,13 @@ function summaryFor(result: WsdlImportResult, key: string): SoapOperationSummary
   return result.operations.find((op) => operationKey(refOf(op)) === key);
 }
 
-/** Adds the endpoints `plan.endpointsAdded` names, skipping URLs the interface already has. */
+/**
+ * Adds the endpoints `plan.endpointsAdded` names, skipping URLs the interface already has. A URL is
+ * known as stored and as it would be escaped, so an endpoint saved from the address before the
+ * escape (#223) is not added a second time.
+ */
 function withAddedEndpoints(iface: Interface, plan: UpdatePlan, newId: IdGenerator): Interface {
-  const known = new Set(iface.endpoints.map((endpoint) => endpoint.url));
+  const known = new Set(iface.endpoints.flatMap((endpoint) => [endpoint.url, endpointUrlFromContract(endpoint.url)]));
   const added: Endpoint[] = plan.endpointsAdded
     .filter((url) => !known.has(url))
     .map((url) => ({ id: newId(), name: url, url, authMode: 'complement' as const }));

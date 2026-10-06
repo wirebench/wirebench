@@ -63,6 +63,20 @@ describe('toInterfaceSummary', () => {
     expect(summary.name).toBe('service.wsdl');
   });
 
+  it("gives each port the endpoint URL its address becomes, the definition's ${ escaped (#223)", async () => {
+    const text = readPublicFixture('calculator').replace(
+      /location="[^"]*"/,
+      'location="http://calc.test/${#System#HOME}"',
+    );
+    const result = await importWsdl({ kind: 'text', text, location: CALCULATOR_URL });
+    const ports = toInterfaceSummary(result, 'iface-4', CALCULATOR_URL).services.flatMap((service) => service.ports);
+    const crafted = ports.find((port) => port.address === 'http://calc.test/${#System#HOME}');
+    expect(crafted?.endpointUrl).toBe('http://calc.test/$${#System#HOME}');
+    for (const port of ports) {
+      expect(port.endpointUrl).toBe(port.address?.replaceAll('${', () => '$${'));
+    }
+  });
+
   it('carries the binding mime parts through to the operation summary', async () => {
     const location = fixturePath('wsdl/crafted/attachments/service.wsdl');
     const result = await importWsdl({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
