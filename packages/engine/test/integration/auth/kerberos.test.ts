@@ -120,4 +120,33 @@ describe('Kerberos over HTTP Negotiate', () => {
     expect(provider.inits).toHaveLength(1);
     expect(server.requests).toHaveLength(1);
   });
+
+  it('fails a hung token wait with timeout within the send budget, after leg 1 only (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    server = await startNegotiateServer({ expectedToken: TOKEN, reply: REPLY });
+    const started = Date.now();
+    await expect(sendWithAuth(post(server.url, 300), { type: 'kerberos' })).rejects.toMatchObject({
+      code: 'timeout',
+      details: { stage: 'kerberos' },
+    });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(server.requests).toHaveLength(1);
+    provider.release();
+  });
+
+  it('returns at once with aborted when cancelled during the token wait (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    server = await startNegotiateServer({ expectedToken: TOKEN, reply: REPLY });
+    const controller = new AbortController();
+    const pending = sendWithAuth({ ...post(server.url), signal: controller.signal }, { type: 'kerberos' });
+    // `inits` grows once the server's 401 has arrived and the token wait has started.
+    while (provider.inits.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    const abortedAt = Date.now();
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'aborted' });
+    expect(Date.now() - abortedAt).toBeLessThan(1000);
+    provider.release();
+  });
 });
