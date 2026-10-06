@@ -78,6 +78,7 @@ import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-pi
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { CurrentValuesStore } from './current-values.js';
+import type { SecretSourcesSnapshot } from './secret-sources-service.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
@@ -2657,6 +2658,19 @@ export class WorkspaceService implements ProjectRouter {
       this.deps.hooks?.onChanged?.(this.snapshot());
       return this.requireSnapshot();
     });
+  }
+
+  /** The open workspace's secret sources, with this machine's overrides and approval (secret sources spec D6). */
+  secretSourcesSnapshot(): SecretSourcesSnapshot | undefined {
+    const open = this.current;
+    if (open === undefined) {
+      return undefined;
+    }
+    return {
+      shared: open.workspace.secretSources,
+      local: open.local.secretSources,
+      approvedHash: open.local.secretSourcesApproved?.hash,
+    };
   }
 
   // ——— snapshot ———————————————————————————————————————————————————————————————————————————

@@ -24,7 +24,7 @@ export interface SourceCache {
   clear(): void;
 }
 
-/** Per-cache state, kept off the object so `SourceCache` stays opaque and any `{ clear }` works as one. */
+/** Per-cache state, kept off the object so `SourceCache` stays opaque. Only caches from `createSourceCache` are accepted. */
 const cacheEntries = new WeakMap<SourceCache, Map<string, CacheEntry>>();
 
 function entriesOf(cache: SourceCache): Map<string, CacheEntry> {

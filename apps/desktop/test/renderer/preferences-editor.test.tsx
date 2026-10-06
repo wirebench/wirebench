@@ -53,6 +53,7 @@ describe('PreferencesEditor', () => {
       'Editor',
       'UI',
       'Accounts',
+      'Secrets',
       'Shortcuts',
     ]) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
@@ -78,6 +79,20 @@ describe('PreferencesEditor', () => {
 
     await vi.waitFor(() => {
       expect(update).toHaveBeenCalledWith({ patch: { editor: { tabSize: 2 } } });
+    });
+  });
+
+  it('sets the secret source cache lifetime from the Secrets section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Secrets' }));
+
+    const field = screen.getByLabelText('Secret source cache (seconds)');
+    fireEvent.change(field, { target: { value: '60' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { secrets: { sourceCacheSeconds: 60 } } });
     });
   });
 

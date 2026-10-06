@@ -757,6 +757,38 @@ describe('WorkspaceService saving', () => {
   }, 60_000);
 });
 
+describe('secretSourcesSnapshot', () => {
+  it('is undefined with no workspace open and reads the shared mapping, overrides and approval once open', async () => {
+    const bootstrap = newService();
+    expect(bootstrap.secretSourcesSnapshot()).toBeUndefined();
+    const created = await bootstrap.create('Sources');
+    await bootstrap.close();
+    const hash = 'cd'.repeat(32);
+    await writeFile(
+      join(workspaceDir(root, created.id), 'local.yaml'),
+      [
+        'version: 2',
+        'secretSources:',
+        '  a:',
+        '    kind: none',
+        'secretSourcesApproved:',
+        `  hash: ${hash}`,
+        '  mapping: {}',
+        '',
+      ].join('\n'),
+    );
+    const service = newService();
+    await service.open(created.id);
+    expect(service.secretSourcesSnapshot()).toEqual({
+      shared: undefined,
+      local: { a: { kind: 'none' } },
+      approvedHash: hash,
+    });
+    await service.close();
+    expect(service.secretSourcesSnapshot()).toBeUndefined();
+  });
+});
+
 describe('active environment: machine-local, via local.yaml', () => {
   it('setActiveEnvironment writes local.yaml and leaves workspace.yaml bytes unchanged', async () => {
     const service = newService();

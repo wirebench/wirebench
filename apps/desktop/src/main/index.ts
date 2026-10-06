@@ -30,7 +30,8 @@ import {
 } from './preferences.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
-import { recordSecretValue } from './redact.js';
+import { recordSecretValue, redactSecretText } from './redact.js';
+import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter } from './secret-resolver.js';
 import { SecretScanSessions } from './secret-scan-session.js';
 import { TeamSecretsService } from './team-secrets-service.js';
@@ -143,6 +144,22 @@ const teamSecrets = new TeamSecretsService({
 });
 const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
 
+/** The user's application preferences, shared by every project and every window. */
+const preferencesService = new PreferencesService(app.getPath('userData'));
+
+/**
+ * Secret sources (spec D6): one cache for the app, in front of every send's getter chain. The workspace
+ * service is declared further down; it is read only when a secret is asked for, so it is reached
+ * through a late-bound reference.
+ */
+const workspaceServiceRef: { current: WorkspaceService | undefined } = { current: undefined };
+const secretSources = new SecretSourcesService({
+  snapshot: () => workspaceServiceRef.current?.secretSourcesSnapshot(),
+  cacheSeconds: () => preferencesService.get().secrets.sourceCacheSeconds,
+  onValue: recordSecretValue,
+  mask: redactSecretText,
+});
+
 /**
  * The secret getter every send resolves through, for one project's `${secret:name}` tokens (or,
  * with no project, for plain refs only). Each value it hands out is recorded in `redact.ts`, so it
@@ -151,7 +168,9 @@ const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
  * removed or declined) instead of the plain "not on this machine".
  */
 const secretsFor = (projectId: string | undefined) =>
-  teamSecretGetter(projectSecretGetter(secretStore, projectId, recordSecretValue), teamSecrets, projectId);
+  secretSources.wrap(
+    teamSecretGetter(projectSecretGetter(secretStore, projectId, recordSecretValue), teamSecrets, projectId),
+  );
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
@@ -159,9 +178,6 @@ const engineService = new EngineService(secretsFor(undefined));
 const exchanges = new ExchangeRegistry();
 /** The request scripts' host (#63), created with the request channels once the app is ready. */
 let scriptHost: ScriptHost | undefined;
-
-/** The user's application preferences, shared by every project and every window. */
-const preferencesService = new PreferencesService(app.getPath('userData'));
 
 /** Absolute paths the user picked through a native dialog this session; see `dialog-picks.ts`. */
 const dialogPicks = new DialogPicks();
@@ -489,6 +505,7 @@ const workspaceService = new WorkspaceService({
         console.warn('[cookies] switching jars failed', error instanceof Error ? error.message : String(error));
       });
       currentValues.syncWorkspace(workspace);
+      secretSources.noteChange();
     },
     onDeleted: (workspaceId) => {
       void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
@@ -533,6 +550,7 @@ const workspaceService = new WorkspaceService({
     },
   },
 });
+workspaceServiceRef.current = workspaceService;
 
 /** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */
 const secretScans: SecretScanSessions = new SecretScanSessions({
