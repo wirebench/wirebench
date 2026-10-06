@@ -97,7 +97,13 @@ describe('OutgoingConfigEditor', () => {
   });
 
   it('lists an entry of a newer kind as read-only, and still lets it move and go', () => {
-    const opaque: WssEntryWire = { kind: 'unknown', originalKind: 'x509-binding', index: 1 };
+    const opaque: WssEntryWire = {
+      kind: 'unknown',
+      originalKind: 'x509-binding',
+      index: 1,
+      fingerprint: 'f',
+      unreadable: false,
+    };
     const { updateWssOutgoing } = setUp([{ ...config, entries: [config.entries[0] as WssEntryWire, opaque] }]);
     expand();
     const rows = screen.getAllByTestId('wss-entry-row');
@@ -111,6 +117,17 @@ describe('OutgoingConfigEditor', () => {
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [opaque, config.entries[0]] });
     fireEvent.click(within(row).getByLabelText('Remove x509-binding (needs a newer version)'));
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [config.entries[0]] });
+  });
+
+  it('labels an entry of a known kind this build cannot read as unreadable', () => {
+    setUp([
+      {
+        ...config,
+        entries: [{ kind: 'unknown', originalKind: 'saml-token', index: 0, fingerprint: 'f', unreadable: true }],
+      },
+    ]);
+    expand();
+    expect(screen.getByText('saml-token (unreadable)')).toBeTruthy();
   });
 
   it("adds a signature entry with this build's defaults", () => {

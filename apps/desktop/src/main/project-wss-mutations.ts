@@ -16,6 +16,7 @@ import {
   toWssOutgoingRef,
 } from '@wirebench/engine';
 import type { Project, WssEntry, WssIncomingConfig, WssOutgoingConfig, WssRef } from '@wirebench/engine';
+import { opaqueEntryFingerprint } from './wss-opaque.js';
 import type { WssIncomingPatchWire, WssOutgoingPatchWire } from '../shared/wire-types.js';
 
 function notFound(configId: string): never {
@@ -85,10 +86,16 @@ function restoreOpaqueEntries(existing: WssRef, entries: WssOutgoingPatchWire['e
     const raw = stored[entry.index];
     const kind = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>)['kind'] : undefined;
     const storedKind = typeof kind === 'string' ? kind : 'unknown';
-    if (raw === undefined || raw === null || typeof raw !== 'object' || storedKind !== entry.originalKind) {
+    if (
+      raw === undefined ||
+      raw === null ||
+      typeof raw !== 'object' ||
+      storedKind !== entry.originalKind ||
+      opaqueEntryFingerprint(raw) !== entry.fingerprint
+    ) {
       throw new ProjectError(
         'wss-config-invalid',
-        `Entry ${String(entry.index + 1)} of "${existing.name}" changed since it was loaded; reopen the project.`,
+        `Entry ${String(entry.index + 1)} of "${existing.name}" changed since the editor loaded it; retry the edit.`,
         { details: { id: existing.id, index: entry.index } },
       );
     }

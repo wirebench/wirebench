@@ -15,6 +15,7 @@ import {
   wssEntrySchema,
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
+import { KNOWN_WSS_ENTRY_KINDS, opaqueEntryFingerprint } from './wss-opaque.js';
 import type {
   Assertion,
   AuthConfig,
@@ -346,7 +347,14 @@ function toWssEntryWireAt(ref: WssRef, entry: WssEntry, index: number): WssEntry
   }
   const stored: unknown = Array.isArray(ref.document['entries']) ? ref.document['entries'][index] : undefined;
   const kind = typeof stored === 'object' && stored !== null ? (stored as Record<string, unknown>)['kind'] : undefined;
-  return { kind: 'unknown', originalKind: typeof kind === 'string' ? kind : 'unknown', index };
+  const originalKind = typeof kind === 'string' ? kind : 'unknown';
+  return {
+    kind: 'unknown',
+    originalKind,
+    index,
+    fingerprint: opaqueEntryFingerprint(stored),
+    unreadable: KNOWN_WSS_ENTRY_KINDS.has(originalKind),
+  };
 }
 
 /** One entry on the wire, field by field. */

@@ -37,9 +37,12 @@ const ENTRY_LABEL: Readonly<Record<Exclude<WssEntryWire['kind'], 'unknown'>, str
   'issued-token': 'Issued Token (WS-Trust)',
 };
 
-/** The label of any listed entry; an opaque one names its kind, which only a newer build can edit. */
+/** The label of any listed entry; an opaque one names its kind and why it cannot be edited here. */
 function entryLabel(entry: WssEntryWire): string {
-  return entry.kind === 'unknown' ? `${entry.originalKind} (needs a newer version)` : ENTRY_LABEL[entry.kind];
+  if (entry.kind === 'unknown') {
+    return `${entry.originalKind} (${entry.unreadable ? 'unreadable' : 'needs a newer version'})`;
+  }
+  return ENTRY_LABEL[entry.kind];
 }
 
 /** The parts a new signature covers: the SOAP 1.1 `Body` and the WS-Security `Timestamp`. */
