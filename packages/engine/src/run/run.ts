@@ -29,6 +29,7 @@ import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
 import type { SendHost } from './host.js';
 import { openExchange } from './open.js';
+import { createIssuedTokenSource } from './issued-token.js';
 import { createRunTokenSource } from './oauth2-token.js';
 import { createRunScope, scopeWith } from './scope.js';
 import {
@@ -287,6 +288,12 @@ export function createRunSender(context: RunContext): RunRequestSender {
         getSecret: context.host.getSecret,
         ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
       }),
+    // Issued SAML tokens are shared the same way: one STS call per run unless the host lends a source.
+    issuedTokens:
+      context.host.issuedTokens ??
+      createIssuedTokenSource(
+        context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {},
+      ),
   };
   const scope = createRunScope({ ...context, host });
 

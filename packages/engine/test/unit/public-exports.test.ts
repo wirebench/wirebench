@@ -32,6 +32,12 @@ const ADDED = [
   'warnCredentialLookingNames',
   'importedScriptPath',
   'SAML_TOKEN_PART',
+  'createIssuedTokenSource',
+  'issuedCacheKey',
+  'ISSUED_TOKEN_REFRESH_MARGIN_MS',
+  'requestIssuedToken',
+  'soapIssuedTokenTarget',
+  'soapIssuedTokenKeyTarget',
 ] as const;
 
 /** 2.x name, 3.0 name. */
