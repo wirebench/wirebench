@@ -17,6 +17,9 @@ import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
+const showToast = vi.hoisted(() => vi.fn());
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));
+
 /** Obviously fake. */
 const FAKE_VALUE = 'fake-value-not-real-0001';
 
@@ -63,7 +66,8 @@ beforeEach(() => {
   installWirebenchApi({ secretScan: { tokens, setValue } });
   openProjects('p1');
   useEditorsStore.setState({ tabs: [], activeId: undefined });
-  useUiStore.setState({ secretTokenDialog: null });
+  useUiStore.setState({ secretTokenDialog: null, secretSourcesDialog: null });
+  showToast.mockReset();
 });
 
 afterEach(() => {
@@ -282,6 +286,55 @@ describe('SecretTokenDialog', () => {
     await screen.findByText('billing_key');
 
     expect(screen.queryByLabelText('Project')).toBeNull();
+  });
+});
+
+describe('the link to Secret Sources', () => {
+  it('maps the opened-on name to a source instead, closing this dialog', async () => {
+    render(<SecretTokenDialog />);
+    open({ projectId: 'p1', name: 'db' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Map to a source instead…' }));
+
+    expect(useUiStore.getState().secretSourcesDialog).toEqual({ name: 'db' });
+    expect(useUiStore.getState().secretTokenDialog).toBeNull();
+  });
+
+  it('opens Secret Sources with no name when the dialog was not opened on one', async () => {
+    render(<SecretTokenDialog />);
+    open();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Map to a source instead…' }));
+
+    expect(useUiStore.getState().secretSourcesDialog).toEqual({});
+    expect(useUiStore.getState().secretTokenDialog).toBeNull();
+  });
+});
+
+describe('Clear Secret Source Cache', () => {
+  beforeEach(() => {
+    resetCommands();
+    registerProjectCommands();
+  });
+
+  it('clears the cache in main and says so, with no project open', async () => {
+    const clearCache = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ secretSources: { clearCache } });
+    useProjectStore.setState({ projects: {}, order: [], projectOf: {} });
+
+    expect(await runCommand('secrets.clearSourceCache', context)).toBe(true);
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Secret source cache cleared.'));
+    expect(clearCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows main's message when it refuses", async () => {
+    const clearCache = vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'No workspace is open.' } });
+    installWirebenchApi({ secretSources: { clearCache } });
+
+    await runCommand('secrets.clearSourceCache', context);
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('No workspace is open.'));
   });
 });
 

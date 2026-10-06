@@ -88,6 +88,7 @@ export const COMMAND_IDS = [
   'env.next',
   'secrets.toggleShowSecrets',
   'secrets.setTokenValue',
+  'secrets.clearSourceCache',
   'request.send',
   'request.cancel',
   'request.sendToEnvironments',

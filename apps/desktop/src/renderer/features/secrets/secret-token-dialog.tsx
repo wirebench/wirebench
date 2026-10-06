@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
+import { openSecretSourcesDialog } from '../secret-sources/actions.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { secretNameError } from '../../state/secret-review.js';
@@ -328,7 +329,17 @@ export function SecretTokenDialog() {
             </p>
           )}
 
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              disabled={saving}
+              onClick={() => {
+                setTarget(null);
+                openSecretSourcesDialog(target?.name);
+              }}
+            >
+              Map to a source instead…
+            </Button>
             <Dialog.Close asChild>
               <Button>Close</Button>
             </Dialog.Close>

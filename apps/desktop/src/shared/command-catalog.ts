@@ -444,6 +444,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Set Secret Token Value…',
     category: 'Secrets',
   },
+  'secrets.clearSourceCache': {
+    id: 'secrets.clearSourceCache',
+    label: 'Clear Secret Source Cache',
+    category: 'Secrets',
+  },
   'request.send': {
     id: 'request.send',
     label: 'Send Request',

@@ -3,6 +3,7 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
+import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import { recordContractProblems } from '../features/rest-editor/response/contract.js';
@@ -64,7 +65,19 @@ export type LogEntry =
  * straight to typing one in. An auth password's `secret-missing` names no token (its value is set
  * in the authentication settings), and any other failure is left to Problems, so neither gets one.
  */
-function offerSecretValue(requestId: string, error: IpcError): void {
+function offerSecretAction(requestId: string, error: IpcError): void {
+  // The one failure a secret source can fix from a toast: its shared mapping is not approved here.
+  // The message carries the name and the kind, never a value; the dialog it opens offers the approval.
+  // The other `secret-source-*` codes reach the person through the send's Problem.
+  if (error.code === 'secret-source-untrusted') {
+    showToast(error.message, {
+      label: 'Review secret sources…',
+      onClick: () => {
+        openSecretSourcesDialog();
+      },
+    });
+    return;
+  }
   const name = error.details?.['name'];
   if (error.code !== 'secret-missing' || typeof name !== 'string') {
     return;
@@ -566,7 +579,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.grpcByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -705,7 +718,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.wsByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -760,7 +773,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           }
           draft.wsByRequest[requestId] = { ...state, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         return;
       }
       // The frame itself is *not* pushed here. The engine fires `onFrame` for a sent frame as it
@@ -933,7 +946,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -1113,7 +1126,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.byRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         // A failed send is not just a red status line that the next send erases: it belongs in
         // Problems alongside everything else that went wrong with this request.
         useProblemsStore.getState().add([
