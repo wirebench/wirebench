@@ -169,6 +169,113 @@ describe('ProjectHost WS-Security', () => {
     return { service, dir, requestId: 'r1', configId: added.configId };
   }
 
+  describe('an entry kind this build does not know (#259)', () => {
+    const future = {
+      kind: 'x509-thumbprint-binding',
+      thumbprint: 'ab:cd',
+      nested: { keep: [1, 2, { deep: true }] },
+    };
+
+    async function openWithFuture(): Promise<{ service: ProjectHost; configId: string }> {
+      const dir = tempDir('proj');
+      const service = newService();
+      await service.create({ dir, name: 'Demo' });
+      const added = await service.mutate({ kind: 'add-wss-outgoing', name: 'Future' });
+      const configId = added.createdWssOutgoingId as string;
+      const open = (service as unknown as { open: { project: Project } }).open;
+      open.project = {
+        ...open.project,
+        wss: {
+          ...open.project.wss,
+          outgoing: open.project.wss.outgoing.map((ref) =>
+            ref.id === configId
+              ? {
+                  ...ref,
+                  document: {
+                    ...ref.document,
+                    entries: [
+                      { kind: 'timestamp', timeToLiveSeconds: 300, millisecondPrecision: false },
+                      future,
+                      { kind: 'signature', keystoreRef: 'k', signatureAlgorithm: 'rsa-sha512' },
+                    ],
+                  },
+                }
+              : ref,
+          ),
+        },
+      };
+      return { service, configId };
+    }
+
+    function storedEntries(service: ProjectHost, configId: string): unknown {
+      const open = (service as unknown as { open: { project: Project } }).open;
+      return open.project.wss.outgoing.find((ref) => ref.id === configId)?.document['entries'];
+    }
+
+    it('mirrors it as an opaque entry, and a malformed known kind the same way', async () => {
+      const { service, configId } = await openWithFuture();
+      const wire = service.snapshot()?.wssOutgoing.find((config) => config.id === configId);
+      expect(wire?.entries[1]).toEqual({ kind: 'unknown', originalKind: 'x509-thumbprint-binding', index: 1 });
+      expect(wire?.entries[2]).toEqual({ kind: 'unknown', originalKind: 'signature', index: 2 });
+    });
+
+    it('keeps it byte-identical through an edit of the rest of the configuration', async () => {
+      const { service, configId } = await openWithFuture();
+      const before = JSON.stringify(storedEntries(service, configId));
+      const wire = service.snapshot()?.wssOutgoing.find((config) => config.id === configId);
+      const entries = (wire?.entries ?? []).map((entry) =>
+        entry.kind === 'timestamp' ? { ...entry, timeToLiveSeconds: 60 } : entry,
+      );
+      await service.mutate({ kind: 'update-wss-outgoing', configId, patch: { name: 'Renamed', entries } });
+      const after = storedEntries(service, configId) as unknown[];
+      expect(JSON.stringify(after[1])).toBe(JSON.stringify(future));
+      expect(after[2]).toEqual({ kind: 'signature', keystoreRef: 'k', signatureAlgorithm: 'rsa-sha512' });
+      expect(after[0]).toMatchObject({ timeToLiveSeconds: 60 });
+      expect(JSON.stringify(storedEntries(service, configId))).not.toBe(before);
+    });
+
+    it('follows it when the editor reorders, and drops it when the editor removes it', async () => {
+      const { service, configId } = await openWithFuture();
+      const wire = service.snapshot()?.wssOutgoing.find((config) => config.id === configId);
+      const [first, second, third] = wire?.entries ?? [];
+      await service.mutate({
+        kind: 'update-wss-outgoing',
+        configId,
+        patch: { entries: [second, third, first] as WssEntryWire[] },
+      });
+      const reordered = storedEntries(service, configId) as unknown[];
+      expect(reordered[0]).toEqual(future);
+      expect(reordered[2]).toMatchObject({ kind: 'timestamp' });
+      const again = service.snapshot()?.wssOutgoing.find((config) => config.id === configId);
+      await service.mutate({
+        kind: 'update-wss-outgoing',
+        configId,
+        patch: { entries: (again?.entries ?? []).filter((entry) => entry.kind !== 'unknown') },
+      });
+      expect(storedEntries(service, configId)).toEqual([
+        { kind: 'timestamp', timeToLiveSeconds: 300, millisecondPrecision: false },
+      ]);
+    });
+
+    it('refuses an opaque entry whose stored counterpart is gone or changed', async () => {
+      const { service, configId } = await openWithFuture();
+      await expect(
+        service.mutate({
+          kind: 'update-wss-outgoing',
+          configId,
+          patch: { entries: [{ kind: 'unknown', originalKind: 'other', index: 1 }] },
+        }),
+      ).rejects.toThrow(/changed/);
+      await expect(
+        service.mutate({
+          kind: 'update-wss-outgoing',
+          configId,
+          patch: { entries: [{ kind: 'unknown', originalKind: 'x', index: 9 }] },
+        }),
+      ).rejects.toThrow(/changed/);
+    });
+  });
+
   it('returns the created configuration ids, so the renderer can select what it just added', async () => {
     const dir = tempDir('proj');
     const service = newService();

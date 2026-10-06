@@ -23,6 +23,10 @@ export interface WssChannelDeps {
 
 /** The wire entry as the engine's model, with `undefined` optionals stripped for exactOptionalPropertyTypes. */
 function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
+  if (entry.kind === 'unknown') {
+    // An opaque entry exists only inside a stored list; there is nothing here to apply.
+    throw new Error(`The "${entry.originalKind}" WS-Security entry needs a newer version of Wirebench.`);
+  }
   if (entry.kind === 'username-token') {
     const { passwordRef: own, ...rest } = entry;
     const ref = own ?? passwordRef;

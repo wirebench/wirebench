@@ -1555,6 +1555,18 @@ export const wssEntryWireSchema = z.discriminatedUnion('kind', [
     file: z.string().optional(),
     expandProperties: z.boolean().optional(),
   }),
+  /**
+   * An entry this build cannot edit: a kind a later build wrote, or a known kind whose stored
+   * shape this build does not understand. Opaque and read-only — the renderer only lists it and
+   * can reorder or remove it; the entry itself never leaves main. `index` is its position in the
+   * stored list, and main puts the stored entry back in its place on write-back (checking that
+   * `originalKind` still matches, so a stale mirror is refused rather than misapplied).
+   */
+  z.object({
+    kind: z.literal('unknown'),
+    originalKind: z.string(),
+    index: z.number().int().nonnegative(),
+  }),
 ]);
 export type WssEntryWire = z.infer<typeof wssEntryWireSchema>;
 

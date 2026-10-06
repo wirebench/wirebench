@@ -96,6 +96,23 @@ describe('OutgoingConfigEditor', () => {
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [config.entries[1]] });
   });
 
+  it('lists an entry of a newer kind as read-only, and still lets it move and go', () => {
+    const opaque: WssEntryWire = { kind: 'unknown', originalKind: 'x509-binding', index: 1 };
+    const { updateWssOutgoing } = setUp([{ ...config, entries: [config.entries[0] as WssEntryWire, opaque] }]);
+    expand();
+    const rows = screen.getAllByTestId('wss-entry-row');
+    const row = rows[1] as HTMLElement;
+    expect(within(row).getByText('x509-binding (needs a newer version)')).toBeTruthy();
+    expect(within(row).queryAllByRole('textbox')).toHaveLength(0);
+    expect(within(row).queryAllByRole('checkbox')).toHaveLength(0);
+    expect(within(row).queryAllByRole('combobox')).toHaveLength(0);
+
+    fireEvent.click(within(row).getByLabelText('Move x509-binding (needs a newer version) up'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [opaque, config.entries[0]] });
+    fireEvent.click(within(row).getByLabelText('Remove x509-binding (needs a newer version)'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [config.entries[0]] });
+  });
+
   it("adds a signature entry with this build's defaults", () => {
     const { updateWssOutgoing } = setUp([{ ...config, entries: [] }]);
     expand();

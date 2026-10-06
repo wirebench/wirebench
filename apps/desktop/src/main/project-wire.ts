@@ -12,6 +12,7 @@ import {
   toWssOutgoingConfig,
   wssIncomingFileSchema,
   qnameToString,
+  wssEntrySchema,
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
 import type {
@@ -312,8 +313,8 @@ function toKeystoreWire(ref: WssRef): KeystoreWire {
 
 /**
  * One outgoing WS-Security configuration, projected for the renderer. An entry this build does
- * not understand (a `signature` written by a later one) is projected as its bare kind so the
- * editor can list it as unsupported rather than the row silently vanishing; a document that is
+ * not understand (a kind a later build wrote) is projected as an opaque `unknown` entry so the
+ * editor can list it as needing a newer version, and write it back untouched; a document that is
  * not a configuration at all becomes an empty one, for the same "offer to remove it" reason
  * `toKeystoreWire` has.
  */
@@ -329,8 +330,23 @@ function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
     ...(config.defaultPasswordRef !== undefined ? { defaultPasswordRef: config.defaultPasswordRef } : {}),
     ...(config.actor !== undefined ? { actor: config.actor } : {}),
     mustUnderstand: config.mustUnderstand,
-    entries: config.entries.map(toWssEntryWire),
+    entries: config.entries.map((entry, index) => toWssEntryWireAt(ref, entry, index)),
   };
+}
+
+/**
+ * The wire entry at `index` of a stored list. An entry this build cannot interpret (a kind a
+ * later build wrote, or a known kind whose shape fails the engine schema) becomes an opaque
+ * `unknown` entry rather than being coerced into one it is not: the editor writes the whole list
+ * back on every edit, and `updateWssOutgoing` restores the stored entry from its `index`.
+ */
+function toWssEntryWireAt(ref: WssRef, entry: WssEntry, index: number): WssEntryWire {
+  if (wssEntrySchema.safeParse(entry).success) {
+    return toWssEntryWire(entry);
+  }
+  const stored: unknown = Array.isArray(ref.document['entries']) ? ref.document['entries'][index] : undefined;
+  const kind = typeof stored === 'object' && stored !== null ? (stored as Record<string, unknown>)['kind'] : undefined;
+  return { kind: 'unknown', originalKind: typeof kind === 'string' ? kind : 'unknown', index };
 }
 
 /** One entry on the wire, field by field. */
