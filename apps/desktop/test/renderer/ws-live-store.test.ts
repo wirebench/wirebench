@@ -19,6 +19,11 @@ import { wsApiWire, wsRequestWire } from '../helpers/wire-defaults.js';
 const openWs = vi.fn();
 const wsSend = vi.fn();
 const wsClose = vi.fn();
+const preflightWs = vi.fn();
+const secretRefs = [
+  { expr: '${secret:tok}', scope: 'Secret', name: 'tok', code: 'secret-source-untrusted', start: 0, end: 0 },
+  { expr: '${secret:bad}', scope: 'Secret', name: 'bad', code: 'secret-source-invalid', start: 0, end: 0 },
+];
 
 /** A settled handshake, as `ws.live`'s `handshake` event carries it. */
 function handshake(overrides: Partial<WsHandshakeWire> = {}): WsHandshakeWire {
@@ -54,7 +59,11 @@ beforeEach(() => {
   openWs.mockReset();
   wsSend.mockReset().mockResolvedValue({ ok: true, value: frame({ direction: 'sent', text: 'hello' }) });
   wsClose.mockReset().mockResolvedValue({ ok: true, value: { closed: true } });
-  installWirebenchApi({ request: { openWs, wsSend, wsClose } });
+  preflightWs.mockReset().mockResolvedValue({
+    ok: true,
+    value: { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } },
+  });
+  installWirebenchApi({ request: { openWs, wsSend, wsClose, preflightWs } });
   useExchangesStore.setState({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, wsByRequest: {}, log: [] });
   useDraftsStore.getState().reset();
   useProblemsStore.setState({ items: [] });
@@ -350,5 +359,31 @@ describe('the WebSocket save path', () => {
     });
     expect(useDraftsStore.getState().isWsRequestDirty('ws-1')).toBe(false);
     expect(useProjectStore.getState().wsRequests['ws-1']?.url).toBe('/lobby2');
+  });
+});
+
+describe('connectWs secret-source warnings', () => {
+  it('shows the secret-source warnings beside the connect, and only those', async () => {
+    preflightWs.mockResolvedValue({
+      ok: true,
+      value: {
+        endpointSource: 'none',
+        unresolved: [...secretRefs, { expr: '${nowhere}', name: 'nowhere', code: 'missing', start: 0, end: 10 }],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+      },
+    });
+    openWs.mockResolvedValue({ ok: true, value: makeWsExchange({ sendId: 'first' }) });
+
+    await useExchangesStore.getState().connectWs('ws-1');
+
+    expect(
+      useProblemsStore
+        .getState()
+        .items.map((item) => [item.source, item.severity, item.problem.code, item.problem.message]),
+    ).toEqual([
+      ['expansion', 'warning', 'expansion-secret-source-untrusted', 'Secret source is not approved: ${secret:tok}'],
+      ['expansion', 'warning', 'expansion-secret-source-invalid', 'Secret source entry is invalid: ${secret:bad}'],
+    ]);
   });
 });

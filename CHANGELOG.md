@@ -13,7 +13,7 @@ All notable changes to this project are documented here. The format follows
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only
   (**Preferences → Secrets**, **Clear Secret Source Cache**) and masks it everywhere. A shared mapping
   is used only after you approve it on this machine, and again after any change; the request warns
-  early when it isn't approved. `wirebench run`, `call` and `mcp` fetch the same mappings with
+  early when it isn't approved. `wirebench run`, `send`, `call` and `mcp` fetch the same mappings with
   `--trust-secret-sources` or `--trust-secret-sources-hash`, and `wirebench secrets list` shows each
   secret's source and the mapping's hash (#37).
 - **Kerberos authentication.** A request, an API, a SOAP interface or endpoint, and a definition

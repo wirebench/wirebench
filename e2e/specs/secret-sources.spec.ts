@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { logRows, selectLogRow } from '../helpers/http-log.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
 import {
   addHeader,
@@ -128,12 +129,30 @@ test.describe('secret sources', () => {
     await page.getByTestId('activity-bar').getByRole('button', { name: 'History' }).click();
     await expect(page.getByTestId('history-row').first()).toBeVisible({ timeout: 20_000 });
     expect(await page.locator('body').innerText()).not.toContain(VAULT_VALUE);
-    const leaks = listFiles(join(userDataDir, 'workspaces')).filter((file) => readFileSync(file).includes(VAULT_VALUE));
+    // History lives in `userData/history`, apart from the workspace tree; the scan covers both, and
+    // the History folder must hold something, so the scan cannot pass by looking at nothing.
+    const historyDir = join(userDataDir, 'history');
+    const historyFiles = listFiles(historyDir);
+    expect(historyFiles.length).toBeGreaterThan(0);
+    const leaks = [...listFiles(join(userDataDir, 'workspaces')), ...historyFiles].filter((file) =>
+      readFileSync(file).includes(VAULT_VALUE),
+    );
     expect(leaks).toEqual([]);
 
+    // The HTTP Log row for the send carries the request headers: the secret is masked there too.
+    const logRow = logRows(page).first();
+    await expect(logRow).toBeVisible({ timeout: 20_000 });
+    await selectLogRow(logRow);
+    expect(await page.locator('body').innerText()).not.toContain(VAULT_VALUE);
+
     // --- the mapping changes on disk: approval is asked again -------------------------------------
-    await expect(toast).not.toContainText('has not approved', { timeout: 20_000 });
-    writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('path: kv/app', 'path: kv/other'));
+    // The outside edit must really change the file, or the wait below would only time out.
+    const before = readFileSync(manifest, 'utf8');
+    const after = before.replace('path: kv/app', 'path: kv/other');
+    expect(after).not.toBe(before);
+    writeFileSync(manifest, after);
+    // A fresh toast, not the earlier one: the earlier one went with its click.
+    await expect(toast.getByText('has not approved')).toHaveCount(0, { timeout: 20_000 });
     await expect(async () => {
       await page.getByTestId('rest-send').click();
       await expect(toast).toContainText('has not approved', { timeout: 3_000 });

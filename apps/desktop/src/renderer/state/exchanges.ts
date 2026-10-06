@@ -519,13 +519,18 @@ function expansionProblems(requestId: string, refs: readonly UnresolvedRefWire[]
 }
 
 /**
- * Puts a REST, gRPC or WebSocket preflight's secret-source warnings in the Problems list before the send
- * goes out, as the SOAP preflight does for every unresolved reference. Only the two `secret-source-*` codes
- * are surfaced: those protocols show their other unresolved references through the send's own result, and
- * this keeps that as it was. It runs beside the send, never in front of it. A preflight that fails or is unavailable adds nothing; the send reports its own.
+ * Puts a REST, gRPC or WebSocket preflight's secret-source warnings in the Problems list, as the SOAP
+ * preflight does for every unresolved reference. Only the two `secret-source-*` codes are surfaced: those
+ * protocols show their other unresolved references through the send's own result, and this keeps that as
+ * it was. It runs beside the send, never in front of it. A preflight that fails or is unavailable adds
+ * nothing; the send reports its own.
+ *
+ * `isCurrent` says whether the send that asked is still the request's latest: a warning that arrives
+ * after a newer send began, or after a cancel, belongs to nothing and is dropped.
  */
 async function warnSecretSources(
   requestId: string,
+  isCurrent: () => boolean,
   preflight: () => Promise<{ ok: boolean; value?: { unresolved: readonly UnresolvedRefWire[] } }>,
 ): Promise<void> {
   try {
@@ -533,7 +538,7 @@ async function warnSecretSources(
     const refs = (result.ok ? (result.value?.unresolved ?? []) : []).filter((ref) =>
       ref.code.startsWith('secret-source-'),
     );
-    if (refs.length > 0) {
+    if (refs.length > 0 && isCurrent()) {
       useProblemsStore.getState().add(expansionProblems(requestId, refs));
     }
   } catch {
@@ -600,8 +605,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       const draftPatch = useDraftsStore.getState().peekGrpcRequest(requestId);
       // Alongside the send, not before it: the warning must not delay the call or the live stream.
-      void warnSecretSources(requestId, () =>
-        ipc().request.preflightGrpc({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+      void warnSecretSources(
+        requestId,
+        () => get().grpcByRequest[requestId]?.sendId === sendId,
+        () => ipc().request.preflightGrpc({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
       );
       const result = await ipc().request.sendGrpc({
         sendId,
@@ -742,8 +749,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       const draftPatch = useDraftsStore.getState().peekWsRequest(requestId);
       // Alongside the send, not before it: the warning must not delay the call or the live stream.
-      void warnSecretSources(requestId, () =>
-        ipc().request.preflightWs({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+      void warnSecretSources(
+        requestId,
+        () => get().wsByRequest[requestId]?.sendId === sendId,
+        () => ipc().request.preflightWs({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
       );
       const result = await ipc().request.openWs({
         sendId,
@@ -974,8 +983,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // is main that decides where this goes and what it carries.
       const draftPatch = useDraftsStore.getState().peekRestRequest(requestId);
       // Alongside the send, not before it: the warning must not delay the call or the live stream.
-      void warnSecretSources(requestId, () =>
-        ipc().request.preflightRest({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+      void warnSecretSources(
+        requestId,
+        () => get().restByRequest[requestId]?.sendId === sendId,
+        () => ipc().request.preflightRest({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
       );
       const result = await ipc().request.sendRest({
         sendId,

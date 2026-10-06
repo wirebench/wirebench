@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe('sendGrpc', () => {
-  it('shows the secret-source warnings before the send, and only those', async () => {
+  it('shows the secret-source warnings beside the send, and only those', async () => {
     preflightGrpc.mockResolvedValue({
       ok: true,
       value: {

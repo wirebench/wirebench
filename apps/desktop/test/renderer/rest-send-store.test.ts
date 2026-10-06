@@ -46,7 +46,7 @@ beforeEach(() => {
 });
 
 describe('sendRest', () => {
-  it('shows the secret-source warnings before the send, and only those', async () => {
+  it('shows the secret-source warnings beside the send, and only those', async () => {
     preflightRest.mockResolvedValue({
       ok: true,
       value: {
@@ -68,6 +68,30 @@ describe('sendRest', () => {
       ['expansion', 'warning', 'expansion-secret-source-untrusted', 'Secret source is not approved: ${secret:tok}'],
       ['expansion', 'warning', 'expansion-secret-source-invalid', 'Secret source entry is invalid: ${secret:bad}'],
     ]);
+  });
+
+  it('drops a warning that arrives after a newer send began', async () => {
+    let release: (value: unknown) => void = () => undefined;
+    preflightRest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await useExchangesStore.getState().sendRest('rest-1');
+    await useExchangesStore.getState().sendRest('rest-1');
+    release({
+      ok: true,
+      value: {
+        endpointSource: 'none',
+        unresolved: secretRefs,
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(useProblemsStore.getState().items).toEqual([]);
   });
 
   it('names the request only, and keeps the reply under that request', async () => {
