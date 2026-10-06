@@ -4,7 +4,7 @@
  * fit the column; a row with no known request falls back to its URL path.
  */
 import { useCallback, useMemo } from 'react';
-import type { LogEntry } from '../../state/exchanges.js';
+import { isStsRow, type LogEntry } from '../../state/exchanges.js';
 import { useProjectStore } from '../../state/project.js';
 import { protocolOf, urlOf } from './log-filter.js';
 
@@ -45,6 +45,12 @@ function eventsSuffix(entry: LogEntry): string {
  * keeps a gRPC service's package (`pets.v1.PetService/GetPet`), for the cell's tooltip.
  */
 export function nameOf(entry: LogEntry, sources: NameSources, full = false): string {
+  const name = baseNameOf(entry, sources, full);
+  // The token request a send made first: named for the request it was made for, and marked.
+  return isStsRow(entry) ? `STS · ${name}` : name;
+}
+
+function baseNameOf(entry: LogEntry, sources: NameSources, full: boolean): string {
   const id = requestIdOf(entry);
   if (id !== undefined) {
     const protocol = protocolOf(entry);

@@ -74,6 +74,9 @@ import {
   type RequestChannelDeps,
 } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
+import { registerIssuedTokenChannels } from './ipc/issued-tokens.js';
+import { IssuedTokensService, type ResolvedIssuedToken } from './issued-tokens.js';
+import { desktopSecrets, stsLogEntry } from './send/host.js';
 import { ExchangeRegistry } from './send/exchange.js';
 import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
@@ -181,6 +184,41 @@ const oauth2Service = new OAuth2Service({
   openExternal: openExternalChecked,
   callbackPort: () => preferencesService.get().rest.oauth2CallbackPort,
 });
+
+/**
+ * Issued SAML tokens (WS-Trust) for the session: one cache every send borrows, never persisted.
+ * The panel's lookup reads the entry and the request it is fetched for from the open project, and a
+ * Fetch now logs its exchange with the token service as a send's does, with no send to link it to.
+ */
+const issuedTokensService: IssuedTokensService = new IssuedTokensService(
+  async (locator): Promise<ResolvedIssuedToken> => {
+    const resolved = await workspaceService.issuedTokenTarget(
+      locator.projectId,
+      locator.configId,
+      locator.entryIndex,
+      locator.requestId,
+      // The getter a send of the project reads through: team secrets and `${secret:…}` refs resolve too.
+      desktopSecrets({ secretsFor }, locator.projectId),
+    );
+    return {
+      ...resolved,
+      deps: {
+        ...resolved.deps,
+        onExchange: (http) => {
+          try {
+            const entry = stsLogEntry(http, {
+              show: showSecretsFlag.get(),
+              ...(locator.requestId !== undefined ? { requestId: locator.requestId } : {}),
+            });
+            broadcast(events.exchange.logged, { entry });
+          } catch {
+            // A broadcast that fails never becomes the token's lastError, as a send's STS row.
+          }
+        },
+      },
+    };
+  },
+);
 
 /**
  * The CA bundle and proxy the server client last resolved, per server origin (live-updates R5).
@@ -397,6 +435,7 @@ const workspaceService = new WorkspaceService({
   teamSecrets,
   preferences: preferencesService,
   picks: dialogPicks,
+  issuedTokens: issuedTokensService.source,
   history: historyService,
   currentValues,
   // A session's History entry is written by its own pending `request.openWs`, so a project (or a
@@ -566,6 +605,7 @@ void app.whenReady().then(() => {
     preferences: preferencesService,
     dialogPicks,
     oauth2: oauth2Service,
+    issuedTokens: issuedTokensService,
     getSecret: secretsFor(undefined),
     storeSecret: (value, label) => secretStore.set(value, { label }),
     secretsFor,
@@ -603,6 +643,7 @@ void app.whenReady().then(() => {
     },
     showSecrets: showSecretsFlag,
   });
+  registerIssuedTokenChannels({ issuedTokens: issuedTokensService, showSecrets: showSecretsFlag });
   registerAccountChannels({ accounts: accountService });
   registerTeamChannels({ client: serverClient, accounts: accountService });
   registerCiTokenChannels({ client: serverClient, accounts: accountService });

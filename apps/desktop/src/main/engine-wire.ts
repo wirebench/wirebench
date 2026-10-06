@@ -202,7 +202,7 @@ function toTlsWire(tls: SslInfo): SslInfoWire {
  * set (the session "show secrets" toggle). Nothing crossing IPC carries a real secret by
  * default: the engine's own in-memory state is never touched by this.
  */
-function toHttpExchangeWire(
+export function toHttpExchangeWire(
   http: HttpExchange,
   opts?: { show?: boolean; keyParams?: readonly string[]; keyHeaders?: readonly string[] },
 ): HttpExchangeWire {

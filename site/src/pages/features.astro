@@ -17,7 +17,10 @@ const sections: Section[] = [
   {
     heading: 'SOAP and WSDL',
     text: 'Import a WSDL into an operations tree, get a sample envelope for every operation, and send it over HTTP or HTTPS. WS-Security, MTOM attachments and WS-I Basic Profile checks build on the same request.',
-    links: [{ label: 'Read the guide', slug: DOCS_LINKS.soapWsdl }],
+    links: [
+      { label: 'Read the guide', slug: DOCS_LINKS.soapWsdl },
+      { label: 'SAML tokens from a token service', slug: DOCS_LINKS.wsTrust },
+    ],
     image: { src: '/wirebench/images/features/wss-outgoing.png', alt: 'The outgoing WS-Security entries of a SOAP request, with a username and a digest password' },
   },
   {

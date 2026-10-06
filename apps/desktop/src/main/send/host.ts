@@ -2,13 +2,14 @@
  * The desktop's `SendHost` (spec §3.1): what the engine borrows from the app for one send. Each
  * member is the app's own service — the project's secret getter, its proxy and trust preferences,
  * the request's or the global client keystore, the WS-Security keystores, the session's OAuth2 token cache, the workspace
- * cookie jar, the REST contract check, a callback's URL from History, a gRPC API's schema — and the
- * two HTTP Log rows the desktop writes while a send is under way: a failure row, and a WebSocket
- * handshake's row.
+ * cookie jar, the REST contract check, a callback's URL from History, a gRPC API's schema, the
+ * session's issued SAML tokens — and the HTTP Log rows the desktop writes while a send is under way:
+ * a failure row, a WebSocket handshake's row, and a row for each exchange with a token service.
  *
  * Every member is a port of what the desktop's own send paths did before every send went through
  * the engine, so a send logs, masks and checks exactly as the desktop always has.
  */
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX } from '@wirebench/engine';
 import type {
@@ -16,6 +17,8 @@ import type {
   ClientIdentity,
   CookieJarHost,
   GetSecret,
+  HttpExchange,
+  IssuedTokenSource,
   OAuth2Auth,
   Preferences,
   ProxyOptions,
@@ -29,11 +32,12 @@ import type {
   WsHandshake,
 } from '@wirebench/engine';
 import type { EngineService } from '../engine-service.js';
-import { toWsHandshakeWire } from '../engine-wire.js';
+import { toHttpExchangeWire, toWsHandshakeWire } from '../engine-wire.js';
 import { failedExchangeOf, type FailedExchangeInput } from '../failed-exchange.js';
 import type { RequestChannelProject } from '../ipc/request.js';
+import type { IssuedTokensService } from '../issued-tokens.js';
 import type { OAuth2Service } from '../oauth2.js';
-import { recordSecretValue } from '../redact.js';
+import { recordSecretValue, redactSecretBytes, redactXml } from '../redact.js';
 import { restContractOf } from '../rest-contract.js';
 import { callbackUrlFor } from '../webhook-send.js';
 import { AD_HOC_ID } from './draft.js';
@@ -44,6 +48,8 @@ export interface DesktopSendDeps {
   /** The exchange cache and the contract checker. */
   readonly service: EngineService;
   readonly oauth2?: Pick<OAuth2Service, 'accessToken' | 'clear'>;
+  /** The session's issued SAML tokens; absent, each run fetches its own (and logs no STS row). */
+  readonly issuedTokens?: Pick<IssuedTokensService, 'source'>;
   /** Resolves one keychain reference: an OAuth2 client secret or remembered refresh token. */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
   /** The getter one project's `${secret:name}` tokens resolve through (`projectSecretGetter`). */
@@ -86,6 +92,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
   const anchors = [...(bundle ?? []), ...extraTrustAnchors()];
   const preferences = deps.preferences?.();
   const tokens = oauth2Tokens(deps);
+  const issued = issuedTokensFor(deps, send);
   return {
     getSecret: desktopSecrets(deps, projectId),
     onSecretValue: recordSecretValue,
@@ -107,6 +114,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       ? { keystoreFor: async (keystoreId: string) => await project.keystoreFor?.(projectId, keystoreId) }
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
+    ...(issued !== undefined ? { issuedTokens: issued } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
     ...(cookies !== undefined ? { cookies } : {}),
     contractFor: restContractFor(deps),
@@ -136,8 +144,12 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
  * The getter `tokenSecrets` builds in `ipc/request.ts`: the send's own project's. A webhook signing
  * pseudo-ref (a node that names only a CI variable) is never looked up (R7): the desktop reads a
  * signing secret from the keychain by `secretRef` alone, so such a node refuses rather than signs.
+ * Exported for the issued-token panel, whose Fetch now must read secrets exactly as a send does.
  */
-function desktopSecrets(deps: DesktopSendDeps, projectId: string | undefined): GetSecret {
+export function desktopSecrets(
+  deps: Pick<DesktopSendDeps, 'secretsFor' | 'getSecret'>,
+  projectId: string | undefined,
+): GetSecret {
   const getSecret = deps.secretsFor?.(projectId) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
   return (ref) => (ref.startsWith(SIGNING_PSEUDO_REF_PREFIX) ? Promise.resolve(undefined) : getSecret(ref));
 }
@@ -166,6 +178,109 @@ function oauth2Tokens(deps: DesktopSendDeps): RunTokenSource | undefined {
       if (config !== undefined) oauth2.clear(config);
     },
   };
+}
+
+/**
+ * The session's issued-token source as this send's: the same cache, with every exchange the send
+ * makes with a token service reported as its own HTTP Log row. A cached token asks no service, so
+ * it makes no row.
+ */
+function issuedTokensFor(deps: DesktopSendDeps, send: DesktopSend): IssuedTokenSource | undefined {
+  const source = deps.issuedTokens?.source;
+  if (source === undefined) return undefined;
+  return {
+    get: (entry, target, trustDeps) =>
+      source.get(entry, target, {
+        ...trustDeps,
+        onExchange: (exchange) => {
+          trustDeps.onExchange?.(exchange);
+          reportStsExchange(deps, send, exchange);
+        },
+      }),
+    peek: (entry, target) => source.peek(entry, target),
+    reject: (token) => {
+      source.reject(token);
+    },
+    status: (entry, target) => source.status(entry, target),
+    clear: (entry, target) => {
+      source.clear(entry, target);
+    },
+  };
+}
+
+/**
+ * The HTTP Log row of one exchange with a token service: marked `sts`, and linked by `causedBy` to
+ * the send it was made for when there is one (Fetch now has none). Redacted as a SOAP row is, and the
+ * body too, since the row has no `response` to redact: an assertion's signature value, a proof
+ * key's secret and every recorded secret value (the assertion is one) are masked unless `show`.
+ */
+export function stsLogEntry(
+  http: HttpExchange,
+  opts: { readonly show: boolean; readonly requestId?: string; readonly causedBy?: string },
+): LogEntryWire {
+  const { show } = opts;
+  const wire = toHttpExchangeWire(http, { show });
+  const body = redactBody(wire.bodyBase64, show);
+  // A compressed body's bytes are not text the redaction reads, in the raw response as in the raw
+  // body; the redacted, decoded body stands in for them under the response's own head.
+  const compressed = wire.rawBodyBase64 !== wire.bodyBase64;
+  return {
+    kind: 'exchange',
+    ...(opts.requestId !== undefined ? { requestId: opts.requestId } : {}),
+    exchange: {
+      // Unique per row: the log drops a second row with a send id it already holds.
+      sendId: `${opts.causedBy ?? 'fetch'}:sts:${randomUUID()}`,
+      durationMs: http.timings.totalMs,
+      http: {
+        ...wire,
+        bodyBase64: body,
+        // A compressed body's bytes are not text the redaction reads, so the decoded, redacted body
+        // stands in for them rather than the assertion crossing the bridge compressed.
+        rawBodyBase64: show ? wire.rawBodyBase64 : body,
+        rawResponseBase64: show || !compressed ? wire.rawResponseBase64 : withBody(wire.rawResponseBase64, body),
+      },
+      problems: [],
+      auxiliary: 'sts',
+      ...(opts.causedBy !== undefined ? { causedBy: opts.causedBy } : {}),
+    },
+  };
+}
+
+/**
+ * Raw response bytes with their body replaced by `body` (both base64); the head is kept as it is.
+ * With no head/body boundary to find, nothing of the raw bytes is known to be head, so only the
+ * redacted body ships rather than compressed bytes the redaction never read.
+ */
+function withBody(rawBase64: string, body: string): string {
+  const raw = Buffer.from(rawBase64, 'base64');
+  const end = raw.indexOf('\r\n\r\n');
+  if (end < 0) return body;
+  return Buffer.concat([raw.subarray(0, end + 4), Buffer.from(body, 'base64')]).toString('base64');
+}
+
+/** A token service's reply body, its XML secrets and recorded values masked unless `show`. */
+function redactBody(base64: string, show: boolean): string {
+  if (show) return base64;
+  const text = Buffer.from(base64, 'base64').toString('utf8');
+  const masked = redactXml(text);
+  // Re-encoded only when something was masked, so a body that is not text keeps its bytes.
+  return redactSecretBytes(masked === text ? base64 : Buffer.from(masked, 'utf8').toString('base64'));
+}
+
+/** The STS exchange as its own HTTP Log row (never History), redacted like any SOAP row. */
+function reportStsExchange(deps: DesktopSendDeps, send: DesktopSend, http: HttpExchange): void {
+  if (deps.onExchange === undefined) return;
+  try {
+    deps.onExchange(
+      stsLogEntry(http, {
+        show: deps.showSecrets?.get() ?? false,
+        ...(send.requestId !== AD_HOC_ID ? { requestId: send.requestId } : {}),
+        causedBy: send.sendId,
+      }),
+    );
+  } catch {
+    // A broadcast that fails never affects the send, as `reportWsHandshake`'s own catch.
+  }
 }
 
 /** The client secret and remembered refresh token an OAuth2 token request needs, if any. */

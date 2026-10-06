@@ -15,6 +15,7 @@ import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { useProjectStore, useTargetProjectId } from '../../state/project.js';
+import { useUiStore } from '../../state/ui.js';
 import {
   EncryptionFields,
   SignatureFields,
@@ -22,6 +23,7 @@ import {
   UsernameTokenFields,
   WSS_FIELD_CLASS,
 } from './outgoing-entry-fields.js';
+import { IssuedTokenFields } from './issued-token-fields.js';
 import { newSamlFormEntry, SamlTokenFields } from './saml-token-fields.js';
 import type { WssEntryWire, WssOutgoingWire } from '../../../shared/wire-types.js';
 
@@ -51,7 +53,7 @@ const DEFAULT_ENCRYPTION_PARTS = [
 ] as const;
 
 /** The kinds the Add menu can create. */
-type NewEntryKind = 'timestamp' | 'username-token' | 'signature' | 'encryption' | 'saml-token';
+type NewEntryKind = 'timestamp' | 'username-token' | 'signature' | 'encryption' | 'saml-token' | 'issued-token';
 
 /** A fresh entry of the kind the user picked from the Add menu. */
 function newEntry(kind: NewEntryKind): WssEntryWire {
@@ -75,6 +77,18 @@ function newEntry(kind: NewEntryKind): WssEntryWire {
   }
   if (kind === 'saml-token') {
     return newSamlFormEntry();
+  }
+  if (kind === 'issued-token') {
+    return {
+      kind: 'issued-token',
+      stsUrl: '',
+      soapVersion: '1.2',
+      trustVersion: '1.3',
+      tokenType: '2.0',
+      keyType: 'bearer',
+      credential: { kind: 'username', username: '' },
+      requestedLifetimeSeconds: 0,
+    };
   }
   return {
     kind: 'encryption',
@@ -108,12 +122,16 @@ interface EntryProps {
   readonly entry: WssEntryWire;
   readonly index: number;
   readonly count: number;
+  readonly projectId: string;
+  readonly configId: string;
+  /** The request being edited, when one that selects this configuration is open. */
+  readonly requestId: string | undefined;
   readonly onChange: (entry: WssEntryWire) => void;
   readonly onMove: (delta: number) => void;
   readonly onRemove: () => void;
 }
 
-function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProps) {
+function EntryRow({ entry, index, count, projectId, configId, requestId, onChange, onMove, onRemove }: EntryProps) {
   return (
     <li data-testid="wss-entry-row" className="rounded border border-hairline p-1">
       <div className="flex items-center gap-1">
@@ -154,14 +172,21 @@ function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProp
       )}
 
       {entry.kind === 'issued-token' && (
-        <p className="mt-1 text-xs text-fg-faint">Issued tokens can be edited in a later version.</p>
+        <IssuedTokenFields
+          entry={entry}
+          onChange={onChange}
+          projectId={projectId}
+          configId={configId}
+          entryIndex={index}
+          requestId={requestId}
+        />
       )}
     </li>
   );
 }
 
 interface ConfigProps {
-  readonly config: WssOutgoingWire;
+  readonly config: WssOutgoingWire & { readonly projectId: string };
   readonly onRemove: () => void;
 }
 
@@ -169,6 +194,14 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
   const [open, setOpen] = useState(false);
   const updateWssOutgoing = useProjectStore((state) => state.updateWssOutgoing);
   const keystores = useProjectStore((state) => state.keystores);
+  // The request open in the editor, but only when it selects this configuration: main refuses a
+  // request that does not, and a status line for another request's cache key would mislead.
+  const selectedRequestId = useUiStore((state) => state.selection?.requestId);
+  const requestId = useProjectStore((state) =>
+    selectedRequestId !== undefined && state.requests[selectedRequestId]?.wssOutgoingRef === config.id
+      ? selectedRequestId
+      : undefined,
+  );
   const Chevron = open ? ChevronDown : ChevronRight;
 
   const patchEntries = (entries: readonly WssEntryWire[]): void => {
@@ -292,7 +325,8 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
                   kind === 'username-token' ||
                   kind === 'signature' ||
                   kind === 'encryption' ||
-                  kind === 'saml-token'
+                  kind === 'saml-token' ||
+                  kind === 'issued-token'
                 ) {
                   patchEntries([...config.entries, newEntry(kind)]);
                 }
@@ -304,6 +338,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
               <option value="username-token">Username Token</option>
               <option value="signature">Signature</option>
               <option value="encryption">Encryption</option>
+              <option value="issued-token">Issued Token (WS-Trust)</option>
               <option value="saml-token">SAML Token</option>
             </select>
           </div>
@@ -318,6 +353,9 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
                 entry={entry}
                 index={index}
                 count={config.entries.length}
+                projectId={config.projectId}
+                configId={config.id}
+                requestId={requestId}
                 onChange={(next) => {
                   patchEntries(config.entries.map((candidate, at) => (at === index ? next : candidate)));
                 }}

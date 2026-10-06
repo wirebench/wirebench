@@ -416,6 +416,21 @@ One line per request as it finishes — outcome mark, status, duration — with 
 anything that did not pass indented below it, and a summary line. Goes to stdout; diagnostics go to
 stderr. `--quiet` suppresses passing lines; `--verbose` also prints each passing assertion.
 
+With `--verbose`, a request that asks a security token service for a SAML token (WS-Trust, #41) also
+writes one line per token request to stderr: the service's host, the status and whether the token was
+fetched or came from the run's cache, and when it expires (UTC). The token, the service URL's path and
+the password are never printed.
+
+```text
+STS sts.example.test 200 fetched, valid until 14:32
+STS sts.example.test cached, valid until 14:32
+```
+
+A token with no lifetime reads `single use` instead of `valid until`. The cache lasts one run, so a
+suite fetches each token once. The username credential's password and a certificate credential's key
+password are WS-Security secrets: they have no `…Env` name, so supply them as
+`WIREBENCH_SECRET_<REF>` as described under [Secrets](#secrets) (`wirebench secrets list` names them).
+
 ```text
 ✓ Echo/Echo/Say hello  404  6 ms
 ✓ demo/ok  200  1 ms

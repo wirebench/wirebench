@@ -46,6 +46,11 @@ export type Added = [
   Engine.SamlVersion,
   Engine.WsTrustVersion,
   Engine.IssuedKeyType,
+  Engine.IssuedTokenSource,
+  Engine.IssuedTokenSourceOptions,
+  Engine.IssuedTokenStatus,
+  Engine.IssuedTokenTarget,
+  Engine.TrustDeps,
 ];
 
 /** Every type 3.0 renames, under its new name. */

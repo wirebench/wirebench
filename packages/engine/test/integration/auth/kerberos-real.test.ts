@@ -1,11 +1,16 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { sendWithAuth } from '../../../src/http/auth/apply.js';
 import { kerberosToken } from '../../../src/http/auth/kerberos-token.js';
+import { createWssContext } from '../../../src/wss/model.js';
+import { requestIssuedToken } from '../../../src/wss/trust/client.js';
 import { describeKerberos } from '../../helpers/kerberos-gate.js';
+import { startTestSts } from '../../helpers/test-sts-server.js';
 
 interface ServerContext {
   step(token: string): Promise<string>;
@@ -67,6 +72,46 @@ describeKerberos('Kerberos against a real KDC', () => {
     await expect(sendWithAuth(get(), { type: 'kerberos', spn: 'HTTP/nowhere' })).rejects.toMatchObject({
       code: 'kerberos-unknown-spn',
     });
+  });
+
+  it('asks a token service with an AP-REQ a real acceptor accepts (#41, SC-WT6)', async () => {
+    const accepted: string[] = [];
+    const sts = await startTestSts(async (body) => {
+      // The token service's side: the BinarySecurityToken's bytes go to the acceptor; a token it
+      // verifies earns the RSTR, anything else a 500.
+      const apReq = /#GSS_Kerberosv5_AP_REQ"[^>]*>([^<]+)<\/wsse:BinarySecurityToken>/.exec(body)?.[1];
+      if (apReq === undefined) return { status: 500, body: 'no Kerberos token' };
+      const context = await load().initializeServer('HTTP@localhost');
+      await context.step(apReq);
+      accepted.push(context.username);
+      return {
+        status: 200,
+        body: readFileSync(
+          fileURLToPath(new URL('../../fixtures/ws-trust/rstrc-1.3-saml2.xml', import.meta.url)),
+          'utf8',
+        ),
+      };
+    });
+    try {
+      const token = await requestIssuedToken(
+        {
+          kind: 'issued-token',
+          stsUrl: sts.url.replace('usernamemixed', 'windowstransport'),
+          soapVersion: '1.2',
+          trustVersion: '1.3',
+          tokenType: '2.0',
+          keyType: 'bearer',
+          credential: { kind: 'kerberos', spn: 'HTTP@localhost' },
+          requestedLifetimeSeconds: 0,
+        },
+        { endpointUrl: 'https://service.test/', expand: (text) => text, tls: { ca: [sts.caPem] } },
+        { ctx: createWssContext(), kerberosToken: (spn, credentials) => kerberosToken(spn, credentials) },
+      );
+      expect(token.assertionId).toBe('_fixture-2.0');
+      expect(accepted).toEqual(['alice@WIREBENCH.TEST']);
+    } finally {
+      await sts.close();
+    }
   });
 
   // Must stay last: it destroys the ticket every test above relies on.

@@ -3,7 +3,7 @@
  * `runRowAction` (log-row-menu.tsx) carries it out.
  */
 import { decodeBase64Text } from '../../lib/format-size.js';
-import type { LogEntry } from '../../state/exchanges.js';
+import { isStsRow, type LogEntry } from '../../state/exchanges.js';
 import { useProjectStore } from '../../state/project.js';
 import { protocolOf, stageOf, type LogProtocol } from './log-filter.js';
 
@@ -91,6 +91,9 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
   let resend: RowAction;
   if (protocol === 'websocket') {
     resend = off('resend', 'Resend', 'A WebSocket session reconnects from the request');
+  } else if (isStsRow(entry)) {
+    // The saved request would be sent, not this token request, which main keeps no copy of to replay.
+    resend = off('resend', 'Resend', 'A token request is made again by sending the request it was made for');
   } else if (!exists) {
     resend = off('resend', 'Resend', missingReason);
   } else if (stageOf(entry) === 'prepare') {

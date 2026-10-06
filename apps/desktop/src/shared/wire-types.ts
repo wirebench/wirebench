@@ -499,6 +499,34 @@ export const oauth2StatusSchema = z.object({
 export type OAuth2StatusWire = z.infer<typeof oauth2StatusSchema>;
 
 /**
+ * Request payload for every `issuedTokens.*` call: one issued-token entry of an outgoing WS-Security
+ * configuration, and the request whose endpoint and environment it is fetched for (the first one
+ * that selects the configuration when absent). Main reads the entry from the model.
+ */
+export const issuedTokenLocatorSchema = z.object({
+  projectId: z.string(),
+  configId: z.string(),
+  entryIndex: z.number().int().nonnegative(),
+  requestId: z.string().optional(),
+});
+export type IssuedTokenLocatorWire = z.infer<typeof issuedTokenLocatorSchema>;
+
+/** What the renderer is told about an issued SAML token: never the assertion unless secrets show. */
+export const issuedTokenStatusSchema = z.object({
+  state: z.enum(['none', 'valid', 'expired']),
+  expiresAt: z.string().optional(),
+  samlVersion: z.enum(['1.1', '2.0']).optional(),
+  keyType: z.enum(['bearer', 'public-key']).optional(),
+  stsHost: z.string().optional(),
+  lastError: z.string().optional(),
+  /** With `state: 'none'`: the last token had no expiry, so it was used once and not kept. */
+  singleUse: z.literal(true).optional(),
+  /** Only with show-secrets on. */
+  assertion: z.string().optional(),
+});
+export type IssuedTokenStatusWire = z.infer<typeof issuedTokenStatusSchema>;
+
+/**
  * Request payload for every `oauth2.*` call: the entity whose configuration to use — an API, a
  * folder or a request. Main reads the configuration from the model; the renderer never sends one,
  * because it would then be sending a client secret's reference around.
@@ -910,6 +938,10 @@ export const exchangeSummarySchema = z.object({
   script: scriptResultWireSchema.optional(),
   /** Set when the request has scripts and they are switched off, so none ran. */
   scriptsOff: z.boolean().optional(),
+  /** Set on a row that is not the send itself: `sts` is the token request a send made first. */
+  auxiliary: z.literal('sts').optional(),
+  /** The `sendId` of the send this auxiliary row belongs to. */
+  causedBy: z.string().optional(),
 });
 export type ExchangeSummary = z.infer<typeof exchangeSummarySchema>;
 

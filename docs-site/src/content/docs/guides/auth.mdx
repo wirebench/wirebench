@@ -142,7 +142,7 @@ export leaves Kerberos out and says so in a note.
 
 ## WS-Security (SOAP)
 
-WS-Security lives in its own sidebar view, **WSS**, alongside Keystores (see below). A project
+WS-Security lives in its own sidebar view, **WS-Security**, alongside Keystores (see below). A project
 holds a list of **Outgoing configurations**, each an ordered list of entries applied to a request's
 envelope before it's sent:
 
@@ -158,7 +158,7 @@ envelope before it's sent:
 
 <Steps>
 
-1. Open the **WSS** view in the activity bar.
+1. Open the **WS-Security** view in the activity bar.
 2. Add or select an Outgoing configuration, then add entries with **Add** and reorder them with
    the up/down arrows — order matters, since a signature normally has to cover a timestamp that
    was already added.
@@ -174,7 +174,7 @@ it is flagged rather than silently accepted.
 
 ## Client certificates and keystores
 
-Under **WSS → Keystores**, add a PKCS#12 (`.p12`) or PEM keystore. Each row shows whether it
+Under **WS-Security → Keystores**, add a PKCS#12 (`.p12`) or PEM keystore. Each row shows whether it
 loaded (a wrong password shows as **Wrong password**, a missing file as **File missing**), and its
 certificate aliases once it did. A keystore's password is entered through the secret dialog, same
 as any other credential — Wirebench holds no key material or password in the renderer.
