@@ -28,7 +28,7 @@ import { newSamlFormEntry, SamlTokenFields } from './saml-token-fields.js';
 import type { WssEntryWire, WssOutgoingWire } from '../../../shared/wire-types.js';
 
 /** The label each entry kind carries in the list and in the Add menu. */
-const ENTRY_LABEL: Readonly<Record<WssEntryWire['kind'], string>> = {
+const ENTRY_LABEL: Readonly<Record<Exclude<WssEntryWire['kind'], 'unknown'>, string>> = {
   timestamp: 'Timestamp',
   'username-token': 'Username Token',
   signature: 'Signature',
@@ -36,6 +36,14 @@ const ENTRY_LABEL: Readonly<Record<WssEntryWire['kind'], string>> = {
   'saml-token': 'SAML Token',
   'issued-token': 'Issued Token (WS-Trust)',
 };
+
+/** The label of any listed entry; an opaque one names its kind and why it cannot be edited here. */
+function entryLabel(entry: WssEntryWire): string {
+  if (entry.kind === 'unknown') {
+    return `${entry.originalKind} (${entry.unreadable ? 'unreadable' : 'needs a newer version'})`;
+  }
+  return ENTRY_LABEL[entry.kind];
+}
 
 /** The parts a new signature covers: the SOAP 1.1 `Body` and the WS-Security `Timestamp`. */
 const DEFAULT_SIGNATURE_PARTS = [
@@ -135,9 +143,9 @@ function EntryRow({ entry, index, count, projectId, configId, requestId, onChang
   return (
     <li data-testid="wss-entry-row" className="rounded border border-hairline p-1">
       <div className="flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-xs text-fg-default">{ENTRY_LABEL[entry.kind]}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-fg-default">{entryLabel(entry)}</span>
         <IconButton
-          label={`Move ${ENTRY_LABEL[entry.kind]} up`}
+          label={`Move ${entryLabel(entry)} up`}
           disabled={index === 0}
           onClick={() => {
             onMove(-1);
@@ -146,7 +154,7 @@ function EntryRow({ entry, index, count, projectId, configId, requestId, onChang
           <ArrowUp size={12} aria-hidden="true" />
         </IconButton>
         <IconButton
-          label={`Move ${ENTRY_LABEL[entry.kind]} down`}
+          label={`Move ${entryLabel(entry)} down`}
           disabled={index === count - 1}
           onClick={() => {
             onMove(1);
@@ -154,7 +162,7 @@ function EntryRow({ entry, index, count, projectId, configId, requestId, onChang
         >
           <ArrowDown size={12} aria-hidden="true" />
         </IconButton>
-        <IconButton label={`Remove ${ENTRY_LABEL[entry.kind]}`} onClick={onRemove}>
+        <IconButton label={`Remove ${entryLabel(entry)}`} onClick={onRemove}>
           <Trash2 size={12} aria-hidden="true" />
         </IconButton>
       </div>

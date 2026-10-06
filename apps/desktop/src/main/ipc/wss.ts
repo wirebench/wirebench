@@ -13,6 +13,7 @@ import { channels } from '../../shared/ipc.js';
 import { redactXml } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
 import type { WssEntryWire } from '../../shared/wire-types.js';
+import { WssError } from '@wirebench/engine';
 import type { WssEntry } from '@wirebench/engine';
 import { registerHandler } from './register.js';
 
@@ -23,6 +24,13 @@ export interface WssChannelDeps {
 
 /** The wire entry as the engine's model, with `undefined` optionals stripped for exactOptionalPropertyTypes. */
 function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
+  if (entry.kind === 'unknown') {
+    // An opaque entry exists only inside a stored list; there is nothing here to apply.
+    throw new WssError(
+      'wss-entry-unsupported',
+      `The "${entry.originalKind}" WS-Security entry cannot be applied by this build.`,
+    );
+  }
   if (entry.kind === 'username-token') {
     const { passwordRef: own, ...rest } = entry;
     const ref = own ?? passwordRef;

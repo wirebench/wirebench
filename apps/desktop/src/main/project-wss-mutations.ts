@@ -16,6 +16,7 @@ import {
   toWssOutgoingRef,
 } from '@wirebench/engine';
 import type { Project, WssEntry, WssIncomingConfig, WssOutgoingConfig, WssRef } from '@wirebench/engine';
+import { opaqueEntryFingerprint } from './wss-opaque.js';
 import type { WssIncomingPatchWire, WssOutgoingPatchWire } from '../shared/wire-types.js';
 
 function notFound(configId: string): never {
@@ -70,6 +71,38 @@ export function addWssOutgoing(
   return { project: withOutgoing(project, [...project.wss.outgoing, ref]), configId: config.id };
 }
 
+/**
+ * The patch's entries as the engine's model. An opaque `unknown` wire entry stands for one this
+ * build cannot edit: the stored entry is put back in its place verbatim, so an edit to the rest of
+ * the configuration never rewrites it. The stored entry must still be where the mirror said and of
+ * the kind it said; anything else is a stale mirror, refused rather than misapplied.
+ */
+function restoreOpaqueEntries(existing: WssRef, entries: WssOutgoingPatchWire['entries'] & object): WssEntry[] {
+  const stored: readonly unknown[] = Array.isArray(existing.document['entries']) ? existing.document['entries'] : [];
+  return entries.map((entry) => {
+    if (entry.kind !== 'unknown') {
+      return entry as WssEntry;
+    }
+    const raw = stored[entry.index];
+    const kind = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>)['kind'] : undefined;
+    const storedKind = typeof kind === 'string' ? kind : 'unknown';
+    if (
+      raw === undefined ||
+      raw === null ||
+      typeof raw !== 'object' ||
+      storedKind !== entry.originalKind ||
+      opaqueEntryFingerprint(raw) !== entry.fingerprint
+    ) {
+      throw new ProjectError(
+        'wss-config-invalid',
+        `Entry ${String(entry.index + 1)} of "${existing.name}" changed since the editor loaded it; retry the edit.`,
+        { details: { id: existing.id, index: entry.index } },
+      );
+    }
+    return raw as WssEntry;
+  });
+}
+
 /** Applies a patch to one configuration; `null` clears an optional field, `entries` replaces the list. */
 export function updateWssOutgoing(project: Project, configId: string, patch: WssOutgoingPatchWire): Project {
   const existing = requireConfig(project, configId);
@@ -89,7 +122,7 @@ export function updateWssOutgoing(project: Project, configId: string, patch: Wss
     ...optional('defaultPasswordRef'),
     ...optional('actor'),
     mustUnderstand: patch.mustUnderstand ?? current.mustUnderstand,
-    entries: (patch.entries as readonly WssEntry[] | undefined) ?? current.entries,
+    entries: patch.entries !== undefined ? restoreOpaqueEntries(existing, patch.entries) : current.entries,
   };
   const ref = toWssOutgoingRef(next, existing);
   return withOutgoing(
