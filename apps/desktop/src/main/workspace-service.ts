@@ -1045,6 +1045,7 @@ export class WorkspaceService implements ProjectRouter {
     // Read afresh on every resolution, like the workspace context, so a value typed a moment ago applies.
     host.setCurrentValues(() => this.deps.currentValues?.overlaysFor(entry.projectId));
     host.setIssuedTokens(this.deps.issuedTokens);
+    host.setSecretSources(() => this.secretSourcesSnapshot());
     try {
       const record = await this.unsaved?.readProject(entry.ref.id);
       const project = await host.openProject(

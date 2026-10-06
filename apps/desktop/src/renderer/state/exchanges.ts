@@ -496,6 +496,17 @@ function whereOf(ref: UnresolvedRefWire): string {
   return ref.field === 'header' && ref.headerName !== undefined ? ` in header "${ref.headerName}"` : ` in ${ref.field}`;
 }
 
+/** The message a preflight warning carries; a secret-source one names no value, only the problem. */
+function expansionMessage(ref: UnresolvedRefWire): string {
+  if (ref.code === 'secret-source-untrusted') {
+    return `Secret source is not approved: ${ref.expr}${whereOf(ref)}`;
+  }
+  if (ref.code === 'secret-source-invalid') {
+    return `Secret source entry is invalid: ${ref.expr}${whereOf(ref)}`;
+  }
+  return `Unresolved property ${ref.expr}${whereOf(ref)}`;
+}
+
 /** Turns the preflight's (or the exchange's) unresolved references into Problems entries. */
 function expansionProblems(requestId: string, refs: readonly UnresolvedRefWire[]): Problem[] {
   return refs.map((ref) => ({
@@ -503,7 +514,7 @@ function expansionProblems(requestId: string, refs: readonly UnresolvedRefWire[]
     source: 'expansion' as const,
     severity: 'warning' as const,
     requestId,
-    problem: { code: `expansion-${ref.code}`, message: `Unresolved property ${ref.expr}${whereOf(ref)}` },
+    problem: { code: `expansion-${ref.code}`, message: expansionMessage(ref) },
   }));
 }
 

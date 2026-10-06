@@ -667,6 +667,8 @@ async function previewOf<K extends DraftOf['kind']>(
       readonly placeholders: SecretPlaceholders;
       readonly asTyped: (ref: string) => Promise<string | undefined>;
       readonly secretTokens: () => boolean;
+      /** The names of the `${secret:name}` tokens reached, in the order reached. */
+      readonly secretNames: () => readonly string[];
     }
   | undefined
 > {
@@ -680,8 +682,11 @@ async function previewOf<K extends DraftOf['kind']>(
     ...(envId !== undefined ? { envId } : {}),
   };
   let reached = false;
+  const names = new Set<string>();
   const asTyped = (ref: string): Promise<string | undefined> => {
-    reached ||= parseSecretPseudoRef(ref) !== undefined;
+    const name = parseSecretPseudoRef(ref);
+    reached ||= name !== undefined;
+    if (name !== undefined) names.add(name);
     return tokenText(ref);
   };
   const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
@@ -692,6 +697,7 @@ async function previewOf<K extends DraftOf['kind']>(
     placeholders,
     asTyped,
     secretTokens: () => reached,
+    secretNames: () => [...names],
   };
 }
 
@@ -703,6 +709,8 @@ export interface RestPreview {
   readonly item: RestSelected;
   readonly input: RestSendInput;
   readonly unresolved: readonly UnresolvedRef[];
+  /** The names of the `${secret:name}` tokens reached, for the preflight's early warnings. */
+  readonly secretNames: readonly string[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
   /** Where the base URL came from, for the editor's badge. */
@@ -735,6 +743,7 @@ export async function previewRest(
     item,
     input: await placeholders.restore(resolved.input, asTyped),
     unresolved: resolved.unresolved,
+    secretNames: preview.secretNames(),
     auth: restEffectiveAuth(item),
     ...restUrlSourceOf(deps, item, context),
   };
@@ -770,6 +779,8 @@ export interface GrpcPreview {
   readonly unresolved: readonly UnresolvedRef[];
   /** True when a `${secret:name}` token was reached: it stays in the output as typed. */
   readonly secretTokens: boolean;
+  /** The names of the `${secret:name}` tokens reached, for the preflight's early warnings. */
+  readonly secretNames: readonly string[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
   /** Where the target came from, for the editor's badge. */
@@ -804,6 +815,7 @@ export async function previewGrpc(
     messageText: restored.messageText,
     unresolved: resolved.unresolved,
     secretTokens: preview.secretTokens(),
+    secretNames: preview.secretNames(),
     auth: grpcEffectiveAuth(item),
     targetSource: resolvedBaseUrl(context, { slug: item.api.slug, baseUrl: item.api.target }).source,
   };
@@ -815,6 +827,8 @@ export interface WsPreview {
   readonly unresolved: readonly UnresolvedRef[];
   /** True when a `${secret:name}` token was reached: it stays in the output as typed. */
   readonly secretTokens: boolean;
+  /** The names of the `${secret:name}` tokens reached, for the preflight's early warnings. */
+  readonly secretNames: readonly string[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
   /** Where the server URL came from, for the editor's badge. */
@@ -842,6 +856,7 @@ export async function previewWs(
     input: await placeholders.restore(resolved.input, asTyped),
     unresolved: resolved.unresolved,
     secretTokens: preview.secretTokens(),
+    secretNames: preview.secretNames(),
     auth: wsEffectiveAuth(item),
     urlSource: resolvedBaseUrl(context, { slug: item.api.slug, baseUrl: item.api.url }).source,
   };

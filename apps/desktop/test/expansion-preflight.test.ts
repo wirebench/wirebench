@@ -1,8 +1,16 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest, isWirebenchError, resolveScopes } from '@wirebench/engine';
+import {
+  createInterface,
+  createProject,
+  createRequest,
+  isWirebenchError,
+  parseSecretSources,
+  resolveScopes,
+  secretSourcesHash,
+} from '@wirebench/engine';
 import type { Environment, Interface, Project } from '@wirebench/engine';
-import { preflightRequest } from '../src/main/expansion-preflight.js';
+import { preflightRequest, secretSourceContext, secretSourceRefCode } from '../src/main/expansion-preflight.js';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
 
@@ -92,6 +100,56 @@ describe('preflightRequest', () => {
     const result = preflightRequest(withTokens, 'req-1', resolveScopes(withTokens, undefined, {}, {}));
 
     expect(result.unresolved.map((ref) => ref.expr)).toEqual(['${#Env#missing}', '${#Global#nope}']);
+  });
+
+  it('warns about a token mapped to an invalid or unapproved source, and not a trusted one', () => {
+    const shared = parseSecretSources({
+      ok: { kind: 'gcp', secret: 's' },
+      bad: { kind: 'vault', path: '-x', field: 'f' },
+    }).sources;
+    const project = build();
+    const operation = project.interfaces[0]!.operations[0]!;
+    const request = {
+      ...operation.requests[0]!,
+      envelopeXml: '<Add>${secret:ok} ${secret:bad} ${secret:plain}</Add>',
+      headers: [],
+    };
+    const withTokens: Project = {
+      ...project,
+      interfaces: [{ ...project.interfaces[0]!, operations: [{ ...operation, requests: [request] }] }],
+    };
+    const scopes = resolveScopes(withTokens, undefined, {}, {});
+    const run = (approvedHash: string | undefined) =>
+      preflightRequest(withTokens, 'req-1', scopes, undefined, '', undefined, {
+        shared,
+        local: undefined,
+        approvedHash,
+      }).unresolved.filter((ref) => ref.scope === 'Secret' || ref.code.startsWith('secret-source'));
+
+    expect(run(undefined).map((ref) => [ref.name, ref.code])).toEqual([
+      ['ok', 'secret-source-untrusted'],
+      ['bad', 'secret-source-invalid'],
+    ]);
+    expect(run(secretSourcesHash(shared)).map((ref) => [ref.name, ref.code])).toEqual([
+      ['bad', 'secret-source-invalid'],
+    ]);
+  });
+
+  it('secretSourceRefCode flags only a mapped secret token, and a local entry needs no approval', () => {
+    const shared = parseSecretSources({ ok: { kind: 'gcp', secret: 's' } }).sources;
+    const ref = (name: string) => ({ scope: 'Secret', name, code: 'missing' as const });
+    const untrusted = secretSourceContext({ shared, local: undefined, approvedHash: undefined });
+    expect(secretSourceRefCode(ref('ok'), untrusted.sources, untrusted.trusted)).toBe('secret-source-untrusted');
+    expect(secretSourceRefCode(ref('plain'), untrusted.sources, untrusted.trusted)).toBeUndefined();
+    expect(
+      secretSourceRefCode({ scope: 'Env', name: 'ok', code: 'missing' }, untrusted.sources, false),
+    ).toBeUndefined();
+    const local = secretSourceContext({
+      shared: undefined,
+      local: { ok: { kind: 'gcp', secret: 's' } },
+      approvedHash: undefined,
+    });
+    expect(secretSourceRefCode(ref('ok'), local.sources, local.trusted)).toBeUndefined();
   });
 
   it('reports an unresolved reference in the endpoint itself', () => {

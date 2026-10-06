@@ -242,6 +242,7 @@ import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
 import { moveDir } from './rename-dir.js';
+import type { SecretSourcesSnapshot } from './secret-sources-service.js';
 import { refusedSequenceSlugs } from './project-sequence-mutations.js';
 
 /**
@@ -477,6 +478,9 @@ export class ProjectHost {
    */
   private issuedTokens: IssuedTokenSource | undefined;
 
+  /** The workspace's secret sources, read afresh by every preflight. Set by `WorkspaceService`; absent standalone and in tests. */
+  private secretSources: (() => SecretSourcesSnapshot | undefined) | undefined;
+
   constructor(
     private readonly engine: EngineService,
     private readonly hooks: ProjectHostHooks = {},
@@ -519,6 +523,11 @@ export class ProjectHost {
   /** Tells this host where its project's current values come from; `undefined` drops them. */
   setCurrentValues(source: (() => CurrentValues | undefined) | undefined): void {
     this.currentValues = source;
+  }
+
+  /** Tells this host where the open workspace's secret sources come from, for the preflight's early warnings. */
+  setSecretSources(source: (() => SecretSourcesSnapshot | undefined) | undefined): void {
+    this.secretSources = source;
   }
 
   /** Tells this host which issued-token cache its WS-Security preview peeks at; `undefined` drops it. */
@@ -902,6 +911,7 @@ export class ProjectHost {
       this.workspaceContext?.() === undefined
         ? undefined
         : (iface, request) => this.resolveEndpointFor(open.project, iface, request),
+      this.secretSources?.(),
     );
   }
 

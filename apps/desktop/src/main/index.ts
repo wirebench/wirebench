@@ -607,6 +607,7 @@ void app.whenReady().then(() => {
   registerScriptChannels(scripts);
   const requestDeps: RequestChannelDeps = {
     project: workspaceService,
+    secretSources: () => workspaceService.secretSourcesSnapshot(),
     adHocScopes: () => {
       const state = globalProperties.get();
       const global = overlayCurrent(
