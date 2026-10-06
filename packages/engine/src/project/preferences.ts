@@ -197,6 +197,17 @@ export interface AccountPreferences {
   readonly showInStatusBar: boolean;
 }
 
+/** Secret sources (secret sources spec D6). */
+export interface SecretsPreferences {
+  /** How long a value fetched from a secret manager stays in memory, in seconds; 0 fetches it on every send. */
+  readonly sourceCacheSeconds: number;
+}
+
+/** `secrets.sourceCacheSeconds`, kept to whole seconds between 0 and an hour. */
+function clampSourceCacheSeconds(value: number): number {
+  return Math.min(3600, Math.max(0, Math.round(value)));
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -210,6 +221,7 @@ export interface Preferences {
   readonly ui: UiPreferences;
   readonly updates: UpdatePreferences;
   readonly accounts: AccountPreferences;
+  readonly secrets: SecretsPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -269,6 +281,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   }),
   updates: Object.freeze({ checkOnLaunch: false }),
   accounts: Object.freeze({ showInStatusBar: true }),
+  secrets: Object.freeze({ sourceCacheSeconds: 300 }),
   shortcuts: Object.freeze({}),
 });
 
@@ -361,6 +374,7 @@ export const preferencesSchema = z.object({
     .optional(),
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
+  secrets: z.object({ sourceCacheSeconds: z.number().finite().optional() }).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -421,6 +435,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     ui: parseSection(shape.ui, root['ui']),
     updates: parseSection(shape.updates, root['updates']),
     accounts: parseSection(shape.accounts, root['accounts']),
+    secrets: parseSection(shape.secrets, root['secrets']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -439,6 +454,9 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     },
     updates: mergeSection(base.updates, value.updates),
     accounts: mergeSection(base.accounts, value.accounts),
+    secrets: {
+      sourceCacheSeconds: clampSourceCacheSeconds(value.secrets?.sourceCacheSeconds ?? base.secrets.sourceCacheSeconds),
+    },
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

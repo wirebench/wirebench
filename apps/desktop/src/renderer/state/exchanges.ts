@@ -3,6 +3,7 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
+import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import { recordContractProblems } from '../features/rest-editor/response/contract.js';
@@ -64,7 +65,19 @@ export type LogEntry =
  * straight to typing one in. An auth password's `secret-missing` names no token (its value is set
  * in the authentication settings), and any other failure is left to Problems, so neither gets one.
  */
-function offerSecretValue(requestId: string, error: IpcError): void {
+function offerSecretAction(requestId: string, error: IpcError): void {
+  // The one failure a secret source can fix from a toast: its shared mapping is not approved here.
+  // The message carries the name and the kind, never a value; the dialog it opens offers the approval.
+  // The other `secret-source-*` codes reach the person through the send's Problem.
+  if (error.code === 'secret-source-untrusted') {
+    showToast(error.message, {
+      label: 'Review secret sources…',
+      onClick: () => {
+        openSecretSourcesDialog();
+      },
+    });
+    return;
+  }
   const name = error.details?.['name'];
   if (error.code !== 'secret-missing' || typeof name !== 'string') {
     return;
@@ -483,6 +496,17 @@ function whereOf(ref: UnresolvedRefWire): string {
   return ref.field === 'header' && ref.headerName !== undefined ? ` in header "${ref.headerName}"` : ` in ${ref.field}`;
 }
 
+/** The message a preflight warning carries; a secret-source one names no value, only the problem. */
+function expansionMessage(ref: UnresolvedRefWire): string {
+  if (ref.code === 'secret-source-untrusted') {
+    return `Secret source is not approved: ${ref.expr}${whereOf(ref)}`;
+  }
+  if (ref.code === 'secret-source-invalid') {
+    return `Secret source entry is invalid: ${ref.expr}${whereOf(ref)}`;
+  }
+  return `Unresolved property ${ref.expr}${whereOf(ref)}`;
+}
+
 /** Turns the preflight's (or the exchange's) unresolved references into Problems entries. */
 function expansionProblems(requestId: string, refs: readonly UnresolvedRefWire[]): Problem[] {
   return refs.map((ref) => ({
@@ -490,8 +514,36 @@ function expansionProblems(requestId: string, refs: readonly UnresolvedRefWire[]
     source: 'expansion' as const,
     severity: 'warning' as const,
     requestId,
-    problem: { code: `expansion-${ref.code}`, message: `Unresolved property ${ref.expr}${whereOf(ref)}` },
+    problem: { code: `expansion-${ref.code}`, message: expansionMessage(ref) },
   }));
+}
+
+/**
+ * Puts a REST, gRPC or WebSocket preflight's secret-source warnings in the Problems list, as the SOAP
+ * preflight does for every unresolved reference. Only the two `secret-source-*` codes are surfaced: those
+ * protocols show their other unresolved references through the send's own result, and this keeps that as
+ * it was. It runs beside the send, never in front of it. A preflight that fails or is unavailable adds
+ * nothing; the send reports its own.
+ *
+ * `isCurrent` says whether the send that asked is still the request's latest: a warning that arrives
+ * after a newer send began, or after a cancel, belongs to nothing and is dropped.
+ */
+async function warnSecretSources(
+  requestId: string,
+  isCurrent: () => boolean,
+  preflight: () => Promise<{ ok: boolean; value?: { unresolved: readonly UnresolvedRefWire[] } }>,
+): Promise<void> {
+  try {
+    const result = await preflight();
+    const refs = (result.ok ? (result.value?.unresolved ?? []) : []).filter((ref) =>
+      ref.code.startsWith('secret-source-'),
+    );
+    if (refs.length > 0 && isCurrent()) {
+      useProblemsStore.getState().add(expansionProblems(requestId, refs));
+    }
+  } catch {
+    // The preflight is advisory.
+  }
 }
 
 export const useExchangesStore = create<ExchangesStore>((set, get) => {
@@ -552,6 +604,17 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
 
       const draftPatch = useDraftsStore.getState().peekGrpcRequest(requestId);
+      // Alongside the send, not before it: the warning must not delay the call or the live stream.
+      void warnSecretSources(
+        requestId,
+        () => get().grpcByRequest[requestId]?.sendId === sendId,
+        () =>
+          ipc().request.preflightGrpc({
+            requestId,
+            secretsOnly: true,
+            ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+          }),
+      );
       const result = await ipc().request.sendGrpc({
         sendId,
         requestId,
@@ -566,7 +629,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.grpcByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -690,6 +753,17 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
 
       const draftPatch = useDraftsStore.getState().peekWsRequest(requestId);
+      // Alongside the send, not before it: the warning must not delay the call or the live stream.
+      void warnSecretSources(
+        requestId,
+        () => get().wsByRequest[requestId]?.sendId === sendId,
+        () =>
+          ipc().request.preflightWs({
+            requestId,
+            secretsOnly: true,
+            ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+          }),
+      );
       const result = await ipc().request.openWs({
         sendId,
         requestId,
@@ -705,7 +779,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.wsByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -760,7 +834,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           }
           draft.wsByRequest[requestId] = { ...state, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         return;
       }
       // The frame itself is *not* pushed here. The engine fires `onFrame` for a sent frame as it
@@ -918,6 +992,17 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
       // is main that decides where this goes and what it carries.
       const draftPatch = useDraftsStore.getState().peekRestRequest(requestId);
+      // Alongside the send, not before it: the warning must not delay the call or the live stream.
+      void warnSecretSources(
+        requestId,
+        () => get().restByRequest[requestId]?.sendId === sendId,
+        () =>
+          ipc().request.preflightRest({
+            requestId,
+            secretsOnly: true,
+            ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+          }),
+      );
       const result = await ipc().request.sendRest({
         sendId,
         requestId,
@@ -933,7 +1018,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -1113,7 +1198,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.byRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
-        offerSecretValue(requestId, result.error);
+        offerSecretAction(requestId, result.error);
         // A failed send is not just a red status line that the next send erases: it belongs in
         // Problems alongside everything else that went wrong with this request.
         useProblemsStore.getState().add([

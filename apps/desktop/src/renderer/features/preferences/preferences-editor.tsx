@@ -13,6 +13,7 @@ import { WsdlSection } from './sections/wsdl-section.js';
 import { EditorSection, UiSection } from './sections/editor-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
 import { AccountsSection } from './sections/accounts-section.js';
+import { SecretsSection } from './sections/secrets-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
 import { TokensSection } from './sections/tokens-section.js';
 
@@ -36,6 +37,7 @@ const SECTIONS: readonly SectionEntry[] = [
   { id: 'ui', label: 'UI' },
   { id: 'updates', label: 'Updates' },
   { id: 'accounts', label: 'Accounts' },
+  { id: 'secrets', label: 'Secrets' },
   { id: 'tokens', label: 'Devices & tokens' },
   { id: 'shortcuts', label: 'Shortcuts' },
 ];
@@ -121,6 +123,7 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
         {active === 'ui' && <UiSection {...sectionProps} />}
         {active === 'updates' && <UpdatesSection {...sectionProps} />}
         {active === 'accounts' && <AccountsSection {...sectionProps} />}
+        {active === 'secrets' && <SecretsSection {...sectionProps} />}
         {active === 'tokens' && <TokensSection />}
         {active === 'shortcuts' && <ShortcutsSection context={commandContext} />}
       </div>

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createProject,
+  createSourceCache,
   loadProject,
   requestFileLocation,
   saveProject,
@@ -20,7 +21,6 @@ import type { Project, RestFolder, RestRequestDef } from '@wirebench/engine';
 import { runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
-import { createSourceCache } from '@wirebench/engine';
 import { DEFAULT_CLI_SECRET_SOURCES } from '../../../src/source-secrets.js';
 
 const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures', 'mcp');

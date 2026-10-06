@@ -144,6 +144,10 @@ describe('sourceGetter', () => {
     expect(first.run).toHaveBeenCalledTimes(2);
   });
 
+  it('refuses a SourceCache that createSourceCache did not make', () => {
+    expect(() => setup({ cache: { clear: vi.fn() } })).toThrow(/createSourceCache/);
+  });
+
   it('does not cache a failure', async () => {
     const run = vi
       .fn()

@@ -7,6 +7,7 @@ import {
   createApi,
   createProject,
   createRestRequest,
+  createSourceCache,
   createWorkspace,
   parseSecretSources,
   jarCookieHost,
@@ -17,7 +18,6 @@ import { OPEN_GATES } from '../../src/ops/context.js';
 import type { OpsContext } from '../../src/ops/context.js';
 import type { SendableItem } from '../../src/ops/items.js';
 import { sendAndRecord } from '../../src/ops/send.js';
-import { createSourceCache } from '@wirebench/engine';
 import { DEFAULT_CLI_SECRET_SOURCES } from '../../src/source-secrets.js';
 
 const request = createRestRequest('Me', { id: 'r1', slug: 'me', url: 'http://api.test/me' });

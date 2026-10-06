@@ -79,6 +79,18 @@ describe('mergePreferences', () => {
   });
 });
 
+describe('secrets preferences', () => {
+  it('defaults, reads and clamps secrets.sourceCacheSeconds', () => {
+    const read = (value: number) =>
+      mergePreferences({ secrets: { sourceCacheSeconds: value } }).secrets.sourceCacheSeconds;
+    expect(DEFAULT_PREFERENCES.secrets.sourceCacheSeconds).toBe(300);
+    expect(read(0)).toBe(0);
+    expect(read(99999)).toBe(3600);
+    expect(read(-5)).toBe(0);
+    expect(read(12.6)).toBe(13);
+  });
+});
+
 describe('resetPreferences', () => {
   it('resets one section, leaving the others alone', () => {
     const current = mergePreferences({ editor: { tabSize: 8 }, http: { userAgent: 'Keep/1' } });

@@ -53,6 +53,7 @@ describe('PreferencesEditor', () => {
       'Editor',
       'UI',
       'Accounts',
+      'Secrets',
       'Shortcuts',
     ]) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
@@ -78,6 +79,39 @@ describe('PreferencesEditor', () => {
 
     await vi.waitFor(() => {
       expect(update).toHaveBeenCalledWith({ patch: { editor: { tabSize: 2 } } });
+    });
+  });
+
+  it('sets the secret source cache lifetime from the Secrets section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Secrets' }));
+
+    const field = screen.getByLabelText('Secret source cache (seconds)');
+    fireEvent.change(field, { target: { value: '60' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { secrets: { sourceCacheSeconds: 60 } } });
+    });
+  });
+
+  it('refuses a secret source cache lifetime above 3600 seconds and snaps the field back', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Secrets' }));
+
+    const field = screen.getByLabelText<HTMLInputElement>('Secret source cache (seconds)');
+    fireEvent.change(field, { target: { value: '3601' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(field.value).toBe('300');
+    expect(update).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: '3600' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { secrets: { sourceCacheSeconds: 3600 } } });
     });
   });
 

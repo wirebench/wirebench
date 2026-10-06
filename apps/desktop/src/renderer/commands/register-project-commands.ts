@@ -5,6 +5,8 @@ import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { projectActions } from '../features/project/project-actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { registerCommand } from '../lib/commands.js';
+import { showToast } from '../components/toast.js';
+import { ipc } from '../state/ipc-client.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
@@ -140,6 +142,16 @@ export function registerProjectCommands(): void {
     whenScope: 'project',
     run: () => {
       openSecretTokenDialog();
+    },
+  });
+
+  // Values fetched from an external manager are cached for a few minutes; this forgets them, so the
+  // next send asks the tool again (after a rotation, say). Needs no project: the cache is main's.
+  registerCommand({
+    ...catalogEntry('secrets.clearSourceCache'),
+    run: async () => {
+      const result = await ipc().secretSources.clearCache(undefined);
+      showToast(result.ok ? 'Secret source cache cleared.' : result.error.message);
     },
   });
 }

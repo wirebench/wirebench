@@ -31,10 +31,19 @@ const AUTH_MISSING = {
   details: { ref: 'ref-1' },
 };
 
+const SOURCE_UNTRUSTED = {
+  code: 'secret-source-untrusted',
+  message: 'The secret "db" comes from a shared source (vault) that is not approved on this machine.',
+  details: { name: 'db', kind: 'vault' },
+};
+
 type Protocol = 'soap' | 'rest' | 'grpc' | 'ws';
 
 /** Sends `requestId` over `protocol` with main refusing it as `error`. */
-async function failSend(protocol: Protocol, error: typeof TOKEN_MISSING | typeof AUTH_MISSING): Promise<void> {
+async function failSend(
+  protocol: Protocol,
+  error: typeof TOKEN_MISSING | typeof AUTH_MISSING | typeof SOURCE_UNTRUSTED,
+): Promise<void> {
   const refused = vi.fn().mockResolvedValue({ ok: false, error });
   installWirebenchApi({
     request: {
@@ -59,7 +68,7 @@ beforeEach(() => {
   useDraftsStore.getState().reset();
   useProblemsStore.setState({ items: [] });
   usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE });
-  useUiStore.setState({ secretTokenDialog: null });
+  useUiStore.setState({ secretTokenDialog: null, secretSourcesDialog: null, secretSourcesApproval: false });
   useProjectStore.setState({
     projects: {
       p1: { id: 'p1', name: 'Billing' } as ProjectWire,
@@ -127,6 +136,49 @@ describe('the secret-missing toast', () => {
     useProjectStore.setState({ projectOf: { p1: 'p1', p2: 'p2' } });
 
     await failSend('rest', TOKEN_MISSING);
+
+    expect(showToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('the secret-source toast', () => {
+  it.each<Protocol>(['soap', 'rest', 'grpc', 'ws'])(
+    'offers Review secret sources… for an unapproved source over %s, opening the Secret Sources dialog',
+    async (protocol) => {
+      await failSend(protocol, SOURCE_UNTRUSTED);
+
+      expect(showToast).toHaveBeenCalledTimes(1);
+      const [message, action] = showToast.mock.calls[0] as [string, ToastAction];
+      expect(message).toBe(SOURCE_UNTRUSTED.message);
+      expect(action.label).toBe('Review secret sources…');
+
+      action.onClick();
+      expect(useUiStore.getState().secretSourcesDialog).toEqual({});
+      expect(useUiStore.getState().secretSourcesApproval).toBe(false);
+    },
+  );
+
+  it('offers it when a message on an open WebSocket session is refused', async () => {
+    const refused = vi.fn().mockResolvedValue({ ok: false, error: SOURCE_UNTRUSTED });
+    installWirebenchApi({ request: { wsSend: refused } });
+    useExchangesStore.setState({ wsByRequest: { 'ws-1': { status: 'open', sendId: 'send-1' } } });
+
+    await useExchangesStore.getState().sendWsMessage('ws-1', { format: 'text', content: 'x', expand: true });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect((showToast.mock.calls[0] as [string, ToastAction])[1].label).toBe('Review secret sources…');
+  });
+
+  it('offers it even when the request belongs to no known project', async () => {
+    useProjectStore.setState({ projectOf: { p1: 'p1', p2: 'p2' } });
+
+    await failSend('rest', SOURCE_UNTRUSTED);
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers nothing for the other secret-source failures, which reach the Problems list', async () => {
+    await failSend('rest', { ...SOURCE_UNTRUSTED, code: 'secret-source-failed' });
 
     expect(showToast).not.toHaveBeenCalled();
   });

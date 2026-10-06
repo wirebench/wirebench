@@ -1,9 +1,26 @@
-// packages/engine/test/unit/secrets/sources/trust.test.ts
 import { describe, expect, it } from 'vitest';
 import { parseSecretSources } from '../../../../src/secrets/sources/parse.js';
 import { secretSourcesHash, sharedTrusted } from '../../../../src/secrets/sources/trust.js';
 
+function withProto(value: unknown): Record<string, unknown> {
+  const input: Record<string, unknown> = { a: { kind: 'gcp', secret: 's' } };
+  Object.defineProperty(input, '__proto__', { value, enumerable: true, configurable: true, writable: true });
+  return input;
+}
+
 describe('secretSourcesHash', () => {
+  it('changes when an own __proto__ entry changes, at the top level and nested', () => {
+    const top = (field: string) =>
+      secretSourcesHash(parseSecretSources(withProto({ kind: 'vault', path: '-x', field })).sources);
+    expect(top('f')).not.toBe(top('g'));
+    const nested = (n: number) => {
+      const raw: Record<string, unknown> = { kind: 'vault', path: '-x', field: 'f' };
+      Object.defineProperty(raw, '__proto__', { value: { n }, enumerable: true, configurable: true, writable: true });
+      return secretSourcesHash(parseSecretSources({ b: raw }).sources);
+    };
+    expect(nested(1)).not.toBe(nested(2));
+  });
+
   it('ignores key order at every level and changes with any value', () => {
     const a = parseSecretSources({
       x: { kind: 'aws', secretId: 's', region: 'eu-west-1' },

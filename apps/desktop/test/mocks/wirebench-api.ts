@@ -237,6 +237,15 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       tokens: vi.fn().mockResolvedValue({ ok: true, value: { tokens: [] } }),
       setValue: fail('secretScan.setValue'),
     },
+    // Nothing mapped and nothing to approve; a test of the dialogs states its own answers.
+    secretSources: {
+      get: vi.fn().mockResolvedValue({ ok: true, value: { open: true, entries: [], trusted: true, changes: [] } }),
+      setShared: vi.fn().mockResolvedValue({ ok: true, value: { ok: true, issues: [] } }),
+      setLocal: vi.fn().mockResolvedValue({ ok: true, value: { ok: true, issues: [] } }),
+      approve: fail('secretSources.approve'),
+      test: fail('secretSources.test'),
+      clearCache: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+    },
     // No token cached; a test that fetches or clears states its own answer.
     issuedTokens: {
       status: vi.fn().mockResolvedValue({ ok: true, value: { state: 'none' } }),

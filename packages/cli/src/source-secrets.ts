@@ -1,4 +1,3 @@
-// packages/cli/src/source-secrets.ts
 /**
  * The CLI's secrets: `WIREBENCH_SECRET_<NAME>` first, as always, then the workspace's shared secret
  * sources (secret sources spec D2, D8). The CLI never sees the desktop's `local.yaml`, so it has no local

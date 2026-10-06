@@ -1,4 +1,3 @@
-// packages/engine/src/secrets/sources/trust.ts
 /**
  * Whether this machine may use a workspace's shared secret sources (secret sources spec D4). A shared
  * mapping decides which of the user's secrets a shared request can read, so it is used only once approved
@@ -13,9 +12,15 @@ function canonical(value: unknown): unknown {
     return value.map(canonical);
   }
   if (typeof value === 'object' && value !== null) {
-    const out: Record<string, unknown> = {};
+    // Null prototype and `defineProperty`: an own `__proto__` key must stay a key, not set the prototype.
+    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const key of Object.keys(value).sort()) {
-      out[key] = canonical((value as Record<string, unknown>)[key]);
+      Object.defineProperty(out, key, {
+        value: canonical((value as Record<string, unknown>)[key]),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return out;
   }

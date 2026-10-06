@@ -60,7 +60,7 @@ export function workspaceFiles(workspace: Workspace): WorkspaceFiles {
         secretSources:
           workspace.secretSources !== undefined && Object.keys(workspace.secretSources).length > 0
             ? serializeSecretSources(workspace.secretSources)
-            : undefined,
+            : workspace.secretSourcesRaw,
         projects: workspace.projects.map((ref) => projectRefDocument(ref)),
       }),
     ),

@@ -3,7 +3,8 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadLocalState, loadWorkspace } from '@wirebench/engine';
+import { loadLocalState, loadWorkspace, parseSecretSources, secretSourcesHash } from '@wirebench/engine';
+import { readFileSync } from 'node:fs';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -362,5 +363,51 @@ describe('WorkspaceService.ensureEnvironments', () => {
         ?.environments.map((environment) => environment.name)
         .sort(),
     ).toEqual(['Default', 'Staging']);
+  });
+});
+
+describe('secret source warnings in the SOAP preflight', () => {
+  const VAULT = { kind: 'vault', path: 'kv/app', field: 'password' };
+  const sharedHash = (): string => secretSourcesHash(parseSecretSources({ tok: VAULT }).sources) as string;
+  const warnings = (host: ProjectHost, requestId: string): unknown[][] =>
+    host
+      .preflight(requestId)
+      .unresolved.filter((ref) => ref.code.startsWith('secret-source-'))
+      .map((ref) => [ref.name, ref.code]);
+
+  async function withToken(): Promise<{ service: WorkspaceService; host: ProjectHost; requestId: string }> {
+    const { service, projectId, requestId } = await workspaceWithCalculator();
+    const host = service.hostFor(projectId);
+    await host.mutate({
+      kind: 'update-request',
+      requestId,
+      patch: { headers: [{ name: 'X-Token', value: '${secret:tok} and ${secret:tok}' }] },
+    });
+    await service.setSharedSecretSources({ name: 'tok', entry: VAULT });
+    return { service, host, requestId };
+  }
+
+  it('flags a shared entry nobody approved, once per name, and not an approved one', async () => {
+    const { service, host, requestId } = await withToken();
+    // Two tokens in one header value: one warning per name per request, on every protocol.
+    expect(warnings(host, requestId)).toEqual([['tok', 'secret-source-untrusted']]);
+    await service.approveSecretSources(sharedHash());
+    expect(warnings(host, requestId)).toEqual([]);
+    await service.close();
+  }, 60_000);
+
+  it('gives a local override of a shared entry no warning, and neither a local unmap', async () => {
+    const { service, host, requestId } = await withToken();
+    expect(warnings(host, requestId)).toHaveLength(1);
+    await service.setLocalSecretSources({ name: 'tok', entry: { kind: '1password', ref: 'op://a/b/c' } });
+    expect(warnings(host, requestId)).toEqual([]);
+    await service.setLocalSecretSources({ name: 'tok', entry: { kind: 'none' } });
+    expect(warnings(host, requestId)).toEqual([]);
+    await service.close();
+  }, 60_000);
+
+  it('hands the REST, gRPC and WebSocket preflights the same snapshot, in the app wiring', () => {
+    const index = readFileSync(join(__dirname, '../src/main/index.ts'), 'utf8');
+    expect(index).toContain('secretSources: () => workspaceService.secretSourcesSnapshot()');
   });
 });

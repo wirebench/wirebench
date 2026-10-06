@@ -15,8 +15,12 @@ import type { FsLike } from '../project/fs.js';
 import { nodeFs, readFileIfExists, writeFileAtomic } from '../project/fs.js';
 import { stringifyYaml, compact } from '../project/yaml.js';
 import type { LocalSecretSources } from '../secrets/sources/parse.js';
-import { parseLocalSecretSources, serializeSecretSources } from '../secrets/sources/parse.js';
-import { workspaceLocalStateSchema } from './schema.js';
+import {
+  isNonMappingSecretSources,
+  parseLocalSecretSources,
+  serializeSecretSources,
+} from '../secrets/sources/parse.js';
+import { secretSourcesApprovalSchema, workspaceLocalStateSchema } from './schema.js';
 
 /** File name of a workspace's machine-local state, directly under its app-data folder. */
 export const WORKSPACE_LOCAL_FILE = 'local.yaml';
@@ -34,6 +38,11 @@ export interface WorkspaceLocalState {
   readonly activeEnvironmentId?: string;
   /** This machine's secret-source overrides; `{ kind: none }` unmaps a shared name. */
   readonly secretSources?: LocalSecretSources;
+  /**
+   * A `secretSources` value in `local.yaml` that is not a mapping, kept as read so a save writes it back.
+   * Written only when there is no parsed map; whatever replaces the overrides must clear it.
+   */
+  readonly secretSourcesRaw?: unknown;
   /** The shared mapping this machine approved (secret sources spec D4). */
   readonly secretSourcesApproved?: SecretSourcesApproval;
 }
@@ -70,11 +79,14 @@ export async function loadLocalState(dir: string, options?: LocalStateOptions): 
   }
   const data = result.data;
   const local = parseLocalSecretSources(data.secretSources).sources;
+  // A malformed approval is dropped alone: it must not take the active environment or the overrides with it.
+  const approval = secretSourcesApprovalSchema.safeParse(data.secretSourcesApproved);
   return {
     version: 2,
     ...(data.activeEnvironmentId !== undefined ? { activeEnvironmentId: data.activeEnvironmentId } : {}),
     ...(Object.keys(local).length > 0 ? { secretSources: local } : {}),
-    ...(data.secretSourcesApproved !== undefined ? { secretSourcesApproved: data.secretSourcesApproved } : {}),
+    ...(isNonMappingSecretSources(data.secretSources) ? { secretSourcesRaw: data.secretSources } : {}),
+    ...(approval.success && approval.data !== undefined ? { secretSourcesApproved: approval.data } : {}),
   };
 }
 
@@ -93,6 +105,7 @@ export async function saveLocalState(
   const empty =
     state.activeEnvironmentId === undefined &&
     (state.secretSources === undefined || Object.keys(state.secretSources).length === 0) &&
+    state.secretSourcesRaw === undefined &&
     state.secretSourcesApproved === undefined;
   if (empty) {
     await fs.rm(path, { force: true });
@@ -108,7 +121,7 @@ export async function saveLocalState(
         secretSources:
           state.secretSources !== undefined && Object.keys(state.secretSources).length > 0
             ? serializeSecretSources(state.secretSources)
-            : undefined,
+            : state.secretSourcesRaw,
         secretSourcesApproved: state.secretSourcesApproved,
       }),
     ),

@@ -78,6 +78,12 @@ export interface Workspace {
    */
   readonly secretSources?: SharedSecretSources;
   /**
+   * A `secretSources` value in `workspace.yaml` that is not a mapping, kept as read so a save writes it
+   * back instead of losing it. Written only when there is no parsed map. Whatever replaces the shared
+   * mapping (the desktop's `setShared`, Task 7) must clear this field.
+   */
+  readonly secretSourcesRaw?: unknown;
+  /**
    * Id of the environment currently active for this workspace, if any. Machine-local: kept only
    * in memory while a workspace is open, and never serialised into `workspace.yaml` — see
    * `local-state.ts`, which is where it actually lives on disk.

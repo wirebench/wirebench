@@ -1490,7 +1490,42 @@ export type { SecretMove, SecretMovesResult } from './secrets/scan/apply.js';
 export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
 
 export { SECRET_REF_PATTERN, secretRefsInValue } from './secrets/secret-refs.js';
-export * from './secrets/sources/index.js';
+export {
+  createSourceCache,
+  effectiveSecretSources,
+  parseLocalSecretSources,
+  parseSecretSources,
+  SECRET_SOURCE_KIND_FIELDS,
+  SECRET_SOURCE_KINDS,
+  secretSourcesHash,
+  serializeSecretSources,
+  sharedTrusted,
+  sourceGetter,
+} from './secrets/sources/index.js';
+export type {
+  AwsSource,
+  AzureSource,
+  EffectiveSecretSource,
+  EffectiveSecretSources,
+  FindSourceTool,
+  GcpSource,
+  InvalidSecretSource,
+  KeychainSource,
+  LocalSecretSource,
+  LocalSecretSources,
+  OnePasswordSource,
+  RunSourceTool,
+  SecretSource,
+  SecretSourceIssue,
+  SecretSourceKind,
+  SecretSourcesTrust,
+  SourceToolOptions,
+  SharedSecretSource,
+  SharedSecretSources,
+  SourceCache,
+  SourceGetterOptions,
+  VaultSource,
+} from './secrets/sources/index.js';
 
 // ---------------------------------------------------------------------------
 // Team secrets: machine keys, the access log and the vault (team-secrets spec §4, §5.2)

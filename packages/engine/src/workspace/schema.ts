@@ -73,10 +73,32 @@ export const workspaceLocalStateSchema = z.object({
   version: z.union([z.literal(1), z.literal(2)]),
   activeEnvironmentId: z.string().optional(),
   secretSources: z.unknown().optional(),
-  secretSourcesApproved: z
-    .object({ hash: z.string().regex(/^[0-9a-f]{64}$/), mapping: z.record(z.string(), z.unknown()) })
-    .optional(),
+  /** Validated apart in `local-state.ts`, so a malformed approval is dropped alone. */
+  secretSourcesApproved: z.unknown().optional(),
 });
+
+/** What this machine approved of the shared secret sources: the hash, and the mapping it was taken over. */
+export const secretSourcesApprovalSchema = z
+  .object({
+    hash: z.string().regex(/^[0-9a-f]{64}$/),
+    // Not `z.record`, which drops an own `__proto__` key: the mapping is copied key by key below.
+    mapping: z.custom<Record<string, unknown>>(
+      (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+    ),
+  })
+  .transform(({ hash, mapping }) => {
+    const copy: Record<string, unknown> = {};
+    for (const key of Object.keys(mapping)) {
+      Object.defineProperty(copy, key, {
+        value: mapping[key],
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return { hash, mapping: copy };
+  })
+  .optional();
 
 /** `share.yaml`'s `git` block: settings for a git-backed share. See `share.ts`. */
 const gitShareSettingsSchema = z.object({

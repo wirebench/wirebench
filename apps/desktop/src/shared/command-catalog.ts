@@ -153,6 +153,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Manage Workspaces…',
     category: 'Workspace',
   },
+  'workspace.secretSources': {
+    id: 'workspace.secretSources',
+    label: 'Secret Sources…',
+    category: 'Workspace',
+  },
   'workspace.newProject': {
     id: 'workspace.newProject',
     label: 'New Project…',
@@ -437,6 +442,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   'secrets.setTokenValue': {
     id: 'secrets.setTokenValue',
     label: 'Set Secret Token Value…',
+    category: 'Secrets',
+  },
+  'secrets.clearSourceCache': {
+    id: 'secrets.clearSourceCache',
+    label: 'Clear Secret Source Cache',
     category: 'Secrets',
   },
   'request.send': {

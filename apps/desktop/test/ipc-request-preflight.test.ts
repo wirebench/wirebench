@@ -9,6 +9,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
 import {
+  parseSecretSources,
+  secretSourcesHash,
   createApi,
   createGrpcApi,
   createGrpcRequest,
@@ -24,6 +26,7 @@ import type { Environment, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { HistoryService } from '../src/main/history-service.js';
+import type { SecretSourcesSnapshot } from '../src/main/secret-sources-service.js';
 import type { HistoryEntryWire, RestExchangeSummary } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -210,9 +213,14 @@ function parentEntry(callback: string): HistoryEntryWire {
  * Registers the channels over `model`, as the app's project would answer for it. `parents` are the
  * newest History entries a callback's URL is read from.
  */
-function registerOver(model: Project, parents: Record<string, HistoryEntryWire> = {}): void {
+function registerOver(
+  model: Project,
+  parents: Record<string, HistoryEntryWire> = {},
+  secretSources?: RequestChannelDeps['secretSources'],
+): void {
   handlers.clear();
   registerRequestChannels(new EngineService(), {
+    ...(secretSources !== undefined ? { secretSources } : {}),
     project: {
       projectId: () => model.id,
       runContextFor: () => ({
@@ -401,5 +409,82 @@ describe('request.preflightWs', () => {
   it('answers the empty preflight for a request no project holds', async () => {
     registerOver(seeded());
     expect(await preflight('request.preflightWs', { requestId: 'nope' })).toEqual(NONE);
+  });
+});
+
+describe('preflight and secret sources', () => {
+  const shared = parseSecretSources({
+    tok: { kind: 'gcp', secret: 's' },
+    bad: { kind: 'vault', path: '-x', field: 'f' },
+  }).sources;
+  const snapshot = (approvedHash: string | undefined): SecretSourcesSnapshot => ({
+    shared,
+    local: undefined,
+    approvedHash,
+  });
+  const secretRefs = (response: unknown) =>
+    (response as { unresolved: { name?: string; code: string }[] }).unresolved
+      .filter((ref) => ref.code.startsWith('secret-source'))
+      .map((ref) => [ref.name, ref.code]);
+
+  it('warns about the REST token mapped to an unapproved source, and drops it once approved', async () => {
+    registerOver(seeded(), {}, () => snapshot(undefined));
+    expect(secretRefs(await preflight('request.preflightRest', { requestId: 'rest-1' }))).toEqual([
+      ['tok', 'secret-source-untrusted'],
+    ]);
+    registerOver(seeded(), {}, () => snapshot(secretSourcesHash(shared)));
+    expect(secretRefs(await preflight('request.preflightRest', { requestId: 'rest-1' }))).toEqual([]);
+  });
+
+  it('warns about an invalid entry whether or not the mapping is approved', async () => {
+    const project = seeded();
+    const rest = project.apis[0]!.requests[0]!;
+    const withBad: Project = {
+      ...project,
+      apis: [
+        {
+          ...project.apis[0]!,
+          requests: [{ ...rest, headers: [entry('X-Token', '${secret:bad}')] }, ...project.apis[0]!.requests.slice(1)],
+        },
+      ],
+    };
+    registerOver(withBad, {}, () => snapshot(secretSourcesHash(shared)));
+    expect(secretRefs(await preflight('request.preflightRest', { requestId: 'rest-1' }))).toEqual([
+      ['bad', 'secret-source-invalid'],
+    ]);
+  });
+
+  it('with secretsOnly, resolves nothing when no name is mapped, and still warns when one is', async () => {
+    const empty: SecretSourcesSnapshot = { shared: undefined, local: undefined, approvedHash: undefined };
+    for (const [channel, requestId] of [
+      ['request.preflightRest', 'rest-1'],
+      ['request.preflightGrpc', 'grpc-1'],
+      ['request.preflightWs', 'ws-1'],
+    ] as const) {
+      registerOver(seeded(), {}, () => empty);
+      // The empty answer, though the request exists: it was never resolved (a full preflight has an endpoint).
+      expect(await preflight(channel, { requestId, secretsOnly: true })).toEqual(NONE);
+      registerOver(seeded(), {}, () => undefined);
+      expect(await preflight(channel, { requestId, secretsOnly: true })).toEqual(NONE);
+      // Without the flag, the editor's badge still gets its full answer.
+      registerOver(seeded(), {}, () => empty);
+      expect(await preflight(channel, { requestId })).not.toEqual(NONE);
+    }
+    registerOver(seeded(), {}, () => snapshot(undefined));
+    expect(secretRefs(await preflight('request.preflightRest', { requestId: 'rest-1', secretsOnly: true }))).toEqual([
+      ['tok', 'secret-source-untrusted'],
+    ]);
+  });
+
+  it('warns on gRPC and WebSocket too, and not without a snapshot', async () => {
+    registerOver(seeded(), {}, () => snapshot(undefined));
+    expect(secretRefs(await preflight('request.preflightGrpc', { requestId: 'grpc-1' }))).toEqual([
+      ['tok', 'secret-source-untrusted'],
+    ]);
+    expect(secretRefs(await preflight('request.preflightWs', { requestId: 'ws-1' }))).toEqual([
+      ['tok', 'secret-source-untrusted'],
+    ]);
+    registerOver(seeded(), {}, () => undefined);
+    expect(secretRefs(await preflight('request.preflightGrpc', { requestId: 'grpc-1' }))).toEqual([]);
   });
 });

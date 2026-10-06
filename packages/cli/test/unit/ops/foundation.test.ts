@@ -1,5 +1,6 @@
 import {
   awaitCallbacks,
+  createSourceCache,
   HttpError,
   prepareCallbacks,
   ProjectError,
@@ -28,7 +29,6 @@ import {
   redactError,
   redactUrlsInText,
 } from '../../../src/ops/redact.js';
-import { createSourceCache } from '@wirebench/engine';
 import { DEFAULT_CLI_SECRET_SOURCES } from '../../../src/source-secrets.js';
 
 const SECRET = 'abc123def456ghi789';

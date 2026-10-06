@@ -72,6 +72,7 @@ describe('buildApi', () => {
       'script',
       'search',
       'secretScan',
+      'secretSources',
       'secrets',
       'sequence',
       'snapshot',
@@ -112,6 +113,19 @@ describe('buildApi', () => {
       'setShowSecrets',
     ]);
     expect('get' in api.secrets).toBe(false);
+  });
+
+  it('exposes secretSources.get/setShared/setLocal/approve/test/clearCache, none of which answers with a value', () => {
+    const api = buildApi(vi.fn(), vi.fn());
+
+    expect(Object.keys(api.secretSources).sort()).toEqual([
+      'approve',
+      'clearCache',
+      'get',
+      'setLocal',
+      'setShared',
+      'test',
+    ]);
   });
 
   it('exposes secretScan.scan/keep/move, the autosave hold/release and tokens/setValue, none of which answers with a value', () => {

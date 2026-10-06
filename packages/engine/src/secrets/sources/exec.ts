@@ -44,11 +44,20 @@ function installHint(tool: string): string {
   return page !== undefined ? ` Install it (${page}) and make sure it is on PATH.` : ' Make sure it is on PATH.';
 }
 
+/** Where Homebrew puts tools on Apple silicon and Intel Macs, searched after `PATH`. */
+const DARWIN_FIXED_DIRS: readonly string[] = ['/opt/homebrew/bin', '/usr/local/bin'];
+
 async function locate(tool: string, options: SourceToolOptions): Promise<string> {
   const env = options.env ?? process.env;
-  const windows = (options.platform ?? process.platform) === 'win32';
+  const platform = options.platform ?? process.platform;
+  const windows = platform === 'win32';
   const isFile = options.isFile ?? isRegularFile;
-  const entries = (env['PATH'] ?? env['Path'] ?? '').split(windows ? ';' : ':').filter((entry) => entry.length > 0);
+  // A desktop app started from the Finder gets a bare PATH, so on a Mac look where Homebrew installs too
+  // (as `findGit` does). Search only: the child's environment is not changed.
+  const entries = [
+    ...(env['PATH'] ?? env['Path'] ?? '').split(windows ? ';' : ':').filter((entry) => entry.length > 0),
+    ...(platform === 'darwin' ? DARWIN_FIXED_DIRS : []),
+  ];
   const sep = windows ? '\\' : '/';
   const at = (dir: string, file: string): string => (dir.endsWith(sep) ? `${dir}${file}` : `${dir}${sep}${file}`);
   let wrapper: string | undefined;

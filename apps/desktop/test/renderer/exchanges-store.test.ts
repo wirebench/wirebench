@@ -308,6 +308,29 @@ describe('useExchangesStore', () => {
     });
   });
 
+  it('gives a secret-source warning its own message, naming no value', async () => {
+    const preflight = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'http://dev.test/soap',
+        endpointSource: 'environment',
+        unresolved: [
+          { expr: '${secret:tok}', scope: 'Secret', name: 'tok', code: 'secret-source-untrusted', start: 0, end: 0 },
+          { expr: '${secret:bad}', scope: 'Secret', name: 'bad', code: 'secret-source-invalid', start: 0, end: 0 },
+        ],
+      },
+    });
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn(), preflight } });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(useProblemsStore.getState().items.map((item) => [item.problem.code, item.problem.message])).toEqual([
+      ['expansion-secret-source-untrusted', 'Secret source is not approved: ${secret:tok}'],
+      ['expansion-secret-source-invalid', 'Secret source entry is invalid: ${secret:bad}'],
+    ]);
+  });
+
   it("send() clears the previous send's expansion problems for that request only", async () => {
     useProblemsStore.setState({
       items: [

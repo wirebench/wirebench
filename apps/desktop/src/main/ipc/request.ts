@@ -68,6 +68,8 @@ import { type SendScripts } from '../script-send.js';
 import { type WebhookUrlSource } from '../webhook-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
 import { toUnresolvedRefWire, toWsFrameWire } from '../engine-wire.js';
+import { secretSourceContext, secretSourceRefCode } from '../expansion-preflight.js';
+import type { SecretSourcesSnapshot } from '../secret-sources-service.js';
 import type {
   GrpcRequestPatchWire,
   RestRequestPatchWire,
@@ -165,6 +167,11 @@ export interface RequestChannelDeps {
    * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
    */
   readonly adHocScopes?: () => PropertyScopes;
+  /**
+   * The open workspace's secret sources, read afresh by a REST, gRPC or WebSocket preflight so a token
+   * mapped to an invalid or unapproved source warns early. Omitted in tests that do not care.
+   */
+  readonly secretSources?: () => SecretSourcesSnapshot | undefined;
   /** The session "show secrets" flag; omitted defaults every send to redacted. */
   readonly showSecrets?: { get(): boolean };
   /** The open workspace's cookie jar, asked for once at the start of every REST send (cookie jar spec §2). */
@@ -892,6 +899,41 @@ function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRe
   return unresolved.filter((ref) => !isSecretTokenRef(ref)).map(toUnresolvedRefWire);
 }
 
+/**
+ * The early warnings for the `${secret:name}` tokens a preview reached: one whose name maps to an invalid
+ * entry, or to a shared entry this machine has not approved. A preview resolves each token behind a
+ * placeholder, so none of them is ever in its unresolved list; the names come from `secretNames`. Nothing is
+ * fetched and no tool runs: only the mapping and the trust state are read.
+ */
+function preflightSecretRefs(
+  names: readonly string[],
+  secretSources: SecretSourcesSnapshot | undefined,
+): UnresolvedRefWire[] {
+  if (secretSources === undefined) {
+    return [];
+  }
+  const { sources, trusted } = secretSourceContext(secretSources);
+  const wire: UnresolvedRefWire[] = [];
+  for (const name of names) {
+    const code = secretSourceRefCode({ scope: 'Secret', name, code: 'missing' }, sources, trusted);
+    if (code !== undefined) {
+      wire.push({ expr: `\${secret:${name}}`, scope: 'Secret', name, code, start: 0, end: 0 });
+    }
+  }
+  return wire;
+}
+
+/**
+ * True when a caller asked for the secret-source warnings only and no name is mapped: there is nothing
+ * to warn about, so the request is not resolved at all (the send that runs beside it resolves it once).
+ */
+function nothingToWarnAbout(
+  secretsOnly: boolean | undefined,
+  secretSources: SecretSourcesSnapshot | undefined,
+): boolean {
+  return secretsOnly === true && (secretSources === undefined || secretSourceContext(secretSources).sources.size === 0);
+}
+
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
 function isWebhookUrlSource(source: RestUrlSource): source is WebhookUrlSource {
   return source === 'target' || source === 'callback' || source === 'callback-fallback';
@@ -922,8 +964,16 @@ function preflightAuth(auth: AuthConfig): PreflightResult['auth'] {
  */
 async function preflightRest(
   sendDeps: SendThroughEngineDeps,
-  request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
+  secretSources: SecretSourcesSnapshot | undefined,
+  request: {
+    readonly requestId: string;
+    readonly draft?: RestRequestPatchWire | undefined;
+    readonly secretsOnly?: boolean | undefined;
+  },
 ): Promise<PreflightResult> {
+  if (nothingToWarnAbout(request.secretsOnly, secretSources)) {
+    return NO_PREFLIGHT;
+  }
   const resolved = await previewRest(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
     return NO_PREFLIGHT;
@@ -953,7 +1003,11 @@ async function preflightRest(
     // the editor reads identically for either protocol. A webhook item's target is its default,
     // and where it actually went is reported in `target`.
     endpointSource: endpointSourceOf(resolved.baseUrlSource),
-    unresolved: [...preflightUnresolved(resolved.unresolved), ...missing],
+    unresolved: [
+      ...preflightUnresolved(resolved.unresolved),
+      ...preflightSecretRefs(resolved.secretNames, secretSources),
+      ...missing,
+    ],
     auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
     ...(isWebhookUrlSource(resolved.baseUrlSource)
@@ -1048,8 +1102,16 @@ const GRPC_STREAM_UNKNOWN_MESSAGE = 'That call is no longer open for sending.';
  */
 async function preflightGrpc(
   sendDeps: SendThroughEngineDeps,
-  request: { readonly requestId: string; readonly draft?: GrpcRequestPatchWire | undefined },
+  secretSources: SecretSourcesSnapshot | undefined,
+  request: {
+    readonly requestId: string;
+    readonly draft?: GrpcRequestPatchWire | undefined;
+    readonly secretsOnly?: boolean | undefined;
+  },
 ): Promise<PreflightResult> {
+  if (nothingToWarnAbout(request.secretsOnly, secretSources)) {
+    return NO_PREFLIGHT;
+  }
   const resolved = await previewGrpc(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
     return NO_PREFLIGHT;
@@ -1057,7 +1119,10 @@ async function preflightGrpc(
   return {
     endpoint: resolved.input.target,
     endpointSource: resolved.targetSource === 'api' ? 'interface-default' : resolved.targetSource,
-    unresolved: preflightUnresolved(resolved.unresolved),
+    unresolved: [
+      ...preflightUnresolved(resolved.unresolved),
+      ...preflightSecretRefs(resolved.secretNames, secretSources),
+    ],
     auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
@@ -1197,8 +1262,16 @@ function isValidBase64(text: string): boolean {
  */
 async function preflightWs(
   sendDeps: SendThroughEngineDeps,
-  request: { readonly requestId: string; readonly draft?: WsRequestPatchWire | undefined },
+  secretSources: SecretSourcesSnapshot | undefined,
+  request: {
+    readonly requestId: string;
+    readonly draft?: WsRequestPatchWire | undefined;
+    readonly secretsOnly?: boolean | undefined;
+  },
 ): Promise<PreflightResult> {
+  if (nothingToWarnAbout(request.secretsOnly, secretSources)) {
+    return NO_PREFLIGHT;
+  }
   const resolved = await previewWs(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
     return NO_PREFLIGHT;
@@ -1206,7 +1279,10 @@ async function preflightWs(
   return {
     endpoint: wsDisplayUrl(resolved.input),
     endpointSource: resolved.urlSource === 'api' ? 'interface-default' : resolved.urlSource,
-    unresolved: preflightUnresolved(resolved.unresolved),
+    unresolved: [
+      ...preflightUnresolved(resolved.unresolved),
+      ...preflightSecretRefs(resolved.secretNames, secretSources),
+    ],
     auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
@@ -1255,7 +1331,9 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     ),
   );
 
-  registerHandler(channels.request.preflightRest, (request) => preflightRest(sendDeps, request));
+  registerHandler(channels.request.preflightRest, (request) =>
+    preflightRest(sendDeps, deps.secretSources?.(), request),
+  );
 
   // The call as it happens, its request side open for pushes when `interactive`; the `closed` event
   // of a half-close comes from the engine with the rest of the call's events.
@@ -1280,7 +1358,9 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     Promise.resolve({ closed: sendDeps.registry.halfClose(sendId) }),
   );
 
-  registerHandler(channels.request.preflightGrpc, (request) => preflightGrpc(sendDeps, request));
+  registerHandler(channels.request.preflightGrpc, (request) =>
+    preflightGrpc(sendDeps, deps.secretSources?.(), request),
+  );
 
   // The session as it happens: the invoke stays pending until it closes, while `ws.live` reports the
   // handshake, each frame and each frame's contract check. Its request side takes pushes and a close.
@@ -1327,7 +1407,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.wsClose, (request) =>
     Promise.resolve({ closed: sendDeps.registry.closeWs(request.sendId, request.code, request.reason) }),
   );
-  registerHandler(channels.request.preflightWs, (request) => preflightWs(sendDeps, request));
+  registerHandler(channels.request.preflightWs, (request) => preflightWs(sendDeps, deps.secretSources?.(), request));
 
   registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
 

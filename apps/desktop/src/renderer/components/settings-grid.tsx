@@ -116,6 +116,8 @@ export interface NumberSettingProps {
   readonly onCommit: (value: number | undefined) => void;
   readonly placeholder?: string;
   readonly min?: number;
+  /** The largest value accepted; a larger one is refused like an unparsable one. */
+  readonly max?: number;
   readonly hint?: string;
   readonly testId?: string;
 }
@@ -125,7 +127,7 @@ export interface NumberSettingProps {
  * not parse as a finite number is rejected and the field snaps back, rather than persisting a
  * `NaN` that would silently disable a timeout.
  */
-export function NumberSetting({ label, value, onCommit, placeholder, min, hint, testId }: NumberSettingProps) {
+export function NumberSetting({ label, value, onCommit, placeholder, min, max, hint, testId }: NumberSettingProps) {
   const id = useId();
   const asText = value === undefined ? '' : String(value);
   const [draft, setDraft] = useState(asText);
@@ -142,7 +144,7 @@ export function NumberSetting({ label, value, onCommit, placeholder, min, hint, 
       return;
     }
     const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || (min !== undefined && parsed < min)) {
+    if (!Number.isFinite(parsed) || (min !== undefined && parsed < min) || (max !== undefined && parsed > max)) {
       setDraft(asText);
       return;
     }

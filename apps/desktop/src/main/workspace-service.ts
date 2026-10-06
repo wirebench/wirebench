@@ -31,6 +31,8 @@ import {
   loadLocalState,
   loadProject,
   loadWorkspace,
+  parseLocalSecretSources,
+  parseSecretSources,
   ProjectError,
   reidentifyProject,
   saveLocalState,
@@ -38,6 +40,8 @@ import {
   saveShare,
   saveWorkspace,
   secretNamesInValue,
+  secretSourcesHash,
+  serializeSecretSources,
   secretRefsInValue,
   slugify,
   uniqueSlug,
@@ -62,9 +66,12 @@ import type {
   GitCli,
   GitShareSettings,
   IssuedTokenSource,
+  LocalSecretSource,
   Project,
   SaveResult,
+  SecretSourceIssue,
   ServerAccount,
+  SharedSecretSource,
   SyncSettings,
   TeamWorkspace,
   TlsOptions,
@@ -78,6 +85,13 @@ import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-pi
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { CurrentValuesStore } from './current-values.js';
+import type { SecretSourcesSnapshot } from './secret-sources-service.js';
+import {
+  NOTHING_OPEN,
+  secretSourceRenameIssue,
+  secretSourcesStateOf,
+  withSecretSourceEntry,
+} from './secret-sources-state.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
@@ -133,6 +147,8 @@ import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
   EngineProgressEvent,
   ProjectWire,
+  SecretSourcesSetRequest,
+  SecretSourcesState,
   SyncSettingsPatchWire,
   WorkspaceChange,
   WorkspaceEnvironmentWire,
@@ -1029,6 +1045,7 @@ export class WorkspaceService implements ProjectRouter {
     // Read afresh on every resolution, like the workspace context, so a value typed a moment ago applies.
     host.setCurrentValues(() => this.deps.currentValues?.overlaysFor(entry.projectId));
     host.setIssuedTokens(this.deps.issuedTokens);
+    host.setSecretSources(() => this.secretSourcesSnapshot());
     try {
       const record = await this.unsaved?.readProject(entry.ref.id);
       const project = await host.openProject(
@@ -2645,13 +2662,10 @@ export class WorkspaceService implements ProjectRouter {
       // local-state.ts) — so, unlike `mutate`/`rename`, there is nothing here for
       // `open.watcher` (which only watches the tree) to ever see or need pre-announcing.
       if (environmentId === null) {
-        open.local = {
-          version: 2,
-          ...(open.local.secretSources !== undefined ? { secretSources: open.local.secretSources } : {}),
-          ...(open.local.secretSourcesApproved !== undefined
-            ? { secretSourcesApproved: open.local.secretSourcesApproved }
-            : {}),
-        };
+        // By omission, so every other local field (the raw secretSources value included) survives.
+        const cleared: { -readonly [K in keyof WorkspaceLocalState]: WorkspaceLocalState[K] } = { ...open.local };
+        delete cleared.activeEnvironmentId;
+        open.local = { ...cleared, version: 2 };
       } else {
         open.local = { ...open.local, version: 2, activeEnvironmentId: environmentId };
       }
@@ -2659,6 +2673,157 @@ export class WorkspaceService implements ProjectRouter {
       this.requireStillOpen(open);
       this.deps.hooks?.onChanged?.(this.snapshot());
       return this.requireSnapshot();
+    });
+  }
+
+  /** The open workspace's secret sources, with this machine's overrides and approval (secret sources spec D6). */
+  secretSourcesSnapshot(): SecretSourcesSnapshot | undefined {
+    const open = this.current;
+    if (open === undefined) {
+      return undefined;
+    }
+    return {
+      shared: open.workspace.secretSources,
+      local: open.local.secretSources,
+      approvedHash: open.local.secretSourcesApproved?.hash,
+    };
+  }
+
+  /** The open workspace's secret sources as the Secret Sources dialog shows them; never a value. */
+  secretSourcesState(): SecretSourcesState {
+    const open = this.current;
+    if (open === undefined) {
+      return NOTHING_OPEN;
+    }
+    return secretSourcesStateOf({
+      shared: open.workspace.secretSources,
+      sharedRaw: open.workspace.secretSourcesRaw,
+      local: open.local.secretSources,
+      localRaw: open.local.secretSourcesRaw,
+      approved: open.local.secretSourcesApproved,
+    });
+  }
+
+  /**
+   * Writes one shared entry to `workspace.yaml` (secret sources spec D6): `previousName` and `name` are removed,
+   * then `entry` is set under `name`, or nothing is when it is `null`. Only that entry is validated; every other
+   * one, an invalid raw one included (A7), is written back as it was. Nothing is written when it is refused.
+   *
+   * @throws WorkspaceError `workspace-not-found` when none is open.
+   */
+  async setSharedSecretSources(
+    request: SecretSourcesSetRequest,
+  ): Promise<{ ok: boolean; issues: SecretSourceIssue[] }> {
+    const open = this.requireOpen();
+    const parsed = request.entry === null ? undefined : parseSecretSources({ [request.name]: request.entry });
+    if (parsed !== undefined && parsed.issues.length > 0) {
+      return { ok: false, issues: parsed.issues };
+    }
+    const entry: SharedSecretSource | undefined = parsed?.sources[request.name];
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      const previousWorkspace = open.workspace;
+      // Checked here, against the map as it is now, not the one the dialog was showing.
+      const refused = secretSourceRenameIssue(
+        open.workspace.secretSources,
+        request.name,
+        request.previousName,
+        request.entry,
+        request.create,
+      );
+      if (refused !== undefined) {
+        return { ok: false, issues: [refused] };
+      }
+      const sources = withSecretSourceEntry(open.workspace.secretSources, request.name, request.previousName, entry);
+      // A real map replaces a non-mapping value kept raw; with nothing to write, that raw value stays.
+      const { secretSourcesRaw } = open.workspace;
+      const rest: { -readonly [K in keyof Workspace]: Workspace[K] } = { ...open.workspace };
+      delete rest.secretSources;
+      delete rest.secretSourcesRaw;
+      open.workspace =
+        Object.keys(sources).length > 0
+          ? { ...rest, secretSources: sources }
+          : { ...rest, ...(secretSourcesRaw !== undefined ? { secretSourcesRaw } : {}) };
+      const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
+      await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
+      this.requireStillOpen(open);
+      open.sync?.afterSave('workspace');
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return { ok: true, issues: [] };
+    });
+  }
+
+  /**
+   * Writes one of this machine's overrides to `local.yaml`, the way {@link setSharedSecretSources} writes a
+   * shared entry; `{ kind: none }` unmaps a shared name here. Nothing watches `local.yaml`, so this fires
+   * `onChanged` itself, which drops cached source values.
+   *
+   * @throws WorkspaceError `workspace-not-found` when none is open.
+   */
+  async setLocalSecretSources(request: SecretSourcesSetRequest): Promise<{ ok: boolean; issues: SecretSourceIssue[] }> {
+    const open = this.requireOpen();
+    const parsed = request.entry === null ? undefined : parseLocalSecretSources({ [request.name]: request.entry });
+    if (parsed !== undefined && parsed.issues.length > 0) {
+      return { ok: false, issues: parsed.issues };
+    }
+    const entry: LocalSecretSource | undefined = parsed?.sources[request.name];
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      // Checked here, against the map as it is now, not the one the dialog was showing.
+      const refused = secretSourceRenameIssue(
+        open.local.secretSources,
+        request.name,
+        request.previousName,
+        request.entry,
+        request.create,
+      );
+      if (refused !== undefined) {
+        return { ok: false, issues: [refused] };
+      }
+      const sources = withSecretSourceEntry(open.local.secretSources, request.name, request.previousName, entry);
+      const { secretSourcesRaw } = open.local;
+      const rest: { -readonly [K in keyof WorkspaceLocalState]: WorkspaceLocalState[K] } = { ...open.local };
+      delete rest.secretSources;
+      delete rest.secretSourcesRaw;
+      open.local =
+        Object.keys(sources).length > 0
+          ? { ...rest, version: 2, secretSources: sources }
+          : { ...rest, version: 2, ...(secretSourcesRaw !== undefined ? { secretSourcesRaw } : {}) };
+      await saveLocalState(open.dir, open.local, this.fsOption());
+      this.requireStillOpen(open);
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return { ok: true, issues: [] };
+    });
+  }
+
+  /**
+   * Approves the shared mapping on this machine (secret sources spec D4): writes `hash` and a copy of the
+   * mapping to `local.yaml`, but only while `hash` is still the current mapping's.
+   *
+   * @throws WirebenchError `secret-source-approval-stale` when the mapping changed since it was reviewed.
+   * @throws WorkspaceError `workspace-not-found` when none is open.
+   */
+  async approveSecretSources(hash: string): Promise<SecretSourcesState> {
+    const open = this.requireOpen();
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      const shared = open.workspace.secretSources;
+      const current = secretSourcesHash(shared);
+      if (current === undefined || current !== hash) {
+        throw new WirebenchError(
+          'secret-source-approval-stale',
+          'The shared secret sources changed while you were reviewing them; review them again.',
+        );
+      }
+      open.local = {
+        ...open.local,
+        version: 2,
+        secretSourcesApproved: { hash, mapping: serializeSecretSources(shared ?? {}) },
+      };
+      await saveLocalState(open.dir, open.local, this.fsOption());
+      this.requireStillOpen(open);
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return this.secretSourcesState();
     });
   }
 

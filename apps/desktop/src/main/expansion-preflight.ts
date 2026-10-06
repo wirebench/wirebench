@@ -15,13 +15,17 @@ import {
   effectiveAuth,
   effectiveMessageId,
   effectiveTo,
+  effectiveSecretSources,
   effectiveWsa,
   expand,
   ProjectError,
   resolveAuthEndpoint,
   resolveEndpoint,
+  secretSourcesHash,
+  sharedTrusted,
 } from '@wirebench/engine';
 import type {
+  EffectiveSecretSources,
   Endpoint,
   Interface,
   Project,
@@ -39,6 +43,7 @@ import type {
 } from '../shared/wire-types.js';
 import { findRequest } from './project-wire.js';
 import { isSecretTokenRef } from './secret-resolver.js';
+import type { SecretSourcesSnapshot } from './secret-sources-service.js';
 
 /** What `request.preflight` answers: where the request would go, and what would not expand. */
 export interface PreflightResult {
@@ -125,6 +130,43 @@ function authSourceFor(
   };
 }
 
+/** The two codes a preflight raises about a `${secret:name}` token's mapped source (secret sources spec D5). */
+export type SecretSourceRefCode = 'secret-source-invalid' | 'secret-source-untrusted';
+
+/** What a preflight reads of a {@link SecretSourcesSnapshot}: the effective mapping, and whether its shared entries are approved. */
+export function secretSourceContext(snapshot: SecretSourcesSnapshot): {
+  readonly sources: EffectiveSecretSources;
+  readonly trusted: boolean;
+} {
+  return {
+    sources: effectiveSecretSources(snapshot.shared, snapshot.local),
+    trusted: sharedTrusted({ mode: 'approved', hash: snapshot.approvedHash }, secretSourcesHash(snapshot.shared)),
+  };
+}
+
+/**
+ * The warning a `${secret:name}` token earns before a send: its mapped entry is invalid, or it is a shared
+ * entry this machine has not approved. Any other ref, and any token with no mapping or a usable one, earns
+ * none. Reads no secret and runs no tool: it looks at the mapping and the trust state only.
+ */
+export function secretSourceRefCode(
+  ref: Pick<UnresolvedRef, 'scope' | 'name' | 'code'>,
+  sources: EffectiveSecretSources,
+  trusted: boolean,
+): SecretSourceRefCode | undefined {
+  if (!isSecretTokenRef(ref) || ref.name === undefined) {
+    return undefined;
+  }
+  const mapped = sources.get(ref.name);
+  if (mapped === undefined) {
+    return undefined;
+  }
+  if (mapped.source.kind === 'invalid') {
+    return 'secret-source-invalid';
+  }
+  return mapped.origin === 'shared' && !trusted ? 'secret-source-untrusted' : undefined;
+}
+
 /** Copies an engine `UnresolvedRef` onto the wire, tagged with where in the request it was found. */
 function toWire(ref: UnresolvedRef, field: ExpansionField, headerName?: string): UnresolvedRefWire {
   return {
@@ -157,6 +199,7 @@ export type PreflightEndpointResolver = (
  * `envId` selects the environment endpoint overrides are read from; pass the project's active
  * environment; `defaultAction` is the WSDL-derived `wsa:Action` for the request's operation.
  * `resolveUrl` overrides how the endpoint is resolved (see {@link PreflightEndpointResolver}).
+ * `secretSources` lets a `${secret:name}` token mapped to an invalid or unapproved source warn early.
  * Throws `ProjectError('not-found')` when the project holds no such request.
  */
 export function preflightRequest(
@@ -166,6 +209,7 @@ export function preflightRequest(
   envId?: string,
   defaultAction = '',
   resolveUrl?: PreflightEndpointResolver,
+  secretSources?: SecretSourcesSnapshot,
 ): PreflightResult {
   const location = findRequest(project, requestId);
   if (location === undefined) {
@@ -177,11 +221,22 @@ export function preflightRequest(
   const endpoint = resolveAuthEndpoint(iface, request);
 
   const unresolved: UnresolvedRefWire[] = [];
+  const secrets = secretSources !== undefined ? secretSourceContext(secretSources) : undefined;
+  // One warning per secret name per request, whichever field and however often it is used: the same as the
+  // REST, gRPC and WebSocket previews, which report each token reached once.
+  const warned = new Set<string>();
   const check = (text: string, field: ExpansionField, headerName?: string): void => {
     for (const ref of expand(text, scopes).unresolved) {
       // A `${secret:name}` token resolves only at send, which refuses it there if nothing is stored.
+      // Only one mapped to a broken or unapproved source is flagged early.
       if (!isSecretTokenRef(ref)) {
         unresolved.push(toWire(ref, field, headerName));
+        continue;
+      }
+      const code = secrets !== undefined ? secretSourceRefCode(ref, secrets.sources, secrets.trusted) : undefined;
+      if (code !== undefined && ref.name !== undefined && !warned.has(ref.name)) {
+        warned.add(ref.name);
+        unresolved.push({ ...toWire(ref, field, headerName), code });
       }
     }
   };

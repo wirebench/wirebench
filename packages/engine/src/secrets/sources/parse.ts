@@ -1,4 +1,3 @@
-// packages/engine/src/secrets/sources/parse.ts
 /**
  * Where a `${secret:name}` comes from when it is not in this machine's store: a mapping, in the shared
  * `workspace.yaml` and the machine-local `local.yaml`, from a name to an entry in an external manager.
@@ -124,6 +123,29 @@ const kindSchemas = {
   keychain: z.strictObject({ kind: z.literal('keychain'), service: field(), account: field() }),
 } as const;
 
+/**
+ * The field names of each kind, required then optional, read from the schemas above. A form that cannot load
+ * the schemas (the desktop renderer) keeps its own copy and a test holds it to this one.
+ */
+export const SECRET_SOURCE_KIND_FIELDS: Readonly<
+  Record<SecretSourceKind, { readonly required: readonly string[]; readonly optional: readonly string[] }>
+> = Object.fromEntries(
+  SECRET_SOURCE_KINDS.map((kind) => {
+    const shape = kindSchemas[kind].shape as Record<string, z.ZodType>;
+    const names = Object.keys(shape).filter((name) => name !== 'kind');
+    return [
+      kind,
+      {
+        required: names.filter((name) => !shape[name]?.safeParse(undefined).success),
+        optional: names.filter((name) => shape[name]?.safeParse(undefined).success === true),
+      },
+    ];
+  }),
+) as unknown as Record<
+  SecretSourceKind,
+  { readonly required: readonly string[]; readonly optional: readonly string[] }
+>;
+
 function invalid(raw: unknown, reason: string, fieldName?: string): InvalidSecretSource {
   return { kind: 'invalid', raw, reason, ...(fieldName !== undefined ? { field: fieldName } : {}) };
 }
@@ -153,6 +175,11 @@ export function parseSecretSource(raw: unknown): SharedSecretSource {
 
 /** Names that would set or shadow a prototype member of the plain-object maps. */
 const FORBIDDEN_NAMES: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** A `secretSources` value that is present but not a mapping: kept raw by the loaders, never lost on save. */
+export function isNonMappingSecretSources(raw: unknown): boolean {
+  return raw !== undefined && raw !== null && (typeof raw !== 'object' || Array.isArray(raw));
+}
 
 function parseMap(
   raw: unknown,
@@ -218,11 +245,17 @@ export function effectiveSecretSources(
 
 /** The YAML form: keys sorted, an invalid entry as its raw value, so a save never rewrites what it could not read. */
 export function serializeSecretSources(sources: Readonly<Record<string, LocalSecretSource>>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  // A null-prototype object and `defineProperty`: a raw `__proto__` entry must stay an own key, not set the prototype.
+  const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const name of Object.keys(sources).sort()) {
     const source = sources[name];
     if (source !== undefined) {
-      out[name] = source.kind === 'invalid' ? source.raw : { ...source };
+      Object.defineProperty(out, name, {
+        value: source.kind === 'invalid' ? source.raw : { ...source },
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
   }
   return out;

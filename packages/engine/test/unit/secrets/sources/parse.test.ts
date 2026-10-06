@@ -1,4 +1,3 @@
-// packages/engine/test/unit/secrets/sources/parse.test.ts
 import { describe, expect, it } from 'vitest';
 import {
   effectiveSecretSources,
@@ -114,5 +113,17 @@ describe('serializeSecretSources', () => {
     const { sources } = parseSecretSources({ z: { kind: 'gcp', secret: 's' }, a: raw });
     expect(Object.keys(serializeSecretSources(sources))).toEqual(['a', 'z']);
     expect(serializeSecretSources(sources)['a']).toEqual(raw);
+  });
+
+  it('round-trips an invalid __proto__ entry without touching the prototype', () => {
+    const raw = { kind: 'vault', path: '-x', field: 'f' };
+    const input = JSON.parse(JSON.stringify({ a: { kind: 'gcp', secret: 's' } })) as Record<string, unknown>;
+    Object.defineProperty(input, '__proto__', { value: raw, enumerable: true, configurable: true, writable: true });
+    const { sources } = parseSecretSources(input);
+    expect(sources['__proto__']?.kind).toBe('invalid');
+    const out = serializeSecretSources(sources);
+    expect(Object.getPrototypeOf(out)).toBe(null);
+    expect(Object.getOwnPropertyDescriptor(out, '__proto__')?.value).toEqual(raw);
+    expect(Object.keys(out)).toEqual(['__proto__', 'a']);
   });
 });
