@@ -9,10 +9,19 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadLocalState, loadWorkspace, parseSecretSources, saveWorkspace, workspaceDir } from '@wirebench/engine';
+import {
+  loadLocalState,
+  loadWorkspace,
+  nodeFs,
+  parseSecretSources,
+  saveWorkspace,
+  workspaceDir,
+} from '@wirebench/engine';
+import type { FsLike } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { SecretSourcesService } from '../src/main/secret-sources-service.js';
+import { secretSourcesStateOf } from '../src/main/secret-sources-state.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-types.js';
@@ -160,6 +169,22 @@ describe('setSharedSecretSources', () => {
     expect(service.secretSourcesState().entries).toEqual([]);
   });
 
+  it('refuses a rename onto a name that is already mapped, and a rename with a null entry, writing nothing', async () => {
+    const { service, dir } = await openFixtureWorkspace();
+    await service.setSharedSecretSources({ name: 'db', entry: VAULT });
+    await service.setSharedSecretSources({ name: 'api', entry: { kind: '1password', ref: 'op://a/b/c' } });
+    const before = await manifest(dir);
+    const collision = await service.setSharedSecretSources({ name: 'api', previousName: 'db', entry: VAULT });
+    expect(collision).toMatchObject({ ok: false, issues: [{ name: 'api' }] });
+    const removal = await service.setSharedSecretSources({ name: 'api', previousName: 'db', entry: null });
+    expect(removal).toMatchObject({ ok: false, issues: [{ name: 'api' }] });
+    expect(await manifest(dir)).toBe(before);
+    expect(service.secretSourcesState().entries.map((entry) => [entry.name, entry.kind])).toEqual([
+      ['db', 'vault'],
+      ['api', '1password'],
+    ]);
+  });
+
   it('reports a non-mapping secretSources as a problem and replaces it when an entry is written', async () => {
     const { service, dir } = await openSeeded(async (dir) => {
       await writeFile(join(dir, 'workspace.yaml'), `${await manifest(dir)}secretSources: oops\n`);
@@ -225,6 +250,18 @@ describe('approveSecretSources', () => {
     expect(await service.approveSecretSources(hash as string)).toMatchObject({ trusted: true, changes: [] });
   });
 
+  it('tells a non-finite number from the same text when comparing with the approval', () => {
+    const now = parseSecretSources({ bad: { kind: 'vault', path: 'Infinity', field: 'f', n: 1 } }).sources;
+    const state = secretSourcesStateOf({
+      shared: now,
+      sharedRaw: undefined,
+      local: undefined,
+      localRaw: undefined,
+      approved: { hash: '0'.repeat(64), mapping: { bad: { kind: 'vault', path: Infinity, field: 'f', n: 1 } } },
+    });
+    expect(state.changes).toEqual([{ name: 'bad', change: 'changed' }]);
+  });
+
   it('goes untrusted when workspace.yaml is changed outside the app', async () => {
     // Seeded before opening: the app's own write of workspace.yaml would hide an outside edit for a while.
     const { service, dir } = await openSeeded(async (dir) => {
@@ -266,6 +303,22 @@ describe('setLocalSecretSources', () => {
     ]);
   });
 
+  it('refuses a local rename onto a name that is already mapped, and a rename with a null entry, writing nothing', async () => {
+    const { service, dir } = await openFixtureWorkspace();
+    await service.setLocalSecretSources({ name: 'db', entry: VAULT });
+    await service.setLocalSecretSources({ name: 'api', entry: { kind: 'none' } });
+    const before = await localFile(dir);
+    const collision = await service.setLocalSecretSources({ name: 'api', previousName: 'db', entry: VAULT });
+    expect(collision).toMatchObject({ ok: false, issues: [{ name: 'api' }] });
+    const removal = await service.setLocalSecretSources({ name: 'api', previousName: 'db', entry: null });
+    expect(removal).toMatchObject({ ok: false, issues: [{ name: 'api' }] });
+    expect(await localFile(dir)).toBe(before);
+    expect(service.secretSourcesState().entries.map((entry) => [entry.name, entry.kind])).toEqual([
+      ['db', 'vault'],
+      ['api', 'none'],
+    ]);
+  });
+
   it('keeps the active environment when local secret sources are written', async () => {
     const { service, dir } = await openFixtureWorkspace();
     const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
@@ -296,21 +349,36 @@ describe('setLocalSecretSources', () => {
 });
 
 describe('queueing and the change hook', () => {
-  it('serialises local writes with setActiveEnvironment, so none loses another', async () => {
-    const { service, dir } = await openFixtureWorkspace();
+  it('queues a local write behind setActiveEnvironment, so the slower write cannot land stale', async () => {
+    // The first local.yaml write after `armed` waits on the gate: without the queue, setLocal's own write would
+    // land first and the held one, built before it, would overwrite it.
+    let armed = false;
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const fs: FsLike = {
+      ...nodeFs,
+      rename: async (from, to) => {
+        if (armed && to.endsWith('local.yaml')) {
+          armed = false;
+          await gate;
+        }
+        await nodeFs.rename(from, to);
+      },
+    };
+    const { service, dir } = await openFixtureWorkspace({ fs });
     const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
-    await service.setSharedSecretSources({ name: 'db', entry: VAULT });
-    const { hash } = service.secretSourcesState();
-    await Promise.all([
-      service.setActiveEnvironment(createdEnvironmentId as string),
-      service.setLocalSecretSources({ name: 'api', entry: { kind: '1password', ref: 'op://a/b/c' } }),
-      service.approveSecretSources(hash as string),
-      service.setLocalSecretSources({ name: 'other', entry: { kind: 'none' } }),
-    ]);
+    armed = true;
+    const activating = service.setActiveEnvironment(createdEnvironmentId as string);
+    const writing = service.setLocalSecretSources({ name: 'api', entry: { kind: '1password', ref: 'op://a/b/c' } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(service.secretSourcesState().entries).toEqual([]);
+    open();
+    await Promise.all([activating, writing]);
     const local = await loadLocalState(dir);
     expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
-    expect(Object.keys(local.secretSources ?? {}).sort()).toEqual(['api', 'other']);
-    expect(local.secretSourcesApproved?.hash).toBe(hash);
+    expect(Object.keys(local.secretSources ?? {})).toEqual(['api']);
   });
 
   it('fires onChanged for every write: shared, local and approval', async () => {

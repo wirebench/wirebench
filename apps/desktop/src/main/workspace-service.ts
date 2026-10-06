@@ -86,7 +86,12 @@ import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { CurrentValuesStore } from './current-values.js';
 import type { SecretSourcesSnapshot } from './secret-sources-service.js';
-import { NOTHING_OPEN, secretSourcesStateOf, withSecretSourceEntry } from './secret-sources-state.js';
+import {
+  NOTHING_OPEN,
+  secretSourceRenameIssue,
+  secretSourcesStateOf,
+  withSecretSourceEntry,
+} from './secret-sources-state.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
@@ -2717,6 +2722,16 @@ export class WorkspaceService implements ProjectRouter {
     return await this.enqueueWorkspaceOp(async () => {
       this.requireStillOpen(open);
       const previousWorkspace = open.workspace;
+      // Checked here, against the map as it is now, not the one the dialog was showing.
+      const refused = secretSourceRenameIssue(
+        open.workspace.secretSources,
+        request.name,
+        request.previousName,
+        request.entry,
+      );
+      if (refused !== undefined) {
+        return { ok: false, issues: [refused] };
+      }
       const sources = withSecretSourceEntry(open.workspace.secretSources, request.name, request.previousName, entry);
       // A real map replaces a non-mapping value kept raw; with nothing to write, that raw value stays.
       const { secretSourcesRaw } = open.workspace;
@@ -2752,6 +2767,16 @@ export class WorkspaceService implements ProjectRouter {
     const entry: LocalSecretSource | undefined = parsed?.sources[request.name];
     return await this.enqueueWorkspaceOp(async () => {
       this.requireStillOpen(open);
+      // Checked here, against the map as it is now, not the one the dialog was showing.
+      const refused = secretSourceRenameIssue(
+        open.local.secretSources,
+        request.name,
+        request.previousName,
+        request.entry,
+      );
+      if (refused !== undefined) {
+        return { ok: false, issues: [refused] };
+      }
       const sources = withSecretSourceEntry(open.local.secretSources, request.name, request.previousName, entry);
       const { secretSourcesRaw } = open.local;
       const rest: { -readonly [K in keyof WorkspaceLocalState]: WorkspaceLocalState[K] } = { ...open.local };

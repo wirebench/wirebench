@@ -4413,9 +4413,11 @@ export type SecretSourcesSetResponse = z.infer<typeof secretSourcesSetResponseSc
 
 /** Request for `secretSources.approve`: the hash the user reviewed. */
 export const secretSourcesApproveRequestSchema = z.object({ hash: z.string() });
+export type SecretSourcesApproveRequest = z.infer<typeof secretSourcesApproveRequestSchema>;
 
 /** Request for `secretSources.test`. */
 export const secretSourcesTestRequestSchema = z.object({ name: z.string() });
+export type SecretSourcesTestRequest = z.infer<typeof secretSourcesTestRequestSchema>;
 /** Response for `secretSources.test`: the value's length, or why it could not be read. Never the value. */
 export const secretSourcesTestResponseSchema = z.union([
   z.object({ ok: z.literal(true), length: z.number() }),

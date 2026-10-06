@@ -9,6 +9,7 @@ import {
   secretSourcesHash,
   type LocalSecretSource,
   type LocalSecretSources,
+  type SecretSourceIssue,
   type SharedSecretSources,
 } from '@wirebench/engine';
 import type { SecretSourceEntryWire, SecretSourcesState } from '../shared/wire-types.js';
@@ -53,6 +54,28 @@ export function withSecretSourceEntry<T extends LocalSecretSource>(
   return next;
 }
 
+/**
+ * Why a one-entry write must be refused against the current map, if it must: a rename onto a name that is
+ * already mapped would silently replace that entry, and a rename with no entry would remove two.
+ */
+export function secretSourceRenameIssue(
+  map: Readonly<Record<string, unknown>> | undefined,
+  name: string,
+  previousName: string | undefined,
+  entry: unknown,
+): SecretSourceIssue | undefined {
+  if (previousName === undefined || previousName === name) {
+    return undefined;
+  }
+  if (entry === null) {
+    return { name, reason: 'a rename needs an entry; remove the old name on its own' };
+  }
+  if (Object.hasOwn(map ?? {}, name)) {
+    return { name, reason: `"${name}" is already mapped; remove it first or choose another name` };
+  }
+  return undefined;
+}
+
 function fieldsOf(source: LocalSecretSource): Record<string, string> {
   const body: unknown = source.kind === 'invalid' ? source.raw : source;
   const fields: Record<string, string> = {};
@@ -67,36 +90,42 @@ function fieldsOf(source: LocalSecretSource): Record<string, string> {
 }
 
 /**
+ * A text form of a value that YAML can hand over but JSON cannot hold: a non-finite number, a bigint or a date
+ * is written as a bare token, which no JSON string can equal, so `Infinity` never matches `"Infinity"`.
+ */
+function tagged(value: unknown): string {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? JSON.stringify(value) : `#${String(value)}`;
+  }
+  if (typeof value === 'bigint') {
+    return `#${value.toString()}n`;
+  }
+  if (value instanceof Date) {
+    return `#date:${String(value.getTime())}`;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => tagged(item)).join(',')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${tagged(record[key])}`).join(',')}}`;
+  }
+  if (typeof value === 'string' || typeof value === 'boolean' || value === null) {
+    return JSON.stringify(value);
+  }
+  return `#${typeof value}`;
+}
+
+/**
  * A stable text form of an entry. `canonicalJson` throws on what YAML can still hand over in a raw, invalid
- * entry (`.inf`, `.nan`), so those fall back to a key-sorted JSON that writes them as text.
+ * entry (`.inf`, `.nan`), so those fall back to {@link tagged}.
  */
 function comparable(value: unknown): string {
   try {
     return canonicalJson(value);
   } catch {
-    return (
-      JSON.stringify(value, (_key, item: unknown) => {
-        if (typeof item === 'number' && !Number.isFinite(item)) {
-          return String(item);
-        }
-        if (typeof item === 'bigint') {
-          return item.toString();
-        }
-        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-          const sorted: Record<string, unknown> = {};
-          for (const key of Object.keys(item).sort()) {
-            Object.defineProperty(sorted, key, {
-              value: (item as Record<string, unknown>)[key],
-              enumerable: true,
-              writable: true,
-              configurable: true,
-            });
-          }
-          return sorted;
-        }
-        return item;
-      }) ?? 'undefined'
-    );
+    return tagged(value);
   }
 }
 
