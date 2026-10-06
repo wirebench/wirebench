@@ -894,7 +894,6 @@ function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string
 /**
  * A dry run's unresolved references onto the wire, without the `${secret:name}` tokens: a dry run
  * reads no secret, and a send resolves them (refusing as `secret-missing` when nothing is stored).
-
  */
 function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRefWire[] {
   return unresolved.filter((ref) => !isSecretTokenRef(ref)).map(toUnresolvedRefWire);

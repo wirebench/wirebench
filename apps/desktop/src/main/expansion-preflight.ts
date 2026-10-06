@@ -222,6 +222,9 @@ export function preflightRequest(
 
   const unresolved: UnresolvedRefWire[] = [];
   const secrets = secretSources !== undefined ? secretSourceContext(secretSources) : undefined;
+  // One warning per secret name per request, whichever field and however often it is used: the same as the
+  // REST, gRPC and WebSocket previews, which report each token reached once.
+  const warned = new Set<string>();
   const check = (text: string, field: ExpansionField, headerName?: string): void => {
     for (const ref of expand(text, scopes).unresolved) {
       // A `${secret:name}` token resolves only at send, which refuses it there if nothing is stored.
@@ -231,7 +234,8 @@ export function preflightRequest(
         continue;
       }
       const code = secrets !== undefined ? secretSourceRefCode(ref, secrets.sources, secrets.trusted) : undefined;
-      if (code !== undefined) {
+      if (code !== undefined && ref.name !== undefined && !warned.has(ref.name)) {
+        warned.add(ref.name);
         unresolved.push({ ...toWire(ref, field, headerName), code });
       }
     }

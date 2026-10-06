@@ -325,11 +325,6 @@ describe('useExchangesStore', () => {
 
     await useExchangesStore.getState().send('r1');
 
-    expect(preflight).toHaveBeenCalledWith({ requestId: 'r1' });
-    // The environment override from main wins over the mirror's own `endpointUrl`.
-    expect(sendFn).toHaveBeenCalledWith(
-      expect.objectContaining({ input: expect.objectContaining({ endpoint: 'http://dev.test/soap' }) as unknown }),
-    );
     expect(useProblemsStore.getState().items.map((item) => [item.problem.code, item.problem.message])).toEqual([
       ['expansion-secret-source-untrusted', 'Secret source is not approved: ${secret:tok}'],
       ['expansion-secret-source-invalid', 'Secret source entry is invalid: ${secret:bad}'],

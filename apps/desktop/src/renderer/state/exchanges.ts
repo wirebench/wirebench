@@ -518,6 +518,29 @@ function expansionProblems(requestId: string, refs: readonly UnresolvedRefWire[]
   }));
 }
 
+/**
+ * Puts a REST, gRPC or WebSocket preflight's secret-source warnings in the Problems list before the send
+ * goes out, as the SOAP preflight does for every unresolved reference. Only the two `secret-source-*` codes
+ * are surfaced: those protocols show their other unresolved references through the send's own result, and
+ * this keeps that as it was. It runs beside the send, never in front of it. A preflight that fails or is unavailable adds nothing; the send reports its own.
+ */
+async function warnSecretSources(
+  requestId: string,
+  preflight: () => Promise<{ ok: boolean; value?: { unresolved: readonly UnresolvedRefWire[] } }>,
+): Promise<void> {
+  try {
+    const result = await preflight();
+    const refs = (result.ok ? (result.value?.unresolved ?? []) : []).filter((ref) =>
+      ref.code.startsWith('secret-source-'),
+    );
+    if (refs.length > 0) {
+      useProblemsStore.getState().add(expansionProblems(requestId, refs));
+    }
+  } catch {
+    // The preflight is advisory.
+  }
+}
+
 export const useExchangesStore = create<ExchangesStore>((set, get) => {
   const update = (recipe: Mutate): void => {
     set((state) => produce(state, recipe));
@@ -576,6 +599,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
 
       const draftPatch = useDraftsStore.getState().peekGrpcRequest(requestId);
+      // Alongside the send, not before it: the warning must not delay the call or the live stream.
+      void warnSecretSources(requestId, () =>
+        ipc().request.preflightGrpc({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+      );
       const result = await ipc().request.sendGrpc({
         sendId,
         requestId,
@@ -714,6 +741,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
 
       const draftPatch = useDraftsStore.getState().peekWsRequest(requestId);
+      // Alongside the send, not before it: the warning must not delay the call or the live stream.
+      void warnSecretSources(requestId, () =>
+        ipc().request.preflightWs({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+      );
       const result = await ipc().request.openWs({
         sendId,
         requestId,
@@ -942,6 +973,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
       // is main that decides where this goes and what it carries.
       const draftPatch = useDraftsStore.getState().peekRestRequest(requestId);
+      // Alongside the send, not before it: the warning must not delay the call or the live stream.
+      void warnSecretSources(requestId, () =>
+        ipc().request.preflightRest({ requestId, ...(draftPatch !== undefined ? { draft: draftPatch } : {}) }),
+      );
       const result = await ipc().request.sendRest({
         sendId,
         requestId,

@@ -16,11 +16,25 @@ import { restApiWire, restRequestWire } from '../helpers/wire-defaults.js';
 
 const sendRest = vi.fn();
 const cancel = vi.fn();
+const preflightRest = vi.fn();
+const secretRefs = [
+  { expr: '${secret:tok}', scope: 'Secret', name: 'tok', code: 'secret-source-untrusted', start: 0, end: 0 },
+  { expr: '${secret:bad}', scope: 'Secret', name: 'bad', code: 'secret-source-invalid', start: 0, end: 0 },
+];
 
 beforeEach(() => {
+  preflightRest.mockReset().mockResolvedValue({
+    ok: true,
+    value: {
+      endpointSource: 'none',
+      unresolved: [],
+      auth: { type: 'none', source: 'none' },
+      wsa: { enabled: false },
+    },
+  });
   sendRest.mockReset().mockResolvedValue({ ok: true, value: makeRestExchange() });
   cancel.mockReset().mockResolvedValue({ ok: true, value: { cancelled: true } });
-  installWirebenchApi({ request: { sendRest, cancel } });
+  installWirebenchApi({ request: { sendRest, preflightRest, cancel } });
   useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [] });
   useDraftsStore.getState().reset();
   useProblemsStore.setState({ items: [] });
@@ -32,6 +46,30 @@ beforeEach(() => {
 });
 
 describe('sendRest', () => {
+  it('shows the secret-source warnings before the send, and only those', async () => {
+    preflightRest.mockResolvedValue({
+      ok: true,
+      value: {
+        endpointSource: 'none',
+        unresolved: [...secretRefs, { expr: '${nowhere}', name: 'nowhere', code: 'missing', start: 0, end: 10 }],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+      },
+    });
+
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    expect(preflightRest).toHaveBeenCalledWith({ requestId: 'rest-1' });
+    expect(
+      useProblemsStore
+        .getState()
+        .items.map((item) => [item.source, item.severity, item.problem.code, item.problem.message]),
+    ).toEqual([
+      ['expansion', 'warning', 'expansion-secret-source-untrusted', 'Secret source is not approved: ${secret:tok}'],
+      ['expansion', 'warning', 'expansion-secret-source-invalid', 'Secret source entry is invalid: ${secret:bad}'],
+    ]);
+  });
+
   it('names the request only, and keeps the reply under that request', async () => {
     await useExchangesStore.getState().sendRest('rest-1');
 

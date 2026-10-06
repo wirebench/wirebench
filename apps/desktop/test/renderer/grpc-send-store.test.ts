@@ -17,11 +17,25 @@ import { grpcApiWire, grpcRequestWire } from '../helpers/wire-defaults.js';
 
 const sendGrpc = vi.fn();
 const cancel = vi.fn();
+const preflightGrpc = vi.fn();
+const secretRefs = [
+  { expr: '${secret:tok}', scope: 'Secret', name: 'tok', code: 'secret-source-untrusted', start: 0, end: 0 },
+  { expr: '${secret:bad}', scope: 'Secret', name: 'bad', code: 'secret-source-invalid', start: 0, end: 0 },
+];
 
 beforeEach(() => {
+  preflightGrpc.mockReset().mockResolvedValue({
+    ok: true,
+    value: {
+      endpointSource: 'none',
+      unresolved: [],
+      auth: { type: 'none', source: 'none' },
+      wsa: { enabled: false },
+    },
+  });
   sendGrpc.mockReset().mockResolvedValue({ ok: true, value: makeGrpcExchange() });
   cancel.mockReset().mockResolvedValue({ ok: true, value: { cancelled: true } });
-  installWirebenchApi({ request: { sendGrpc, cancel } });
+  installWirebenchApi({ request: { sendGrpc, preflightGrpc, cancel } });
   useExchangesStore.setState({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [] });
   useDraftsStore.getState().reset();
   useProblemsStore.setState({ items: [] });
@@ -33,6 +47,30 @@ beforeEach(() => {
 });
 
 describe('sendGrpc', () => {
+  it('shows the secret-source warnings before the send, and only those', async () => {
+    preflightGrpc.mockResolvedValue({
+      ok: true,
+      value: {
+        endpointSource: 'none',
+        unresolved: [...secretRefs, { expr: '${nowhere}', name: 'nowhere', code: 'missing', start: 0, end: 10 }],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+      },
+    });
+
+    await useExchangesStore.getState().sendGrpc('grpc-1');
+
+    expect(preflightGrpc).toHaveBeenCalledWith({ requestId: 'grpc-1' });
+    expect(
+      useProblemsStore
+        .getState()
+        .items.map((item) => [item.source, item.severity, item.problem.code, item.problem.message]),
+    ).toEqual([
+      ['expansion', 'warning', 'expansion-secret-source-untrusted', 'Secret source is not approved: ${secret:tok}'],
+      ['expansion', 'warning', 'expansion-secret-source-invalid', 'Secret source entry is invalid: ${secret:bad}'],
+    ]);
+  });
+
   it('names the request only, and keeps the reply under that request', async () => {
     await useExchangesStore.getState().sendGrpc('grpc-1');
 
