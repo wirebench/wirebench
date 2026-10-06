@@ -167,6 +167,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | --- | --- | --- |
 | Toggle Show Secrets in HTTP Log | — | — |
 | Set Secret Token Value… | — | — |
+| Secret Sources… | — | — |
 
 ## Editor
 

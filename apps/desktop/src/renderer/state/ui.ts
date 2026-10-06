@@ -52,6 +52,11 @@ export interface SecretTokenDialogTarget {
   readonly name?: string;
 }
 
+/** Which name the Secret Sources dialog opens its add form on; `{}` opens the table alone. */
+export interface SecretSourcesDialogTarget {
+  readonly name?: string;
+}
+
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
 export type ImportDialogFormat =
   | 'auto'
@@ -128,6 +133,10 @@ export interface UiStore extends UiSnapshot {
    * `null` when it is closed. Names only: a value typed there stays in the dialog's own state.
    */
   readonly secretTokenDialog: SecretTokenDialogTarget | null;
+  /** The Secret Sources dialog: `null` while closed. */
+  readonly secretSourcesDialog: SecretSourcesDialogTarget | null;
+  /** The dialog that approves the workspace's shared secret sources on this machine. */
+  readonly secretSourcesApproval: boolean;
   /** Whether the Settings dialog is open, and which section it should land on. Transient. */
   readonly preferences: { readonly open: boolean; readonly section: PreferencesSectionWire | undefined };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
@@ -159,6 +168,8 @@ export interface UiStore extends UiSnapshot {
   readonly setTeamDialogOpen: (open: boolean) => void;
   readonly setMoveProjectDialog: (projectId: string | null) => void;
   readonly setSecretTokenDialog: (target: SecretTokenDialogTarget | null) => void;
+  readonly setSecretSourcesDialog: (target: SecretSourcesDialogTarget | null) => void;
+  readonly setSecretSourcesApproval: (open: boolean) => void;
   /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
   readonly openPreferences: (section?: PreferencesSectionWire) => void;
   readonly setPreferencesOpen: (open: boolean) => void;
@@ -254,6 +265,8 @@ export const useUiStore = create<UiStore>((set, get) => {
     teamDialog: { open: false, url: undefined },
     moveProjectDialog: null,
     secretTokenDialog: null,
+    secretSourcesDialog: null,
+    secretSourcesApproval: false,
     confirmRemoveProjectId: undefined,
 
     setSelection: (selection) => {
@@ -353,6 +366,12 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setSecretTokenDialog: (target) => {
       set({ secretTokenDialog: target });
+    },
+    setSecretSourcesDialog: (target) => {
+      set({ secretSourcesDialog: target });
+    },
+    setSecretSourcesApproval: (open) => {
+      set({ secretSourcesApproval: open });
     },
     openPreferences: (section) => {
       set({ preferences: { open: true, section } });
