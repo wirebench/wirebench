@@ -16,6 +16,10 @@ const EXPLAINED_CODES: ReadonlySet<string> = new Set(['secret-missing', 'webhook
  * item's signing secret (`webhook-signing-secret`, webhook-signatures §5.2).
  */
 export function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
+  if (result.error?.code.startsWith('secret-source-') === true) {
+    // A secret source's refusal already says what to do (which tool, which flag); keep it as it is.
+    return result;
+  }
   const ref = EXPLAINED_CODES.has(result.error?.code ?? '') ? result.error?.details?.['ref'] : undefined;
   if (result.error === undefined || typeof ref !== 'string') {
     return result;

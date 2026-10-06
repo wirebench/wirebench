@@ -783,6 +783,51 @@ describe('active environment: machine-local, via local.yaml', () => {
     await service.close();
   });
 
+  it('setActiveEnvironment keeps the secret-source fields of local.yaml, set or cleared', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Envs');
+    const { createdEnvironmentId } = await bootstrap.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const approval = { hash: 'ab'.repeat(32), mapping: { a: { kind: 'gcp', secret: 's' } } };
+    const overrides = { a: { kind: 'none' as const } };
+    await writeFile(
+      join(dir, 'local.yaml'),
+      [
+        'version: 2',
+        'secretSources:',
+        '  a:',
+        '    kind: none',
+        'secretSourcesApproved:',
+        `  hash: ${approval.hash}`,
+        '  mapping:',
+        '    a:',
+        '      kind: gcp',
+        '      secret: s',
+        '',
+      ].join('\n'),
+    );
+
+    const service = newService();
+    await service.open(created.id);
+    await service.setActiveEnvironment(createdEnvironmentId as string);
+    expect(await loadLocalState(dir)).toEqual({
+      version: 2,
+      activeEnvironmentId: createdEnvironmentId,
+      secretSources: overrides,
+      secretSourcesApproved: approval,
+    });
+
+    await service.setActiveEnvironment(null);
+    expect(await loadLocalState(dir)).toEqual({
+      version: 2,
+      secretSources: overrides,
+      secretSourcesApproved: approval,
+    });
+
+    await service.close();
+  });
+
   it('reopening the workspace restores the active environment from local.yaml', async () => {
     const bootstrap = newService();
     const created = await bootstrap.create('Envs');
@@ -807,7 +852,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     // Hand-write a v2 manifest carrying activeEnvironmentId, as an older build would have.
     const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
     const v2Text = manifestText
-      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace('formatVersion: 4', 'formatVersion: 2')
       .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
     await writeFile(workspaceManifestFile(dir), v2Text);
     expect(existsSync(join(dir, 'local.yaml'))).toBe(false);
@@ -831,7 +876,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     const dir = workspaceDir(root, created.id);
     const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
     const v2Text = manifestText
-      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace('formatVersion: 4', 'formatVersion: 2')
       .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
     await writeFile(workspaceManifestFile(dir), v2Text);
 
@@ -854,7 +899,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     const dir = workspaceDir(root, created.id);
     const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
     const v2Text = manifestText
-      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace('formatVersion: 4', 'formatVersion: 2')
       .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
     await writeFile(workspaceManifestFile(dir), v2Text);
 
@@ -864,7 +909,7 @@ describe('active environment: machine-local, via local.yaml', () => {
 
     // The migration is finished on disk immediately: no more legacy key to resurrect later.
     const migratedManifest = await readFile(workspaceManifestFile(dir), 'utf8');
-    expect(migratedManifest).toContain('formatVersion: 3');
+    expect(migratedManifest).toContain('formatVersion: 4');
     expect(migratedManifest).not.toContain('activeEnvironmentId');
 
     // Explicitly clearing it must stick across a close/reopen — nothing on disk can bring it back.
@@ -886,7 +931,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     const dir = workspaceDir(root, created.id);
     const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
     const v2Text = manifestText
-      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace('formatVersion: 4', 'formatVersion: 2')
       .replace(/\nprojects:/, `\nactiveEnvironmentId: 01JGHOSTGHOSTGHOSTGHOSTGH\nprojects:`);
     await writeFile(workspaceManifestFile(dir), v2Text);
 
@@ -897,7 +942,7 @@ describe('active environment: machine-local, via local.yaml', () => {
 
     // The stale manifest key is still cleaned up on disk, even though it named nothing real.
     const migratedManifest = await readFile(workspaceManifestFile(dir), 'utf8');
-    expect(migratedManifest).toContain('formatVersion: 3');
+    expect(migratedManifest).toContain('formatVersion: 4');
     expect(migratedManifest).not.toContain('activeEnvironmentId');
 
     await reopened.close();

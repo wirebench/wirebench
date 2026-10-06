@@ -580,7 +580,7 @@ describe('prepareFor — inside a workspace', () => {
     disabledProperties: [],
   };
   const WORKSPACE: Workspace = {
-    formatVersion: 3,
+    formatVersion: 4,
     id: 'ws-1',
     name: 'Team',
     createdAt: '2026-09-18T00:00:00.000Z',

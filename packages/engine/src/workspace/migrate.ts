@@ -26,6 +26,8 @@ export interface MigratedWorkspaceManifest {
 /**
  * Brings a raw manifest document up to {@link WORKSPACE_FORMAT_VERSION}.
  *
+ * Version 3 → 4 adds the optional `secretSources` map and needs no rewrite: it is a stamp.
+ *
  * Version 1 needs no rewrite of its own beyond what version 2 does: it simply has no `disabled`
  * key, and `load.ts` defaults a missing list to empty. Versions 1 and 2 both carried
  * `activeEnvironmentId` (machine-local, moved to `local.yaml` in v3) and `writtenBy` (dropped

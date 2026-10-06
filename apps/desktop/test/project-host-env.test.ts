@@ -142,7 +142,7 @@ function workspaceEnv(id: string, order: number, slug: string, url: string, tena
 /** Opens the host inside a workspace with two environments, `wdev` active. */
 function insideWorkspace(slug: string): { workspace: () => Workspace } {
   const workspace: Workspace = {
-    formatVersion: 3,
+    formatVersion: 4,
     id: 'ws',
     name: 'WS',
     createdAt: '2026-09-22T00:00:00.000Z',

@@ -200,6 +200,7 @@ describe('wirebench run — a project inside a workspace', () => {
   async function workspaceWith(
     envProps: Record<string, string>,
     workspaceProps: Record<string, string> = {},
+    extraLines: readonly string[] = [],
   ): Promise<string> {
     const root = await tempDir();
     const projectDir = join(root, 'projects', 'runner');
@@ -216,6 +217,7 @@ describe('wirebench run — a project inside a workspace', () => {
         'name: Team',
         'createdAt: 2026-09-18T00:00:00.000Z',
         ...map(workspaceProps),
+        ...extraLines,
         'projects:',
         '  - id: RUNNER0001',
         '    slug: runner',
@@ -275,6 +277,90 @@ describe('wirebench run — a project inside a workspace', () => {
     expect(missing.code).toBe(3);
     const { code } = await runCli(['run', dir, '-e', 'ci', 'demo/ok'], { WIREBENCH_SECRET_DEMO_KEY: 'k-value' });
     expect(code).toBe(0);
+  });
+
+  describe.skipIf(process.platform === 'win32')('secret sources', () => {
+    const credential = Buffer.from('svc:hunter2-long').toString('base64');
+    const mapping = ['secretSources:', '  token:', '    kind: vault', '    path: kv/app', '    field: password'];
+
+    /** A workspace project whose `demo/secure` sends `Basic ${secret:token}`, and a PATH with a fake `vault`. */
+    async function sourced(vaultBody: string): Promise<{ dir: string; env: Record<string, string> }> {
+      const dir = await workspaceWith({ baseUrl: demo.url }, {}, mapping);
+      const file = join(dir, 'apis', 'demo', 'requests', 'secure.request.yaml');
+      await writeFile(
+        file,
+        (await readFile(file, 'utf8')).replace(
+          /auth:\n(?: {2}.*\n)+/,
+          'auth:\n  type: none\nheaders:\n  - enabled: true\n    name: Authorization\n    value: Basic ${secret:token}\n',
+        ),
+      );
+      const bin = await tempDir();
+      await writeFile(join(bin, 'vault'), `#!/bin/sh\n${vaultBody}\n`, { mode: 0o755 });
+      return { dir, env: { PATH: `${bin}:${process.env['PATH'] ?? '/usr/bin:/bin'}` } };
+    }
+
+    it('sends a trusted source value and never prints it', async () => {
+      demo.secureAuth.length = 0;
+      const { dir, env } = await sourced(`echo ${credential}`);
+      const report = join(await tempDir(), 'report.json');
+      const { code, stdout, stderr } = await runCli(
+        [
+          'run',
+          dir,
+          '-e',
+          'ci',
+          '--trust-secret-sources',
+          '-v',
+          '--reporter',
+          'cli',
+          '--reporter',
+          `json=${report}`,
+          'demo/secure',
+        ],
+        env,
+      );
+      expect(code).toBe(0);
+      expect(demo.secureAuth).toEqual([`Basic ${credential}`]);
+      expect(stdout + stderr).not.toContain(credential);
+      expect(await readFile(report, 'utf8')).not.toContain(credential);
+    });
+
+    it('refuses an untrusted mapping, naming the error, and sends nothing', async () => {
+      const { dir, env } = await sourced(`echo ${credential}`);
+      const { code, stdout, stderr } = await runCli(['run', dir, '-e', 'ci', 'demo/secure'], env);
+      expect(code).toBe(3);
+      expect(stdout + stderr).toContain('secret-source-untrusted');
+      expect(stdout + stderr).toContain('--trust-secret-sources-hash');
+      expect(demo.requests).not.toContain('/secure');
+    });
+
+    it('lists the mapping as mapped and untrusted, then as trusted, with its hash', async () => {
+      const { dir, env } = await sourced(`echo ${credential}`);
+      const untrusted = await runCli(['secrets', 'list', dir, '-e', 'ci', 'demo/secure'], env);
+      expect(untrusted.code).toBe(0);
+      expect(untrusted.stdout).toMatch(/WIREBENCH_SECRET_TOKEN\s+mapped\s+vault \(untrusted\)\s/);
+      expect(untrusted.stdout).toMatch(/Secret sources hash: [0-9a-f]{64} \(pass --trust-secret-sources-hash/);
+      const trusted = await runCli(['secrets', 'list', dir, '-e', 'ci', '--trust-secret-sources', 'demo/secure'], env);
+      expect(trusted.code).toBe(0);
+      expect(trusted.stdout).toMatch(/WIREBENCH_SECRET_TOKEN\s+mapped\s+vault\s/);
+      expect(trusted.stdout).toContain('(trusted)');
+      expect(untrusted.stdout + trusted.stdout).not.toContain(credential);
+    });
+
+    it('lists an invalid entry as missing, exit 3', async () => {
+      const dir = await workspaceWith({ baseUrl: demo.url }, {}, ['secretSources:', '  token:', '    kind: vault']);
+      const file = join(dir, 'apis', 'demo', 'requests', 'secure.request.yaml');
+      await writeFile(
+        file,
+        (await readFile(file, 'utf8')).replace(
+          /auth:\n(?: {2}.*\n)+/,
+          'auth:\n  type: none\nheaders:\n  - enabled: true\n    name: Authorization\n    value: Basic ${secret:token}\n',
+        ),
+      );
+      const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'ci', 'demo/secure']);
+      expect(code).toBe(3);
+      expect(stdout).toMatch(/WIREBENCH_SECRET_TOKEN\s+missing\s+invalid\s/);
+    });
   });
 
   it('warns and applies nothing from a workspace.yaml that does not list the project', async () => {

@@ -16,6 +16,7 @@ import { nodeFs, readFileIfExists, readdirIfExists } from '../project/fs.js';
 import type { Workspace, WorkspaceEnvironment, WorkspaceProjectRef } from './model.js';
 import { WORKSPACE_FORMAT_VERSION } from './model.js';
 import { migrateWorkspace } from './migrate.js';
+import { parseSecretSources } from '../secrets/sources/parse.js';
 import { WORKSPACE_ENVIRONMENTS_DIR, WORKSPACE_MANIFEST } from './paths.js';
 import {
   parseWorkspaceFile,
@@ -26,7 +27,7 @@ import {
 
 /** A recoverable inconsistency found while loading a workspace. */
 export interface WorkspaceProblem {
-  readonly code: 'environment-file-invalid' | 'project-ref-invalid';
+  readonly code: 'environment-file-invalid' | 'project-ref-invalid' | 'secret-source-invalid';
   readonly message: string;
   /** Path relative to the workspace root. */
   readonly file: string;
@@ -189,6 +190,15 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
 
   const manifest = parseWorkspaceFile(workspaceManifestSchema, { ...migrated, projects: [] }, WORKSPACE_MANIFEST);
 
+  const parsedSources = parseSecretSources(manifest.secretSources);
+  for (const issue of parsedSources.issues) {
+    problems.push({
+      code: 'secret-source-invalid',
+      message: issue.name === '' ? issue.reason : `Secret source "${issue.name}": ${issue.reason}`,
+      file: WORKSPACE_MANIFEST,
+    });
+  }
+
   const workspace: Workspace = {
     formatVersion: WORKSPACE_FORMAT_VERSION,
     id: manifest.id,
@@ -197,6 +207,7 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
     createdAt: manifest.createdAt,
     properties: manifest.properties,
     disabledProperties: manifest.disabled ?? [],
+    ...(Object.keys(parsedSources.sources).length > 0 ? { secretSources: parsedSources.sources } : {}),
     projects,
     environments: await loadEnvironments(fs, root, problems),
   };

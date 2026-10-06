@@ -20,6 +20,8 @@ import type { Project, RestFolder, RestRequestDef } from '@wirebench/engine';
 import { runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
+import { createSourceCache } from '@wirebench/engine';
+import { DEFAULT_CLI_SECRET_SOURCES } from '../../../src/source-secrets.js';
 
 const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures', 'mcp');
 export const CALCULATOR_WSDL = join(FIXTURES, 'calculator.wsdl');
@@ -66,6 +68,9 @@ export async function emptyProject(): Promise<Fixture> {
       gates: { write: true, send: true },
       origin: 'mcp',
       warn: (line) => warnings.push(line),
+      secretSources: DEFAULT_CLI_SECRET_SOURCES,
+      secretSourceCache: createSourceCache(),
+      secretSourceValues: new Set<string>(),
       ...overrides,
     }),
   };

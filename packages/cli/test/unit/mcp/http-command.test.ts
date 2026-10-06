@@ -7,10 +7,16 @@ import { ExitCode } from '../../../src/exit-codes.js';
 import { runOp } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
 import { emptyProject, manyOperationsOpenApi, removeTempDirs, soapProject } from '../ops/helpers.js';
+import { DEFAULT_CLI_SECRET_SOURCES } from '../../../src/source-secrets.js';
 
 afterEach(removeTempDirs);
 
-const ARGS = { command: 'mcp', allowWrite: false, allowSend: false } as const;
+const ARGS = {
+  command: 'mcp',
+  allowWrite: false,
+  allowSend: false,
+  secretSources: DEFAULT_CLI_SECRET_SOURCES,
+} as const;
 
 function capture(): { stream: PassThrough; text: () => string } {
   const stream = new PassThrough();

@@ -28,6 +28,8 @@ import {
   redactError,
   redactUrlsInText,
 } from '../../../src/ops/redact.js';
+import { createSourceCache } from '@wirebench/engine';
+import { DEFAULT_CLI_SECRET_SOURCES } from '../../../src/source-secrets.js';
 
 const SECRET = 'abc123def456ghi789';
 
@@ -38,6 +40,9 @@ const base: OpsBase = {
   gates: { write: false, send: false },
   origin: 'cli',
   warn: () => undefined,
+  secretSources: DEFAULT_CLI_SECRET_SOURCES,
+  secretSourceCache: createSourceCache(),
+  secretSourceValues: new Set<string>(),
 };
 
 const leaky = defineOp({
@@ -55,6 +60,21 @@ const leaky = defineOp({
 });
 
 describe('runOp', () => {
+  it('masks a value a source handed out in an earlier call of the same base', async () => {
+    const echo = defineOp({
+      name: 'echo',
+      title: 'Echo',
+      description: 'Returns its input, resolving nothing.',
+      input: z.object({ value: z.string() }),
+      run: (input) => Promise.resolve({ echoed: input.value }),
+    });
+    const shared: OpsBase = { ...base, origin: 'mcp', secretSourceValues: new Set<string>() };
+    // What `sendAndRecord` leaves behind after call 1 resolved a source value.
+    shared.secretSourceValues.add('from-vault-long-value');
+    const result = await runOp(echo, { value: 'seen from-vault-long-value' }, shared);
+    expect(result.echoed).toBe('seen <redacted>');
+  });
+
   it('masks every secret the call revealed, at any depth', async () => {
     const result = await runOp(leaky, { value: `also ${SECRET}` }, base);
     expect(JSON.stringify(result)).not.toContain(SECRET);

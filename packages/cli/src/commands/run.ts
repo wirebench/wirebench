@@ -5,6 +5,7 @@ import {
   createScriptChecker,
   createIssuedTokenSource,
   createScriptSandbox,
+  createSourceCache,
   createSecretMasker,
   isWirebenchError,
   jarCookieHost,
@@ -34,7 +35,7 @@ import { UsageError } from '../args.js';
 import type { RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
-import { createEnvSecrets } from '../env-secrets.js';
+import { cliSecrets } from '../source-secrets.js';
 import { pickEnvironment } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
@@ -203,11 +204,16 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   }
   const { project, workspace, environment, selected, sequences } = loaded;
   const needs = secretNeedsOf(selected, project, args.vars, workspace?.workspace);
-  const secrets = createEnvSecrets(needs, io.env);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
   // one as it arrives, and every mask built after that — they are built per result — hides it.
+  // A value a secret source hands out is masked too, including in that source's own error text.
   const tokens = new Set<string>();
-  const maskNow = (): ((text: string) => string) => createSecretMasker([...secrets.values(), ...tokens]);
+  let known: () => string[] = () => [...tokens];
+  const maskNow = (): ((text: string) => string) => createSecretMasker(known());
+  const secrets = cliSecrets(needs, io.env, workspace?.workspace, args.secretSources, createSourceCache(), (text) =>
+    maskNow()(text),
+  );
+  known = () => [...secrets.values(), ...tokens];
   const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainMissingSecret(raw, needs));
   const proxyFor = proxyFromEnv(io.env);
   // Callback assertions read captures with a CI token (callback-assertion §4); masked like every secret.

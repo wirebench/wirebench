@@ -91,7 +91,7 @@ describe('RunContext.globals', () => {
       workspace: {
         projectSlug: 'p',
         workspace: {
-          formatVersion: 3,
+          formatVersion: 4,
           id: 'ws',
           name: 'WS',
           createdAt: '2026-10-01T00:00:00.000Z',

@@ -10,6 +10,7 @@ import {
   VERB_HELP,
 } from './args-ops.js';
 import type { CallArgs, McpArgs, OpArgs } from './args-ops.js';
+import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
@@ -40,6 +41,12 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --update-baseline  Save each changed response as its golden, keeping its ignore rules.
                        The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
+    --no-secret-sources   Read secrets from WIREBENCH_SECRET_<NAME> only; skip the workspace's
+                          secret sources.
+    --trust-secret-sources
+                          Use the workspace's shared secret sources as they are.
+    --trust-secret-sources-hash <hash>
+                          Use them only if the mapping's hash is <hash> (secrets list prints it).
     --no-color
 -q, --quiet | -v, --verbose
 
@@ -47,6 +54,8 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
                        prints a value. --var as for run, so a token only a --var holds is listed.
+                       Also shows where each secret comes from, and prints the
+                       secret-sources hash.
 
 ${OPS_HELP_TEXT}
 
@@ -73,6 +82,7 @@ export interface RunArgs {
   readonly requireBaseline: boolean;
   readonly updateBaseline: boolean;
   readonly insecure: boolean;
+  readonly secretSources: CliSecretSourcesOptions;
   readonly color: boolean;
   readonly quiet: boolean;
   readonly verbose: boolean;
@@ -87,6 +97,7 @@ export interface SecretsListArgs {
   readonly env?: string;
   /** `--var` overrides, as `run` takes them: a token only one of them holds is listed too. */
   readonly vars: Readonly<Record<string, string>>;
+  readonly secretSources: CliSecretSourcesOptions;
 }
 
 export type ParsedArgs =
@@ -166,6 +177,9 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         'require-baseline': { type: 'boolean' },
         'update-baseline': { type: 'boolean' },
         insecure: { type: 'boolean' },
+        'no-secret-sources': { type: 'boolean' },
+        'trust-secret-sources': { type: 'boolean' },
+        'trust-secret-sources-hash': { type: 'string' },
         'no-color': { type: 'boolean' },
         quiet: { type: 'boolean', short: 'q' },
         verbose: { type: 'boolean', short: 'v' },
@@ -246,6 +260,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       requireBaseline,
       updateBaseline,
       insecure: values.insecure ?? false,
+      secretSources: secretSourcesOptionsFrom(values),
       color: !values['no-color'],
       quiet: values.quiet ?? false,
       verbose: values.verbose ?? false,
@@ -269,6 +284,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       sequences,
       ...(values.env !== undefined ? { env: values.env } : {}),
       vars: parseVars(values.var),
+      secretSources: secretSourcesOptionsFrom(values),
     };
   }
 

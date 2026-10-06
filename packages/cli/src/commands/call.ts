@@ -64,7 +64,16 @@ function callText(result: CallResult): string {
 }
 
 export async function callCommand(args: CallArgs, io: CliIo): Promise<ExitCode> {
-  const base = opsBaseFor({ project: args.project, historyDir: args.historyDir, gates: OPEN_GATES, origin: 'cli' }, io);
+  const base = opsBaseFor(
+    {
+      project: args.project,
+      historyDir: args.historyDir,
+      gates: OPEN_GATES,
+      origin: 'cli',
+      secretSources: args.secretSources,
+    },
+    io,
+  );
   try {
     const { project } = await openProject(base);
     const tool = await findContractTool(project, base.projectDir, args.operation);
