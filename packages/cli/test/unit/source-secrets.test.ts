@@ -14,7 +14,7 @@ import { UsageError } from '../../src/usage-error.js';
 
 const sources = parseSecretSources({ db: { kind: 'vault', path: 'kv/app', field: 'password' } }).sources;
 const workspace = { ...createWorkspace('W'), secretSources: sources };
-const needs: SecretNeed[] = [{ ref: 'secret:db' } as SecretNeed];
+const needs: SecretNeed[] = [{ ref: 'secret:db', purpose: 'test' }];
 
 /** A directory holding a fake `vault`, and the env that finds it without the process PATH (spec D3). */
 async function fakeVault(body: string): Promise<{ dir: string; env: NodeJS.ProcessEnv }> {

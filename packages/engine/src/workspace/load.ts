@@ -16,7 +16,7 @@ import { nodeFs, readFileIfExists, readdirIfExists } from '../project/fs.js';
 import type { Workspace, WorkspaceEnvironment, WorkspaceProjectRef } from './model.js';
 import { WORKSPACE_FORMAT_VERSION } from './model.js';
 import { migrateWorkspace } from './migrate.js';
-import { parseSecretSources } from '../secrets/sources/parse.js';
+import { isNonMappingSecretSources, parseSecretSources } from '../secrets/sources/parse.js';
 import { WORKSPACE_ENVIRONMENTS_DIR, WORKSPACE_MANIFEST } from './paths.js';
 import {
   parseWorkspaceFile,
@@ -208,6 +208,7 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
     properties: manifest.properties,
     disabledProperties: manifest.disabled ?? [],
     ...(Object.keys(parsedSources.sources).length > 0 ? { secretSources: parsedSources.sources } : {}),
+    ...(isNonMappingSecretSources(manifest.secretSources) ? { secretSourcesRaw: manifest.secretSources } : {}),
     projects,
     environments: await loadEnvironments(fs, root, problems),
   };

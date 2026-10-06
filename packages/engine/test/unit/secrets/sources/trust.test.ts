@@ -1,4 +1,3 @@
-// packages/engine/test/unit/secrets/sources/trust.test.ts
 import { describe, expect, it } from 'vitest';
 import { parseSecretSources } from '../../../../src/secrets/sources/parse.js';
 import { secretSourcesHash, sharedTrusted } from '../../../../src/secrets/sources/trust.js';

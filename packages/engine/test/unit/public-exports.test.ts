@@ -32,21 +32,7 @@ const ADDED = [
   'warnCredentialLookingNames',
   'importedScriptPath',
   'SAML_TOKEN_PART',
-  'argvFor',
-  'parseSourceOutput',
-  'toolOf',
-  'secretSourceError',
-  'withSource',
-  'TOOL_INSTALL_PAGES',
-  'SOURCE_TIMEOUT_MS',
-  'SOURCE_STDOUT_MAX',
-  'SOURCE_STDERR_MAX',
-  'SOURCE_STDERR_SHOWN',
-  'findSourceTool',
-  'runSourceTool',
   'SECRET_SOURCE_KINDS',
-  'SECRET_SOURCE_FIELD_MAX',
-  'parseSecretSource',
   'parseSecretSources',
   'parseLocalSecretSources',
   'effectiveSecretSources',
@@ -74,6 +60,24 @@ const RENAMED: Array<[string, string]> = [
 ];
 
 const REMOVED = ['prepareSend', 'assertSupportedKind', 'apiKindOf', 'scriptTypesFor'] as const;
+
+/** Secret-source internals the engine keeps to itself; hosts reach sources through `sourceGetter` only. */
+const SOURCE_INTERNALS = [
+  'argvFor',
+  'toolOf',
+  'parseSourceOutput',
+  'secretSourceError',
+  'withSource',
+  'TOOL_INSTALL_PAGES',
+  'SOURCE_TIMEOUT_MS',
+  'SOURCE_STDOUT_MAX',
+  'SOURCE_STDERR_MAX',
+  'SOURCE_STDERR_SHOWN',
+  'findSourceTool',
+  'runSourceTool',
+  'parseSecretSource',
+  'SECRET_SOURCE_FIELD_MAX',
+] as const;
 
 /** A sample of what spec §8 lists as unchanged. */
 const UNCHANGED = [
@@ -171,6 +175,10 @@ describe('the public exports of 3.0', () => {
   });
 
   it.each(REMOVED)('no longer exports %s', (name) => {
+    expect(names.has(name)).toBe(false);
+  });
+
+  it.each(SOURCE_INTERNALS)('keeps %s off the root', (name) => {
     expect(names.has(name)).toBe(false);
   });
 

@@ -27,6 +27,49 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
     });
   });
 
+  describe('darwin fixed directories', () => {
+    const only = (...present: string[]) => ({
+      isFile: (path: string) => Promise.resolve(present.includes(path)),
+    });
+
+    it('finds a tool in /opt/homebrew/bin when PATH lacks it', async () => {
+      const path = await findSourceTool('vault', {
+        env: { PATH: '/usr/bin:/bin' },
+        platform: 'darwin',
+        ...only('/opt/homebrew/bin/vault'),
+      });
+      expect(path).toBe('/opt/homebrew/bin/vault');
+    });
+
+    it('finds a tool in /usr/local/bin when PATH lacks it', async () => {
+      const path = await findSourceTool('op', {
+        env: { PATH: '/usr/bin:/bin' },
+        platform: 'darwin',
+        ...only('/usr/local/bin/op'),
+      });
+      expect(path).toBe('/usr/local/bin/op');
+    });
+
+    it('prefers a PATH hit over the fixed directories', async () => {
+      const path = await findSourceTool('vault', {
+        env: { PATH: '/custom/bin' },
+        platform: 'darwin',
+        ...only('/custom/bin/vault', '/opt/homebrew/bin/vault'),
+      });
+      expect(path).toBe('/custom/bin/vault');
+    });
+
+    it('does not search them on another platform', async () => {
+      await expect(
+        findSourceTool('vault', {
+          env: { PATH: '/usr/bin' },
+          platform: 'linux',
+          ...only('/opt/homebrew/bin/vault'),
+        }),
+      ).rejects.toMatchObject({ code: 'secret-source-unavailable' });
+    });
+  });
+
   it('passes the environment through', async () => {
     const dir = await toolDir({ op: 'printf "%s" "$VAULT_ADDR"' });
     const env = { PATH: `${dir}:/usr/bin:/bin`, VAULT_ADDR: 'https://v.example' };

@@ -1,4 +1,3 @@
-// packages/engine/src/secrets/sources/trust.ts
 /**
  * Whether this machine may use a workspace's shared secret sources (secret sources spec D4). A shared
  * mapping decides which of the user's secrets a shared request can read, so it is used only once approved

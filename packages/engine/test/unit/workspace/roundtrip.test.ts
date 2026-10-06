@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { WorkspaceError } from '../../../src/errors.js';
@@ -485,6 +485,21 @@ describe('secretSources', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     expect((await readBytes(dir, 'workspace.yaml')).toString('utf8')).not.toContain('secretSources');
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('keeps a non-mapping secretSources raw through load and save', async () => {
+    const dir = await tempWorkspaceDir();
+    await saveWorkspace(sampleWorkspace(), dir);
+    const path = join(dir, 'workspace.yaml');
+    await writeFile(path, `${(await readFile(path, 'utf8')).trimEnd()}\nsecretSources:\n  - a\n  - b\n`);
+    const loaded = await loadWorkspace(dir);
+    expect(loaded.workspace.secretSources).toBeUndefined();
+    expect(loaded.workspace.secretSourcesRaw).toEqual(['a', 'b']);
+    expect(loaded.problems).toContainEqual(expect.objectContaining({ code: 'secret-source-invalid' }));
+    await saveWorkspace(loaded.workspace, dir);
+    expect((await loadWorkspace(dir)).workspace.secretSourcesRaw).toEqual(['a', 'b']);
+    expect(await readFile(path, 'utf8')).toMatch(/secretSources:\n {2}- a\n {2}- b\n/);
     await rm(dir, { recursive: true, force: true });
   });
 });

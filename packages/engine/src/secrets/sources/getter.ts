@@ -19,20 +19,37 @@ interface CacheEntry {
   settledAt?: number;
 }
 
+/** Opaque to hosts: they create it, share it and `clear()` it. What it holds is private to this module. */
 export interface SourceCache {
   clear(): void;
 }
 
-class MemorySourceCache implements SourceCache {
-  readonly entries = new Map<string, CacheEntry>();
-  clear(): void {
-    this.entries.clear();
+/** Per-cache state, kept off the object so `SourceCache` stays opaque and any `{ clear }` works as one. */
+const cacheEntries = new WeakMap<SourceCache, Map<string, CacheEntry>>();
+
+function entriesOf(cache: SourceCache): Map<string, CacheEntry> {
+  let entries = cacheEntries.get(cache);
+  if (entries === undefined) {
+    entries = new Map();
+    cacheEntries.set(cache, entries);
   }
+  return entries;
 }
 
-/** The in-memory cache a host keeps for as long as it wants values reused. Never written anywhere. */
+/**
+ * The in-memory cache a host keeps for as long as it wants values reused. Never written anywhere.
+ * One cache serves one environment: values are keyed by the source alone, so a host that switches
+ * environment (and so may map a name to another source or account) must `clear()` it or make a new one.
+ */
 export function createSourceCache(): SourceCache {
-  return new MemorySourceCache();
+  const entries = new Map<string, CacheEntry>();
+  const cache: SourceCache = {
+    clear: () => {
+      entries.clear();
+    },
+  };
+  cacheEntries.set(cache, entries);
+  return cache;
 }
 
 export interface SourceGetterOptions {
@@ -70,7 +87,7 @@ async function fetchValue(source: SecretSource, options: SourceGetterOptions): P
 }
 
 export function sourceGetter(next: GetSecret, options: SourceGetterOptions): GetSecret {
-  const cache = options.cache as MemorySourceCache;
+  const entries = entriesOf(options.cache);
   const now = options.now ?? Date.now;
   return async (ref) => {
     const name = parseSecretPseudoRef(ref);
@@ -100,7 +117,7 @@ export function sourceGetter(next: GetSecret, options: SourceGetterOptions): Get
       );
     }
     const key = canonicalJson(source);
-    const cached = cache.entries.get(key);
+    const cached = entries.get(key);
     const usable =
       cached !== undefined && (cached.settledAt === undefined || now() - cached.settledAt < options.cacheMs);
     let entry: CacheEntry;
@@ -109,17 +126,17 @@ export function sourceGetter(next: GetSecret, options: SourceGetterOptions): Get
     } else {
       const created: CacheEntry = { pending: fetchValue(source, options) };
       entry = created;
-      cache.entries.set(key, created);
+      entries.set(key, created);
       created.pending.then(
         () => {
           created.settledAt = now();
-          if (options.cacheMs <= 0 && cache.entries.get(key) === created) {
-            cache.entries.delete(key);
+          if (options.cacheMs <= 0 && entries.get(key) === created) {
+            entries.delete(key);
           }
         },
         () => {
-          if (cache.entries.get(key) === created) {
-            cache.entries.delete(key);
+          if (entries.get(key) === created) {
+            entries.delete(key);
           }
         },
       );

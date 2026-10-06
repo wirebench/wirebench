@@ -73,10 +73,14 @@ export const workspaceLocalStateSchema = z.object({
   version: z.union([z.literal(1), z.literal(2)]),
   activeEnvironmentId: z.string().optional(),
   secretSources: z.unknown().optional(),
-  secretSourcesApproved: z
-    .object({ hash: z.string().regex(/^[0-9a-f]{64}$/), mapping: z.record(z.string(), z.unknown()) })
-    .optional(),
+  /** Validated apart in `local-state.ts`, so a malformed approval is dropped alone. */
+  secretSourcesApproved: z.unknown().optional(),
 });
+
+/** What this machine approved of the shared secret sources: the hash, and the mapping it was taken over. */
+export const secretSourcesApprovalSchema = z
+  .object({ hash: z.string().regex(/^[0-9a-f]{64}$/), mapping: z.record(z.string(), z.unknown()) })
+  .optional();
 
 /** `share.yaml`'s `git` block: settings for a git-backed share. See `share.ts`. */
 const gitShareSettingsSchema = z.object({

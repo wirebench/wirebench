@@ -144,6 +144,14 @@ describe('sourceGetter', () => {
     expect(first.run).toHaveBeenCalledTimes(2);
   });
 
+  it('works with any SourceCache, not only the one createSourceCache returns', async () => {
+    const cleared = vi.fn();
+    const { get, run } = setup({ cache: { clear: cleared } });
+    await get('secret:db');
+    await get('secret:db');
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('does not cache a failure', async () => {
     const run = vi
       .fn()
