@@ -2645,13 +2645,10 @@ export class WorkspaceService implements ProjectRouter {
       // local-state.ts) — so, unlike `mutate`/`rename`, there is nothing here for
       // `open.watcher` (which only watches the tree) to ever see or need pre-announcing.
       if (environmentId === null) {
-        open.local = {
-          version: 2,
-          ...(open.local.secretSources !== undefined ? { secretSources: open.local.secretSources } : {}),
-          ...(open.local.secretSourcesApproved !== undefined
-            ? { secretSourcesApproved: open.local.secretSourcesApproved }
-            : {}),
-        };
+        // By omission, so every other local field (the raw secretSources value included) survives.
+        const cleared: { -readonly [K in keyof WorkspaceLocalState]: WorkspaceLocalState[K] } = { ...open.local };
+        delete cleared.activeEnvironmentId;
+        open.local = { ...cleared, version: 2 };
       } else {
         open.local = { ...open.local, version: 2, activeEnvironmentId: environmentId };
       }

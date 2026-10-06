@@ -49,9 +49,9 @@ const DARWIN_FIXED_DIRS: readonly string[] = ['/opt/homebrew/bin', '/usr/local/b
 
 async function locate(tool: string, options: SourceToolOptions): Promise<string> {
   const env = options.env ?? process.env;
-  const windows = (options.platform ?? process.platform) === 'win32';
-  const isFile = options.isFile ?? isRegularFile;
   const platform = options.platform ?? process.platform;
+  const windows = platform === 'win32';
+  const isFile = options.isFile ?? isRegularFile;
   // A desktop app started from the Finder gets a bare PATH, so on a Mac look where Homebrew installs too
   // (as `findGit` does). Search only: the child's environment is not changed.
   const entries = [

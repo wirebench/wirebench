@@ -828,6 +828,22 @@ describe('active environment: machine-local, via local.yaml', () => {
     await service.close();
   });
 
+  it('clearing the active environment keeps a non-mapping secretSources value in local.yaml', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Envs');
+    const { createdEnvironmentId } = await bootstrap.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    await writeFile(join(dir, 'local.yaml'), 'version: 2\nsecretSources:\n  - one\n');
+
+    const service = newService();
+    await service.open(created.id);
+    await service.setActiveEnvironment(createdEnvironmentId as string);
+    await service.setActiveEnvironment(null);
+    expect(await loadLocalState(dir)).toEqual({ version: 2, secretSourcesRaw: ['one'] });
+    await service.close();
+  });
+
   it('reopening the workspace restores the active environment from local.yaml', async () => {
     const bootstrap = newService();
     const created = await bootstrap.create('Envs');

@@ -28,10 +28,10 @@ export interface SourceCache {
 const cacheEntries = new WeakMap<SourceCache, Map<string, CacheEntry>>();
 
 function entriesOf(cache: SourceCache): Map<string, CacheEntry> {
-  let entries = cacheEntries.get(cache);
+  const entries = cacheEntries.get(cache);
   if (entries === undefined) {
-    entries = new Map();
-    cacheEntries.set(cache, entries);
+    // A cache of the host's own making could not be cleared by `clear()`, so it would serve stale values.
+    throw new TypeError('The secret-source cache must come from createSourceCache().');
   }
   return entries;
 }

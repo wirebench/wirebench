@@ -59,6 +59,15 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
       expect(path).toBe('/custom/bin/vault');
     });
 
+    it('finds a tool once when PATH already lists /opt/homebrew/bin', async () => {
+      const path = await findSourceTool('vault', {
+        env: { PATH: '/opt/homebrew/bin:/usr/bin' },
+        platform: 'darwin',
+        ...only('/opt/homebrew/bin/vault'),
+      });
+      expect(path).toBe('/opt/homebrew/bin/vault');
+    });
+
     it('does not search them on another platform', async () => {
       await expect(
         findSourceTool('vault', {

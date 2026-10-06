@@ -118,4 +118,15 @@ describe('local.yaml', () => {
     expect(parseYaml(text)).toEqual({ version: 2, activeEnvironmentId: 'ENV1', secretSources: ['one', 'two'] });
     await rm(dir, { recursive: true, force: true });
   });
+
+  it('keeps an own __proto__ key in the approved mapping', async () => {
+    const dir = await tempWorkspaceDir();
+    await writeFile(
+      join(dir, 'local.yaml'),
+      `version: 2\nsecretSourcesApproved:\n  hash: ${'ab'.repeat(32)}\n  mapping:\n    b:\n      kind: gcp\n      secret: s\n    __proto__:\n      kind: nope\n`,
+    );
+    const approval = (await loadLocalState(dir)).secretSourcesApproved;
+    expect(Object.keys(approval?.mapping ?? {})).toEqual(['b', '__proto__']);
+    await rm(dir, { recursive: true, force: true });
+  });
 });

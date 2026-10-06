@@ -1518,6 +1518,7 @@ export type {
   SecretSourceIssue,
   SecretSourceKind,
   SecretSourcesTrust,
+  SourceToolOptions,
   SharedSecretSource,
   SharedSecretSources,
   SourceCache,
