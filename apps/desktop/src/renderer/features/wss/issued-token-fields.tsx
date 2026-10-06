@@ -4,7 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import { SecretField } from '../../components/secret-field.js';
-import { useKerberosAvailable } from '../../state/capabilities.js';
+import { useKerberosAvailability } from '../../lib/use-kerberos-availability.js';
 import { KeystorePicker, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
 import { IssuedTokenStatus } from './issued-token-status.js';
 import type { WssEntryWire } from '../../../shared/wire-types.js';
@@ -58,7 +58,8 @@ function freshCredential(kind: Credential['kind']): Credential {
 }
 
 export function IssuedTokenFields({ entry, onChange, projectId, configId, entryIndex, requestId }: Props) {
-  const kerberos = useKerberosAvailable();
+  // Undefined until main answers; Windows alone takes a typed-in account, as the engine's seam does.
+  const kerberos = useKerberosAvailability();
   const set = <K extends keyof IssuedEntry>(key: K, value: IssuedEntry[K]) => {
     onChange({ ...entry, [key]: value });
   };
@@ -248,7 +249,9 @@ export function IssuedTokenFields({ entry, onChange, projectId, configId, entryI
         )}
         {credential.kind === 'kerberos' && (
           <>
-            {!kerberos.available && <p className="text-xs text-fg-faint">Needs Kerberos support (#40).</p>}
+            {kerberos?.available === false && kerberos.reason !== undefined && kerberos.reason !== '' && (
+              <p className="text-xs text-fg-subtle">{kerberos.reason}</p>
+            )}
             <Row label="SPN">
               <input
                 aria-label="Service principal"
@@ -270,7 +273,7 @@ export function IssuedTokenFields({ entry, onChange, projectId, configId, entryI
                 }}
               />
             </Row>
-            {kerberos.explicitCredentials && (
+            {kerberos?.platform === 'win32' && (
               <>
                 <Row label="Username">
                   <input

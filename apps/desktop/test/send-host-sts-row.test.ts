@@ -162,6 +162,32 @@ describe('the STS log row', () => {
     expect(raw).not.toContain('hunter2-sts');
   });
 
+  it.each([
+    [false, 'masks'],
+    [true, 'keeps'],
+  ])("with show-secrets %s, %s the RST's Kerberos AP-REQ in the raw request", async (show) => {
+    const apReq = 'YIIKerberosApReqBytesFromTheSeam';
+    const rst =
+      '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Header><wsse:Security xmlns:wsse=' +
+      '"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+      '<wsse:BinarySecurityToken ValueType="http://docs.oasis-open.org/wss/oasis-wss-kerberos-token-profile-1.1' +
+      '#GSS_Kerberosv5_AP_REQ" EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message' +
+      `-security-1.0#Base64Binary">${apReq}</wsse:BinarySecurityToken></wsse:Security></s:Header><s:Body/></s:Envelope>`;
+    const { host, rows, request, trustDeps } = await hostWith(show, {
+      ...fakeExchange,
+      rawRequest: bytes(`POST /issue HTTP/1.1\r\nhost: sts.test\r\ncontent-type: application/soap+xml\r\n\r\n${rst}`),
+    });
+    const kerberosToken = () => Promise.resolve(new Uint8Array([1, 2, 3]));
+    await host.issuedTokens!.get(entry, target, { ...trustDeps, kerberosToken });
+    // The send's wrapper lends the engine's Kerberos seam through untouched.
+    expect((request.mock.calls[0]?.[2] as { kerberosToken?: unknown }).kerberosToken).toBe(kerberosToken);
+    const row = rows[0]!;
+    if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
+    const raw = textOf(row.exchange.http.rawRequestBase64);
+    expect(raw).toContain('GSS_Kerberosv5_AP_REQ');
+    expect(raw.includes(apReq)).toBe(show);
+  });
+
   it('replaces a compressed raw response body with the redacted one', async () => {
     const gzipped = gzipSync(Buffer.from(RSTR, 'utf8'));
     const head = 'HTTP/1.1 200 OK\r\ncontent-type: application/soap+xml\r\ncontent-encoding: gzip\r\n\r\n';

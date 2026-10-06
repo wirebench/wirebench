@@ -50,7 +50,8 @@ import {
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
 import type { IssuedToken, WssIssuedTokenEntry } from '../wss/model.js';
-import type { IssuedTokenTarget } from '../wss/trust/client.js';
+import type { IssuedTokenTarget, KerberosTokenFn } from '../wss/trust/client.js';
+import { kerberosToken } from '../http/auth/kerberos-token.js';
 import type { AttemptedRequest } from '../run/host.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
@@ -225,14 +226,21 @@ export async function soapIssuedTokenTarget(
   selected: SoapSelected,
   context: RunContext,
   entry: WssIssuedTokenEntry,
-): Promise<{ readonly target: IssuedTokenTarget; readonly ctx: WssContext }> {
+): Promise<{ readonly target: IssuedTokenTarget; readonly ctx: WssContext; readonly kerberosToken: KerberosTokenFn }> {
   const scopes = scopesFor(context);
   const endpointUrl = requiredEndpoint(selected, context).url;
   return {
     target: await issuedTargetFor(context, endpointUrl, issuedExpand(scopes), entry),
     ctx: baseWssContext(context, scopes),
+    kerberosToken: stsKerberosToken,
   };
 }
+
+/**
+ * A Kerberos credential to the token service, through #40's seam with the process-wide provider,
+ * as the SPNEGO paths call it. Its `kerberos-*` errors pass through unchanged.
+ */
+const stsKerberosToken: KerberosTokenFn = (spn, credentials) => kerberosToken(spn, credentials);
 
 /** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
 function wssFor(
@@ -283,7 +291,7 @@ function wssFor(
           expand: expandText,
           connection: () => issuedTargetFor(context, endpointUrl, expandText, entry),
         };
-        const token = await source.get(entry, target, { ctx: base });
+        const token = await source.get(entry, target, { ctx: base, kerberosToken: stsKerberosToken });
         used.push(token);
         return token;
       },

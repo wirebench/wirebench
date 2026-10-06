@@ -9,6 +9,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import type { LogEntry } from '../../src/renderer/state/exchanges.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { resetKerberosAvailability } from '../../src/renderer/lib/use-kerberos-availability.js';
 import type { ProjectWire, WssEntryWire } from '../../src/shared/wire-types.js';
 
 type IssuedEntry = Extract<WssEntryWire, { kind: 'issued-token' }>;
@@ -26,6 +27,7 @@ const fresh: IssuedEntry = {
 
 afterEach(() => {
   cleanup();
+  resetKerberosAvailability();
   useExchangesStore.getState().reset();
   useExchangesStore.setState({ log: [], byRequest: {} });
   useProjectStore.getState().reset();
@@ -37,7 +39,10 @@ function render(ui: ReactElement) {
   return baseRender(<TooltipPrimitive.Provider>{ui}</TooltipPrimitive.Provider>);
 }
 
-function api(overrides: Record<string, unknown> = {}) {
+function api(
+  overrides: Record<string, unknown> = {},
+  kerberos: Record<string, unknown> = { available: true, platform: 'linux' },
+) {
   const issuedTokens = {
     status: vi.fn().mockResolvedValue({ ok: true, value: { state: 'none' } }),
     fetch: vi.fn().mockResolvedValue({
@@ -47,7 +52,10 @@ function api(overrides: Record<string, unknown> = {}) {
     clear: vi.fn().mockResolvedValue({ ok: true, value: { state: 'none' } }),
     ...overrides,
   };
-  installWirebenchApi({ issuedTokens });
+  installWirebenchApi({
+    issuedTokens,
+    auth: { kerberosAvailability: vi.fn().mockResolvedValue({ ok: true, value: kerberos }) },
+  });
   return issuedTokens;
 }
 
@@ -87,10 +95,24 @@ describe('IssuedTokenFields', () => {
     expect(screen.queryByLabelText('Proof keystore')).toBeNull();
   });
 
-  it('says Kerberos needs support while it is unavailable', () => {
-    api();
+  it("shows main's reason while Kerberos is unavailable", async () => {
+    api({}, { available: false, reason: 'The Kerberos module is not installed.', platform: 'linux' });
     fields(undefined, { ...fresh, credential: { kind: 'kerberos', spn: '' } });
-    expect(screen.getByText('Needs Kerberos support (#40).')).toBeTruthy();
+    expect(await screen.findByText('The Kerberos module is not installed.')).toBeTruthy();
+  });
+
+  it('offers a typed-in account on Windows only', async () => {
+    api({}, { available: true, platform: 'win32' });
+    fields(undefined, { ...fresh, credential: { kind: 'kerberos', spn: '' } });
+    expect(await screen.findByLabelText('Username')).toBeTruthy();
+    cleanup();
+    resetKerberosAvailability();
+    api({}, { available: true, platform: 'darwin' });
+    fields(undefined, { ...fresh, credential: { kind: 'kerberos', spn: '' } });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Principal')).toBeTruthy();
+    });
+    expect(screen.queryByLabelText('Username')).toBeNull();
   });
 
   it('clearing an optional field drops the key', () => {

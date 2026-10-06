@@ -1,4 +1,4 @@
-/** An HTTPS token service for tests: hands each RST to `answer`, records what it was sent. */
+/** An HTTPS token service for tests: hands each RST to `answer` (sync or async), records what it was sent. */
 import { createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { generateServerCert, generateTestCa } from './test-certs.js';
@@ -16,7 +16,7 @@ export interface TestSts {
   close(): Promise<void>;
 }
 
-export async function startTestSts(answer: (body: string) => StsAnswer): Promise<TestSts> {
+export async function startTestSts(answer: (body: string) => StsAnswer | Promise<StsAnswer>): Promise<TestSts> {
   const ca = generateTestCa();
   const cert = generateServerCert(ca, { sans: ['localhost', '127.0.0.1'] });
   const requests: TestSts['requests'] = [];
@@ -26,9 +26,12 @@ export async function startTestSts(answer: (body: string) => StsAnswer): Promise
     request.on('end', () => {
       const body = Buffer.concat(chunks).toString('utf8');
       requests.push({ headers: request.headers, body });
-      const reply = answer(body);
-      response.writeHead(reply.status, { 'content-type': 'application/soap+xml; charset=utf-8', ...reply.headers });
-      response.end(reply.body);
+      void Promise.resolve(answer(body))
+        .catch((error: unknown): StsAnswer => ({ status: 500, body: String(error) }))
+        .then((reply) => {
+          response.writeHead(reply.status, { 'content-type': 'application/soap+xml; charset=utf-8', ...reply.headers });
+          response.end(reply.body);
+        });
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
