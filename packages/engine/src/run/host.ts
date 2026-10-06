@@ -8,6 +8,7 @@ import type { Keystore } from '../keystore/index.js';
 import type { Preferences } from '../project/preferences.js';
 import type { SelectedBase } from '../protocol/module.js';
 import type { GetSecret } from '../secrets/resolve.js';
+import type { IssuedTokenSource } from './issued-token.js';
 import type { RunTokenSource } from './oauth2-token.js';
 
 export interface ClientIdentity {
@@ -70,6 +71,8 @@ export interface SendHost {
   readonly keystoreFor?: (keystoreId: string) => Promise<Keystore | undefined>;
   /** The OAuth2 token source; a run creates one per run when the host brings none. */
   readonly tokens?: RunTokenSource;
+  /** Issued SAML tokens; a run creates one per run when the host brings none. */
+  readonly issuedTokens?: IssuedTokenSource;
   readonly preferences?: Preferences;
   readonly events?: {
     onFailed?(item: SelectedBase, failure: SendFailure): void;

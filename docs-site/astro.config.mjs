@@ -35,6 +35,7 @@ export default defineConfig({
           items: [
             { label: 'Workspaces and projects', slug: 'guides/workspaces' },
             { label: 'SOAP and WSDL', slug: 'guides/soap-wsdl' },
+            { label: 'WS-Trust tokens', slug: 'guides/ws-trust' },
             { label: 'REST', slug: 'guides/rest-client' },
             { label: 'gRPC', slug: 'guides/grpc' },
             { label: 'WebSocket', slug: 'guides/websocket' },

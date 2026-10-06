@@ -52,7 +52,8 @@ export {
   type NtlmServerOptions,
 } from './ntlm-server.js';
 export { SOURCE_SNIPPET_CASES, type SourceSnippetCase } from './source-snippet-cases.js';
-export { readCraftedFixture, readFixtureWsdl, readPublicFixture } from './fixtures.js';
+export { projectWithWss, readCraftedFixture, readFixtureWsdl, readPublicFixture } from './fixtures.js';
+export { startTestSts, type StsAnswer, type TestSts } from './test-sts-server.js';
 export {
   startTestWsServer,
   encodeFrame,

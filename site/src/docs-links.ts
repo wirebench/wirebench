@@ -3,6 +3,7 @@ export const DOCS_LINKS = {
   home: '',
   installation: 'getting-started/installation',
   soapWsdl: 'guides/soap-wsdl',
+  wsTrust: 'guides/ws-trust',
   restClient: 'guides/rest-client',
   grpc: 'guides/grpc',
   websocket: 'guides/websocket',

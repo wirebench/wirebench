@@ -3,6 +3,7 @@ import {
   checkRunScripts,
   CookieJar,
   createScriptChecker,
+  createIssuedTokenSource,
   createScriptSandbox,
   createSourceCache,
   createSecretMasker,
@@ -38,6 +39,7 @@ import { cliSecrets } from '../source-secrets.js';
 import { pickEnvironment } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
+import { verboseIssuedTokens } from '../verbose-sts.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { explainMissingSecret, maskerDetects } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
@@ -244,6 +246,15 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       onSecretValue: (value) => tokens.add(value),
       // One jar for the whole run: every request, sequence step and iteration shares it.
       cookies: jarCookieHost(new CookieJar()),
+      // `--verbose` reports each token request on stderr: host and status, never the token.
+      ...(args.verbose
+        ? {
+            issuedTokens: verboseIssuedTokens(
+              createIssuedTokenSource({ onSecretValue: (value) => tokens.add(value) }),
+              (line) => io.stderr.write(`${line}\n`),
+            ),
+          }
+        : {}),
     }),
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     insecure: args.insecure,

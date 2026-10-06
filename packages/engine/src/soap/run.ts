@@ -36,7 +36,9 @@ import type { SentRequest } from '../run/run.js';
 import {
   authFor,
   dropRefusedToken,
+  dropRejectedIssuedToken,
   insideProject,
+  issuedTokenSourceOf,
   keystoreFor,
   keystoreNeeds,
   originOf,
@@ -47,6 +49,9 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
+import type { IssuedToken, WssIssuedTokenEntry } from '../wss/model.js';
+import type { IssuedTokenTarget, KerberosTokenFn } from '../wss/trust/client.js';
+import { kerberosToken } from '../http/auth/kerberos-token.js';
 import type { AttemptedRequest } from '../run/host.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
@@ -68,7 +73,7 @@ import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { WsdlDefinition } from '../wsdl/model.js';
 import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { createWssContext } from '../wss/model.js';
-import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
+import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 
@@ -154,6 +159,89 @@ function expandOrRefuse(text: string, scopes: PropertyScopes, what: string): str
   return result.text;
 }
 
+/** How an issued-token entry's STS URL, AppliesTo and Claims expand: refusing what nothing resolves. */
+function issuedExpand(scopes: PropertyScopes): (text: string) => string {
+  return (text) => expandOrRefuse(text, scopes, 'WS-Security issued token');
+}
+
+/** The STS's own TLS (mutual TLS from the entry's keystore), proxy and limits; never the endpoint's. */
+async function issuedTargetFor(
+  context: RunContext,
+  endpointUrl: string,
+  expandText: (text: string) => string,
+  entry: WssIssuedTokenEntry,
+): Promise<IssuedTokenTarget> {
+  // The request's TLS settings never carry over, nor does a host's default client identity.
+  const tls = await tlsFor(context, entry.tlsKeystoreRef, false, { ownKeystoreOnly: true });
+  return {
+    endpointUrl,
+    expand: expandText,
+    ...(tls !== undefined ? { tls } : {}),
+    ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
+    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  };
+}
+
+/** The keystores, secrets, expansion and project files a send's WS-Security reads through. */
+function baseWssContext(context: RunContext, scopes: PropertyScopes): WssContext {
+  return createWssContext({
+    keystores: (ref) => keystoreFor(context, ref),
+    secrets: (ref) => requiredSecret(ref, context.host.getSecret),
+    expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
+    projectFile: async (path) => {
+      const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
+      try {
+        return await readFile(absolute, 'utf8');
+      } catch (cause) {
+        throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
+          details: { file: path },
+          cause,
+        });
+      }
+    },
+  });
+}
+
+/**
+ * The target a send of `selected` hands the token source for an issued-token entry, without the
+ * connection half: its endpoint and expansion only. That is all a token's cache key reads, so a
+ * host can peek at the token a send would use (a preview) without loading a keystore.
+ *
+ * @throws WirebenchError `endpoint-unresolved`
+ */
+export function soapIssuedTokenKeyTarget(selected: SoapSelected, context: RunContext): IssuedTokenTarget {
+  return { endpointUrl: requiredEndpoint(selected, context).url, expand: issuedExpand(scopesFor(context)) };
+}
+
+/**
+ * What a send of `selected` hands the token source for one issued-token entry, built outside a
+ * send: the target (its endpoint, expansion, the entry's own mutual TLS and the proxy) and the
+ * WS-Security context the token request reads its credential through. A host's token status, fetch
+ * and clear use it, so they key and fetch exactly as the send does.
+ *
+ * @throws WirebenchError `endpoint-unresolved` | `keystore-missing`
+ */
+export async function soapIssuedTokenTarget(
+  selected: SoapSelected,
+  context: RunContext,
+  entry: WssIssuedTokenEntry,
+): Promise<{ readonly target: IssuedTokenTarget; readonly ctx: WssContext; readonly kerberosToken: KerberosTokenFn }> {
+  const scopes = scopesFor(context);
+  const endpointUrl = requiredEndpoint(selected, context).url;
+  return {
+    target: await issuedTargetFor(context, endpointUrl, issuedExpand(scopes), entry),
+    ctx: baseWssContext(context, scopes),
+    kerberosToken: stsKerberosToken,
+  };
+}
+
+/**
+ * A Kerberos credential to the token service, through #40's seam with the process-wide provider,
+ * as the SPNEGO paths call it. Its `kerberos-*` errors pass through unchanged.
+ */
+const stsKerberosToken: KerberosTokenFn = (spn, credentials) => kerberosToken(spn, credentials);
+
 /** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
 function wssFor(
   selected: SoapSelected,
@@ -161,7 +249,6 @@ function wssFor(
   scopes: PropertyScopes,
   endpointUrl: string,
 ): SoapSendWss | undefined {
-  void endpointUrl; // lent to the issued-token source by a later task
   const { request } = selected;
   const pick = (id: string | undefined): string | undefined => (id === undefined || id.length === 0 ? undefined : id);
   const outgoingId = pick(request.wssOutgoingRef);
@@ -189,25 +276,33 @@ function wssFor(
   const incoming =
     incomingId === undefined ? undefined : find(context.project.wss.incoming, incomingId, toWssIncomingConfig);
   const { properties } = request;
+  const used: IssuedToken[] = [];
+  const source = issuedTokenSourceOf(context);
+  const expandText = issuedExpand(scopes);
+  const base = baseWssContext(context, scopes);
+  const ctx = createWssContext({
+    ...base,
+    issuedTokens: {
+      get: async (entry) => {
+        // The connection half (the entry's keystore) is built only when the token service is
+        // asked: a cached token needs none, so a keystore problem cannot fail its send.
+        const target: IssuedTokenTarget = {
+          endpointUrl,
+          expand: expandText,
+          connection: () => issuedTargetFor(context, endpointUrl, expandText, entry),
+        };
+        const token = await source.get(entry, target, { ctx: base, kerberosToken: stsKerberosToken });
+        used.push(token);
+        return token;
+      },
+      peek: (entry) => source.peek(entry, { endpointUrl, expand: expandText }),
+    },
+  });
   return {
     ...(outgoing !== undefined ? { outgoing } : {}),
     ...(incoming !== undefined ? { incoming } : {}),
-    ctx: createWssContext({
-      keystores: (ref) => keystoreFor(context, ref),
-      secrets: (ref) => requiredSecret(ref, context.host.getSecret),
-      expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
-      projectFile: async (path) => {
-        const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
-        try {
-          return await readFile(absolute, 'utf8');
-        } catch (cause) {
-          throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
-            details: { file: path },
-            cause,
-          });
-        }
-      },
-    }),
+    ctx,
+    issuedUsed: used,
     requestProperties: {
       ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
       ...(properties.wssTimeToLive !== undefined ? { wssTimeToLive: properties.wssTimeToLive } : {}),
@@ -623,6 +718,7 @@ async function sendSoapItem(
     throw error;
   }
   dropRefusedToken(context, connected.auth, exchange.http.status === 401);
+  dropRejectedIssuedToken(context, connected.wss?.issuedUsed ?? [], exchange.response?.fault);
   const sent: SentRequest = {
     subject: soapSubject(exchange, loaded, selected),
     raw: exchange.http,

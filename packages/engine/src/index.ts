@@ -90,7 +90,7 @@ export type { UnsupportedContainer } from './project/model.js';
 // What three core files re-exported until 3.0, from the module that declares it.
 export { soapResponseSubject } from './soap/run.js';
 // The SOAP run facet's item and its effective credentials, for a host that sends one SOAP item itself.
-export { soapEffectiveAuth, soapItemFor } from './soap/run.js';
+export { soapEffectiveAuth, soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from './soap/run.js';
 export type { SoapOverride, SoapSelected } from './soap/run.js';
 export { restSubject } from './rest/run.js';
 // The REST run facet and its effective credentials, for a host that sends one REST item itself.
@@ -1101,6 +1101,10 @@ export type { WsaHeaderContext } from './wsa/headers.js';
 export { defaultAction, detectWsaDefaults, summarizeWsa } from './wsa/policy-detect.js';
 export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
 
+export { createIssuedTokenSource, issuedCacheKey, ISSUED_TOKEN_REFRESH_MARGIN_MS } from './run/issued-token.js';
+export type { IssuedTokenSource, IssuedTokenSourceOptions, IssuedTokenStatus } from './run/issued-token.js';
+export { requestIssuedToken } from './wss/trust/client.js';
+export type { IssuedTokenTarget, TrustDeps } from './wss/trust/client.js';
 export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';
 export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.js';
 export {

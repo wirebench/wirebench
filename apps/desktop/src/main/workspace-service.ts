@@ -61,6 +61,7 @@ import type {
   FsLike,
   GitCli,
   GitShareSettings,
+  IssuedTokenSource,
   Project,
   SaveResult,
   ServerAccount,
@@ -218,6 +219,8 @@ export interface WorkspaceServiceDeps {
   readonly picks?: ReadPicks & RecordsReadPicks & RecordsWritePicks;
   /** Answers Chromium's PAC-style proxy string for a URL; omitted in tests. */
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
+  /** The session's issued-token cache, which every host's WS-Security preview peeks at; omitted in tests. */
+  readonly issuedTokens?: IssuedTokenSource;
   /** One history file per open project. */
   readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'> & Partial<Pick<HistoryService, 'newestFor'>>;
   /**
@@ -1025,6 +1028,7 @@ export class WorkspaceService implements ProjectRouter {
     });
     // Read afresh on every resolution, like the workspace context, so a value typed a moment ago applies.
     host.setCurrentValues(() => this.deps.currentValues?.overlaysFor(entry.projectId));
+    host.setIssuedTokens(this.deps.issuedTokens);
     try {
       const record = await this.unsaved?.readProject(entry.ref.id);
       const project = await host.openProject(
@@ -3171,6 +3175,13 @@ export class WorkspaceService implements ProjectRouter {
     ...args: Parameters<ProjectRouter['previewOutgoingWss']>
   ): ReturnType<ProjectRouter['previewOutgoingWss']> {
     return this.hostOfEntity(args[0]).previewOutgoingWss(...args);
+  }
+
+  /** @inheritdoc */
+  issuedTokenTarget(
+    ...args: Parameters<ProjectRouter['issuedTokenTarget']>
+  ): ReturnType<ProjectRouter['issuedTokenTarget']> {
+    return this.hostFor(args[0]).issuedTokenTarget(...args);
   }
 
   /** @inheritdoc */

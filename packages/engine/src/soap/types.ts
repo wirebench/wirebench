@@ -17,7 +17,7 @@ import type { SoapFault } from './fault.js';
 import type { UnresolvedRef } from '../project/properties.js';
 import type { Attachment } from '../project/model.js';
 import type { AttachmentResolver, ResponseAttachment } from './mime/types.js';
-import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
+import type { IssuedToken, WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import type { WssResult } from '../wss/incoming/index.js';
 import type { WssRequestProperties } from '../wss/apply.js';
 import type { WsaConfig } from '../wsa/model.js';
@@ -175,6 +175,8 @@ export interface SoapSendWss {
   readonly incoming?: WssIncomingConfig;
   readonly ctx: WssContext;
   readonly requestProperties?: WssRequestProperties;
+  /** The issued tokens this send carried, filled as the envelope is secured; see `dropRejectedIssuedToken`. */
+  readonly issuedUsed?: IssuedToken[];
 }
 
 /**
