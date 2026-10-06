@@ -127,13 +127,17 @@ placeholders) to get the literal-masking guarantee as well.
 ## Values read from the process environment are masked too
 
 A request can read any process environment variable through `${#System#NAME}`, and nothing marks
-such a value as a secret. So once a send expands one, the value is masked by value like a resolved
-secret: in `wirebench run`'s reports (`cli`, `junit`, `json`, `html`), in `send` results (over MCP
-too), in History, and in the desktop's HTTP log and History, wherever a recorded secret is masked.
-Only a value a request actually expands is masked, never the rest of the environment, and only one
-of at least 8 characters — the same floor as the MCP server's seeded secrets — since a short value
-such as `1` or `true` would mask ordinary text everywhere. A shorter value is sent and shown as it
-is, so keep credentials in `${secret:…}` tokens rather than `${#System#…}` references.
+such a value as a secret. So whenever Wirebench expands one, the value is recorded and masked by
+value like a resolved secret: in `wirebench run`'s reports (`cli`, `junit`, `json`, `html`), in
+`send` results (over MCP too), in History, and in the desktop's HTTP log, History and WebSocket
+frames, in the places a recorded secret is masked. A value is recorded when anything expands it,
+not only a send: a request's script properties are expanded before its script runs, and in the
+desktop the preflight, the Code panel's command, the body-schema lookup and a resend's comparison
+expand the request too, each recording for the session. So a value can be masked although no send
+used it. The rest of the environment, which nothing expands, is never recorded. Only a value of at
+least 8 characters is recorded — the same floor as the MCP server's seeded secrets — since a short
+value such as `1` or `true` would mask ordinary text everywhere. A shorter value is sent and shown
+as it is, so keep credentials in `${secret:…}` tokens rather than `${#System#…}` references.
 
 ## The MCP server is gated, redacted and local
 

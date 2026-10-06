@@ -113,21 +113,30 @@ export function scopesFor(context: RunContext): PropertyScopes {
           system: process.env,
         });
   const report = context.host.onSecretValue;
-  const { system } = scopes;
+  const reported = report !== undefined ? withSystemValuesReported(scopes, report) : scopes;
   return {
-    ...scopes,
+    ...reported,
     env: { ...(scopes.env ?? {}), ...context.overrides },
-    // A `${#System#…}` value is masked like a secret once a request expands it (#181); a short one
-    // is left alone, so a common word is not masked everywhere.
-    ...(report !== undefined
-      ? {
-          onSystemRead: (name: string) => {
-            const value = system?.[name];
-            if (value !== undefined && value.length >= MIN_SEEDED_SECRET_LENGTH) report(value);
-          },
-        }
-      : {}),
     // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
     ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
+  };
+}
+
+/**
+ * `scopes` telling `report` each `${#System#…}` value an expansion puts in its text, so a host masks
+ * it like a resolved secret (#181): the value as it went in and, when that differs (the protocol
+ * escaped it, or the variable held a reference), the variable's own value too. One shorter than
+ * {@link MIN_SEEDED_SECRET_LENGTH} is not reported, so a common word is not masked everywhere. The
+ * run's scopes use it ({@link scopesFor}), and so does a host that builds scopes of its own.
+ */
+export function withSystemValuesReported(scopes: PropertyScopes, report: (value: string) => void): PropertyScopes {
+  const system = scopes.system ?? process.env;
+  return {
+    ...scopes,
+    onSystemRead: (name, value) => {
+      for (const one of new Set([value, system[name]])) {
+        if (one !== undefined && one.length >= MIN_SEEDED_SECRET_LENGTH) report(one);
+      }
+    },
   };
 }

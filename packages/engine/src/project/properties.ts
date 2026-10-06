@@ -35,13 +35,14 @@ export interface PropertyScopes {
   /** Defaults to `process.env` when omitted. */
   readonly system?: Readonly<Record<string, string | undefined>>;
   /**
-   * Told the name of each `${#System#name}` property {@link expand} substitutes, so a host can mask
-   * the value it put on the wire (`scopesFor` in `run/context.ts`). Only what an expansion actually
-   * reaches is named, never the rest of the environment, and a secret lookup that merely follows
-   * references names nothing. A protocol that escapes the scopes keeps this, so the host reads the
-   * value from its own map, unescaped.
+   * Told each `${#System#name}` property {@link expand} substitutes, with the value as it went into
+   * the text (its own references expanded and `$${` escapes undone, before any entitizing), so a
+   * host can mask it (`withSystemValuesReported` in `run/context.ts`). Only what an expansion
+   * reaches is told, never the rest of the environment; a secret lookup that merely follows
+   * references tells nothing. A protocol that escapes the scopes keeps this, and then `value` is
+   * the escaped form: the host can read the raw one from its own map by `name`.
    */
-  readonly onSystemRead?: (name: string) => void;
+  readonly onSystemRead?: (name: string, value: string) => void;
   /**
    * Secret values keyed by name, for the `${secret:name}` token. Resolved by the caller (main
    * from the keychain-backed store, the CLI from `WIREBENCH_SECRET_<NAME>`) and injected here so
@@ -369,21 +370,17 @@ function expandAt(
         continue;
       }
       ctx.used.push({ scope, name });
-      if (scope === 'System') {
-        ctx.scopes.onSystemRead?.(name);
-      }
       if (scope === 'Sequence') {
         // Literal: the value came from a response, and expanding it would let a server name any
         // property or secret for the next request to carry back (ADR-0015).
         out += substituted(ctx, outer, value, scope);
         continue;
       }
-      out += substituted(
-        ctx,
-        outer,
-        expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]),
-        scope,
-      );
+      const expanded = expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]);
+      if (scope === 'System') {
+        ctx.scopes.onSystemRead?.(name, expanded);
+      }
+      out += substituted(ctx, outer, expanded, scope);
       continue;
     }
 

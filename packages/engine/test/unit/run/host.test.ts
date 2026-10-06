@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { createProject } from '../../../src/project/model.js';
+import { expand } from '../../../src/project/properties.js';
 import type { AuthConfig } from '../../../src/project/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { scopesFor, type RunContext } from '../../../src/run/context.js';
@@ -91,7 +92,23 @@ describe('${#System#…} values', () => {
     };
     const [item] = selectRequests(context.project, []).selected;
     await createRunSender(context)(item!).catch(() => undefined);
+    // The raw value, wherever it went (the JSON body escapes it; the masker covers that form); the
+    // short one not at all.
     expect(new Set(reported)).toEqual(new Set(['sys-"value"-1234']));
+  });
+
+  it('reports the value as it was sent when the variable itself holds a reference, and the raw one too', () => {
+    const reported: string[] = [];
+    process.env[LONG] = 'tenant-${#Project#tenant}-$${kept}';
+    const context: RunContext = {
+      ...contextWith({ type: 'none' }, { onSecretValue: (v) => reported.push(v) }),
+    };
+    const scopes = scopesFor({
+      ...context,
+      project: { ...context.project, properties: { tenant: 'acme-corp' } },
+    });
+    expect(expand(`\${#System#${LONG}}`, scopes).text).toBe('tenant-acme-corp-${kept}');
+    expect(reported).toEqual(['tenant-acme-corp-${kept}', 'tenant-${#Project#tenant}-$${kept}']);
   });
 
   it('adds no reporter to the scopes of a host that masks nothing', () => {

@@ -1,6 +1,6 @@
 export { findStepRequest, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
-export { scopesFor } from './context.js';
+export { scopesFor, withSystemValuesReported } from './context.js';
 export { overlayCurrent, withCurrentValues } from './current-values.js';
 export type { CurrentValues } from './current-values.js';
 export type { AttemptedRequest, ClientIdentity, SendFailure, SendHost } from './host.js';
