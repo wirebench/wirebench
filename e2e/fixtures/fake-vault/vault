@@ -1,0 +1,9 @@
+#!/bin/sh
+# A stand-in for the vault CLI in e2e/specs/secret-sources.spec.ts. It answers
+# `vault kv get -field=password kv/app` with a fixed test value and fails anything else.
+if [ "$1" = "kv" ] && [ "$2" = "get" ] && [ "$3" = "-field=password" ] && [ "$4" = "kv/app" ]; then
+  printf 'e2e-vault-value-7731\n'
+  exit 0
+fi
+echo "unexpected arguments: $*" >&2
+exit 2

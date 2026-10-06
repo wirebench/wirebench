@@ -117,8 +117,10 @@ the hood, with no other setup.
 ## Secret tokens
 
 A `${secret:name}` token in a request reads `WIREBENCH_SECRET_<NAME>`, with the name upper-cased:
-`${secret:billing_key}` reads `WIREBENCH_SECRET_BILLING_KEY`, and nothing else. A token reached
-through a property counts too. `wirebench secrets list` names the variable for each token the
+`${secret:billing_key}` reads `WIREBENCH_SECRET_BILLING_KEY` first. A token the workspace maps to a
+secret manager can also come from there (see
+[Secrets from a secret manager](#secrets-from-a-secret-manager)); with neither, the request fails. A
+token reached through a property counts too. `wirebench secrets list` names the variable for each token the
 selected requests use, with `secret "billing_key"` as its purpose and whether it's set:
 
 ```bash
@@ -134,7 +136,9 @@ how a value ends up behind a token.
 
 ## Secrets from a secret manager
 
-If the workspace maps a secret to a manager (see [Secrets](/wirebench/docs/guides/secrets/)), `wirebench run`
+If the workspace maps a secret to a manager (see
+[Secrets from external managers](/wirebench/docs/guides/secrets/#secrets-from-external-managers)),
+`wirebench run`
 can fetch it with the manager's CLI on the runner, using the runner's own login. A
 `WIREBENCH_SECRET_<NAME>` variable still wins.
 
@@ -147,7 +151,24 @@ wirebench run ./projects/orders -e ci --trust-secret-sources-hash <hash printed 
 ```
 
 A pushed change to the mapping then fails the run until the pin is updated. `--trust-secret-sources`
-trusts whatever is there, and `--no-secret-sources` turns sources off.
+trusts whatever is there, and `--no-secret-sources` turns sources off. The two trust flags can't be
+combined. See [Secrets from external managers](/wirebench/docs/guides/secrets/#secrets-from-external-managers)
+for the kinds and the tool each needs on the runner.
+
+`secrets list` shows where each secret would come from in a `SOURCE` column:
+
+- `env` when the variable is set, since it always wins;
+- the mapping's kind (`vault`, `aws`, …) when a source would supply the value;
+- `kind (untrusted)`, such as `vault (untrusted)`, when the run would refuse the mapping until it is
+  trusted;
+- `invalid` for an entry that doesn't parse, and `—` when nothing supplies the value.
+
+It also prints `Secret sources hash: <hash>`, the value `--trust-secret-sources-hash` takes. A name
+only a source supplies is listed as `mapped` and counts as supplied for the exit code; the run itself
+refuses an untrusted mapping and prints the hash.
+
+`wirebench mcp` and `wirebench call` take the same three flags. A value fetched in one MCP call stays
+masked in the calls after it, since the server keeps it for its whole life.
 
 ## Callback assertions
 
