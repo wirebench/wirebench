@@ -9,6 +9,7 @@ import { loadProject } from '@wirebench/engine';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { callOp } from '../../../src/ops/call.js';
 import { runOp } from '../../../src/ops/context.js';
+import { generateOp } from '../../../src/ops/generate.js';
 import { importOp } from '../../../src/ops/import.js';
 import { sendOp } from '../../../src/ops/send.js';
 import {
@@ -47,7 +48,10 @@ afterEach(async () => {
   await removeTempDirs();
 });
 
-/** The calculator with a `fixed` element and a SOAP action that each hold a `${…}`; the element optional or required. */
+/**
+ * The calculator with a `fixed` element, a required `fixed` attribute and a SOAP action that each hold
+ * a `${…}`; the element optional or required.
+ */
 async function craftedSoap(homeOccurs: 'optional' | 'required'): Promise<{ fixture: Fixture; server: TestServer }> {
   const min = homeOccurs === 'optional' ? ' minOccurs="0"' : '';
   const original = await readFile(CALCULATOR_WSDL, 'utf8');
@@ -58,6 +62,11 @@ async function craftedSoap(homeOccurs: 'optional' | 'required'): Promise<{ fixtu
       .replace(
         '<xs:element name="note" type="xs:string" minOccurs="0"/>',
         `<xs:element name="note" type="xs:string" minOccurs="0"/><xs:element name="home" type="xs:string"${min} fixed="${PROBE}"/>`,
+      )
+      // A required fixed attribute: the argument check never asks for it, so the call writes it in.
+      .replace(
+        '</xs:sequence>',
+        `</xs:sequence><xs:attribute name="origin" type="xs:string" use="required" fixed="${PROBE}"/>`,
       )
       .replace('soapAction="urn:wirebench:calculator/Add"', `soapAction="urn:wirebench:calculator/${PROBE}"`),
   );
@@ -112,17 +121,36 @@ async function craftedRest(): Promise<{ fixture: Fixture; server: TestServer }> 
 }
 
 describe('a ${ from the contract', () => {
-  it('send: an XSD fixed value and the SOAP action go out literally', async () => {
+  it('generate: shows the contract text as written, for SOAP as for REST', async () => {
+    const { fixture } = await craftedSoap('required');
+    const soap = await runOp(generateOp, { operation: 'CalculatorService/Add' }, fixture.base());
+    expect(soap).toMatchObject({ kind: 'soap', soapAction: `urn:wirebench:calculator/${PROBE}` });
+    if (soap.kind === 'soap') {
+      expect(soap.body).toContain(`>${PROBE}</`);
+      expect(soap.body).toContain(`origin="${PROBE}"`);
+      expect(soap.body).not.toContain(`$${PROBE}`);
+      expect(soap.headers['SOAPAction']).toBe(`"urn:wirebench:calculator/${PROBE}"`);
+    }
+    const rest = await runOp(
+      generateOp,
+      { operation: 'Files/GET /files/${home}' },
+      (await craftedRest()).fixture.base(),
+    );
+    expect(rest).toMatchObject({ kind: 'rest', path: '/files/${home}' });
+  });
+
+  it('send: an XSD fixed value, a fixed attribute and the SOAP action go out literally', async () => {
     const { fixture, server } = await craftedSoap('required');
     await runOp(sendOp, { item: SOAP_ITEM, environment: 'local' }, fixture.base());
 
     const [received] = server.received;
     expect(received?.body).toContain(`>${PROBE}</`);
+    expect(received?.body).toContain(`origin="${PROBE}"`);
     expect(received?.headers['soapaction']).toBe(`"urn:wirebench:calculator/${PROBE}"`);
     expect(JSON.stringify(received)).not.toContain(LEAK);
   });
 
-  it("a contract tool's call: the SOAP action goes out literally; a ${ fixed value is refused as an argument", async () => {
+  it("a contract tool's call: a fixed attribute and the SOAP action go out literally; a ${ argument is refused", async () => {
     const { fixture, server } = await craftedSoap('optional');
     const call = (args: Record<string, unknown>) =>
       runOp(
@@ -134,8 +162,9 @@ describe('a ${ from the contract', () => {
     await expect(call({ a: 1, b: 2, home: PROBE })).rejects.toMatchObject({ code: 'invalid-input' });
     expect(server.received).toEqual([]);
 
-    await call({ a: 1, b: 2 }).catch(() => undefined);
+    await call({ a: 1, b: 2 });
     const [received] = server.received;
+    expect(received?.body).toContain(`origin="${PROBE}"`);
     expect(received?.headers['soapaction']).toBe(`"urn:wirebench:calculator/${PROBE}"`);
     expect(JSON.stringify(received)).not.toContain(LEAK);
   });

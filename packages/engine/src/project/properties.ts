@@ -521,4 +521,4 @@ export function hasExpansions(text: string): boolean {
   return false;
 }
 
-export { escapeExpansions } from './escape-expansions.js';
+export { escapeExpansions, unescapeExpansions } from './escape-expansions.js';

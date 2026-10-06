@@ -18,6 +18,7 @@
 
 import { generateSoapRequest } from '../soap/generate.js';
 import { endpointUrlFromContract } from './contract-endpoints.js';
+import { hasExpansions } from '../project/properties.js';
 import { createRequest, generateId } from '../project/model.js';
 import type { Endpoint, IdGenerator, Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
@@ -276,11 +277,15 @@ function summaryFor(result: WsdlImportResult, key: string): SoapOperationSummary
 
 /**
  * Adds the endpoints `plan.endpointsAdded` names, skipping URLs the interface already has. A URL is
- * known as stored and as it would be escaped, so an endpoint saved from the address before the
- * escape (#223) is not added a second time.
+ * known as stored; one that still holds a raw `${` (saved from the address before the escape, #223)
+ * is known escaped as well, so it is not added a second time. An escaped URL is never escaped again.
  */
 function withAddedEndpoints(iface: Interface, plan: UpdatePlan, newId: IdGenerator): Interface {
-  const known = new Set(iface.endpoints.flatMap((endpoint) => [endpoint.url, endpointUrlFromContract(endpoint.url)]));
+  const known = new Set(
+    iface.endpoints.flatMap((endpoint) =>
+      hasExpansions(endpoint.url) ? [endpoint.url, endpointUrlFromContract(endpoint.url)] : [endpoint.url],
+    ),
+  );
   const added: Endpoint[] = plan.endpointsAdded
     .filter((url) => !known.has(url))
     .map((url) => ({ id: newId(), name: url, url, authMode: 'complement' as const }));

@@ -320,7 +320,7 @@ export { NamespaceScope } from './soap/namespace-scope.js';
 export { soapActionHeaders } from './soap/soap-action.js';
 export type { SoapActionHeaders, SoapActionOptions } from './soap/soap-action.js';
 export type { BuildProblem, BuildProblemCode } from './soap/build-problems.js';
-export { buildEmptyRequest, buildSampleRequest } from './soap/request-builder.js';
+export { buildEmptyRequest, buildLiteralSampleRequest, buildSampleRequest } from './soap/request-builder.js';
 export type { GeneratedRequest, OperationRef, RequestBuildInput, RequestBuildOptions } from './soap/request-builder.js';
 export { buildRequestForm } from './soap/form-request.js';
 export type { RequestForm } from './soap/form-request.js';
@@ -1074,7 +1074,14 @@ export type {
   HistoryWs,
   RestEventStreamLike,
 } from './project/history.js';
-export { enabledProperties, escapeExpansions, expand, hasExpansions, secretNamesIn } from './project/properties.js';
+export {
+  enabledProperties,
+  escapeExpansions,
+  expand,
+  hasExpansions,
+  secretNamesIn,
+  unescapeExpansions,
+} from './project/properties.js';
 export { contractPorts, endpointsFromContract, endpointUrlFromContract } from './wsdl/contract-endpoints.js';
 export type { ContractPort } from './wsdl/contract-endpoints.js';
 export { expandSendInput } from './soap/expand.js';

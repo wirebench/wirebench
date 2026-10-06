@@ -13,3 +13,24 @@
 export function escapeExpansions(text: string): string {
   return text.replaceAll('${', () => '$${');
 }
+
+/**
+ * The inverse of {@link escapeExpansions}: every `$${` escape read back as the literal `${` it
+ * stands for, left to right as the tokenizer reads it, and nothing else touched — a live `${…}` stays
+ * as it is. For a check of the text as it will be sent, such as validating an envelope against the
+ * contract a generated `$${…}` value came from.
+ */
+export function unescapeExpansions(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text.startsWith('$${', i)) {
+      out += '${';
+      i += 3;
+      continue;
+    }
+    out += text[i];
+    i += 1;
+  }
+  return out;
+}

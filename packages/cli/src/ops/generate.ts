@@ -1,5 +1,5 @@
 // packages/cli/src/ops/generate.ts
-import { buildSampleRequest, sampleFromSchema } from '@wirebench/engine';
+import { buildLiteralSampleRequest, sampleFromSchema } from '@wirebench/engine';
 import type { OpenApiMediaType } from '@wirebench/engine';
 import { z } from 'zod';
 import { defineOp } from './context.js';
@@ -68,7 +68,9 @@ export const generateOp = defineOp({
     const resolved = await resolveOperation(project, context.projectDir, value.operation);
     const includeOptional = value.optional === 'all';
     if (resolved.kind === 'soap') {
-      const generated = buildSampleRequest(
+      // Read-only, so the contract's text is shown as written: a `${…}` it holds is not escaped as a
+      // saved request's would be (#223), just as a REST path or sample is shown as the document wrote it.
+      const generated = buildLiteralSampleRequest(
         { definition: resolved.wsdl.definition, schemaSet: resolved.wsdl.schemaSet },
         { bindingName: clarkToQName(resolved.operation.bindingName), operationName: resolved.operation.name },
         { includeOptional, sampleValues: true },

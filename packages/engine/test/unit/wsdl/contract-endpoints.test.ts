@@ -123,4 +123,13 @@ describe('Update Definition and a contract endpoint', () => {
       `http://host/${PROBE}`,
     ]);
   });
+
+  it('never escapes an already escaped URL again when telling what the interface holds', async () => {
+    // The stored URL is the escaped `${…}` address. The new definition's address is literally `$${…}`,
+    // a different address, whose endpoint URL is `$$${…}`: it is added, not taken for the stored one.
+    expect(await urlsAfterUpdate([`http://host/$${PROBE}`], ['http://host/a'], [`http://host/$${PROBE}`])).toEqual([
+      `http://host/$${PROBE}`,
+      `http://host/$$${PROBE}`,
+    ]);
+  });
 });

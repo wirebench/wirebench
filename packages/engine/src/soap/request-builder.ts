@@ -137,7 +137,7 @@ export interface RequestBuildOptions extends SoapActionOptions {
 
 /**
  * A generated request whose contract-originated text is held for a saved request: every `${` in the
- * envelope, the SOAP action and the action header written as `$${`, so expansion at send time puts
+ * envelope, the SOAP action, the action header and the `Content-Type` written as `$${`, so expansion at send time puts
  * the contract's text on the wire as written and never resolves a reference from it (#223).
  */
 function asStored(request: GeneratedRequest): GeneratedRequest {
@@ -145,6 +145,8 @@ function asStored(request: GeneratedRequest): GeneratedRequest {
     ...request,
     envelopeXml: escapeExpansions(request.envelopeXml),
     ...(request.soapAction !== undefined ? { soapAction: escapeExpansions(request.soapAction) } : {}),
+    // SOAP 1.2 carries the action in the media type rather than a header.
+    contentType: escapeExpansions(request.contentType),
     headers: Object.fromEntries(
       Object.entries(request.headers).map(([name, value]) => [name, escapeExpansions(value)]),
     ),
@@ -180,6 +182,19 @@ export function buildSampleRequest(
   options?: RequestBuildOptions,
 ): GeneratedRequest {
   return asStored(literalSampleRequest(input, op, genOptions, options));
+}
+
+/**
+ * {@link buildSampleRequest} with the contract's text as written, `${` unescaped: for a caller that
+ * shows the sample rather than saving or sending it (`wirebench generate`).
+ */
+export function buildLiteralSampleRequest(
+  input: RequestBuildInput,
+  op: OperationRef,
+  genOptions?: Partial<GenerateOptions>,
+  options?: RequestBuildOptions,
+): GeneratedRequest {
+  return literalSampleRequest(input, op, genOptions, options);
 }
 
 function literalSampleRequest(

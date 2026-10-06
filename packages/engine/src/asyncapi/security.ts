@@ -6,6 +6,7 @@
  */
 
 import type { AuthConfig } from '../project/model.js';
+import { escapeExpansions } from '../project/escape-expansions.js';
 import type { AsyncApiSecurityScheme, AsyncApiSkip } from './model.js';
 
 /** What a scheme needs, as the tests and callers hand it: everything but the type is optional. */
@@ -26,7 +27,8 @@ export function authFromScheme(scheme: AsyncApiSchemeInput): AuthConfig | AsyncA
       return skip(scheme, `http ${scheme.scheme ?? '(no scheme)'} authentication is not supported`);
     case 'httpApiKey':
       if ((scheme.in === 'query' || scheme.in === 'header') && scheme.name !== undefined) {
-        return { type: 'api-key', name: scheme.name, in: scheme.in };
+        // The document's text, its `${` escaped so it is sent as written (#223).
+        return { type: 'api-key', name: escapeExpansions(scheme.name), in: scheme.in };
       }
       return skip(scheme, `an API key in ${scheme.in ?? 'an unstated place'} cannot be sent on a WebSocket handshake`);
     case 'apiKey':
@@ -44,10 +46,13 @@ export function authFromScheme(scheme: AsyncApiSchemeInput): AuthConfig | AsyncA
       return {
         type: 'oauth2',
         grant: scheme.grant,
-        tokenUrl: scheme.tokenUrl ?? '',
-        ...(scheme.authorizationUrl !== undefined ? { authorizationUrl: scheme.authorizationUrl } : {}),
+        // The document's URLs and scopes, `${` escaped: the token fetch expands them (#223).
+        tokenUrl: escapeExpansions(scheme.tokenUrl ?? ''),
+        ...(scheme.authorizationUrl !== undefined
+          ? { authorizationUrl: escapeExpansions(scheme.authorizationUrl) }
+          : {}),
         clientId: '',
-        scopes: scheme.scopes ?? [],
+        scopes: (scheme.scopes ?? []).map(escapeExpansions),
         clientAuth: 'basic',
         pkce: true,
       };

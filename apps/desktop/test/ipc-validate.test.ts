@@ -136,4 +136,59 @@ describe('validate.message IPC', () => {
       expect(result.error.code).toBe('unknown-operation');
     }
   });
+
+  describe('a value the contract wrote with ${', () => {
+    const PROBE = '${#System#HOME}';
+    const WSDL = `<?xml version="1.0"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:probe" targetNamespace="urn:probe">
+  <wsdl:types>
+    <xs:schema targetNamespace="urn:probe" elementFormDefault="qualified">
+      <xs:element name="Ping"><xs:complexType><xs:sequence>
+        <xs:element name="home" type="xs:string" fixed="${PROBE}"/>
+      </xs:sequence></xs:complexType></xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="PingRequest"><wsdl:part name="parameters" element="tns:Ping"/></wsdl:message>
+  <wsdl:portType name="P"><wsdl:operation name="Ping"><wsdl:input message="tns:PingRequest"/></wsdl:operation></wsdl:portType>
+  <wsdl:binding name="B" type="tns:P">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Ping"><soap:operation soapAction="urn:probe/${PROBE}"/><wsdl:input><soap:body use="literal"/></wsdl:input></wsdl:operation>
+  </wsdl:binding>
+</wsdl:definitions>`;
+
+    const ping = (home: string) =>
+      [
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pro="urn:probe">',
+        `<soapenv:Body><pro:Ping><pro:home>${home}</pro:home></pro:Ping></soapenv:Body>`,
+        '</soapenv:Envelope>',
+      ].join('');
+
+    async function validate(envelopeXml: string, direction: 'request' | 'response' = 'request'): Promise<string[]> {
+      const probe = await importWsdl({ kind: 'text', text: WSDL });
+      registerValidateChannels(
+        { resultFor: () => probe } as unknown as EngineService,
+        project({
+          interfaceId: 'iface-p',
+          bindingName: '{urn:probe}B',
+          operationName: 'Ping',
+          envelopeXml,
+          // As the generated request holds it: escaped.
+          soapAction: `urn:probe/$${PROBE}`,
+          contentType: 'text/xml;charset=UTF-8',
+        }),
+      );
+      const result = (await invoke('validate.message', { requestId: 'req-p', direction })) as Result;
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value.problems.map((problem) => problem.code);
+    }
+
+    it('validates the generated, escaped value as the literal text it sends', async () => {
+      expect(await validate(ping(`$${PROBE}`))).toEqual([]);
+    });
+
+    it('still reports a value that is not the fixed one', async () => {
+      expect(await validate(ping('elsewhere'))).not.toEqual([]);
+    });
+  });
 });

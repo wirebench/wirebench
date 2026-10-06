@@ -364,7 +364,8 @@ export function mapScheme(scheme: OpenApiSecurityScheme): { auth?: AuthConfig; r
       return { reason: `HTTP scheme "${scheme.scheme ?? 'unnamed'}" is not supported` };
     case 'apiKey':
       if (scheme.in === 'header' || scheme.in === 'query') {
-        return { auth: { type: 'api-key', name: scheme.keyName ?? '', in: scheme.in } };
+        // The key's name is the document's text: its `${` escaped, as for a request (#223).
+        return { auth: { type: 'api-key', name: escapeExpansions(scheme.keyName ?? ''), in: scheme.in } };
       }
       return { reason: 'An API key in a cookie is sent as a Cookie header on each request instead' };
     case 'oauth2': {
@@ -378,10 +379,12 @@ export function mapScheme(scheme: OpenApiSecurityScheme): { auth?: AuthConfig; r
         auth: {
           type: 'oauth2',
           grant: clientCredentials !== undefined ? 'client-credentials' : 'authorization-code',
-          tokenUrl: flow.tokenUrl ?? '',
-          ...(flow.authorizationUrl !== undefined ? { authorizationUrl: flow.authorizationUrl } : {}),
+          // The document's URLs and scopes, `${` escaped: the token fetch expands them, and a crafted
+          // token URL must not carry a property or an environment variable off with it (#223).
+          tokenUrl: escapeExpansions(flow.tokenUrl ?? ''),
+          ...(flow.authorizationUrl !== undefined ? { authorizationUrl: escapeExpansions(flow.authorizationUrl) } : {}),
           clientId: '',
-          scopes: Object.keys(flow.scopes ?? {}),
+          scopes: Object.keys(flow.scopes ?? {}).map(escapeExpansions),
           clientAuth: 'basic',
           // PKCE is what makes an authorization-code flow safe in a public client; a
           // client-credentials flow has no authorization request to protect.
