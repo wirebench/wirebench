@@ -292,18 +292,27 @@ function connectOptions(input: GrpcSendInput, target: GrpcTarget): http2.SecureC
  * @throws HttpError for a connection, DNS, TLS or abort failure, with the HTTP transport's codes;
  * GrpcError `grpc-target-invalid`, `grpc-auth-unsupported`, `grpc-stream-malformed`,
  * `grpc-encoding-unsupported`, `grpc-message-too-large`, `grpc-stream-closed`; HttpError `kerberos-*` when Kerberos
- * cannot make a token
+ * cannot make a token, `timeout` | `aborted` while waiting for a Kerberos token
  */
 export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   const target = parseGrpcTarget(input.target, input.tls);
   const now = input.now ?? (() => performance.now());
   const startedAtMs = now();
   const startedAt = new Date().toISOString();
-  // One token per call, at call start: an HTTP/2 stream has no 401 to wait for.
-  const callAuth = await withNegotiate(input.auth, `${target.tls ? 'https' : 'http'}://${target.authority}`);
+  // One token per call, at call start: an HTTP/2 stream has no 401 to wait for. It spends the
+  // call's deadline and stops on its signal (#267).
+  const callAuth = await withNegotiate(input.auth, `${target.tls ? 'https' : 'http'}://${target.authority}`, {
+    timeoutMs: input.timeoutMs,
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
+  });
+  // What is left of the deadline once a token was made; any other call keeps its own exactly.
+  const timeoutMs =
+    callAuth === input.auth ? input.timeoutMs : Math.max(1, Math.floor(input.timeoutMs - (now() - startedAtMs)));
   const requestHeaders = buildGrpcHeaders(
     // `callAuth === undefined` exists for exactOptionalPropertyTypes: spreading it would set `auth: undefined`.
-    callAuth === input.auth || callAuth === undefined ? input : { ...input, auth: callAuth },
+    callAuth === input.auth || callAuth === undefined
+      ? { ...input, timeoutMs }
+      : { ...input, auth: callAuth, timeoutMs },
     target,
   );
   // What was actually sent, which in interactive mode grows after the call opens; the exchange
@@ -444,7 +453,7 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
         status: 4,
         message: `Deadline of ${formatGrpcTimeout(input.timeoutMs)} exceeded before the server answered`,
       });
-    }, input.timeoutMs);
+    }, timeoutMs);
     if (input.signal?.aborted === true) {
       onAbort();
       return;

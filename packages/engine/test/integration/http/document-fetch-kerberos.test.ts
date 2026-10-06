@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
 import { createHttpFetchDocument } from '../../../src/http/document-fetch.js';
 import { importWsdl } from '../../../src/soap/import.js';
@@ -110,5 +110,37 @@ describe('Kerberos on definition fetches', () => {
     expect(root.seen[0]).toBe(`Negotiate ${TOKEN}`);
     expect(other.seen.length).toBeGreaterThan(0);
     expect(other.seen).toEqual(other.seen.map(() => undefined));
+  });
+
+  it('fails a hung Kerberos token with timeout at the hop limit, before any request (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    const doc = await serve('openapi: 3.1.0');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const fetch = createHttpFetchDocument({ auth: { type: 'kerberos' }, authOrigin: new URL(doc.url).origin });
+      const pending = fetch(doc.url).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(await pending).toMatchObject({ code: 'timeout', details: { stage: 'kerberos' } });
+      expect(doc.seen).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      provider.release();
+    }
+  });
+
+  it('keeps a cancel during the token wait a cancel (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    const doc = await serve('openapi: 3.1.0');
+    const controller = new AbortController();
+    const fetch = createHttpFetchDocument({ auth: { type: 'kerberos' }, authOrigin: new URL(doc.url).origin });
+    const pending = fetch(doc.url, controller.signal).catch((error: unknown) => error);
+    while (provider.inits.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    controller.abort();
+    const error = await pending;
+    expect(error).toBe(controller.signal.reason);
+    expect(error).toMatchObject({ name: 'AbortError' });
+    provider.release();
   });
 });

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { HttpError } from '../../../../src/errors.js';
 import {
   defaultSpn,
   kerberosToken,
@@ -167,5 +168,114 @@ describe('withNegotiate', () => {
     const basic = { type: 'basic', username: 'u', password: 'p', preemptive: true } as const;
     await expect(withNegotiate(basic, 'wss://x')).resolves.toBe(basic);
     await expect(withNegotiate(undefined, 'wss://x')).resolves.toBeUndefined();
+  });
+});
+
+describe('the token wait (#267)', () => {
+  const spn = process.platform === 'win32' ? 'HTTP/svc' : 'HTTP@svc';
+
+  it.each(['init', 'step'] as const)('times a hung %s out with the Kerberos message', async (hang) => {
+    const provider = fakeKerberos({ hang });
+    const error = await kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 20 }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({
+      code: 'timeout',
+      message: `Timed out waiting for a Kerberos ticket for ${spn}.`,
+      details: { spn, stage: 'kerberos' },
+    });
+    provider.release();
+  });
+
+  it('times a hung verify out on its own limit', async () => {
+    const provider = fakeKerberos({ hang: 'verify' });
+    const context = await startKerberosContext('HTTP/svc', {}, { provider, timeoutMs: 1000 });
+    await expect(context.verify(Buffer.from('ap-rep'), { timeoutMs: 20 })).rejects.toMatchObject({
+      code: 'timeout',
+      details: { spn, stage: 'kerberos' },
+    });
+    provider.release();
+  });
+
+  it('rejects at once with aborted when the signal fires while the call hangs', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    const controller = new AbortController();
+    const pending = kerberosToken('HTTP/svc', {}, { provider, signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({
+      code: 'aborted',
+      message: 'The request was aborted.',
+      details: { spn, stage: 'kerberos' },
+    });
+    provider.release();
+  });
+
+  it('never touches the provider for an aborted signal or a spent budget', async () => {
+    const provider = fakeKerberos();
+    await expect(kerberosToken('HTTP/svc', {}, { provider, signal: AbortSignal.abort() })).rejects.toMatchObject({
+      code: 'aborted',
+    });
+    await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 0 })).rejects.toMatchObject({ code: 'timeout' });
+    expect(provider.inits).toEqual([]);
+  });
+
+  it('has no limit without options', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    const pending = kerberosToken('HTTP/svc', {}, { provider });
+    setTimeout(() => provider.release(), 50);
+    await expect(pending).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it('refuses a third call while two abandoned calls still run, and accepts one once they end', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    for (let i = 0; i < 2; i += 1) {
+      await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({
+        code: 'timeout',
+      });
+    }
+    await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({
+      code: 'kerberos-failed',
+      message: 'Kerberos is still waiting on earlier requests to the Kerberos server; try again shortly.',
+      details: { spn, abandoned: 2 },
+    });
+    expect(provider.inits).toHaveLength(2);
+    provider.release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pending = kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 1000 });
+    provider.release();
+    await expect(pending).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it('still verifies a reply while two earlier calls are abandoned (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    const made = startKerberosContext('HTTP/svc', {}, { provider });
+    provider.release();
+    const context = await made;
+    for (let i = 0; i < 2; i += 1) {
+      await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({
+        code: 'timeout',
+      });
+    }
+    await expect(context.verify(new Uint8Array([1]), { timeoutMs: 1000 })).resolves.toBeUndefined();
+    provider.release();
+  });
+
+  it('counts an abandoned call that later fails as ended, with no unhandled rejection', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
+    await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
+    provider.fail();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pending = kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 1000 });
+    provider.release();
+    await expect(pending).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it('removes its abort listener once the call settles', async () => {
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, 'addEventListener');
+    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+    await kerberosToken('HTTP/svc', {}, { provider: fakeKerberos(), signal: controller.signal, timeoutMs: 1000 });
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0]![1]);
   });
 });

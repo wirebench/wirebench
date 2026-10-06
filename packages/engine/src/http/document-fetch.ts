@@ -169,10 +169,25 @@ async function fetchHttp(
   for (let hops = 0; ; hops += 1) {
     // Kerberos makes a fresh token per same-origin hop; `credentialsFor` stays synchronous for the rest.
     const sameOrigin = options.authOrigin !== undefined && new URL(bare).origin === options.authOrigin;
-    const hopOptions: DocumentFetchOptions =
-      options.auth?.type === 'kerberos' && sameOrigin
-        ? { ...options, auth: await negotiateBearer(options.auth, bare) }
-        : options;
+    // The token spends this hop's limit, and the hop's fetch gets what is left (#267); a hop that made
+    // no token keeps the full limit.
+    let tokenMs = 0;
+    let hopOptions: DocumentFetchOptions = options;
+    if (options.auth?.type === 'kerberos' && sameOrigin) {
+      try {
+        const tokenStartedAt = Date.now();
+        const bearer = await negotiateBearer(options.auth, bare, {
+          timeoutMs: TIMEOUT_MS,
+          ...(signal !== undefined ? { signal } : {}),
+        });
+        tokenMs = Date.now() - tokenStartedAt;
+        hopOptions = { ...options, auth: bearer };
+      } catch (error) {
+        // A cancel stays a cancel: the resolver tells an `AbortError` from a document that failed.
+        signal?.throwIfAborted();
+        throw error;
+      }
+    }
     const { url, headers } = credentialsFor(bare, hopOptions);
     const credentialsSent = url !== bare || Object.keys(headers).length > 0;
     let exchange;
@@ -184,7 +199,7 @@ async function fetchHttp(
         url,
         method: 'GET',
         headers: { 'user-agent': USER_AGENT, accept: ACCEPT, ...headers },
-        timeoutMs: TIMEOUT_MS,
+        timeoutMs: Math.max(1, TIMEOUT_MS - tokenMs),
         followRedirects: false,
         ...(signal !== undefined ? { signal } : {}),
         ...(network.tls !== undefined ? { tls: network.tls } : {}),
