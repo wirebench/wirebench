@@ -73,6 +73,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Create Workspace… | — | — |
 | Switch Workspace… | — | — |
 | Manage Workspaces… | — | — |
+| Secret Sources… | — | — |
 | New Project… | <kbd>⌘⇧N</kbd> | <kbd>Ctrl+Shift+N</kbd> |
 | Link Project Folder… | — | — |
 | Import Project Folder… | — | — |
@@ -167,7 +168,6 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | --- | --- | --- |
 | Toggle Show Secrets in HTTP Log | — | — |
 | Set Secret Token Value… | — | — |
-| Secret Sources… | — | — |
 
 ## Editor
 

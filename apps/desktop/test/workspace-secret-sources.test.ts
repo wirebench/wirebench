@@ -185,6 +185,25 @@ describe('setSharedSecretSources', () => {
     ]);
   });
 
+  it('refuses a create onto a name that is already mapped, an invalid raw entry included, writing nothing', async () => {
+    const { service, dir } = await openSeeded(async (dir) => {
+      await writeFile(
+        join(dir, 'workspace.yaml'),
+        `${await manifest(dir)}secretSources:\n  bad:\n    kind: vault\n    path: -x\n    field: f\n  db:\n    kind: vault\n    path: kv/app\n    field: password\n`,
+      );
+    });
+    const before = await manifest(dir);
+    for (const name of ['db', 'bad']) {
+      const refused = await service.setSharedSecretSources({ name, entry: VAULT, create: true });
+      expect(refused).toMatchObject({ ok: false, issues: [{ name }] });
+    }
+    expect(await manifest(dir)).toBe(before);
+    expect(await service.setSharedSecretSources({ name: 'fresh', entry: VAULT, create: true })).toEqual({
+      ok: true,
+      issues: [],
+    });
+  });
+
   it('reports a non-mapping secretSources as a problem and replaces it when an entry is written', async () => {
     const { service, dir } = await openSeeded(async (dir) => {
       await writeFile(join(dir, 'workspace.yaml'), `${await manifest(dir)}secretSources: oops\n`);
@@ -317,6 +336,22 @@ describe('setLocalSecretSources', () => {
       ['db', 'vault'],
       ['api', 'none'],
     ]);
+  });
+
+  it('refuses a local create onto a mapped name, writing nothing, and allows one that only the shared map has', async () => {
+    const { service, dir } = await openFixtureWorkspace();
+    await service.setSharedSecretSources({ name: 'db', entry: VAULT });
+    await service.setLocalSecretSources({ name: 'pw', entry: { kind: 'none' } });
+    const before = await localFile(dir);
+    expect(await service.setLocalSecretSources({ name: 'pw', entry: VAULT, create: true })).toMatchObject({
+      ok: false,
+      issues: [{ name: 'pw' }],
+    });
+    expect(await localFile(dir)).toBe(before);
+    expect(await service.setLocalSecretSources({ name: 'db', entry: { kind: 'none' }, create: true })).toEqual({
+      ok: true,
+      issues: [],
+    });
   });
 
   it('keeps the active environment when local secret sources are written', async () => {

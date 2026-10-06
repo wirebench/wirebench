@@ -2,6 +2,7 @@ import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
 import { hasSignedInServer } from './register-account-commands.js';
 import { projectRowActions } from '../features/explorer/project-actions.js';
+import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -65,6 +66,17 @@ export function registerWorkspaceCommands(): void {
     ...catalogEntry('workspace.manage'),
     run: () => {
       useUiStore.getState().setWorkspaceManageOpen(true);
+    },
+  });
+
+  // The map from a `${secret:name}` to an external secret manager belongs to the workspace, not to a
+  // project, so an open workspace is all it needs. No shortcut; the palette finds it by name.
+  registerCommand({
+    ...catalogEntry('workspace.secretSources'),
+    when: workspaceIsOpen,
+    whenScope: 'workspace',
+    run: () => {
+      openSecretSourcesDialog();
     },
   });
 

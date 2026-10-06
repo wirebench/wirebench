@@ -10,7 +10,7 @@ import type {
 } from '../../../shared/wire-types.js';
 import { openSecretSourcesApproval } from './actions.js';
 import { KIND_FIELDS } from './kind-fields.js';
-import { EntryLocation, kindLabel } from './location.js';
+import { EntryLocation, entryProblem, kindLabel } from './location.js';
 
 type Scope = 'shared' | 'local';
 
@@ -101,7 +101,7 @@ export function SecretSourcesDialog() {
 
   const send = async (
     scope: Scope,
-    request: { name: string; previousName?: string; entry: Record<string, string> | null },
+    request: { name: string; previousName?: string; entry: Record<string, string> | null; create?: boolean },
   ): Promise<readonly Issue[] | undefined> => {
     const channel = scope === 'shared' ? ipc().secretSources.setShared : ipc().secretSources.setLocal;
     const result = await channel(request);
@@ -116,12 +116,30 @@ export function SecretSourcesDialog() {
       return result.value.issues;
     }
     setError(undefined);
+    // What a Test said about an entry is stale once that entry is written.
+    setResults((current) => {
+      const next = { ...current };
+      delete next[`${scope}:${request.name}`];
+      if (request.previousName !== undefined) {
+        delete next[`${scope}:${request.previousName}`];
+      }
+      return next;
+    });
     await load();
     return [];
   };
 
   const save = async (): Promise<void> => {
     if (form === undefined || saving) {
+      return;
+    }
+    if (KIND_FIELDS[form.kind] === undefined) {
+      setIssues([{ name: form.name, reason: `unknown kind "${form.kind}"; nothing was saved` }]);
+      return;
+    }
+    const creating = form.editing === undefined;
+    if (creating && state?.entries.some((entry) => entry.origin === form.scope && entry.name === form.name) === true) {
+      setIssues([{ name: form.name, reason: `"${form.name}" is already mapped here; edit or remove it instead` }]);
       return;
     }
     const entry: Record<string, string> = { kind: form.kind };
@@ -140,6 +158,7 @@ export function SecretSourcesDialog() {
       name: form.name,
       ...(renamed && form.editing !== undefined ? { previousName: form.editing.name } : {}),
       entry,
+      ...(creating ? { create: true } : {}),
     });
     setSaving(false);
     if (sent === undefined) {
@@ -177,6 +196,11 @@ export function SecretSourcesDialog() {
 
   const edit = (entry: SecretSourceEntryWire): void => {
     setIssues([]);
+    setResults((current) => {
+      const next = { ...current };
+      delete next[rowKey(entry)];
+      return next;
+    });
     setForm({
       editing: { name: entry.name, scope: entry.origin },
       name: entry.name,
@@ -259,7 +283,7 @@ export function SecretSourcesDialog() {
                 <tbody>
                   {state.entries.map((entry) => {
                     const result = results[rowKey(entry)];
-                    const invalid = entry.kind === 'invalid';
+                    const invalid = entryProblem(entry) !== undefined;
                     return (
                       <tr
                         key={rowKey(entry)}
@@ -277,7 +301,7 @@ export function SecretSourcesDialog() {
                         </td>
                         <td className="py-1.5">
                           <div className="flex justify-end gap-1">
-                            {!invalid && entry.kind !== 'none' && (
+                            {!invalid && entry.kind !== 'none' && !entry.overridden && (
                               <Button variant="ghost" onClick={() => void testEntry(entry)}>
                                 Test
                               </Button>
@@ -326,7 +350,7 @@ export function SecretSourcesDialog() {
               ))}
               <div className="mt-2 grid grid-cols-[6rem_1fr] items-center gap-x-2 gap-y-1.5">
                 <label htmlFor={`${baseId}-name`} className="text-sm text-fg-subtle">
-                  Name
+                  Secret name
                 </label>
                 <input
                   id={`${baseId}-name`}

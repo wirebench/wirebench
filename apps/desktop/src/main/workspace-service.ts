@@ -2728,6 +2728,7 @@ export class WorkspaceService implements ProjectRouter {
         request.name,
         request.previousName,
         request.entry,
+        request.create,
       );
       if (refused !== undefined) {
         return { ok: false, issues: [refused] };
@@ -2773,6 +2774,7 @@ export class WorkspaceService implements ProjectRouter {
         request.name,
         request.previousName,
         request.entry,
+        request.create,
       );
       if (refused !== undefined) {
         return { ok: false, issues: [refused] };

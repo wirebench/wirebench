@@ -63,7 +63,12 @@ export function secretSourceRenameIssue(
   name: string,
   previousName: string | undefined,
   entry: unknown,
+  create?: boolean,
 ): SecretSourceIssue | undefined {
+  // An add must not replace what is there now: an entry a teammate's change brought in, or an invalid one.
+  if (create === true && Object.hasOwn(map ?? {}, name)) {
+    return { name, reason: `"${name}" is already mapped here; edit or remove it instead` };
+  }
   if (previousName === undefined || previousName === name) {
     return undefined;
   }

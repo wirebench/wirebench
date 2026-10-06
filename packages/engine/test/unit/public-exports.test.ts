@@ -33,6 +33,7 @@ const ADDED = [
   'importedScriptPath',
   'SAML_TOKEN_PART',
   'SECRET_SOURCE_KINDS',
+  'SECRET_SOURCE_KIND_FIELDS',
   'parseSecretSources',
   'parseLocalSecretSources',
   'effectiveSecretSources',

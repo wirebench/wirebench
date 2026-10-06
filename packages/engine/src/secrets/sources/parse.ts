@@ -123,6 +123,29 @@ const kindSchemas = {
   keychain: z.strictObject({ kind: z.literal('keychain'), service: field(), account: field() }),
 } as const;
 
+/**
+ * The field names of each kind, required then optional, read from the schemas above. A form that cannot load
+ * the schemas (the desktop renderer) keeps its own copy and a test holds it to this one.
+ */
+export const SECRET_SOURCE_KIND_FIELDS: Readonly<
+  Record<SecretSourceKind, { readonly required: readonly string[]; readonly optional: readonly string[] }>
+> = Object.fromEntries(
+  SECRET_SOURCE_KINDS.map((kind) => {
+    const shape = kindSchemas[kind].shape as Record<string, z.ZodType>;
+    const names = Object.keys(shape).filter((name) => name !== 'kind');
+    return [
+      kind,
+      {
+        required: names.filter((name) => !shape[name]?.safeParse(undefined).success),
+        optional: names.filter((name) => shape[name]?.safeParse(undefined).success === true),
+      },
+    ];
+  }),
+) as unknown as Record<
+  SecretSourceKind,
+  { readonly required: readonly string[]; readonly optional: readonly string[] }
+>;
+
 function invalid(raw: unknown, reason: string, fieldName?: string): InvalidSecretSource {
   return { kind: 'invalid', raw, reason, ...(fieldName !== undefined ? { field: fieldName } : {}) };
 }

@@ -4401,6 +4401,8 @@ export const secretSourcesSetRequestSchema = z.object({
   name: z.string(),
   previousName: z.string().optional(),
   entry: z.record(z.string(), z.string()).nullable(),
+  /** An add: refused, writing nothing, when `name` is already mapped in this scope (an invalid entry included). */
+  create: z.boolean().optional(),
 });
 export type SecretSourcesSetRequest = z.infer<typeof secretSourcesSetRequestSchema>;
 

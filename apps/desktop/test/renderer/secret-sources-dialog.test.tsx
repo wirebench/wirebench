@@ -9,13 +9,14 @@ import {
   openSecretSourcesApproval,
   openSecretSourcesDialog,
 } from '../../src/renderer/features/secret-sources/actions.js';
-import { registerProjectCommands } from '../../src/renderer/commands/register-project-commands.js';
+import { registerWorkspaceCommands } from '../../src/renderer/commands/register-workspace-commands.js';
 import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
-import type { ProjectWire, SecretSourcesState } from '../../src/shared/wire-types.js';
+import type { SecretSourcesState, WorkspaceWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const STATE: SecretSourcesState = {
@@ -114,14 +115,16 @@ describe('SecretSourcesDialog', () => {
     });
     render(<SecretSourcesDialog />);
     openDialog('db');
-    expect((await screen.findByLabelText<HTMLInputElement>('Name')).value).toBe('db');
+    expect((await screen.findByLabelText<HTMLInputElement>('Secret name')).value).toBe('db');
     fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'vault' } });
     fireEvent.change(screen.getByLabelText('path'), { target: { value: '-x' } });
     fireEvent.change(screen.getByLabelText('field'), { target: { value: 'f' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     const message = await screen.findByText('path must not start with "-"');
     expect(screen.getByLabelText('path').getAttribute('aria-describedby')).toContain(message.id);
-    expect(setShared.mock.calls).toEqual([[{ name: 'db', entry: { kind: 'vault', path: '-x', field: 'f' } }]]);
+    expect(setShared.mock.calls).toEqual([
+      [{ name: 'db', entry: { kind: 'vault', path: '-x', field: 'f' }, create: true }],
+    ]);
     // The form stays open for a correction.
     expect(screen.getByLabelText('path')).toBeTruthy();
   });
@@ -134,12 +137,12 @@ describe('SecretSourcesDialog', () => {
     });
     render(<SecretSourcesDialog />);
     openDialog('db');
-    await screen.findByLabelText('Name');
+    await screen.findByLabelText('Secret name');
     fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'local' } });
     fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'none' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('db is already mapped')).toBeTruthy();
-    expect(setLocal.mock.calls).toEqual([[{ name: 'db', entry: { kind: 'none' } }]]);
+    expect(setLocal.mock.calls).toEqual([[{ name: 'db', entry: { kind: 'none' }, create: true }]]);
   });
 
   it('offers the none kind only for this machine', async () => {
@@ -160,7 +163,7 @@ describe('SecretSourcesDialog', () => {
       within(await screen.findByRole('row', { name: 'Secret source db' })).getByRole('button', { name: 'Edit' }),
     );
     expect((await screen.findByLabelText<HTMLInputElement>('path')).value).toBe('kv/app');
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'db2' } });
+    fireEvent.change(screen.getByLabelText('Secret name'), { target: { value: 'db2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(setShared.mock.calls).toEqual([
@@ -201,9 +204,123 @@ describe('SecretSourcesDialog', () => {
     openDialog();
     const row = await screen.findByRole('row', { name: 'Secret source bad' });
     expect(within(row).getByText('Invalid: unknown field "extra"')).toBeTruthy();
+    // What is there is shown, so a person can see what an approval covers.
+    expect(within(row).getByText('extra')).toBeTruthy();
+    expect(within(row).getByText('x')).toBeTruthy();
     expect(within(row).queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(within(row).queryByRole('button', { name: 'Test' })).toBeNull();
     expect(within(row).getByRole('button', { name: 'Remove' })).toBeTruthy();
+  });
+
+  it('shows an entry with fields the form cannot show as invalid, and an unknown kind too', async () => {
+    answer({
+      ...STATE,
+      entries: [
+        {
+          name: 'wide',
+          origin: 'shared',
+          kind: 'vault',
+          fields: { path: 'p', field: 'f', note: 'keep me' },
+          overridden: false,
+        },
+        { name: 'odd', origin: 'local', kind: 'etcd', fields: { key: 'k' }, overridden: false },
+      ],
+    });
+    render(<SecretSourcesDialog />);
+    openDialog();
+    const wide = await screen.findByRole('row', { name: 'Secret source wide' });
+    expect(within(wide).getByText('Invalid: fields this dialog cannot show: note')).toBeTruthy();
+    expect(within(wide).getByText('keep me')).toBeTruthy();
+    const odd = screen.getByRole('row', { name: 'Secret source odd' });
+    expect(within(odd).getByText('Invalid: unknown kind "etcd"')).toBeTruthy();
+    for (const row of [wide, odd]) {
+      expect(within(row).queryByRole('button', { name: 'Edit' })).toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Test' })).toBeNull();
+      expect(within(row).getByRole('button', { name: 'Remove' })).toBeTruthy();
+    }
+  });
+
+  it('refuses an add onto a name that is already mapped in that scope, without sending', async () => {
+    answer(STATE);
+    render(<SecretSourcesDialog />);
+    openDialog('db');
+    fireEvent.change(await screen.findByLabelText('path'), { target: { value: 'kv/other' } });
+    fireEvent.change(screen.getByLabelText('field'), { target: { value: 'f' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('"db" is already mapped here; edit or remove it instead')).toBeTruthy();
+    expect(setShared).not.toHaveBeenCalled();
+  });
+
+  it('allows the same name in the other scope and sends create', async () => {
+    answer(STATE);
+    render(<SecretSourcesDialog />);
+    openDialog('db');
+    await screen.findByLabelText('path');
+    fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'local' } });
+    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'none' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(setLocal.mock.calls).toEqual([[{ name: 'db', entry: { kind: 'none' }, create: true }]]));
+  });
+
+  it('shows main refusing an add onto a name that appeared since the view loaded', async () => {
+    answer({ open: true, entries: [], trusted: true, changes: [] });
+    setShared.mockResolvedValue({
+      ok: true,
+      value: { ok: false, issues: [{ name: 'db', reason: '"db" is already mapped here; edit or remove it instead' }] },
+    });
+    render(<SecretSourcesDialog />);
+    openDialog('db');
+    fireEvent.change(await screen.findByLabelText('path'), { target: { value: 'kv/app' } });
+    fireEvent.change(screen.getByLabelText('field'), { target: { value: 'f' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('"db" is already mapped here; edit or remove it instead')).toBeTruthy();
+    expect(setShared.mock.calls[0]?.[0]).toMatchObject({ create: true });
+  });
+
+  it('does not offer Test on a shared entry that a local one overrides', async () => {
+    answer({
+      ...STATE,
+      entries: [
+        { ...STATE.entries[0]!, overridden: true },
+        { name: 'db', origin: 'local', kind: 'keychain', fields: { service: 's', account: 'me' }, overridden: false },
+      ],
+    });
+    test.mockResolvedValue({ ok: true, value: { ok: true, length: 3 } });
+    render(<SecretSourcesDialog />);
+    openDialog();
+    const rows = await screen.findAllByRole('row', { name: 'Secret source db' });
+    expect(within(rows[0]!).queryByRole('button', { name: 'Test' })).toBeNull();
+    fireEvent.click(within(rows[1]!).getByRole('button', { name: 'Test' }));
+    expect(await within(rows[1]!).findByText('OK, 3 characters')).toBeTruthy();
+    expect(within(rows[0]!).queryByText('OK, 3 characters')).toBeNull();
+  });
+
+  it("drops a row's Test result when that entry is edited or saved", async () => {
+    answer(STATE);
+    test.mockResolvedValue({ ok: true, value: { ok: true, length: 24 } });
+    render(<SecretSourcesDialog />);
+    openDialog();
+    const row = await screen.findByRole('row', { name: 'Secret source db' });
+    fireEvent.click(within(row).getByRole('button', { name: 'Test' }));
+    await within(row).findByText('OK, 24 characters');
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
+    expect(within(row).queryByText('OK, 24 characters')).toBeNull();
+    fireEvent.click(within(row).getByRole('button', { name: 'Test' }));
+    await within(row).findByText('OK, 24 characters');
+    fireEvent.change(await screen.findByLabelText('path'), { target: { value: 'kv/new' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(setShared).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(within(row).queryByText('OK, 24 characters')).toBeNull());
+  });
+
+  it('labels the entry name apart from an azure field called name', async () => {
+    answer({ open: true, entries: [], trusted: true, changes: [] });
+    render(<SecretSourcesDialog />);
+    openDialog('az');
+    fireEvent.change(await screen.findByLabelText('Kind'), { target: { value: 'azure' } });
+    expect(screen.getByLabelText('Secret name')).toBeTruthy();
+    expect(screen.getByLabelText('name')).toBeTruthy();
+    expect(screen.getByLabelText('vault')).toBeTruthy();
   });
 
   it('shows the state problem as a banner', async () => {
@@ -242,16 +359,18 @@ describe('SecretSourcesDialog', () => {
   });
 });
 
-describe('secrets.manageSources', () => {
+describe('workspace.secretSources', () => {
   const context = { platform: 'linux', ui: () => DEFAULT_UI_STATE, selection: undefined } as unknown as CommandContext;
 
-  it('opens the dialog when a workspace has a project, and does nothing without one', async () => {
+  it('opens the dialog whenever a workspace is open, even one with no project, and not otherwise', async () => {
     resetCommands();
-    registerProjectCommands();
+    registerWorkspaceCommands();
     useProjectStore.setState({ projects: {}, order: [], projectOf: {} });
-    expect(await runCommand('secrets.manageSources', context)).toBe(false);
-    useProjectStore.setState({ projects: { p1: { id: 'p1', name: 'Billing' } as ProjectWire } });
-    expect(await runCommand('secrets.manageSources', context)).toBe(true);
+    useWorkspaceStore.setState({ workspace: null });
+    expect(await runCommand('workspace.secretSources', context)).toBe(false);
+    useWorkspaceStore.setState({ workspace: { id: 'w1', name: 'Team' } as WorkspaceWire });
+    expect(await runCommand('workspace.secretSources', context)).toBe(true);
     expect(useUiStore.getState().secretSourcesDialog).toEqual({});
+    useWorkspaceStore.setState({ workspace: null });
   });
 });

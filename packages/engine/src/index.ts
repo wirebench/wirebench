@@ -1495,6 +1495,7 @@ export {
   effectiveSecretSources,
   parseLocalSecretSources,
   parseSecretSources,
+  SECRET_SOURCE_KIND_FIELDS,
   SECRET_SOURCE_KINDS,
   secretSourcesHash,
   serializeSecretSources,

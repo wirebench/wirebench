@@ -13,7 +13,14 @@ const UNTRUSTED: SecretSourcesState = {
   entries: [
     { name: 'db', origin: 'shared', kind: 'vault', fields: { path: 'kv/app', field: 'password' }, overridden: false },
     { name: 'pw', origin: 'local', kind: 'keychain', fields: { service: 'only-local' }, overridden: false },
-    { name: 'bad', origin: 'shared', kind: 'invalid', fields: {}, reason: 'unknown field "extra"', overridden: false },
+    {
+      name: 'bad',
+      origin: 'shared',
+      kind: 'invalid',
+      fields: { stray: 'raw-value' },
+      reason: 'unknown field "extra"',
+      overridden: false,
+    },
   ],
   hash: HASH,
   trusted: false,
@@ -56,6 +63,8 @@ describe('SecretSourcesApproveDialog', () => {
     // A local entry is not what is being approved; an invalid shared one is shown with its reason.
     expect(screen.queryByText('only-local')).toBeNull();
     expect(screen.getByText('Invalid: unknown field "extra"')).toBeTruthy();
+    expect(screen.getByText('stray')).toBeTruthy();
+    expect(screen.getByText('raw-value')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(approve.mock.calls).toEqual([[{ hash: HASH }]]));
     await waitFor(() => expect(useUiStore.getState().secretSourcesApproval).toBe(false));
@@ -69,6 +78,23 @@ describe('SecretSourcesApproveDialog', () => {
     expect(await screen.findByText('The shared secret sources changed while you were reviewing them.')).toBeTruthy();
     expect(get).toHaveBeenCalledTimes(2);
     expect(useUiStore.getState().secretSourcesApproval).toBe(true);
+  });
+
+  it('approves the reloaded hash on the second try, not the first one', async () => {
+    const SECOND = 'b'.repeat(64);
+    approve
+      .mockResolvedValueOnce({ ok: false, error: { code: 'secret-source-approval-stale', message: 'stale' } })
+      .mockResolvedValueOnce({ ok: true, value: { ...UNTRUSTED, trusted: true, changes: [] } });
+    get
+      .mockResolvedValueOnce({ ok: true, value: UNTRUSTED })
+      .mockResolvedValue({ ok: true, value: { ...UNTRUSTED, hash: SECOND } });
+    render(<SecretSourcesApproveDialog />);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    await screen.findByText('The shared secret sources changed while you were reviewing them.');
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(approve.mock.calls).toEqual([[{ hash: HASH }], [{ hash: SECOND }]]));
   });
 
   it('shows another approval error as it is', async () => {

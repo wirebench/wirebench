@@ -3,7 +3,6 @@ import { checkForUpdates } from '../lib/update-status.js';
 import { getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { projectActions } from '../features/project/project-actions.js';
-import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
@@ -141,17 +140,6 @@ export function registerProjectCommands(): void {
     whenScope: 'project',
     run: () => {
       openSecretTokenDialog();
-    },
-  });
-
-  // Where a `${secret:name}` comes from in an external secret manager: a workspace-level map, so it
-  // needs an open workspace. No shortcut; the palette finds it by name.
-  registerCommand({
-    ...catalogEntry('secrets.manageSources'),
-    when: () => Object.keys(useProjectStore.getState().projects).length > 0,
-    whenScope: 'project',
-    run: () => {
-      openSecretSourcesDialog();
     },
   });
 }
