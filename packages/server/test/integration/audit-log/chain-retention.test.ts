@@ -575,8 +575,9 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
       expect(sealed.rows).toHaveLength(1);
     }, WAIT);
     await insertOld(h.db, '01J9ZK3V8Q0000000000000UN1');
-    timers.fire(SWEEP_INTERVAL_MS);
     await vi.waitFor(async () => {
+      // A sweep still running from start-up absorbs a tick, so fire until a pass sees the row.
+      timers.fire(SWEEP_INTERVAL_MS);
       expect(await idsOf(h.db)).toEqual(['01J9ZK3V8Q0000000000000UN1']);
     }, WAIT);
     expect((await readAnchor(h.db))?.seq).toBe(1n);
@@ -594,8 +595,9 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
       await setAnchorHead(tx, KEY, anchor, 1n);
     });
     await insertOld(h.db, '01J9ZK3V8Q0000000000000UN3');
-    timers.fire(SWEEP_INTERVAL_MS);
     await vi.waitFor(async () => {
+      // A sweep still running from start-up absorbs a tick, so fire until a pass sees the row.
+      timers.fire(SWEEP_INTERVAL_MS);
       expect(await idsOf(h.db)).toEqual(['01J9ZK3V8Q0000000000000SE3']);
     }, WAIT);
     expect(await readAnchor(h.db)).toMatchObject({ seq: 0n, headSeq: 1n });
@@ -605,8 +607,9 @@ describeDb('retention with a chain key in a running server (audit-chain spec §3
   it('without the key, the sweep deletes old rows by at, unsealed or not', async () => {
     const { h, timers } = await server({});
     await insertOld(h.db, '01J9ZK3V8Q0000000000000UN2');
-    timers.fire(SWEEP_INTERVAL_MS);
     await vi.waitFor(async () => {
+      // A sweep still running from start-up absorbs a tick, so fire until a pass sees the row.
+      timers.fire(SWEEP_INTERVAL_MS);
       expect(await idsOf(h.db)).toEqual([]);
     }, WAIT);
   }, 30_000);

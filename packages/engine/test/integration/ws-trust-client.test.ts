@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { proofCertOf, requestIssuedToken } from '../../src/wss/trust/client.js';
+import { sendHttp } from '../../src/http/client.js';
 import { createWssContext } from '../../src/wss/model.js';
 import { startTestSts } from '../helpers/test-sts-server.js';
 import { generateSigningCert, generateTestCa } from '../helpers/test-certs.js';
@@ -99,6 +100,63 @@ describe('requestIssuedToken', () => {
         { ctx },
       ),
     ).rejects.toMatchObject({ code: 'kerberos-unavailable' });
+  });
+
+  it("hands the Kerberos seam the request's signal and timeout, and spends one budget on both waits", async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const controller = new AbortController();
+    const waits: { signal?: AbortSignal; timeoutMs?: number }[] = [];
+    let sentTimeoutMs: number | undefined;
+    await requestIssuedToken(
+      { ...entry(sts.url), credential: { kind: 'kerberos', spn: 'HTTP@sts.test' } },
+      {
+        endpointUrl: 'https://service.test/',
+        expand: (t) => t,
+        tls: { ca: [sts.caPem] },
+        timeoutMs: 5_000,
+        signal: controller.signal,
+      },
+      {
+        ctx,
+        kerberosToken: async (_spn, _credentials, wait) => {
+          waits.push(wait ?? {});
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          return new Uint8Array([1, 2, 3]);
+        },
+        send: (request) => {
+          sentTimeoutMs = request.timeoutMs;
+          return sendHttp(request);
+        },
+      },
+    );
+    expect(waits).toEqual([{ signal: controller.signal, timeoutMs: 5_000 }]);
+    // The ticket wait used part of the budget; the token service gets what is left of it.
+    expect(sentTimeoutMs).toBeLessThanOrEqual(4_960);
+    expect(sentTimeoutMs).toBeGreaterThan(0);
+  });
+
+  it("passes the seam's aborted through and never asks the token service", async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const controller = new AbortController();
+    const pending = requestIssuedToken(
+      { ...entry(sts.url), credential: { kind: 'kerberos', spn: 'HTTP@sts.test' } },
+      { endpointUrl: 'https://s/', expand: (t) => t, tls: { ca: [sts.caPem] }, signal: controller.signal },
+      {
+        ctx,
+        kerberosToken: (_spn, _credentials, wait) =>
+          new Promise((_resolve, reject) => {
+            // As the seam does: an already-aborted signal rejects at once, a later abort when it fires.
+            const abort = () => {
+              reject(Object.assign(new Error('The request was aborted.'), { code: 'aborted' }));
+            };
+            if (wait?.signal?.aborted === true) abort();
+            else wait?.signal?.addEventListener('abort', abort);
+          }),
+      },
+    );
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'aborted' });
+    expect(sts.requests).toHaveLength(0);
   });
 
   it('sends UseKey and returns proofCertPem for a public-key token', async () => {

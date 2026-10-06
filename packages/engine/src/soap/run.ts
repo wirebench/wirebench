@@ -240,7 +240,7 @@ export async function soapIssuedTokenTarget(
  * A Kerberos credential to the token service, through #40's seam with the process-wide provider,
  * as the SPNEGO paths call it. Its `kerberos-*` errors pass through unchanged.
  */
-const stsKerberosToken: KerberosTokenFn = (spn, credentials) => kerberosToken(spn, credentials);
+const stsKerberosToken: KerberosTokenFn = (spn, credentials, wait) => kerberosToken(spn, credentials, wait);
 
 /** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
 function wssFor(
