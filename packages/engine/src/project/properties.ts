@@ -520,3 +520,14 @@ export function hasExpansions(text: string): boolean {
   }
   return false;
 }
+
+/**
+ * `text` with every `${` written as the `$${` escape, so {@link expand} gives `text` back exactly
+ * and resolves nothing in it. For text a request is generated from that the user did not write — a
+ * contract's fixed value, SOAP action or path — whose `${…}` must reach the wire as written rather
+ * than read a property, a secret or the sending process's environment (#223). A `$${` already there
+ * becomes `$$${`, which the tokenizer reads back as `$${`.
+ */
+export function escapeExpansions(text: string): string {
+  return text.replaceAll('${', () => '$${');
+}

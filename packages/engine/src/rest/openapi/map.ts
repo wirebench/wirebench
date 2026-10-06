@@ -41,6 +41,7 @@ import type {
 } from './model.js';
 import { HTTP_METHODS, serverUrl } from './model.js';
 import { sampleFromSchema, sampleXml } from '../../json/schema/sample.js';
+import { escapeExpansions } from '../../project/properties.js';
 
 /** How the caller wants the document read. Every field has a documented default. */
 export interface MapApiOptions {
@@ -502,6 +503,36 @@ function groupByFolder(operations: readonly OpenApiOperation[]): Map<string | un
   return groups;
 }
 
+/**
+ * Rows as a saved request holds them: every `${` the document wrote, in a name or a value, escaped
+ * as `$${`, so the request sends the document's text as written and never resolves a property, a
+ * secret or an environment variable from it (#223). Placeholders a user types later still expand.
+ */
+function storedRows(rows: readonly KeyValueEntry[]): KeyValueEntry[] {
+  return rows.map((row) => ({ ...row, name: escapeExpansions(row.name), value: escapeExpansions(row.value) }));
+}
+
+/** A body as a saved request holds it, its document-written `${` escaped as {@link storedRows} does. */
+function storedBody(body: RestBody): RestBody {
+  switch (body.kind) {
+    case 'raw':
+      return { ...body, text: escapeExpansions(body.text) };
+    case 'form':
+      return { kind: 'form', fields: storedRows(body.fields) };
+    case 'multipart':
+      return {
+        kind: 'multipart',
+        parts: body.parts.map((part) =>
+          part.kind === 'text'
+            ? { ...part, name: escapeExpansions(part.name), value: escapeExpansions(part.value) }
+            : { ...part, name: escapeExpansions(part.name) },
+        ),
+      };
+    default:
+      return body;
+  }
+}
+
 /** What {@link requestFromOperation} needs beyond the operation itself, threaded through one mapping pass. */
 interface MapContext {
   readonly document: OpenApiDocument;
@@ -545,15 +576,15 @@ function requestFromOperation(
     slug: uniqueSlug(label, taken),
     order,
     method: HTTP_METHODS.includes(operation.method.toLowerCase()) ? operation.method.toUpperCase() : operation.method,
-    url: overrides?.url ?? operation.path,
+    url: escapeExpansions(overrides?.url ?? operation.path),
     ...(description !== undefined ? { description } : {}),
-    pathParams: overrides !== undefined ? [] : parameterRows(operation, 'path', options, skipped),
-    query: parameterRows(operation, 'query', options, skipped),
-    headers: [
+    pathParams: storedRows(overrides !== undefined ? [] : parameterRows(operation, 'path', options, skipped)),
+    query: storedRows(parameterRows(operation, 'query', options, skipped)),
+    headers: storedRows([
       ...parameterRows(operation, 'header', options, skipped),
       ...cookieHeader(operation, effectiveScheme(operation, document, context.apiScheme), options),
-    ],
-    body: bodyOf(operation, options, skipped),
+    ]),
+    body: storedBody(bodyOf(operation, options, skipped)),
     ...(auth !== undefined ? { auth } : {}),
     ...(overrides !== undefined
       ? { hook: overrides.hook }
@@ -688,8 +719,9 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
   const newId = options.newId ?? generateId;
   const skipped: OpenApiSkipped[] = [...document.skipped];
 
+  // A server URL is the document's text too, so its `${` is escaped like a request's (#223).
   const servers: RestServer[] = document.servers.map((server) => ({
-    url: serverUrl(server),
+    url: escapeExpansions(serverUrl(server)),
     ...(server.description !== undefined ? { description: server.description } : {}),
   }));
   const title = document.info.title.trim();

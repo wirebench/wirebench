@@ -19,7 +19,7 @@ import type { SchemaSet } from '../xsd/schema-set.js';
 import { createEnvelope } from './envelope.js';
 import type { SoapEnvelopeVersion } from './envelope.js';
 import { findBody, namespacesInScope } from './form-request.js';
-import { buildEmptyRequest } from './request-builder.js';
+import { literalEmptyRequest } from './request-builder.js';
 import type { OperationRef, RequestBuildInput } from './request-builder.js';
 
 export interface OperationSchema {
@@ -141,13 +141,17 @@ export function operationJsonSchema(
 /**
  * The request envelope for `args`: the body written through the form model, in an envelope with no
  * indentation (`createEnvelope` indents every line of the body, which would change a multi-line value).
+ *
+ * The envelope and the SOAP action are the contract's text as written — an XSD `fixed` value included
+ * — so they can be checked against the schema. A caller saving or sending them as a request escapes
+ * them with `escapeExpansions` first, so a `${…}` from the contract is sent literally (#223).
  */
 export function envelopeFromJson(
   input: RequestBuildInput,
   op: OperationRef,
   args: Readonly<Record<string, unknown>>,
 ): JsonEnvelope {
-  const empty = buildEmptyRequest(input, op);
+  const empty = literalEmptyRequest(input, op);
   const notes = empty.problems.map((problem) => problem.message);
   const transport = {
     soapVersion: empty.soapVersion,

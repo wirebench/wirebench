@@ -1074,7 +1074,7 @@ export type {
   HistoryWs,
   RestEventStreamLike,
 } from './project/history.js';
-export { enabledProperties, expand, hasExpansions, secretNamesIn } from './project/properties.js';
+export { enabledProperties, escapeExpansions, expand, hasExpansions, secretNamesIn } from './project/properties.js';
 export { expandSendInput } from './soap/expand.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';

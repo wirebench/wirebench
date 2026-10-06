@@ -91,6 +91,12 @@ All notable changes to this project are documented here. The format follows
   `&lt;redacted&gt;`, as a masked XML example already did, so a redacted XML document stays well
   formed. Other redaction keeps `<redacted>`. An XML History entry recorded before this change still
   shows `<redacted>`, so a diff against a newer entry shows that line as changed (#252).
+- **`${` from a contract is sent as written.** A request generated from a WSDL or an OpenAPI document
+  now holds a `${…}` copied from the definition as `$${…}`. That covers an XSD `fixed` or `default`
+  value, the SOAP action, an OpenAPI path, a server URL, and an example or default. So the `${…}` goes
+  on the wire literally and never reads a property, a secret or an environment variable. This holds
+  in the desktop, `send` and the contract tools. A request generated before this change keeps the
+  unescaped text; regenerate it to get the new behaviour (#223).
 
 ## [3.1.0] - 2026-10-04
 
