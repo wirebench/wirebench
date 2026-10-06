@@ -35,6 +35,8 @@ export type KerberosTokenFn = (
     readonly domain?: string;
     readonly password?: string;
   },
+  /** The token request's own Cancel and what is left of its time budget. */
+  wait?: { readonly signal?: AbortSignal; readonly timeoutMs?: number },
 ) => Promise<Uint8Array>;
 
 export interface TrustDeps {
@@ -87,19 +89,27 @@ export async function requestIssuedToken(
   const appliesTo =
     entry.appliesTo !== undefined && entry.appliesTo !== '' ? target.expand(entry.appliesTo) : target.endpointUrl;
   const proofCertPem = await proofCertOf(entry, deps.ctx);
+  if (entry.credential.kind === 'kerberos' && deps.kerberosToken === undefined) {
+    throw new WssError('kerberos-unavailable', 'Kerberos is not available in this build.');
+  }
+  const connected = await connectionOf(target);
+  // One budget covers the whole token request: waiting for a Kerberos ticket, then the token service.
+  const budgetMs = connected.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const deadline = Date.now() + budgetMs;
   let kerberosToken: Uint8Array | undefined;
-  if (entry.credential.kind === 'kerberos') {
-    if (deps.kerberosToken === undefined) {
-      throw new WssError('kerberos-unavailable', 'Kerberos is not available in this build.');
-    }
+  if (entry.credential.kind === 'kerberos' && deps.kerberosToken !== undefined) {
     const { spn, principal, username, domain, passwordRef } = entry.credential;
     const password = passwordRef === undefined ? undefined : await deps.ctx.secrets(passwordRef);
-    kerberosToken = await deps.kerberosToken(spn, {
-      ...(principal !== undefined ? { principal } : {}),
-      ...(username !== undefined ? { username } : {}),
-      ...(domain !== undefined ? { domain } : {}),
-      ...(password !== undefined ? { password } : {}),
-    });
+    kerberosToken = await deps.kerberosToken(
+      spn,
+      {
+        ...(principal !== undefined ? { principal } : {}),
+        ...(username !== undefined ? { username } : {}),
+        ...(domain !== undefined ? { domain } : {}),
+        ...(password !== undefined ? { password } : {}),
+      },
+      { timeoutMs: budgetMs, ...(connected.signal !== undefined ? { signal: connected.signal } : {}) },
+    );
   }
   const rst = await buildRst(entry, {
     stsUrl,
@@ -109,7 +119,6 @@ export async function requestIssuedToken(
     ...(proofCertPem !== undefined ? { proofCertPem } : {}),
     ...(kerberosToken !== undefined ? { kerberosToken } : {}),
   });
-  const connected = await connectionOf(target);
   const proxy = await connected.proxy?.(stsUrl);
   const send = deps.send ?? sendHttp;
   const exchange = await send({
@@ -120,7 +129,7 @@ export async function requestIssuedToken(
       ...(entry.soapVersion === '1.1' ? { soapaction: `"${rst.action}"` } : {}),
     },
     body: new TextEncoder().encode(rst.xml),
-    timeoutMs: connected.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: Math.max(1, deadline - Date.now()),
     followRedirects: false,
     ...(connected.tls !== undefined ? { tls: connected.tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
