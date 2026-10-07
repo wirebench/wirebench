@@ -401,8 +401,9 @@ describe('ProjectWatcher', () => {
       await writeFile(file, 'v: 1\n', 'utf8');
       watcher.expect(['wirebench.yaml']);
       now += 100; // v1's mark has lapsed
+      const token = watcher.announce(['wirebench.yaml']);
       await writeFile(file, 'v: 2\n', 'utf8');
-      watcher.expect(['wirebench.yaml']);
+      watcher.release(token, ['wirebench.yaml']);
       // The file goes back to v1 from outside: v1 is no longer the app's content.
       await writeFile(file, 'v: 1\n', 'utf8');
       simulateEvent(watcher, 'wirebench.yaml');
