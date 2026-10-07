@@ -18,6 +18,7 @@ import {
   removeTempDirs,
   soapProject,
   startServer,
+  twoBindingWsdl,
 } from '../ops/helpers.js';
 
 const TOOLS = ['import', 'operations', 'generate', 'send', 'validate', 'query', 'history_list', 'history_diff'];
@@ -26,6 +27,11 @@ const ADD_RESPONSE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
   '<c:AddResponse xmlns:c="urn:wirebench:calculator"><c:result>5</c:result></c:AddResponse>' +
   '</soapenv:Body></soapenv:Envelope>';
+
+const ADD_RESPONSE_12 =
+  '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body>' +
+  '<c:AddResponse xmlns:c="urn:wirebench:calculator"><c:result>7</c:result></c:AddResponse>' +
+  '</env:Body></env:Envelope>';
 
 const closers: (() => Promise<void> | void)[] = [];
 
@@ -128,6 +134,33 @@ describe('contract tools over MCP', () => {
       arguments: { environment: 'local', a: 2, b: 3 },
     });
     expect(payload(called)).toMatchObject({ isError: false, json: { ok: true, result: { result: 5 } } });
+  });
+
+  it('calls a SOAP 1.2 binding end to end: its content type and action, and the JSON result', async () => {
+    const fixture = await emptyProject();
+    await runOp(importOp, { source: await twoBindingWsdl() }, fixture.base());
+    const calculator = await startServer(() => ({
+      headers: { 'Content-Type': 'application/soap+xml; charset=utf-8' },
+      body: ADD_RESPONSE_12,
+    }));
+    closers.push(() => calculator.close());
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
+
+    const base = fixture.base();
+    const client = await connect(base, await host(base, fakeWatch().watch));
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name)).toEqual([...TOOLS, 'calculator_service_add', 'calculator_service_add_2']);
+    const called = await client.callTool({
+      name: 'calculator_service_add_2',
+      arguments: { environment: 'local', a: 3, b: 4 },
+    });
+    expect(payload(called)).toMatchObject({ isError: false, json: { ok: true, result: { result: 7 } } });
+    expect(calculator.received).toHaveLength(1);
+    const [sent] = calculator.received;
+    expect(sent?.headers['content-type']).toMatch(/^application\/soap\+xml/);
+    expect(sent?.headers['content-type']).toContain('action="urn:wirebench:calculator/Add"');
+    expect(sent?.headers['soapaction']).toBeUndefined();
+    expect(sent?.body).toContain('http://www.w3.org/2003/05/soap-envelope');
   });
 
   it('answers an unknown tool with operation-gone, and bad arguments with invalid-input', async () => {
