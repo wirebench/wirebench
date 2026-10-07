@@ -218,6 +218,37 @@ describe('expand', () => {
   });
 });
 
+describe('onSystemRead', () => {
+  it('names each ${#System#…} property an expansion substitutes, with the value it put in the text', () => {
+    const read: string[] = [];
+    const result = expand('${#System#MY_VAR} ${#Project#via} ${#Project#name} ${#System#NOPE} ${name}', {
+      ...scopes,
+      project: { ...scopes.project, via: '${#System#OTHER}' },
+      system: { MY_VAR: 'sys-value', OTHER: 'other-value', UNUSED: 'unused-value' },
+      onSystemRead: (name, value) => read.push(`${name}=${value}`),
+    });
+    expect(result.text).toBe('sys-value other-value proj-name ${#System#NOPE} env-name');
+    expect(read).toEqual(['MY_VAR=sys-value', 'OTHER=other-value']);
+  });
+
+  it('gives the value as it went into the text: its own references expanded, its escapes undone', () => {
+    const read: string[] = [];
+    const result = expand('${#System#NESTED}', {
+      ...scopes,
+      system: { NESTED: 'a-${#Project#name}-$${lit}' },
+      onSystemRead: (name, value) => read.push(`${name}=${value}`),
+    });
+    expect(result.text).toBe('a-proj-name-${lit}');
+    expect(read).toEqual(['NESTED=a-proj-name-${lit}']);
+  });
+
+  it('is not told of a System property that only a secret lookup follows', () => {
+    const read: string[] = [];
+    secretNamesIn('${#System#MY_VAR}', { ...scopes, onSystemRead: (name) => read.push(name) });
+    expect(read).toEqual([]);
+  });
+});
+
 describe('hasExpansions', () => {
   it('is true when text contains a ${ expression', () => {
     expect(hasExpansions('hello ${name}')).toBe(true);

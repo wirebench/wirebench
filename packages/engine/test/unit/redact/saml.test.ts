@@ -89,4 +89,20 @@ describe('redactXml on security tokens', () => {
     const text = '<saml2:Assertion>' + '<saml2:Assertion>'.repeat(2000) + 'x'.repeat(256 * 1024);
     expect(redactXml(text)).toBe(text);
   });
+
+  it('masks a complete assertion that follows a truncated one', () => {
+    const out = redactXml(`<saml2:Assertion ID="_cut"><saml2:Issuer>urn:sts</saml2:Issuer>${SIGNED}`);
+    expect(out).not.toContain('c2lnbmF0dXJl');
+    expect(out).toContain(`<ds:SignatureValue>${REDACTED_XML_MARKER}</ds:SignatureValue>`);
+    expect(out).toContain('<saml2:NameID>alice</saml2:NameID>');
+  });
+
+  it('masks a secret inside an unclosed container: too much rather than too little', () => {
+    const cut =
+      '<saml2:Assertion ID="_cut"><ds:Signature xmlns:ds="x"><ds:SignatureValue>dHJ1bmNhdGVk</ds:SignatureValue></ds:Signature>' +
+      '<saml2:Subject><saml2:NameID>bob</saml2:NameID>';
+    const out = redactXml(cut);
+    expect(out).not.toContain('dHJ1bmNhdGVk');
+    expect(out).toContain('<saml2:NameID>bob</saml2:NameID>');
+  });
 });

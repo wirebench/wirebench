@@ -329,10 +329,10 @@ export function redactSecurityTokens(text: string): string {
       from = tagEnd + 1;
       continue;
     }
-    const end = closeOf(text, tagEnd + 1, found[1] ?? 'Assertion');
-    if (end === -1) {
-      break;
-    }
+    // A container that never closes (a truncated body) runs to the end of the text: masking too
+    // much beats stopping here and leaving a later token's secrets showing.
+    const closed = closeOf(text, tagEnd + 1, found[1] ?? 'Assertion');
+    const end = closed === -1 ? text.length : closed;
     out += text.slice(from, found.index) + maskElements(text.slice(found.index, end), TOKEN_SECRET_RE, () => true);
     from = end;
   }

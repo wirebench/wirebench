@@ -100,12 +100,19 @@ test.describe('secret sources', () => {
 
     // --- the team's mapping arrives in workspace.yaml, as it would from a pull -----------------
     const manifest = join(workspaceFolder(userDataDir), 'workspace.yaml');
-    const original = readFileSync(manifest, 'utf8');
     const mapping = 'secretSources:\n  token:\n    kind: vault\n    path: kv/app\n    field: password\n';
-    writeFileSync(manifest, `${original.endsWith('\n') ? original : `${original}\n`}${mapping}`);
+    const writeMapping = (): void => {
+      const current = readFileSync(manifest, 'utf8');
+      const base = current.includes('secretSources:') ? current.slice(0, current.indexOf('secretSources:')) : current;
+      writeFileSync(manifest, `${base.endsWith('\n') ? base : `${base}\n`}${mapping}`);
+    };
 
     // --- send: refused until approved. The send is retried until the watcher has reloaded the file.
+    // The watcher drops events on a path for 2 s after the app's own write (SELF_WRITE_TTL_MS), and a
+    // dropped event is not replayed, so each attempt writes the mapping again: one lands past the window.
     await expect(async () => {
+      writeMapping();
+      await page.waitForTimeout(500);
       await page.getByTestId('rest-send').click();
       await expect(toast).toContainText('has not approved', { timeout: 3_000 });
     }).toPass({ timeout: 60_000 });

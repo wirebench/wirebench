@@ -1635,7 +1635,7 @@ export {
   redactUrl,
   redactXml,
 } from './redact/index.js';
-export { createSecretBytesMasker, createSecretMasker } from './redact/literal.js';
+export { createSecretBytesMasker, createSecretMasker, MIN_SEEDED_SECRET_LENGTH } from './redact/literal.js';
 
 // WebSocket: the fourth protocol, a sibling container to a SOAP interface, a REST API and a gRPC
 // API (ADR-0007).

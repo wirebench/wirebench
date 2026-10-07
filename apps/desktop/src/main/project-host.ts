@@ -57,6 +57,7 @@ import {
   protoPathSegments,
   resolveEndpoint,
   resolveScopes,
+  withSystemValuesReported,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveProject,
@@ -240,6 +241,7 @@ import {
 import type { AsyncApiDefinitionInfo, InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
+import { recordSecretValue } from './redact.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
 import { moveDir } from './rename-dir.js';
@@ -855,6 +857,12 @@ export class ProjectHost {
    * so an ad-hoc send still expands `${#Global#…}`.
    */
   scopesFor(envId?: string): PropertyScopes {
+    // A `${#System#…}` value these scopes expand is recorded like a resolved secret, as a send's are (#181):
+    // a pushed WebSocket message and a sequence step's callback assertions expand against them.
+    return withSystemValuesReported(this.unreportedScopesFor(envId), recordSecretValue);
+  }
+
+  private unreportedScopesFor(envId?: string): PropertyScopes {
     const globals = this.enabledGlobals();
     const current = this.currentValues?.();
     if (this.open === undefined) {
