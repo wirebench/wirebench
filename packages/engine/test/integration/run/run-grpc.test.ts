@@ -152,7 +152,7 @@ describe('runRequests — gRPC', () => {
     expect(dead?.status).toBeUndefined();
   });
 
-  it('holds a call to --timeout rather than its own deadline', async () => {
+  it('holds a call to --timeout rather than its own deadline, and errors it with timeout', async () => {
     const project = makeProject([
       {
         ...call('slow', 0, 'Slow', { delay_ms: 2000 }, [{ type: 'status', equals: 0 }]),
@@ -162,9 +162,24 @@ describe('runRequests — gRPC', () => {
     const started = performance.now();
     const [only] = (await runRequests(all(project), contextFor(project, { timeoutMs: 100 }))).requests;
     expect(performance.now() - started).toBeLessThan(1500);
-    expect(only).toMatchObject({ outcome: 'failed', status: 4 });
-    expect(only?.assertions[0]).toMatchObject({ actual: 'DEADLINE_EXCEEDED' });
-    expect(only?.exchange?.request).toContain('grpc-timeout: 100m');
+    expect(only).toMatchObject({ outcome: 'errored', error: { code: 'timeout' }, assertions: [] });
+  });
+
+  it.each([
+    ['an unasserted', []],
+    ['an asserted', [{ type: 'status', equals: 'DEADLINE_EXCEEDED' }] as const],
+  ])('errors %s unary call that passes its deadline with timeout, never a pass', async (_label, assertions) => {
+    const project = makeProject([call('slow', 0, 'Slow', { delay_ms: 2000 }, assertions)]);
+    const [only] = (await runRequests(all(project), contextFor(project, { timeoutMs: 100 }))).requests;
+    expect(only).toMatchObject({ outcome: 'errored', error: { code: 'timeout', message: 'The request timed out.' } });
+  });
+
+  it('keeps a status 4 the server returns inside the deadline as a result', async () => {
+    const project = makeProject([
+      call('early', 0, 'Fail', { code: 4, message: 'upstream' }, [{ type: 'status', equals: 'DEADLINE_EXCEEDED' }]),
+    ]);
+    const [only] = (await runRequests(all(project), contextFor(project, { timeoutMs: 5000 }))).requests;
+    expect(only).toMatchObject({ outcome: 'passed', status: 4 });
   });
 
   it('fetches one client-credentials token for two calls behind the same configuration, and sends it', async () => {

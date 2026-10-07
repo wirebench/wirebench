@@ -239,13 +239,14 @@ const GRPC_UNAUTHENTICATED = 16;
 const GRPC_DEADLINE_EXCEEDED = 4;
 
 /**
- * True when the deadline cut a stream a run made: the local deadline ended it, or the server said so
- * once the deadline had passed. A unary call keeps `DEADLINE_EXCEEDED` as its status, for assertions.
+ * True when the deadline cut a call a run made: the local deadline ended it, or the server said so
+ * once the deadline had passed. A run errors such a call with `timeout`, unary or streaming, as it
+ * does a REST request: an unasserted call never passes after its deadline. A status 4 the server
+ * returns inside the deadline stays a result.
  */
 function deadlineCut(result: GrpcCallResult, timeoutMs: number): boolean {
   const { exchange } = result;
   return (
-    result.methodKind !== 'unary' &&
     exchange.status === GRPC_DEADLINE_EXCEEDED &&
     // A server's own status 4 counts once the deadline has passed: the local one would have fired by then.
     (exchange.statusSource === 'local' || exchange.durationMs >= timeoutMs)
