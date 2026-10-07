@@ -37,6 +37,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        # Type-aware ESLint over the whole tree has outgrown Node's default heap (about 4 GB), as in ci.yml.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
 
   build:
     needs: check
