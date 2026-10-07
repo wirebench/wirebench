@@ -17,10 +17,13 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat } from 'no
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { rootCertificates } from 'node:tls';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { isInsideAny, isInsideReal, realpathOfPrefix } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import { resolveProxy, resolveTrustAnchors } from './network-options.js';
+import { endpointCandidates, resolveEndpointTargets } from './certificate-expiry.js';
+import type { KeystoreCertificates, ProjectCertificateSources } from './certificate-expiry.js';
 import {
   apiDefinitionDir,
   applyUpdate,
@@ -198,7 +201,8 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
-import { isEndpointAuth, nextApiOrder } from '@wirebench/engine';
+import { isEndpointAuth, nextApiOrder, pemCertificates } from '@wirebench/engine';
+import type { PemCertificateSummary } from '@wirebench/engine';
 import type {
   DefinitionAuth,
   EndpointAuth,
@@ -1597,6 +1601,69 @@ export class ProjectHost {
               : 'invalid';
       return { status, aliases: [], message };
     }
+  }
+
+  /**
+   * What this project contributes to the workspace's certificate check: the TLS endpoints it
+   * names, resolved under every environment it can be sent under, and each keystore's
+   * certificates (every alias's leaf and the chain it carries) or why the keystore did not load.
+   * See `certificate-expiry.ts`.
+   */
+  async certificateSources(): Promise<ProjectCertificateSources> {
+    const open = this.require();
+    const context = this.workspaceContext?.();
+    // Inside a workspace its environments override this project's endpoints under
+    // `<projectSlug>/<slug>`; those overrides are this project's endpoints too.
+    const overrides =
+      context === undefined
+        ? []
+        : context.workspace.environments.flatMap((environment) =>
+            Object.entries(environment.endpoints)
+              .filter(([key]) => key.startsWith(`${context.projectSlug}/`))
+              .map(([, url]) => url),
+          );
+    const envIds = [undefined, ...this.sendEnvironments().environments.map((environment) => environment.id)];
+    const endpoints = resolveEndpointTargets(
+      endpointCandidates(open.project, overrides),
+      envIds.map((envId) => this.scopesFor(envId)),
+    );
+    const keystores: KeystoreCertificates[] = [];
+    for (const ref of open.project.wss.keystores) {
+      const def = this.keystoreDef(ref.id);
+      if (def === undefined) continue;
+      try {
+        const keystore = await this.loadKeystoreFor(def);
+        // A keystore that also carries its CA holds that certificate in several places; report it once.
+        const seen = new Set<string>();
+        const certificates = keystore.aliases
+          .flatMap((alias) =>
+            pemCertificates([alias.certPem, ...alias.chainPem].join('\n')).map((cert) => ({
+              ...cert,
+              alias: alias.alias,
+            })),
+          )
+          .filter((cert) => {
+            if (seen.has(cert.fingerprint256)) return false;
+            seen.add(cert.fingerprint256);
+            return true;
+          });
+        keystores.push({ name: def.name, certificates });
+      } catch (error) {
+        keystores.push({ name: def.name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { projectId: open.project.id, endpoints, keystores };
+  }
+
+  /**
+   * The CA bundle's own certificates — not the system roots {@link trustAnchors} puts in front of
+   * them — or none when no bundle is configured or it may not be read.
+   */
+  async caBundleCertificates(): Promise<PemCertificateSummary[]> {
+    const anchors = await this.trustAnchors();
+    if (anchors === undefined) return [];
+    const roots = new Set(rootCertificates);
+    return pemCertificates(anchors.filter((anchor) => !roots.has(anchor)).join('\n'));
   }
 
   /**
