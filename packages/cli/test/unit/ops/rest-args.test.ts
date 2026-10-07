@@ -1,6 +1,7 @@
 // packages/cli/test/unit/ops/rest-args.test.ts
 import { describe, expect, it } from 'vitest';
 import type { OpenApiOperation, RestApi } from '@wirebench/engine';
+import { checkArgs } from '../../../src/ops/contract-tools.js';
 import { restRequestOf, restToolSchema } from '../../../src/ops/rest-args.js';
 
 const API = {
@@ -101,6 +102,24 @@ describe('restToolSchema', () => {
     });
     const keyOnly = { ...operation, parameters: [operation.parameters?.[0]] } as unknown as OpenApiOperation;
     expect(restToolSchema(api, keyOnly).schema['properties']).toEqual({});
+  });
+
+  it('refuses a caller-supplied value for an API key parameter, so only the configured key is sent', () => {
+    const queryApi = { auth: { type: 'api-key', name: 'key', in: 'query', valueRef: 'key' } } as unknown as RestApi;
+    const operation = {
+      method: 'get',
+      path: '/pets',
+      parameters: [
+        { name: 'key', in: 'query', schema: { type: 'string' } },
+        { name: 'X-Key', in: 'header', schema: { type: 'string' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer' } },
+      ],
+    } as unknown as OpenApiOperation;
+    const queryTool = restToolSchema(queryApi, operation).schema;
+    expect(() => checkArgs(queryTool, { query: { limit: 1 } })).not.toThrow();
+    expect(() => checkArgs(queryTool, { query: { key: 'mine' } })).toThrow(/invalid-input|additional|key/i);
+    const headerTool = restToolSchema(API, operation).schema;
+    expect(() => checkArgs(headerTool, { headers: { 'X-Key': 'mine' } })).toThrow(/X-Key|additional/i);
   });
 
   it('takes a non-JSON body as a string sent with its media type', () => {
