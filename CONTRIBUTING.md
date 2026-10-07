@@ -20,6 +20,10 @@ OS-sensitive part, `pnpm check:tests` (typecheck + tests + perf gates):
 pnpm check        # lint + typecheck + wsi:docs --check + contrast:check + check:doc-paths + test + test:perf
 ```
 
+A change that touches only Markdown skips that matrix: `.github/workflows/docs.yml` runs just the
+Markdown-facing checks instead (`pnpm check:docs`: Prettier, the generated docs, cited paths and
+images, banned terms).
+
 The end-to-end suite is separate and needs a build first:
 
 ```
