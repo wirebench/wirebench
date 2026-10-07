@@ -64,3 +64,19 @@ export async function expectSidebarCollapsed(page: Page): Promise<void> {
   await expect(page.getByTestId('sidebar-panel')).toHaveCount(0);
   await expect(page.getByTestId('activity-bar')).toBeVisible();
 }
+
+/**
+ * The colour `var(--<token>)` resolves to in the page, as the `rgb(...)` string a computed style
+ * reports — resolved through a throwaway probe element so an alias token (`--wb-handle-hover`
+ * onto `--wb-accent-hover`) and either theme are followed exactly as the stylesheet follows them.
+ */
+export async function resolvedToken(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = `var(${name})`;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  }, token);
+}
