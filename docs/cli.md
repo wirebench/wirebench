@@ -344,7 +344,7 @@ at run time: the runner posts to the token URL (property expansion applies to it
 scopes and the audience) with the client secret from `clientSecretEnv` / `clientSecretRef` as above,
 and sends the token as a Bearer — REST, SOAP and gRPC alike. One token is fetched per configuration
 per run and reused until it is due for refresh; a failed fetch is not cached. When a server refuses
-the token — an HTTP `401` (REST or SOAP) or a gRPC `UNAUTHENTICATED` (16) — the run drops it, and
+the token — an HTTP `401` (REST or SOAP) a gRPC `UNAUTHENTICATED` (16), or a WebSocket handshake the server refuses — the run drops it, and
 the next request behind the same configuration fetches a new one. The refused request is reported as
 it came back and is **not** sent again: it may already have had an effect. The token request honours
 `--timeout`, `--insecure` and the proxy variables. The access token is masked in every report and in

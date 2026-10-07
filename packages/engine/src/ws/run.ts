@@ -19,12 +19,14 @@ import type { ProtocolRun, RunGroup } from '../protocol/module.js';
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';
 import { exchangeController } from '../run/exchange.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
 import type { ExchangeController, PushMessage, StreamingSide } from '../run/exchange.js';
 import type { AttemptedRequest } from '../run/host.js';
 import type { SentRequest } from '../run/run.js';
 import {
   authFor,
   baseUrlFor,
+  dropRefusedToken,
   keystoreNeeds,
   originOf,
   tlsFor,
@@ -173,7 +175,7 @@ async function connectWs(
   context: RunContext,
   input: WsCallInput,
   signal: AbortSignal,
-): Promise<WsSessionOptions> {
+): Promise<{ readonly session: WsSessionOptions; readonly auth: SendAuth | undefined }> {
   const { settings } = selected.request;
   const tls = await tlsFor(context, settings.sslKeystoreRef, settings.trustInvalid === true);
   const proxy = await context.host.proxyFor?.(dialledUrl(input).replace(/^ws/, 'http'));
@@ -195,8 +197,11 @@ async function connectWs(
     ...(proxy !== undefined ? { proxy } : {}),
     signal,
   });
-  if (sendAuth === auth || handshakeTimeoutMs === undefined) return session;
-  return { ...session, handshakeTimeoutMs: Math.max(1, handshakeTimeoutMs - (Date.now() - tokenStartedAt)) };
+  if (sendAuth === auth || handshakeTimeoutMs === undefined) return { session, auth: sendAuth };
+  return {
+    session: { ...session, handshakeTimeoutMs: Math.max(1, handshakeTimeoutMs - (Date.now() - tokenStartedAt)) },
+    auth: sendAuth,
+  };
 }
 
 /** True when `text` is strictly valid base64, the empty string included: the app's own check. */
@@ -461,6 +466,7 @@ async function sendWsItem(
   try {
     let input: WsCallInput | undefined;
     let options: WsSessionOptions;
+    let auth: SendAuth | undefined;
     try {
       const resolved = await resolveWs(selected, context);
       input = resolved.input;
@@ -481,7 +487,8 @@ async function sendWsItem(
         }
       }
       const connected = await connectWs(selected, context, input, controller.signal);
-      options = run ? { ...connected, closeGraceMs: RUN_CLOSE_GRACE_MS } : connected;
+      auth = connected.auth;
+      options = run ? { ...connected.session, closeGraceMs: RUN_CLOSE_GRACE_MS } : connected.session;
     } catch (error) {
       failed('prepare', error, input === undefined ? undefined : attemptedOf(input), input);
       throw error;
@@ -527,6 +534,14 @@ async function sendWsItem(
       if (controller.signal.aborted && (!opened || (run && watch?.hasReplied !== true))) {
         throw new HttpError('aborted', 'The request was aborted.');
       }
+      // undici does not report a refusal's status, so any handshake the server refused drops the
+      // OAuth2 token: a stale one is refetched, a good one costs one extra fetch (#193). A cancel or a
+      // timeout says nothing about the credential, so those keep it.
+      dropRefusedToken(
+        context,
+        auth,
+        !opened && !controller.signal.aborted && exchange.handshake.error?.startsWith(HANDSHAKE_TIMEOUT_ERROR) !== true,
+      );
       // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
       if (!opened && !interactive) throw handshakeFailure(exchange.handshake);
       if (timedOut && watch?.hasReplied === false) {

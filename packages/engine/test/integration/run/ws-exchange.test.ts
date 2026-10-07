@@ -12,6 +12,7 @@ import type { AuthConfig, Project } from '../../../src/project/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import type { ExchangeOptions } from '../../../src/run/exchange.js';
 import type { SendFailure, SendHost } from '../../../src/run/host.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { openExchange } from '../../../src/run/open.js';
 import { runRequests } from '../../../src/run/run.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -624,5 +625,52 @@ describe('effectiveWsSettings', () => {
     expect(effectiveWsSettings(inherits, bare, undefined).handshakeTimeoutMs).toBe(
       DEFAULT_PREFERENCES.http.socketTimeoutMs,
     );
+  });
+});
+
+describe('WebSocket with an OAuth2 token', () => {
+  it('fetches a new token after a refused handshake, and the next connect carries it', async () => {
+    let fetched = 0;
+    const tokens = createRunTokenSource({
+      getSecret: () => Promise.resolve(undefined),
+      send: (request) => {
+        fetched += 1;
+        const body = new TextEncoder().encode(
+          JSON.stringify({ access_token: `tok-${String(fetched)}`, token_type: 'Bearer', expires_in: 3600 }),
+        );
+        return Promise.resolve({
+          request: { url: request.url, method: 'POST', headers: {} },
+          status: 200,
+          statusText: 'OK',
+          headers: { 'content-type': 'application/json' },
+          rawHeaders: [],
+          body,
+          rawBody: body,
+        } as never);
+      },
+    });
+    const auth: AuthConfig = {
+      type: 'oauth2',
+      grant: 'client-credentials',
+      tokenUrl: 'https://auth.test/token',
+      clientId: 'client',
+      scopes: [],
+      clientAuth: 'basic',
+      pkce: false,
+    };
+    const before = server.handshakes.length;
+    for (const path of ['/refuse', '/echo']) {
+      const handle = open(build(path, { auth }), {}, { tokens });
+      if (path === '/echo') {
+        await handle.push({ text: 'hi' });
+        handle.close();
+      }
+      const sent = await handle.result;
+      expect(sent.exchange?.kind).toBe('websocket');
+    }
+    expect(fetched).toBe(2);
+    const seen = server.handshakes.slice(before).map((h) => ({ url: h.url, auth: h.headers['authorization'] }));
+    expect(seen.find((h) => h.url === '/refuse')?.auth).toBe('Bearer tok-1');
+    expect(seen.at(-1)).toEqual({ url: '/echo', auth: 'Bearer tok-2' });
   });
 });
