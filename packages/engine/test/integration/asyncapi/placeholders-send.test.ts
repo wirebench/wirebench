@@ -1,7 +1,8 @@
 /**
  * An imported AsyncAPI contract sent for real: whatever text it chose for its server URL, channel
- * address, parameter defaults, binding samples and message examples, neither a stored secret nor an
- * environment variable reaches the wire, and a plain `{name}` variable still works (#287).
+ * address, parameter defaults, binding samples and message examples, neither a stored secret, an
+ * environment variable nor a project property reaches the wire: a `{name}` slot the document gives
+ * no value is dialled as the literal `{name}` it wrote (#287).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { importAsyncApi } from '../../../src/asyncapi/import.js';
@@ -19,6 +20,7 @@ import { startTestWsServer, type TestWsServer } from '../../helpers/test-ws-serv
 const ENV_NAME = 'WB_287_X';
 const ENV_VALUE = 'ENV-VALUE-287';
 const SECRET_VALUE = 'SECRET-VALUE-287';
+const PROPERTY_VALUE = 'PROPERTY-VALUE-287';
 
 let server: TestWsServer;
 let host: string;
@@ -83,7 +85,8 @@ async function send(yaml: string): Promise<Wire> {
   const request = imported.requests[0]!;
   const p: Project = {
     ...createProject('AsyncAPI #287', { id: 'p-287' }),
-    properties: { env: 'echo' },
+    // A property under the very name a slot uses: a slot must never read it.
+    properties: { token: PROPERTY_VALUE },
     wsApis: [imported],
   };
   const item: WsSelected = { kind: 'websocket', path: 'Chat/c', group: 'Chat', api: imported, chain: [], request };
@@ -107,6 +110,7 @@ async function send(yaml: string): Promise<Wire> {
   ].join('\n');
   expect(seen).not.toContain(ENV_VALUE);
   expect(seen).not.toContain(SECRET_VALUE);
+  expect(seen).not.toContain(PROPERTY_VALUE);
   expect(server.handshakes.length - handshakes).toBe(wire.refused === undefined ? 1 : 0);
   return wire;
 }
@@ -129,8 +133,27 @@ describe('an imported AsyncAPI contract on the wire (#287)', () => {
     expect(wire.refused).toBe('ws-bad-options');
   });
 
-  it('a plain {env} server variable still becomes a property and resolves', async () => {
-    const { url } = await send(contract({ pathname: '/{env}', address: '/x', message: '{payload: {type: string}}' }));
+  it('a {token} slot with no value is dialled as written, never reading the token property', async () => {
+    const { url } = await send(
+      contract({
+        pathname: '/{token}',
+        variables: '{token: {description: x}}',
+        address: '/r/{token}',
+        message: '{payload: {type: string}}',
+      }),
+    );
+    expect(url).toBe('/{token}/r/{token}');
+  });
+
+  it('a server variable default fills its slot', async () => {
+    const { url } = await send(
+      contract({
+        pathname: '/{env}',
+        variables: '{env: {default: echo}}',
+        address: '/x',
+        message: '{payload: {type: string}}',
+      }),
+    );
     expect(url).toBe('/echo/x');
   });
 

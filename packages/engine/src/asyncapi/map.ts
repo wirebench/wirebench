@@ -13,7 +13,6 @@ import type { AuthConfig, IdGenerator } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
 import { entry, type KeyValueEntry } from '../http/entries.js';
 import { sampleFromSchema } from '../json/schema/sample.js';
-import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import {
   createWsApi,
   createWsFolder,
@@ -25,7 +24,7 @@ import {
   type WsSavedMessage,
 } from '../ws/model.js';
 import type { AsyncApiChannel, AsyncApiDocument, AsyncApiMessage, AsyncApiServer, AsyncApiSkip } from './model.js';
-import { isJsonSchemaFormat, isRecord, record, str } from './read.js';
+import { isJsonSchemaFormat, isRecord, record, SLOT, str } from './read.js';
 import { authFromScheme, isSkip } from './security.js';
 
 export interface MapAsyncApiOptions {
@@ -44,7 +43,10 @@ export interface AsyncApiImportSummary {
   readonly requests: number;
   readonly messages: number;
   readonly skipped: readonly AsyncApiSkip[];
-  /** Parameters and server variables left as `${name}` for the user to define. */
+  /**
+   * Parameters and server variables the document gives no value: each is sent as the literal
+   * `{name}` it wrote, for the user to map themselves (#287).
+   */
   readonly unresolved: readonly string[];
   /** JSON Schema keywords the contract check will not assert. */
   readonly unsupportedKeywords: readonly string[];
@@ -62,77 +64,26 @@ function isWsServer(server: AsyncApiServer): boolean {
   return WS_PROTOCOLS.has(server.protocol.toLowerCase());
 }
 
-/**
- * The names a `{name}` slot may turn into a `${name}` property: the grammar `project/properties.ts`
- * holds a `${secret:name}` name to, so no `#Scope#` prefix, `secret:`, `:`, `#`, brace, space or `$`
- * can make the reference read anything but a plain property (#287).
- */
-const PLAIN_NAME = SECRET_NAME_PATTERN;
-
-/** A `{…}` slot as the document writes it: up to the first `}`, so a nested brace is part of the name. */
-const SLOT = /\{([^}]+)\}/g;
-
-interface Slots {
-  readonly where: string;
-  readonly unresolved: Set<string>;
-  readonly skipped: AsyncApiSkip[];
+/** The report line for a slot the document gives no value: what it lacks, and that it is sent as written. */
+function literalSlot(name: string, lacks: string): string {
+  return `{${name}} has no ${lacks}: it is sent as the literal text {${name}}`;
 }
 
 /**
- * Contract text with `{name}` slots, as Wirebench text. A slot the document gives a value fills in
- * that value as literal text; one it does not, with a plain name, becomes the `${name}` property for
- * the user to define; any other slot stays the literal `{…}` it was written as. Every literal run —
- * the document's own text and the values together — is then escaped with `escapeExpansions`, so a
- * `${…}` the contract wrote is sent as written and never reads a property, a secret or the
- * environment. The `${name}` properties are the only references the result holds.
+ * The channel address with each `{name}` parameter filled from its default (else its first enum
+ * value, else its first example). A parameter with none stays the literal `{name}` the document
+ * wrote: it never becomes a `${name}` property, which would read whatever property, secret or
+ * System value that name reaches and send it to a host the document chose (#287).
  */
-function withSlots(text: string, valueOf: (name: string) => string | undefined, slots: Slots): string {
-  let out = '';
-  let literal = '';
-  let last = 0;
-  for (const match of text.matchAll(SLOT)) {
-    literal += text.slice(last, match.index);
-    last = match.index + match[0].length;
-    const name = match[1]!;
-    const value = valueOf(name);
-    if (value !== undefined) {
-      literal += value;
-    } else if (!PLAIN_NAME.test(name)) {
-      slots.skipped.push({
-        where: slots.where,
-        reason: `${match[0]} is not a plain property name: it is kept as literal text`,
-      });
-      literal += match[0];
-    } else if (literal.endsWith('$')) {
-      // `$` + `${name}` would read as the `$${` escape: no reference can follow a literal `$`.
-      literal += match[0];
-    } else {
-      out += `${escapeExpansions(literal)}\${${name}}`;
-      literal = '';
-      slots.unresolved.add(name);
-    }
-  }
-  return out + escapeExpansions(literal + text.slice(last));
-}
-
-function serverUrl(server: AsyncApiServer, slots: Slots): string {
-  return withSlots(
-    server.template,
-    (name) => (Object.hasOwn(server.variables, name) ? server.variables[name] : undefined),
-    slots,
-  );
-}
-
-function channelUrl(channel: AsyncApiChannel, slots: Slots): string {
+function channelAddress(channel: AsyncApiChannel, literal: (name: string) => void): string {
   if (channel.address === null) return '';
-  return withSlots(
-    channel.address,
-    (name) => {
-      const p = Object.hasOwn(channel.parameters, name) ? channel.parameters[name] : undefined;
-      return p?.default ?? p?.enum?.[0] ?? p?.examples?.[0];
-    },
-    slots,
-  );
+  return channel.address.replace(SLOT, (whole, name: string) => {
+    const p = Object.hasOwn(channel.parameters, name) ? channel.parameters[name] : undefined;
+    const chosen = p?.default ?? p?.enum?.[0] ?? p?.examples?.[0];
+    if (chosen !== undefined) return chosen;
+    literal(name);
+    return whole;
+  });
 }
 
 function sampleText(value: unknown): string {
@@ -235,7 +186,13 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
       skipped.push({ where: `server ${s.key}`, reason: `${s.protocol} server: only WebSocket is imported` });
   }
   if (server === undefined) skipped.push({ where: 'servers', reason: 'no ws or wss server: the API has no URL' });
-  const url = server !== undefined ? serverUrl(server, { where: `server ${server.key}`, unresolved, skipped }) : '';
+  // The URL with its variables already filled (normalising did that), the document's text escaped:
+  // a send expands the API's URL, and a `${…}` the document wrote must reach the wire as written.
+  const url = server !== undefined ? escapeExpansions(server.url) : '';
+  for (const name of server?.unresolvedVariables ?? []) {
+    unresolved.add(name);
+    skipped.push({ where: `server ${server!.key}`, reason: literalSlot(name, 'default or enum') });
+  }
 
   let auth: AuthConfig | undefined;
   for (const scheme of server?.security ?? []) {
@@ -297,7 +254,13 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
       ...ids,
       slug,
       order: order++,
-      url: channelUrl(channel, { where, unresolved, skipped }),
+      // The document's text, escaped: a send expands the request's URL (#287).
+      url: escapeExpansions(
+        channelAddress(channel, (name) => {
+          unresolved.add(name);
+          skipped.push({ where, reason: literalSlot(name, 'default, enum or example') });
+        }),
+      ),
       query: binding.query,
       headers: binding.headers,
       subprotocols: binding.subprotocols,

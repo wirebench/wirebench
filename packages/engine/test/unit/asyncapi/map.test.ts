@@ -67,17 +67,7 @@ describe('mapAsyncApi', () => {
       version: '3',
       declaredVersion: '3.0.0',
       title: 'Gen',
-      servers: [
-        {
-          key: 's',
-          url: 'ws://h.test',
-          template: 'ws://h.test',
-          variables: {},
-          protocol: 'ws',
-          security: [],
-          unresolvedVariables: [],
-        },
-      ],
+      servers: [{ key: 's', url: 'ws://h.test', protocol: 'ws', security: [], unresolvedVariables: [] }],
       channels: [{ key: 'c', address: '/{id}', servers: 'all', parameters: { id: {} }, bindings: {}, tags: [] }],
       operations: [
         {
@@ -104,7 +94,7 @@ describe('mapAsyncApi', () => {
     };
     const { api, summary } = mapAsyncApi(doc, { newId: seqIds() });
     const req = api.requests[0]!;
-    expect(req.url).toBe('/${id}');
+    expect(req.url).toBe('/{id}'); // no value: sent as written (#287)
     expect(summary.unresolved).toEqual(['id']);
     expect(JSON.parse(req.messages[0]!.content)).toEqual({ n: 0 });
     expect(req.messages[1]!.content).not.toMatch(/^"/);
@@ -128,17 +118,7 @@ describe('mapAsyncApi', () => {
       version: '3',
       declaredVersion: '3.0.0',
       title: 'NoAddr',
-      servers: [
-        {
-          key: 's',
-          url: 'http://h.test',
-          template: 'http://h.test',
-          variables: {},
-          protocol: 'http',
-          security: [],
-          unresolvedVariables: [],
-        },
-      ],
+      servers: [{ key: 's', url: 'http://h.test', protocol: 'http', security: [], unresolvedVariables: [] }],
       channels: [{ key: 'c', address: null, servers: 'all', parameters: {}, bindings: { ws: {} }, tags: [] }],
       operations: [],
       notes: [],
@@ -155,17 +135,7 @@ describe('mapAsyncApi', () => {
       version: '3',
       declaredVersion: '3.0.0',
       title: 'Enum',
-      servers: [
-        {
-          key: 's',
-          url: 'ws://h.test',
-          template: 'ws://h.test',
-          variables: {},
-          protocol: 'ws',
-          security: [],
-          unresolvedVariables: [],
-        },
-      ],
+      servers: [{ key: 's', url: 'ws://h.test', protocol: 'ws', security: [], unresolvedVariables: [] }],
       channels: [
         {
           key: 'c',
@@ -188,17 +158,7 @@ describe('mapAsyncApi', () => {
       version: '3',
       declaredVersion: '3.0.0',
       title: 'Bindings',
-      servers: [
-        {
-          key: 's',
-          url: 'ws://h.test',
-          template: 'ws://h.test',
-          variables: {},
-          protocol: 'ws',
-          security: [],
-          unresolvedVariables: [],
-        },
-      ],
+      servers: [{ key: 's', url: 'ws://h.test', protocol: 'ws', security: [], unresolvedVariables: [] }],
       channels: [
         {
           key: 'c',
@@ -238,17 +198,7 @@ describe('mapAsyncApi', () => {
       version: '3',
       declaredVersion: '3.0.0',
       title: 'SubEnum',
-      servers: [
-        {
-          key: 's',
-          url: 'ws://h.test',
-          template: 'ws://h.test',
-          variables: {},
-          protocol: 'ws',
-          security: [],
-          unresolvedVariables: [],
-        },
-      ],
+      servers: [{ key: 's', url: 'ws://h.test', protocol: 'ws', security: [], unresolvedVariables: [] }],
       channels: [
         {
           key: 'c',
@@ -271,17 +221,7 @@ describe('mapAsyncApi', () => {
       version: '3',
       declaredVersion: '3.0.0',
       title: 'Avro',
-      servers: [
-        {
-          key: 's',
-          url: 'ws://h.test',
-          template: 'ws://h.test',
-          variables: {},
-          protocol: 'ws',
-          security: [],
-          unresolvedVariables: [],
-        },
-      ],
+      servers: [{ key: 's', url: 'ws://h.test', protocol: 'ws', security: [], unresolvedVariables: [] }],
       channels: [{ key: 'c', address: '/c', servers: 'all', parameters: {}, bindings: {}, tags: [] }],
       operations: [
         {

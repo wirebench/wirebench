@@ -1,8 +1,9 @@
 /**
  * A contract chooses the text of its server URLs, channel addresses, parameter and variable values,
- * binding samples and message examples. None of it may become a reference that reads a secret, the
- * environment or another scope: only a `{name}` slot with a plain name becomes a `${name}` property,
- * and everything else the contract wrote is sent exactly as written (#287).
+ * binding samples and message examples. None of it may become a reference that reads a property, a
+ * secret or the environment: a `{name}` slot is filled from the document's own default or enum, or
+ * else kept as the literal `{name}` it wrote, and every `${` the document wrote is sent as written
+ * (#287).
  */
 import { describe, expect, it } from 'vitest';
 import { importAsyncApi } from '../../../src/asyncapi/import.js';
@@ -10,14 +11,18 @@ import { expand, type PropertyScopes } from '../../../src/project/properties.js'
 import { fileFetch } from '../../helpers/file-fetch.js';
 
 const scopes: PropertyScopes = {
-  project: { env: 'staging' },
+  project: { env: 'staging', token: 'PROPERTY-VALUE' },
   global: {},
   system: { X: 'ENV-VALUE' },
   secrets: { tok: 'SECRET-VALUE' },
 };
 
-/** The text as a send would put it on the wire. */
-const sent = (text: string): string => expand(text, scopes).text;
+/** The text as a send would put it on the wire, and what the expansion read on the way. */
+const sent = (text: string): string => {
+  const result = expand(text, scopes);
+  expect(result.used).toEqual([]);
+  return result.text;
+};
 
 const seqIds = () => {
   let n = 0;
@@ -58,30 +63,52 @@ function doc(parts: {
   ].join('\n');
 }
 
-describe('AsyncAPI import: contract text never becomes a secret or System reference (#287)', () => {
+/** A 2.6 document with one server whose `url` is written as given, and one channel. */
+function doc2(url: string, variables?: string, channel = '/c'): string {
+  return [
+    'asyncapi: 2.6.0',
+    'info: {title: t, version: "1"}',
+    'servers:',
+    '  s:',
+    `    url: ${JSON.stringify(url)}`,
+    '    protocol: ws',
+    ...(variables !== undefined ? [`    variables: ${variables}`] : []),
+    'channels:',
+    `  ${JSON.stringify(channel)}:`,
+    '    publish: {message: {payload: {type: string}}}',
+    '',
+  ].join('\n');
+}
+
+const keptLiteral = (where: string, name: string) => ({
+  where,
+  reason: `{${name}} has no ${where.startsWith('server') ? 'default or enum' : 'default, enum or example'}: it is sent as the literal text {${name}}`,
+});
+
+describe('AsyncAPI import: contract text never becomes a reference (#287)', () => {
   it('a server URL slot naming a secret is imported as literal text', async () => {
     const { api, summary } = await load(doc({ pathname: '/{secret:tok}' }));
     expect(api.url).toBe('ws://evil.test/{secret:tok}');
     expect(sent(api.url)).toBe('ws://evil.test/{secret:tok}');
-    expect(summary.unresolved).toEqual([]);
-    expect(summary.skipped).toContainEqual({
-      where: 'server s',
-      reason: '{secret:tok} is not a plain property name: it is kept as literal text',
-    });
+    expect(summary.unresolved).toEqual(['secret:tok']);
+    expect(summary.skipped).toContainEqual(keptLiteral('server s', 'secret:tok'));
   });
 
   it('a server URL slot naming a System property is imported as literal text', async () => {
-    const { api, summary } = await load(doc({ pathname: '/{#System#X}' }));
+    const { api } = await load(doc({ pathname: '/{#System#X}' }));
     expect(api.url).toBe('ws://evil.test/{#System#X}');
-    expect(sent(api.url)).not.toContain('ENV-VALUE');
-    expect(summary.unresolved).toEqual([]);
+    expect(sent(api.url)).toBe('ws://evil.test/{#System#X}');
   });
 
-  it('a plain server variable still becomes a property and resolves', async () => {
-    const { api, summary } = await load(doc({ pathname: '/{env}', variables: '{env: {description: stage}}' }));
-    expect(api.url).toBe('ws://evil.test/${env}');
-    expect(sent(api.url)).toBe('ws://evil.test/staging');
-    expect(summary.unresolved).toEqual(['env']);
+  it('a {token} slot with no value is sent as written, never reading the token property', async () => {
+    const { api, summary } = await load(
+      doc({ pathname: '/{token}', variables: '{token: {description: x}}', address: '/r/{token}' }),
+    );
+    expect(sent(api.url)).toBe('ws://evil.test/{token}');
+    expect(sent(api.requests[0]!.url)).toBe('/r/{token}');
+    expect(summary.unresolved).toEqual(['token']);
+    expect(summary.skipped).toContainEqual(keptLiteral('server s', 'token'));
+    expect(summary.skipped).toContainEqual(keptLiteral('channel c', 'token'));
   });
 
   it.each([
@@ -93,15 +120,14 @@ describe('AsyncAPI import: contract text never becomes a secret or System refere
     ['nested braces', '{{env}}'],
     ['a brace inside', '{a{env}}'],
   ])('a slot with %s stays literal text', async (_what, slot) => {
-    const { api, summary } = await load(doc({ pathname: `/${slot}` }));
+    const { api } = await load(doc({ pathname: `/${slot}` }));
     expect(sent(api.url)).toBe(`ws://evil.test/${slot}`);
-    expect(summary.unresolved).toEqual([]);
   });
 
   it('contract text holding ${…} around the slots is escaped, not expanded', async () => {
     const { api } = await load(doc({ pathname: '/${secret:tok}/${env}/{env}' }));
-    expect(api.url).toBe('ws://evil.test/$${secret:tok}/$${env}/${env}');
-    expect(sent(api.url)).toBe('ws://evil.test/${secret:tok}/${env}/staging');
+    expect(api.url).toBe('ws://evil.test/$${secret:tok}/$${env}/{env}');
+    expect(sent(api.url)).toBe('ws://evil.test/${secret:tok}/${env}/{env}');
   });
 
   it('server variable defaults and enums are literal values, never slots or references', async () => {
@@ -118,7 +144,7 @@ describe('AsyncAPI import: contract text never becomes a secret or System refere
   });
 
   it('a channel parameter default and a message example are sent literally', async () => {
-    const { api } = await load(
+    const { api, summary } = await load(
       doc({
         pathname: '/',
         address: '/{room}/{secret:tok}',
@@ -128,6 +154,7 @@ describe('AsyncAPI import: contract text never becomes a secret or System refere
     );
     const request = api.requests[0]!;
     expect(sent(request.url)).toBe('/${#System#X}/{secret:tok}');
+    expect(summary.skipped).toContainEqual(keptLiteral('channel c', 'secret:tok'));
     const message = request.messages[0]!;
     expect(message.content).toBe('$${#System#X}');
     expect(message.contract?.generated).toBe(message.content);
@@ -151,12 +178,39 @@ describe('AsyncAPI import: contract text never becomes a secret or System refere
       doc({
         pathname: '/',
         bindings:
-          '{ws: {query: {type: object, properties: {"q${env}": {type: string, const: "${#System#X}"}}}, headers: {type: object, properties: {"x-h": {type: string, default: "${secret:tok}"}, Sec-WebSocket-Protocol: {type: string, const: "${#System#X}"}}}}}',
+          '{ws: {query: {type: object, properties: {"q${env}": {type: string, const: "${#System#X}"}}}, headers: {type: object, properties: {"x-h": {type: string, default: "${secret:tok}"}, Sec-WebSocket-Protocol: {type: string, enum: ["${#System#X}", "{token}"]}}}}}',
       }),
     );
     const request = api.requests[0]!;
     expect(request.query.map((q) => [sent(q.name), sent(q.value)])).toEqual([['q${env}', '${#System#X}']]);
     expect(request.headers.map((h) => [sent(h.name), sent(h.value)])).toEqual([['x-h', '${secret:tok}']]);
-    expect(request.subprotocols.map(sent)).toEqual(['${#System#X}']);
+    // A subprotocol is never a slot: `{token}` is its text, not a parameter.
+    expect(request.subprotocols.map(sent)).toEqual(['${#System#X}', '{token}']);
+  });
+
+  describe('2.x servers', () => {
+    it('a slot with a default is filled from it', async () => {
+      const { api, summary } = await load(doc2('{region}.evil.test/ws', '{region: {default: eu}}'));
+      expect(api.url).toBe('ws://eu.evil.test/ws');
+      expect(summary.unresolved).toEqual([]);
+    });
+
+    it('a default that supplies the scheme is not prefixed again', async () => {
+      const { api } = await load(doc2('{base}/path', '{base: {default: "wss://evil.test"}}'));
+      expect(api.url).toBe('wss://evil.test/path');
+    });
+
+    it('a slot with no default or enum is kept literal and reported', async () => {
+      const { api, summary } = await load(doc2('evil.test/{token}', '{token: {description: x}}'));
+      expect(sent(api.url)).toBe('ws://evil.test/{token}');
+      expect(summary.unresolved).toEqual(['token']);
+      expect(summary.skipped).toContainEqual(keptLiteral('server s', 'token'));
+    });
+
+    it('a channel parameter with no value is kept literal', async () => {
+      const { api, summary } = await load(doc2('evil.test', undefined, '/rooms/{token}'));
+      expect(sent(api.requests[0]!.url)).toBe('/rooms/{token}');
+      expect(summary.skipped).toContainEqual(keptLiteral('channel /rooms/{token}', 'token'));
+    });
   });
 });

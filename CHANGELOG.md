@@ -105,13 +105,15 @@ All notable changes to this project are documented here. The format follows
   made before this change keeps the unescaped text. Regenerate a request to fix it. Re-import the
   definition to fix an interface's endpoints or an API's servers, base URL and credentials (#223).
 - **AsyncAPI text is sent as written.** An AsyncAPI import no longer lets a document choose a
-  reference: a `{name}` server variable or channel parameter with no value becomes the property
-  `${name}` only for a plain name (a letter or `_`, then letters, digits and `_`), so a document's
-  `{secret:token}` or `{#System#NAME}` stays literal text and never reads a stored secret or an
-  environment variable. Every `${` the document's own text holds is copied as `$${`: server URLs,
-  channel addresses, variable and parameter values, WebSocket binding query and header samples,
-  subprotocols, and message examples and samples. Re-import the document to fix an API imported
-  before this change (#287).
+  reference. A `{name}` server variable or channel parameter with no default or enum value now stays
+  the literal text `{name}` instead of becoming the property `${name}`, so a document's `{token}`,
+  `{secret:token}` or `{#System#NAME}` never reads a property, a stored secret or an environment
+  variable and sends it to a host the document chose. The import report lists each such slot for you
+  to map yourself. Every `${` the document's own text holds is copied as `$${`: server URLs, channel
+  addresses, variable and parameter values, WebSocket binding query and header samples,
+  subprotocols, and message examples and samples. **Update definition…** does not repair an API
+  imported before this change, since it keeps the old text as your own edit: import the document
+  again (#287).
 
 ## [3.1.0] - 2026-10-04
 

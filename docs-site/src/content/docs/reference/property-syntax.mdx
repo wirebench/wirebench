@@ -91,10 +91,12 @@ That covers:
 - an AsyncAPI WebSocket binding's query and header names and samples, and its subprotocols
 - an AsyncAPI message example, or the sample made from its payload
 
-An AsyncAPI `{name}` variable or parameter that has no value becomes the property `${name}` for you
-to define, but only when `name` is a plain name: a letter or `_`, then letters, digits and `_`. Any
-other `{…}`, such as `{secret:token}` or `{#System#HOME}`, stays as the literal text the document
-wrote, and the import report lists it.
+An AsyncAPI `{name}` server variable or channel parameter is filled from the document's own
+default or enum value (a parameter's example too). One with no value stays the literal text `{name}`
+and is sent that way. It never becomes the property `${name}`, because that would read whatever
+property, secret or environment variable the name reaches and send it to a host the document chose.
+The import report lists each such slot, so you can replace it with a value or a property of your
+own.
 
 A contract tool's call does the same. Each `${` then goes on the wire exactly as the definition
 wrote it, and never reads a property, a secret, or an environment variable through
@@ -107,6 +109,10 @@ Anything made before this rule still holds the definition's `${` unescaped. Rege
 to fix it. Re-import the definition to fix an interface's endpoints, an API's servers and base URL,
 or its OAuth2 settings, since regenerating a request does not change those. Or write the `${` as
 `$${` yourself.
+
+An AsyncAPI API imported before this rule is not repaired by **Update definition…**. An update
+rewrites a field only while it still equals what the contract generates, and the old unescaped text
+no longer does, so it is kept as if you had edited it. Import the document again instead.
 
 ## Undefined and malformed references
 

@@ -94,26 +94,29 @@ export function deref(root: unknown, node: unknown): unknown {
 }
 
 /**
- * `{name}` placeholders replaced by each variable's default (else first enum value), and the value
- * each variable that has one was given.
+ * A `{name}` slot — a server variable or a channel parameter — as the document writes it: up to the
+ * first `}`, so a nested brace is part of the name. The one grammar both the server URL and the
+ * channel address are read with.
  */
-export function substitute(
-  template: string,
-  variables: unknown,
-): { value: string; unresolved: string[]; chosen: Record<string, string> } {
+export const SLOT = /\{([^}]+)\}/g;
+
+/**
+ * `{name}` placeholders replaced by each variable's default (else first enum value). A slot with
+ * neither stays as the literal `{name}` it was written as, and is listed in `unresolved`.
+ */
+export function substitute(template: string, variables: unknown): { value: string; unresolved: string[] } {
   const vars = record(variables);
   const unresolved: string[] = [];
-  const chosen: Record<string, string> = {};
-  for (const [name, variable] of Object.entries(vars)) {
-    const value = scalarText(record(variable)['default']) ?? texts(record(variable)['enum'])?.[0];
-    if (value !== undefined) chosen[name] = value;
-  }
-  const value = template.replace(/\{([^{}]+)\}/g, (whole, name: string) => {
-    if (Object.hasOwn(chosen, name)) return chosen[name]!;
-    if (!unresolved.includes(name)) unresolved.push(name);
-    return whole;
+  const value = template.replace(SLOT, (whole, name: string) => {
+    const variable = Object.hasOwn(vars, name) ? record(vars[name]) : {};
+    const chosen = scalarText(variable['default']) ?? texts(variable['enum'])?.[0];
+    if (chosen === undefined) {
+      if (!unresolved.includes(name)) unresolved.push(name);
+      return whole;
+    }
+    return chosen;
   });
-  return { value, unresolved, chosen };
+  return { value, unresolved };
 }
 
 export function securityScheme(key: string, scheme: Json): AsyncApiSecurityScheme {

@@ -54,15 +54,12 @@ export function normaliseAsyncApi2(raw: Json, resolved: Json, declaredVersion: s
   const servers: AsyncApiServer[] = entries(resolved['servers']).map(([key, server]) => {
     const protocol = str(server['protocol']) ?? '';
     const written = str(server['url']) ?? '';
-    const { value, unresolved, chosen } = substitute(written, server['variables']);
-    const prefixed = (text: string) => (text.includes('://') || protocol === '' ? text : `${protocol}://${text}`);
-    const url = prefixed(value);
+    const { value, unresolved } = substitute(written, server['variables']);
+    const url = value.includes('://') || protocol === '' ? value : `${protocol}://${value}`;
     const security: readonly unknown[] = Array.isArray(server['security']) ? server['security'] : [];
     return {
       key,
       url,
-      template: prefixed(written),
-      variables: chosen,
       protocol,
       security: security.flatMap((requirement) =>
         Object.keys(record(requirement)).flatMap((name) => {

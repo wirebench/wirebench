@@ -60,14 +60,12 @@ export function normaliseAsyncApi3(raw: Json, resolved: Json, declaredVersion: s
   const servers: AsyncApiServer[] = entries(resolved['servers']).map(([key, server]) => {
     const protocol = str(server['protocol']) ?? '';
     const written = `${str(server['host']) ?? ''}${str(server['pathname']) ?? ''}`;
-    const { value, unresolved, chosen } = substitute(written, server['variables']);
+    const { value, unresolved } = substitute(written, server['variables']);
     const rawSecurity = record(deref(raw, rawServers[key]))['security'];
     const security: readonly unknown[] = Array.isArray(server['security']) ? server['security'] : [];
     return {
       key,
       url: protocol === '' ? value : `${protocol}://${value}`,
-      template: protocol === '' ? written : `${protocol}://${written}`,
-      variables: chosen,
       protocol,
       security: security.flatMap((scheme, index) => {
         if (!isRecord(scheme)) return [];
