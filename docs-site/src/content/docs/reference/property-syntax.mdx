@@ -69,9 +69,37 @@ left verbatim rather than expanded.
 ## Escaping
 
 `$${` is a literal `${` — the two characters before the brace are consumed by the escape, so
-`$${name}` produces the literal text `${name}`, unexpanded. A run of three or more `$` before a
-brace only ever has its first `$$` treated as an escape: `$$${x}` leaves a literal `$` followed by
-`${x}`, which then *is* eligible for expansion, matched left to right.
+`$${name}` produces the literal text `${name}`, unexpanded. In a run of three or more `$` before a
+brace, the last two and the brace form the escape and every `$` before them stays as it is. So
+`$$${x}` produces the literal text `$${x}`, and nothing in it is expanded.
+
+### Text that comes from a contract
+
+A `${` in a definition's own text belongs to the definition, not to you. When Wirebench makes
+something you send from a WSDL or an OpenAPI document, it writes every `${` it copies as `$${`.
+That covers:
+
+- an XSD `fixed` or `default` value, in a generated request or inserted from the form view
+- the SOAP action
+- a WSDL `soap:address`, and the endpoint made from it
+- an OpenAPI path, a server URL and the base URL taken from it
+- an OpenAPI example or default
+- an OAuth2 token URL, authorization URL and scope, and an API key's name
+
+A contract tool's call does the same. Each `${` then goes on the wire exactly as the definition
+wrote it, and never reads a property, a secret, or an environment variable through
+`${#System#…}`. A `${…}` you type later still expands as usual.
+
+**Validate** checks a `$${` as the literal `${` it sends, so a generated `fixed` value passes.
+`wirebench generate` saves nothing, so it shows the definition's text as written.
+
+Anything made before this rule still holds the definition's `${` unescaped. Regenerate a request
+to fix it. Re-import the definition to fix an interface's endpoints, an API's servers and base URL,
+or its OAuth2 settings, since regenerating a request does not change those. Or write the `${` as
+`$${` yourself.
+
+An AsyncAPI import escapes only its OAuth2 and API key settings so far. The rest of an AsyncAPI
+definition's `${` is not escaped yet.
 
 ## Undefined and malformed references
 

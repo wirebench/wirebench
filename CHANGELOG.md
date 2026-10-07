@@ -91,6 +91,20 @@ All notable changes to this project are documented here. The format follows
   `&lt;redacted&gt;`, as a masked XML example already did, so a redacted XML document stays well
   formed. Other redaction keeps `<redacted>`. An XML History entry recorded before this change still
   shows `<redacted>`, so a diff against a newer entry shows that line as changed (#252).
+- **`${` from a contract is sent as written.** Wirebench now copies a `${…}` from a WSDL or an
+  OpenAPI document as `$${…}`, so it goes on the wire literally and never reads a property, a
+  secret or an environment variable. That covers:
+  - an XSD `fixed` or `default` value, in a generated request or inserted from the form view
+  - the SOAP action
+  - a WSDL `soap:address` and its endpoint
+  - an OpenAPI path, server and base URL, example or default
+  - an OAuth2 token URL, authorization URL or scope, and an API key's name
+
+  This holds in the desktop, `send` and the contract tools. **Validate** checks the escaped text as
+  the literal value it sends. `wirebench generate` shows the definition's text unescaped. Anything
+  made before this change keeps the unescaped text. Regenerate a request to fix it. Re-import the
+  definition to fix an interface's endpoints or an API's servers, base URL and credentials. AsyncAPI
+  import is not covered yet beyond its OAuth2 and API key settings (#223).
 
 ## [3.1.0] - 2026-10-04
 

@@ -221,6 +221,41 @@ describe('EndpointSelect', () => {
     expect(onChange).toHaveBeenCalledWith('https://example.test/calc12.asmx');
   });
 
+  it("commits a declared address with its ${ escaped, so the contract's text is sent as written", async () => {
+    const onChange = vi.fn();
+    const crafted = makeInterface({
+      services: [
+        {
+          name: 'Calculator',
+          ports: [
+            {
+              name: 'CalculatorSoap',
+              address: 'https://example.test/${#System#HOME}',
+              // As main sends it: the address escaped by the engine's contract-endpoint helper.
+              endpointUrl: 'https://example.test/$${#System#HOME}',
+              binding: '{http://tempuri.org/}CalculatorSoap',
+              soapVersion: '1.1',
+            },
+          ],
+        },
+      ],
+    });
+    render(
+      <EndpointSelect
+        summary={crafted}
+        bindingName="{http://tempuri.org/}CalculatorSoap"
+        value="https://example.test/calc.asmx"
+        onChange={onChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('request-endpoint-menu'));
+    // The menu shows the address as the definition wrote it; the field gets main's escaped URL (#223).
+    await userEvent.click(await screen.findByRole('menuitem', { name: /System#HOME/ }));
+
+    expect(onChange).toHaveBeenCalledWith('https://example.test/$${#System#HOME}');
+  });
+
   it('offers the endpoint manager only when there is one to open', async () => {
     const onEditEndpoints = vi.fn();
     render(

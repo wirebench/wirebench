@@ -4,7 +4,7 @@
  * schemas are a `$ref`-inlined, possibly cyclic, graph; a node reached more than once becomes one
  * `$defs` entry, so the published schema is a tree.
  */
-import { createRestRequest, entry, lexical, NO_BODY } from '@wirebench/engine';
+import { createRestRequest, entry, escapeExpansions, lexical, NO_BODY } from '@wirebench/engine';
 import type {
   JsonSchema,
   JsonSchemaObject,
@@ -297,7 +297,8 @@ export function restRequestOf(
   const headers = isRecord(args['headers']) ? args['headers'] : {};
   return createRestRequest(name, {
     method: operation.method.toUpperCase(),
-    url: operation.path,
+    // The document's path, escaped: a `${…}` in it is the document's text, sent literally (#223).
+    url: escapeExpansions(operation.path),
     pathParams: pathRows(path),
     query: Object.entries(query)
       .flatMap(([key, value]) => formRows(key, value))

@@ -17,7 +17,10 @@ export interface EndpointSelectProps {
 }
 
 interface EndpointOption {
+  /** The address as the definition wrote it, shown in the menu. */
   readonly address: string;
+  /** What choosing it puts in the field: the address with its `${` escaped by main, so it is sent as written (#223). */
+  readonly endpointUrl: string;
   readonly label: string;
   readonly matchesBinding: boolean;
 }
@@ -35,6 +38,7 @@ function collectOptions(summary: InterfaceSummary | undefined, bindingName: stri
       seen.add(port.address);
       options.push({
         address: port.address,
+        endpointUrl: port.endpointUrl ?? port.address,
         label: `${service.name} · ${port.name}`,
         matchesBinding: port.binding === bindingName,
       });
@@ -93,7 +97,7 @@ export function EndpointSelect({ summary, bindingName, value, onChange, onEditEn
                 key={option.address}
                 className={ITEM_CLASS}
                 onSelect={() => {
-                  onChange(option.address);
+                  onChange(option.endpointUrl);
                 }}
               >
                 <span className="max-w-full truncate font-mono">{option.address}</span>

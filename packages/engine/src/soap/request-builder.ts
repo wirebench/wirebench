@@ -17,6 +17,7 @@ import { createEnvelope } from './envelope.js';
 import { NamespaceScope } from './namespace-scope.js';
 import { soapActionHeaders } from './soap-action.js';
 import type { SoapActionOptions } from './soap-action.js';
+import { escapeExpansions } from '../project/properties.js';
 
 /** Identifies one operation of one binding. */
 export interface OperationRef {
@@ -135,7 +136,29 @@ export interface RequestBuildOptions extends SoapActionOptions {
 }
 
 /**
+ * A generated request whose contract-originated text is held for a saved request: every `${` in the
+ * envelope, the SOAP action, the action header and the `Content-Type` written as `$${`, so expansion at send time puts
+ * the contract's text on the wire as written and never resolves a reference from it (#223).
+ */
+function asStored(request: GeneratedRequest): GeneratedRequest {
+  return {
+    ...request,
+    envelopeXml: escapeExpansions(request.envelopeXml),
+    ...(request.soapAction !== undefined ? { soapAction: escapeExpansions(request.soapAction) } : {}),
+    // SOAP 1.2 carries the action in the media type rather than a header.
+    contentType: escapeExpansions(request.contentType),
+    headers: Object.fromEntries(
+      Object.entries(request.headers).map(([name, value]) => [name, escapeExpansions(value)]),
+    ),
+  };
+}
+
+/**
  * Builds the sample SOAP request for one binding operation.
+ *
+ * Everything in it comes from the contract, so a `${…}` there (an XSD `fixed` or `default` value, a
+ * SOAP action) is escaped as `$${…}`: the request is saved and expanded at send time, and the
+ * contract's text must be sent as written, not read as a property (#223).
  *
  * The builder never throws for a modelling problem: it always returns an
  * envelope (an empty one in the worst case) and reports what went wrong in
@@ -153,6 +176,28 @@ export interface RequestBuildOptions extends SoapActionOptions {
  * @param options indent plus SOAP action/`Content-Type` knobs
  */
 export function buildSampleRequest(
+  input: RequestBuildInput,
+  op: OperationRef,
+  genOptions?: Partial<GenerateOptions>,
+  options?: RequestBuildOptions,
+): GeneratedRequest {
+  return asStored(literalSampleRequest(input, op, genOptions, options));
+}
+
+/**
+ * {@link buildSampleRequest} with the contract's text as written, `${` unescaped: for a caller that
+ * shows the sample rather than saving or sending it (`wirebench generate`).
+ */
+export function buildLiteralSampleRequest(
+  input: RequestBuildInput,
+  op: OperationRef,
+  genOptions?: Partial<GenerateOptions>,
+  options?: RequestBuildOptions,
+): GeneratedRequest {
+  return literalSampleRequest(input, op, genOptions, options);
+}
+
+function literalSampleRequest(
   input: RequestBuildInput,
   op: OperationRef,
   genOptions?: Partial<GenerateOptions>,
@@ -218,9 +263,22 @@ export function buildSampleRequest(
 /**
  * Builds an empty envelope for one binding operation — the "Create Empty"
  * request. The envelope carries an empty `Header` and `Body`, while the SOAP
- * version, action and `Content-Type` are exactly those of a sample request.
+ * version, action and `Content-Type` are exactly those of a sample request,
+ * the action's `${` escaped the same way.
  */
 export function buildEmptyRequest(
+  input: RequestBuildInput,
+  op: OperationRef,
+  options?: RequestBuildOptions,
+): GeneratedRequest {
+  return asStored(literalEmptyRequest(input, op, options));
+}
+
+/**
+ * {@link buildEmptyRequest} with the contract's text as written, `${` unescaped: for a caller that
+ * checks the text against the contract first and escapes it itself before saving or sending it.
+ */
+export function literalEmptyRequest(
   input: RequestBuildInput,
   op: OperationRef,
   options?: RequestBuildOptions,

@@ -528,3 +528,5 @@ export function hasExpansions(text: string): boolean {
   }
   return false;
 }
+
+export { escapeExpansions, unescapeExpansions } from './escape-expansions.js';

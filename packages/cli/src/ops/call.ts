@@ -8,6 +8,7 @@ import {
   bindingContextFor,
   createRequest,
   envelopeFromJson,
+  escapeExpansions,
   faultDetailJson,
   jsonFromEnvelope,
   redactHeaders,
@@ -141,10 +142,12 @@ async function prepareSoap(
       group,
       iface,
       operation,
+      // Checked as written above; held escaped, so a `${…}` from the contract (a fixed value, the
+      // SOAP action) is sent literally rather than expanded (#223). The arguments hold none.
       request: createRequest(name, {
-        envelopeXml: built.envelopeXml,
+        envelopeXml: escapeExpansions(built.envelopeXml),
         soapVersion: built.soapVersion,
-        ...(built.soapAction !== undefined ? { soapAction: built.soapAction } : {}),
+        ...(built.soapAction !== undefined ? { soapAction: escapeExpansions(built.soapAction) } : {}),
         ...(endpointId !== undefined ? { endpointId } : {}),
       }),
     },

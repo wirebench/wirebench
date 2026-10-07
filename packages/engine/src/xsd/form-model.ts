@@ -33,6 +33,7 @@ import type { ScannedAttribute, ScannedElement, TextRange } from './xml-scan.js'
 import { scanXml } from './xml-scan.js';
 import type { XmlNode } from './xml-writer.js';
 import { PrefixTable, comment, element as xmlElement, escapeAttribute, escapeText } from './xml-writer.js';
+import { escapeExpansions } from '../project/escape-expansions.js';
 
 export type { TextRange } from './xml-scan.js';
 
@@ -363,6 +364,11 @@ function splitAttributes(
   return { matched, extras };
 }
 
+/** A schema's `fixed`/`default` value as an inserted node holds it: `${` escaped (#223). */
+function escapeForced(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : escapeExpansions(value);
+}
+
 function attributeNode(
   ctx: Ctx,
   attribute: ResolvedAttribute,
@@ -370,7 +376,9 @@ function attributeNode(
   id: string,
 ): FormNode {
   const ref = attribute.type ?? attribute.anonymousType;
-  const forced = attribute.fixed ?? attribute.default;
+  // A schema's fixed or default value is the contract's text: its `${` is escaped, as the generated
+  // envelope's is, so inserting it from the form sends it as written (#223).
+  const forced = escapeForced(attribute.fixed ?? attribute.default);
   return {
     id,
     kind: 'attribute',
@@ -432,7 +440,7 @@ function buildElementNode(
       ? { trailingComments: source.trailingComments }
       : {}),
   } as const;
-  const forced = effective.fixed ?? effective.default;
+  const forced = escapeForced(effective.fixed ?? effective.default);
 
   if (resolved.kind !== 'complex') {
     const ref = resolved.kind === 'simple' ? resolved.ref : undefined;

@@ -1,4 +1,4 @@
-import { bindingContextFor, ProjectError, validateMessage } from '@wirebench/engine';
+import { bindingContextFor, ProjectError, unescapeExpansions, validateMessage } from '@wirebench/engine';
 import type { QName } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -48,15 +48,19 @@ export function registerValidateChannels(service: EngineService, project: Valida
       );
     }
 
+    // Validate reads a request as written, placeholders and all, except the `$${` escape: that is a
+    // literal `${` the request sends — a generated value the contract wrote with `${` (#223) — so it
+    // is checked as the text it stands for. A response is what a server sent, and is never touched.
+    const literal = (text: string): string => (request.direction === 'request' ? unescapeExpansions(text) : text);
     const { problems, durationMs } = await validateMessage({
-      xml: request.xml ?? target.envelopeXml,
+      xml: literal(request.xml ?? target.envelopeXml),
       direction: request.direction,
       schemaSet: result.schemaSet,
       bundle: result.bundle,
       binding,
       http: {
-        ...(target.contentType !== undefined ? { contentType: target.contentType } : {}),
-        ...(target.soapAction !== undefined ? { soapAction: target.soapAction } : {}),
+        ...(target.contentType !== undefined ? { contentType: literal(target.contentType) } : {}),
+        ...(target.soapAction !== undefined ? { soapAction: literal(target.soapAction) } : {}),
       },
     });
 

@@ -68,6 +68,11 @@ const soapVersionSchema = z.enum(['1.1', '1.2', 'none']);
 const portSummarySchema = z.object({
   name: z.string(),
   address: z.string().optional(),
+  /**
+   * The URL an endpoint made from `address` holds: its `${` escaped as `$${` so the definition's text
+   * is sent as written (#223). Main sets it whenever `address` is set.
+   */
+  endpointUrl: z.string().optional(),
   binding: z.string(),
   soapVersion: soapVersionSchema,
 });
