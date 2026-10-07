@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **WS-Security from the WSDL's policy.** When a WSDL attaches a WS-SecurityPolicy to an operation, the
+  request's Auth inspector shows the tokens, the signed and encrypted parts, the algorithm suite and
+  whether TLS is required. **Apply policy** turns it into an outgoing WS-Security configuration in one
+  click, and a badge says whether the request satisfies the policy or lists what is still missing (#58).
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only

@@ -280,6 +280,8 @@ import {
   wssInsertEntryRequestSchema,
   wssRemoveOutgoingRequestSchema,
   wssEnvelopeResponseSchema,
+  wssPolicyStatusRequestSchema,
+  wssPolicyStatusResponseSchema,
   keystoresInspectRequestSchema,
   keystoresInspectResponseSchema,
   keystoresPickFileRequestSchema,
@@ -1176,6 +1178,7 @@ export const channels = {
     previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssEnvelopeResponseSchema),
     insertEntry: defineChannel('wss.insertEntry', wssInsertEntryRequestSchema, wssEnvelopeResponseSchema),
     removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    policyStatus: defineChannel('wss.policyStatus', wssPolicyStatusRequestSchema, wssPolicyStatusResponseSchema),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),

@@ -321,6 +321,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       previewOutgoing: fail('wss.previewOutgoing'),
       insertEntry: fail('wss.insertEntry'),
       removeOutgoing: fail('wss.removeOutgoing'),
+      policyStatus: fail('wss.policyStatus'),
     },
     history: {
       list: fail('history.list'),

@@ -5138,6 +5138,26 @@ export const wssEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
 export type WssPreviewOutgoingRequest = z.infer<typeof wssPreviewOutgoingRequestSchema>;
 export type WssEnvelopeResponse = z.infer<typeof wssEnvelopeResponseSchema>;
 
+/**
+ * `wss.policyStatus`: the WS-SecurityPolicy of a request's operation as the Auth inspector shows it
+ * (#58) — its summary lines, whether the request as configured now satisfies it (each requirement
+ * met or not, and why), and the entries "Apply policy" would store. `status` is absent when the
+ * operation carries no policy. Main runs the engine's check; the renderer only renders it.
+ */
+export const wssPolicyStatusRequestSchema = z.object({ requestId: z.string() });
+export const wssPolicyStatusResponseSchema = z.object({
+  status: z
+    .object({
+      lines: z.array(z.object({ label: z.string(), value: z.string() })),
+      satisfied: z.boolean(),
+      results: z.array(z.object({ requirement: z.string(), met: z.boolean(), reason: z.string().optional() })),
+      proposal: z.array(wssEntryWireSchema),
+      notes: z.array(z.string()),
+    })
+    .optional(),
+});
+export type WssPolicyStatusResponse = z.infer<typeof wssPolicyStatusResponseSchema>;
+
 /** `wss.insertEntry`: applies one ad-hoc entry, with no configuration involved. */
 export const wssInsertEntryRequestSchema = z.object({
   requestId: z.string(),
