@@ -11,6 +11,8 @@
  * case pays for the envelope exactly once. The empty-body optimisation applies only to leg
  * 2, the Type 1 token, which never carries a body of its own; a server that does challenge
  * causes the envelope to cross the wire a second time, on leg 3.
+ *
+ * When leg 1 followed a redirect, legs 2 and 3 go to the hop that challenged (see `challenged-hop.ts`).
  */
 
 import { randomBytes } from 'node:crypto';
@@ -19,6 +21,7 @@ import { createSingleConnectionDispatcher } from '../client.js';
 import { sendHttp } from '../client.js';
 import { headerValue, withoutHeader } from '../headers.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
+import { challengedRequest, withLegOneRedirects } from './challenged-hop.js';
 import {
   createType1,
   createType3,
@@ -101,8 +104,12 @@ export async function ntlmHandshake(
   const sendOptions = { dispatcher, ...(options?.now !== undefined ? { now: options.now } : {}) };
 
   let durationMs = 0;
-  const leg = async (headers: Readonly<Record<string, string>>, body: Uint8Array): Promise<HttpExchange> => {
-    const exchange = await sendHttp({ ...request, headers, body, timeoutMs: Math.max(1, remaining()) }, sendOptions);
+  const leg = async (
+    target: HttpRequest,
+    headers: Readonly<Record<string, string>>,
+    body: Uint8Array,
+  ): Promise<HttpExchange> => {
+    const exchange = await sendHttp({ ...target, headers, body, timeoutMs: Math.max(1, remaining()) }, sendOptions);
     durationMs += exchange.timings.totalMs;
     return exchange;
   };
@@ -110,13 +117,14 @@ export async function ntlmHandshake(
   try {
     // Leg 1: the real request, real body. A server that needs no auth answers here and we
     // are done — the envelope has already made it, so nothing is resent.
-    const first = await leg(request.headers, request.body ?? EMPTY_BODY);
+    const first = await leg(request, request.headers, request.body ?? EMPTY_BODY);
     if (first.status !== 401 || !offersNtlm(headerValue(first.headers, 'www-authenticate'))) {
       return { http: first, attempts: 1, challenged: false, durationMs };
     }
     if (remaining() <= 0) {
       return { http: first, attempts: 1, challenged: true, durationMs };
     }
+    const hop = challengedRequest(request, first, 'ntlm');
 
     // Leg 2: the Type 1 negotiate message, bodyless. Strip any content-encoding/length
     // that described leg 1's body — a gzip-declared zero-length body can trip up a strict
@@ -126,13 +134,13 @@ export async function ntlmHandshake(
       ...(credentials.workstation !== undefined ? { workstation: credentials.workstation } : {}),
     });
     const type1Headers = withoutHeader(
-      withoutHeader({ ...request.headers, Authorization: encodeNtlmAuthorization(type1) }, 'content-encoding'),
+      withoutHeader({ ...hop.headers, Authorization: encodeNtlmAuthorization(type1) }, 'content-encoding'),
       'content-length',
     );
-    const second = await leg(type1Headers, EMPTY_BODY);
+    const second = await leg(hop, type1Headers, EMPTY_BODY);
     const challengeBytes = parseNtlmChallengeHeader(headerValue(second.headers, 'www-authenticate'));
     if (challengeBytes === undefined || remaining() <= 0) {
-      return { http: second, attempts: 2, challenged: true, durationMs };
+      return { http: withLegOneRedirects(second, first), attempts: 2, challenged: true, durationMs };
     }
 
     // Leg 3: the Type 3 authenticate message, this time carrying the real body.
@@ -147,10 +155,11 @@ export async function ntlmHandshake(
       timestamp: options?.timestamp ?? toFileTime(now()),
     });
     const third = await leg(
-      { ...request.headers, Authorization: encodeNtlmAuthorization(type3.message) },
-      request.body ?? EMPTY_BODY,
+      hop,
+      { ...hop.headers, Authorization: encodeNtlmAuthorization(type3.message) },
+      hop.body ?? EMPTY_BODY,
     );
-    return { http: third, attempts: 3, challenged: true, durationMs };
+    return { http: withLegOneRedirects(third, first), attempts: 3, challenged: true, durationMs };
   } finally {
     if (ownDispatcher !== undefined) await ownDispatcher.close().catch(() => undefined);
   }

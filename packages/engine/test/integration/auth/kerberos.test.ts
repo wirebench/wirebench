@@ -3,15 +3,19 @@ import { sendWithAuth } from '../../../src/http/auth/apply.js';
 import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
 import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { startNegotiateServer, type NegotiateServer } from '../../helpers/negotiate-server.js';
+import { startRedirectServer, type RedirectServer } from '../../helpers/redirect-server.js';
 
 const TOKEN = Buffer.from('ap-req').toString('base64');
 const REPLY = Buffer.from('ap-rep').toString('base64');
 let server: NegotiateServer | undefined;
+let redirector: RedirectServer | undefined;
 
 afterEach(async () => {
   configureKerberos(undefined);
   await server?.close();
+  await redirector?.close();
   server = undefined;
+  redirector = undefined;
 });
 
 const post = (url: string, timeoutMs = 10_000) => ({
@@ -148,5 +152,69 @@ describe('Kerberos over HTTP Negotiate', () => {
     await expect(pending).rejects.toMatchObject({ code: 'aborted' });
     expect(Date.now() - abortedAt).toBeLessThan(1000);
     provider.release();
+  });
+
+  describe('after a redirect (#266)', () => {
+    const SPN = process.platform === 'win32' ? 'HTTP/127.0.0.1' : 'HTTP@127.0.0.1';
+    const follow = (url: string) => ({ ...post(url), followRedirects: true });
+
+    it('sends leg 2 straight to the hop that challenged, with that hop’s SPN', async () => {
+      const provider = fakeKerberos();
+      configureKerberos(provider);
+      server = await startNegotiateServer({
+        expectedToken: TOKEN,
+        reply: REPLY,
+        redirect: { from: '/old', status: 307 },
+      });
+      const result = await sendWithAuth(follow(server.url.replace('/svc', '/old')), { type: 'kerberos' });
+      expect(result.http.status).toBe(200);
+      expect(result.http.request.url).toBe(server.url);
+      expect(result.http.redirects).toEqual([{ url: server.url.replace('/svc', '/old'), status: 307 }]);
+      expect(result.auth).toEqual({ scheme: 'kerberos', challenged: true, attempts: 2, spn: SPN });
+      expect(provider.inits.map((init) => init.spn)).toEqual([SPN]);
+      expect(server.redirected).toHaveLength(1);
+      expect(server.requests.map((entry) => [entry.path, entry.authorization, entry.body])).toEqual([
+        ['/svc', undefined, '<Envelope/>'],
+        ['/svc', `Negotiate ${TOKEN}`, '<Envelope/>'],
+      ]);
+      expect(server.sameSocket()).toBe(true);
+    });
+
+    it('repeats the hop’s method too: a 302 turned the POST into a bodyless GET', async () => {
+      configureKerberos(fakeKerberos());
+      server = await startNegotiateServer({ expectedToken: TOKEN, redirect: { from: '/old', status: 302 } });
+      const result = await sendWithAuth(follow(server.url.replace('/svc', '/old')), { type: 'kerberos' });
+      expect(result.http.status).toBe(200);
+      expect(server.requests.map((entry) => [entry.method, entry.authorization, entry.body])).toEqual([
+        ['GET', undefined, ''],
+        ['GET', `Negotiate ${TOKEN}`, ''],
+      ]);
+    });
+
+    it('names the hop that challenged when it refuses the token', async () => {
+      configureKerberos(fakeKerberos());
+      server = await startNegotiateServer({
+        expectedToken: TOKEN,
+        rejectToken: true,
+        redirect: { from: '/old', status: 307 },
+      });
+      const sent = sendWithAuth(follow(server.url.replace('/svc', '/old')), { type: 'kerberos' });
+      await expect(sent).rejects.toMatchObject({ code: 'kerberos-rejected', details: { url: server.url } });
+      await expect(sent).rejects.toThrow(server.url);
+    });
+
+    it('makes no token for a hop on another origin, and names that hop', async () => {
+      const provider = fakeKerberos();
+      configureKerberos(provider);
+      server = await startNegotiateServer({ expectedToken: TOKEN });
+      const target = server.url;
+      redirector = await startRedirectServer(() => target);
+      const sent = sendWithAuth(follow(redirector.url), { type: 'kerberos' });
+      await expect(sent).rejects.toMatchObject({ code: 'kerberos-cross-origin', details: { url: target } });
+      await expect(sent).rejects.toThrow(target);
+      expect(provider.inits).toEqual([]);
+      expect(server.requests.map((entry) => entry.authorization)).toEqual([undefined]);
+      expect(redirector.authorizations).toEqual([undefined]);
+    });
   });
 });
