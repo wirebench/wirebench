@@ -124,6 +124,14 @@ describe('AsyncAPI import: contract text never becomes a reference (#287)', () =
     expect(sent(api.url)).toBe(`ws://evil.test/${slot}`);
   });
 
+  it('a long run of open braces is read in linear time', async () => {
+    const run = '{{|'.repeat(20_000);
+    const started = performance.now();
+    const { api } = await load(doc({ pathname: `/${run}`, address: `/${run}` }));
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(sent(api.url)).toBe(`ws://evil.test/${run}`);
+  });
+
   it('contract text holding ${…} around the slots is escaped, not expanded', async () => {
     const { api } = await load(doc({ pathname: '/${secret:tok}/${env}/{env}' }));
     expect(api.url).toBe('ws://evil.test/$${secret:tok}/$${env}/{env}');

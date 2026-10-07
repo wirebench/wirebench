@@ -94,11 +94,11 @@ export function deref(root: unknown, node: unknown): unknown {
 }
 
 /**
- * A `{name}` slot — a server variable or a channel parameter — as the document writes it: up to the
- * first `}`, so a nested brace is part of the name. The one grammar both the server URL and the
- * channel address are read with.
+ * A `{name}` slot — a server variable or a channel parameter — as the document writes it: a name
+ * with no brace in it, so `{a{b}` holds the slot `{b}`. Excluding `{` keeps the scan linear on a
+ * hostile run of open braces. The one grammar both the server URL and the channel address are read with.
  */
-export const SLOT = /\{([^}]+)\}/g;
+export const SLOT = /\{([^{}]+)\}/g;
 
 /**
  * `{name}` placeholders replaced by each variable's default (else first enum value). A slot with
