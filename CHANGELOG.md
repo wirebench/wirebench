@@ -73,10 +73,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **gRPC deadline in a run.** A unary gRPC call that passes its deadline in a run now errors with
-  `timeout`, as a REST request or a stream does, instead of reporting `DEADLINE_EXCEEDED` as a result
-  that an unasserted call passed with. A status 4 the server returns before the deadline is still a
-  result, and sending a call from the app still shows status 4 (#194).
+- **Issued-token status while typing.** The cached-token line under an issued-token entry reads
+  again once you stop editing, not on every keystroke (#279).
 - **Kerberos ticket wait.** A slow or unreachable Kerberos server no longer holds a send or a
   Cancel: the wait counts against the request's timeout (the handshake timeout for a WebSocket, the
   deadline for gRPC), Cancel stops it at once, and it fails with `timeout` and a message naming the
