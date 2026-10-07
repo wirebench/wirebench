@@ -15,6 +15,8 @@ import { verifyIncoming } from './verify.js';
 import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { WssContext, WssIncomingConfig } from '../model.js';
 import type { WssSignatureCheck } from './check.js';
+import { describeSecurityHeader } from '../timeline.js';
+import type { WssTimelineStep } from '../timeline.js';
 
 /** Which of the three incoming steps an action reports on. */
 export type WssActionKind = 'decrypt' | 'signature' | 'timestamp';
@@ -53,6 +55,11 @@ export interface WssResult {
   readonly decryptedXml?: string;
   /** Every failure, as a message safe to log. Empty when every action succeeded. */
   readonly errors: readonly string[];
+  /**
+   * The response's `wsse:Security` header step by step, in header order, read from the message as
+   * it arrived (so encryption is visible). Absent when the response carries no such header.
+   */
+  readonly timeline?: readonly WssTimelineStep[];
 }
 
 /** Options for {@link processIncomingWss}. */
@@ -176,6 +183,18 @@ export async function processIncomingWss(
   config: WssIncomingConfig,
   ctx: WssContext,
   options?: ProcessIncomingWssOptions,
+): Promise<WssResult> {
+  const result = await processSteps(xml, config, ctx, options);
+  const timeline = describeSecurityHeader(xml);
+  return timeline.length === 0 ? result : { ...result, timeline };
+}
+
+/** The decrypt, signature and timestamp steps of {@link processIncomingWss}. */
+async function processSteps(
+  xml: string,
+  config: WssIncomingConfig,
+  ctx: WssContext,
+  options: ProcessIncomingWssOptions | undefined,
 ): Promise<WssResult> {
   const clock = options?.clock ?? ctx.clock;
   const actions: WssAction[] = [];
