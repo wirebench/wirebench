@@ -14,6 +14,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { SCRIPT_LIMITS, type SandboxJob, type SandboxResult } from './model.js';
+import { forwardWorkerOutput, workerOutputOptions } from '../../worker-output.js';
 
 /** How many jobs may wait behind the one running before new ones are refused. */
 export const SCRIPT_QUEUE_LIMIT = 16;
@@ -111,7 +112,11 @@ export function createScriptSandbox(options: ScriptSandboxOptions = {}): ScriptS
 
   const spawn = (): Worker => {
     url ??= defaultWorkerUrl();
-    const next = new Worker(url, { resourceLimits: { stackSizeMb: WORKER_STACK_MB } });
+    const next = new Worker(url, {
+      resourceLimits: { stackSizeMb: WORKER_STACK_MB },
+      ...workerOutputOptions(),
+    });
+    forwardWorkerOutput(next);
     spawned += 1;
     // The sandbox must never be what keeps the process alive.
     next.unref();
