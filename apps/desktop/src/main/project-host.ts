@@ -1159,7 +1159,7 @@ export class ProjectHost {
       ...this.expectedOnDisk.filter((entry) => entry.until > now),
       { paths: [...paths], until: now + SELF_WRITE_TTL_MS },
     ];
-    this.open?.watcher.expect(paths);
+    this.open?.watcher.expect(paths, { snapshot: false });
   }
 
   /** Re-reads the folder from disk, discarding any unsaved in-memory changes. */
@@ -1208,7 +1208,7 @@ export class ProjectHost {
     const now = Date.now();
     this.expectedOnDisk = this.expectedOnDisk.filter((entry) => entry.until > now);
     for (const entry of this.expectedOnDisk) {
-      watcher.expect(entry.paths);
+      watcher.expect(entry.paths, { snapshot: false });
     }
     watcher.start();
   }

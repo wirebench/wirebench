@@ -27,7 +27,14 @@
  * retried a few times rather than giving up on the directory.
  */
 
-import { readdirSync as nodeReaddirSync, realpathSync, statSync as nodeStatSync, watch as nodeWatch } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  readdirSync as nodeReaddirSync,
+  readFileSync,
+  realpathSync,
+  statSync as nodeStatSync,
+  watch as nodeWatch,
+} from 'node:fs';
 import { readdir as nodeReaddir, stat as nodeStat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { MAX_FOLDER_DEPTH } from '@wirebench/engine';
@@ -264,14 +271,34 @@ function watchableDir(dir: string): string {
 }
 
 /**
+ * A path the app wrote itself: suppressed until `until`, but only while the file still holds what
+ * the app wrote. `digest` is the SHA-256 of that content, `null` when the app left the file
+ * absent, and `undefined` when there is no snapshot (a write made by someone else on the app's
+ * behalf, or a path that is not a readable file) — then every event in the window is suppressed.
+ */
+interface SelfWriteMark {
+  readonly until: number;
+  readonly digest?: string | null;
+}
+
+/** SHA-256 of the file at `absolute`; `null` when it does not exist; `undefined` when unreadable. */
+function digestOf(absolute: string): string | null | undefined {
+  try {
+    return createHash('sha256').update(readFileSync(absolute)).digest('hex');
+  } catch (error) {
+    return isGone(error) ? null : undefined;
+  }
+}
+
+/**
  * A pending self-write announcement, returned by {@link ProjectWatcher.announce} and consumed
  * exactly once by {@link ProjectWatcher.release}. Opaque to callers — everything on it is
  * `ProjectWatcher`'s own bookkeeping for the paths that one `announce()` call covered.
  */
 export class AnnouncementToken {
-  /** Each announced path's self-write expiry from *before* this announcement, or `undefined`
+  /** Each announced path's self-write mark from *before* this announcement, or `undefined`
    * when it was not marked at all — what `release()` restores for a path it does not `keep`. */
-  readonly priorMarks = new Map<string, number | undefined>();
+  readonly priorMarks = new Map<string, SelfWriteMark | undefined>();
   /** Announced paths whose event arrived (and was dropped) while owned by *this* announcement —
    * see {@link ProjectWatcher.record}. A drop that happened before this announcement started, or
    * under a different announcement, is never attributed here. */
@@ -303,7 +330,7 @@ export class ProjectWatcher {
   private generation = 0;
   private readonly pending = new Set<string>();
   /** Relative path to the timestamp after which it is no longer treated as a self-write. */
-  private readonly selfWrites = new Map<string, number>();
+  private readonly selfWrites = new Map<string, SelfWriteMark>();
   /**
    * Which {@link AnnouncementToken} currently owns each announced path — at most one at a time,
    * since usage is always `announce()` then `release()` in sequence. `record()` consults this to
@@ -691,12 +718,19 @@ export class ProjectWatcher {
    * currently own one of `paths`: that announcement's eventual {@link release} will find this
    * fresher mark already in place and leave the path alone, rather than restoring or re-delivering
    * anything for it.
+   *
+   * Call it *after* the write has landed: the file's content is remembered, and an event inside
+   * the window is suppressed only while the file still holds exactly that, so an outside edit
+   * made moments later (a sync pull, a checkout, an editor save) is reported rather than lost.
+   * A path that is not a readable file (a directory) is suppressed outright for the window. Pass
+   * `snapshot: false` for a write made by someone else on the app's behalf that has not landed
+   * yet (a sync pull): there is no content to compare, so the whole window is suppressed.
    */
-  expect(paths: readonly string[]): void {
+  expect(paths: readonly string[], options: { readonly snapshot?: boolean } = {}): void {
     const until = this.options.now() + this.options.selfWriteTtlMs;
     for (const rawPath of paths) {
       const path = this.normalise(rawPath);
-      this.selfWrites.set(path, until);
+      this.selfWrites.set(path, this.mark(path, until, options.snapshot !== false));
       this.announcedBy.delete(path);
     }
   }
@@ -718,7 +752,8 @@ export class ProjectWatcher {
     for (const rawPath of paths) {
       const path = this.normalise(rawPath);
       token.priorMarks.set(path, this.selfWrites.get(path));
-      this.selfWrites.set(path, until);
+      // Provisional: the write is still running, so there is nothing final to snapshot yet.
+      this.selfWrites.set(path, { until });
       this.announcedBy.set(path, token);
     }
     return token;
@@ -738,7 +773,7 @@ export class ProjectWatcher {
     const keepSet = new Set(keep.map((path) => this.normalise(path)));
     const until = this.options.now() + this.options.selfWriteTtlMs;
     let revived = false;
-    for (const [path, priorUntil] of token.priorMarks) {
+    for (const [path, prior] of token.priorMarks) {
       // Ownership already moved on (a plain `expect()`, TTL expiry, or a newer `announce()` of
       // the same path) — nothing here belongs to this announcement any more.
       if (this.announcedBy.get(path) !== token) {
@@ -746,13 +781,14 @@ export class ProjectWatcher {
       }
       this.announcedBy.delete(path);
       if (keepSet.has(path)) {
-        this.selfWrites.set(path, until);
+        // The write is done: remember what it left, so a later outside edit is told apart.
+        this.selfWrites.set(path, this.mark(path, until, true));
         continue;
       }
-      if (priorUntil === undefined) {
+      if (prior === undefined) {
         this.selfWrites.delete(path);
       } else {
-        this.selfWrites.set(path, priorUntil);
+        this.selfWrites.set(path, prior);
       }
       if (token.dropped.has(path) && !this.isSelfWrite(path)) {
         this.pending.add(path);
@@ -768,17 +804,35 @@ export class ProjectWatcher {
     return path.split(sep).join('/');
   }
 
+  private mark(path: string, until: number, snapshot: boolean): SelfWriteMark {
+    if (!snapshot) {
+      return { until };
+    }
+    const digest = digestOf(join(this.options.dir, ...path.split('/')));
+    return digest === undefined ? { until } : { until, digest };
+  }
+
+  /**
+   * True when an event on `path` is the app's own write coming back: the path is marked and has not
+   * lapsed, and — unless a write is still in flight (announced) or no snapshot was taken — the file
+   * still holds what the app wrote. Anything else is an outside change that landed in the window.
+   * An atomic write (temp file plus rename) is covered because the mark is taken after the rename,
+   * and the temp file's own events are for a path that is not managed.
+   */
   private isSelfWrite(path: string): boolean {
-    const until = this.selfWrites.get(path);
-    if (until === undefined) {
+    const mark = this.selfWrites.get(path);
+    if (mark === undefined) {
       return false;
     }
-    if (this.options.now() > until) {
+    if (this.options.now() > mark.until) {
       this.selfWrites.delete(path);
       this.announcedBy.delete(path);
       return false;
     }
-    return true;
+    if (this.announcedBy.has(path) || mark.digest === undefined) {
+      return true;
+    }
+    return digestOf(join(this.options.dir, ...path.split('/'))) === mark.digest;
   }
 
   private record(filename: string | Buffer | null): void {
