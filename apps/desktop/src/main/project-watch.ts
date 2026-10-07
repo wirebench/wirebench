@@ -767,7 +767,8 @@ export class ProjectWatcher {
       token.priorMarks.set(path, prior);
       // Provisional: the write is still running, so there is nothing final to snapshot yet. The
       // digests of the app's earlier writes stay, so `release()` can add to them rather than start over.
-      this.selfWrites.set(path, prior?.digests !== undefined ? { until, digests: prior.digests } : { until });
+      const live = this.liveDigests(prior);
+      this.selfWrites.set(path, live !== undefined ? { until, digests: live } : { until });
       this.announcedBy.set(path, token);
     }
     return token;
@@ -796,7 +797,7 @@ export class ProjectWatcher {
       this.announcedBy.delete(path);
       if (keepSet.has(path)) {
         // The write is done: remember what it left, so a later outside edit is told apart.
-        this.selfWrites.set(path, this.mark(path, until, true, prior?.digests));
+        this.selfWrites.set(path, this.mark(path, until, true, this.liveDigests(prior)));
         continue;
       }
       if (prior === undefined) {
@@ -845,6 +846,11 @@ export class ProjectWatcher {
 
   private normalise(path: string): string {
     return path.split(sep).join('/');
+  }
+
+  /** The digests of a mark that has not lapsed; `undefined` for none, a lapsed mark or one without a snapshot. */
+  private liveDigests(mark: SelfWriteMark | undefined): readonly (string | null)[] | undefined {
+    return mark !== undefined && mark.until >= this.options.now() ? mark.digests : undefined;
   }
 
   /** Absolute location of a watched-relative path; one that is already absolute is used as it is. */
@@ -897,12 +903,7 @@ export class ProjectWatcher {
     if (digest === undefined) {
       return { until };
     }
-    const previous = this.selfWrites.get(path);
-    const earlier =
-      earlierDigests ??
-      (previous !== undefined && previous.until >= this.options.now() && previous.digests !== undefined
-        ? previous.digests
-        : []);
+    const earlier = earlierDigests ?? this.liveDigests(this.selfWrites.get(path)) ?? [];
     const digests = [...earlier.filter((known) => known !== digest), digest].slice(-MAX_DIGESTS);
     return { until, digests };
   }

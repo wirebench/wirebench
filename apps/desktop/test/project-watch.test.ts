@@ -385,6 +385,30 @@ describe('ProjectWatcher', () => {
       expect(await seen.next(150)).toBeUndefined();
     });
 
+    it('does not carry digests from a mark that has lapsed', async () => {
+      dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
+      let now = 1_000;
+      const seen = new Collector();
+      watcher = new ProjectWatcher({
+        dir,
+        debounceMs: DEBOUNCE_MS,
+        selfWriteTtlMs: 50,
+        now: () => now,
+        isManaged: () => true,
+        onChange: seen.push,
+      });
+      const file = join(dir, 'wirebench.yaml');
+      await writeFile(file, 'v: 1\n', 'utf8');
+      watcher.expect(['wirebench.yaml']);
+      now += 100; // v1's mark has lapsed
+      await writeFile(file, 'v: 2\n', 'utf8');
+      watcher.expect(['wirebench.yaml']);
+      // The file goes back to v1 from outside: v1 is no longer the app's content.
+      await writeFile(file, 'v: 1\n', 'utf8');
+      simulateEvent(watcher, 'wirebench.yaml');
+      expect(await seen.next(10_000)).toEqual(['wirebench.yaml']);
+    });
+
     it('falls back to suppress-all for a file over the size cap', async () => {
       const { seen, target } = make();
       const file = join(dir as string, 'wirebench.yaml');

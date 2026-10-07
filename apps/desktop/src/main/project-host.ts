@@ -1304,8 +1304,15 @@ export class ProjectHost {
       const touched = result !== undefined ? [...result.written, ...result.removed] : [];
       // A removed folder (a deleted interface or API) takes every file in it along: those are the app's too.
       const folders = result?.removed.map((path) => `${path}/`) ?? [];
+      // A path renamed only by case (Foo to foo on a case-folding disk) is the app's too, under both names.
+      const byFold = new Map<string, string[]>();
+      for (const path of candidates) {
+        byFold.set(path.toLowerCase(), [...(byFold.get(path.toLowerCase()) ?? []), path]);
+      }
+      const renamedByCase = [...byFold.values()].filter((group) => group.length > 1).flat();
       open.watcher.release(token, [
         ...touched,
+        ...renamedByCase,
         ...[...candidates].filter((path) => folders.some((folder) => path.startsWith(folder))),
       ]);
     }
