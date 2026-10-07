@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
+import { isLockedByPolicy, usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -74,5 +74,18 @@ describe('preferences store', () => {
 
     await usePreferencesStore.getState().reset();
     expect(reset).toHaveBeenLastCalledWith({});
+  });
+});
+
+describe('preferences store policy', () => {
+  it('fetches the managed-preferences policy from main', async () => {
+    const policy = { path: '/etc/wirebench/policy.yaml', locked: ['proxy.mode'], ignored: [] };
+    installWirebenchApi({ preferences: { policy: vi.fn().mockResolvedValue({ ok: true, value: policy }) } });
+    usePreferencesStore.setState({ policy: undefined });
+    await usePreferencesStore.getState().loadPolicy();
+    expect(usePreferencesStore.getState().policy).toEqual(policy);
+    expect(isLockedByPolicy(usePreferencesStore.getState().policy, 'proxy.mode')).toBe(true);
+    expect(isLockedByPolicy(usePreferencesStore.getState().policy, 'proxy.port')).toBe(false);
+    expect(isLockedByPolicy(undefined, 'proxy.mode')).toBe(false);
   });
 });

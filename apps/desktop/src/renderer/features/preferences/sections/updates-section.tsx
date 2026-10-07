@@ -6,12 +6,13 @@ import type { SectionProps } from './section-props.js';
  * user runs "Check for Updates…", or — if this is on — once shortly after the app starts, and
  * never otherwise. Nothing is ever downloaded or installed without a separate confirmation.
  */
-export function UpdatesSection({ preferences, update }: SectionProps) {
+export function UpdatesSection({ preferences, update, locked = () => false }: SectionProps) {
   return (
     <SettingsGroup title="Updates">
       <BooleanSetting
         label="Check for updates on launch"
         value={preferences.updates.checkOnLaunch}
+        locked={locked('updates.checkOnLaunch')}
         onChange={(checkOnLaunch) => update({ updates: { checkOnLaunch } })}
         hint="Asks GitHub Releases for the latest version at startup. Downloading and installing still need your confirmation."
       />
