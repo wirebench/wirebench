@@ -1110,6 +1110,20 @@ export type { WsaHeaderContext } from './wsa/headers.js';
 export { defaultAction, detectWsaDefaults, summarizeWsa } from './wsa/policy-detect.js';
 export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
 export { detectWssPolicy, summarizeWssPolicy } from './wss/policy/detect.js';
+export {
+  checkWssPolicy,
+  describeWssPolicy,
+  proposeWssEntries,
+  requiredSignatureParts,
+  suiteAlgorithms,
+} from './wss/policy/plan.js';
+export type {
+  WssPolicyCheck,
+  WssPolicyCheckResult,
+  WssPolicyLine,
+  WssPolicyProposal,
+  WssSuiteAlgorithms,
+} from './wss/policy/plan.js';
 export type {
   WssPolicy,
   WssPolicyKeyReference,
