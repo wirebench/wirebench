@@ -89,7 +89,10 @@ applies here too.
 
 The same recorded values are masked in a REST response body (the decoded text the pane renders and copies, the body and the raw body bytes; show-secrets reveals them) before it reaches the renderer, and in a REST request copied as cURL from the editor, URL,
 headers and body alike, unless show-secrets is on. Only the recorded values' own bytes are replaced, so
-a binary body keeps every other byte.
+a binary body keeps every other byte. In decoded XML or HTML text the marker is written escaped
+(`&lt;redacted&gt;`), as in a redacted envelope, so pretty-printing and the HTML preview see text,
+not a tag. Flipping show-secrets re-reads every response a pane shows — each request's last response
+and every environment-compare result — not only the row selected in the HTTP Log.
 
 Copying an HTTP Log row as cURL builds the command in main from the row the renderer holds. For a
 finished exchange it follows the show-secrets toggle; for a failure row it is always masked, since
@@ -212,10 +215,10 @@ not gated: the person typing the command has allowed it. The gates belong to the
   its next request and must initialize again; a malformed or non-initialize request closes nothing.
   Every client shares the one token, so any holder of it can close other clients' sessions by opening
   new ones. There is no idle timeout below the cap: stop the process to drop them.
-- **On stdio, stdout is frames only, as far as the process's own code goes.** `console.log`, `info` and
-  `debug` are pointed at stderr while the server runs. The engine's worker threads (the XPath and
-  JSONPath evaluator, the REST contract check, the script checker) keep Node's default: their stdout
-  is not guarded. None of them writes to it, but a line one did print would reach the protocol stream.
+- **On stdio, stdout is frames only.** `console.log`, `info` and `debug` are pointed at stderr while
+  the server runs, and so is the stdout of the engine's worker threads (the XPath and JSONPath
+  evaluator, the REST contract check, the script checker and sandbox, the WebSocket frame check): a
+  stray line from any of them lands on stderr, not in the protocol stream.
 - **No model runs in Wirebench.** The server answers tool calls; the agent, its model and its prompts
   live outside the app. Nothing is sent anywhere except the requests the user or the agent asks
   `send` to make.

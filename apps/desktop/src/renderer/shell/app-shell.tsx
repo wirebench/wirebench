@@ -26,6 +26,7 @@ import { subscribeToHistory } from '../state/history.js';
 import {
   subscribeToExchangeFailures,
   subscribeToExchangeLogged,
+  subscribeToSecretsVisibility,
   subscribeToGrpcLive,
   subscribeToRestLive,
   subscribeToWsLive,
@@ -283,6 +284,7 @@ export function AppShell() {
   useEffect(() => subscribeToHistory(), []);
   useEffect(() => subscribeToExchangeFailures(), []);
   useEffect(() => subscribeToExchangeLogged(), []);
+  useEffect(() => subscribeToSecretsVisibility(), []);
   useEffect(() => subscribeToGrpcLive(), []);
   useEffect(() => subscribeToRestLive(), []);
   useEffect(() => subscribeToWsLive(), []);
