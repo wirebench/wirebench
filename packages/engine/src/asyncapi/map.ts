@@ -8,6 +8,7 @@
 
 import { AsyncApiError } from '../errors.js';
 import { unsupportedKeywordsIn } from '../json/schema-validate.js';
+import { escapeExpansions } from '../project/escape-expansions.js';
 import type { AuthConfig, IdGenerator } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
 import { entry, type KeyValueEntry } from '../http/entries.js';
@@ -23,7 +24,7 @@ import {
   type WsSavedMessage,
 } from '../ws/model.js';
 import type { AsyncApiChannel, AsyncApiDocument, AsyncApiMessage, AsyncApiServer, AsyncApiSkip } from './model.js';
-import { isJsonSchemaFormat, isRecord, record, str } from './read.js';
+import { isJsonSchemaFormat, isRecord, record, SLOT, str } from './read.js';
 import { authFromScheme, isSkip } from './security.js';
 
 export interface MapAsyncApiOptions {
@@ -42,7 +43,10 @@ export interface AsyncApiImportSummary {
   readonly requests: number;
   readonly messages: number;
   readonly skipped: readonly AsyncApiSkip[];
-  /** Parameters and server variables left as `${name}` for the user to define. */
+  /**
+   * Parameters and server variables the document gives no value: each is sent as the literal
+   * `{name}` it wrote, for the user to map themselves (#287).
+   */
   readonly unresolved: readonly string[];
   /** JSON Schema keywords the contract check will not assert. */
   readonly unsupportedKeywords: readonly string[];
@@ -60,22 +64,25 @@ function isWsServer(server: AsyncApiServer): boolean {
   return WS_PROTOCOLS.has(server.protocol.toLowerCase());
 }
 
-/** `{name}` placeholders as Wirebench properties, the names collected. */
-function asProperties(text: string, unresolved: Set<string>): string {
-  return text.replace(/\{([^{}]+)\}/g, (_whole, name: string) => {
-    unresolved.add(name);
-    return `\${${name}}`;
-  });
+/** The report line for a slot the document gives no value: what it lacks, and that it is sent as written. */
+function literalSlot(name: string, lacks: string): string {
+  return `{${name}} has no ${lacks}: it is sent as the literal text {${name}}`;
 }
 
-function channelUrl(channel: AsyncApiChannel, unresolved: Set<string>): string {
+/**
+ * The channel address with each `{name}` parameter filled from its default (else its first enum
+ * value, else its first example). A parameter with none stays the literal `{name}` the document
+ * wrote: it never becomes a `${name}` property, which would read whatever property, secret or
+ * System value that name reaches and send it to a host the document chose (#287).
+ */
+function channelAddress(channel: AsyncApiChannel, literal: (name: string) => void): string {
   if (channel.address === null) return '';
-  return channel.address.replace(/\{([^{}]+)\}/g, (_whole, name: string) => {
-    const p = channel.parameters[name];
+  return channel.address.replace(SLOT, (whole, name: string) => {
+    const p = Object.hasOwn(channel.parameters, name) ? channel.parameters[name] : undefined;
     const chosen = p?.default ?? p?.enum?.[0] ?? p?.examples?.[0];
     if (chosen !== undefined) return chosen;
-    unresolved.add(name);
-    return `\${${name}}`;
+    literal(name);
+    return whole;
   });
 }
 
@@ -103,12 +110,15 @@ function wsBinding(channel: AsyncApiChannel, skipped: AsyncApiSkip[]): WsBinding
     skipped.push({ where, reason: `ws binding method ${method} is ignored: a handshake is always GET` });
   }
   const propertiesOf = (schema: unknown) => Object.entries(record(record(schema)['properties']));
-  const query = propertiesOf(binding['query']).map(([name, schema]) => entry(name, sampleText(sampleOf(schema))));
+  // Names and samples are the document's text, escaped: a send expands both (#287).
+  const literal = (name: string, schema: unknown) =>
+    entry(escapeExpansions(name), escapeExpansions(sampleText(sampleOf(schema))));
+  const query = propertiesOf(binding['query']).map(([name, schema]) => literal(name, schema));
   const headers: KeyValueEntry[] = [];
   const subprotocols: string[] = [];
   for (const [name, schema] of propertiesOf(binding['headers'])) {
     if (name.toLowerCase() !== SUBPROTOCOL_HEADER) {
-      headers.push(entry(name, sampleText(sampleOf(schema))));
+      headers.push(literal(name, schema));
       continue;
     }
     const s = record(schema);
@@ -117,7 +127,7 @@ function wsBinding(channel: AsyncApiChannel, skipped: AsyncApiSkip[]): WsBinding
     if (names.length === 0) {
       skipped.push({ where, reason: 'Sec-WebSocket-Protocol has no const or enum to take a subprotocol from' });
     }
-    subprotocols.push(...names);
+    subprotocols.push(...names.map(escapeExpansions));
   }
   return { query, headers, subprotocols };
 }
@@ -136,12 +146,15 @@ function notWebSocket(channel: AsyncApiChannel, servers: readonly AsyncApiServer
     : 'no WebSocket server carries it';
 }
 
-/** The saved-message text for one outgoing message, or undefined when it gets no sample. */
+/**
+ * The saved-message text for one outgoing message, or undefined when it gets no sample. The
+ * document's example or sample, escaped: a send expands a saved message (#287).
+ */
 function messageText(m: AsyncApiMessage): string | undefined {
   if (!isJsonSchemaFormat(m.schemaFormat)) return undefined;
   const value = m.example !== undefined ? m.example : sampleOf(m.payload);
-  if (typeof value === 'string' && record(m.payload)['type'] === 'string') return value;
-  return JSON.stringify(value, null, 2) ?? '';
+  if (typeof value === 'string' && record(m.payload)['type'] === 'string') return escapeExpansions(value);
+  return escapeExpansions(JSON.stringify(value, null, 2) ?? '');
 }
 
 function chooseServer(document: AsyncApiDocument, wanted: string | undefined): AsyncApiServer | undefined {
@@ -173,7 +186,13 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
       skipped.push({ where: `server ${s.key}`, reason: `${s.protocol} server: only WebSocket is imported` });
   }
   if (server === undefined) skipped.push({ where: 'servers', reason: 'no ws or wss server: the API has no URL' });
-  const url = server !== undefined ? asProperties(server.url, unresolved) : '';
+  // The URL with its variables already filled (normalising did that), the document's text escaped:
+  // a send expands the API's URL, and a `${…}` the document wrote must reach the wire as written.
+  const url = server !== undefined ? escapeExpansions(server.url) : '';
+  for (const name of server?.unresolvedVariables ?? []) {
+    unresolved.add(name);
+    skipped.push({ where: `server ${server!.key}`, reason: literalSlot(name, 'default or enum') });
+  }
 
   let auth: AuthConfig | undefined;
   for (const scheme of server?.security ?? []) {
@@ -235,7 +254,13 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
       ...ids,
       slug,
       order: order++,
-      url: channelUrl(channel, unresolved),
+      // The document's text, escaped: a send expands the request's URL (#287).
+      url: escapeExpansions(
+        channelAddress(channel, (name) => {
+          unresolved.add(name);
+          skipped.push({ where, reason: literalSlot(name, 'default, enum or example') });
+        }),
+      ),
       query: binding.query,
       headers: binding.headers,
       subprotocols: binding.subprotocols,

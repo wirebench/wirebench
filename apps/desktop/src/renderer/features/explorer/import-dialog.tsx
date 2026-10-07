@@ -2121,7 +2121,7 @@ export function AsyncApiSummary({ summary }: { readonly summary: AsyncApiImportS
         </p>
         {summary.unresolved.length > 0 && (
           <p data-testid="import-asyncapi-unresolved" className="mt-1 text-xs text-fg-subtle">
-            Left as properties to define: {summary.unresolved.map((name) => `\${${name}}`).join(', ')}
+            No value in the document, sent as written: {summary.unresolved.map((name) => `{${name}}`).join(', ')}
           </p>
         )}
         {summary.unsupportedKeywords.length > 0 && (

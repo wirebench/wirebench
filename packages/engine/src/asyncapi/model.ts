@@ -36,7 +36,7 @@ export interface AsyncApiServer {
   readonly url: string;
   readonly protocol: string;
   readonly security: readonly AsyncApiSecurityScheme[];
-  /** Variables left as `{name}` in {@link url}: no default and no enum to take one from. */
+  /** Variables left as the literal `{name}` in {@link url}: no default and no enum to take one from. */
   readonly unresolvedVariables: readonly string[];
 }
 

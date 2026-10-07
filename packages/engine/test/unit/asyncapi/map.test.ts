@@ -94,7 +94,7 @@ describe('mapAsyncApi', () => {
     };
     const { api, summary } = mapAsyncApi(doc, { newId: seqIds() });
     const req = api.requests[0]!;
-    expect(req.url).toBe('/${id}');
+    expect(req.url).toBe('/{id}'); // no value: sent as written (#287)
     expect(summary.unresolved).toEqual(['id']);
     expect(JSON.parse(req.messages[0]!.content)).toEqual({ n: 0 });
     expect(req.messages[1]!.content).not.toMatch(/^"/);

@@ -76,7 +76,8 @@ brace, the last two and the brace form the escape and every `$` before them stay
 ### Text that comes from a contract
 
 A `${` in a definition's own text belongs to the definition, not to you. When Wirebench makes
-something you send from a WSDL or an OpenAPI document, it writes every `${` it copies as `$${`.
+something you send from a WSDL, an OpenAPI or an AsyncAPI document, it writes every `${` it copies
+as `$${`.
 That covers:
 
 - an XSD `fixed` or `default` value, in a generated request or inserted from the form view
@@ -85,6 +86,17 @@ That covers:
 - an OpenAPI path, a server URL and the base URL taken from it
 - an OpenAPI example or default
 - an OAuth2 token URL, authorization URL and scope, and an API key's name
+- an AsyncAPI server URL and channel address, a server variable's default or enum value, and a
+  channel parameter's default, enum or example value
+- an AsyncAPI WebSocket binding's query and header names and samples, and its subprotocols
+- an AsyncAPI message example, or the sample made from its payload
+
+An AsyncAPI `{name}` server variable or channel parameter is filled from the document's own
+default or enum value (a parameter's example too). One with no value stays the literal text `{name}`
+and is sent that way. It never becomes the property `${name}`, because that would read whatever
+property, secret or environment variable the name reaches and send it to a host the document chose.
+The import report lists each such slot, so you can replace it with a value or a property of your
+own.
 
 A contract tool's call does the same. Each `${` then goes on the wire exactly as the definition
 wrote it, and never reads a property, a secret, or an environment variable through
@@ -98,8 +110,9 @@ to fix it. Re-import the definition to fix an interface's endpoints, an API's se
 or its OAuth2 settings, since regenerating a request does not change those. Or write the `${` as
 `$${` yourself.
 
-An AsyncAPI import escapes only its OAuth2 and API key settings so far. The rest of an AsyncAPI
-definition's `${` is not escaped yet.
+An AsyncAPI API imported before this rule is not repaired by **Update definition…**. An update
+rewrites a field only while it still equals what the contract generates, and the old unescaped text
+no longer does, so it is kept as if you had edited it. Import the document again instead.
 
 ## Undefined and malformed references
 

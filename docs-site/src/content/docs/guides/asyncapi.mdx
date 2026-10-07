@@ -32,7 +32,9 @@ contract only adds to it.
 </Steps>
 
 The summary counts the requests and messages it made, names any `{parameter}` or server variable
-it had no default for — those are left as `${name}` properties to define in an environment — and
+it had no default or enum value for — those stay the literal text `{name}` in the URL, for you to
+replace with a value or a property of your own (see
+[Text that comes from a contract](/wirebench/docs/reference/property-syntax/#text-that-comes-from-a-contract)) — and
 lists schema keywords the contract check does not assert. Everything it did not map is under
 **Skipped**, one line each: Kafka, MQTT, AMQP and every other non-WebSocket server, channel or
 binding; message formats other than JSON Schema (an Avro message, for instance); and security
