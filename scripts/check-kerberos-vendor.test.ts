@@ -14,27 +14,40 @@ async function resources(prebuilds: string[]): Promise<string> {
 }
 
 describe('checkKerberosVendor', () => {
-  it('passes when every pinned prebuild of the platform is there', async () => {
-    const dir = await resources(['linux-x64', 'linux-arm64']);
-    expect(checkKerberosVendor({ platform: 'linux', resourcesDirs: [dir], loadHost: false })).toEqual([]);
+  it('passes a single-architecture build that carries only its own binding', async () => {
+    const dir = await resources(['linux-x64']);
+    expect(checkKerberosVendor({ target: 'linux-x64', resourcesDirs: [dir], loadHost: false })).toEqual([]);
   });
 
-  it('names each missing binding', async () => {
-    const dir = await resources(['linux-x64']);
-    expect(checkKerberosVendor({ platform: 'linux', resourcesDirs: [dir], loadHost: false })).toEqual([
-      `${join(dir, 'kerberos', 'linux-arm64', 'kerberos.node')} is missing`,
+  it('names a binding of another architecture in a single-architecture build', async () => {
+    const dir = await resources(['linux-x64', 'linux-arm64']);
+    expect(checkKerberosVendor({ target: 'linux-x64', resourcesDirs: [dir], loadHost: false })).toEqual([
+      `${join(dir, 'kerberos', 'linux-arm64')} is not a binding a linux-x64 build needs`,
     ]);
   });
 
-  it('accepts a Windows build with only the x64 binding, since there is no arm64 prebuild', async () => {
-    const dir = await resources(['win32-x64']);
-    expect(checkKerberosVendor({ platform: 'win32', resourcesDirs: [dir], loadHost: false })).toEqual([]);
+  it('wants every pinned binding of the platform when the target names no architecture', async () => {
+    const dir = await resources(['darwin-arm64']);
+    expect(checkKerberosVendor({ target: 'darwin', resourcesDirs: [dir], loadHost: false })).toEqual([
+      `${join(dir, 'kerberos', 'darwin-x64', 'kerberos.node')} is missing`,
+    ]);
+    const both = await resources(['darwin-arm64', 'darwin-x64']);
+    expect(checkKerberosVendor({ target: 'darwin', resourcesDirs: [both], loadHost: false })).toEqual([]);
+  });
+
+  it('wants no binding in a Windows arm64 build, since there is no arm64 prebuild', async () => {
+    const empty = await resources([]);
+    expect(checkKerberosVendor({ target: 'win32-arm64', resourcesDirs: [empty], loadHost: false })).toEqual([]);
+    const x64 = await resources(['win32-x64']);
+    expect(checkKerberosVendor({ target: 'win32-arm64', resourcesDirs: [x64], loadHost: false })).toEqual([
+      `${join(x64, 'kerberos', 'win32-x64')} is not a binding a win32-arm64 build needs`,
+    ]);
   });
 
   it('checks every resources directory it is given', async () => {
     const complete = await resources(['win32-x64']);
     const empty = await resources([]);
-    expect(checkKerberosVendor({ platform: 'win32', resourcesDirs: [complete, empty], loadHost: false })).toEqual([
+    expect(checkKerberosVendor({ target: 'win32-x64', resourcesDirs: [complete, empty], loadHost: false })).toEqual([
       `${join(empty, 'kerberos', 'win32-x64', 'kerberos.node')} is missing`,
     ]);
   });
@@ -44,9 +57,9 @@ describe('checkKerberosVendor loading', () => {
   it.skipIf(!['darwin', 'linux'].includes(process.platform))(
     'loads the host binding by absolute path, so a relative resources dir is not read as a package name',
     async () => {
-      const dir = await resources(['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64']);
+      const dir = await resources([`${process.platform}-arm64`, `${process.platform}-x64`]);
       const problems = checkKerberosVendor({
-        platform: process.platform,
+        target: process.platform,
         resourcesDirs: [relative(process.cwd(), dir)],
         loadHost: true,
       });
