@@ -81,6 +81,9 @@ All notable changes to this project are documented here. The format follows
   `history_diff` now write the marker as escaped text, so the body and its History entry still parse (#183).
 - **Issued-token status while typing.** The cached-token line under an issued-token entry reads
   again once you stop editing, not on every keystroke (#279).
+- **A WebSocket upgrade refused with 401 drops the OAuth2 token.** The next connect fetches a new
+  one instead of reusing the stale token until it expires, as a REST `401` already did. A server that
+  cannot be reached, a `403`, a timeout and a cancel keep the token (#193).
 - **Kerberos ticket wait.** A slow or unreachable Kerberos server no longer holds a send or a
   Cancel: the wait counts against the request's timeout (the handshake timeout for a WebSocket, the
   deadline for gRPC), Cancel stops it at once, and it fails with `timeout` and a message naming the
