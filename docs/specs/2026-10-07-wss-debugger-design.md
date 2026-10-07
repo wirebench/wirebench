@@ -96,7 +96,8 @@ export interface WssSignatureCheck {
   - one or more references failed: `Reference #Id-1 (Body) does not match: the digest computed with
     exc-c14n and sha256 differs from the one in the message.` (the first failing reference; the rest are
     in `check`);
-  - an unresolvable reference: `Reference #Id-1 points at no element in the message.`;
+  - a reference that cannot be digested: `Reference #Id-1 could not be checked: No element in the message
+    carries this id.`;
   - references fine, value not: `Every reference matches, but the SignatureValue does not verify with the
     signer's certificate: SignedInfo was changed, or the message names the wrong certificate.`
 - `WssAction` gains `check?: WssSignatureCheck` on `signature` actions.

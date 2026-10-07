@@ -124,6 +124,15 @@ describe('signature check', () => {
     expect(missing?.computedDigest).toBeUndefined();
   });
 
+  it('says a reference could not be checked when its id is gone', async () => {
+    const ctx = createWssContext({ keystores: () => Promise.resolve(truststore) });
+    const xml = (await signed()).replace(/(<soapenv:Body[^>]*wsu:Id=")Id-/, '$1Gone-');
+    const result = await processIncomingWss(xml, incoming, ctx);
+    expect(result.actions[0]?.detail).toMatch(
+      /^Reference #Id-[\w-]+ could not be checked: No element in the message carries this id\.$/,
+    );
+  });
+
   it('puts the cause in the signature action', async () => {
     const ctx = createWssContext({ keystores: () => Promise.resolve(truststore) });
     const tampered = (await signed()).replace('<Ping>hello</Ping>', '<Ping>HELLO</Ping>');

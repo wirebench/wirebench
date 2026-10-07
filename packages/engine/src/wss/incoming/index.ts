@@ -89,9 +89,7 @@ function failureDetail(check: WssSignatureCheck | undefined): string | undefined
   if (failed !== undefined) {
     const name = failed.element !== undefined && failed.element !== '' ? ` (${failed.element})` : '';
     if (failed.computedDigest === undefined) {
-      return failed.element === undefined
-        ? `Reference #${failed.uri} points at no element in the message: ${failed.problem ?? 'it cannot be resolved.'}`
-        : `Reference #${failed.uri}${name} could not be digested: ${failed.problem ?? 'unknown error.'}`;
+      return `Reference #${failed.uri}${name} could not be checked: ${failed.problem ?? 'unknown error.'}`;
     }
     const transforms = failed.transforms.length === 0 ? 'no transform' : failed.transforms.join(' + ');
     return (
