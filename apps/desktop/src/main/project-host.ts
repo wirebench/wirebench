@@ -1277,14 +1277,23 @@ export class ProjectHost {
     // with a newer one while the write is in flight, and bookkeeping below must describe the
     // model that was actually saved, not whatever happens to be open afterwards.
     const model = open.project;
-    const result = await saveProject(model, open.dir, {
-      ...(open.lastWritten !== undefined ? { previous: open.lastWritten } : {}),
-      writer: PROJECT_WRITER,
-      ...(options.backups !== undefined ? { backups: options.backups } : {}),
-      ...(this.fs !== undefined ? { fs: this.fs } : {}),
-    });
-    open.watcher.expect([...result.written, ...result.removed]);
-    open.lastWritten = projectFiles(model, { writer: PROJECT_WRITER });
+    const files = projectFiles(model, { writer: PROJECT_WRITER });
+    // Announce every path this write might touch (all it will write, plus anything it may remove)
+    // before it starts, so the events of a save that has not finished — or of the autosave right
+    // behind it — are never taken for an outside edit; `release` then keeps what was really written.
+    const token = open.watcher.announce([...new Set([...files.keys(), ...(open.lastWritten?.keys() ?? [])])]);
+    let result: Awaited<ReturnType<typeof saveProject>> | undefined;
+    try {
+      result = await saveProject(model, open.dir, {
+        ...(open.lastWritten !== undefined ? { previous: open.lastWritten } : {}),
+        writer: PROJECT_WRITER,
+        ...(options.backups !== undefined ? { backups: options.backups } : {}),
+        ...(this.fs !== undefined ? { fs: this.fs } : {}),
+      });
+    } finally {
+      open.watcher.release(token, result !== undefined ? [...result.written, ...result.removed] : []);
+    }
+    open.lastWritten = files;
     open.baseline = open.lastWritten;
     if (open.project === model) {
       open.dirty = false;

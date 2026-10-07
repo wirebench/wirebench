@@ -36,7 +36,7 @@ import {
   watch as nodeWatch,
 } from 'node:fs';
 import { readdir as nodeReaddir, stat as nodeStat } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { isAbsolute, join, sep } from 'node:path';
 import { MAX_FOLDER_DEPTH } from '@wirebench/engine';
 
 /** How long events are coalesced before `onChange` fires. */
@@ -278,16 +278,24 @@ function watchableDir(dir: string): string {
  */
 interface SelfWriteMark {
   readonly until: number;
-  readonly digest?: string | null;
+  /** Every content the app wrote to the path within the window, newest last; any match suppresses. */
+  readonly digests?: readonly (string | null)[];
 }
 
-/** SHA-256 of the file at `absolute`; `null` when it does not exist; `undefined` when unreadable. */
-function digestOf(absolute: string): string | null | undefined {
-  try {
-    return createHash('sha256').update(readFileSync(absolute)).digest('hex');
-  } catch (error) {
-    return isGone(error) ? null : undefined;
-  }
+/** Files above this size are not hashed on the event path; they fall back to suppress-all. */
+export const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
+/** How many distinct app writes to one path are remembered inside the window. */
+const MAX_DIGESTS = 8;
+
+/** A cached digest and the stat it was taken under. */
+interface CachedDigest {
+  readonly key: string;
+  readonly digest: string;
+}
+
+/** The file's identity for the digest cache: size, times and inode, so a rewrite misses the cache. */
+function statKey(stats: { size: number; mtimeMs: number; ctimeMs: number; ino: number | bigint }): string {
+  return `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}`;
 }
 
 /**
@@ -331,6 +339,8 @@ export class ProjectWatcher {
   private readonly pending = new Set<string>();
   /** Relative path to the timestamp after which it is no longer treated as a self-write. */
   private readonly selfWrites = new Map<string, SelfWriteMark>();
+  /** Digest per absolute path, valid while the file's stat is unchanged — repeated events do not re-read it. */
+  private readonly digestCache = new Map<string, CachedDigest>();
   /**
    * Which {@link AnnouncementToken} currently owns each announced path — at most one at a time,
    * since usage is always `announce()` then `release()` in sequence. `record()` consults this to
@@ -804,20 +814,67 @@ export class ProjectWatcher {
     return path.split(sep).join('/');
   }
 
+  /** Absolute location of a watched-relative path; one that is already absolute is used as it is. */
+  private resolve(path: string): string {
+    return isAbsolute(path) ? path : join(this.options.dir, ...path.split('/'));
+  }
+
+  /**
+   * SHA-256 of the file at `path`; `null` when it does not exist; `undefined` when it cannot be
+   * compared (not a regular file, unreadable, or larger than {@link MAX_SNAPSHOT_BYTES}).
+   */
+  private digestOf(path: string): string | null | undefined {
+    const absolute = this.resolve(path);
+    try {
+      const stats = nodeStatSync(absolute);
+      if (!stats.isFile() || stats.size > MAX_SNAPSHOT_BYTES) {
+        return undefined;
+      }
+      const key = statKey(stats);
+      const cached = this.digestCache.get(absolute);
+      if (cached?.key === key) {
+        return cached.digest;
+      }
+      const digest = createHash('sha256').update(readFileSync(absolute)).digest('hex');
+      this.digestCache.set(absolute, { key, digest });
+      return digest;
+    } catch (error) {
+      this.digestCache.delete(absolute);
+      return isGone(error) ? null : undefined;
+    }
+  }
+
+  /**
+   * The mark for a write to `path` that has just finished. With a snapshot, the new content joins
+   * those the app already wrote to it inside the window (back-to-back saves), so an event for an
+   * earlier save that arrives late still matches. The snapshot narrows the race with an outside
+   * edit but does not close it: one that lands between the app's rename and this read is taken as
+   * the app's own.
+   */
   private mark(path: string, until: number, snapshot: boolean): SelfWriteMark {
     if (!snapshot) {
       return { until };
     }
-    const digest = digestOf(join(this.options.dir, ...path.split('/')));
-    return digest === undefined ? { until } : { until, digest };
+    const digest = this.digestOf(path);
+    if (digest === undefined) {
+      return { until };
+    }
+    const previous = this.selfWrites.get(path);
+    const earlier =
+      previous !== undefined && previous.until >= this.options.now() && previous.digests !== undefined
+        ? previous.digests
+        : [];
+    const digests = [...earlier.filter((known) => known !== digest), digest].slice(-MAX_DIGESTS);
+    return { until, digests };
   }
 
   /**
    * True when an event on `path` is the app's own write coming back: the path is marked and has not
    * lapsed, and — unless a write is still in flight (announced) or no snapshot was taken — the file
    * still holds what the app wrote. Anything else is an outside change that landed in the window.
-   * An atomic write (temp file plus rename) is covered because the mark is taken after the rename,
-   * and the temp file's own events are for a path that is not managed.
+   * An atomic write (temp file plus rename) is mostly covered: the mark is taken after the rename and
+   * the temp file's own events are for a path that is not managed. The race is narrowed, not closed:
+   * an outside edit landing between the app's rename and the snapshot is recorded as the app's own.
    */
   private isSelfWrite(path: string): boolean {
     const mark = this.selfWrites.get(path);
@@ -829,10 +886,11 @@ export class ProjectWatcher {
       this.announcedBy.delete(path);
       return false;
     }
-    if (this.announcedBy.has(path) || mark.digest === undefined) {
+    if (this.announcedBy.has(path) || mark.digests === undefined) {
       return true;
     }
-    return digestOf(join(this.options.dir, ...path.split('/'))) === mark.digest;
+    const current = this.digestOf(path);
+    return current === undefined || mark.digests.includes(current);
   }
 
   private record(filename: string | Buffer | null): void {

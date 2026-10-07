@@ -8,6 +8,7 @@ import {
   isManagedDir,
   isManagedPath,
   isWorkspaceManagedPath,
+  MAX_SNAPSHOT_BYTES,
   ProjectWatcher,
   type WatchDirEntry,
   type WatchFs,
@@ -280,7 +281,13 @@ describe('ProjectWatcher', () => {
       dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
       const seen = new Collector();
       const clock = 1_000;
-      watcher = new ProjectWatcher({ dir, debounceMs: DEBOUNCE_MS, now: () => clock, onChange: seen.push });
+      watcher = new ProjectWatcher({
+        dir,
+        debounceMs: DEBOUNCE_MS,
+        now: () => clock,
+        isManaged: () => true,
+        onChange: seen.push,
+      });
       return { seen, target: watcher, now: () => clock };
     }
 
@@ -337,6 +344,52 @@ describe('ProjectWatcher', () => {
       await writeFile(file, 'v: outside\n', 'utf8');
       simulateEvent(target, 'wirebench.yaml');
       expect(await seen.next(10_000)).toEqual(['wirebench.yaml']);
+    });
+
+    it('does not report an event for the next save landing before its release (announce → write → release)', async () => {
+      const { seen, target } = make();
+      const file = join(dir as string, 'wirebench.yaml');
+      await writeFile(file, 'v: 1\n', 'utf8');
+      target.expect(['wirebench.yaml']);
+      // Save 2 announces, writes and its event arrives before its release.
+      const token = target.announce(['wirebench.yaml']);
+      await writeFile(file, 'v: 2\n', 'utf8');
+      simulateEvent(target, 'wirebench.yaml');
+      target.release(token, ['wirebench.yaml']);
+      expect(await seen.next(150)).toBeUndefined();
+    });
+
+    it('suppresses any content the app wrote inside the window, not only the latest', async () => {
+      const { seen, target } = make();
+      const file = join(dir as string, 'wirebench.yaml');
+      await writeFile(file, 'v: 1\n', 'utf8');
+      target.expect(['wirebench.yaml']);
+      await writeFile(file, 'v: 2\n', 'utf8');
+      target.expect(['wirebench.yaml']);
+      // A late event for save 1's content: the file is rewritten to v1 by a lagging reader of the first save.
+      await writeFile(file, 'v: 1\n', 'utf8');
+      simulateEvent(target, 'wirebench.yaml');
+      expect(await seen.next(150)).toBeUndefined();
+    });
+
+    it('falls back to suppress-all for a file over the size cap', async () => {
+      const { seen, target } = make();
+      const file = join(dir as string, 'wirebench.yaml');
+      await writeFile(file, 'a'.repeat(MAX_SNAPSHOT_BYTES + 1), 'utf8');
+      target.expect(['wirebench.yaml']);
+      await writeFile(file, 'b'.repeat(MAX_SNAPSHOT_BYTES + 1), 'utf8');
+      simulateEvent(target, 'wirebench.yaml');
+      expect(await seen.next(150)).toBeUndefined();
+    });
+
+    it('snapshots an absolute path as it is', async () => {
+      const { seen, target } = make();
+      const file = join(dir as string, 'abs.yaml');
+      await writeFile(file, 'v: 1\n', 'utf8');
+      target.expect([file]);
+      await writeFile(file, 'v: outside\n', 'utf8');
+      simulateEvent(target, file);
+      expect(await seen.next(10_000)).toEqual([file]);
     });
 
     it('expect() without a snapshot suppresses everything for the window (a sync pull)', async () => {
