@@ -9,8 +9,12 @@
  * badge is exactly the mistake this pane exists to prevent.
  */
 
+import { useState } from 'react';
 import { FileLock2, Clock, ShieldCheck } from 'lucide-react';
 import { useEditorsStore } from '../../../state/editors.js';
+import { useProjectStore } from '../../../state/project.js';
+import { previewSecuredRequest } from '../wss-actions.js';
+import type { SecuredRequestPreview } from '../wss-actions.js';
 import type {
   ExchangeSummary,
   WssActionWire,
@@ -165,6 +169,67 @@ function ActionRow({ action }: { readonly action: WssActionWire }) {
   );
 }
 
+/**
+ * The request as a send would secure it, before Send (#57): its Security-header timeline and the
+ * envelope, read-only. Nothing is written to the editor and nothing is sent; the preview is a
+ * snapshot, dropped as soon as the envelope on screen changes.
+ */
+function OutgoingPreview({ requestId }: { readonly requestId: string }) {
+  const [preview, setPreview] = useState<SecuredRequestPreview | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const envelope = useProjectStore((state) => state.requests[requestId]?.envelopeXml);
+  const current = preview?.ok === true && preview.sourceEnvelope !== envelope ? undefined : preview;
+
+  return (
+    <section aria-label="Outgoing WS-Security" className="flex flex-col gap-1 border-t border-hairline px-0.5 pt-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs tracking-wider text-fg-subtle uppercase">Outgoing</h3>
+        <button
+          type="button"
+          data-testid="wss-preview-button"
+          className="rounded-sm border border-hairline px-1.5 py-0.5 text-xs text-fg-default disabled:opacity-60"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void previewSecuredRequest(requestId)
+              .then(setPreview)
+              .finally(() => {
+                setBusy(false);
+              });
+          }}
+        >
+          Preview secured request
+        </button>
+      </div>
+      {current?.ok === false && (
+        <p data-testid="wss-preview-error" role="alert" className="text-xs text-status-danger">
+          {current.message}
+        </p>
+      )}
+      {current?.ok === true && (
+        <>
+          {current.preview.timeline.length > 0 ? (
+            <SecurityTimeline
+              steps={current.preview.timeline}
+              order="applied in this order"
+              testId="wss-preview-timeline"
+            />
+          ) : (
+            <p className="text-xs text-fg-subtle">The configuration adds no Security header.</p>
+          )}
+          <pre
+            data-testid="wss-preview-envelope"
+            aria-label="Secured request envelope"
+            className="max-h-64 overflow-auto rounded-sm border border-hairline p-2 font-mono text-xs break-all whitespace-pre-wrap text-fg-default"
+          >
+            {current.preview.envelopeXml}
+          </pre>
+        </>
+      )}
+    </section>
+  );
+}
+
 export interface WssInspectorProps {
   /** The exchange whose WS-Security result to show; absent before the first send. */
   readonly exchange: ExchangeSummary | undefined;
@@ -179,7 +244,12 @@ export function WssInspector({ exchange, requestId }: WssInspectorProps) {
   const setView = useEditorsStore((state) => state.setResponseView);
 
   if (actions.length === 0 && timeline.length === 0) {
-    return <p className="p-3 text-sm text-fg-subtle">No WS-Security processing for this response</p>;
+    return (
+      <div className="flex flex-col gap-1 p-2">
+        <p className="p-1 text-sm text-fg-subtle">No WS-Security processing for this response</p>
+        <OutgoingPreview requestId={requestId} />
+      </div>
+    );
   }
 
   const decrypted = actions.some((action) => action.kind === 'decrypt' && action.ok);
@@ -234,6 +304,8 @@ export function WssInspector({ exchange, requestId }: WssInspectorProps) {
           </button>
         </p>
       )}
+
+      <OutgoingPreview requestId={requestId} />
     </div>
   );
 }

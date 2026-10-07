@@ -13,7 +13,8 @@ import { channels } from '../../shared/ipc.js';
 import { redactXml } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
 import type { WssEntryWire } from '../../shared/wire-types.js';
-import { WssError } from '@wirebench/engine';
+import { describeSecurityHeader, WssError } from '@wirebench/engine';
+import { toTimelineStepWire } from '../engine-wire.js';
 import type { WssEntry } from '@wirebench/engine';
 import { registerHandler } from './register.js';
 
@@ -62,8 +63,9 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
 /** Registers the `wss.*` channels. */
 export function registerWssChannels(deps: WssChannelDeps): void {
   registerHandler(channels.wss.previewOutgoing, async (request) => {
-    const envelopeXml = await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml);
-    return { envelopeXml: redactXml(envelopeXml) };
+    const envelopeXml = redactXml(await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml));
+    // Read from the redacted envelope, so the timeline describes exactly what the preview shows.
+    return { envelopeXml, timeline: describeSecurityHeader(envelopeXml).map(toTimelineStepWire) };
   });
 
   registerHandler(channels.wss.insertEntry, async (request) => {

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { IncomingConfigEditor } from '../../src/renderer/features/wss/incoming-config-editor.js';
 import { WssInspector, wssTabLabel } from '../../src/renderer/features/request-editor/inspectors/wss-inspector.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { makeDraft } from '../mocks/exchange-fixtures.js';
 import type { ExchangeSummary, KeystoreWire, ProjectWire, WssIncomingWire } from '../../src/shared/wire-types.js';
 
 const project = { id: 'p1', name: 'Demo', dir: '/tmp/demo' } as unknown as ProjectWire;
@@ -297,5 +298,60 @@ describe('WssInspector', () => {
       />,
     );
     expect(screen.queryByTestId('wss-decrypted-note')).toBeNull();
+  });
+});
+
+describe('WssInspector outgoing preview (#57)', () => {
+  const PREVIEW = {
+    envelopeXml: '<soapenv:Envelope><soapenv:Header><wsse:Security/></soapenv:Header></soapenv:Envelope>',
+    timeline: [
+      { kind: 'timestamp', summary: 'Timestamp (created T0)' },
+      { kind: 'signature', summary: 'Signed Body, Timestamp (rsa-sha256, exc-c14n)', covers: ['Body', 'Timestamp'] },
+    ],
+  };
+
+  function setUpPreview(previewOutgoing: ReturnType<typeof vi.fn>) {
+    const editRequest = vi.fn();
+    installWirebenchApi({ wss: { previewOutgoing } as Record<string, unknown> });
+    useProjectStore.setState({ requests: { r1: makeDraft({ envelopeXml: '<plain/>' }) }, editRequest } as never);
+    render(<WssInspector exchange={undefined} requestId="r1" />);
+    return editRequest;
+  }
+
+  it('shows the secured envelope and its timeline without touching the editor', async () => {
+    const previewOutgoing = vi.fn().mockResolvedValue({ ok: true, value: PREVIEW });
+    const editRequest = setUpPreview(previewOutgoing);
+    fireEvent.click(screen.getByTestId('wss-preview-button'));
+    expect(await screen.findByTestId('wss-preview-envelope')).toBeTruthy();
+    expect(previewOutgoing).toHaveBeenCalledWith({ requestId: 'r1', envelopeXml: '<plain/>' });
+    expect(screen.getAllByTestId('wss-timeline-step').map((step) => step.textContent)).toEqual([
+      'Timestamp (created T0)',
+      'Signed Body, Timestamp (rsa-sha256, exc-c14n)',
+    ]);
+    expect(screen.getByText(/applied in this order/)).toBeTruthy();
+    expect(editRequest).not.toHaveBeenCalled();
+  });
+
+  it('drops the preview once the envelope on screen changes', async () => {
+    setUpPreview(vi.fn().mockResolvedValue({ ok: true, value: PREVIEW }));
+    fireEvent.click(screen.getByTestId('wss-preview-button'));
+    expect(await screen.findByTestId('wss-preview-envelope')).toBeTruthy();
+    act(() => {
+      useProjectStore.setState({ requests: { r1: makeDraft({ envelopeXml: '<edited/>' }) } } as never);
+    });
+    expect(screen.queryByTestId('wss-preview-envelope')).toBeNull();
+  });
+
+  it('says why there is nothing to preview', async () => {
+    setUpPreview(
+      vi.fn().mockResolvedValue({
+        ok: false,
+        error: { code: 'wss-config-missing', message: 'This request has no outgoing WS-Security configuration.' },
+      }),
+    );
+    fireEvent.click(screen.getByTestId('wss-preview-button'));
+    expect((await screen.findByTestId('wss-preview-error')).textContent).toBe(
+      'This request has no outgoing WS-Security configuration.',
+    );
   });
 });

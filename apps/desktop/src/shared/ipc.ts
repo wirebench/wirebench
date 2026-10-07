@@ -277,6 +277,7 @@ import {
   wsaRemoveHeadersRequestSchema,
   wsaEnvelopeResponseSchema,
   wssPreviewOutgoingRequestSchema,
+  wssPreviewResponseSchema,
   wssInsertEntryRequestSchema,
   wssRemoveOutgoingRequestSchema,
   wssEnvelopeResponseSchema,
@@ -1173,7 +1174,7 @@ export const channels = {
     removeHeaders: defineChannel('wsa.removeHeaders', wsaRemoveHeadersRequestSchema, wsaEnvelopeResponseSchema),
   },
   wss: {
-    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssPreviewResponseSchema),
     insertEntry: defineChannel('wss.insertEntry', wssInsertEntryRequestSchema, wssEnvelopeResponseSchema),
     removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
   },

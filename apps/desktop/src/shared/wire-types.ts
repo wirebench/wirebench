@@ -5141,8 +5141,17 @@ export const wssPreviewOutgoingRequestSchema = z.object({
   envelopeXml: z.string().optional(),
 });
 export const wssEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
+/**
+ * `wss.previewOutgoing`: the secured envelope plus its `wsse:Security` timeline (#57), read from
+ * the redacted envelope, so the preview shows exactly what the timeline describes.
+ */
+export const wssPreviewResponseSchema = z.object({
+  envelopeXml: z.string(),
+  timeline: z.array(wssTimelineStepWireSchema),
+});
 export type WssPreviewOutgoingRequest = z.infer<typeof wssPreviewOutgoingRequestSchema>;
 export type WssEnvelopeResponse = z.infer<typeof wssEnvelopeResponseSchema>;
+export type WssPreviewResponse = z.infer<typeof wssPreviewResponseSchema>;
 
 /** `wss.insertEntry`: applies one ad-hoc entry, with no configuration involved. */
 export const wssInsertEntryRequestSchema = z.object({
