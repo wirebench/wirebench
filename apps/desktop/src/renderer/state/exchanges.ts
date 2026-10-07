@@ -9,6 +9,7 @@ import { runValidation } from '../features/request-editor/validate-actions.js';
 import { recordContractProblems } from '../features/rest-editor/response/contract.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type {
+  EnvSendResult,
   ExchangeFailedEvent,
   ExchangeLoggedEvent,
   ExchangeSummary,
@@ -33,6 +34,8 @@ import { selectRequestEndpointUrl } from './project-endpoint.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
 import { useDraftsStore } from './drafts.js';
+import { useEditorsStore } from './editors.js';
+import { useSecretsVisibilityStore } from './secrets-visibility.js';
 import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
@@ -418,6 +421,12 @@ export interface ExchangesStore extends ExchangesSnapshot {
    * request's pane. A no-op when main has evicted the exchange.
    */
   readonly refreshExchange: (sendId: string) => Promise<void>;
+  /**
+   * Re-reads every REST exchange a pane is showing — each request's last response and every
+   * environment-compare result — so all of them follow the show-secrets flag, not only the row
+   * selected in the HTTP Log. A result main has evicted keeps the copy it has.
+   */
+  readonly refreshShownExchanges: () => Promise<void>;
   /**
    * Sends one REST request. The renderer names the request and hands over its unsaved draft; main
    * resolves the base URL, the properties and the credentials, so nothing about where the request
@@ -1283,6 +1292,16 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    refreshShownExchanges: async () => {
+      const paneIds = Object.values(get().restByRequest).flatMap((state) =>
+        state.exchange === undefined ? [] : [state.exchange.sendId],
+      );
+      await Promise.all([
+        ...[...new Set(paneIds)].map((sendId) => get().refreshExchange(sendId)),
+        refreshEnvCompareResults(),
+      ]);
+    },
+
     clearLog: () => {
       update((draft) => {
         draft.log = [];
@@ -1420,4 +1439,66 @@ export function subscribeToExchangeLogged(): () => void {
           : { kind: 'exchange', exchange: entry.exchange, requestId: entry.requestId },
       );
   }) as (payload: unknown) => void);
+}
+
+/** The send id of one environment-compare result, when it produced an exchange. */
+function envResultSendId(result: EnvSendResult): string | undefined {
+  if (result.outcome !== 'ok') {
+    return undefined;
+  }
+  return result.rest?.sendId ?? result.soap?.sendId;
+}
+
+/**
+ * Re-reads every exchange an environment-compare tab shows and swaps each fresher copy into the
+ * result with the same send id — matched by id, so a tab re-run meanwhile keeps its new results.
+ */
+async function refreshEnvCompareResults(): Promise<void> {
+  const sendIds = useEditorsStore
+    .getState()
+    .tabs.flatMap((tab) => tab.envCompare?.results ?? [])
+    .flatMap((result) => {
+      const sendId = envResultSendId(result);
+      return sendId === undefined ? [] : [sendId];
+    });
+  const fetched = await Promise.all(
+    [...new Set(sendIds)].map(async (sendId) => {
+      const result = await ipc().exchanges.get({ sendId });
+      return result.ok ? ([sendId, result.value] as const) : undefined;
+    }),
+  );
+  const fresh = new Map(fetched.filter((entry) => entry !== undefined));
+  if (fresh.size === 0) {
+    return;
+  }
+  useEditorsStore.setState((state) => ({
+    tabs: state.tabs.map((tab) => {
+      if (tab.envCompare === undefined) {
+        return tab;
+      }
+      const results = tab.envCompare.results.map((result): EnvSendResult => {
+        const sendId = envResultSendId(result);
+        const exchange = sendId === undefined ? undefined : fresh.get(sendId);
+        if (result.outcome !== 'ok' || exchange === undefined) {
+          return result;
+        }
+        return 'methodChanged' in exchange ? { ...result, rest: exchange } : { ...result, soap: exchange };
+      });
+      return { ...tab, envCompare: { ...tab.envCompare, results } };
+    }),
+  }));
+}
+
+/**
+ * Re-reads every shown REST exchange whenever the show-secrets flag flips, however it flipped:
+ * redaction happens in main as each copy is read, so a copy the renderer holds is only as current
+ * as the flag was when it was fetched. Installed once at the shell, so it does not depend on the
+ * HTTP Log being open. Returns the unsubscribe.
+ */
+export function subscribeToSecretsVisibility(): () => void {
+  return useSecretsVisibilityStore.subscribe((state, previous) => {
+    if (state.show !== previous.show) {
+      void useExchangesStore.getState().refreshShownExchanges();
+    }
+  });
 }

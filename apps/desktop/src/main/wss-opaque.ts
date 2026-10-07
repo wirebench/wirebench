@@ -37,3 +37,28 @@ function canonicalJson(value: unknown): string {
 export function opaqueEntryFingerprint(stored: unknown): string {
   return createHash('sha256').update(canonicalJson(stored)).digest('hex').slice(0, 16);
 }
+
+function keysOf(value: unknown): string[] {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
+}
+
+/**
+ * True when the stored entry has a key (on the entry, or on one of its parts) that its wire mirror
+ * does not emit. Writing the mirror back would drop that key, so the entry must stay opaque. The
+ * mirror itself is the source of truth for what is editable; no list of fields is kept here.
+ */
+export function hasUnmirroredFields(stored: unknown, wire: unknown): boolean {
+  const wireKeys = new Set(keysOf(wire));
+  if (keysOf(stored).some((key) => !wireKeys.has(key))) {
+    return true;
+  }
+  const storedParts = (stored as Record<string, unknown> | null)?.['parts'];
+  const wireParts = (wire as Record<string, unknown> | null)?.['parts'];
+  if (!Array.isArray(storedParts)) {
+    return false;
+  }
+  return storedParts.some((part: unknown, i) => {
+    const emitted = new Set(keysOf(Array.isArray(wireParts) ? wireParts[i] : undefined));
+    return keysOf(part).some((key) => !emitted.has(key));
+  });
+}

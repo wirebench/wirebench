@@ -73,6 +73,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
+  by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
+  can no longer corrupt the frames (#182).
 - **Issued-token status while typing.** The cached-token line under an issued-token entry reads
   again once you stop editing, not on every keystroke (#279).
 - **Kerberos ticket wait.** A slow or unreachable Kerberos server no longer holds a send or a
