@@ -73,6 +73,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
+  by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
+  can no longer corrupt the frames (#182).
+- **A partly masked XML value no longer leaves the message unparseable.** Where a secret is only part
+  of an element's text (`<Auth>Bearer <redacted></Auth>`), `send`, `call`, `query`, `validate` and
+  `history_diff` now write the marker as escaped text, so the body and its History entry still parse (#183).
+- **Issued-token status while typing.** The cached-token line under an issued-token entry reads
+  again once you stop editing, not on every keystroke (#279).
 - **gRPC deadline in a run.** A unary gRPC call that passes its deadline in a run now errors with
   `timeout`, as a REST request or a stream does, instead of reporting `DEADLINE_EXCEEDED` as a result
   that an unasserted call passed with. A status 4 the server returns before the deadline is still a

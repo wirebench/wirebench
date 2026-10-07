@@ -1622,6 +1622,7 @@ export type {
 
 export {
   REDACTED_MARKER,
+  escapeStrayRedactionMarkers,
   REDACTED_XML_MARKER,
   SECRET_BODY_KEYS,
   containsRedaction,
@@ -2001,3 +2002,5 @@ export {
   hasSequenceValues,
   urlOrigin,
 } from './project/sequence-guards.js';
+
+export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';

@@ -512,6 +512,20 @@ describe('toRestExchangeSummary — an API key in the query', () => {
     expect(shown.text).toContain('echoed-secret-value-284');
   });
 
+  it('writes the escaped marker into decoded XML and HTML text, the raw one into JSON', () => {
+    redact.recordSecretValue('echoed-markup-secret-284');
+    const cases = [
+      { language: 'xml', text: '<echo>echoed-markup-secret-284</echo>', marker: '&lt;redacted&gt;' },
+      { language: 'html', text: '<p>echoed-markup-secret-284</p>', marker: '&lt;redacted&gt;' },
+      { language: 'json', text: '{"echo":"echoed-markup-secret-284"}', marker: '<redacted>' },
+    ] as const;
+    for (const { language, text, marker } of cases) {
+      const summary = toRestExchangeSummary({ ...restExchange('/x'), text, language }, 's1', { method: 'GET' });
+      expect(summary.text).not.toContain('echoed-markup-secret-284');
+      expect(summary.text).toContain(marker);
+    }
+  });
+
   it('masks the keyParams parameter on the raw request line', () => {
     const summary = toRestExchangeSummary(restExchange('/calc?key=secret123&a=1'), 's1', {
       method: 'GET',

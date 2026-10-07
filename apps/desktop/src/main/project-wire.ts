@@ -15,7 +15,7 @@ import {
   wssEntrySchema,
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
-import { KNOWN_WSS_ENTRY_KINDS, opaqueEntryFingerprint } from './wss-opaque.js';
+import { hasUnmirroredFields, KNOWN_WSS_ENTRY_KINDS, opaqueEntryFingerprint } from './wss-opaque.js';
 import type {
   Assertion,
   AuthConfig,
@@ -338,14 +338,21 @@ function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
 /**
  * The wire entry at `index` of a stored list. An entry this build cannot interpret (a kind a
  * later build wrote, or a known kind whose shape fails the engine schema) becomes an opaque
- * `unknown` entry rather than being coerced into one it is not: the editor writes the whole list
+ * `unknown` entry rather than being coerced into one it is not (so is a known kind carrying fields
+ * a later build added, which the field-by-field projection would drop): the editor writes the whole list
  * back on every edit, and `updateWssOutgoing` restores the stored entry from its `index`.
  */
 function toWssEntryWireAt(ref: WssRef, entry: WssEntry, index: number): WssEntryWire {
-  if (wssEntrySchema.safeParse(entry).success) {
-    return toWssEntryWire(entry);
-  }
   const stored: unknown = Array.isArray(ref.document['entries']) ? ref.document['entries'][index] : undefined;
+  // A known kind that parses but carries fields a newer build added is opaque too: rebuilding it
+  // field by field would drop them on the next write-back.
+  const readable = wssEntrySchema.safeParse(entry).success;
+  if (readable) {
+    const wire = toWssEntryWire(entry);
+    if (!hasUnmirroredFields(stored, wire)) {
+      return wire;
+    }
+  }
   const kind = typeof stored === 'object' && stored !== null ? (stored as Record<string, unknown>)['kind'] : undefined;
   const originalKind = typeof kind === 'string' ? kind : 'unknown';
   return {
@@ -353,7 +360,7 @@ function toWssEntryWireAt(ref: WssRef, entry: WssEntry, index: number): WssEntry
     originalKind,
     index,
     fingerprint: opaqueEntryFingerprint(stored),
-    unreadable: KNOWN_WSS_ENTRY_KINDS.has(originalKind),
+    unreadable: !readable && KNOWN_WSS_ENTRY_KINDS.has(originalKind),
   };
 }
 
