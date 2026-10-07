@@ -14,6 +14,7 @@ import { decryptIncoming } from './decrypt.js';
 import { verifyIncoming } from './verify.js';
 import type { Keystore } from '../../keystore/model.js';
 import type { WssContext, WssIncomingConfig } from '../model.js';
+import type { WssSignatureCheck } from './check.js';
 
 /** Which of the three incoming steps an action reports on. */
 export type WssActionKind = 'decrypt' | 'signature' | 'timestamp';
@@ -36,6 +37,8 @@ export interface WssAction {
   readonly references?: readonly string[];
   /** Whether a valid reference covers the envelope's `Body`; `signature` only. */
   readonly coversBody?: boolean;
+  /** Every reference's expected and computed digest; `signature` only, when it was checked. */
+  readonly check?: WssSignatureCheck;
 }
 
 /** What {@link processIncomingWss} made of a response. */
@@ -60,6 +63,38 @@ function messageOf(error: unknown): string {
     return error.message;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Why a checked signature failed, from its per-reference report: the first reference that did not
+ * match, or — when every reference matched — the SignatureValue. `undefined` when the report has
+ * nothing to add to the verifier's own message.
+ */
+function failureDetail(check: WssSignatureCheck | undefined): string | undefined {
+  if (check === undefined) {
+    return undefined;
+  }
+  const failed = check.references.find((reference) => !reference.ok);
+  if (failed !== undefined) {
+    const name = failed.element !== undefined && failed.element !== '' ? ` (${failed.element})` : '';
+    if (failed.computedDigest === undefined) {
+      return failed.element === undefined
+        ? `Reference #${failed.uri} points at no element in the message: ${failed.problem ?? 'it cannot be resolved.'}`
+        : `Reference #${failed.uri}${name} could not be digested: ${failed.problem ?? 'unknown error.'}`;
+    }
+    const transforms = failed.transforms.length === 0 ? 'no transform' : failed.transforms.join(' + ');
+    return (
+      `Reference #${failed.uri}${name} does not match: the digest computed with ${transforms} and ` +
+      `${failed.digestAlgorithm} differs from the one in the message.`
+    );
+  }
+  if (check.references.length > 0 && !check.signatureValueOk) {
+    return (
+      "Every reference matches, but the SignatureValue does not verify with the signer's certificate: " +
+      'SignedInfo was changed, or the message names the wrong certificate.'
+    );
+  }
+  return undefined;
 }
 
 /** The decrypt step: the (possibly restored) XML plus the action it produced, if any. */
@@ -192,7 +227,7 @@ export async function processIncomingWss(
       ? signature.trusted
         ? `Signature valid over ${covered}; signer trusted.`
         : `Signature valid over ${covered}, ${untrusted}`
-      : (signature.error ?? 'The signature did not verify.');
+      : (failureDetail(signature.check) ?? signature.error ?? 'The signature did not verify.');
     actions.push({
       kind: 'signature',
       ok,
@@ -201,6 +236,7 @@ export async function processIncomingWss(
       trusted: signature.trusted,
       references: [...signature.referenceNames],
       coversBody: signature.coversBody,
+      ...(signature.check !== undefined ? { check: signature.check } : {}),
     });
     if (!ok) {
       errors.push(detail);

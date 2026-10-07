@@ -31,6 +31,7 @@ import {
 import { childElement, findElement } from '../security-header.js';
 import { verifySignature } from '../outgoing/signature.js';
 import type { Keystore } from '../../keystore/model.js';
+import type { WssSignatureCheck } from './check.js';
 
 /** One `ds:Signature` as {@link verifyIncoming} judged it. */
 export interface IncomingSignatureResult {
@@ -48,6 +49,8 @@ export interface IncomingSignatureResult {
   readonly trusted: boolean;
   /** Why the signature did not verify, or why its certificate could not be resolved. */
   readonly error?: string;
+  /** Every reference's expected and computed digest; absent when the signature was never checked. */
+  readonly check?: WssSignatureCheck;
 }
 
 /** The `wsu:Timestamp` as {@link verifyIncoming} read it. */
@@ -532,6 +535,7 @@ export function verifyIncoming(xml: string, options: VerifyIncomingOptions): Ver
       signerSubject: renderDn(certificate.subject.attributes),
       trusted: isTrusted(certificate, trusted, options.verifyChain, at),
       ...(result.error !== undefined ? { error: result.error } : {}),
+      ...(result.check !== undefined ? { check: result.check } : {}),
     };
   });
 

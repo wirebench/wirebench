@@ -351,6 +351,6 @@ test.describe('wss', () => {
     await page.getByTestId('request-send').click();
     await expect(responseInspectors.getByRole('tab', { name: 'WSS ✗' })).toBeVisible({ timeout: 30_000 });
     await expect(panel.getByText('failed', { exact: true })).toHaveCount(1);
-    await expect(panel).toContainText('references failed validation');
+    await expect(panel).toContainText('(Body) does not match');
   });
 });
