@@ -3110,6 +3110,28 @@ export class ProjectHost {
     return this.basicImportAuth(iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined);
   }
 
+  /**
+   * The auth an Update Definition fetch is given. A URL on another origin than the interface's
+   * definition is a host the interface's credentials were not set up for: a Basic username and
+   * password are not sent to it, and a Kerberos auth keeps its account but drops the SPN, so the
+   * token targets the host that was typed (the SPN defaults to it) rather than the old service.
+   */
+  private async updateAuthFor(
+    iface: Interface,
+    source: DefinitionUpdateSource,
+  ): Promise<{ username: string; password: string } | KerberosSendAuth | undefined> {
+    const auth = await this.importAuthFor(iface);
+    if (source.kind !== 'url' || auth === undefined || sameOrigin(iface.definitionUrl, source.url)) {
+      return auth;
+    }
+    if ('type' in auth) {
+      const withoutSpn: KerberosSendAuth = { ...auth };
+      delete (withoutSpn as { spn?: string }).spn;
+      return withoutSpn;
+    }
+    return undefined;
+  }
+
   private async basicImportAuth(
     auth: EndpointAuth | undefined,
   ): Promise<{ username: string; password: string } | undefined> {
@@ -3127,7 +3149,7 @@ export class ProjectHost {
   async planDefinitionUpdate(interfaceId: string, source: DefinitionUpdateSource): Promise<UpdatePlanWire> {
     const iface = this.requireInterface(interfaceId);
     const current = this.engine.resultFor(interfaceId);
-    const auth = await this.importAuthFor(iface);
+    const auth = await this.updateAuthFor(iface, source);
     const next = await this.engine.importPreview(await this.updateSource(source), auth);
     return toUpdatePlanWire(planUpdate(current, next));
   }
@@ -3145,7 +3167,7 @@ export class ProjectHost {
     const open = this.require();
     const iface = this.requireInterface(interfaceId);
     const previous = this.engine.resultFor(interfaceId);
-    const auth = await this.importAuthFor(iface);
+    const auth = await this.updateAuthFor(iface, source);
     // Fetched into a scratch result only: nothing about the live `WsdlImportResult` or the
     // definition cache changes here. If the save below fails, the interface must look exactly
     // as it did before this call — see the fix1 finding on this method.
@@ -4080,4 +4102,13 @@ function withoutUndefinedProxy(proxy: ProxyOptionsWire): ProxyOptions {
   return Object.fromEntries(
     Object.entries(proxy).filter(([, value]) => value !== undefined),
   ) as unknown as ProxyOptions;
+}
+
+/** True when both URLs parse and share a scheme, host and port; anything unparsable counts as different. */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin && new URL(a).origin !== 'null';
+  } catch {
+    return false;
+  }
 }

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FsLike } from '@wirebench/engine';
 import { definitionCacheDir, nodeFs } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
@@ -235,5 +235,45 @@ describe('ProjectHost — Export Definition and documentation', () => {
   it('refuses to export or document an interface the project does not have', async () => {
     await expect(service.exportDefinitionTo('nope', tempDir('export'))).rejects.toThrow(/nope/);
     expect(() => service.definitionDocs('nope', 'html')).toThrow(/nope/);
+  });
+});
+
+describe('ProjectHost — Update Definition with Kerberos', () => {
+  async function planFrom(spn: string, update: (first: TestSoapServer, second: TestSoapServer) => string) {
+    const first = await startTestSoapServer({ fixture: 'versioned/v1' });
+    const second = await startTestSoapServer({ fixture: 'versioned/v2' });
+    const engine = new EngineService();
+    const preview = vi.spyOn(engine, 'importPreview').mockRejectedValue(new Error('stop after capture'));
+    const host = new ProjectHost(engine, {}, undefined, undefined, undefined, undefined, new DialogPicks());
+    const dir = join(tempDir('projects'), 'Krb');
+    try {
+      await host.create({ dir, name: 'Krb' });
+      const added = await host.addInterface({ source: { kind: 'url', url: first.wsdlUrl } });
+      await host.mutate({
+        kind: 'update-interface-auth',
+        interfaceId: added.interfaceId,
+        auth: { type: 'kerberos', spn },
+      });
+      await host
+        .planDefinitionUpdate(added.interfaceId, { kind: 'url', url: update(first, second) })
+        .catch(() => undefined);
+      return preview.mock.calls[0]?.[1];
+    } finally {
+      await host.close();
+      await first.close();
+      await second.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('does not send the interface SPN to an update URL on another origin', async () => {
+    const auth = await planFrom('HTTP/original.example', (_first, second) => second.wsdlUrl);
+    expect(auth).toMatchObject({ type: 'kerberos' });
+    expect(auth).not.toHaveProperty('spn');
+  });
+
+  it('keeps the interface SPN for an update URL on the same origin', async () => {
+    const auth = await planFrom('HTTP/original.example', (first) => first.wsdlUrl);
+    expect(auth).toMatchObject({ type: 'kerberos', spn: 'HTTP/original.example' });
   });
 });
