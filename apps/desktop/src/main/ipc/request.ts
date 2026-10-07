@@ -47,7 +47,7 @@ import type { IssuedTokensService } from '../issued-tokens.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
-import { redactHeaders, redactUrl, redactXml } from '../redact.js';
+import { redactHeaders, redactSecretText, redactUrl, redactXml } from '../redact.js';
 import { AD_HOC_ID, soapOverrideOf } from '../send/draft.js';
 import { AD_HOC_NAME } from '../send/record.js';
 import {
@@ -495,9 +495,14 @@ async function restCurl(
     : show
       ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
       : placeholderAuth(resolved.auth);
-  const command = restToCurl(
-    { ...resolved.input, ...(auth !== undefined ? { auth } : {}) },
-    { shell: request.shell, redactSecrets: !show },
+  // The engine masks by header name; a value main recorded (a `${secret:…}` or secret-source value, a
+  // long `${#System#…}` one) can sit in the URL, any header or the body, so the whole command is masked.
+  const command = redactSecretText(
+    restToCurl(
+      { ...resolved.input, ...(auth !== undefined ? { auth } : {}) },
+      { shell: request.shell, redactSecrets: !show },
+    ),
+    { show },
   );
   const notes: string[] = [];
   // A `${secret:name}` token stays in the command as written: it is resolved only by a send.

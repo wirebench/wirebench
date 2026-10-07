@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { AuthConfig, KeyValueEntry, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
+import { recordSecretValue } from '../src/main/redact.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { ProjectChange } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from './helpers/wire-defaults.js';
@@ -193,6 +194,30 @@ describe('request.curl for a REST request', () => {
       expect(getSecret).not.toHaveBeenCalled();
     },
   );
+
+  it('masks a recorded secret value in the URL, a header and the body, but not with show-secrets on', async () => {
+    recordSecretValue('rec-secret-value-284');
+    const rest = createRestRequest('Echo', {
+      id: 'rest-1',
+      method: 'POST',
+      url: '/echo?k=rec-secret-value-284',
+      headers: [{ name: 'X-Trace', value: 'rec-secret-value-284', enabled: true }],
+      body: { kind: 'raw', language: 'json', text: '{"note":"rec-secret-value-284"}' },
+      settings: { timeoutMs: 30_000, followRedirects: true },
+    });
+    const api = createApi('Petstore', { id: 'api-1', baseUrl: 'https://api.test', requests: [rest] });
+    const withValue: Project = { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+
+    setup({ rest: withValue });
+    const hidden = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }));
+    expect(hidden.command).toContain('X-Trace');
+    expect(hidden.command).not.toContain('rec-secret-value-284');
+
+    setup({ rest: withValue, show: true });
+    const shown = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }));
+    expect(shown.command).toContain('X-Trace: rec-secret-value-284');
+    expect(shown.command).toContain('"note":"rec-secret-value-284"');
+  });
 
   it('resolves the credential for real when show-secrets is on', async () => {
     setup({

@@ -87,6 +87,10 @@ is never recorded: people choose passwords, so one is often ordinary text (`admi
 sends the password itself, so it has nothing to echo. The 4-character floor below
 applies here too.
 
+The same recorded values are masked in a REST response body (the body and raw body bytes) before it reaches the renderer, and in a REST request copied as cURL from the editor, URL,
+headers and body alike, unless show-secrets is on. Only the recorded values' own bytes are replaced, so
+a binary body keeps every other byte.
+
 Copying an HTTP Log row as cURL builds the command in main from the row the renderer holds. For a
 finished exchange it follows the show-secrets toggle; for a failure row it is always masked, since
 that row was redacted when it was recorded and has no unredacted copy. Resending a row never sends
