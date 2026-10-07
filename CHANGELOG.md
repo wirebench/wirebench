@@ -73,6 +73,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A REST contract tool no longer asks for a query API key.** When the API's auth is a query API
+  key, the tool's `query` argument leaves that parameter out, so the request carries the key once
+  instead of `key=<argument>&key=<secret>` (#225).
 - **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
   by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
   can no longer corrupt the frames (#182).

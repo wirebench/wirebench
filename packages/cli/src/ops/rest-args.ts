@@ -149,7 +149,9 @@ export function restToolSchema(api: RestApi, operation: OpenApiOperation): RestT
       path.push({ name, in: 'path', required: true, schema: { type: 'string' } });
     }
   }
-  const query = parametersIn(operation, 'query');
+  // A query API key is set by auth; query names are case-sensitive, so it is matched exactly.
+  const queryKey = api.auth?.type === 'api-key' && api.auth.in === 'query' ? api.auth.name : undefined;
+  const query = parametersIn(operation, 'query').filter((parameter) => parameter.name !== queryKey);
   const headers = parametersIn(operation, 'header').filter((parameter) => !excluded.has(parameter.name.toLowerCase()));
   const cookies = parametersIn(operation, 'cookie')
     .filter((parameter) => parameter.required === true)

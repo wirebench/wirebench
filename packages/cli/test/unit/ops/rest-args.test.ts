@@ -80,6 +80,29 @@ describe('restToolSchema', () => {
     });
   });
 
+  it('leaves a query API key out of the query section, and the section when nothing else is left', () => {
+    const api = {
+      auth: { type: 'api-key', name: 'key', in: 'query', valueRef: 'key' },
+    } as unknown as RestApi;
+    const operation = {
+      method: 'get',
+      path: '/pets',
+      parameters: [
+        { name: 'key', in: 'query', required: true, schema: { type: 'string' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer' } },
+      ],
+    } as unknown as OpenApiOperation;
+    expect(restToolSchema(api, operation).schema).toEqual({
+      type: 'object',
+      properties: {
+        query: { type: 'object', properties: { limit: { type: 'integer' } }, additionalProperties: false },
+      },
+      additionalProperties: false,
+    });
+    const keyOnly = { ...operation, parameters: [operation.parameters?.[0]] } as unknown as OpenApiOperation;
+    expect(restToolSchema(api, keyOnly).schema['properties']).toEqual({});
+  });
+
   it('takes a non-JSON body as a string sent with its media type', () => {
     const operation = {
       method: 'put',
