@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Managed preferences.** On a managed machine, a `policy.yaml` in a system location
+  (`%ProgramData%\Wirebench`, `/Library/Application Support/Wirebench` or `/etc/wirebench`) locks the
+  proxy, the minimum TLS version, the CA bundle and update checks. Locked settings are read-only in
+  **Preferences** and marked **Locked by policy**; the user's own values come back if the policy is
+  removed (#67).
+
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only
