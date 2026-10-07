@@ -16,6 +16,56 @@ export const REDACTED_MARKER = REDACTED;
  */
 export const REDACTED_XML_MARKER = '&lt;redacted&gt;';
 
+/** Comments, CDATA sections, processing instructions and tags (a quoted attribute value may hold `>`). */
+const XML_MARKUP =
+  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<(\/?)([\w.:-]+)(?:"[^"]*"|'[^']*'|[^<>"'])*?(\/?)>/g;
+
+/**
+ * `xml` with every raw `<redacted>` that stands as text, wholly or as part of an element's content
+ * (`<Auth>Bearer <redacted></Auth>`), written as {@link REDACTED_XML_MARKER}, so the document parses.
+ * A raw marker is read as an open tag of an element named `redacted`; it is the message's own element
+ * only when a `</redacted>` closes it, so one that another end tag closes first, or that is never closed,
+ * is the marker. Comments and CDATA are left as they are.
+ */
+export function escapeStrayRedactionMarkers(xml: string): string {
+  if (!xml.includes(REDACTED)) {
+    return xml;
+  }
+  const stack: { name: string; start: number; end: number }[] = [];
+  const strays: { start: number; end: number }[] = [];
+  for (const match of xml.matchAll(XML_MARKUP)) {
+    const name = match[2];
+    if (name === undefined || match[3] === '/') {
+      continue;
+    }
+    const start = match.index;
+    if (match[1] === '/') {
+      // An open `redacted` above the element this closes was never closed by a `</redacted>`: a marker.
+      while (stack.length > 0 && stack[stack.length - 1]?.name !== name) {
+        const top = stack.pop();
+        if (top?.name === 'redacted') {
+          strays.push({ start: top.start, end: top.end });
+        }
+      }
+      stack.pop();
+    } else {
+      stack.push({ name, start, end: start + match[0].length });
+    }
+  }
+  for (const open of stack) {
+    if (open.name === 'redacted' && xml.slice(open.start, open.end) === REDACTED) {
+      strays.push({ start: open.start, end: open.end });
+    }
+  }
+  let out = xml;
+  for (const { start, end } of strays.sort((a, b) => b.start - a.start)) {
+    if (xml.slice(start, end) === REDACTED) {
+      out = out.slice(0, start) + REDACTED_XML_MARKER + out.slice(end);
+    }
+  }
+  return out;
+}
+
 /**
  * True when `text` contains the redaction marker, raw or as XML text — i.e. it was produced by a
  * `redact*` helper. The raw form is also what XML History entries recorded before the escaped

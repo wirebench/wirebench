@@ -1622,6 +1622,7 @@ export type {
 
 export {
   REDACTED_MARKER,
+  escapeStrayRedactionMarkers,
   REDACTED_XML_MARKER,
   SECRET_BODY_KEYS,
   containsRedaction,

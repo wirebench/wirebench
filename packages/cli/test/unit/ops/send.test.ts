@@ -132,6 +132,32 @@ describe('op send', () => {
     expect(history).toContain('"tags":["cli"]');
   });
 
+  it('writes the marker as escaped text when a secret is part of an XML body, in the result and in History', async () => {
+    const fixture = await restProject();
+    const pets = await server((request) => ({
+      headers: { 'Content-Type': 'application/xml' },
+      body: `<Auth>Bearer ${String(request.headers['x-api-key'])}</Auth>`,
+    }));
+    await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+    await updateRestRequest(fixture.dir, 'GET', '/pets', (request) => ({
+      ...request,
+      headers: [...request.headers, { name: 'X-Api-Key', value: '${secret:petsKey}', enabled: true }],
+    }));
+    const item = await restItem(fixture.dir, 'GET', '/pets');
+
+    const result = await runOp(
+      sendOp,
+      { item, environment: 'local' },
+      fixture.base({ env: { WIREBENCH_SECRET_PETSKEY: SECRET }, origin: 'cli' }),
+    );
+
+    expect(result.body).toBe('<Auth>Bearer &lt;redacted&gt;</Auth>');
+    const history = await historyText(fixture.historyDir);
+    expect(history).not.toContain(SECRET);
+    expect(history).toContain('Bearer &lt;redacted&gt;');
+    expect(history).not.toContain('Bearer <redacted>');
+  });
+
   it('masks a ${#System#…} value the request expands in the result and in History, but not a short one', async () => {
     const LONG = 'WB_TEST_181_SEND_LONG';
     const SHORT = 'WB_TEST_181_SEND_SHORT';
