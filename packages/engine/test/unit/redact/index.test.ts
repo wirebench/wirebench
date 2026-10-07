@@ -320,4 +320,21 @@ describe('escapeStrayRedactionMarkers', () => {
     const xml = `<a><!-- ${REDACTED_MARKER} --><![CDATA[${REDACTED_MARKER}]]></a>`;
     expect(escapeStrayRedactionMarkers(xml)).toBe(xml);
   });
+
+  it('leaves a raw marker inside an attribute value alone', () => {
+    // A mask writes the escaped marker, which is valid in an attribute; this scan is for older History.
+    const xml = `<a b="${REDACTED_MARKER}">${REDACTED_MARKER}</a>`;
+    expect(escapeStrayRedactionMarkers(xml)).toBe(`<a b="${REDACTED_MARKER}">${REDACTED_XML_MARKER}</a>`);
+  });
+
+  it('stays linear on unterminated comments, CDATA, instructions and tags, with many strays', () => {
+    const strays = `<a>${`x ${REDACTED_MARKER}`.repeat(20000)}`;
+    for (const open of ['<!--', '<![CDATA[', '<?x', '<a b="', '<a <a ']) {
+      const hostile = `${strays}${open.repeat(Math.ceil(320_000 / open.length))}`;
+      const started = performance.now();
+      const out = escapeStrayRedactionMarkers(hostile);
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(out.startsWith(`<a>${`x ${REDACTED_XML_MARKER}`.repeat(20000)}`)).toBe(true);
+    }
+  });
 });

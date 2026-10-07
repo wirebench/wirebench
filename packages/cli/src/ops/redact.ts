@@ -4,9 +4,9 @@
  */
 import {
   createSecretMasker,
-  escapeStrayRedactionMarkers,
   isSensitiveHeaderName,
   REDACTED_MARKER,
+  REDACTED_XML_MARKER,
   redactStructuredBody,
   redactUrl,
   redactXml,
@@ -40,16 +40,15 @@ export function redactResult<R>(value: R, revealed: ReadonlySet<string>): R {
 }
 
 /**
- * The secret masker for a send's texts: a text that reads as XML gets the marker as escaped text where
- * a secret was only part of an element's content (`Bearer <redacted>`), so the stored and returned
- * body still parses. Any other text is masked as `createSecretMasker` does.
+ * The secret masker for a send's texts: a text that reads as XML (it starts with `<`) is masked with
+ * the escaped marker, as `redactXml` writes it, so a secret that is only part of an element's content
+ * (`Bearer <redacted>`) leaves the stored and returned body parsing. Any other text, such as a header
+ * value, a frame or an error, is masked as `createSecretMasker` does.
  */
 export function createSendMasker(values: readonly string[]): (text: string) => string {
-  const mask = createSecretMasker(values);
-  return (text) => {
-    const masked = mask(text);
-    return masked !== text && masked.trimStart().startsWith('<') ? escapeStrayRedactionMarkers(masked) : masked;
-  };
+  const plain = createSecretMasker(values);
+  const xml = createSecretMasker(values, { marker: REDACTED_XML_MARKER });
+  return (text) => (text.trimStart().startsWith('<') ? xml(text) : plain(text));
 }
 
 /** A URL `new URL` cannot parse: its `user:pass@` and its query values are stripped by pattern. */

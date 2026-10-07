@@ -16,54 +16,125 @@ export const REDACTED_MARKER = REDACTED;
  */
 export const REDACTED_XML_MARKER = '&lt;redacted&gt;';
 
-/** Comments, CDATA sections, processing instructions and tags (a quoted attribute value may hold `>`). */
-const XML_MARKUP =
-  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<(\/?)([\w.:-]+)(?:"[^"]*"|'[^']*'|[^<>"'])*?(\/?)>/g;
+interface XmlTag {
+  readonly name: string;
+  readonly closing: boolean;
+  readonly selfClosing: boolean;
+  /** Offset just past the `>`. */
+  readonly end: number;
+}
+
+const NAME_CHAR = /[\w.:-]/;
+
+/**
+ * The tag that starts at `from` (a `<`), or undefined when none does: no name follows, or the tag is
+ * cut by a `<` or by the end of the text. A quoted attribute value may hold `<` and `>`; an
+ * unterminated quote runs to the end of the text.
+ */
+function tagAt(xml: string, from: number): XmlTag | undefined {
+  let i = from + 1;
+  const closing = xml[i] === '/';
+  if (closing) {
+    i += 1;
+  }
+  const nameStart = i;
+  while (i < xml.length && NAME_CHAR.test(xml[i] ?? '')) {
+    i += 1;
+  }
+  if (i === nameStart) {
+    return undefined;
+  }
+  const name = xml.slice(nameStart, i);
+  while (i < xml.length) {
+    const char = xml[i];
+    if (char === '"' || char === "'") {
+      const close = xml.indexOf(char, i + 1);
+      if (close === -1) {
+        return undefined;
+      }
+      i = close + 1;
+    } else if (char === '<') {
+      return undefined;
+    } else if (char === '>') {
+      return { name, closing, selfClosing: xml[i - 1] === '/', end: i + 1 };
+    } else {
+      i += 1;
+    }
+  }
+  return undefined;
+}
 
 /**
  * `xml` with every raw `<redacted>` that stands as text, wholly or as part of an element's content
  * (`<Auth>Bearer <redacted></Auth>`), written as {@link REDACTED_XML_MARKER}, so the document parses.
- * A raw marker is read as an open tag of an element named `redacted`; it is the message's own element
- * only when a `</redacted>` closes it, so one that another end tag closes first, or that is never closed,
- * is the marker. Comments and CDATA are left as they are.
+ * For History written before the masks wrote the escaped marker; a mask writes it escaped itself now.
+ *
+ * A raw marker reads as an open tag of an element named `redacted`; it is the message's own element
+ * only when a `</redacted>` closes it, so one that another end tag closes first, or that is never
+ * closed, is the marker. That is a limit: a message's own `<redacted>` element that holds a marker
+ * (`<redacted>a <redacted></redacted>`) cannot be told from the marker. Comments, CDATA, processing
+ * instructions and attribute values are left as they are.
+ *
+ * One pass: each step moves forward, and an unterminated comment, CDATA section, processing
+ * instruction or tag ends the scan, so the cost is linear in the text however hostile.
  */
 export function escapeStrayRedactionMarkers(xml: string): string {
   if (!xml.includes(REDACTED)) {
     return xml;
   }
   const stack: { name: string; start: number; end: number }[] = [];
-  const strays: { start: number; end: number }[] = [];
-  for (const match of xml.matchAll(XML_MARKUP)) {
-    const name = match[2];
-    if (name === undefined || match[3] === '/') {
-      continue;
-    }
-    const start = match.index;
-    if (match[1] === '/') {
-      // An open `redacted` above the element this closes was never closed by a `</redacted>`: a marker.
-      while (stack.length > 0 && stack[stack.length - 1]?.name !== name) {
-        const top = stack.pop();
-        if (top?.name === 'redacted') {
-          strays.push({ start: top.start, end: top.end });
+  const strays: number[] = [];
+  let i = xml.indexOf('<');
+  while (i !== -1) {
+    let next: number;
+    if (xml.startsWith('<!--', i)) {
+      next = xml.indexOf('-->', i + 4);
+      next = next === -1 ? -1 : next + 3;
+    } else if (xml.startsWith('<![CDATA[', i)) {
+      next = xml.indexOf(']]>', i + 9);
+      next = next === -1 ? -1 : next + 3;
+    } else if (xml.startsWith('<?', i)) {
+      next = xml.indexOf('?>', i + 2);
+      next = next === -1 ? -1 : next + 2;
+    } else {
+      const tag = tagAt(xml, i);
+      if (tag === undefined) {
+        next = i + 1;
+      } else {
+        next = tag.end;
+        if (tag.closing) {
+          // An open `redacted` above the element this closes was never closed by a `</redacted>`: a marker.
+          while (stack.length > 0 && stack[stack.length - 1]?.name !== tag.name) {
+            const top = stack.pop();
+            if (top?.name === 'redacted' && top.end - top.start === REDACTED.length) {
+              strays.push(top.start);
+            }
+          }
+          stack.pop();
+        } else if (!tag.selfClosing) {
+          stack.push({ name: tag.name, start: i, end: tag.end });
         }
       }
-      stack.pop();
-    } else {
-      stack.push({ name, start, end: start + match[0].length });
     }
+    i = next === -1 ? -1 : xml.indexOf('<', next);
   }
   for (const open of stack) {
-    if (open.name === 'redacted' && xml.slice(open.start, open.end) === REDACTED) {
-      strays.push({ start: open.start, end: open.end });
+    if (open.name === 'redacted' && open.end - open.start === REDACTED.length) {
+      strays.push(open.start);
     }
   }
-  let out = xml;
-  for (const { start, end } of strays.sort((a, b) => b.start - a.start)) {
-    if (xml.slice(start, end) === REDACTED) {
-      out = out.slice(0, start) + REDACTED_XML_MARKER + out.slice(end);
-    }
+  if (strays.length === 0) {
+    return xml;
   }
-  return out;
+  strays.sort((a, b) => a - b);
+  const parts: string[] = [];
+  let kept = 0;
+  for (const start of strays) {
+    parts.push(xml.slice(kept, start), REDACTED_XML_MARKER);
+    kept = start + REDACTED.length;
+  }
+  parts.push(xml.slice(kept));
+  return parts.join('');
 }
 
 /**
