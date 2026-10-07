@@ -436,7 +436,13 @@ export type { SystemProxyResolution } from './http/proxy.js';
 export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
-export { certificateExpiry, pemCertificates, probeTlsChain, tlsProbeTarget } from './http/cert-expiry.js';
+export {
+  certificateExpiry,
+  isCertificateVerifyError,
+  pemCertificates,
+  probeTlsChain,
+  tlsProbeTarget,
+} from './http/cert-expiry.js';
 export type {
   CertificateExpiry,
   CertificateExpiryStatus,

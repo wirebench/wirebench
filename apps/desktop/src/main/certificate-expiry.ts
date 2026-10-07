@@ -4,8 +4,9 @@
  *
  * Keystores and the CA bundle are local reads, cheap enough to check whenever a project opens or
  * changes. Endpoints are reached over the network — one TLS handshake per `host:port`, through the
- * proxy a send would use — so they are probed only when the caller asks. No request is ever sent:
- * the handshake is the whole conversation.
+ * proxy and verified against the trust anchors a send would use — so they are probed only when the
+ * caller asks. No request is ever sent: the handshake is the whole conversation. A chain that does
+ * not verify (an expired certificate among them) is reported as `untrusted` with the reason.
  *
  * `ProjectHost` only gathers what a project names; the probing and the judging live here so they
  * can be tested without a project on disk or a network.
@@ -14,6 +15,7 @@
 import {
   certificateExpiry,
   expand,
+  isCertificateVerifyError,
   tlsProbeTarget,
   type GrpcApi,
   type PemCertificateSummary,
@@ -30,6 +32,7 @@ import type {
   CertificateFindingWire,
   CertificateSkippedWire,
   CertificatesCheckResponse,
+  CertificateUntrustedWire,
   CertificateSourceWire,
 } from '../shared/wire-types.js';
 
@@ -144,7 +147,10 @@ export interface CertificateCheckInput {
   readonly warnDays: number;
   /** Probe endpoints over the network; without it only keystores and the CA bundle are read. */
   readonly probeEndpoints: boolean;
-  /** Reads the chain an endpoint presents: `probeTlsChain` with the send's proxy and anchors. */
+  /**
+   * Reads the chain an endpoint presents: `probeTlsChain` with the send's proxy and anchors. It
+   * verifies the chain, so one that does not verify rejects with a certificate verify error.
+   */
   readonly probe: (projectId: string, target: EndpointTarget) => Promise<SslInfo>;
   /** How many handshakes run at once. Default 4. */
   readonly concurrency?: number;
@@ -191,6 +197,7 @@ export async function checkCertificates(input: CertificateCheckInput): Promise<C
   const now = input.now ?? Date.now();
   const certificates: CertificateFindingWire[] = [];
   const skipped: CertificateSkippedWire[] = [];
+  const untrusted: CertificateUntrustedWire[] = [];
   const add = (found: CertificateFindingWire | undefined): void => {
     if (found !== undefined) certificates.push(found);
   };
@@ -232,7 +239,7 @@ export async function checkCertificates(input: CertificateCheckInput): Promise<C
       try {
         return { item, info: await input.probe(item.projectId, item.target) };
       } catch (error) {
-        return { item, error: error instanceof Error ? error.message : String(error) };
+        return { item, error };
       }
     });
     for (const result of probed) {
@@ -242,7 +249,13 @@ export async function checkCertificates(input: CertificateCheckInput): Promise<C
         where: endpointLabel(result.item.target),
       };
       if (result.info === undefined) {
-        skipped.push({ ...base, message: result.error ?? 'The endpoint did not answer.' });
+        const { error } = result;
+        if (isCertificateVerifyError(error)) {
+          // The chain is the problem, not the network: an expired or untrusted certificate.
+          untrusted.push({ projectId: base.projectId, where: base.where, code: error.code, message: error.message });
+        } else {
+          skipped.push({ ...base, message: error instanceof Error ? error.message : String(error) });
+        }
         continue;
       }
       for (const cert of result.info.peerChain) {
@@ -251,5 +264,5 @@ export async function checkCertificates(input: CertificateCheckInput): Promise<C
     }
   }
 
-  return { warnDays: input.warnDays, certificates, skipped, probedEndpoints: input.probeEndpoints };
+  return { warnDays: input.warnDays, certificates, skipped, untrusted, probedEndpoints: input.probeEndpoints };
 }

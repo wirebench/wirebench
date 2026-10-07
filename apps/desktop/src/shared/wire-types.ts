@@ -5147,7 +5147,7 @@ export const keystoresPickFileResponseSchema = z.object({ path: z.string().optio
  * `certificates.check`: how long the certificates the open workspace relies on have left —
  * every keystore alias (leaf and the chain it carries), the CA bundle, and, when
  * `probeEndpoints` is set, the chain each TLS endpoint presents. Probing reaches the network (one
- * TLS handshake per `host:port`, no request), so it is asked for; the local reads are not.
+ * verified TLS handshake per `host:port`, no request), so it is asked for; the local reads are not.
  * Certificates only — no key, no PEM.
  */
 export const certificatesCheckRequestSchema = z.object({ probeEndpoints: z.boolean() });
@@ -5177,11 +5177,26 @@ export const certificateSkippedSchema = z.object({
   message: z.string(),
 });
 export type CertificateSkippedWire = z.infer<typeof certificateSkippedSchema>;
+/**
+ * An endpoint whose chain does not verify as a send would verify it: expired, untrusted, or not
+ * issued for the host. The probe verifies, so nothing of such a chain is read; `code` says why.
+ */
+export const certificateUntrustedSchema = z.object({
+  projectId: z.string().optional(),
+  /** `host:port`. */
+  where: z.string(),
+  /** OpenSSL's reason, e.g. `CERT_HAS_EXPIRED`, or Node's `ERR_TLS_CERT_ALTNAME_INVALID`. */
+  code: z.string(),
+  message: z.string(),
+});
+export type CertificateUntrustedWire = z.infer<typeof certificateUntrustedSchema>;
 export const certificatesCheckResponseSchema = z.object({
   /** The warning window the statuses were judged against (`ssl.expiryWarningDays`). */
   warnDays: z.number(),
   certificates: z.array(certificateFindingSchema),
   skipped: z.array(certificateSkippedSchema),
+  /** Probed endpoints whose chain did not verify; always empty when endpoints were not probed. */
+  untrusted: z.array(certificateUntrustedSchema),
   /** Whether endpoints were probed; `false` means only keystores and the CA bundle were read. */
   probedEndpoints: z.boolean(),
 });

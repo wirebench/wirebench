@@ -211,9 +211,11 @@ keystore and alias, the CA bundle, or an endpoint's `host:port`.
   Wirebench reaches every TLS endpoint the open projects name — SOAP endpoints, REST base URLs and
   servers, WebSocket and gRPC targets, and the endpoint overrides of every environment, with
   `${…}` properties resolved under each one — and reads the chain each presents. It opens a TLS
-  connection through the proxy a send would use and closes it once the certificates arrive; no
-  request is sent. Each `host:port` is reached once, however many projects name it. An endpoint
-  that doesn't answer is listed in the summary rather than in Problems.
+  connection through the proxy a send would use, verifies the chain as a send would (including your
+  CA bundle), and closes it once the certificates arrive; no request is sent. Each `host:port` is
+  reached once, however many projects name it. An endpoint whose chain doesn't verify — already
+  expired, untrusted, or issued for another host — is an error in Problems with the reason. An
+  endpoint that doesn't answer is listed in the summary rather than in Problems.
 
 <Aside type="tip" title="Trusting a custom CA">
 To trust a corporate or internal root CA without disabling certificate validation, add its PEM

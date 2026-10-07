@@ -15,8 +15,10 @@ import {
   generateServerCert,
   generateTestCa,
   startTestSoapServer,
+  type TestCertificate,
   type TestSoapServer,
 } from '@wirebench/engine/test-helpers';
+import { probeTlsChain } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
@@ -38,10 +40,11 @@ vi.mock('electron', () => ({
 
 let root: string;
 let server: TestSoapServer;
+let ca: TestCertificate;
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'wirebench-certs-'));
-  const ca = generateTestCa();
+  ca = generateTestCa();
   const leaf = generateServerCert(ca, { commonName: 'localhost', sans: ['localhost', '127.0.0.1'] });
   server = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem } });
 });
@@ -84,14 +87,17 @@ async function workspaceWithEndpointAndKeystore(): Promise<{ service: WorkspaceS
 }
 
 describe('certificates.check', () => {
-  it('reads keystores without probing, and probes the resolved endpoints when asked', async () => {
-    const { service, projectId } = await workspaceWithEndpointAndKeystore();
+  type Response = Awaited<ReturnType<WorkspaceService['checkCertificates']>>;
+
+  /** Registers the channel over `project` and returns a caller for it. */
+  function channel(
+    project: Pick<WorkspaceService, 'checkCertificates'>,
+  ): (probeEndpoints: boolean) => Promise<Response> {
     registerCertificateChannels({
-      project: service,
+      project,
       preferences: { get: () => ({ ssl: { expiryWarningDays: 30 } }) as never },
     });
-    type Response = Awaited<ReturnType<WorkspaceService['checkCertificates']>>;
-    const check = async (probeEndpoints: boolean): Promise<Response> => {
+    return async (probeEndpoints) => {
       const result = (await handlers.get('certificates.check')?.({}, { probeEndpoints })) as {
         ok: boolean;
         value: Response;
@@ -99,6 +105,11 @@ describe('certificates.check', () => {
       expect(result.ok).toBe(true);
       return result.value;
     };
+  }
+
+  it('reads keystores without probing, and reports an endpoint whose chain does not verify', async () => {
+    const { service, projectId } = await workspaceWithEndpointAndKeystore();
+    const check = channel(service);
 
     const local = await check(false);
     expect(local.probedEndpoints).toBe(false);
@@ -106,6 +117,28 @@ describe('certificates.check', () => {
     expect(local.certificates.map((cert) => cert.source)).toEqual(['keystore']);
     expect(local.certificates[0]).toMatchObject({ projectId, status: 'expiring', daysLeft: 1 });
     expect(local.certificates[0]?.where).toMatch(/^Client › /);
+    expect(local.untrusted).toEqual([]);
+
+    // The test CA is in no trust store a send would use, so the handshake does not verify.
+    const full = await check(true);
+    expect(full.certificates.filter((cert) => cert.source === 'endpoint')).toEqual([]);
+    expect(full.untrusted).toEqual([
+      expect.objectContaining({ projectId, where: `localhost:${new URL(server.url).port}` }),
+    ]);
+    expect(full.untrusted[0]?.code).toMatch(/UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED/);
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it('reads the chain of an endpoint that verifies, sending it nothing', async () => {
+    const { service, projectId } = await workspaceWithEndpointAndKeystore();
+    // As if the test CA were in the CA bundle.
+    const check = channel({
+      checkCertificates: (options) =>
+        service.checkCertificates({
+          ...options,
+          probe: (target, probeOptions) => probeTlsChain(target, { ...probeOptions, ca: [ca.certPem] }),
+        }),
+    });
 
     const full = await check(true);
     const endpoint = full.certificates.filter((cert) => cert.source === 'endpoint');
@@ -115,8 +148,8 @@ describe('certificates.check', () => {
       status: 'expiring',
     });
     expect(endpoint[0]?.subject).toContain('CN=localhost');
+    expect(full.untrusted).toEqual([]);
     expect(full.skipped).toEqual([]);
-    // The handshake alone: nothing was sent to the endpoint.
     expect(server.requests).toHaveLength(0);
   });
 });

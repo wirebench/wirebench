@@ -1,6 +1,7 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { probeTlsChain } from '../../../src/http/cert-expiry.js';
+import forge from 'node-forge';
+import { isCertificateVerifyError, probeTlsChain } from '../../../src/http/cert-expiry.js';
 import { generateServerCert, generateTestCa, type TestCertificate } from '../../helpers/test-certs.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
@@ -34,8 +35,25 @@ afterEach(async () => {
   );
 });
 
-async function startTls(): Promise<{ readonly port: number; readonly requests: () => number }> {
-  const server = await startTestSoapServer({ tls: { cert: serverCert.certPem, key: serverCert.keyPem } });
+/** A `localhost` certificate issued by `ca` that ran out yesterday. */
+function expiredServerCert(): TestCertificate {
+  const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '0badc0de';
+  cert.validity.notBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  cert.validity.notAfter = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  cert.setSubject([{ name: 'commonName', value: 'localhost' }]);
+  cert.setIssuer(forge.pki.certificateFromPem(ca.certPem).subject.attributes);
+  cert.setExtensions([{ name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] }]);
+  cert.sign(forge.pki.privateKeyFromPem(ca.keyPem), forge.md.sha256.create());
+  return { certPem: forge.pki.certificateToPem(cert), keyPem: forge.pki.privateKeyToPem(keys.privateKey) };
+}
+
+async function startTls(
+  leaf: TestCertificate = serverCert,
+): Promise<{ readonly port: number; readonly requests: () => number }> {
+  const server = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem } });
   servers.push(server);
   return { port: Number(new URL(server.url).port), requests: () => server.requests.length };
 }
@@ -44,27 +62,41 @@ describe('probeTlsChain', () => {
   it('reads the presented chain from a handshake alone, sending no request', async () => {
     const server = await startTls();
 
-    const info = await probeTlsChain({ host: 'localhost', port: server.port });
+    const info = await probeTlsChain({ host: 'localhost', port: server.port }, { ca: [ca.certPem] });
 
     expect(info.peerChain[0]?.subject).toContain('CN=localhost');
     expect(info.servername).toBe('localhost');
-    // Not trusted by Node's defaults, and reported rather than refused.
-    expect(info.authorized).toBe(false);
+    expect(info.authorized).toBe(true);
     expect(server.requests()).toBe(0);
   });
 
-  it('judges trust against the anchors it is given', async () => {
+  it('verifies the chain as a send does, failing with the reason when it does not', async () => {
     const server = await startTls();
 
-    const info = await probeTlsChain({ host: 'localhost', port: server.port }, { ca: [ca.certPem] });
+    const error: unknown = await probeTlsChain({ host: 'localhost', port: server.port }).catch(
+      (caught: unknown) => caught,
+    );
 
-    expect(info.authorized).toBe(true);
+    expect(isCertificateVerifyError(error)).toBe(true);
+    expect((error as { code: string }).code).toMatch(/UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED/);
+    expect(server.requests()).toBe(0);
   });
 
-  it('sends no SNI to an IP literal', async () => {
+  it('fails an expired certificate with CERT_HAS_EXPIRED', async () => {
+    const server = await startTls(expiredServerCert());
+
+    const error: unknown = await probeTlsChain({ host: 'localhost', port: server.port }, { ca: [ca.certPem] }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(isCertificateVerifyError(error)).toBe(true);
+    expect((error as { code: string }).code).toBe('CERT_HAS_EXPIRED');
+  });
+
+  it('checks the host name, so an IP literal the certificate names verifies', async () => {
     const server = await startTls();
 
-    const info = await probeTlsChain({ host: '127.0.0.1', port: server.port });
+    const info = await probeTlsChain({ host: '127.0.0.1', port: server.port }, { ca: [ca.certPem] });
 
     expect(info.peerChain[0]?.subject).toContain('CN=localhost');
   });
@@ -76,7 +108,7 @@ describe('probeTlsChain', () => {
 
     const info = await probeTlsChain(
       { host: 'localhost', port: server.port },
-      { proxy: { url: proxy.url, auth: { username: 'u', password: 'p' } } },
+      { proxy: { url: proxy.url, auth: { username: 'u', password: 'p' } }, ca: [ca.certPem] },
     );
 
     expect(info.peerChain[0]?.subject).toContain('CN=localhost');

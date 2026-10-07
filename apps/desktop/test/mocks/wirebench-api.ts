@@ -318,7 +318,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       // workspace has nothing to report.
       check: vi.fn().mockResolvedValue({
         ok: true,
-        value: { warnDays: 30, certificates: [], skipped: [], probedEndpoints: false },
+        value: { warnDays: 30, certificates: [], skipped: [], untrusted: [], probedEndpoints: false },
       }),
     },
     keystores: {

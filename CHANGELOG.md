@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - **Certificate expiry warnings.** Problems warns before a certificate in the workspace expires:
   keystores and the CA bundle are checked on their own, and **Check Certificate Expiry** also reads
-  the chain every TLS endpoint of the open projects presents, from a handshake alone. The window is
+  the chain every TLS endpoint of the open projects presents, from a verified handshake alone; an
+  endpoint whose chain doesn't verify is an error. The window is
   **Preferences → SSL → Expiry warning** (30 days); the SSL inspector uses it too (#70).
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench

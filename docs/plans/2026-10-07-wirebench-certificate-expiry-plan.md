@@ -12,10 +12,13 @@ the open workspace are checked, and expiry is warned about ahead of time.
     count. Unique `host:port` pairs are probed once.
   - its keystores (`wss/keystores.yaml`): every alias's leaf and the chain it carries.
   - the preferred CA bundle (`ssl.caBundlePath`), once for the whole workspace.
-- **Probe.** A bare TLS handshake (`tls.connect`, SNI = host, `rejectUnauthorized: false`) — no request is
-  sent. Through the proxy a send to that URL would use (HTTP `CONNECT`). Timeout 10 s, 4 at a time. The
-  certificates the peer presents (leaf to root) are read; an unreachable endpoint is reported as such, not as
-  a certificate problem.
+- **Probe.** A bare TLS handshake (`tls.connect`, SNI = host) — no request is sent. Through the proxy a send
+  to that URL would use (HTTP `CONNECT`), verified against the trust anchors a send would use. Timeout 10 s,
+  4 at a time. A chain that verifies is read (leaf to root) and judged by date. One that does not (expired,
+  untrusted, wrong host) fails the handshake and Node keeps nothing of it, so it is reported as untrusted with
+  OpenSSL's reason (`CERT_HAS_EXPIRED`, …) — an error, as a send there fails too. Verification stays on
+  rather than being turned off to read such chains. An unreachable endpoint is reported as such, not as a
+  certificate problem.
 - **Threshold.** New preference `ssl.expiryWarningDays` (default 30). Expired → error; within the window →
   warning.
 - **Where it shows.**

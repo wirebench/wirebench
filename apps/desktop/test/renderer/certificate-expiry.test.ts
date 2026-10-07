@@ -26,7 +26,7 @@ function finding(overrides: Partial<CertificateFindingWire>): CertificateFinding
 }
 
 function response(overrides: Partial<CertificatesCheckResponse>): CertificatesCheckResponse {
-  return { warnDays: 30, certificates: [], skipped: [], probedEndpoints: false, ...overrides };
+  return { warnDays: 30, certificates: [], skipped: [], untrusted: [], probedEndpoints: false, ...overrides };
 }
 
 describe('certificate expiry problems', () => {
@@ -59,6 +59,28 @@ describe('certificate expiry problems', () => {
       ['certificate', 'warning', 'Client › client', 'keystore'],
       ['certificate', 'error', 'Old › old', 'keystore'],
     ]);
+  });
+
+  it('reports an endpoint whose chain does not verify as an error, naming an expired one plainly', () => {
+    applyCertificateCheck(
+      response({
+        probedEndpoints: true,
+        untrusted: [
+          { where: 'old.example:443', code: 'CERT_HAS_EXPIRED', message: 'certificate has expired' },
+          { where: 'self.example:443', code: 'SELF_SIGNED_CERT_IN_CHAIN', message: 'self-signed' },
+        ],
+      }),
+    );
+
+    expect(
+      useProblemsStore.getState().items.map((item) => [item.severity, item.problem.source, item.problem.message]),
+    ).toEqual([
+      ['error', 'endpoint', 'The certificate old.example:443 presents has expired.'],
+      ['error', 'endpoint', 'The certificate self.example:443 presents does not verify (SELF_SIGNED_CERT_IN_CHAIN).'],
+    ]);
+    // A local re-check keeps them: only a probe can say they are fixed.
+    applyCertificateCheck(response({}));
+    expect(useProblemsStore.getState().items).toHaveLength(2);
   });
 
   it('keeps the last endpoint findings through a local re-check, and replaces them on the next probe', () => {
@@ -94,9 +116,13 @@ describe('certificate expiry problems', () => {
         response({
           certificates: [finding({}), finding({ status: 'expired', daysLeft: -1 })],
           skipped: [{ source: 'endpoint', where: 'down.example:443', message: 'ECONNREFUSED' }],
+          untrusted: [{ where: 'old.example:443', code: 'CERT_HAS_EXPIRED', message: 'expired' }],
         }),
       ),
-    ).toBe('1 certificate expired, 1 certificate expiring within 30 days. Could not check 1 item: down.example:443.');
+    ).toBe(
+      '1 certificate expired, 1 certificate expiring within 30 days, 1 endpoint not verifying. ' +
+        'Could not check 1 item: down.example:443.',
+    );
   });
 });
 

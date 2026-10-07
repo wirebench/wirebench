@@ -5,6 +5,9 @@
  * expires within the `ssl.expiryWarningDays` window, becomes a `certificate` problem — an error once
  * expired, a warning before — so the status bar's problem count says so wherever the user is.
  *
+ * An endpoint whose chain does not verify — expired, untrusted, or not issued for the host — is an
+ * error too: the probe verifies as a send does, so it reads nothing of such a chain but the reason.
+ *
  * Two kinds of check feed it. Keystores and the CA bundle are local reads, re-checked on their own
  * whenever the open projects, their keystores or the warning window change. Endpoints are reached
  * over the network, so they are checked only by the *Check Certificate Expiry* command; a local
@@ -12,7 +15,11 @@
  */
 
 import { showToast } from '../components/toast.js';
-import type { CertificateFindingWire, CertificatesCheckResponse } from '../../shared/wire-types.js';
+import type {
+  CertificateFindingWire,
+  CertificatesCheckResponse,
+  CertificateUntrustedWire,
+} from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
@@ -38,9 +45,30 @@ export function certificateMessage(finding: CertificateFindingWire): string {
   return `Certificate ${finding.subject} expires in ${plural(finding.daysLeft, 'day')} (${date}).`;
 }
 
-/** The problems a check reports: every expired or expiring certificate, and nothing that is fine. */
+/** An endpoint whose chain did not verify, as the sentence a Problems row shows. */
+export function untrustedMessage(untrusted: CertificateUntrustedWire): string {
+  return untrusted.code === 'CERT_HAS_EXPIRED'
+    ? `The certificate ${untrusted.where} presents has expired.`
+    : `The certificate ${untrusted.where} presents does not verify (${untrusted.code}).`;
+}
+
+/**
+ * The problems a check reports: every expired or expiring certificate, and every endpoint whose
+ * chain does not verify — an error, since a send there fails the same way. Nothing that is fine.
+ */
 export function certificateProblems(response: CertificatesCheckResponse): Problem[] {
-  return response.certificates
+  const untrusted = response.untrusted.map((entry) => ({
+    groupId: CERTIFICATE_GROUP,
+    source: 'certificate' as const,
+    severity: 'error' as const,
+    problem: {
+      code: 'certificate-untrusted',
+      message: untrustedMessage(entry),
+      source: 'endpoint',
+      location: entry.where,
+    },
+  }));
+  const judged = response.certificates
     .filter((finding) => finding.status !== 'ok')
     .map((finding) => ({
       groupId: CERTIFICATE_GROUP,
@@ -53,6 +81,7 @@ export function certificateProblems(response: CertificatesCheckResponse): Proble
         location: finding.where,
       },
     }));
+  return [...judged, ...untrusted];
 }
 
 /**
@@ -75,6 +104,7 @@ export function certificateCheckSummary(response: CertificatesCheckResponse): st
   const found = [
     ...(expired > 0 ? [`${plural(expired, 'certificate')} expired`] : []),
     ...(expiring > 0 ? [`${plural(expiring, 'certificate')} expiring within ${window}`] : []),
+    ...(response.untrusted.length > 0 ? [`${plural(response.untrusted.length, 'endpoint')} not verifying`] : []),
   ];
   const parts = [found.length === 0 ? `No certificate expires within ${window}.` : `${found.join(', ')}.`];
   if (response.skipped.length > 0) {
@@ -111,7 +141,7 @@ export async function runCertificateCheckCommand(): Promise<void> {
   if (response === undefined) {
     return;
   }
-  const flagged = response.certificates.some((finding) => finding.status !== 'ok');
+  const flagged = response.untrusted.length > 0 || response.certificates.some((finding) => finding.status !== 'ok');
   showToast(
     certificateCheckSummary(response),
     flagged

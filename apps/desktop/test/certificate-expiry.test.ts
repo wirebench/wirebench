@@ -170,6 +170,22 @@ describe('checkCertificates', () => {
     ]);
   });
 
+  it('reports an endpoint whose chain does not verify as untrusted, with the reason', async () => {
+    const expired = Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' });
+    const result = await checkCertificates(
+      input({
+        probe: () => Promise.reject(expired),
+        sources: [{ projectId: 'p1', endpoints: [target('old.example')], keystores: [] }],
+      }),
+    );
+
+    expect(result.untrusted).toEqual([
+      { projectId: 'p1', where: 'old.example:443', code: 'CERT_HAS_EXPIRED', message: 'certificate has expired' },
+    ]);
+    expect(result.skipped).toEqual([]);
+    expect(result.certificates).toEqual([]);
+  });
+
   it('keeps at most `concurrency` handshakes in flight', async () => {
     let inFlight = 0;
     let peak = 0;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { certificateExpiry, pemCertificates, tlsProbeTarget } from '../../../src/http/cert-expiry.js';
+import {
+  certificateExpiry,
+  isCertificateVerifyError,
+  pemCertificates,
+  tlsProbeTarget,
+} from '../../../src/http/cert-expiry.js';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -77,5 +82,30 @@ describe('tlsProbeTarget', () => {
     expect(tlsProbeTarget('http://example.test/')).toBeUndefined();
     expect(tlsProbeTarget('ws://example.test/')).toBeUndefined();
     expect(tlsProbeTarget('${baseUrl}/x')).toBeUndefined();
+  });
+});
+
+describe('isCertificateVerifyError', () => {
+  const withCode = (code: string): Error => Object.assign(new Error(code), { code });
+
+  it('recognises the reasons a chain does not verify', () => {
+    for (const code of [
+      'CERT_HAS_EXPIRED',
+      'CERT_NOT_YET_VALID',
+      'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+      'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+      'SELF_SIGNED_CERT_IN_CHAIN',
+      'ERR_TLS_CERT_ALTNAME_INVALID',
+    ]) {
+      expect(isCertificateVerifyError(withCode(code)), code).toBe(true);
+    }
+  });
+
+  it('leaves network failures and anything without a code alone', () => {
+    expect(isCertificateVerifyError(withCode('ECONNREFUSED'))).toBe(false);
+    expect(isCertificateVerifyError(withCode('ECONNRESET'))).toBe(false);
+    expect(isCertificateVerifyError(new Error('CERT_HAS_EXPIRED'))).toBe(false);
+    expect(isCertificateVerifyError('CERT_HAS_EXPIRED')).toBe(false);
   });
 });

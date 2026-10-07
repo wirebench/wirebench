@@ -131,7 +131,7 @@ export function tlsProbeTarget(url: string): TlsProbeTarget | undefined {
 export interface ProbeTlsChainOptions {
   /** The proxy a send to this endpoint would go through; the handshake tunnels through `CONNECT`. */
   readonly proxy?: ProxyOptions;
-  /** Trust anchors to judge `authorized` against, as a send would; Node's defaults when absent. */
+  /** Trust anchors to verify the chain against, as a send would; Node's defaults when absent. */
   readonly ca?: readonly string[];
   /** Gives up after this long. Default 10 s. */
   readonly timeoutMs?: number;
@@ -178,17 +178,38 @@ function tunnel(proxy: ProxyOptions, target: TlsProbeTarget, signal: AbortSignal
 }
 
 /**
+ * True for the error a TLS handshake fails with when the peer's chain does not verify: expired,
+ * not yet valid, issued by nothing the trust anchors know, or not issued for the host. Its `code`
+ * is OpenSSL's reason (`CERT_HAS_EXPIRED`, `SELF_SIGNED_CERT_IN_CHAIN`, …) or Node's
+ * `ERR_TLS_CERT_ALTNAME_INVALID`.
+ */
+export function isCertificateVerifyError(error: unknown): error is Error & { readonly code: string } {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return (
+    typeof code === 'string' &&
+    (/^(CERT_|UNABLE_TO_(GET|VERIFY|DECRYPT|DECODE)_|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|INVALID_CA$|PATH_LENGTH_EXCEEDED$|HOSTNAME_MISMATCH$)/.test(
+      code,
+    ) ||
+      code === 'ERR_TLS_CERT_ALTNAME_INVALID')
+  );
+}
+
+/**
  * Reads the certificate chain `target` presents, from a TLS handshake alone: nothing is sent once
  * it completes, and the connection is closed straight away.
  *
- * Verification is reported (`authorized`), never enforced: an expired or untrusted chain is
- * exactly what the caller wants to see. No client certificate is offered, so a server that
- * insists on one may refuse the handshake; that surfaces as an error.
+ * The chain is verified exactly as a send verifies it, against `ca` (Node's roots when absent) and
+ * the host name. One that does not verify fails the handshake — Node keeps nothing of a chain it
+ * rejected — with an error {@link isCertificateVerifyError} recognises, whose `code` says why: an
+ * expired certificate is `CERT_HAS_EXPIRED`. No client certificate is offered, so a server that
+ * insists on one may refuse the handshake; that surfaces as an ordinary error.
  *
  * @param target the host and port to reach
  * @param options the proxy to tunnel through, trust anchors, and a timeout
  * @returns the connection snapshot, `peerChain` leaf first
- * @throws Error when the endpoint (or the proxy) cannot be reached or the handshake fails
+ * @throws Error when the endpoint (or the proxy) cannot be reached, the chain does not verify, or
+ * the handshake fails
  */
 export async function probeTlsChain(target: TlsProbeTarget, options: ProbeTlsChainOptions = {}): Promise<SslInfo> {
   const controller = new AbortController();
@@ -205,7 +226,6 @@ export async function probeTlsChain(target: TlsProbeTarget, options: ProbeTlsCha
         // An IP literal is not a valid SNI name; Node warns about one and OpenSSL drops it anyway.
         ...(isIP(target.host) === 0 ? { servername: target.host } : {}),
         ...(options.ca !== undefined ? { ca: [...options.ca] } : {}),
-        rejectUnauthorized: false,
       });
       const abort = (): void => {
         tls.destroy();
