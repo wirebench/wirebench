@@ -76,6 +76,9 @@ All notable changes to this project are documented here. The format follows
 - **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
   by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
   can no longer corrupt the frames (#182).
+- **A partly masked XML value no longer leaves the message unparseable.** Where a secret is only part
+  of an element's text (`<Auth>Bearer <redacted></Auth>`), `send`, `call`, `query`, `validate` and
+  `history_diff` now write the marker as escaped text, so the body and its History entry still parse (#183).
 - **A WebSocket upgrade refused with 401 drops the OAuth2 token.** The next connect fetches a new
   one instead of reusing the stale token until it expires, as a REST `401` already did. A server that
   cannot be reached, a `403`, a timeout and a cancel keep the token (#193).

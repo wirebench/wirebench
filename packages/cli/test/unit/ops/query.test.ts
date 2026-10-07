@@ -249,6 +249,18 @@ describe('op query: kind, size, files and errors', () => {
     expect(await run('count(//redacted)')).toEqual(['1']);
   });
 
+  it('reads a stored entry whose secret is only part of an element text as well-formed XML', async () => {
+    const fixture = await emptyProject();
+    const xml = `<a><Auth>Bearer ${REDACTED_MARKER}</Auth><b>${REDACTED_MARKER} and ${REDACTED_MARKER}<c/></b><redacted>keep</redacted></a>`;
+    await appendHistory(historyFileFor(fixture.historyDir, 'mcp-fixture'), entryOf(xml, 'text/xml'));
+    const run = async (expression: string): Promise<readonly string[]> =>
+      (await runOp(queryOp, { expression, historyId: '01J0000000000000000000WXYZ' }, fixture.base())).results;
+
+    expect(await run('string(//Auth)')).toEqual([`Bearer ${REDACTED_MARKER}`]);
+    expect(await run('string(//b)')).toEqual([`${REDACTED_MARKER} and ${REDACTED_MARKER}`]);
+    expect(await run('string(//redacted)')).toEqual(['keep']);
+  });
+
   it('keeps a JSON body declared as a form valid JSON, its strings whole', async () => {
     const fixture = await emptyProject();
     await appendHistory(
