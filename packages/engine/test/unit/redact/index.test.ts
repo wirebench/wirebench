@@ -3,6 +3,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   containsRedaction,
+  escapeStrayRedactionMarkers,
   redactHeaderPairs,
   redactHeaders,
   REDACTED_MARKER,
@@ -293,5 +294,47 @@ describe('one XML redaction marker', () => {
     expect(example).toBe(history);
     // Escaped, the document has no element the marker would open.
     expect(history).not.toContain(REDACTED_MARKER);
+  });
+});
+
+describe('escapeStrayRedactionMarkers', () => {
+  it('escapes a marker that is part of an element text', () => {
+    expect(escapeStrayRedactionMarkers(`<Auth>Bearer ${REDACTED_MARKER}</Auth>`)).toBe(
+      `<Auth>Bearer ${REDACTED_XML_MARKER}</Auth>`,
+    );
+    expect(escapeStrayRedactionMarkers(`<a><b>${REDACTED_MARKER} x ${REDACTED_MARKER}<c/></b></a>`)).toBe(
+      `<a><b>${REDACTED_XML_MARKER} x ${REDACTED_XML_MARKER}<c/></b></a>`,
+    );
+  });
+
+  it('escapes a marker that is a whole element text', () => {
+    expect(escapeStrayRedactionMarkers(`<a>${REDACTED_MARKER}</a>`)).toBe(`<a>${REDACTED_XML_MARKER}</a>`);
+  });
+
+  it('leaves an element named redacted as it is', () => {
+    const xml = '<a><redacted>keep</redacted><redacted></redacted><redacted/><redacted><b/></redacted></a>';
+    expect(escapeStrayRedactionMarkers(xml)).toBe(xml);
+  });
+
+  it('leaves a marker inside a comment or CDATA alone', () => {
+    const xml = `<a><!-- ${REDACTED_MARKER} --><![CDATA[${REDACTED_MARKER}]]></a>`;
+    expect(escapeStrayRedactionMarkers(xml)).toBe(xml);
+  });
+
+  it('leaves a raw marker inside an attribute value alone', () => {
+    // A mask writes the escaped marker, which is valid in an attribute; this scan is for older History.
+    const xml = `<a b="${REDACTED_MARKER}">${REDACTED_MARKER}</a>`;
+    expect(escapeStrayRedactionMarkers(xml)).toBe(`<a b="${REDACTED_MARKER}">${REDACTED_XML_MARKER}</a>`);
+  });
+
+  it('stays linear on unterminated comments, CDATA, instructions and tags, with many strays', () => {
+    const strays = `<a>${`x ${REDACTED_MARKER}`.repeat(20000)}`;
+    for (const open of ['<!--', '<![CDATA[', '<?x', '<a b="', '<a <a ']) {
+      const hostile = `${strays}${open.repeat(Math.ceil(320_000 / open.length))}`;
+      const started = performance.now();
+      const out = escapeStrayRedactionMarkers(hostile);
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(out.startsWith(`<a>${`x ${REDACTED_XML_MARKER}`.repeat(20000)}`)).toBe(true);
+    }
   });
 });
