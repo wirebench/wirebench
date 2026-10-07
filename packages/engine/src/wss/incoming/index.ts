@@ -10,9 +10,9 @@
 
 import { isWirebenchError } from '../../errors.js';
 import { selectAlias } from '../../keystore/index.js';
-import { decryptIncoming } from './decrypt.js';
+import { decryptIncoming, encryptedKeyMismatch } from './decrypt.js';
 import { verifyIncoming } from './verify.js';
-import type { Keystore } from '../../keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { WssContext, WssIncomingConfig } from '../model.js';
 import type { WssSignatureCheck } from './check.js';
 
@@ -33,6 +33,10 @@ export interface WssAction {
   readonly created?: string;
   /** `wsu:Expires`; only on a `timestamp` action that had one. */
   readonly expires?: string;
+  /** This machine's clock minus `wsu:Created`, in seconds (negative: Created is ahead); `timestamp` only. */
+  readonly skewSeconds?: number;
+  /** The clock skew tolerated, in seconds; `timestamp` only. */
+  readonly toleranceSeconds?: number;
   /** The covered parts' element names (the reference id when unresolvable); `signature` only. */
   readonly references?: readonly string[];
   /** Whether a valid reference covers the envelope's `Body`; `signature` only. */
@@ -121,8 +125,9 @@ async function runDecrypt(
       action: { kind: 'decrypt', ok: false, detail: 'The decryption keystore is not available.' },
     };
   }
+  let alias: KeystoreAlias | undefined;
   try {
-    const alias = selectAlias(keystore, config.decryptAlias);
+    alias = selectAlias(keystore, config.decryptAlias);
     const password =
       config.decryptKeyPasswordRef === undefined ? undefined : await ctx.secrets(config.decryptKeyPasswordRef);
     const result = decryptIncoming(xml, {
@@ -145,7 +150,14 @@ async function runDecrypt(
       },
     };
   } catch (error) {
-    return { xml, action: { kind: 'decrypt', ok: false, detail: messageOf(error) } };
+    // "No key opened" alone leaves the user guessing which certificate the sender used: say what
+    // the message asked for beside what the alias has.
+    const mismatch =
+      alias !== undefined && isWirebenchError(error) && error.code === 'wss-decrypt-failed'
+        ? encryptedKeyMismatch(xml, alias.certPem, alias.alias)
+        : undefined;
+    const detail = mismatch === undefined ? messageOf(error) : `${messageOf(error)} ${mismatch}`;
+    return { xml, action: { kind: 'decrypt', ok: false, detail } };
   }
 }
 
@@ -265,6 +277,8 @@ export async function processIncomingWss(
       detail,
       created: timestamp.created,
       ...(timestamp.expires !== undefined ? { expires: timestamp.expires } : {}),
+      ...(timestamp.skewSeconds !== undefined ? { skewSeconds: timestamp.skewSeconds } : {}),
+      toleranceSeconds: timestamp.toleranceSeconds,
     });
     if (!timestamp.fresh) {
       errors.push(detail);
