@@ -178,6 +178,29 @@ An **Incoming configuration** works the other way: it states what a response mus
 valid signature, a decrypted body, a timestamp within tolerance — so a response that doesn't meet
 it is flagged rather than silently accepted.
 
+### Why a response failed, and what a request will send
+
+The response pane's **WSS** inspector explains a failure instead of only reporting it:
+
+- **A signature that does not verify** lists every part it signed. For each part it shows whether the
+  digest matched, the transforms and digest algorithm used, and for a part that changed, the digest
+  the message carries beside the one computed from what arrived. When every part matches but the
+  signature itself does not, it says so: the signed information was changed, or the message names
+  the wrong certificate.
+- **A signer that cannot be found** names what the message asked for: the token id, the thumbprint or
+  subject key identifier, or the issuer and serial number to look up in the truststore.
+- **A message that cannot be decrypted** names the certificate it was encrypted for beside the one
+  the decryption keystore holds.
+- **A timestamp** shows the clock skew in seconds and how much is tolerated.
+- **Security header** lists the header step by step in header order: the timestamp, each token, each
+  signature with what it covers, and each encryption with what it hides. Senders that follow the
+  WS-Security standard add each step at the top, so their last step is usually listed first.
+
+Under **Outgoing**, **Preview secured request** applies the request's outgoing configuration to the
+envelope on screen and shows the result without sending it or changing the editor. The steps are
+listed in the order they were applied, and passwords are masked. An issued token is not fetched for a
+preview; a placeholder stands in for it.
+
 ## Client certificates and keystores
 
 Under **WS-Security → Keystores**, add a PKCS#12 (`.p12`) or PEM keystore. Each row shows whether it

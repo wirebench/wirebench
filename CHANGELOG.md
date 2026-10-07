@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **WS-Security debugger.** The response's **WSS** inspector now says why a signature, decryption or
+  timestamp failed. It shows the part that changed, with its expected and computed digest and the
+  transforms used, or a SignatureValue that fails while every part matches. It names the signer token
+  or decryption certificate the message asked for and did not find, and the clock skew against the
+  timestamp. It also lists the Security header step by step. **Preview secured request** shows a
+  request's secured envelope and its steps before Send (#57).
+
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only

@@ -195,3 +195,14 @@ WS-Trust client and its cache), and SC-WT6 with the fourth (the Kerberos credent
 | **SC-WT2** The certificate credential signs the RST | `rst.test.ts`, `ws-trust-send.test.ts` |
 | **SC-WT3** A holder-of-key or sender-vouches signature refers to the SAML token, and covers it through the STR-Transform without altering it | `signature-saml.test.ts`, `str-transform.test.ts`, `saml-preservation.test.ts`, `verify-str.test.ts` |
 | **SC-WT6** The Kerberos credential asks the token service with a ticket | `rst-kerberos.test.ts`, `ws-trust-send.test.ts`, `kerberos-real.test.ts` (the `kerberos-integration` CI job: a real KDC accepts the RST's AP-REQ) |
+
+## WS-Security debugger (docs/specs/2026-10-07-wss-debugger-design.md)
+
+| Criterion | Proved by |
+|---|---|
+| **SC-WD1** A tampered Body reports the failing reference, expected and computed digests, and the canonicalisation and digest algorithm | `check.test.ts`, `e2e/specs/wss.spec.ts` |
+| **SC-WD2** A broken SignatureValue is reported with every reference matching | `check.test.ts`, `wss-incoming.test.tsx` |
+| **SC-WD3** A missing signer token, an unmatched thumbprint or issuer and serial, and an undecryptable message each name what was asked for | `verify.test.ts`, `process.test.ts` |
+| **SC-WD4** A timestamp ahead, expired or stale reports the skew in seconds and the tolerance | `verify.test.ts`, `wss-incoming.test.tsx` |
+| **SC-WD5** The Security header timeline lists each step in header order with what it covers; the preview lists the configured entries in order | `timeline.test.ts`, `ipc-wss.test.ts`, `e2e/specs/wss.spec.ts` |
+| **SC-WD6** The WSS inspector previews the secured envelope and timeline without sending or editing | `wss-incoming.test.tsx`, `e2e/specs/wss.spec.ts` |
