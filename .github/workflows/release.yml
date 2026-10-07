@@ -141,6 +141,16 @@ jobs:
             node scripts/check-kerberos-vendor.ts linux-arm64 apps/desktop/release/linux-arm64-unpacked/resources
           fi
 
+      # The asar holds exactly the packages the app depends on: none dropped by the `files`
+      # exclusions, and none of the `prebuild-install` tree that only the unloaded `kerberos` needs.
+      - name: Check the packed node_modules
+        run: |
+          if [ "${{ matrix.os }}" = macos-latest ]; then
+            node scripts/check-desktop-asar.ts apps/desktop/release/mac*/Wirebench.app/Contents/Resources
+          else
+            node scripts/check-desktop-asar.ts apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -332,6 +342,7 @@ jobs:
       - run: |
           node scripts/check-kerberos-vendor.ts win32-x64 apps/desktop/release/win-unpacked/resources
           node scripts/check-kerberos-vendor.ts win32-arm64 apps/desktop/release/win-arm64-unpacked/resources
+          node scripts/check-desktop-asar.ts apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
       - uses: actions/upload-artifact@v7
         id: upload
         with:

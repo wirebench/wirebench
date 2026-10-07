@@ -101,6 +101,14 @@ the x64 and arm64 apps to hold the same files. `@electron/universal` already ski
 Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
 universal.
 
+The `kerberos` package itself stays out of the asar, and so does everything only it depends on:
+`node-addon-api` and the `prebuild-install` tree it uses to fetch a binding at install time. The
+`files` list in `electron-builder.yml` names those packages, and `scripts/check-desktop-asar.ts`
+runs in every release job to prove the asar holds exactly what the app's own dependencies reach —
+it fails when an exclusion drops a package something else needs, and when a `kerberos` upgrade
+brings a package the list does not name yet. (`THIRD-PARTY-LICENSES.md` still lists that tree:
+Wirebench Server's image installs the engine's optional dependencies, `kerberos` included.)
+
 ## Electron fuses
 
 `scripts/fuses.ts` runs as electron-builder's `afterPack` hook (before signing — flipping a
