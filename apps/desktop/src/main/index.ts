@@ -28,6 +28,7 @@ import {
   rememberPickedGit,
   toPreferencesWire,
 } from './preferences.js';
+import { policyFilePath } from './policy.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
@@ -146,7 +147,10 @@ const teamSecrets = new TeamSecretsService({
 const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
 
 /** The user's application preferences, shared by every project and every window. */
-const preferencesService = new PreferencesService(app.getPath('userData'));
+const preferencesService = new PreferencesService(app.getPath('userData'), {
+  // Managed machines: an administrator's policy file locks the settings it names (see `policy.ts`).
+  policyFile: policyFilePath({ platform: process.platform, env: process.env, isPackaged: app.isPackaged }),
+});
 
 /**
  * Secret sources (spec D6): one cache for the app, in front of every send's getter chain. The workspace
@@ -939,6 +943,13 @@ void app.whenReady().then(() => {
     rememberPickedCaBundle(preferences, dialogPicks);
     // Same evidence, same reason, for a git executable main itself picked (`git.pathPickedByMain`).
     rememberPickedGit(preferences, dialogPicks);
+    const policy = preferencesService.policy();
+    if (policy.error !== undefined) {
+      console.error(`Managed-preferences policy ${policy.path} not applied: ${policy.error}`);
+    }
+    if (policy.ignored.length > 0) {
+      console.warn(`Managed-preferences policy ${policy.path} ignores: ${policy.ignored.join(', ')}`);
+    }
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();

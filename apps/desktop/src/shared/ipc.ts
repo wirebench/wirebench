@@ -118,6 +118,7 @@ import {
   dialogsOpenFileResponseSchema,
   dialogsSaveFileRequestSchema,
   dialogsSaveFileResponseSchema,
+  preferencesPolicyResponseSchema,
   preferencesResetRequestSchema,
   preferencesResponseSchema,
   preferencesUpdateRequestSchema,
@@ -968,6 +969,8 @@ export const channels = {
     get: defineChannel('preferences.get', z.undefined(), preferencesResponseSchema),
     update: defineChannel('preferences.update', preferencesUpdateRequestSchema, preferencesResponseSchema),
     reset: defineChannel('preferences.reset', preferencesResetRequestSchema, preferencesResponseSchema),
+    /** The managed-preferences policy; read once at startup, so the renderer asks once. */
+    policy: defineChannel('preferences.policy', z.undefined(), preferencesPolicyResponseSchema),
   },
   // The CA bundle preference has channels of its own because only main may set it: the path is
   // a file main reads on every send, so it comes from a native picker main ran, never from a
