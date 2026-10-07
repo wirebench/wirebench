@@ -238,13 +238,24 @@ describe('ProjectHost — Export Definition and documentation', () => {
   });
 });
 
-describe('ProjectHost — Update Definition with Kerberos', () => {
-  async function planFrom(spn: string, update: (first: TestSoapServer, second: TestSoapServer) => string) {
+describe('ProjectHost — Update Definition auth across origins', () => {
+  async function planFrom(
+    ownerAuth: { type: 'kerberos'; spn: string } | { type: 'basic'; username: string; passwordRef: string },
+    update: (first: TestSoapServer, second: TestSoapServer) => string,
+  ) {
     const first = await startTestSoapServer({ fixture: 'versioned/v1' });
     const second = await startTestSoapServer({ fixture: 'versioned/v2' });
     const engine = new EngineService();
     const preview = vi.spyOn(engine, 'importPreview').mockRejectedValue(new Error('stop after capture'));
-    const host = new ProjectHost(engine, {}, undefined, undefined, undefined, undefined, new DialogPicks());
+    const host = new ProjectHost(
+      engine,
+      {},
+      undefined,
+      undefined,
+      { get: () => Promise.resolve('hunter2') },
+      undefined,
+      new DialogPicks(),
+    );
     const dir = join(tempDir('projects'), 'Krb');
     try {
       await host.create({ dir, name: 'Krb' });
@@ -252,7 +263,7 @@ describe('ProjectHost — Update Definition with Kerberos', () => {
       await host.mutate({
         kind: 'update-interface-auth',
         interfaceId: added.interfaceId,
-        auth: { type: 'kerberos', spn },
+        auth: ownerAuth,
       });
       await host
         .planDefinitionUpdate(added.interfaceId, { kind: 'url', url: update(first, second) })
@@ -267,13 +278,25 @@ describe('ProjectHost — Update Definition with Kerberos', () => {
   }
 
   it('does not send the interface SPN to an update URL on another origin', async () => {
-    const auth = await planFrom('HTTP/original.example', (_first, second) => second.wsdlUrl);
+    const auth = await planFrom({ type: 'kerberos', spn: 'HTTP/original.example' }, (_first, second) => second.wsdlUrl);
     expect(auth).toMatchObject({ type: 'kerberos' });
     expect(auth).not.toHaveProperty('spn');
   });
 
   it('keeps the interface SPN for an update URL on the same origin', async () => {
-    const auth = await planFrom('HTTP/original.example', (first) => first.wsdlUrl);
+    const auth = await planFrom({ type: 'kerberos', spn: 'HTTP/original.example' }, (first) => first.wsdlUrl);
     expect(auth).toMatchObject({ type: 'kerberos', spn: 'HTTP/original.example' });
+  });
+
+  const basic = { type: 'basic', username: 'alice', passwordRef: 'ref-1' } as const;
+
+  it('does not send the interface Basic credentials to an update URL on another origin', async () => {
+    const auth = await planFrom(basic, (_first, second) => second.wsdlUrl);
+    expect(auth).toBeUndefined();
+  });
+
+  it('keeps the interface Basic credentials for an update URL on the same origin', async () => {
+    const auth = await planFrom(basic, (first) => first.wsdlUrl);
+    expect(auth).toEqual({ username: 'alice', password: 'hunter2' });
   });
 });
