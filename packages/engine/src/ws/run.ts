@@ -498,6 +498,7 @@ async function sendWsItem(
     startedAt = Date.now();
     let opened = false;
     let timedOut = false;
+    let refusedStatus: number | undefined;
     let exchange: WsExchange | undefined;
     try {
       // The run timeout bounds the whole session; it is also the handshake's, so either ends it. The
@@ -522,6 +523,9 @@ async function sendWsItem(
           // After this hook returns: `session` is assigned by then, and the socket is open.
           queueMicrotask(() => state.opened(session));
         },
+        onRefused: (status) => {
+          refusedStatus = status;
+        },
         onFrame: (frame) => {
           watch?.frame(frame);
           controller.queue.push({ protocol: 'websocket', kind: 'frame', frame });
@@ -534,14 +538,9 @@ async function sendWsItem(
       if (controller.signal.aborted && (!opened || (run && watch?.hasReplied !== true))) {
         throw new HttpError('aborted', 'The request was aborted.');
       }
-      // undici does not report a refusal's status, so any handshake the server refused drops the
-      // OAuth2 token: a stale one is refetched, a good one costs one extra fetch (#193). A cancel or a
-      // timeout says nothing about the credential, so those keep it.
-      dropRefusedToken(
-        context,
-        auth,
-        !opened && !controller.signal.aborted && exchange.handshake.error?.startsWith(HANDSHAKE_TIMEOUT_ERROR) !== true,
-      );
+      // Only a 401 says the token is stale, as for REST; a connection that never got an answer, a 403
+      // or a timeout keeps it (#193). A cancel says nothing either.
+      dropRefusedToken(context, auth, refusedStatus === 401 && !controller.signal.aborted);
       // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
       if (!opened && !interactive) throw handshakeFailure(exchange.handshake);
       if (timedOut && watch?.hasReplied === false) {
