@@ -38,70 +38,27 @@ export function opaqueEntryFingerprint(stored: unknown): string {
   return createHash('sha256').update(canonicalJson(stored)).digest('hex').slice(0, 16);
 }
 
-const PART_KEYS: ReadonlySet<string> = new Set(['name', 'namespace', 'encode', 'token']);
-
-/** The fields this build edits on each kind it rebuilds field by field; any other key is a newer build's. */
-const EDITED_KEYS: Readonly<Record<string, { keys: ReadonlySet<string>; partKeys?: ReadonlySet<string> }>> = {
-  timestamp: { keys: new Set(['kind', 'timeToLiveSeconds', 'millisecondPrecision']) },
-  'username-token': {
-    keys: new Set(['kind', 'username', 'passwordRef', 'passwordType', 'addNonce', 'addCreated']),
-  },
-  signature: {
-    keys: new Set([
-      'kind',
-      'keystoreRef',
-      'alias',
-      'keyPasswordRef',
-      'keyIdentifierType',
-      'signatureAlgorithm',
-      'digestAlgorithm',
-      'canonicalization',
-      'useSingleCertificate',
-      'parts',
-    ]),
-    partKeys: PART_KEYS,
-  },
-  encryption: {
-    keys: new Set([
-      'kind',
-      'keystoreRef',
-      'alias',
-      'keyIdentifierType',
-      'symmetricAlgorithm',
-      'keyTransportAlgorithm',
-      'embedKey',
-      'encryptSymmetricKey',
-      'parts',
-    ]),
-    partKeys: PART_KEYS,
-  },
-};
+function keysOf(value: unknown): string[] {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
+}
 
 /**
- * True when a stored entry of a field-by-field kind carries a key this build does not edit, on the
- * entry or on one of its parts. Mirroring such an entry field by field would drop those keys on the
- * next write-back, so it is carried as an opaque entry instead.
+ * True when the stored entry has a key (on the entry, or on one of its parts) that its wire mirror
+ * does not emit. Writing the mirror back would drop that key, so the entry must stay opaque. The
+ * mirror itself is the source of truth for what is editable; no list of fields is kept here.
  */
-export function hasUnmirroredFields(stored: unknown): boolean {
-  if (typeof stored !== 'object' || stored === null) {
-    return false;
-  }
-  const record = stored as Record<string, unknown>;
-  const kind = record['kind'];
-  const spec = typeof kind === 'string' ? EDITED_KEYS[kind] : undefined;
-  if (spec === undefined) {
-    return false;
-  }
-  if (Object.keys(record).some((key) => !spec.keys.has(key))) {
+export function hasUnmirroredFields(stored: unknown, wire: unknown): boolean {
+  const wireKeys = new Set(keysOf(wire));
+  if (keysOf(stored).some((key) => !wireKeys.has(key))) {
     return true;
   }
-  const parts = record['parts'];
-  if (spec.partKeys !== undefined && Array.isArray(parts)) {
-    const partKeys = spec.partKeys;
-    return parts.some(
-      (part: unknown) =>
-        typeof part === 'object' && part !== null && Object.keys(part).some((key) => !partKeys.has(key)),
-    );
+  const storedParts = (stored as Record<string, unknown> | null)?.['parts'];
+  const wireParts = (wire as Record<string, unknown> | null)?.['parts'];
+  if (!Array.isArray(storedParts)) {
+    return false;
   }
-  return false;
+  return storedParts.some((part: unknown, i) => {
+    const emitted = new Set(keysOf(Array.isArray(wireParts) ? wireParts[i] : undefined));
+    return keysOf(part).some((key) => !emitted.has(key));
+  });
 }

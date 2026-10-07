@@ -347,8 +347,11 @@ function toWssEntryWireAt(ref: WssRef, entry: WssEntry, index: number): WssEntry
   // A known kind that parses but carries fields a newer build added is opaque too: rebuilding it
   // field by field would drop them on the next write-back.
   const readable = wssEntrySchema.safeParse(entry).success;
-  if (readable && !hasUnmirroredFields(stored)) {
-    return toWssEntryWire(entry);
+  if (readable) {
+    const wire = toWssEntryWire(entry);
+    if (!hasUnmirroredFields(stored, wire)) {
+      return wire;
+    }
   }
   const kind = typeof stored === 'object' && stored !== null ? (stored as Record<string, unknown>)['kind'] : undefined;
   const originalKind = typeof kind === 'string' ? kind : 'unknown';

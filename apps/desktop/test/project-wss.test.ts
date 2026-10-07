@@ -470,6 +470,77 @@ describe('ProjectHost WS-Security', () => {
       expect(after[0]).toMatchObject({ timeToLiveSeconds: 60 });
     });
 
+    it('keeps an encryption entry with an unknown field, and an encryption part stored with token', async () => {
+      const encryption = {
+        kind: 'encryption',
+        keystoreRef: 'k',
+        futureField: 1,
+        parts: [{ name: 'Body', namespace: 'urn:x', encode: 'Content' }],
+      };
+      const tokenPart = {
+        kind: 'encryption',
+        keystoreRef: 'k',
+        parts: [{ name: 'Body', namespace: 'urn:x', encode: 'Content', token: true }],
+      };
+      const { service, configId } = await openWith([
+        { kind: 'timestamp', timeToLiveSeconds: 300, millisecondPrecision: false },
+        encryption,
+        tokenPart,
+      ]);
+      const wire = service.snapshot()?.wssOutgoing.find((config) => config.id === configId);
+      expect(wire?.entries[1]).toMatchObject({ kind: 'unknown', originalKind: 'encryption', unreadable: false });
+      expect(wire?.entries[2]).toMatchObject({ kind: 'unknown', originalKind: 'encryption', unreadable: false });
+      const entries = (wire?.entries ?? []).map((entry) =>
+        entry.kind === 'timestamp' ? { ...entry, timeToLiveSeconds: 60 } : entry,
+      );
+      await service.mutate({ kind: 'update-wss-outgoing', configId, patch: { entries } });
+      const after = storedEntries(service, configId);
+      expect(JSON.stringify(after[1])).toBe(JSON.stringify(encryption));
+      expect(JSON.stringify(after[2])).toBe(JSON.stringify(tokenPart));
+    });
+
+    it('mirrors every field of each edited kind (drift guard: a schema field the mirror drops fails here)', async () => {
+      const full: Record<string, unknown> = {
+        timestamp: { kind: 'timestamp', timeToLiveSeconds: 1, millisecondPrecision: true },
+        'username-token': {
+          kind: 'username-token',
+          username: 'u',
+          passwordRef: 'p',
+          passwordType: 'text',
+          addNonce: true,
+          addCreated: true,
+        },
+        signature: {
+          kind: 'signature',
+          keystoreRef: 'k',
+          alias: 'a',
+          keyPasswordRef: 'kp',
+          keyIdentifierType: 'Thumbprint',
+          signatureAlgorithm: 'rsa-sha1',
+          digestAlgorithm: 'sha1',
+          canonicalization: 'exc-c14n',
+          useSingleCertificate: false,
+          parts: [{ name: 'Body', namespace: 'urn:x', encode: 'Element', token: true }],
+        },
+        encryption: {
+          kind: 'encryption',
+          keystoreRef: 'k',
+          alias: 'a',
+          keyIdentifierType: 'Thumbprint',
+          symmetricAlgorithm: 'aes128-cbc',
+          keyTransportAlgorithm: 'rsa-1_5',
+          embedKey: true,
+          encryptSymmetricKey: false,
+          parts: [{ name: 'Body', namespace: 'urn:x', encode: 'Element' }],
+        },
+      };
+      const { service, configId } = await openWith(Object.values(full));
+      const wire = service.snapshot()?.wssOutgoing.find((config) => config.id === configId);
+      const kinds = (wire?.entries ?? []).map((entry) => entry.kind);
+      expect(kinds).toEqual(Object.keys(full));
+      expect(wire?.entries).toEqual(Object.values(full));
+    });
+
     it('still edits a known entry whose fields are all ones this build knows', async () => {
       const { service, configId } = await openWith([
         {
