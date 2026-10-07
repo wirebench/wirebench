@@ -233,6 +233,37 @@ describe('IssuedTokenStatus refresh', () => {
     });
   });
 
+  it('asks main once after a burst of edits settles, not once per keystroke', async () => {
+    const status = vi.fn().mockResolvedValue({ ok: true, value: { state: 'none' } });
+    api({ status });
+    const view = render(
+      <IssuedTokenFields entry={fresh} onChange={vi.fn()} projectId="p1" configId="w1" entryIndex={2} />,
+    );
+    await waitFor(() => {
+      expect(status).toHaveBeenCalledTimes(1);
+    });
+    for (const typed of ['h', 'ht', 'htt', 'http']) {
+      view.rerender(
+        <TooltipPrimitive.Provider>
+          <IssuedTokenFields
+            entry={{ ...fresh, stsUrl: typed }}
+            onChange={vi.fn()}
+            projectId="p1"
+            configId="w1"
+            entryIndex={2}
+          />
+        </TooltipPrimitive.Provider>,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(status).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(status).toHaveBeenCalledTimes(2);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(status).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the newest answer when an older read answers last', async () => {
     let answerFirst: (value: unknown) => void = () => undefined;
     const status = vi

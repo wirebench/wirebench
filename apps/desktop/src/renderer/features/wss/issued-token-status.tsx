@@ -23,10 +23,14 @@ export interface IssuedTokenStatusProps {
   readonly requestId?: string | undefined;
   /**
    * Changes whenever the entry's fields do (its JSON, say): main reads the saved entry, so an edit
-   * can change the key the token is cached under, and the line reads again.
+   * can change the key the token is cached under, and the line reads again once the edits settle
+   * ({@link REVISION_SETTLE_MS}), not on every keystroke.
    */
   readonly revision?: string | undefined;
 }
+
+/** How long the entry's fields must stay unchanged before the line asks main again. */
+export const REVISION_SETTLE_MS = 400;
 
 /** What the line says for a token the service gave no expiry: it was sent once and not kept. */
 export const SINGLE_USE_LINE = 'Used once — the token service gave no expiry';
@@ -90,10 +94,22 @@ export function IssuedTokenStatus({ projectId, configId, entryIndex, requestId, 
     // stays at its last answer rather than shouting about an editor state.
   }, [projectId, configId, entryIndex, requestId]);
 
+  // The revision follows the fields keystroke by keystroke; only the settled value is a reason to
+  // ask main, which also gives the autosave time to put the edit where main reads it.
+  const [settledRevision, setSettledRevision] = useState(revision);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSettledRevision(revision);
+    }, REVISION_SETTLE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [revision]);
+
   useEffect(() => {
     void read();
     // The triggers are not read here: each change is a reason to ask main again.
-  }, [read, revision, lastStsRow, settledSend]);
+  }, [read, settledRevision, lastStsRow, settledSend]);
 
   /** Shows an answer of Fetch now or Clear, which is newer than any read still under way. */
   function replace(value: IssuedTokenStatusWire): void {
