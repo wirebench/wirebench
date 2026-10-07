@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { HttpError, ProjectError, WsdlParseError } from '../errors.js';
 import { summarizeSoapOperations } from './operations.js';
 import { summarizeWsa } from '../wsa/policy-detect.js';
+import { summarizeWssPolicy } from '../wss/policy/detect.js';
 import type {
   WsdlImportCacheOptions,
   WsdlImportOptions,
@@ -225,6 +226,7 @@ export async function importWsdl(source: WsdlImportSource, options?: WsdlImportO
     problems,
     operations,
     wsa: summarizeWsa(definition),
+    wssPolicy: summarizeWssPolicy(definition),
     ...(fromCache ? { fromCache: true } : {}),
   };
 }
