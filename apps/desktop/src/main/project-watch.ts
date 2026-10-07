@@ -291,7 +291,16 @@ const MAX_DIGESTS = 8;
 interface CachedDigest {
   readonly key: string;
   readonly digest: string;
+  /** Wall-clock time the file was read, compared with its mtime to tell a racily clean entry. */
+  readonly readAtMs: number;
 }
+
+/**
+ * How far a file's mtime must lie before the read for a cached digest to be trusted. A filesystem
+ * stamps mtime coarsely (about 16 ms on Windows, 2 s on FAT), so a same-size rewrite inside that
+ * granule leaves size, times and inode unchanged; a file modified this close to the read is hashed again.
+ */
+const RACY_MARGIN_MS = 2_000;
 
 /** The file's identity for the digest cache: size, times and inode, so a rewrite misses the cache. */
 function statKey(stats: { size: number; mtimeMs: number; ctimeMs: number; ino: number | bigint }): string {
@@ -339,7 +348,7 @@ export class ProjectWatcher {
   private readonly pending = new Set<string>();
   /** Relative path to the timestamp after which it is no longer treated as a self-write. */
   private readonly selfWrites = new Map<string, SelfWriteMark>();
-  /** Digest per absolute path, valid while the file's stat is unchanged — repeated events do not re-read it. */
+  /** Digest per absolute path, valid while the file's stat is unchanged and its mtime well before the read — repeated events do not re-read it. */
   private readonly digestCache = new Map<string, CachedDigest>();
   /**
    * Which {@link AnnouncementToken} currently owns each announced path — at most one at a time,
@@ -871,11 +880,12 @@ export class ProjectWatcher {
       }
       const key = statKey(stats);
       const cached = this.digestCache.get(absolute);
-      if (cached?.key === key) {
+      if (cached?.key === key && stats.mtimeMs + RACY_MARGIN_MS < cached.readAtMs) {
         return cached.digest;
       }
+      const readAtMs = Date.now();
       const digest = createHash('sha256').update(readFileSync(absolute)).digest('hex');
-      this.digestCache.set(absolute, { key, digest });
+      this.digestCache.set(absolute, { key, digest, readAtMs });
       return digest;
     } catch (error) {
       this.digestCache.delete(absolute);

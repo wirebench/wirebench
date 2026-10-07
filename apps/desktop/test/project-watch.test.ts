@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   isManagedDir,
@@ -427,7 +427,8 @@ describe('ProjectWatcher', () => {
       target.expect([file]);
       await writeFile(file, 'v: outside\n', 'utf8');
       simulateEvent(target, file);
-      expect(await seen.next(10_000)).toEqual([file]);
+      // Reported paths use `/` on every platform.
+      expect(await seen.next(10_000)).toEqual([file.split(sep).join('/')]);
     });
 
     it('expect() without a snapshot suppresses everything for the window (a sync pull)', async () => {
