@@ -232,7 +232,7 @@ describe('sendThroughEngine for a REST request', () => {
       },
       url,
       method: 'GET',
-      text: echo(KEY),
+      text: echo('<redacted>'),
       language: 'json',
       cookies: [],
       methodChanged: false,
@@ -423,7 +423,7 @@ describe('sendThroughEngine for a REST request', () => {
     });
 
     const echoed = JSON.parse(summary.text) as { headers: Record<string, string>; query: Record<string, string> };
-    expect(echoed.headers['k2']).toBe('other-key-77');
+    expect(echoed.headers['k2']).toBe('<redacted>');
     expect(echoed.query['api_key']).toBeUndefined();
   });
 });

@@ -167,8 +167,8 @@ describe('a REST send through the engine', () => {
     const summary = await sending;
     const engine = deps.service;
 
-    // The server got the key; the report masks it by the header's own name.
-    expect(summary.text).toContain('good-key');
+    // The server got the key; the report masks it by the header's own name, the pane's text by value.
+    expect(summary.text).not.toContain('good-key');
     const sent = Object.entries(summary.http.request.headers).find(
       ([name]) => name.toLowerCase() === 'ocp-apim-subscription-key',
     );

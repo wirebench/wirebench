@@ -158,7 +158,7 @@ describe('a REST send with scripts', () => {
 
     const seen = echoed(summary.text);
     expect(seen.headers['x-region']).toBe('eu');
-    expect(seen.headers['authorization']).toBe(`Bearer ${TOKEN}`);
+    expect(seen.headers['authorization']).toBe('Bearer <redacted>');
     // The secret the request's own text names goes out as its value, put back after the script.
     expect(seen.headers['x-api-key']).toBe(API_KEY);
     expect(summary.script?.log).toEqual(['auth header: absent', 'key is a placeholder: true']);
@@ -198,7 +198,7 @@ describe('a REST send with scripts', () => {
 
       const second = await sendRest('s2', 'r2');
       // The server got the token; the request as the summary and History show it has it masked.
-      expect(echoed(second.text).headers['x-session']).toBe(LOGIN_TOKEN);
+      expect(echoed(second.text).headers['x-session']).toBe('<redacted>');
       expect(echoed(second.text).headers['x-plain']).toBe('visible');
       expect(JSON.stringify(second.http.request)).not.toContain(LOGIN_TOKEN);
       expect(JSON.stringify(history[1])).not.toContain(LOGIN_TOKEN);

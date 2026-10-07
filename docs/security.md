@@ -87,7 +87,7 @@ is never recorded: people choose passwords, so one is often ordinary text (`admi
 sends the password itself, so it has nothing to echo. The 4-character floor below
 applies here too.
 
-The same recorded values are masked in a REST response body (the body and raw body bytes) before it reaches the renderer, and in a REST request copied as cURL from the editor, URL,
+The same recorded values are masked in a REST response body (the decoded text the pane renders and copies, the body and the raw body bytes; show-secrets reveals them) before it reaches the renderer, and in a REST request copied as cURL from the editor, URL,
 headers and body alike, unless show-secrets is on. Only the recorded values' own bytes are replaced, so
 a binary body keeps every other byte.
 

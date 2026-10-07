@@ -362,7 +362,7 @@ export function toRestExchangeSummary(
       ...(context.keyParams !== undefined ? { extraParams: context.keyParams } : {}),
     }),
     method: context.method,
-    text: exchange.text,
+    text: redactSecretText(exchange.text, { show }),
     language: exchange.language,
     ...(exchange.decodeNote !== undefined ? { decodeNote: exchange.decodeNote } : {}),
     cookies: exchange.cookies.map((cookie, index) => {
