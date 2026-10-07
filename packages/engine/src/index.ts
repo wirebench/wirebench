@@ -2001,3 +2001,5 @@ export {
   hasSequenceValues,
   urlOrigin,
 } from './project/sequence-guards.js';
+
+export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';

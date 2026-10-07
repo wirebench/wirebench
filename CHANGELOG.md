@@ -73,6 +73,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
+  by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
+  can no longer corrupt the frames (#182).
 - **A WebSocket upgrade refused with 401 drops the OAuth2 token.** The next connect fetches a new
   one instead of reusing the stale token until it expires, as a REST `401` already did. A server that
   cannot be reached, a `403`, a timeout and a cancel keep the token (#193).

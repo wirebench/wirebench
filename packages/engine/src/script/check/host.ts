@@ -24,6 +24,7 @@ export type {
   ScriptQuickInfo,
   ScriptSignatureHelp,
 } from './service.js';
+import { forwardWorkerOutput, workerOutputOptions } from '../../worker-output.js';
 
 /** One request to the checker worker. */
 export type CheckerRequest =
@@ -120,7 +121,8 @@ export function createScriptChecker(options: ScriptCheckerOptions = {}): ScriptC
 
   const spawn = (): Worker => {
     url ??= defaultWorkerUrl();
-    const next = new Worker(url);
+    const next = new Worker(url, workerOutputOptions());
+    forwardWorkerOutput(next);
     next.unref();
     next.on('message', (answer: { id: number; result?: unknown; error?: string }) => {
       if (current?.id !== answer.id) return;

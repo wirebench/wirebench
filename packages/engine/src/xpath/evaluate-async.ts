@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { EvaluateOptions, QueryResult } from './evaluate.js';
 import type { RegexWorkerResult } from './worker.js';
+import { forwardWorkerOutput, workerOutputOptions } from '../worker-output.js';
 
 /** Default time budget for one evaluation, matching the brief's 5s ceiling for the scratchpad. */
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -128,7 +129,8 @@ function runOnWorker<Posted, Result = Posted>(
 ): Promise<Result> {
   return new Promise((resolve) => {
     let settled = false;
-    const worker = new Worker(workerUrl(), { workerData });
+    const worker = new Worker(workerUrl(), { workerData, ...workerOutputOptions() });
+    forwardWorkerOutput(worker);
 
     const finish = (result: Result): void => {
       if (settled) {
