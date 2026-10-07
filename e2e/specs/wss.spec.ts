@@ -197,10 +197,11 @@ test.describe('wss', () => {
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
 
-    // The echo route hands the envelope back verbatim, so this *is* what went out.
-    const responseEditor = page.getByTestId('response-editor');
-    await expect(responseEditor).toContainText('ds:Signature', { timeout: 15_000 });
-    await expect(responseEditor).toContainText('wsse:BinarySecurityToken');
+    // The echo route hands the envelope back verbatim, so this *is* what went out. The WSS
+    // inspector opened for the preview leaves the editor too short for Monaco to render the
+    // Signature line, so read the model rather than the DOM.
+    await expect(page.getByTestId('response-editor')).toContainText('wsse:BinarySecurityToken', { timeout: 15_000 });
+    await expect.poll(() => monacoModelText(page), { timeout: 15_000 }).toContain('ds:Signature');
     // Two references — one for the Body's generated wsu:Id, one for the Timestamp's.
     await expect.poll(() => monacoModelText(page)).toContain('<ds:Reference URI="#Id-');
     await expect.poll(() => monacoModelText(page)).toContain('<ds:Reference URI="#TS-');
