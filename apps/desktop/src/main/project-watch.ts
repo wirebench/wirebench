@@ -27,9 +27,16 @@
  * retried a few times rather than giving up on the directory.
  */
 
-import { readdirSync as nodeReaddirSync, realpathSync, statSync as nodeStatSync, watch as nodeWatch } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  readdirSync as nodeReaddirSync,
+  readFileSync,
+  realpathSync,
+  statSync as nodeStatSync,
+  watch as nodeWatch,
+} from 'node:fs';
 import { readdir as nodeReaddir, stat as nodeStat } from 'node:fs/promises';
-import { join, sep } from 'node:path';
+import { isAbsolute, join, sep } from 'node:path';
 import { MAX_FOLDER_DEPTH } from '@wirebench/engine';
 
 /** How long events are coalesced before `onChange` fires. */
@@ -264,14 +271,51 @@ function watchableDir(dir: string): string {
 }
 
 /**
+ * A path the app wrote itself: suppressed until `until`, but only while the file still holds what
+ * the app wrote. `digest` is the SHA-256 of that content, `null` when the app left the file
+ * absent, and `undefined` when there is no snapshot (a write made by someone else on the app's
+ * behalf, or a path that is not a readable file) — then every event in the window is suppressed.
+ */
+interface SelfWriteMark {
+  readonly until: number;
+  /** Every content the app wrote to the path within the window, newest last; any match suppresses. */
+  readonly digests?: readonly (string | null)[];
+}
+
+/** Files above this size are not hashed on the event path; they fall back to suppress-all. */
+export const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
+/** How many distinct app writes to one path are remembered inside the window. */
+const MAX_DIGESTS = 8;
+
+/** A cached digest and the stat it was taken under. */
+interface CachedDigest {
+  readonly key: string;
+  readonly digest: string;
+  /** Wall-clock time the file was read, compared with its mtime to tell a racily clean entry. */
+  readonly readAtMs: number;
+}
+
+/**
+ * How far a file's mtime must lie before the read for a cached digest to be trusted. A filesystem
+ * stamps mtime coarsely (about 16 ms on Windows, 2 s on FAT), so a same-size rewrite inside that
+ * granule leaves size, times and inode unchanged; a file modified this close to the read is hashed again.
+ */
+const RACY_MARGIN_MS = 2_000;
+
+/** The file's identity for the digest cache: size, times and inode, so a rewrite misses the cache. */
+function statKey(stats: { size: number; mtimeMs: number; ctimeMs: number; ino: number | bigint }): string {
+  return `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}`;
+}
+
+/**
  * A pending self-write announcement, returned by {@link ProjectWatcher.announce} and consumed
  * exactly once by {@link ProjectWatcher.release}. Opaque to callers — everything on it is
  * `ProjectWatcher`'s own bookkeeping for the paths that one `announce()` call covered.
  */
 export class AnnouncementToken {
-  /** Each announced path's self-write expiry from *before* this announcement, or `undefined`
+  /** Each announced path's self-write mark from *before* this announcement, or `undefined`
    * when it was not marked at all — what `release()` restores for a path it does not `keep`. */
-  readonly priorMarks = new Map<string, number | undefined>();
+  readonly priorMarks = new Map<string, SelfWriteMark | undefined>();
   /** Announced paths whose event arrived (and was dropped) while owned by *this* announcement —
    * see {@link ProjectWatcher.record}. A drop that happened before this announcement started, or
    * under a different announcement, is never attributed here. */
@@ -303,7 +347,9 @@ export class ProjectWatcher {
   private generation = 0;
   private readonly pending = new Set<string>();
   /** Relative path to the timestamp after which it is no longer treated as a self-write. */
-  private readonly selfWrites = new Map<string, number>();
+  private readonly selfWrites = new Map<string, SelfWriteMark>();
+  /** Digest per absolute path, valid while the file's stat is unchanged and its mtime well before the read — repeated events do not re-read it. */
+  private readonly digestCache = new Map<string, CachedDigest>();
   /**
    * Which {@link AnnouncementToken} currently owns each announced path — at most one at a time,
    * since usage is always `announce()` then `release()` in sequence. `record()` consults this to
@@ -691,12 +737,21 @@ export class ProjectWatcher {
    * currently own one of `paths`: that announcement's eventual {@link release} will find this
    * fresher mark already in place and leave the path alone, rather than restoring or re-delivering
    * anything for it.
+   *
+   * Call it *after* the write has landed: the file's content is remembered, and an event inside
+   * the window is suppressed only while the file still holds exactly that, so an outside edit
+   * made moments later (a sync pull, a checkout, an editor save) is usually reported. The race is
+   * narrowed, not closed: an edit landing between the app's rename and the snapshot is recorded as
+   * the app's own.
+   * A path that is not a readable file (a directory) is suppressed outright for the window. Pass
+   * `snapshot: false` for a write made by someone else on the app's behalf that has not landed
+   * yet (a sync pull): there is no content to compare, so the whole window is suppressed.
    */
-  expect(paths: readonly string[]): void {
+  expect(paths: readonly string[], options: { readonly snapshot?: boolean } = {}): void {
     const until = this.options.now() + this.options.selfWriteTtlMs;
     for (const rawPath of paths) {
       const path = this.normalise(rawPath);
-      this.selfWrites.set(path, until);
+      this.selfWrites.set(path, this.mark(path, until, options.snapshot !== false));
       this.announcedBy.delete(path);
     }
   }
@@ -717,8 +772,12 @@ export class ProjectWatcher {
     const until = this.options.now() + this.options.selfWriteTtlMs;
     for (const rawPath of paths) {
       const path = this.normalise(rawPath);
-      token.priorMarks.set(path, this.selfWrites.get(path));
-      this.selfWrites.set(path, until);
+      const prior = this.selfWrites.get(path);
+      token.priorMarks.set(path, prior);
+      // Provisional: the write is still running, so there is nothing final to snapshot yet. The
+      // digests of the app's earlier writes stay, so `release()` can add to them rather than start over.
+      const live = this.liveDigests(prior);
+      this.selfWrites.set(path, live !== undefined ? { until, digests: live } : { until });
       this.announcedBy.set(path, token);
     }
     return token;
@@ -738,7 +797,7 @@ export class ProjectWatcher {
     const keepSet = new Set(keep.map((path) => this.normalise(path)));
     const until = this.options.now() + this.options.selfWriteTtlMs;
     let revived = false;
-    for (const [path, priorUntil] of token.priorMarks) {
+    for (const [path, prior] of token.priorMarks) {
       // Ownership already moved on (a plain `expect()`, TTL expiry, or a newer `announce()` of
       // the same path) — nothing here belongs to this announcement any more.
       if (this.announcedBy.get(path) !== token) {
@@ -746,13 +805,14 @@ export class ProjectWatcher {
       }
       this.announcedBy.delete(path);
       if (keepSet.has(path)) {
-        this.selfWrites.set(path, until);
+        // The write is done: remember what it left, so a later outside edit is told apart.
+        this.selfWrites.set(path, this.mark(path, until, true, this.liveDigests(prior)));
         continue;
       }
-      if (priorUntil === undefined) {
+      if (prior === undefined) {
         this.selfWrites.delete(path);
       } else {
-        this.selfWrites.set(path, priorUntil);
+        this.selfWrites.set(path, prior);
       }
       if (token.dropped.has(path) && !this.isSelfWrite(path)) {
         this.pending.add(path);
@@ -764,21 +824,123 @@ export class ProjectWatcher {
     }
   }
 
+  /**
+   * Every managed file currently under the folder (relative, `/`-separated): the paths a write that
+   * prunes what it no longer wants (stale files, a deleted or renamed folder) can remove. Announce
+   * these with the new files to cover a save made before the app has recorded what it last wrote.
+   */
+  managedOnDisk(): string[] {
+    const found: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: readonly WatchDirEntry[];
+      try {
+        entries = this.options.fs.readdirSync(this.absolute(dir));
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = childOf(dir, entry.name);
+        if (!entry.isDirectory()) {
+          if (this.options.isManaged(child)) {
+            found.push(child);
+          }
+        } else if (this.coversDir(child)) {
+          walk(child);
+        }
+      }
+    };
+    walk('');
+    return found;
+  }
+
   private normalise(path: string): string {
     return path.split(sep).join('/');
   }
 
+  /** The digests of a mark that has not lapsed; `undefined` for none, a lapsed mark or one without a snapshot. */
+  private liveDigests(mark: SelfWriteMark | undefined): readonly (string | null)[] | undefined {
+    return mark !== undefined && mark.until >= this.options.now() ? mark.digests : undefined;
+  }
+
+  /** Absolute location of a watched-relative path; one that is already absolute is used as it is. */
+  private resolve(path: string): string {
+    return isAbsolute(path) ? path : join(this.options.dir, ...path.split('/'));
+  }
+
+  /**
+   * SHA-256 of the file at `path`; `null` when it does not exist; `undefined` when it cannot be
+   * compared (not a regular file, unreadable, or larger than {@link MAX_SNAPSHOT_BYTES}).
+   */
+  private digestOf(path: string): string | null | undefined {
+    const absolute = this.resolve(path);
+    try {
+      const stats = nodeStatSync(absolute);
+      if (!stats.isFile() || stats.size > MAX_SNAPSHOT_BYTES) {
+        return undefined;
+      }
+      const key = statKey(stats);
+      const cached = this.digestCache.get(absolute);
+      if (cached?.key === key && stats.mtimeMs + RACY_MARGIN_MS < cached.readAtMs) {
+        return cached.digest;
+      }
+      const readAtMs = Date.now();
+      const digest = createHash('sha256').update(readFileSync(absolute)).digest('hex');
+      this.digestCache.set(absolute, { key, digest, readAtMs });
+      return digest;
+    } catch (error) {
+      this.digestCache.delete(absolute);
+      return isGone(error) ? null : undefined;
+    }
+  }
+
+  /**
+   * The mark for a write to `path` that has just finished. With a snapshot, the new content joins
+   * those the app already wrote to it inside the window (back-to-back saves), so an event for an
+   * earlier save that arrives late still matches. The snapshot narrows the race with an outside
+   * edit but does not close it: one that lands between the app's rename and this read is taken as
+   * the app's own.
+   */
+  private mark(
+    path: string,
+    until: number,
+    snapshot: boolean,
+    earlierDigests?: readonly (string | null)[],
+  ): SelfWriteMark {
+    if (!snapshot) {
+      return { until };
+    }
+    const digest = this.digestOf(path);
+    if (digest === undefined) {
+      return { until };
+    }
+    const earlier = earlierDigests ?? this.liveDigests(this.selfWrites.get(path)) ?? [];
+    const digests = [...earlier.filter((known) => known !== digest), digest].slice(-MAX_DIGESTS);
+    return { until, digests };
+  }
+
+  /**
+   * True when an event on `path` is the app's own write coming back: the path is marked and has not
+   * lapsed, and — unless a write is still in flight (announced) or no snapshot was taken — the file
+   * still holds what the app wrote. Anything else is an outside change that landed in the window.
+   * An atomic write (temp file plus rename) is mostly covered: the mark is taken after the rename and
+   * the temp file's own events are for a path that is not managed. The race is narrowed, not closed:
+   * an outside edit landing between the app's rename and the snapshot is recorded as the app's own.
+   */
   private isSelfWrite(path: string): boolean {
-    const until = this.selfWrites.get(path);
-    if (until === undefined) {
+    const mark = this.selfWrites.get(path);
+    if (mark === undefined) {
       return false;
     }
-    if (this.options.now() > until) {
+    if (this.options.now() > mark.until) {
       this.selfWrites.delete(path);
       this.announcedBy.delete(path);
       return false;
     }
-    return true;
+    if (this.announcedBy.has(path) || mark.digests === undefined) {
+      return true;
+    }
+    const current = this.digestOf(path);
+    return current === undefined || mark.digests.includes(current);
   }
 
   private record(filename: string | Buffer | null): void {

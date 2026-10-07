@@ -1567,7 +1567,8 @@ export class WorkspaceService implements ProjectRouter {
       uses: () => this.secretUses(open),
       identity: () => open.sync?.identity() ?? this.treeIdentity(open),
       beforeWrite: (paths) => {
-        open.watcher?.expect(paths);
+        // Announced ahead of the write, so there is no final content to snapshot yet.
+        open.watcher?.expect(paths, { snapshot: false });
       },
       afterWrite: (message) => {
         // `current`, not `stale`: `close()` lets a last write commit before it stops sync.
@@ -1735,8 +1736,9 @@ export class WorkspaceService implements ProjectRouter {
       return;
     }
     const plan = planPull(changedPaths);
-    open.watcher?.expect(plan.workspacePaths);
-    open.watcher?.expect(teamPaths);
+    // Announced for a pull whose files are still being merged in: no snapshot, whole window suppressed.
+    open.watcher?.expect(plan.workspacePaths, { snapshot: false });
+    open.watcher?.expect(teamPaths, { snapshot: false });
     const byProjectId = new Map<string, readonly string[]>();
     for (const [slug, paths] of plan.projects) {
       const entry = this.entryOfSlug(open, slug);
@@ -2450,10 +2452,15 @@ export class WorkspaceService implements ProjectRouter {
   /** Rewrites the manifest's project list from the entries, which are the source of truth. */
   private async saveManifest(open: OpenWorkspace): Promise<void> {
     open.workspace = { ...open.workspace, projects: open.entries.map((entry) => entry.ref) };
-    const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
-    // The write this call just made would otherwise come back through the watcher as if a
-    // teammate had made it, triggering a redundant reload of the record this call just built.
-    open.watcher?.expect([...result.written, ...result.removed]);
+    // The write this call makes would otherwise come back through the watcher as if a teammate
+    // had made it, triggering a redundant reload of the record this call just built.
+    await saveWorkspaceAnnounced(
+      open.watcher,
+      open.workspace,
+      open.tree,
+      candidateWorkspacePaths(open.workspace),
+      this.fsOption(),
+    );
     open.sync?.afterSave('workspace');
   }
 

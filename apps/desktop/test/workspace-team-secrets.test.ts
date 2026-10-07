@@ -276,6 +276,21 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
     await vi.waitFor(async () => expect(await a.store.get(ref)).toBe('from-b'), WAIT);
   });
 
+  it("does not report the app's own vault write as an outside edit (#289)", async () => {
+    const a = await openMachine(await seedShared());
+    await a.team.turnOn();
+    await committed(a, 'Turn on team secrets');
+    await a.service.sync()?.idle();
+    const afterPull = vi.spyOn(a.team, 'afterPull');
+
+    await setPassword(a, 'hunter2');
+    await committed(a, 'Update secret Password');
+    // Well past the watcher's debounce: a mismatched self-write event would have been reported by now.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(afterPull).not.toHaveBeenCalled();
+  });
+
   it("hands a pull's vault change to team secrets once, from the pull and not from the watcher", async () => {
     const { b } = await twoApproved();
     const afterPull = vi.spyOn(b.team, 'afterPull');
