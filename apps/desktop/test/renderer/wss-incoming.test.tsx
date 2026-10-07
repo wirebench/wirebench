@@ -145,6 +145,147 @@ describe('WssInspector', () => {
     expect(useEditorsStore.getState().responseViewFor('r1')).toBe('xml');
   });
 
+  it('lists every reference of a failed signature with its digests (#57)', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [
+            {
+              kind: 'signature',
+              ok: false,
+              detail: 'Reference #Id-1 (Body) does not match.',
+              check: {
+                canonicalization: 'exc-c14n',
+                signatureMethod: 'rsa-sha256',
+                signatureValueOk: true,
+                references: [
+                  {
+                    uri: 'Id-1',
+                    element: 'Body',
+                    ok: false,
+                    transforms: ['exc-c14n'],
+                    inclusivePrefixes: ['soapenv'],
+                    digestAlgorithm: 'sha256',
+                    expectedDigest: 'EXPECTED=',
+                    computedDigest: 'COMPUTED=',
+                  },
+                  {
+                    uri: 'TS-1',
+                    element: 'Timestamp',
+                    ok: true,
+                    transforms: ['exc-c14n'],
+                    inclusivePrefixes: [],
+                    digestAlgorithm: 'sha256',
+                    expectedDigest: 'SAME=',
+                    computedDigest: 'SAME=',
+                  },
+                ],
+              },
+            },
+          ],
+          errors: ['Reference #Id-1 (Body) does not match.'],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.getAllByTestId('wss-reference-check')).toHaveLength(2);
+    expect(screen.getByText('differs')).toBeTruthy();
+    expect(screen.getByText('matches')).toBeTruthy();
+    expect(screen.getByText('EXPECTED=')).toBeTruthy();
+    expect(screen.getByText('COMPUTED=')).toBeTruthy();
+    // Only the failing reference spells out its digests.
+    expect(screen.queryByText('SAME=')).toBeNull();
+    expect(screen.queryByText('SignatureValue invalid')).toBeNull();
+  });
+
+  it('flags a SignatureValue that fails while every reference matches', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [
+            {
+              kind: 'signature',
+              ok: false,
+              detail: 'Every reference matches, but the SignatureValue does not verify.',
+              check: {
+                canonicalization: 'exc-c14n',
+                signatureMethod: 'rsa-sha256',
+                signatureValueOk: false,
+                references: [
+                  {
+                    uri: 'Id-1',
+                    element: 'Body',
+                    ok: true,
+                    transforms: ['exc-c14n'],
+                    inclusivePrefixes: [],
+                    digestAlgorithm: 'sha256',
+                    expectedDigest: 'SAME=',
+                    computedDigest: 'SAME=',
+                  },
+                ],
+              },
+            },
+          ],
+          errors: [],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.getByText('SignatureValue invalid')).toBeTruthy();
+  });
+
+  it('shows the clock skew a timestamp was judged with', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [
+            {
+              kind: 'timestamp',
+              ok: false,
+              detail: 'Created 95 s ahead.',
+              created: 'T0',
+              skewSeconds: -95,
+              toleranceSeconds: 30,
+            },
+          ],
+          errors: [],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.getByTestId('wss-clock-skew').textContent).toBe(
+      'Clock: created 95 s ahead of this clock; 30 s skew tolerated',
+    );
+  });
+
+  it('lists the Security header in header order', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [],
+          errors: [],
+          timeline: [
+            { kind: 'timestamp', summary: 'Timestamp (created T0)' },
+            {
+              kind: 'signature',
+              summary: 'Signed Body, Timestamp (rsa-sha256, exc-c14n)',
+              covers: ['Body', 'Timestamp'],
+            },
+            { kind: 'encryption', summary: 'Encrypted Body (content)', actor: 'urn:gw' },
+          ],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.queryByTestId('wss-actions-table')).toBeNull();
+    const steps = screen.getAllByTestId('wss-timeline-step').map((step) => step.textContent);
+    expect(steps).toEqual([
+      'Timestamp (created T0)',
+      'Signed Body, Timestamp (rsa-sha256, exc-c14n)',
+      'Encrypted Body (content) (for urn:gw)',
+    ]);
+  });
+
   it('has no note to show when nothing was decrypted', () => {
     render(
       <WssInspector

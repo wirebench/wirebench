@@ -307,6 +307,47 @@ describe('toExchangeSummary', () => {
     expect(shown.http.rawHeaders).toContainEqual(['Set-Cookie', 'sid=abc; HttpOnly']);
   });
 
+  it('carries the WS-Security debugger fields: reference checks, clock skew and timeline (#57)', () => {
+    const check = {
+      canonicalization: 'exc-c14n',
+      signatureMethod: 'rsa-sha256',
+      signatureValueOk: true,
+      references: [
+        {
+          uri: 'Id-1',
+          element: 'Body',
+          ok: false,
+          transforms: ['exc-c14n'],
+          inclusivePrefixes: ['soapenv'],
+          digestAlgorithm: 'sha256',
+          expectedDigest: 'A=',
+          computedDigest: 'B=',
+        },
+      ],
+    };
+    const exchange: SoapExchange = {
+      http: fakeHttpExchange(),
+      durationMs: 1,
+      problems: [],
+      wss: {
+        incoming: {
+          actions: [
+            { kind: 'signature', ok: false, detail: 'd', check },
+            { kind: 'timestamp', ok: true, detail: 't', created: 'T0', skewSeconds: 3, toleranceSeconds: 300 },
+          ],
+          errors: ['d'],
+          timeline: [{ kind: 'signature', summary: 'Signed Body', covers: ['Body'], actor: 'urn:gw' }],
+        },
+      },
+    };
+    const incoming = toExchangeSummary(exchange, 'send-wss').wss?.incoming;
+    expect(incoming?.actions[0]?.check).toEqual(check);
+    expect(incoming?.actions[1]).toMatchObject({ skewSeconds: 3, toleranceSeconds: 300 });
+    expect(incoming?.timeline).toEqual([
+      { kind: 'signature', summary: 'Signed Body', covers: ['Body'], actor: 'urn:gw' },
+    ]);
+  });
+
   it('omits `response` when the exchange had none', () => {
     const wire = toExchangeSummary({ http: fakeHttpExchange(), durationMs: 5, problems: [] }, 'send-2');
     expect(wire.response).toBeUndefined();
