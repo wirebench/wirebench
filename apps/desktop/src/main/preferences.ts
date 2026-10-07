@@ -16,8 +16,11 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { DEFAULT_PREFERENCES, mergePreferences, resetPreferences } from '@wirebench/engine';
+import { DEFAULT_PREFERENCES, mergePreferences, resetPreferences, WirebenchError } from '@wirebench/engine';
 import type { findGit, Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
+
+import { applyPolicy, loadPolicy, lockedKeysIn, noPolicy } from './policy.js';
+import type { Policy } from './policy.js';
 
 import type { PreferencesWire } from '../shared/wire-types.js';
 
@@ -136,13 +139,29 @@ async function writeAtomic(path: string, data: string): Promise<void> {
   }
 }
 
+/** Options for a {@link PreferencesService}. */
+export interface PreferencesServiceOptions {
+  /** The managed-preferences policy file (see `policy.ts`); no policy applies without one. */
+  readonly policyFile?: string;
+}
+
 /**
  * Owns the preferences document for one `userData` directory. {@link get} is synchronous so
  * the send path can read preferences without awaiting a disk read; {@link ready} resolves once
  * the initial load has completed, and every mutator loads on demand.
+ *
+ * With a policy file, two documents are kept apart: the user's own (`user`), which is all that
+ * is ever written to `preferences.yaml`, and the one in force (`preferences`), which is the
+ * user's with the policy's locked values laid over it. Keeping them apart is what lets a
+ * machine leave management and hand the user back the settings they had.
  */
 export class PreferencesService {
   private readonly file: string;
+  private readonly policyFile: string | undefined;
+  private policyValue: Policy;
+  /** The user's own document, without the policy. */
+  private user: Preferences = DEFAULT_PREFERENCES;
+  /** The document in force: {@link user} with the policy applied. */
   private preferences: Preferences = DEFAULT_PREFERENCES;
   private loaded = false;
   private loadPromise: Promise<Preferences> | undefined;
@@ -150,8 +169,10 @@ export class PreferencesService {
   private queue: Promise<Preferences> = Promise.resolve(DEFAULT_PREFERENCES);
   private readonly listeners = new Set<(preferences: Preferences) => void>();
 
-  constructor(userDataDir: string) {
+  constructor(userDataDir: string, options: PreferencesServiceOptions = {}) {
     this.file = join(userDataDir, PREFERENCES_FILE);
+    this.policyFile = options.policyFile;
+    this.policyValue = noPolicy(options.policyFile ?? '');
   }
 
   /** Reads the file into memory. Safe to call more than once; concurrent calls share one read. */
@@ -167,9 +188,23 @@ export class PreferencesService {
     } catch {
       document = undefined;
     }
-    this.preferences = mergePreferences(document);
+    if (this.policyFile !== undefined) {
+      this.policyValue = await loadPolicy(this.policyFile);
+    }
+    this.user = mergePreferences(document);
+    this.preferences = applyPolicy(this.user, this.policyValue);
     this.loaded = true;
     return this.preferences;
+  }
+
+  /** The managed-preferences policy in force. Empty until the initial {@link load} resolves. */
+  policy(): Policy {
+    return this.policyValue;
+  }
+
+  /** Whether the policy locks the dotted key (`ssl.caBundlePath`). */
+  isLocked(key: string): boolean {
+    return this.policyValue.locked.includes(key);
   }
 
   /** Resolves once the initial {@link load} has completed. */
@@ -190,15 +225,17 @@ export class PreferencesService {
     };
   }
 
-  private async persist(next: Preferences): Promise<Preferences> {
+  /** Writes the user's document `user` and makes it, with the policy applied, the one in force. */
+  private async persist(user: Preferences): Promise<Preferences> {
     await mkdir(join(this.file, '..'), { recursive: true });
-    await writeAtomic(this.file, stringifyYaml({ version: 1, ...next }, { lineWidth: 0 }));
-    this.preferences = next;
+    await writeAtomic(this.file, stringifyYaml({ version: 1, ...user }, { lineWidth: 0 }));
+    this.user = user;
+    this.preferences = applyPolicy(user, this.policyValue);
     this.loaded = true;
     for (const listener of this.listeners) {
-      listener(next);
+      listener(this.preferences);
     }
-    return next;
+    return this.preferences;
   }
 
   /** Queues `op` after every previously queued write, so it always reads the latest state. */
@@ -215,13 +252,32 @@ export class PreferencesService {
     return next;
   }
 
-  /** Deep-merges `patch` into the current preferences and persists the result. */
+  /**
+   * Deep-merges `patch` into the user's preferences and persists the result. A patch that sets
+   * any key the policy locks is refused whole (`preference-locked`), so a caller that still
+   * tries fails loudly rather than appearing to succeed with the value unchanged.
+   */
   update(patch: PreferencesPatch): Promise<Preferences> {
-    return this.enqueue(() => this.persist(mergePreferences(patch, this.preferences)));
+    return this.enqueue(() => {
+      const locked = lockedKeysIn(patch, this.policyValue);
+      if (locked.length > 0) {
+        throw new WirebenchError(
+          'preference-locked',
+          `Locked by the managed-preferences policy: ${locked.join(', ')}`,
+          {
+            details: { keys: locked, policyFile: this.policyValue.path },
+          },
+        );
+      }
+      return this.persist(mergePreferences(patch, this.user));
+    });
   }
 
-  /** Restores one section — or, with no section, everything — to its default. */
+  /**
+   * Restores one section — or, with no section, everything — of the user's preferences to its
+   * default. Locked values are not the user's, so they stay in force.
+   */
   reset(section?: PreferencesSection): Promise<Preferences> {
-    return this.enqueue(() => this.persist(resetPreferences(this.preferences, section)));
+    return this.enqueue(() => this.persist(resetPreferences(this.user, section)));
   }
 }
