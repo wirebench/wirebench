@@ -157,16 +157,32 @@ linux:
 
 # Both package formats take their name and file name from the npm package name by default —
 # `@wirebench/desktop`, whose slash becomes a directory the packager never creates.
+#
+# Kerberos loads the system GSSAPI library at run time (ADR-0019), so both packages recommend it
+# rather than depend on it: without it Wirebench still runs and shows Kerberos disabled with the
+# reason. A recommendation is installed by default by apt and dnf.
 deb:
   packageName: wirebench
   artifactName: wirebench_${version}_${arch}.${ext}
+  # Setting `recommends` replaces electron-builder's default list, which is only the tray library.
+  recommends:
+    - libappindicator3-1
+    - libgssapi-krb5-2
 rpm:
   packageName: wirebench
   artifactName: wirebench-${version}.${arch}.${ext}
+  # electron-builder has no `recommends` for rpm; fpm writes the tag into the spec as given.
+  # Fedora and RHEL name the package `krb5-libs`, openSUSE `krb5`.
+  fpm:
+    - --rpm-tag
+    - 'Recommends: (krb5-libs or krb5)'
 
 # Confinement is `strict`: the app can reach the network and the user's home directory, and
 # nothing else. A WSDL kept outside `$HOME` is not readable from a snap install — that is the
-# format's trade-off, not a packaging mistake.
+# format's trade-off, not a packaging mistake. Kerberos is not supported here either (#268): it
+# needs `/etc/krb5.conf` and the ticket cache, and the `kerberos-tickets` interface only reaches a
+# file cache in `/tmp`, never the keyring or KCM caches, and is never connected automatically. The
+# app reports Kerberos unavailable in the snap without loading the binding (`src/main/kerberos.ts`).
 snap:
   artifactName: wirebench_${version}_${arch}.${ext}
   confinement: strict

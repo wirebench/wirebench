@@ -53,7 +53,9 @@ means here — the snap is unsigned, not unsafe. Publishing to the Snap Store in
 the flag and bring automatic updates, at the cost of a `snapcraft` account and review; nothing
 in the repository does that today. Confinement is `strict`, so the app can reach the network
 and `$HOME` and nothing else: **a WSDL stored outside the home directory is not readable from a
-snap install**. The AppImage and `.deb` have no such restriction.
+snap install**. The AppImage and `.deb` have no such restriction. **Kerberos is not supported in
+the snap** for the same reason: it cannot read `/etc/krb5.conf` or the ticket cache, so the app
+shows Kerberos disabled there and names the deb, rpm and AppImage builds instead.
 
 ## Building locally
 
@@ -160,6 +162,16 @@ release candidate installed:
 3. The SPN set to `HTTP/nowhere.invalid` fails with "The KDC does not know HTTP/nowhere.invalid…".
 4. On Windows on ARM, the Kerberos option is disabled and reads "Kerberos is not available on Windows
    on ARM."
+
+CI's KDC runs the engine against the real binding, not the packaged Linux app. On a Linux x64
+machine with a reachable KDC and a `kinit` ticket:
+
+1. `dpkg-deb -f wirebench_<version>_amd64.deb Recommends` lists `libgssapi-krb5-2`, and
+   `rpm -qp --recommends wirebench-<version>.x86_64.rpm` lists `(krb5-libs or krb5)`.
+2. The deb installed with `apt install ./wirebench_<version>_amd64.deb`: a REST GET with auth
+   **Kerberos** against an SPNEGO-protected site returns 200.
+3. The snap installed with `snap install --dangerous`: the Kerberos option is disabled and reads
+   "Kerberos is not supported in the snap. Install the deb, rpm or AppImage build."
 
 ## Publishing the CLI: image and npm
 

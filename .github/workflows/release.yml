@@ -138,6 +138,17 @@ jobs:
             node scripts/check-kerberos-vendor.ts linux apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
           fi
 
+      # Kerberos needs the system GSSAPI library; the deb and rpm recommend it (#268).
+      - name: Check the Linux packages recommend GSSAPI
+        if: runner.os == 'Linux'
+        run: |
+          for deb in apps/desktop/release/*.deb; do
+            dpkg-deb -f "$deb" Recommends | tee /dev/stderr | grep -q 'libgssapi-krb5-2' || { echo "::error::$deb does not recommend libgssapi-krb5-2"; exit 1; }
+          done
+          for rpm in apps/desktop/release/*.rpm; do
+            rpm -qp --recommends "$rpm" | tee /dev/stderr | grep -qF '(krb5-libs or krb5)' || { echo "::error::$rpm does not recommend krb5-libs"; exit 1; }
+          done
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:

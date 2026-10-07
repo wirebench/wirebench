@@ -123,8 +123,11 @@ account with `kerberos-explicit-credentials-unsupported`; run `kinit user@REALM`
 
 Kerberos is the only mechanism. Nothing falls back to NTLM, so if the server needs NTLM, choose
 NTLM instead. Kerberos is not available on Windows on ARM. On Linux, Kerberos needs the deb, rpm
-or AppImage build. Where the Kerberos support cannot load, the type is shown disabled with the
-reason.
+or AppImage build: the snap's confinement keeps it away from `/etc/krb5.conf` and the ticket cache,
+so Kerberos is not supported there. It also needs the system's GSSAPI library (`libgssapi-krb5-2`
+on Debian and Ubuntu, `krb5-libs` on Fedora and RHEL), which the deb and rpm install as a
+recommended package; an AppImage uses the one already on the machine. Where the Kerberos support
+cannot load, the type is shown disabled with the reason.
 
 A cURL export of a REST or SOAP request uses `curl --negotiate -u :`. A gRPC or WebSocket command
 export leaves Kerberos out and says so in a note.
@@ -135,7 +138,7 @@ download, the 20-second limit on each request.
 
 | Code | Message | Fix |
 | --- | --- | --- |
-| `kerberos-unavailable` | The reason Kerberos support could not load. | Use a build for a supported platform (not Windows on ARM; on Linux the deb, rpm or AppImage build). |
+| `kerberos-unavailable` | The reason Kerberos support could not load. | Use a build for a supported platform (not Windows on ARM; on Linux the deb, rpm or AppImage build, not the snap). On Linux, install the GSSAPI library if the reason names it. |
 | `kerberos-explicit-credentials-unsupported` | Explicit Kerberos credentials are Windows-only. Run `kinit user@REALM` and leave username and password empty. | Clear the username and password, and run `kinit`. |
 | `kerberos-no-credentials` | No Kerberos ticket. Sign in to the domain, or run `kinit`. | Sign in to the domain, or run `kinit user@REALM`, then send again. |
 | `kerberos-unknown-spn` | The KDC does not know the SPN. Set the SPN to the name the service is registered under. Also shown for a blank or unparseable SPN. | Set the SPN to the registered name, or clear it to use the default. |
