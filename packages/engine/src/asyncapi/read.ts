@@ -93,20 +93,27 @@ export function deref(root: unknown, node: unknown): unknown {
   return current;
 }
 
-/** `{name}` placeholders replaced by each variable's default (else first enum value). */
-export function substitute(template: string, variables: unknown): { value: string; unresolved: string[] } {
+/**
+ * `{name}` placeholders replaced by each variable's default (else first enum value), and the value
+ * each variable that has one was given.
+ */
+export function substitute(
+  template: string,
+  variables: unknown,
+): { value: string; unresolved: string[]; chosen: Record<string, string> } {
   const vars = record(variables);
   const unresolved: string[] = [];
+  const chosen: Record<string, string> = {};
+  for (const [name, variable] of Object.entries(vars)) {
+    const value = scalarText(record(variable)['default']) ?? texts(record(variable)['enum'])?.[0];
+    if (value !== undefined) chosen[name] = value;
+  }
   const value = template.replace(/\{([^{}]+)\}/g, (whole, name: string) => {
-    const variable = record(vars[name]);
-    const chosen = scalarText(variable['default']) ?? texts(variable['enum'])?.[0];
-    if (chosen === undefined) {
-      if (!unresolved.includes(name)) unresolved.push(name);
-      return whole;
-    }
-    return chosen;
+    if (Object.hasOwn(chosen, name)) return chosen[name]!;
+    if (!unresolved.includes(name)) unresolved.push(name);
+    return whole;
   });
-  return { value, unresolved };
+  return { value, unresolved, chosen };
 }
 
 export function securityScheme(key: string, scheme: Json): AsyncApiSecurityScheme {

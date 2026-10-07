@@ -34,6 +34,13 @@ export interface AsyncApiServer {
   readonly key: string;
   /** The full URL, variables substituted by `default` (else the first `enum` value). */
   readonly url: string;
+  /**
+   * The full URL as written, every `{name}` variable still in place. The mapping fills it from
+   * {@link variables} itself, so it can tell the document's slots from the text a value brought.
+   */
+  readonly template: string;
+  /** Each variable's chosen value — its `default`, else its first `enum` value — by name. */
+  readonly variables: Readonly<Record<string, string>>;
   readonly protocol: string;
   readonly security: readonly AsyncApiSecurityScheme[];
   /** Variables left as `{name}` in {@link url}: no default and no enum to take one from. */

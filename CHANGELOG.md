@@ -103,8 +103,15 @@ All notable changes to this project are documented here. The format follows
   This holds in the desktop, `send` and the contract tools. **Validate** checks the escaped text as
   the literal value it sends. `wirebench generate` shows the definition's text unescaped. Anything
   made before this change keeps the unescaped text. Regenerate a request to fix it. Re-import the
-  definition to fix an interface's endpoints or an API's servers, base URL and credentials. AsyncAPI
-  import is not covered yet beyond its OAuth2 and API key settings (#223).
+  definition to fix an interface's endpoints or an API's servers, base URL and credentials (#223).
+- **AsyncAPI text is sent as written.** An AsyncAPI import no longer lets a document choose a
+  reference: a `{name}` server variable or channel parameter with no value becomes the property
+  `${name}` only for a plain name (a letter or `_`, then letters, digits and `_`), so a document's
+  `{secret:token}` or `{#System#NAME}` stays literal text and never reads a stored secret or an
+  environment variable. Every `${` the document's own text holds is copied as `$${`: server URLs,
+  channel addresses, variable and parameter values, WebSocket binding query and header samples,
+  subprotocols, and message examples and samples. Re-import the document to fix an API imported
+  before this change (#287).
 
 ## [3.1.0] - 2026-10-04
 

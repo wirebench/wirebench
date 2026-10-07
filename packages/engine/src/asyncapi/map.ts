@@ -8,10 +8,12 @@
 
 import { AsyncApiError } from '../errors.js';
 import { unsupportedKeywordsIn } from '../json/schema-validate.js';
+import { escapeExpansions } from '../project/escape-expansions.js';
 import type { AuthConfig, IdGenerator } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
 import { entry, type KeyValueEntry } from '../http/entries.js';
 import { sampleFromSchema } from '../json/schema/sample.js';
+import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import {
   createWsApi,
   createWsFolder,
@@ -60,23 +62,77 @@ function isWsServer(server: AsyncApiServer): boolean {
   return WS_PROTOCOLS.has(server.protocol.toLowerCase());
 }
 
-/** `{name}` placeholders as Wirebench properties, the names collected. */
-function asProperties(text: string, unresolved: Set<string>): string {
-  return text.replace(/\{([^{}]+)\}/g, (_whole, name: string) => {
-    unresolved.add(name);
-    return `\${${name}}`;
-  });
+/**
+ * The names a `{name}` slot may turn into a `${name}` property: the grammar `project/properties.ts`
+ * holds a `${secret:name}` name to, so no `#Scope#` prefix, `secret:`, `:`, `#`, brace, space or `$`
+ * can make the reference read anything but a plain property (#287).
+ */
+const PLAIN_NAME = SECRET_NAME_PATTERN;
+
+/** A `{…}` slot as the document writes it: up to the first `}`, so a nested brace is part of the name. */
+const SLOT = /\{([^}]+)\}/g;
+
+interface Slots {
+  readonly where: string;
+  readonly unresolved: Set<string>;
+  readonly skipped: AsyncApiSkip[];
 }
 
-function channelUrl(channel: AsyncApiChannel, unresolved: Set<string>): string {
+/**
+ * Contract text with `{name}` slots, as Wirebench text. A slot the document gives a value fills in
+ * that value as literal text; one it does not, with a plain name, becomes the `${name}` property for
+ * the user to define; any other slot stays the literal `{…}` it was written as. Every literal run —
+ * the document's own text and the values together — is then escaped with `escapeExpansions`, so a
+ * `${…}` the contract wrote is sent as written and never reads a property, a secret or the
+ * environment. The `${name}` properties are the only references the result holds.
+ */
+function withSlots(text: string, valueOf: (name: string) => string | undefined, slots: Slots): string {
+  let out = '';
+  let literal = '';
+  let last = 0;
+  for (const match of text.matchAll(SLOT)) {
+    literal += text.slice(last, match.index);
+    last = match.index + match[0].length;
+    const name = match[1]!;
+    const value = valueOf(name);
+    if (value !== undefined) {
+      literal += value;
+    } else if (!PLAIN_NAME.test(name)) {
+      slots.skipped.push({
+        where: slots.where,
+        reason: `${match[0]} is not a plain property name: it is kept as literal text`,
+      });
+      literal += match[0];
+    } else if (literal.endsWith('$')) {
+      // `$` + `${name}` would read as the `$${` escape: no reference can follow a literal `$`.
+      literal += match[0];
+    } else {
+      out += `${escapeExpansions(literal)}\${${name}}`;
+      literal = '';
+      slots.unresolved.add(name);
+    }
+  }
+  return out + escapeExpansions(literal + text.slice(last));
+}
+
+function serverUrl(server: AsyncApiServer, slots: Slots): string {
+  return withSlots(
+    server.template,
+    (name) => (Object.hasOwn(server.variables, name) ? server.variables[name] : undefined),
+    slots,
+  );
+}
+
+function channelUrl(channel: AsyncApiChannel, slots: Slots): string {
   if (channel.address === null) return '';
-  return channel.address.replace(/\{([^{}]+)\}/g, (_whole, name: string) => {
-    const p = channel.parameters[name];
-    const chosen = p?.default ?? p?.enum?.[0] ?? p?.examples?.[0];
-    if (chosen !== undefined) return chosen;
-    unresolved.add(name);
-    return `\${${name}}`;
-  });
+  return withSlots(
+    channel.address,
+    (name) => {
+      const p = Object.hasOwn(channel.parameters, name) ? channel.parameters[name] : undefined;
+      return p?.default ?? p?.enum?.[0] ?? p?.examples?.[0];
+    },
+    slots,
+  );
 }
 
 function sampleText(value: unknown): string {
@@ -103,12 +159,15 @@ function wsBinding(channel: AsyncApiChannel, skipped: AsyncApiSkip[]): WsBinding
     skipped.push({ where, reason: `ws binding method ${method} is ignored: a handshake is always GET` });
   }
   const propertiesOf = (schema: unknown) => Object.entries(record(record(schema)['properties']));
-  const query = propertiesOf(binding['query']).map(([name, schema]) => entry(name, sampleText(sampleOf(schema))));
+  // Names and samples are the document's text, escaped: a send expands both (#287).
+  const literal = (name: string, schema: unknown) =>
+    entry(escapeExpansions(name), escapeExpansions(sampleText(sampleOf(schema))));
+  const query = propertiesOf(binding['query']).map(([name, schema]) => literal(name, schema));
   const headers: KeyValueEntry[] = [];
   const subprotocols: string[] = [];
   for (const [name, schema] of propertiesOf(binding['headers'])) {
     if (name.toLowerCase() !== SUBPROTOCOL_HEADER) {
-      headers.push(entry(name, sampleText(sampleOf(schema))));
+      headers.push(literal(name, schema));
       continue;
     }
     const s = record(schema);
@@ -117,7 +176,7 @@ function wsBinding(channel: AsyncApiChannel, skipped: AsyncApiSkip[]): WsBinding
     if (names.length === 0) {
       skipped.push({ where, reason: 'Sec-WebSocket-Protocol has no const or enum to take a subprotocol from' });
     }
-    subprotocols.push(...names);
+    subprotocols.push(...names.map(escapeExpansions));
   }
   return { query, headers, subprotocols };
 }
@@ -136,12 +195,15 @@ function notWebSocket(channel: AsyncApiChannel, servers: readonly AsyncApiServer
     : 'no WebSocket server carries it';
 }
 
-/** The saved-message text for one outgoing message, or undefined when it gets no sample. */
+/**
+ * The saved-message text for one outgoing message, or undefined when it gets no sample. The
+ * document's example or sample, escaped: a send expands a saved message (#287).
+ */
 function messageText(m: AsyncApiMessage): string | undefined {
   if (!isJsonSchemaFormat(m.schemaFormat)) return undefined;
   const value = m.example !== undefined ? m.example : sampleOf(m.payload);
-  if (typeof value === 'string' && record(m.payload)['type'] === 'string') return value;
-  return JSON.stringify(value, null, 2) ?? '';
+  if (typeof value === 'string' && record(m.payload)['type'] === 'string') return escapeExpansions(value);
+  return escapeExpansions(JSON.stringify(value, null, 2) ?? '');
 }
 
 function chooseServer(document: AsyncApiDocument, wanted: string | undefined): AsyncApiServer | undefined {
@@ -173,7 +235,7 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
       skipped.push({ where: `server ${s.key}`, reason: `${s.protocol} server: only WebSocket is imported` });
   }
   if (server === undefined) skipped.push({ where: 'servers', reason: 'no ws or wss server: the API has no URL' });
-  const url = server !== undefined ? asProperties(server.url, unresolved) : '';
+  const url = server !== undefined ? serverUrl(server, { where: `server ${server.key}`, unresolved, skipped }) : '';
 
   let auth: AuthConfig | undefined;
   for (const scheme of server?.security ?? []) {
@@ -235,7 +297,7 @@ export function mapAsyncApi(document: AsyncApiDocument, options: MapAsyncApiOpti
       ...ids,
       slug,
       order: order++,
-      url: channelUrl(channel, unresolved),
+      url: channelUrl(channel, { where, unresolved, skipped }),
       query: binding.query,
       headers: binding.headers,
       subprotocols: binding.subprotocols,
