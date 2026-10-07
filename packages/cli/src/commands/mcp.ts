@@ -6,6 +6,7 @@
  */
 import { format } from 'node:util';
 import type { Readable, Writable } from 'node:stream';
+import { routeWorkerOutput } from '@wirebench/engine';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { McpArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
@@ -57,12 +58,10 @@ export async function checkProject(base: OpsBase, io: Pick<CliIo, 'stderr'>): Pr
 
 /**
  * Points `console.log`, `console.info` and `console.debug` at stderr, so a stray log call in any
- * dependency cannot put a non-frame line on stdout. Returns the restore.
- *
- * This covers the main thread only. The engine's worker threads (XPath/JSONPath evaluation, the REST
- * contract check, the script checker) keep Node's default, where a worker's stdout is piped to the
- * process's: their output is not guarded here. None of them writes to stdout today; docs/security.md
- * says the same.
+ * dependency cannot put a non-frame line on stdout. The engine's worker threads (XPath/JSONPath
+ * evaluation, the REST contract check, the script checker and sandbox, the WebSocket frame check) get
+ * the same treatment: their stdout, which Node would pipe to the process's, is forwarded to stderr.
+ * Returns the restore.
  */
 function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
   const saved = { log: console.log, info: console.info, debug: console.debug };
@@ -72,7 +71,9 @@ function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
   console.log = toStderr;
   console.info = toStderr;
   console.debug = toStderr;
+  const restoreWorkers = routeWorkerOutput(io.stderr as Writable);
   return () => {
+    restoreWorkers();
     console.log = saved.log;
     console.info = saved.info;
     console.debug = saved.debug;

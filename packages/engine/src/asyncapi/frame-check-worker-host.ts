@@ -15,6 +15,7 @@ import { Worker } from 'node:worker_threads';
 import type { WsFrame, WsFrameContract } from '../ws/model.js';
 import { MAX_CHECKED_FRAME_BYTES, type ChannelMessages } from './frame-check.js';
 import type { FrameCheckWorkerData } from './frame-check-worker.js';
+import { forwardWorkerOutput, workerOutputOptions } from '../worker-output.js';
 
 /** How long one frame's check may take, worker round trip included, before the worker is replaced. */
 export const DEFAULT_FRAME_CHECK_DEADLINE_MS = 1_000;
@@ -126,7 +127,8 @@ export function createWorkerFrameChecker(
 
   const spawn = (): Worker => {
     url ??= defaultWorkerUrl();
-    const next = new Worker(url, { workerData: data });
+    const next = new Worker(url, { workerData: data, ...workerOutputOptions() });
+    forwardWorkerOutput(next);
     spawned += 1;
     // A session's checker must never be what keeps the process alive.
     next.unref();

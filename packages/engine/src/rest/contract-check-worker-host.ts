@@ -17,6 +17,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { RestContractInput, RestContractResult } from './contract-check.js';
+import { forwardWorkerOutput, workerOutputOptions } from '../worker-output.js';
 
 /** How long one response's check may take, worker round trip included, before the worker is replaced. */
 export const DEFAULT_REST_CHECK_DEADLINE_MS = 1_000;
@@ -105,7 +106,8 @@ export function createRestContractChecker(options: RestContractCheckerOptions = 
 
   const spawn = (): Worker => {
     url ??= defaultWorkerUrl();
-    const next = new Worker(url);
+    const next = new Worker(url, workerOutputOptions());
+    forwardWorkerOutput(next);
     spawned += 1;
     // The checker must never be what keeps the process alive.
     next.unref();
