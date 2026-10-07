@@ -89,7 +89,10 @@ applies here too.
 
 The same recorded values are masked in a REST response body (the decoded text the pane renders and copies, the body and the raw body bytes; show-secrets reveals them) before it reaches the renderer, and in a REST request copied as cURL from the editor, URL,
 headers and body alike, unless show-secrets is on. Only the recorded values' own bytes are replaced, so
-a binary body keeps every other byte.
+a binary body keeps every other byte. In decoded XML or HTML text the marker is written escaped
+(`&lt;redacted&gt;`), as in a redacted envelope, so pretty-printing and the HTML preview see text,
+not a tag. Flipping show-secrets re-reads every response a pane shows — each request's last response
+and every environment-compare result — not only the row selected in the HTTP Log.
 
 Copying an HTTP Log row as cURL builds the command in main from the row the renderer holds. For a
 finished exchange it follows the show-secrets toggle; for a failure row it is always masked, since
