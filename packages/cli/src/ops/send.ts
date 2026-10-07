@@ -52,7 +52,7 @@ import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
 import { environmentFor, openProject } from './project.js';
 import type { OpenedProject } from './project.js';
-import { redactAssertions, redactBaseline, redactBody, redactUrlsInText } from './redact.js';
+import { createSendMasker, redactAssertions, redactBaseline, redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
   readonly item: string;
@@ -265,7 +265,7 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
     if (exchange.kind !== item.kind) {
       throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
     }
-    const mask = createSecretMasker(known());
+    const mask = createSendMasker(known());
     const maskBase64 = createSecretBytesMasker(known());
     let historyId: string | undefined;
     try {

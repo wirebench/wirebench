@@ -10,7 +10,7 @@
 import { constants } from 'node:fs';
 import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { openHistory, REDACTED_MARKER, REDACTED_XML_MARKER, redactStructuredBody, redactXml } from '@wirebench/engine';
+import { escapeStrayRedactionMarkers, openHistory, redactStructuredBody, redactXml } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
 import { z } from 'zod';
 import type { OpsContext } from './context.js';
@@ -62,16 +62,6 @@ function headerValue(pairs: readonly (readonly [string, string])[], name: string
   return pairs.find(([key]) => key.toLowerCase() === name)?.[1];
 }
 
-/**
- * The raw redaction marker where it stands as an element's whole content, as text. `redactXml`
- * writes the marker escaped already, but the raw `<redacted>` still turns up inside an element in a
- * History entry: one recorded before the escaped marker, or any element whose text a send's masker
- * replaced. Raw, it leaves the XML not well formed. An element closed right after it by any name but
- * `redacted` cannot be one of the message's own, so it is escaped; an empty element of the message
- * named `redacted` (`<redacted></redacted>`) stays as it is.
- */
-const MARKER_AS_CONTENT = new RegExp(`>${REDACTED_MARKER}(</(?!redacted>)(?:[\\w.-]+:)?[\\w.-]+>)`, 'g');
-
 function isFormType(contentType: string | undefined): boolean {
   return (contentType?.split(';')[0] ?? '').trim().toLowerCase() === 'application/x-www-form-urlencoded';
 }
@@ -89,7 +79,7 @@ export interface RedactedMessage {
 export function redactedMessage(text: string, contentType: string | undefined): RedactedMessage {
   if (text.trimStart().startsWith('<')) {
     const redacted = redactXml(text, { show: false });
-    return { kind: 'xml', text: redacted.replaceAll(MARKER_AS_CONTENT, `>${REDACTED_XML_MARKER}$1`) };
+    return { kind: 'xml', text: escapeStrayRedactionMarkers(redacted) };
   }
   // Read as JSON whatever the declared type. A declared form type adds the form redaction only for a
   // body that is not JSON: the form pass splits on `&` and `=`, which a JSON string may hold.

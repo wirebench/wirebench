@@ -6,6 +6,7 @@ import {
   createSecretMasker,
   isSensitiveHeaderName,
   REDACTED_MARKER,
+  REDACTED_XML_MARKER,
   redactStructuredBody,
   redactUrl,
   redactXml,
@@ -36,6 +37,18 @@ export function redactBody(text: string, contentType: string | undefined): strin
  */
 export function redactResult<R>(value: R, revealed: ReadonlySet<string>): R {
   return maskDeep(value, createSecretMasker([...revealed])) as R;
+}
+
+/**
+ * The secret masker for a send's texts: a text that reads as XML (it starts with `<`) is masked with
+ * the escaped marker, as `redactXml` writes it, so a secret that is only part of an element's content
+ * (`Bearer <redacted>`) leaves the stored and returned body parsing. Any other text, such as a header
+ * value, a frame or an error, is masked as `createSecretMasker` does.
+ */
+export function createSendMasker(values: readonly string[]): (text: string) => string {
+  const plain = createSecretMasker(values);
+  const xml = createSecretMasker(values, { marker: REDACTED_XML_MARKER });
+  return (text) => (text.trimStart().startsWith('<') ? xml(text) : plain(text));
 }
 
 /** A URL `new URL` cannot parse: its `user:pass@` and its query values are stripped by pattern. */
