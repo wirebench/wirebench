@@ -130,6 +130,39 @@ export type WsaSummaryWire = z.infer<typeof wsaSummaryWireSchema>;
 export const mimePartWireSchema = z.object({ part: z.string(), type: z.string().optional() });
 export type MimePartWire = z.infer<typeof mimePartWireSchema>;
 
+const wssPolicyPartWireSchema = z.object({ name: z.string(), namespace: z.string() });
+
+/**
+ * An operation's WS-SecurityPolicy, as the import read it; mirrors the engine's `WssPolicy`
+ * — main proposes a configuration from it and checks one against it (`wss.policyStatus`).
+ */
+export const wssPolicyWireSchema = z.object({
+  version: z.enum(['1.1', '1.2']),
+  soapVersion: z.enum(['1.1', '1.2']),
+  binding: z.enum(['transport', 'asymmetric', 'symmetric', 'none']),
+  requiresTls: z.boolean(),
+  includeTimestamp: z.boolean(),
+  encryptBeforeSigning: z.boolean(),
+  algorithmSuite: z.string().optional(),
+  tokens: z.array(
+    z.object({
+      kind: z.enum(['username', 'x509', 'issued', 'saml', 'kerberos', 'other']),
+      role: z.enum(['initiator', 'recipient', 'supporting', 'signed-supporting', 'endorsing', 'signed-endorsing']),
+      password: z.enum(['text', 'digest', 'none']).optional(),
+      reference: z
+        .enum(['BinarySecurityToken', 'IssuerSerial', 'SubjectKeyIdentifier', 'X509KeyIdentifier', 'Thumbprint'])
+        .optional(),
+      issuer: z.string().optional(),
+      name: z.string().optional(),
+    }),
+  ),
+  signedParts: z.array(wssPolicyPartWireSchema),
+  encryptedParts: z.array(wssPolicyPartWireSchema),
+  unsupported: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+export type WssPolicyWire = z.infer<typeof wssPolicyWireSchema>;
+
 const operationSummaryWireSchema = z.object({
   name: z.string(),
   binding: z.string(),
@@ -146,6 +179,8 @@ const operationSummaryWireSchema = z.object({
    * and `z.infer` still yields a required array, so every reader can index it unconditionally.
    */
   inputMimeParts: z.array(mimePartWireSchema).default([]),
+  /** The WS-SecurityPolicy the WSDL attaches to this operation; absent when it attaches none. */
+  wssPolicy: wssPolicyWireSchema.optional(),
 });
 
 const importProblemSchema = z.object({

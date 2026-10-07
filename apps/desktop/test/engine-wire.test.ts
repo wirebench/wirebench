@@ -86,6 +86,19 @@ describe('toInterfaceSummary', () => {
     ]);
     expect(summary.operations.find((op) => op.name === 'SendRef')?.inputMimeParts).toEqual([]);
   });
+
+  it('carries each operation’s WS-SecurityPolicy, and none where the WSDL attaches none', async () => {
+    const location = fixturePath('wsdl/crafted/ws-security-policy/service.wsdl');
+    const result = await importWsdl({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
+    const summary = toInterfaceSummary(result, 'iface-5', location);
+    const of = (binding: string) => summary.operations.find((op) => op.bindingLocal === binding && op.name === 'Echo');
+    expect(of('TransportUtBinding')?.wssPolicy).toMatchObject({
+      binding: 'transport',
+      requiresTls: true,
+      tokens: [{ kind: 'username', password: 'digest' }],
+    });
+    expect(of('PlainBinding')).not.toHaveProperty('wssPolicy');
+  });
 });
 
 /** A completed exchange whose response carries two attachment parts (one unnamed). */

@@ -1107,7 +1107,7 @@ export {
   wsaNamespace,
 } from './wsa/headers.js';
 export type { WsaHeaderContext } from './wsa/headers.js';
-export { defaultAction, detectWsaDefaults, summarizeWsa } from './wsa/policy-detect.js';
+export { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from './wsa/policy-detect.js';
 export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
 export { detectWssPolicy, summarizeWssPolicy } from './wss/policy/detect.js';
 export {
