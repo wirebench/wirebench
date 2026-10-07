@@ -481,6 +481,37 @@ describe('toRestExchangeSummary — an API key in the query', () => {
     return Buffer.from(summary.http.rawRequestBase64, 'base64').toString('latin1').split('\r\n')[0] ?? '';
   }
 
+  it('masks a recorded secret an echoing server put in the body, the raw body and the decoded text', () => {
+    redact.recordSecretValue('echoed-secret-value-284');
+    const echoed = new TextEncoder().encode('{"echo":"echoed-secret-value-284"}');
+    const binary = Buffer.concat([
+      Buffer.from([0x00, 0xff, 0x0a]),
+      Buffer.from('echoed-secret-value-284'),
+      Buffer.from([0xfe, 0x80]),
+    ]);
+    const exchange = {
+      ...restExchange('/x'),
+      body: echoed,
+      rawBody: binary,
+      text: '{"echo":"echoed-secret-value-284"}',
+    };
+
+    const hidden = toRestExchangeSummary(exchange, 's1', { method: 'GET' });
+    expect(Buffer.from(hidden.http.bodyBase64, 'base64').toString('utf8')).not.toContain('echoed-secret-value-284');
+    const raw = Buffer.from(hidden.http.rawBodyBase64, 'base64');
+    expect(raw.includes(Buffer.from('echoed-secret-value-284'))).toBe(false);
+    // The bytes around the value are untouched, so a binary body is not corrupted.
+    expect([...raw.subarray(0, 3)]).toEqual([0x00, 0xff, 0x0a]);
+    expect([...raw.subarray(raw.length - 2)]).toEqual([0xfe, 0x80]);
+    // The decoded text the pane renders and copies is masked at this one source.
+    expect(hidden.text).not.toContain('echoed-secret-value-284');
+
+    const shown = toRestExchangeSummary(exchange, 's2', { method: 'GET', show: true });
+    expect(Buffer.from(shown.http.bodyBase64, 'base64').toString('utf8')).toContain('echoed-secret-value-284');
+    expect(Buffer.from(shown.http.rawBodyBase64, 'base64')).toEqual(binary);
+    expect(shown.text).toContain('echoed-secret-value-284');
+  });
+
   it('masks the keyParams parameter on the raw request line', () => {
     const summary = toRestExchangeSummary(restExchange('/calc?key=secret123&a=1'), 's1', {
       method: 'GET',

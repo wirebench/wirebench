@@ -90,8 +90,9 @@ describe('a credential a server echoes back', () => {
       false,
     );
 
-    // The server did echo it: the response pane shows the body as it arrived.
-    expect(summary.text).toContain(KEY);
+    // The server did echo it, and the response pane masks the recorded value like the raw bytes.
+    expect(summary.text).not.toContain(KEY);
+    expect(summary.text).toContain('<redacted>');
     expect(stored.response?.envelopeXml).toContain('"api_key":"<redacted>"');
     expect(stored.response?.envelopeXml).toContain('"x":"1"');
     expect(line).not.toContain(KEY);

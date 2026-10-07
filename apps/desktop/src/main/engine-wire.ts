@@ -218,8 +218,11 @@ export function toHttpExchangeWire(
     statusText: http.statusText,
     headers: redactHeaders(http.headers, { show }),
     rawHeaders: redactHeaderPairs(http.rawHeaders, { show }),
-    bodyBase64: toBase64(http.body),
-    rawBodyBase64: toBase64(http.rawBody),
+    // A server may echo a request field back: every recorded value is masked in the bytes, whatever
+    // they are (a binary body keeps its other bytes). Masking can change the length, so these are
+    // for display; `truncated` and the exchange's sizes describe what the server sent.
+    bodyBase64: redactSecretBytes(toBase64(http.body), { show }),
+    rawBodyBase64: redactSecretBytes(toBase64(http.rawBody), { show }),
     rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { ...urlOpts, ...headerOpts, encoding: 'base64' }),
     rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
@@ -359,7 +362,7 @@ export function toRestExchangeSummary(
       ...(context.keyParams !== undefined ? { extraParams: context.keyParams } : {}),
     }),
     method: context.method,
-    text: exchange.text,
+    text: redactSecretText(exchange.text, { show }),
     language: exchange.language,
     ...(exchange.decodeNote !== undefined ? { decodeNote: exchange.decodeNote } : {}),
     cookies: exchange.cookies.map((cookie, index) => {

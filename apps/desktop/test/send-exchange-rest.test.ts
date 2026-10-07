@@ -214,8 +214,8 @@ describe('sendThroughEngine for a REST request', () => {
           'keep-alive': 'timeout=5',
         },
         rawHeaders,
-        bodyBase64: echo(KEY),
-        rawBodyBase64: echo(KEY),
+        bodyBase64: echo('<redacted>'),
+        rawBodyBase64: echo('<redacted>'),
         rawRequestBase64: `GET /echo?x=1&api_key=%3Credacted%3E HTTP/1.1\r\nhost: ${host}\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate, br\r\n\r\n`,
         rawResponseBase64:
           `HTTP/1.1 200 OK\r\nx-server-ms: -\r\ncontent-type: application/json\r\ncontent-length: ${length}\r\n` +
@@ -232,7 +232,7 @@ describe('sendThroughEngine for a REST request', () => {
       },
       url,
       method: 'GET',
-      text: echo(KEY),
+      text: echo('<redacted>'),
       language: 'json',
       cookies: [],
       methodChanged: false,
@@ -423,7 +423,7 @@ describe('sendThroughEngine for a REST request', () => {
     });
 
     const echoed = JSON.parse(summary.text) as { headers: Record<string, string>; query: Record<string, string> };
-    expect(echoed.headers['k2']).toBe('other-key-77');
+    expect(echoed.headers['k2']).toBe('<redacted>');
     expect(echoed.query['api_key']).toBeUndefined();
   });
 });
