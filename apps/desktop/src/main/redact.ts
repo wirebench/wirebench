@@ -112,10 +112,12 @@ export function redactSecretValues(text: string, opts?: { xml?: boolean }): stri
 
 /**
  * `text` with every recorded value masked unless `show`: for payloads no pattern rule applies to
- * (a WebSocket frame, a gRPC message or status message) on their way to the renderer.
+ * (a WebSocket frame, a gRPC message or status message) on their way to the renderer. With `xml`
+ * (decoded XML or HTML), the marker is written escaped, as `redactXml` writes it, so a pretty-printer
+ * or an HTML preview sees text rather than a stray tag.
  */
-export function redactSecretText(text: string, opts?: { show?: boolean }): string {
-  return opts?.show === true ? text : maskRecorded(text);
+export function redactSecretText(text: string, opts?: { show?: boolean; xml?: boolean }): string {
+  return opts?.show === true ? text : maskRecorded(text, opts?.xml === true);
 }
 
 /**
