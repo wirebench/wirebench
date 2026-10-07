@@ -79,6 +79,8 @@ All notable changes to this project are documented here. The format follows
 - **A partly masked XML value no longer leaves the message unparseable.** Where a secret is only part
   of an element's text (`<Auth>Bearer <redacted></Auth>`), `send`, `call`, `query`, `validate` and
   `history_diff` now write the marker as escaped text, so the body and its History entry still parse (#183).
+- **Issued-token status while typing.** The cached-token line under an issued-token entry reads
+  again once you stop editing, not on every keystroke (#279).
 - **A WebSocket upgrade refused with 401 drops the OAuth2 token.** The next connect fetches a new
   one instead of reusing the stale token until it expires, as a REST `401` already did. A server that
   cannot be reached, a `403`, a timeout and a cancel keep the token (#193).
