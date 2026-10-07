@@ -731,7 +731,9 @@ export class ProjectWatcher {
    *
    * Call it *after* the write has landed: the file's content is remembered, and an event inside
    * the window is suppressed only while the file still holds exactly that, so an outside edit
-   * made moments later (a sync pull, a checkout, an editor save) is reported rather than lost.
+   * made moments later (a sync pull, a checkout, an editor save) is usually reported. The race is
+   * narrowed, not closed: an edit landing between the app's rename and the snapshot is recorded as
+   * the app's own.
    * A path that is not a readable file (a directory) is suppressed outright for the window. Pass
    * `snapshot: false` for a write made by someone else on the app's behalf that has not landed
    * yet (a sync pull): there is no content to compare, so the whole window is suppressed.
@@ -761,9 +763,11 @@ export class ProjectWatcher {
     const until = this.options.now() + this.options.selfWriteTtlMs;
     for (const rawPath of paths) {
       const path = this.normalise(rawPath);
-      token.priorMarks.set(path, this.selfWrites.get(path));
-      // Provisional: the write is still running, so there is nothing final to snapshot yet.
-      this.selfWrites.set(path, { until });
+      const prior = this.selfWrites.get(path);
+      token.priorMarks.set(path, prior);
+      // Provisional: the write is still running, so there is nothing final to snapshot yet. The
+      // digests of the app's earlier writes stay, so `release()` can add to them rather than start over.
+      this.selfWrites.set(path, prior?.digests !== undefined ? { until, digests: prior.digests } : { until });
       this.announcedBy.set(path, token);
     }
     return token;
@@ -792,7 +796,7 @@ export class ProjectWatcher {
       this.announcedBy.delete(path);
       if (keepSet.has(path)) {
         // The write is done: remember what it left, so a later outside edit is told apart.
-        this.selfWrites.set(path, this.mark(path, until, true));
+        this.selfWrites.set(path, this.mark(path, until, true, prior?.digests));
         continue;
       }
       if (prior === undefined) {
@@ -808,6 +812,35 @@ export class ProjectWatcher {
     if (revived) {
       this.schedule();
     }
+  }
+
+  /**
+   * Every managed file currently under the folder (relative, `/`-separated): the paths a write that
+   * prunes what it no longer wants (stale files, a deleted or renamed folder) can remove. Announce
+   * these with the new files to cover a save made before the app has recorded what it last wrote.
+   */
+  managedOnDisk(): string[] {
+    const found: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: readonly WatchDirEntry[];
+      try {
+        entries = this.options.fs.readdirSync(this.absolute(dir));
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = childOf(dir, entry.name);
+        if (!entry.isDirectory()) {
+          if (this.options.isManaged(child)) {
+            found.push(child);
+          }
+        } else if (this.coversDir(child)) {
+          walk(child);
+        }
+      }
+    };
+    walk('');
+    return found;
   }
 
   private normalise(path: string): string {
@@ -851,7 +884,12 @@ export class ProjectWatcher {
    * edit but does not close it: one that lands between the app's rename and this read is taken as
    * the app's own.
    */
-  private mark(path: string, until: number, snapshot: boolean): SelfWriteMark {
+  private mark(
+    path: string,
+    until: number,
+    snapshot: boolean,
+    earlierDigests?: readonly (string | null)[],
+  ): SelfWriteMark {
     if (!snapshot) {
       return { until };
     }
@@ -861,9 +899,10 @@ export class ProjectWatcher {
     }
     const previous = this.selfWrites.get(path);
     const earlier =
-      previous !== undefined && previous.until >= this.options.now() && previous.digests !== undefined
+      earlierDigests ??
+      (previous !== undefined && previous.until >= this.options.now() && previous.digests !== undefined
         ? previous.digests
-        : [];
+        : []);
     const digests = [...earlier.filter((known) => known !== digest), digest].slice(-MAX_DIGESTS);
     return { until, digests };
   }

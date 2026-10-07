@@ -372,6 +372,19 @@ describe('ProjectWatcher', () => {
       expect(await seen.next(150)).toBeUndefined();
     });
 
+    it('keeps the earlier digests across announce() and release()', async () => {
+      const { seen, target } = make();
+      const file = join(dir as string, 'wirebench.yaml');
+      await writeFile(file, 'v: 1\n', 'utf8');
+      target.expect(['wirebench.yaml']);
+      const token = target.announce(['wirebench.yaml']);
+      await writeFile(file, 'v: 2\n', 'utf8');
+      target.release(token, ['wirebench.yaml']);
+      await writeFile(file, 'v: 1\n', 'utf8');
+      simulateEvent(target, 'wirebench.yaml');
+      expect(await seen.next(150)).toBeUndefined();
+    });
+
     it('falls back to suppress-all for a file over the size cap', async () => {
       const { seen, target } = make();
       const file = join(dir as string, 'wirebench.yaml');

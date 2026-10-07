@@ -1281,7 +1281,15 @@ export class ProjectHost {
     // Announce every path this write might touch (all it will write, plus anything it may remove)
     // before it starts, so the events of a save that has not finished — or of the autosave right
     // behind it — are never taken for an outside edit; `release` then keeps what was really written.
-    const token = open.watcher.announce([...new Set([...files.keys(), ...(open.lastWritten?.keys() ?? [])])]);
+    // Before the first save of an opened project nothing records what is on disk, and the write also
+    // prunes files the model no longer has (stale ones, a deleted or renamed folder): list them.
+    const candidates = new Set([...files.keys(), ...(open.lastWritten?.keys() ?? [])]);
+    if (open.lastWritten === undefined) {
+      for (const path of open.watcher.managedOnDisk()) {
+        candidates.add(path);
+      }
+    }
+    const token = open.watcher.announce([...candidates]);
     let result: Awaited<ReturnType<typeof saveProject>> | undefined;
     try {
       result = await saveProject(model, open.dir, {
@@ -1291,7 +1299,15 @@ export class ProjectHost {
         ...(this.fs !== undefined ? { fs: this.fs } : {}),
       });
     } finally {
-      open.watcher.release(token, result !== undefined ? [...result.written, ...result.removed] : []);
+      // A failed save leaves the app's own partial writes on disk; those that are not kept below are
+      // replayed as outside edits, which is right: disk now differs from the model.
+      const touched = result !== undefined ? [...result.written, ...result.removed] : [];
+      // A removed folder (a deleted interface or API) takes every file in it along: those are the app's too.
+      const folders = result?.removed.map((path) => `${path}/`) ?? [];
+      open.watcher.release(token, [
+        ...touched,
+        ...[...candidates].filter((path) => folders.some((folder) => path.startsWith(folder))),
+      ]);
     }
     open.lastWritten = files;
     open.baseline = open.lastWritten;

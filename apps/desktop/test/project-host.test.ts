@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDefaultFetchDocument,
@@ -603,6 +603,70 @@ paths:
     expect((await readdir(dir)).sort()).toEqual(filesBefore);
 
     await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
+
+  /** Feeds `path` (absolute) to the open project's watcher as the event a real write would raise. */
+  function raise(host: ProjectHost, dir: string, path: string): void {
+    const open = (host as unknown as { open: { watcher: { record(name: string): void } } }).open;
+    open.watcher.record(relative(dir, path).split('\\').join('/'));
+  }
+
+  it('does not report the next save’s own write when its event lands before the save ends (#289)', async () => {
+    const dir = join(tempDir('project'), 'Back To Back');
+    const changed: string[][] = [];
+    let raiseOnWrite = false;
+    let raised = 0;
+    const fs: FsLike = {
+      ...nodeFs,
+      async rename(from, to) {
+        await nodeFs.rename(from, to);
+        if (raiseOnWrite && to === join(dir, 'wirebench.yaml')) {
+          raised += 1;
+          raise(service, dir, to);
+        }
+      },
+    };
+    const service = new ProjectHost(new EngineService(), { onChangedOnDisk: (paths) => changed.push([...paths]) }, fs);
+    await service.create({ dir, name: 'One' });
+    await service.mutate({ kind: 'rename-project', name: 'Two' });
+    await service.save({ reason: 'one' });
+    await service.mutate({ kind: 'rename-project', name: 'Three' });
+    raiseOnWrite = true;
+    // Save 2's event arrives inside its own write, before the save has recorded it.
+    await service.save({ reason: 'two' });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(raised).toBe(1);
+    expect(changed).toEqual([]);
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
+
+  it('does not report the files the first save after open removes (#289)', async () => {
+    const dir = join(tempDir('project'), 'First Save');
+    const first = newService();
+    await first.create({ dir, name: 'First Save' });
+    const { project } = await first.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await first.save({ reason: 'seed' });
+    await first.close();
+
+    const changed: string[][] = [];
+    const fs: FsLike = {
+      ...nodeFs,
+      async rm(path, options) {
+        await nodeFs.rm(path, options);
+        raise(reopened, dir, path);
+      },
+    };
+    const reopened = new ProjectHost(new EngineService(), { onChangedOnDisk: (paths) => changed.push([...paths]) }, fs);
+    await reopened.openProject(dir);
+    await reopened.whenHydrated();
+    await reopened.mutate({ kind: 'remove-interface', interfaceId: project.interfaces[0]!.id });
+    await reopened.save({ reason: 'remove' });
+    expect(existsSync(join(dir, 'interfaces'))).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(changed).toEqual([]);
+    await reopened.close();
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
 });
