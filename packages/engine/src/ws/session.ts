@@ -51,6 +51,12 @@ export interface WsSessionOptions {
 /** Hooks {@link openWsSession} calls as the session runs, in addition to `done`. */
 export interface WsSessionHooks {
   onHandshake?(handshake: WsHandshake): void;
+  /**
+   * The HTTP status of an upgrade the server answered without switching protocols (a refusal). Not
+   * called when no response came (a refused connection, a failed TLS handshake) or on a cancel.
+   * undici's WebSocket API hides this status, so it is read from its request diagnostics channel.
+   */
+  onRefused?(status: number): void;
   onFrame?(frame: WsFrame): void;
   onClosed?(exchange: WsExchange): void;
 }
@@ -152,6 +158,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   let closedBy: 'client' | 'server' | 'error' | undefined;
   let failure: string | undefined;
   let settled = false;
+  let refusedStatus: number | undefined;
   /** The upgrade's socket, which a close the server never answers tears down after `closeGraceMs`. */
   let connection: { destroy?: () => void } | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -247,6 +254,22 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     clearTimeout(timer);
     hooks.onHandshake?.(handshake);
   };
+  const onResponseHeaders = (message: unknown): void => {
+    const m = message as {
+      request?: { origin?: unknown; path?: string; upgrade?: unknown; headers?: unknown };
+      response?: { statusCode?: number };
+    };
+    if (m.request?.upgrade !== 'websocket' || m.request.path !== `${target.pathname}${target.search}`) return;
+    const origin = m.request.origin instanceof URL ? m.request.origin.origin : m.request.origin;
+    if (origin !== httpOrigin || typeof m.response?.statusCode !== 'number' || m.response.statusCode === 101) return;
+    // `Sec-WebSocket-Key` is random per socket, so it ties the response to this session's own upgrade
+    // even when another session dials the same URL at once.
+    const key = /^sec-websocket-key:\s*(.+?)\s*$/im.exec(rawRequestHead ?? '')?.[1];
+    const sent = m.request.headers;
+    const carriesKey =
+      key !== undefined && (Array.isArray(sent) ? sent.includes(key) : typeof sent === 'string' && sent.includes(key));
+    if (carriesKey) refusedStatus = m.response.statusCode;
+  };
   const onPing = (message: unknown): void => {
     const m = message as { websocket?: unknown; payload?: Uint8Array };
     if (m.websocket !== socket) return;
@@ -260,6 +283,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   };
   const unsubscribeAll = (): void => {
     diagnosticsChannel.unsubscribe('undici:client:sendHeaders', onSendHeaders);
+    diagnosticsChannel.unsubscribe('undici:request:headers', onResponseHeaders);
     diagnosticsChannel.unsubscribe('undici:websocket:open', onOpenChannel);
     diagnosticsChannel.unsubscribe('undici:websocket:ping', onPing);
     diagnosticsChannel.unsubscribe('undici:websocket:pong', onPong);
@@ -273,6 +297,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   try {
     ({ dispatcher, owned: ownsDispatcher } = wsDispatcher(options));
     diagnosticsChannel.subscribe('undici:client:sendHeaders', onSendHeaders);
+    diagnosticsChannel.subscribe('undici:request:headers', onResponseHeaders);
     diagnosticsChannel.subscribe('undici:websocket:open', onOpenChannel);
     diagnosticsChannel.subscribe('undici:websocket:ping', onPing);
     diagnosticsChannel.subscribe('undici:websocket:pong', onPong);
@@ -330,6 +355,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     // A failed close of an already-finished session tells the caller nothing useful — the
     // exchange is done either way — so it is swallowed rather than surfaced.
     if (ownsDispatcher) void dispatcher?.close().catch(() => undefined);
+    if (handshake === undefined && refusedStatus !== undefined) hooks.onRefused?.(refusedStatus);
     hooks.onClosed?.(exchange);
     resolveDone(exchange);
   };

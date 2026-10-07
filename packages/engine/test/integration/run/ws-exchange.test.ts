@@ -12,6 +12,7 @@ import type { AuthConfig, Project } from '../../../src/project/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import type { ExchangeOptions } from '../../../src/run/exchange.js';
 import type { SendFailure, SendHost } from '../../../src/run/host.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { openExchange } from '../../../src/run/open.js';
 import { runRequests } from '../../../src/run/run.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -624,5 +625,103 @@ describe('effectiveWsSettings', () => {
     expect(effectiveWsSettings(inherits, bare, undefined).handshakeTimeoutMs).toBe(
       DEFAULT_PREFERENCES.http.socketTimeoutMs,
     );
+  });
+});
+
+describe('WebSocket with an OAuth2 token', () => {
+  const auth: AuthConfig = {
+    type: 'oauth2',
+    grant: 'client-credentials',
+    tokenUrl: 'https://auth.test/token',
+    clientId: 'client',
+    scopes: [],
+    clientAuth: 'basic',
+    pkce: false,
+  };
+
+  /** A token source that hands out `tok-1`, `tok-2`, … and counts the fetches. */
+  function issuer() {
+    const state = { fetched: 0 };
+    const tokens = createRunTokenSource({
+      getSecret: () => Promise.resolve(undefined),
+      send: (request) => {
+        state.fetched += 1;
+        const body = new TextEncoder().encode(
+          JSON.stringify({ access_token: `tok-${String(state.fetched)}`, token_type: 'Bearer', expires_in: 3600 }),
+        );
+        return Promise.resolve({
+          request: { url: request.url, method: 'POST', headers: {} },
+          status: 200,
+          statusText: 'OK',
+          headers: { 'content-type': 'application/json' },
+          rawHeaders: [],
+          body,
+          rawBody: body,
+        } as never);
+      },
+    });
+    return { state, tokens };
+  }
+
+  /** Connects twice to `serverUrl` + `path`, each time with the token source, and settles each result. */
+  async function connectTwice(serverUrl: string, path: string, tokens: ReturnType<typeof issuer>['tokens']) {
+    for (let i = 0; i < 2; i += 1) {
+      await open(build(path, { auth, serverUrl }), {}, { tokens }).result;
+    }
+  }
+
+  it('fetches a new token after a handshake refused with 401, and the next connect carries it', async () => {
+    const { state, tokens } = issuer();
+    const before = server.handshakes.length;
+    for (const path of ['/refuse', '/echo']) {
+      const handle = open(build(path, { auth }), {}, { tokens });
+      if (path === '/echo') {
+        await handle.push({ text: 'hi' });
+        handle.close();
+      }
+      const sent = await handle.result;
+      expect(sent.exchange?.kind).toBe('websocket');
+    }
+    expect(state.fetched).toBe(2);
+    // undici re-sends a 401 upgrade once, so the refused path may be seen twice with the same token.
+    const seen = server.handshakes.slice(before).map((h) => ({ url: h.url, auth: h.headers['authorization'] }));
+    expect(seen.find((h) => h.url === '/refuse')?.auth).toBe('Bearer tok-1');
+    expect(seen.at(-1)).toEqual({ url: '/echo', auth: 'Bearer tok-2' });
+  });
+
+  it('keeps the token after a handshake refused with 403', async () => {
+    const refusing = await startTestWsServer({ status: 403 });
+    try {
+      const { state, tokens } = issuer();
+      await connectTwice(refusing.url, '/echo', tokens);
+      expect(state.fetched).toBe(1);
+    } finally {
+      await refusing.close();
+    }
+  });
+
+  it('keeps the token when nothing answers the connection', async () => {
+    const closed = await startTestWsServer();
+    const url = closed.url;
+    await closed.close();
+    const { state, tokens } = issuer();
+    await connectTwice(url, '/echo', tokens);
+    expect(state.fetched).toBe(1);
+  });
+
+  it('keeps the token when the handshake times out', async () => {
+    const silent = createServer(() => undefined);
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    try {
+      const { state, tokens } = issuer();
+      const url = `ws://127.0.0.1:${String((silent.address() as { port: number }).port)}`;
+      for (let i = 0; i < 2; i += 1) {
+        await open(build('/echo', { auth, serverUrl: url, settings: { handshakeTimeoutMs: 100 } }), {}, { tokens })
+          .result;
+      }
+      expect(state.fetched).toBe(1);
+    } finally {
+      silent.close();
+    }
   });
 });
