@@ -29,6 +29,7 @@ import {
   toPreferencesWire,
 } from './preferences.js';
 import { policyFilePath } from './policy.js';
+import { portableDataDir } from './portable.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
@@ -125,8 +126,17 @@ protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: APP_SCHE
 // `app.getPath('userData')` (the secret store included), or it would keep writing to the
 // developer's real profile regardless of the override.
 const e2eUserDataDir = process.env['WIREBENCH_USER_DATA_DIR'];
+// The portable Windows build keeps its profile in the `data` folder beside `Wirebench.exe`
+// (see `portable.ts`); same constraint, it has to be set before anything reads `userData`.
+const portableDir = portableDataDir({
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  exePath: process.execPath,
+});
 if (e2eUserDataDir !== undefined) {
   app.setPath('userData', e2eUserDataDir);
+} else if (portableDir !== undefined) {
+  app.setPath('userData', portableDir);
 }
 
 /** The keychain-backed secret store; never exposes values to the renderer (no `secrets.get`). */
@@ -582,9 +592,12 @@ void app.whenReady().then(() => {
   // Created once, up front, so it exists before any sync operation can start (see `hooksDir`).
   mkdirSync(hooksDir, { recursive: true });
 
-  const updates = createUpdateController((status) => {
-    broadcast(events.app.updateStatus, { status });
-  });
+  const updates = createUpdateController(
+    (status) => {
+      broadcast(events.app.updateStatus, { status });
+    },
+    { portable: e2eUserDataDir === undefined && portableDir !== undefined },
+  );
   setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   registerKerberosChannels();
   registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
