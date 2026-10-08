@@ -392,7 +392,8 @@ type Check = { equals?: string; matches?: string; exists?: boolean };  // none g
 ```
 
 - `body` evaluates with `evaluateWithTimeout`, on the worker the assertions use, and compares the first item's
-  text. As for assertions, a missing `namespaces` falls back to the request's own prefixes.
+  string value (an element's text content, not its markup). A missing `namespaces` falls back to the
+  request's own prefixes.
 - `matches` uses `matchRegexWithTimeout`, so a catastrophic pattern from a shared file cannot block the
   server.
 - An expression that fails to compile, or that times out, makes the condition false, and the log records a
