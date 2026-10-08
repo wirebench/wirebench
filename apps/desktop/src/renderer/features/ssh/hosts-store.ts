@@ -45,6 +45,11 @@ interface HostsState {
   /** The session state per host id; a host absent from the record is idle. */
   sessions: Readonly<Record<string, HostSession>>;
   trustPrompt: TrustPrompt | null;
+  /**
+   * Hosts whose last connect ended without a session: refused, failed, or the trust prompt cancelled.
+   * Cleared when the host's next connect starts; the terminal tab shows it with a Reconnect.
+   */
+  connectFailed: Readonly<Record<string, true>>;
   /** Bumped by a terminal tab's Reconnect; the tab keyed on it tears down and connects afresh. */
   reconnectNonce: Readonly<Record<string, number>>;
   refresh: () => Promise<void>;
@@ -60,6 +65,9 @@ interface HostsState {
   /** Main's `ssh.state`: a session that closed marks its host `closed` (the id stays, for the tab to see). */
   noteSessionState: (sessionId: string, state: 'open' | 'closed') => void;
   bumpReconnect: (hostId: string) => void;
+  noteConnectFailed: (hostId: string) => void;
+  /** The user dismissed the trust prompt: no session, so the host's connect failed. */
+  cancelTrust: () => void;
   visibleHosts: () => readonly ResolvedHostWire[];
 }
 
@@ -76,6 +84,7 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   sessions: {},
   trustPrompt: null,
   reconnectNonce: {},
+  connectFailed: {},
   async refresh() {
     apply(await ipc().ssh.listHosts(undefined));
   },
@@ -97,9 +106,15 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   },
   setSession: (hostId, session) => {
     const sessions = { ...get().sessions };
-    if (session === undefined) delete sessions[hostId];
-    else sessions[hostId] = session;
-    set({ sessions });
+    if (session === undefined) {
+      delete sessions[hostId];
+      set({ sessions });
+      return;
+    }
+    sessions[hostId] = session;
+    const connectFailed = { ...get().connectFailed };
+    delete connectFailed[hostId];
+    set({ sessions, connectFailed });
   },
   setTrustPrompt: (trustPrompt) => {
     set({ trustPrompt });
@@ -109,6 +124,14 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     const { sessions } = get();
     const hostId = Object.keys(sessions).find((id) => sessions[id]?.sessionId === sessionId);
     if (hostId !== undefined) set({ sessions: { ...sessions, [hostId]: { sessionId, state: 'closed' } } });
+  },
+  noteConnectFailed: (hostId) => {
+    set({ connectFailed: { ...get().connectFailed, [hostId]: true } });
+  },
+  cancelTrust: () => {
+    const prompt = get().trustPrompt;
+    if (prompt === null) return;
+    set({ trustPrompt: null, connectFailed: { ...get().connectFailed, [prompt.hostId]: true } });
   },
   bumpReconnect: (hostId) => {
     const { reconnectNonce } = get();

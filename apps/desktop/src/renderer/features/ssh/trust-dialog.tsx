@@ -16,14 +16,15 @@ export function TrustDialog() {
 function TrustDialogBody() {
   const [understood, setUnderstood] = useState(false);
   const prompt = useHostsStore((s) => s.trustPrompt);
-  const setTrustPrompt = useHostsStore((s) => s.setTrustPrompt);
+  const cancelTrust = useHostsStore((s) => s.cancelTrust);
   const changed = prompt?.previous !== undefined;
   return (
     <AlertDialog.Root
       open={prompt !== null}
       onOpenChange={(open) => {
+        // Trust clears the prompt before this runs, so a prompt still here was dismissed.
         if (!open) {
-          setTrustPrompt(null);
+          cancelTrust();
           setUnderstood(false);
         }
       }}

@@ -8,7 +8,9 @@ interface Size {
   rows: number;
 }
 
+/** A connect that ends here leaves no session: the problem says why, the terminal tab offers a retry. */
 function recordProblem(hostId: string, code: string, message: string): void {
+  useHostsStore.getState().noteConnectFailed(hostId);
   useProblemsStore
     .getState()
     .add([{ groupId: `ssh:${hostId}`, source: 'hosts', severity: 'error', problem: { code, message } }]);
@@ -92,9 +94,20 @@ export function terminalTabId(hostId: string): string {
   return `ssh:${hostId}`;
 }
 
-/** Opens (or brings forward) the host's terminal tab; the tab connects itself when it mounts. */
+/**
+ * Opens (or brings forward) the host's terminal tab; the tab connects itself when it mounts. An open tab
+ * with no live or pending session (and no trust prompt waiting) connects again, so Connect on a host
+ * whose last attempt failed or ended retries.
+ */
 export function openTerminalFor(hostId: string): void {
-  const { resolved, file } = useHostsStore.getState();
-  const title = resolved.find((h) => h.id === hostId)?.name ?? findHost(file, hostId)?.name ?? hostId;
-  useEditorsStore.getState().open({ id: terminalTabId(hostId), kind: 'ssh-terminal', title, hostId });
+  const hosts = useHostsStore.getState();
+  const editors = useEditorsStore.getState();
+  const id = terminalTabId(hostId);
+  const state = hosts.sessions[hostId]?.state;
+  const settled = state !== 'connecting' && state !== 'open' && hosts.trustPrompt?.hostId !== hostId;
+  if (settled && editors.tabs.some((t) => t.id === id)) {
+    hosts.bumpReconnect(hostId);
+  }
+  const title = hosts.resolved.find((h) => h.id === hostId)?.name ?? findHost(hosts.file, hostId)?.name ?? hostId;
+  editors.open({ id, kind: 'ssh-terminal', title, hostId });
 }

@@ -71,6 +71,7 @@ beforeEach(() => {
     file: { version: 1, groups: [], hosts: [{ id: 'a', name: 'alpha', address: 'a.example', tags: [], ssh: {} }] },
     sessions: {},
     trustPrompt: null,
+    connectFailed: {},
   });
 });
 
@@ -159,6 +160,83 @@ describe('the terminal tab', () => {
     expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
     expect(connect).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/Session ended/)).toBeNull();
+  });
+
+  it('a refused connect offers Reconnect, which connects again', async () => {
+    connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    expect(await screen.findByText('Could not connect · see Problems')).toBeDefined();
+
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    await waitFor(() => {
+      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
+    });
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Could not connect/)).toBeNull();
+  });
+
+  it('a dismissed trust prompt offers Reconnect', async () => {
+    connect.mockResolvedValueOnce(NEW_KEY);
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await waitFor(() => {
+      expect(useHostsStore.getState().trustPrompt).not.toBeNull();
+    });
+    expect(screen.queryByText(/Could not connect/)).toBeNull();
+    act(() => {
+      useHostsStore.getState().cancelTrust();
+    });
+    expect(await screen.findByRole('button', { name: 'Reconnect' })).toBeDefined();
+  });
+
+  it('connecting again from the tree retries in the open tab', async () => {
+    connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await screen.findByText('Could not connect · see Problems');
+
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    act(() => {
+      openTerminalFor('a');
+    });
+    await waitFor(() => {
+      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
+    });
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(useEditorsStore.getState().tabs).toHaveLength(1);
+  });
+
+  it('a session that opens after its tab closed is closed too', async () => {
+    let resolve: (value: unknown) => void = () => undefined;
+    connect.mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await waitFor(() => {
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      useEditorsStore.getState().close('ssh:a');
+    });
+    expect(close).not.toHaveBeenCalled();
+    resolve(OPEN('s9'));
+    await waitFor(() => {
+      expect(close).toHaveBeenCalledWith({ sessionId: 's9' });
+    });
+    expect(useHostsStore.getState().sessions['a']).toBeUndefined();
   });
 
   it('the tab strip shows the session state as a dot', async () => {

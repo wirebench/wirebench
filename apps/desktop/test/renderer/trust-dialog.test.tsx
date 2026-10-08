@@ -19,7 +19,7 @@ const BASE = {
 beforeEach(() => {
   connect.mockReset().mockResolvedValue({ ok: true, value: { sessionId: 's1' } });
   trustHostKey.mockReset().mockResolvedValue({ ok: true, value: {} });
-  useHostsStore.setState({ sessions: {}, trustPrompt: null });
+  useHostsStore.setState({ sessions: {}, trustPrompt: null, connectFailed: {} });
 });
 afterEach(cleanup);
 
@@ -40,6 +40,7 @@ it('a first-seen key shows its fingerprint and trusts on click', async () => {
     replace: false,
   });
   expect(connect).toHaveBeenCalledTimes(1);
+  expect(useHostsStore.getState().connectFailed).toEqual({});
 });
 
 it('a changed key shows both fingerprints and needs the checkbox before it replaces', async () => {
@@ -62,6 +63,7 @@ it('Cancel dismisses the prompt without trusting', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(useHostsStore.getState().trustPrompt).toBeNull();
   expect(trustHostKey).not.toHaveBeenCalled();
+  expect(useHostsStore.getState().connectFailed).toEqual({ a: true });
 });
 
 it('a new key has no checkbox and confirms with replace false', async () => {

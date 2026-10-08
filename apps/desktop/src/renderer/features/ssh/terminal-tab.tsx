@@ -13,6 +13,11 @@ import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
 /** How long a layout change settles before the new size goes to the remote pty. */
 const RESIZE_DEBOUNCE_MS = 100;
 
+/** Opens a link from the terminal; main hands only http(s) to the OS browser. */
+function openLink(uri: string): void {
+  window.open(uri, '_blank', 'noopener');
+}
+
 /** The terminal one mount of the tab owns, with what the session was last told its size is. */
 interface Live {
   readonly term: Terminal;
@@ -51,6 +56,8 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
   activeRef.current = active;
   const nonce = useHostsStore((s) => s.reconnectNonce[hostId] ?? 0);
   const session = useHostsStore((s) => s.sessions[hostId]);
+  // The last connect ended with no session (refused, failed, or the trust prompt dismissed).
+  const failed = useHostsStore((s) => s.connectFailed[hostId] === true) && session === undefined;
   const sessionId = session?.sessionId;
   const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
 
@@ -63,11 +70,21 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       fontFamily: monoFontFromCss(),
       fontSize: 13,
       theme: themeFromCss(),
+      // OSC 8 hyperlinks the remote program prints.
+      linkHandler: {
+        activate: (_event, uri) => {
+          openLink(uri);
+        },
+      },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     // The default handler opens a blank window first, which main refuses; this hands main the URL.
-    term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, '_blank', 'noopener')));
+    term.loadAddon(
+      new WebLinksAddon((_event, uri) => {
+        openLink(uri);
+      }),
+    );
     term.open(element);
     if (hasSize(element)) fit.fit();
 
@@ -164,13 +181,18 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
 
   const exitCode = sessionId !== undefined && exit?.sessionId === sessionId ? exit.code : undefined;
   const ended = sessionId !== undefined && (exitCode !== undefined || session?.state === 'closed');
+  const notice = failed
+    ? 'Could not connect · see Problems'
+    : ended
+      ? `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`
+      : undefined;
 
   return (
     <div className="flex h-full flex-col">
       <div ref={holder} className="min-h-0 flex-1 bg-surface-sunken p-2" data-testid="ssh-terminal" />
-      {ended && (
+      {notice !== undefined && (
         <div className="flex items-center gap-3 border-t border-hairline px-3 py-2 text-sm text-fg-default">
-          <span>{`Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`}</span>
+          <span>{notice}</span>
           <button
             type="button"
             className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
