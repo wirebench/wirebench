@@ -576,6 +576,12 @@ jobs:
         id: sbom
         run: echo "path=$(ls artifacts/*.cdx.json)" >> "$GITHUB_OUTPUT"
 
+      # The project file JSON Schemas (#66), every format version's folder, as the docs site serves them.
+      - name: Add the project schemas
+        run: |
+          cd docs-site/public/schemas
+          zip -qr "$GITHUB_WORKSPACE/artifacts/wirebench-project-schemas-${GITHUB_REF_NAME#v}.zip" .
+
       # Provenance for every file in the release, and the SBOM bound to each installer, so anyone
       # can check a download with `gh attestation verify <file> --repo wirebench/wirebench`.
       - uses: actions/attest-build-provenance@v4
