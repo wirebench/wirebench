@@ -10,7 +10,7 @@ import { SaveAsWebhookDialog } from '../features/webhook-items/save-as-webhook-d
 import { WebhookSettingsDialog } from '../features/webhook-items/webhook-settings-dialog.js';
 import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
-import type { AreaId } from '@shared/area-module.js';
+import { toAreaIds } from '@shared/area-module.js';
 import { ipc } from '../state/ipc-client.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
@@ -307,7 +307,7 @@ export function AppShell() {
       .app.areas(undefined)
       .then((result) => {
         if (cancelled || !result.ok) return;
-        useUiStore.getState().setEnabledAreas(result.value.enabled as AreaId[]);
+        useUiStore.getState().setEnabledAreas(toAreaIds(result.value.enabled));
         registerShellCommands(openPalette); // resetCommands() at its top makes re-registration safe
         void syncAppMenu();
       });

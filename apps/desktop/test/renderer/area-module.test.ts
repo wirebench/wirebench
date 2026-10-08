@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, areaById, enabledAreaIds } from '../../src/shared/area-module.js';
+import { AREAS, areaById, enabledAreaIds, toAreaIds } from '../../src/shared/area-module.js';
 
 describe('area modules', () => {
   it('lists the five existing areas in rail order', () => {
@@ -25,5 +25,9 @@ describe('area modules', () => {
   it('areaById finds an area and rejects an unknown id', () => {
     expect(areaById('history').rail.label).toBe('History');
     expect(() => areaById('nope' as never)).toThrow(/unknown area/);
+  });
+
+  it('toAreaIds drops ids that are not areas', () => {
+    expect(toAreaIds(['history', 'nope', 'explorer'])).toEqual(['history', 'explorer']);
   });
 });

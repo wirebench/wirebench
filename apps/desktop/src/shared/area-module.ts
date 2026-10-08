@@ -62,3 +62,9 @@ export function enabledAreaIds(switches: Readonly<Record<string, boolean>>): rea
   };
   return AREAS.filter((area) => isOn(area.id, new Set())).map((area) => area.id);
 }
+
+/** Narrows ids from outside (IPC) to known areas, in the order given; unknown ids are dropped. */
+export function toAreaIds(ids: readonly string[]): AreaId[] {
+  const known = new Set<string>(AREAS.map((area) => area.id));
+  return ids.filter((id): id is AreaId => known.has(id));
+}

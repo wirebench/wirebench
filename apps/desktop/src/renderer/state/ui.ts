@@ -260,6 +260,11 @@ export const useUiStore = create<UiStore>((set, get) => {
     enabledAreas: AREAS.map((area) => area.id),
     setEnabledAreas: (ids) => {
       set({ enabledAreas: ids });
+      // A restored view may belong to an area this run switched off; fall back to the first enabled one.
+      const first = ids[0];
+      if (first !== undefined && !ids.includes(get().sidebar.view)) {
+        get().setSidebarView(first);
+      }
     },
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
@@ -477,6 +482,7 @@ export const useUiStore = create<UiStore>((set, get) => {
 
     showSidebarView: (view) =>
       update((draft) => {
+        if (!get().enabledAreas.includes(view)) return;
         // Clicking the active view again collapses the sidebar, the way VS Code's activity bar does.
         if (draft.sidebar.visible && draft.sidebar.view === view) {
           draft.sidebar.lastSize = draft.sidebar.size;
@@ -491,6 +497,7 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
     setSidebarView: (view) =>
       update((draft) => {
+        if (!get().enabledAreas.includes(view)) return;
         draft.sidebar.view = view;
       }),
     showConsoleTab: (tab) =>
