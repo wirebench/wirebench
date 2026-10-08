@@ -1,4 +1,5 @@
 import { catalogEntry } from '@shared/command-catalog.js';
+import { connectToHost, DEFAULT_TERMINAL_SIZE } from '../features/ssh/connect.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { registerCommand } from '../lib/commands.js';
 import { useUiStore } from '../state/ui.js';
@@ -31,6 +32,12 @@ export function registerSshCommands(): void {
       if (typeof arg !== 'string') return;
       revealHosts();
       useHostsStore.getState().openDialog({ mode: 'edit-host', id: arg });
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.connect'),
+    run: (_context, arg) => {
+      if (typeof arg === 'string') void connectToHost(arg, DEFAULT_TERMINAL_SIZE);
     },
   });
 }

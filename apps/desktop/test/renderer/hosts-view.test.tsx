@@ -6,8 +6,9 @@ const listHosts = vi.fn();
 const saveHosts = vi.fn();
 const secretNames = vi.fn();
 const setSecret = vi.fn();
+const connect = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret } }),
+  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, connect } }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
@@ -89,9 +90,17 @@ describe('HostsView', () => {
   });
   it('editing a host inside a group shows the inherited user with its group', async () => {
     render(<HostsView />);
-    await userEvent.dblClick(screen.getByTestId('host-row-a'));
+    fireEvent.contextMenu(screen.getByTestId('host-row-a'));
+    await userEvent.click(await screen.findByText('Edit…'));
     expect(await screen.findByText('from Production')).toBeDefined();
     expect(screen.getByLabelText<HTMLInputElement>('User').disabled).toBe(true);
+  });
+  it('double-clicking a host connects and shows it as connected', async () => {
+    connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+    render(<HostsView />);
+    await userEvent.dblClick(screen.getByTestId('host-row-b'));
+    expect(connect).toHaveBeenCalledWith({ hostId: 'b', cols: 80, rows: 24 });
+    expect(await screen.findByLabelText('connected')).toBeDefined();
   });
   it('saving a new host sends the whole file', async () => {
     render(<HostsView />);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { ChevronDown, ChevronRight, Circle } from 'lucide-react';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
+import { connectToHost, DEFAULT_TERMINAL_SIZE } from './connect.js';
 import {
   ancestorsOf,
   findHost,
@@ -16,6 +17,13 @@ import {
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
+
+const STATUS = {
+  idle: { label: 'not connected', color: 'text-fg-faint' },
+  connecting: { label: 'connecting', color: 'text-status-warning' },
+  open: { label: 'connected', color: 'text-status-success' },
+  closed: { label: 'not connected', color: 'text-fg-faint' },
+} as const;
 
 /** A row for a host of the file; `resolved` adds the badge and is missing when the resolver could not place the host. */
 function allHostIds(file: HostsFileWire): string[] {
@@ -34,10 +42,14 @@ function HostRow({
   readonly depth: number;
 }) {
   const { file, save, openDialog } = useHostsStore();
+  const session = useHostsStore((s) => s.sessions[host.id]);
   const parent = ancestorsOf(file, 'host', host.id).at(-1);
   const targets = flattenGroups(file).filter(({ group }) => group.id !== parent?.id);
   const edit = (): void => {
     openDialog({ mode: 'edit-host', id: host.id });
+  };
+  const connect = (): void => {
+    void connectToHost(host.id, DEFAULT_TERMINAL_SIZE);
   };
   const duplicate = (): void => {
     const entry = findHost(file, host.id);
@@ -56,12 +68,16 @@ function HostRow({
           data-testid={`host-row-${host.id}`}
           style={{ paddingLeft: `${String(depth * 12 + 8)}px` }}
           className="flex cursor-default items-center gap-2 rounded py-1 pr-2 text-sm hover:bg-surface-raised focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
-          onDoubleClick={edit}
+          onDoubleClick={connect}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') edit();
+            if (e.key === 'Enter') connect();
           }}
         >
-          <Circle size={8} aria-label="not connected" className="shrink-0 text-fg-faint" />
+          <Circle
+            size={8}
+            aria-label={STATUS[session?.state ?? 'idle'].label}
+            className={`shrink-0 fill-current ${STATUS[session?.state ?? 'idle'].color}`}
+          />
           <span className="truncate text-fg-default">{host.name}</span>
           <span className="truncate text-xs text-fg-subtle">{host.address}</span>
           {resolved === undefined ? (
@@ -79,6 +95,9 @@ function HostRow({
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
+          <ContextMenu.Item className={ITEM_CLASS} onSelect={connect}>
+            Connect
+          </ContextMenu.Item>
           <ContextMenu.Item className={ITEM_CLASS} onSelect={edit}>
             Edit…
           </ContextMenu.Item>

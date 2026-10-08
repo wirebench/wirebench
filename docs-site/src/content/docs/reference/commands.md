@@ -50,6 +50,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: New Host… | — | — |
 | Hosts: New Group… | — | — |
 | Hosts: Edit Host… | — | — |
+| Connect to Host | — | — |
 
 ## Definition
 

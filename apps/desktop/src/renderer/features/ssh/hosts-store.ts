@@ -19,6 +19,21 @@ export type HostsDialog =
   | { mode: 'edit-group'; id: string }
   | null;
 
+/** A host key main refused until the user decides; `previous` is set when the stored key differs. */
+export interface TrustPrompt {
+  hostId: string;
+  size: { cols: number; rows: number };
+  host: string;
+  keyType: string;
+  fingerprint: string;
+  previous?: string;
+}
+
+export interface HostSession {
+  sessionId?: string;
+  state: 'connecting' | 'open' | 'closed';
+}
+
 interface HostsState {
   file: HostsFileWire;
   resolved: readonly ResolvedHostWire[];
@@ -27,6 +42,9 @@ interface HostsState {
   filter: string;
   selectedTags: readonly string[];
   dialog: HostsDialog;
+  /** The session state per host id; a host absent from the record is idle. */
+  sessions: Readonly<Record<string, HostSession>>;
+  trustPrompt: TrustPrompt | null;
   refresh: () => Promise<void>;
   /** Sends the whole file; `false` when main refused it (the old state stays, the refusal is a problem). */
   save: (file: HostsFileWire) => Promise<boolean>;
@@ -34,6 +52,9 @@ interface HostsState {
   toggleTag: (tag: string) => void;
   openDialog: (dialog: HostsDialog) => void;
   closeDialog: () => void;
+  /** `undefined` removes the host's entry (idle). */
+  setSession: (hostId: string, session: HostSession | undefined) => void;
+  setTrustPrompt: (prompt: TrustPrompt | null) => void;
   visibleHosts: () => readonly ResolvedHostWire[];
 }
 
@@ -47,6 +68,8 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   filter: '',
   selectedTags: [],
   dialog: null,
+  sessions: {},
+  trustPrompt: null,
   async refresh() {
     apply(await ipc().ssh.listHosts(undefined));
   },
@@ -65,6 +88,15 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   },
   closeDialog: () => {
     set({ dialog: null });
+  },
+  setSession: (hostId, session) => {
+    const sessions = { ...get().sessions };
+    if (session === undefined) delete sessions[hostId];
+    else sessions[hostId] = session;
+    set({ sessions });
+  },
+  setTrustPrompt: (trustPrompt) => {
+    set({ trustPrompt });
   },
   visibleHosts() {
     const { resolved, filter, selectedTags } = get();
