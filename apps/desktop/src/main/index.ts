@@ -9,6 +9,7 @@ import {
   findGit,
   GitCli,
   WirebenchError,
+  WorkspaceError,
   enabledProperties,
   overlayCurrent,
   type ConnectOptions,
@@ -530,8 +531,11 @@ const workspaceService = new WorkspaceService({
     onProgress: (progress) => {
       broadcast(events.engine.progress, progress);
     },
-    onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
+    onHostsFileChanged: () => {
       hostsService.invalidate();
+      broadcast(events.ssh.hostsChanged, {});
+    },
+    onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
       broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
     },
     onSyncStatus: (workspaceId, status) => {
@@ -562,8 +566,9 @@ const hostsService = new HostsService({
   treeDir: () => {
     try {
       return workspaceService.treeDir();
-    } catch {
-      return undefined; // no workspace is open
+    } catch (error) {
+      if (error instanceof WorkspaceError && error.code === 'workspace-not-found') return undefined; // none open
+      throw error;
     }
   },
   onChanged: () => {

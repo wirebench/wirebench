@@ -22,9 +22,14 @@ describe('HostsService', () => {
       'version: 1\nhosts:\n  - { id: a, name: a, address: a, ssh: { auth: { password: oops } } }\n',
     );
     const result = await new HostsService({ treeDir: () => d }).list();
-    expect(result.problems).toHaveLength(1);
-    expect(result.problems[0]).toMatchObject({ code: 'ssh-literal-secret', path: 'hosts[0].ssh.auth.password' });
-    expect(result.problems[0]?.message).toContain('${secret:NAME}');
+    expect(result.problems).toEqual([
+      {
+        code: 'ssh-literal-secret',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        message: expect.stringContaining('${secret:NAME}'),
+        path: 'hosts[0].ssh.auth.password',
+      },
+    ]);
     expect(result.resolved).toEqual([]);
     expect(JSON.stringify(result)).not.toContain('oops');
   });
@@ -64,7 +69,7 @@ describe('HostsService', () => {
           { id: 'a', name: 'A', address: 'x', tags: [], ssh: { auth: { kind: 'password', secret: 'has space' } } },
         ],
       }),
-    ).rejects.toMatchObject({ code: 'ssh-literal-secret' });
+    ).rejects.toMatchObject({ name: 'WirebenchError', code: 'ssh-literal-secret' });
   });
   it('no open workspace is workspace-not-open', async () => {
     await expect(new HostsService({ treeDir: () => undefined }).list()).rejects.toMatchObject({

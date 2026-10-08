@@ -173,6 +173,9 @@ import type {
  */
 export const UNSAVED_RECORD_DEBOUNCE_MS = 2_000;
 
+/** The SSH hosts file, at the tree root; the workspace watcher reports it apart from the manifest. */
+const HOSTS_FILE_PATH = 'hosts.yaml';
+
 /**
  * What the service raises. Every project-scoped hook carries the `projectId` its host belongs
  * to, which is what lets one renderer hold several projects at once.
@@ -192,6 +195,8 @@ export interface WorkspaceHooks {
    * model was left untouched. `paths` is the batch that triggered the attempt.
    */
   readonly onWorkspaceChangedOnDisk?: (workspaceId: string, paths: readonly string[], message: string) => void;
+  /** `hosts.yaml` at the tree root changed on disk (an outside edit, or this app's own save). */
+  readonly onHostsFileChanged?: (workspaceId: string) => void;
   /** One interface of one project finished (or failed) re-importing. */
   readonly onHydration?: (
     projectId: string,
@@ -857,7 +862,7 @@ export class WorkspaceService implements ProjectRouter {
       // "workspace-level watcher" region below).
       open.watcher = new ProjectWatcher({
         dir: tree,
-        isManaged: (path) => isWorkspaceManagedPath(path) || isTeamSecretsPath(path),
+        isManaged: (path) => isWorkspaceManagedPath(path) || isTeamSecretsPath(path) || path === HOSTS_FILE_PATH,
         isWatchedDir: (dir) =>
           isWorkspaceManagedDir(dir) || dir === TEAM_SECRETS_DIR || dir.startsWith(`${TEAM_SECRETS_DIR}/`),
         ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
@@ -867,7 +872,10 @@ export class WorkspaceService implements ProjectRouter {
           if (teamPaths.length > 0) {
             this.teamSecretsChangedOnDisk(open, teamPaths);
           }
-          const paths = changed.filter((path) => !isTeamSecretsPath(path));
+          if (changed.includes(HOSTS_FILE_PATH)) {
+            this.deps.hooks?.onHostsFileChanged?.(open.workspace.id);
+          }
+          const paths = changed.filter((path) => !isTeamSecretsPath(path) && path !== HOSTS_FILE_PATH);
           if (paths.length === 0 || open.held.offerWorkspace(paths)) {
             return;
           }

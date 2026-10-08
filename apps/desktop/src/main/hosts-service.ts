@@ -46,13 +46,22 @@ export class HostsService {
 
   async list(): Promise<SshListHostsResponse> {
     const { file, problems } = await this.load();
-    return { file: fileToWire(file), resolved: listResolvedHosts(file).map(resolvedToWire), problems };
+    try {
+      return { file: fileToWire(file), resolved: listResolvedHosts(file).map(resolvedToWire), problems };
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
   }
 
   /** @throws SshModelError when the file is invalid; WirebenchError `workspace-not-open` without a workspace. */
   async save(wire: HostsFileWire): Promise<SshListHostsResponse> {
     const dir = this.requireDir();
-    const file = parseHostsFile(serializeHostsFile(fileFromWire(wire))); // the round trip is the full validation
+    let file: HostsFile;
+    try {
+      file = parseHostsFile(serializeHostsFile(fileFromWire(wire))); // the round trip is the full validation
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
     await writeFileAtomic(nodeFs, join(dir, HOSTS_FILE), serializeHostsFile(file));
     this.cache = { dir, file, problems: [] };
     this.deps.onChanged?.();
@@ -98,9 +107,16 @@ function authToWire(auth: SshAuth | undefined): SshAuthWire | undefined {
     ...(auth.passphrase ? { passphraseSecret: secretNameOf(auth.passphrase) } : {}),
   };
 }
+/** `SshModelError` is not a `WirebenchError`; without this it would cross IPC as `internal-error`. */
+function asWirebenchError(error: unknown): unknown {
+  return error instanceof SshModelError
+    ? new WirebenchError(error.code, error.message, { details: error.details })
+    : error;
+}
 function token(name: string): string {
+  // The bad name is not echoed: a password typed into the name field would travel back in the message.
   if (!NAME.test(name)) {
-    throw new SshModelError('ssh-literal-secret', 'a secret name must match [A-Za-z_][A-Za-z0-9_]*', { name });
+    throw new SshModelError('ssh-literal-secret', 'a secret name must match [A-Za-z_][A-Za-z0-9_]*', {});
   }
   return `\${secret:${name}}`;
 }

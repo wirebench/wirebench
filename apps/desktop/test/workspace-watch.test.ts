@@ -49,10 +49,11 @@ interface Recorded {
   /** Files-changed-on-disk events forwarded from an open project's own watcher — used only by
    * the close()-races-a-reload test, to detect a host that a reload opened but never closed. */
   projectOnDisk: { projectId: string; paths: readonly string[] }[];
+  hosts: string[];
 }
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: WorkspaceService; recorded: Recorded } {
-  const recorded: Recorded = { changed: [], onDisk: [], projectOnDisk: [] };
+  const recorded: Recorded = { changed: [], onDisk: [], projectOnDisk: [], hosts: [] };
   const service = new WorkspaceService({
     userDataDir: root,
     engine: new EngineService(),
@@ -63,6 +64,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: W
       onWorkspaceChangedOnDisk: (workspaceId, paths, message) =>
         recorded.onDisk.push({ workspaceId, paths: [...paths], message }),
       onProjectChangedOnDisk: (projectId, paths) => recorded.projectOnDisk.push({ projectId, paths: [...paths] }),
+      onHostsFileChanged: (workspaceId) => recorded.hosts.push(workspaceId),
     },
     ...overrides,
   });
@@ -120,6 +122,28 @@ describe('WorkspaceService — workspace-level watcher', () => {
 
     // Exactly one more onChanged: the debounced batch coalesces into a single reload.
     expect(recorded.changed.length).toBe(before + 1);
+
+    await service.close();
+  });
+
+  it('reports an outside edit to hosts.yaml through onHostsFileChanged, and only that file', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const { service, recorded } = newService();
+    await service.open(workspace.id);
+    await settle();
+    const before = recorded.changed.length;
+
+    await writeFile(join(tree, 'notes.txt'), 'unrelated', 'utf8');
+    await settle();
+    expect(recorded.hosts).toEqual([]);
+
+    await writeFile(join(tree, 'hosts.yaml'), 'version: 1\n', 'utf8');
+    await vi.waitFor(() => {
+      expect(recorded.hosts).toEqual([workspace.id]);
+    }, WAIT_OPTIONS);
+    // Not a manifest reload: no onChanged, no failure report.
+    expect(recorded.changed.length).toBe(before);
+    expect(recorded.onDisk).toEqual([]);
 
     await service.close();
   });

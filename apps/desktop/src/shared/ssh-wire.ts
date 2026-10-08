@@ -9,12 +9,12 @@ import { z } from 'zod';
 export const sshProblemSchema = z.object({ code: z.string(), message: z.string(), path: z.string().optional() });
 
 export const sshAuthWireSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('password'), secret: z.string() }),
-  z.object({ kind: z.literal('key'), secret: z.string(), passphraseSecret: z.string().optional() }),
-  z.object({ kind: z.literal('agent') }),
+  z.strictObject({ kind: z.literal('password'), secret: z.string() }),
+  z.strictObject({ kind: z.literal('key'), secret: z.string(), passphraseSecret: z.string().optional() }),
+  z.strictObject({ kind: z.literal('agent') }),
 ]);
 
-export const sshSettingsWireSchema = z.object({
+export const sshSettingsWireSchema = z.strictObject({
   user: z.string().optional(),
   port: z.number().optional(),
   jump: z.string().optional(),
@@ -23,7 +23,7 @@ export const sshSettingsWireSchema = z.object({
   connectTimeout: z.number().optional(),
 });
 
-export const hostEntryWireSchema = z.object({
+export const hostEntryWireSchema = z.strictObject({
   id: z.string(),
   name: z.string(),
   address: z.string(),
@@ -48,7 +48,7 @@ export interface GroupEntryWire {
 }
 
 export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
-  z.object({
+  z.strictObject({
     id: z.string(),
     name: z.string(),
     tags: z.array(z.string()),
@@ -58,7 +58,7 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
   }),
 );
 
-export const hostsFileWireSchema = z.object({
+export const hostsFileWireSchema = z.strictObject({
   version: z.literal(1),
   groups: z.array(groupEntryWireSchema),
   hosts: z.array(hostEntryWireSchema),
@@ -90,7 +90,7 @@ export const sshListHostsResponseSchema = z.object({
   problems: z.array(sshProblemSchema),
 });
 
-export const sshSaveHostsRequestSchema = z.object({ file: hostsFileWireSchema });
+export const sshSaveHostsRequestSchema = z.strictObject({ file: hostsFileWireSchema });
 
 export type SshAuthWire = z.infer<typeof sshAuthWireSchema>;
 export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
