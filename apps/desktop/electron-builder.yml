@@ -28,6 +28,8 @@ files:
   # The engine is a workspace package: its checkout carries sources, tests and a coverage
   # report that the built `dist/` does not need and that nothing at runtime resolves.
   - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'
+  # Same for the SSH package: only its built `dist/` (and ssh2, hoisted) is resolved at runtime.
+  - '!**/node_modules/@wirebench/ssh/{src,test,coverage,node_modules}/**'
   # The engine's optional `kerberos` dependency would otherwise be packed with the binding that
   # happened to be installed on the runner, in the wrong architecture for half the builds. The app
   # loads the vendored copy under `Resources/kerberos/` and never this one.

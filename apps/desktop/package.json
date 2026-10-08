@@ -27,6 +27,7 @@
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "@wirebench/engine": "workspace:*",
+    "@wirebench/ssh": "workspace:*",
     "electron-updater": "^6.8.9",
     "yaml": "^2.9",
     "zod": "^4.6.1"

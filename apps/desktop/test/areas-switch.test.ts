@@ -17,6 +17,7 @@ describe('WIREBENCH_AREAS', () => {
       'environments',
       'search',
       'history',
+      'ssh',
     ]);
   });
 });

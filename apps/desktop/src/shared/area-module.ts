@@ -5,6 +5,7 @@ import { environmentsArea } from './areas/environments.js';
 import { searchArea } from './areas/search.js';
 import { historyArea } from './areas/history.js';
 import { wssArea } from './areas/wss.js';
+import { sshArea } from './areas/ssh.js';
 
 /** The words the sidebar header and empty state show. Was `VIEWS` in `shell/sidebar.tsx`. */
 export interface AreaCopy {
@@ -36,7 +37,7 @@ export interface AreaModule<Id extends string = string> {
   readonly copy: AreaCopy;
 }
 
-export const AREAS = [explorerArea, environmentsArea, searchArea, historyArea, wssArea] as const;
+export const AREAS = [explorerArea, environmentsArea, searchArea, historyArea, wssArea, sshArea] as const;
 
 export type AreaId = (typeof AREAS)[number]['id'];
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sshListHostsResponseSchema, sshSaveHostsRequestSchema } from './ssh-wire.js';
 import {
   ciTokenCreateRequestWireSchema,
   ciTokenCreatedWireSchema,
@@ -1179,6 +1180,10 @@ export const channels = {
     insertEntry: defineChannel('wss.insertEntry', wssInsertEntryRequestSchema, wssEnvelopeResponseSchema),
     removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
   },
+  ssh: {
+    listHosts: defineChannel('ssh.listHosts', z.undefined(), sshListHostsResponseSchema),
+    saveHosts: defineChannel('ssh.saveHosts', sshSaveHostsRequestSchema, sshListHostsResponseSchema),
+  },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),
     namespaces: defineChannel('xpath.namespaces', xpathNamespacesRequestSchema, xpathNamespacesResponseSchema),
@@ -1214,6 +1219,10 @@ export type EventPayload<E> = E extends IpcEvent<infer Payload> ? z.infer<Payloa
 
 /** The registry of main-to-renderer events. */
 export const events = {
+  ssh: {
+    /** `hosts.yaml` was written: a view re-lists. */
+    hostsChanged: defineEvent('ssh.hostsChanged', z.object({})),
+  },
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),
     /** Progress of an update check/download, for the status bar. */

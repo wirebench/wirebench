@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { AREAS, areaById, enabledAreaIds, toAreaIds } from '../../src/shared/area-module.js';
 
 describe('area modules', () => {
-  it('lists the five existing areas in rail order', () => {
-    expect(AREAS.map((area) => area.id)).toEqual(['explorer', 'environments', 'search', 'history', 'wss']);
+  it('lists the six areas in rail order', () => {
+    expect(AREAS.map((area) => area.id)).toEqual(['explorer', 'environments', 'search', 'history', 'wss', 'ssh']);
     const orders = AREAS.map((area) => area.rail.order);
     expect([...orders].sort((a, b) => a - b)).toEqual(orders);
   });
@@ -17,7 +17,7 @@ describe('area modules', () => {
   });
 
   it('a switch turns an area off; unknown switches are ignored', () => {
-    expect(enabledAreaIds({ wss: false })).toEqual(['explorer', 'environments', 'search', 'history']);
+    expect(enabledAreaIds({ wss: false })).toEqual(['explorer', 'environments', 'search', 'history', 'ssh']);
     expect(enabledAreaIds({ nope: false })).toEqual(AREAS.map((a) => a.id));
     expect(enabledAreaIds({})).toEqual(AREAS.map((a) => a.id));
   });

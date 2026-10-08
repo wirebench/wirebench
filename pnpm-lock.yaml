@@ -60,6 +60,9 @@ importers:
       '@wirebench/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@wirebench/ssh':
+        specifier: workspace:*
+        version: link:../../packages/ssh
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9

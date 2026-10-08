@@ -39,7 +39,8 @@ import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
-import { enabledAreasFromEnv } from './areas.js';
+import { enabledAreasFromEnv, registerEnabledAreaChannels } from './areas.js';
+import { HostsService } from './hosts-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
@@ -434,6 +435,7 @@ const gitLocator = (): ReturnType<typeof findGit> =>
  */
 const WS_SESSION_RECORD_TIMEOUT_MS = 2_000;
 
+const enabledAreas = enabledAreasFromEnv();
 const workspaceService = new WorkspaceService({
   userDataDir: app.getPath('userData'),
   // Located afresh for each shared workspace that opens, so a git installed (or picked in
@@ -508,6 +510,7 @@ const workspaceService = new WorkspaceService({
       });
       currentValues.syncWorkspace(workspace);
       secretSources.noteChange();
+      hostsService.invalidate();
     },
     onDeleted: (workspaceId) => {
       void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
@@ -528,6 +531,7 @@ const workspaceService = new WorkspaceService({
       broadcast(events.engine.progress, progress);
     },
     onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
+      hostsService.invalidate();
       broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
     },
     onSyncStatus: (workspaceId, status) => {
@@ -550,6 +554,20 @@ const workspaceService = new WorkspaceService({
         void auditReporter.afterFetch();
       }
     },
+  },
+});
+
+// `hosts.yaml` in the open workspace's tree; dropped whenever the workspace changes (see the hooks above).
+const hostsService = new HostsService({
+  treeDir: () => {
+    try {
+      return workspaceService.treeDir();
+    } catch {
+      return undefined; // no workspace is open
+    }
+  },
+  onChanged: () => {
+    broadcast(events.ssh.hostsChanged, {});
   },
 });
 workspaceServiceRef.current = workspaceService;
@@ -583,7 +601,7 @@ void app.whenReady().then(() => {
   });
   setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   registerKerberosChannels();
-  registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }), enabledAreasFromEnv());
+  registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }), enabledAreas);
   // Every open project's folder: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
     workspaceService
@@ -912,6 +930,8 @@ void app.whenReady().then(() => {
   registerKeystoreChannels({ project: workspaceService, picks: dialogPicks });
   registerWsaChannels({ project: workspaceService });
   registerWssChannels({ project: workspaceService });
+  // Sessions arrive with the SSH session service; until then the area has its hosts file only.
+  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, ssh: {} });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
