@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format follows
   conform), picks a response by sequence, random, XPath/JSONPath/query match or a sandboxed script, keeps
   scenario state, and serves its WSDL. It listens on loopback unless told otherwise and runs without the
   desktop, for the CLI to build on. The desktop tab follows (#59).
+- **Record a mock from live traffic.** `wirebench mock record <path> <mock> --target <url>` stands in
+  front of a real system. Each request passes through to the system, and each response that reaches a
+  contract operation is kept as a stub of the mock, saved when the recording stops. Credentials are
+  masked in what is kept, requests are never saved, and the upstream comes only from the command line
+  (#60).
 
 ## [4.0.0] - 2026-10-08
 

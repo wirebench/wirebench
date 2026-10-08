@@ -573,8 +573,31 @@ scripts. The format decision is [ADR-0021](adr/0021-mock-stubs-are-files-under-m
   `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` values and secret-looking URL
   parameters are masked before an event leaves the engine, and a logged body is capped at 64 KiB.
 
-What this does not change: a mock binds a port only when it is started, and it sends nothing. Recording
-live traffic through a proxy (#60) will add its own section.
+What this does not change: a mock binds a port only when it is started, and it sends nothing.
+
+### Recording live traffic
+
+The recording proxy (#60, `docs/specs/2026-10-08-mock-recording-design.md`) does send. It forwards a
+client's requests to a real system, and it writes what came back into files a team commits.
+
+- **The mock's listener rules.** Loopback by default, the `Host` check, the 10 MiB body cap and the 30 s
+  timeouts apply as above. A web page cannot use the recorder as a relay into the network.
+- **One upstream origin, chosen by the user.** The target is a start option, never a field in a mock
+  file. The request path is appended to the target's path, and the origin never comes from the request,
+  so the recorder is not an open proxy. Redirects are passed back, not followed. Tests:
+  `packages/engine/test/unit/mock/record.test.ts`.
+- **Credentials pass through, never into files.** The client's `Authorization` reaches the target, as it
+  must. Requests are never kept. A kept response is masked before it leaves the recorder:
+  - credential headers (`Set-Cookie` and the rest of the log's list) are masked;
+  - JSON and form bodies have their secret keys masked;
+  - XML bodies have `wsse:Password` and security tokens masked;
+  - every value the caller names is masked in any of its encoded forms. The CLI names every
+    `WIREBENCH_SECRET_*` value.
+
+  Tests: `packages/engine/test/unit/mock/record.test.ts` and `packages/engine/test/unit/rest/mock-record.test.ts`.
+- **Bounded.** A relayed response is capped at 64 MiB and a kept body at 5 MiB, and the upstream has 60 s
+  to answer. ADR-0021's counts cap what is added to a mock, and a stub past them is skipped, not written.
+- **A recording is a stub like any other.** Its body is literal text and is never expanded.
 
 ## The cookie jar
 

@@ -48,7 +48,7 @@ Issue: [#60](https://github.com/wirebench/wirebench/issues/60)
 | `packages/cli/src/args-mock-record.ts`, `args.ts`, `main.ts` | the `mock record` verb |
 | `packages/cli/src/commands/mock-record.ts` | new |
 | `packages/cli/test/…/mock-record.test.ts` | new |
-| `docs-site/.../reference/cli.md`, `docs/security.md`, `docs/roadmap.md`, `CHANGELOG.md` | docs |
+| `docs/cli.md`, `docs/security.md`, `docs/roadmap.md`, `CHANGELOG.md` | docs |
 
 ---
 

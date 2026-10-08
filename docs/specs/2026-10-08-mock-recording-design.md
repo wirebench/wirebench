@@ -148,8 +148,8 @@ wirebench mock record <path> <mock> --target <url> [--from <interface|api>] [--p
 
 - `<mock>` is a mock's name or slug.
   - If no mock has that name and `--from` names an interface or an API, the CLI generates a mock for it
-    with that name and no stubs (`generateMock`, with its operations' responses dropped). The mock is
-    saved when the recording ends.
+    with that name and no operations (`generateMock`, with its operations dropped). Recording adds each
+    operation it reaches, and the mock is saved when the recording ends.
   - With no such mock and no `--from`, exit 2.
 - The upstream proxy comes from `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`, as for `run`. `--insecure` skips
   TLS verification.
@@ -204,7 +204,7 @@ wirebench mock record <path> <mock> --target <url> [--from <interface|api>] [--p
 
 ## Docs
 
-- `docs-site/.../reference/cli.md` (the `mock record` command).
+- `docs/cli.md` (the `mock record` command).
 - `docs/security.md`.
 - `docs/roadmap.md` (item 11's recording part).
 - `CHANGELOG.md`.
