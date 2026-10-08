@@ -15,6 +15,7 @@ import { useUiStore } from '../state/ui.js';
 export function ActivityBar({ platform }: { readonly platform: Platform }) {
   const sidebar = useUiStore((state) => state.sidebar);
   const showSidebarView = useUiStore((state) => state.showSidebarView);
+  const enabledAreas = useUiStore((state) => state.enabledAreas);
   const openPreferences = useUiStore((state) => state.openPreferences);
 
   return (
@@ -23,7 +24,7 @@ export function ActivityBar({ platform }: { readonly platform: Platform }) {
       aria-label="Views"
       className="flex w-activity-bar shrink-0 flex-col items-center gap-1 border-r border-hairline bg-surface-sunken py-2"
     >
-      {AREAS.map((area) => {
+      {AREAS.filter((area) => enabledAreas.includes(area.id)).map((area) => {
         const Icon = AREA_ICONS[area.rail.icon];
         const testId = 'testId' in area.rail ? area.rail.testId : undefined;
         return (

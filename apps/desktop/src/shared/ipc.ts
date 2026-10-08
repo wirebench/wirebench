@@ -466,6 +466,8 @@ export const channels = {
      * installed without a further, separate confirmation from the user; see `main/updater.ts`.
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
+    /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
+    areas: defineChannel('app.areas', z.undefined(), z.object({ enabled: z.array(z.string()) })),
   },
   auth: {
     /** Whether this build can do Kerberos/SPNEGO here, and why not when it cannot. */

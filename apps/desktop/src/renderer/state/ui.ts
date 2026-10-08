@@ -1,4 +1,6 @@
 import type { Draft } from 'immer';
+import { AREAS } from '@shared/area-module.js';
+import type { AreaId } from '@shared/area-module.js';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type {
@@ -103,6 +105,9 @@ export interface UiStore extends UiSnapshot {
   readonly confirmDeleteNode: PendingNodeDeletion | undefined;
   /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
   readonly envSwitcherOpen: boolean;
+  /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly enabledAreas: readonly AreaId[];
+  readonly setEnabledAreas: (ids: readonly AreaId[]) => void;
   /** Whether the title bar's workspace dropdown is open. Transient — never persisted. */
   readonly workspaceSwitcherOpen: boolean;
   /** Whether the Manage workspaces dialog is open. Transient — never persisted. */
@@ -252,6 +257,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     confirmDeleteRequestId: undefined,
     confirmDeleteNode: undefined,
     envSwitcherOpen: false,
+    enabledAreas: AREAS.map((area) => area.id),
+    setEnabledAreas: (ids) => {
+      set({ enabledAreas: ids });
+    },
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
     preferences: { open: false, section: undefined },

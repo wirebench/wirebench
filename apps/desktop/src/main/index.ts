@@ -39,6 +39,7 @@ import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
+import { enabledAreasFromEnv } from './areas.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
@@ -582,7 +583,7 @@ void app.whenReady().then(() => {
   });
   setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   registerKerberosChannels();
-  registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
+  registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }), enabledAreasFromEnv());
   // Every open project's folder: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
     workspaceService

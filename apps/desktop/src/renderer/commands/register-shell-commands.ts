@@ -1,3 +1,5 @@
+import { RENDERER_AREAS } from '../areas/index.js';
+import { useUiStore } from '../state/ui.js';
 import { resetCommands } from '../lib/commands.js';
 import { registerAccountCommands } from './register-account-commands.js';
 import { registerEditorCommands } from './register-editor-commands.js';
@@ -29,4 +31,5 @@ export function registerShellCommands(openPalette: (mode?: 'commands' | 'quick-o
   registerEditorCommands();
   registerExplorerCommands();
   registerHistoryCommands();
+  for (const id of useUiStore.getState().enabledAreas) RENDERER_AREAS[id].registerCommands?.();
 }

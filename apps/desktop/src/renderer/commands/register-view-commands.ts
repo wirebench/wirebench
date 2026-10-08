@@ -1,3 +1,4 @@
+import { AREAS } from '@shared/area-module.js';
 import type { CommandId } from '@shared/commands.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { openCookiesTab } from '../features/cookies/cookie-actions.js';
@@ -5,6 +6,7 @@ import { registerCommand } from '../lib/commands.js';
 import { cycleTheme } from '../lib/theme-actions.js';
 import type { RequestViewType, ResponseViewType } from '../state/editors.js';
 import { useEditorsStore } from '../state/editors.js';
+import { useUiStore } from '../state/ui.js';
 import { activeRequestId, hasActiveRequest, ui } from './command-helpers.js';
 
 /** The request pane's four views, as `view.request*` commands. Labels live in the catalog. */
@@ -62,36 +64,16 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     },
   });
 
-  registerCommand({
-    ...catalogEntry('view.showExplorer'),
-    run: () => {
-      ui().showSidebarView('explorer');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('view.showEnvironments'),
-    run: () => {
-      ui().showSidebarView('environments');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('view.showSearch'),
-    run: () => {
-      ui().showSidebarView('search');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('view.showHistory'),
-    run: () => {
-      ui().showSidebarView('history');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('view.showWss'),
-    run: () => {
-      ui().showSidebarView('wss');
-    },
-  });
+  // One `view.show*` command per area that is switched on (`WIREBENCH_AREAS`).
+  for (const area of AREAS) {
+    if (!useUiStore.getState().enabledAreas.includes(area.id)) continue;
+    registerCommand({
+      ...catalogEntry(area.rail.command),
+      run: () => {
+        ui().showSidebarView(area.id);
+      },
+    });
+  }
   registerCommand({
     ...catalogEntry('view.showCookies'),
     run: () => {
