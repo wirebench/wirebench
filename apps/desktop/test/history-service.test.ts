@@ -96,6 +96,56 @@ describe('HistoryService', () => {
     expect(history.openProjectIds()).toEqual([]);
   });
 
+  it('keeps a file open until every owner closed it (one linked project in two windows)', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1', 'window-1');
+    await history.open('proj-1', 'window-2');
+
+    history.close('proj-1', 'window-1');
+    expect(history.openProjectIds()).toEqual(['proj-1']);
+    history.close('proj-1', 'window-2');
+    expect(history.openProjectIds()).toEqual([]);
+  });
+
+  it('an owner-less open reuses an owned file without holding it', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1', 'window-1');
+    await history.open('proj-1');
+
+    history.close('proj-1', 'window-1');
+    expect(history.openProjectIds()).toEqual([]);
+  });
+
+  it("lists and clears only one window's projects when given their ids", async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-a', 'window-1');
+    await history.open('proj-b', 'window-2');
+    const input = {
+      endpoint: `${server.url}/soap`,
+      envelopeXml: '<Envelope/>',
+      soapVersion: '1.1' as const,
+      headers: {},
+    };
+    await history.recordSend('proj-a', {
+      requestName: 'A',
+      interfaceName: 'I',
+      operationName: 'Op',
+      input,
+      durationMs: 1,
+    });
+    await history.recordSend('proj-b', {
+      requestName: 'B',
+      interfaceName: 'I',
+      operationName: 'Op',
+      input,
+      durationMs: 1,
+    });
+
+    expect(history.list({ projectIds: ['proj-a'] }).entries.map((entry) => entry.requestName)).toEqual(['A']);
+    expect(await history.clear(['proj-a'])).toBe(1);
+    expect(history.list().entries.map((entry) => entry.requestName)).toEqual(['B']);
+  });
+
   it('records an entry after a real send, redacting the Authorization header (no plaintext on disk)', async () => {
     const history = new HistoryService(userDataDir);
     await history.open('proj-2');

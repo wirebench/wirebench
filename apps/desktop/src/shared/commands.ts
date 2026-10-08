@@ -35,6 +35,7 @@ export const COMMAND_IDS = [
   'workspace.secretSources',
   'workspace.checkCertificates',
   'workspace.newProject',
+  'workspace.newWindow',
   'workspace.linkProject',
   'workspace.importProjectFolder',
   'workspace.exportProject',

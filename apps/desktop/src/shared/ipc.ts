@@ -472,6 +472,11 @@ export const channels = {
      * installed without a further, separate confirmation from the user; see `main/updater.ts`.
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
+    /**
+     * Opens another window at the workspace picker (the "New Window" command). Each window holds its
+     * own workspace; see the multi-window design.
+     */
+    newWindow: defineChannel('app.newWindow', z.undefined(), z.object({})),
   },
   auth: {
     /** Whether this build can do Kerberos/SPNEGO here, and why not when it cannot. */

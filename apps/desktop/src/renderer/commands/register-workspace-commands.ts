@@ -7,6 +7,7 @@ import { runCertificateCheckCommand } from '../state/certificate-expiry.js';
 import { useProjectStore } from '../state/project.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { useUiStore } from '../state/ui.js';
+import { ipc } from '../state/ipc-client.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 
 /** The project the explorer has selected, if any — what the four project commands act on. */
@@ -96,6 +97,15 @@ export function registerWorkspaceCommands(): void {
   // Moved here from `register-project-commands.ts` with the rest of the workspace vocabulary;
   // `project.new` / `project.open` / `project.close` are gone, because a project belongs to a
   // workspace and creating one asks for a name only.
+  // Another window, at the picker, for another workspace. Always available: a window at the
+  // picker may open one too.
+  registerCommand({
+    ...catalogEntry('workspace.newWindow'),
+    run: () => {
+      void ipc().app.newWindow(undefined);
+    },
+  });
+
   registerCommand({
     ...catalogEntry('workspace.newProject'),
     when: workspaceIsOpen,

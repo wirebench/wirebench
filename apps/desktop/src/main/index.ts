@@ -12,6 +12,7 @@ import {
   enabledProperties,
   overlayCurrent,
   type ConnectOptions,
+  type GetSecret,
 } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
@@ -30,6 +31,8 @@ import {
 } from './preferences.js';
 import { policyFilePath } from './policy.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
+import { WorkspaceState } from './workspace-state.js';
+import { routeWorkspaces, scoped, WindowScopes } from './window-scope.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
@@ -135,17 +138,38 @@ const secretStore = new SecretStore(app.getPath('userData'), safeStorageBackend(
 const showSecretsFlag = new ShowSecretsFlag();
 
 /**
- * Team secrets for the open shared workspace. It writes this machine's keys and the team's values
- * into `secretStore` directly; everything the renderer saves goes through `teamSecretStore`, which
- * stores locally and then hands the value to the vault. Sign-in tokens, OAuth refresh tokens and a
- * cURL import stay on `secretStore`: they are this machine's, not the team's.
+ * Every open window's own services (multi-window design D1): its workspace, picks, cookie jar,
+ * current values, secret sources, team secrets, secret scans and audit reporter. See `createWindowScope`.
  */
-const teamSecrets = new TeamSecretsService({
-  store: secretStore,
-  onChanged: (workspaceId, status) => broadcast(events.teamSecrets.changed, { workspaceId, status }),
-  log: (message) => console.warn(message),
-});
-const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
+interface WindowScope {
+  readonly window: BrowserWindow;
+  /** Captured at creation: a destroyed window's `webContents` can no longer be asked for its id. */
+  readonly id: number;
+  readonly picks: DialogPicks;
+  readonly cookies: CookieStore;
+  readonly currentValues: CurrentValuesStore;
+  readonly secretSources: SecretSourcesService;
+  /**
+   * Team secrets for the window's open shared workspace. It writes this machine's keys and the team's
+   * values into `secretStore` directly; everything the renderer saves goes through `teamSecretStore`,
+   * which stores locally and then hands the value to the vault. Sign-in tokens, OAuth refresh tokens
+   * and a cURL import stay on `secretStore`: they are this machine's, not the team's.
+   */
+  readonly teamSecrets: TeamSecretsService;
+  readonly teamSecretStore: TeamSecretStore;
+  readonly secretScans: SecretScanSessions;
+  /** Reports the window's workspace's sends and test runs to its server's audit log (desktop audit events §2.4). */
+  readonly audit: AuditReporter;
+  readonly workspace: WorkspaceService;
+  /** The reopen of the last workspace this window started with; resolved at once for one opened at the picker. */
+  ready: Promise<void>;
+  /** Whether the window's audit server was signed in at the last account change. */
+  auditSignedIn: boolean;
+  /** The window's own quit path, once started (`closeWindowScope`). */
+  closing: Promise<void> | undefined;
+}
+
+const scopes = new WindowScopes<WindowScope>();
 
 /** The user's application preferences, shared by every project and every window. */
 const preferencesService = new PreferencesService(app.getPath('userData'), {
@@ -154,29 +178,30 @@ const preferencesService = new PreferencesService(app.getPath('userData'), {
 });
 
 /**
- * Secret sources (spec D6): one cache for the app, in front of every send's getter chain. The workspace
- * service is declared further down; it is read only when a secret is asked for, so it is reached
- * through a late-bound reference.
- */
-const workspaceServiceRef: { current: WorkspaceService | undefined } = { current: undefined };
-const secretSources = new SecretSourcesService({
-  snapshot: () => workspaceServiceRef.current?.secretSourcesSnapshot(),
-  cacheSeconds: () => preferencesService.get().secrets.sourceCacheSeconds,
-  onValue: recordSecretValue,
-  mask: redactSecretText,
-});
-
-/**
  * The secret getter every send resolves through, for one project's `${secret:name}` tokens (or,
  * with no project, for plain refs only). Each value it hands out is recorded in `redact.ts`, so it
  * is masked in the HTTP log and History like any `Authorization` header. Team secrets gets a look
  * first: a value the vault holds that this machine cannot open refuses the send with why (waiting,
- * removed or declined) instead of the plain "not on this machine".
+ * removed or declined) instead of the plain "not on this machine". Secret sources (spec D6) sit in
+ * front of both.
+ *
+ * Team secrets and secret sources are the workspace's, so each ref is resolved through the window
+ * whose workspace holds `projectId` (the caller's, for no project). With no such window, only the
+ * plain store answers.
  */
-const secretsFor = (projectId: string | undefined) =>
-  secretSources.wrap(
-    teamSecretGetter(projectSecretGetter(secretStore, projectId, recordSecretValue), teamSecrets, projectId),
-  );
+const secretsFor = (projectId: string | undefined): GetSecret => {
+  const plain = projectSecretGetter(secretStore, projectId, recordSecretValue);
+  return async (ref) => {
+    const scope =
+      projectId === undefined
+        ? scopes.callerOrOnly()
+        : scopes.find((candidate) => candidate.workspace.projectId(projectId) !== undefined);
+    if (scope === undefined) {
+      return await plain(ref);
+    }
+    return await scope.secretSources.wrap(teamSecretGetter(plain, scope.teamSecrets, projectId))(ref);
+  };
+};
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
@@ -185,8 +210,15 @@ const exchanges = new ExchangeRegistry();
 /** The request scripts' host (#63), created with the request channels once the app is ready. */
 let scriptHost: ScriptHost | undefined;
 
-/** Absolute paths the user picked through a native dialog this session; see `dialog-picks.ts`. */
-const dialogPicks = new DialogPicks();
+/**
+ * The picks preferences carry — the CA bundle and git executable chosen in Settings — which apply to
+ * every window. Each window's own picks are built over it (`dialog-picks.ts`, design D4).
+ */
+const appPicks = new DialogPicks();
+/** The calling window's native-dialog picks; see `dialog-picks.ts`. */
+const dialogPicks = scoped(scopes, (scope) => scope.picks);
+/** The calling window's workspace for workspace-level calls; for entity-addressed ones, the holder's (design D2). */
+const workspaceService = routeWorkspaces(scopes, (scope) => scope.workspace);
 
 /** Opens an external URL, gated the same way for every flow that hands off to a browser. */
 const openExternalChecked = async (url: string): Promise<void> => {
@@ -232,7 +264,7 @@ const issuedTokensService: IssuedTokensService = new IssuedTokensService(
               show: showSecretsFlag.get(),
               ...(locator.requestId !== undefined ? { requestId: locator.requestId } : {}),
             });
-            broadcast(events.exchange.logged, { entry });
+            emitToCaller(events.exchange.logged, { entry });
           } catch {
             // A broadcast that fails never becomes the token's lastError, as a send's STS row.
           }
@@ -259,7 +291,8 @@ const serverConnectOptions = new Map<string, ConnectOptions>();
  */
 const mainHttpDeps: MainHttpDeps = {
   preferences: () => preferencesService.get(),
-  picks: dialogPicks,
+  // Preferences are the app's, so the paths they name are app picks.
+  picks: appPicks,
   getSecret: secretsFor(undefined),
   resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
 };
@@ -290,20 +323,6 @@ function sameOrigin(url: string): string | undefined {
     return undefined;
   }
 }
-
-/**
- * Reports the open workspace's sends and test runs to its server's audit log while the last fetched
- * head says it records (desktop audit events §2.4). Its target follows the open workspace.
- */
-const auditReporter = new AuditReporter({
-  client: serverClient,
-  accounts: accountService,
-  now: () => new Date(),
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-  clearTimeout: (handle) => {
-    clearTimeout(handle as ReturnType<typeof setTimeout>);
-  },
-});
 
 /**
  * One live socket per signed-in server with an open workspace on it (live-updates §3.4), closed on
@@ -347,43 +366,40 @@ const protoImports = new ProtoImportService({
   grpcTls: ({ trustInvalid }) => workspaceService.grpcDiscoveryTls(trustInvalid),
 });
 
-/** Sends one event to every open window: project state is global, not per-invocation. */
+/** Sends one event to every open window: preferences, globals, accounts and the like are the app's. */
 function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {
   for (const window of BrowserWindow.getAllWindows()) {
     emitEvent(window.webContents, event, payload);
   }
 }
 
-/** Keeps the OS window title in step with the open workspace, as `name — Wirebench`. */
-function applyWindowTitle(workspace: WorkspaceWire | null): void {
-  const title = workspace === null ? 'Wirebench' : `${workspace.name} — Wirebench`;
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.setTitle(title);
+/**
+ * Sends one event about a send to the window that started it, or to every window when it was not
+ * started from one (design D3): one window's HTTP log is not another's.
+ */
+function emitToCaller<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {
+  const scope = scopes.callerOrOnly();
+  if (scope === undefined) {
+    broadcast(event, payload);
+  } else {
+    emitEvent(scope.window.webContents, event, payload);
+  }
+}
+
+/** Keeps one window's OS title in step with its workspace, as `name — Wirebench`. */
+function applyWindowTitle(window: BrowserWindow, workspace: WorkspaceWire | null): void {
+  if (!window.isDestroyed()) {
+    window.setTitle(workspace === null ? 'Wirebench' : `${workspace.name} — Wirebench`);
   }
 }
 
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
 const globalProperties = new GlobalProperties(app.getPath('userData'));
 
-/**
- * The workspace cookie jars (cookie jar spec §2): saved encrypted with the keychain, or not at all.
- * Every change to the open workspace's jar reaches the renderer as `cookies.changed`.
- */
-const cookieStore = new CookieStore({
-  userDataDir: app.getPath('userData'),
-  crypto: safeStorageBackend(safeStorage),
-  onChanged: (state) => {
-    broadcast(events.cookies.changed, state);
-  },
-  warn: (message) => {
-    console.warn(`[cookies] ${message}`);
-  },
-});
-
-/** The session's current values (cookie jar spec §5): in memory per workspace, never written anywhere. */
-const currentValues = new CurrentValuesStore((state) => {
-  broadcast(events.currentValues.changed, state);
-});
+/** The calling window's cookie jar (cookie jar spec §2); each window's follows its own workspace. */
+const cookieStore = scoped(scopes, (scope) => scope.cookies);
+/** The calling window's current values (cookie jar spec §5). */
+const currentValues = scoped(scopes, (scope) => scope.currentValues);
 
 /** Persistent request history — one jsonl file per open project under `userData`, watched for other writers. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap, {
@@ -411,11 +427,6 @@ async function trashFolder(target: string): Promise<void> {
   await rename(target, join(e2eTrashDir, `${basename(target)}-${String(Date.now())}`));
 }
 
-/**
- * The open workspace and every project host inside it. It is also the `ProjectRouter` every
- * `register*Channels` call is handed, so a channel addressed at an entity reaches that entity's
- * own project rather than a single ambient one.
- */
 // `core.hooksPath` for every `GitCli.run` call points here: an empty, writable directory, so
 // a cloned or joined tree's own `.git/hooks` (or any hook a remote's push tries to install)
 // never runs. Created once in `whenReady`, before any workspace (and so any sync) can open.
@@ -438,132 +449,244 @@ const gitLocator = (): ReturnType<typeof findGit> =>
  */
 const WS_SESSION_RECORD_TIMEOUT_MS = 2_000;
 
-const workspaceService = new WorkspaceService({
-  userDataDir: app.getPath('userData'),
-  // Located afresh for each shared workspace that opens, so a git installed (or picked in
-  // Settings) since the last open is found without a restart.
-  git: async () => {
-    const location = await gitLocator();
-    return location === undefined ? undefined : new GitCli(location, { hooksDir });
-  },
-  hooksDir,
-  // A server share syncs through the same client and accounts as sign-in and the Team dialog; the
-  // accounts' `ready` and `onChange` gate and resume its polling (server-sync §3.4, §5.3), and the
-  // live clients turn a teammate's push or an access change into a fetch at once (live-updates §3.4).
-  server: { client: serverClient, accounts: accountService, live: liveClients },
-  engine: engineService,
-  globals: globalProperties,
-  secrets: secretStore,
-  teamSecrets,
-  preferences: preferencesService,
-  picks: dialogPicks,
-  issuedTokens: issuedTokensService.source,
-  history: historyService,
-  currentValues,
-  // A session's History entry is written by its own pending `request.openWs`, so a project (or a
-  // whole workspace) closing has to ask the sockets to close *and* wait for the entries before
-  // the history files go with it.
-  closeWsSessions: async (projectId) => {
-    const matches = projectId === undefined ? undefined : (id: string) => workspaceService.projectId(id) === projectId;
-    if (matches === undefined) {
-      exchanges.endWhere(() => true, 'websocket');
-      // The whole workspace is going: its REST checker worker goes with it (the next check starts one).
-      void engineService.disposeRestContractChecker().catch((error: unknown) => {
-        console.warn(
-          '[rest] ending the contract checker failed',
-          error instanceof Error ? error.message : String(error),
-        );
-      });
-    } else {
-      exchanges.endWhere(matches, 'websocket');
-    }
-    // An event stream open on a REST request is the same kind of thing: stopped here (with any other
-    // REST send of the project still in flight), and its History entry — written by its own pending
-    // `request.sendRest` — waited for alongside.
-    exchanges.endWhere(matches ?? (() => true), 'rest');
-    // Always awaited, never guarded by "did we just close anything": a session already asked to
-    // close is not closed again, yet its pending `request.openWs` may not have written the History
-    // entry. A session that closed a moment ago is therefore invisible here while its write is
-    // still in flight, and skipping the wait would race it against `history.close`.
-    // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
-    // Every other send through the engine — a resend, a sequence step, a multi-environment child —
-    // is waited for the same way.
-    await Promise.all([
-      whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
-      whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
-      exchanges.whenRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
-    ]);
-  },
-  trash: trashFolder,
-  // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
-  // file or OS setting — rather than a second, subtly different guess of our own.
-  resolveSystemProxy: async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
-  // Read lazily: the scan sessions are built below, against this very service.
-  secretScans: {
-    findings: (projectId): number => secretScans.findings(projectId),
-    onChange: (listener): (() => void) => secretScans.onChange(listener),
-  },
-  hooks: {
-    onChanged: (workspace) => {
-      broadcast(events.workspace.changed, { workspace });
-      applyWindowTitle(workspace);
-      void cookieStore.switchTo(workspace?.id ?? null).catch((error: unknown) => {
-        console.warn('[cookies] switching jars failed', error instanceof Error ? error.message : String(error));
-      });
-      currentValues.syncWorkspace(workspace);
-      secretSources.noteChange();
-    },
-    onDeleted: (workspaceId) => {
-      void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
-      currentValues.forgetWorkspace(workspaceId);
-    },
-    onProjectChanged: (projectId, project) => {
-      secretScans.projectChanged(projectId, project);
-      currentValues.syncProject(projectId, project);
-      broadcast(events.project.changed, { projectId, project });
-    },
-    onProjectChangedOnDisk: (projectId, paths) => {
-      broadcast(events.project.changedOnDisk, { projectId, paths: [...paths] });
-    },
-    onHydration: (projectId, event) => {
-      broadcast(events.project.hydration, { projectId, ...event });
-    },
-    onProgress: (progress) => {
-      broadcast(events.engine.progress, progress);
-    },
-    onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
-      broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
-    },
-    onSyncStatus: (workspaceId, status) => {
-      broadcast(events.sync.statusChanged, { workspaceId, status });
-    },
-    onSyncPulled: (event) => {
-      broadcast(events.sync.pulled, event);
-    },
-    onSyncConflict: (workspaceId, conflicts) => {
-      broadcast(events.sync.conflict, { workspaceId, conflicts: [...conflicts] });
-    },
-    onGitIdentityNeeded: (workspaceId) => {
-      broadcast(events.git.identityNeeded, { workspaceId });
-    },
-    onAuditTarget: (target, fetched) => {
-      auditReporter.setTarget(target);
-      // A fetch went through with this account's token: it is signed in, and the queue goes out now,
-      // at the pace of any back-off already under way.
-      if (target !== undefined && fetched) {
-        void auditReporter.afterFetch();
-      }
-    },
-  },
-});
-workspaceServiceRef.current = workspaceService;
+/** The calling window's team secrets, the store over them, and its secret sources and scans. */
+const teamSecrets = scoped(scopes, (scope) => scope.teamSecrets);
+const teamSecretStore = scoped(scopes, (scope) => scope.teamSecretStore);
+const secretSources = scoped(scopes, (scope) => scope.secretSources);
+const secretScans = scoped(scopes, (scope) => scope.secretScans);
 
-/** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */
-const secretScans: SecretScanSessions = new SecretScanSessions({
-  host: (projectId) => workspaceService.hostFor(projectId),
-  store: teamSecretStore,
-  holdAutosave: (projectId) => workspaceService.hostFor(projectId).holdAutosave(),
-});
+/** `workspace-state.json`, one queue for every window's workspace service. */
+const workspaceState = new WorkspaceState(app.getPath('userData'));
+
+/**
+ * Builds one window's own services (design D1), every callback aimed at that window alone: its
+ * workspace's events, cookies, current values, team secrets and title (design D3). `sweepJoining`:
+ * only the launch's first window empties `.joining/`.
+ */
+function createWindowScope(window: BrowserWindow, sweepJoining: boolean): WindowScope {
+  const target = window.webContents;
+  const send = <Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void => {
+    emitEvent(target, event, payload);
+  };
+  const picks = new DialogPicks(appPicks);
+  const teamSecrets = new TeamSecretsService({
+    store: secretStore,
+    onChanged: (workspaceId, status) => {
+      send(events.teamSecrets.changed, { workspaceId, status });
+    },
+    log: (message) => {
+      console.warn(message);
+    },
+  });
+  const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
+  // Saved encrypted with the keychain, or not at all; every change reaches the window as `cookies.changed`.
+  const cookies = new CookieStore({
+    userDataDir: app.getPath('userData'),
+    crypto: safeStorageBackend(safeStorage),
+    onChanged: (state) => {
+      send(events.cookies.changed, state);
+    },
+    warn: (message) => {
+      console.warn(`[cookies] ${message}`);
+    },
+  });
+  // In memory per workspace, never written anywhere.
+  const currentValues = new CurrentValuesStore((state) => {
+    send(events.currentValues.changed, state);
+  });
+  currentValues.syncGlobals(globalProperties.get());
+  const audit = new AuditReporter({
+    client: serverClient,
+    accounts: accountService,
+    now: () => new Date(),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (handle) => {
+      clearTimeout(handle as ReturnType<typeof setTimeout>);
+    },
+  });
+  // Both read the workspace service built below, only once something is asked of them.
+  const secretSources = new SecretSourcesService({
+    snapshot: () => workspace.secretSourcesSnapshot(),
+    cacheSeconds: () => preferencesService.get().secrets.sourceCacheSeconds,
+    onValue: recordSecretValue,
+    mask: redactSecretText,
+  });
+  const secretScans: SecretScanSessions = new SecretScanSessions({
+    host: (projectId) => workspace.hostFor(projectId),
+    store: teamSecretStore,
+    holdAutosave: (projectId) => workspace.hostFor(projectId).holdAutosave(),
+  });
+  const workspace: WorkspaceService = new WorkspaceService({
+    userDataDir: app.getPath('userData'),
+    state: workspaceState,
+    sweepJoining,
+    // One workspace, one window (design D5): the window holding it is brought forward instead.
+    heldElsewhere: (workspaceId) => {
+      const holder = scopes
+        .all()
+        .find((other) => other.window !== window && other.workspace.snapshot()?.id === workspaceId);
+      if (holder === undefined) {
+        return false;
+      }
+      if (!holder.window.isDestroyed()) {
+        if (holder.window.isMinimized()) {
+          holder.window.restore();
+        }
+        holder.window.focus();
+      }
+      return true;
+    },
+    // Located afresh for each shared workspace that opens, so a git installed (or picked in
+    // Settings) since the last open is found without a restart.
+    git: async () => {
+      const location = await gitLocator();
+      return location === undefined ? undefined : new GitCli(location, { hooksDir });
+    },
+    hooksDir,
+    // A server share syncs through the same client and accounts as sign-in and the Team dialog; the
+    // accounts' `ready` and `onChange` gate and resume its polling (server-sync §3.4, §5.3), and the
+    // live clients turn a teammate's push or an access change into a fetch at once (live-updates §3.4).
+    server: { client: serverClient, accounts: accountService, live: liveClients },
+    engine: engineService,
+    globals: globalProperties,
+    secrets: secretStore,
+    teamSecrets,
+    preferences: preferencesService,
+    picks,
+    issuedTokens: issuedTokensService.source,
+    history: historyService,
+    currentValues,
+    // A session's History entry is written by its own pending `request.openWs`, so a project (or a
+    // whole workspace) closing has to ask the sockets to close *and* wait for the entries before
+    // the history files go with it.
+    // Only this window's: another window's sockets and sends are none of this workspace's business.
+    closeWsSessions: async (projectId) => {
+      const matches =
+        projectId === undefined
+          ? (id: string) => workspace.projectId(id) !== undefined
+          : (id: string) => workspace.projectId(id) === projectId;
+      exchanges.endWhere(matches, 'websocket');
+      // The whole workspace is going and no other window has one open: the REST checker worker goes
+      // with it (the next check starts one).
+      if (
+        projectId === undefined &&
+        !scopes.all().some((other) => other.window !== window && other.workspace.snapshot() !== null)
+      ) {
+        void engineService.disposeRestContractChecker().catch((error: unknown) => {
+          console.warn(
+            '[rest] ending the contract checker failed',
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }
+      // An event stream open on a REST request is the same kind of thing: stopped here (with any other
+      // REST send of the project still in flight), and its History entry — written by its own pending
+      // `request.sendRest` — waited for alongside.
+      exchanges.endWhere(matches, 'rest');
+      // Always awaited, never guarded by "did we just close anything": a session already asked to
+      // close is not closed again, yet its pending `request.openWs` may not have written the History
+      // entry. A session that closed a moment ago is therefore invisible here while its write is
+      // still in flight, and skipping the wait would race it against `history.close`.
+      // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
+      // Every other send through the engine — a resend, a sequence step, a multi-environment child —
+      // is waited for the same way.
+      await Promise.all([
+        whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+        whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+        exchanges.whenRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+      ]);
+    },
+    trash: trashFolder,
+    // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
+    // file or OS setting — rather than a second, subtly different guess of our own.
+    resolveSystemProxy: async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
+    // Read lazily: the scan sessions are built against this very service.
+    secretScans: {
+      findings: (projectId): number => secretScans.findings(projectId),
+      onChange: (listener): (() => void) => secretScans.onChange(listener),
+    },
+    hooks: {
+      onChanged: (snapshot) => {
+        send(events.workspace.changed, { workspace: snapshot });
+        applyWindowTitle(window, snapshot);
+        void cookies.switchTo(snapshot?.id ?? null).catch((error: unknown) => {
+          console.warn('[cookies] switching jars failed', error instanceof Error ? error.message : String(error));
+        });
+        currentValues.syncWorkspace(snapshot);
+        secretSources.noteChange();
+      },
+      onDeleted: (workspaceId) => {
+        void cookies.deleteWorkspace(workspaceId).catch(() => undefined);
+        currentValues.forgetWorkspace(workspaceId);
+      },
+      onProjectChanged: (projectId, project) => {
+        secretScans.projectChanged(projectId, project);
+        currentValues.syncProject(projectId, project);
+        send(events.project.changed, { projectId, project });
+      },
+      onProjectChangedOnDisk: (projectId, paths) => {
+        send(events.project.changedOnDisk, { projectId, paths: [...paths] });
+      },
+      onHydration: (projectId, event) => {
+        send(events.project.hydration, { projectId, ...event });
+      },
+      onProgress: (progress) => {
+        send(events.engine.progress, progress);
+      },
+      onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
+        send(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
+      },
+      onSyncStatus: (workspaceId, status) => {
+        send(events.sync.statusChanged, { workspaceId, status });
+      },
+      onSyncPulled: (event) => {
+        send(events.sync.pulled, event);
+      },
+      onSyncConflict: (workspaceId, conflicts) => {
+        send(events.sync.conflict, { workspaceId, conflicts: [...conflicts] });
+      },
+      onGitIdentityNeeded: (workspaceId) => {
+        send(events.git.identityNeeded, { workspaceId });
+      },
+      onAuditTarget: (auditTarget, fetched) => {
+        audit.setTarget(auditTarget);
+        // A fetch went through with this account's token: it is signed in, and the queue goes out now,
+        // at the pace of any back-off already under way.
+        if (auditTarget !== undefined && fetched) {
+          void audit.afterFetch();
+        }
+      },
+    },
+  });
+  return {
+    window,
+    id: target.id,
+    picks,
+    cookies,
+    currentValues,
+    secretSources,
+    teamSecrets,
+    teamSecretStore,
+    secretScans,
+    audit,
+    workspace,
+    ready: Promise.resolve(),
+    auditSignedIn: false,
+    closing: undefined,
+  };
+}
+
+/** The window's account is signed in to the server its workspace reports audit events to. */
+function auditSignedInFor(
+  scope: WindowScope,
+  servers: readonly { readonly url: string; readonly signedOut?: boolean | undefined }[],
+): boolean {
+  const target = scope.workspace.auditTarget();
+  const origin = target === undefined ? undefined : sameOrigin(target.url);
+  return (
+    origin !== undefined && servers.some((account) => sameOrigin(account.url) === origin && account.signedOut !== true)
+  );
+}
 
 // The product name, set before `ready` so the macOS application menu (`role: 'appMenu'`) and
 // the About panel read "Wirebench" in development too. A packaged bundle already carries it as
@@ -587,8 +710,15 @@ void app.whenReady().then(() => {
   });
   setUpKerberos({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   registerKerberosChannels();
-  registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
-  // Every open project's folder: the containment roots a renderer-named import path may sit in.
+  registerAppChannels(
+    undefined,
+    async () => await updates.check({ trigger: 'user' }),
+    // New Window (design D7) opens at the picker.
+    () => {
+      openWindow({ reopenLast: false });
+    },
+  );
+  // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
     workspaceService
       .hosts()
@@ -606,7 +736,9 @@ void app.whenReady().then(() => {
     openApiDocumentFor: async (apiId) => await workspaceService.hostOfEntity(apiId).openApiDocumentFor(apiId),
     grpcProtoSetFor: async (apiId) => await workspaceService.grpcProtoSetFor(apiId),
     soapDefinitionFor: (interfaceId) => engineService.resultFor(interfaceId),
-    onValuesChanged: (projectId) => broadcast(events.script.valuesChanged, { projectId }),
+    onValuesChanged: (projectId) => {
+      emitToCaller(events.script.valuesChanged, { projectId });
+    },
   });
   scriptHost = scripts;
   registerScriptChannels(scripts);
@@ -624,9 +756,15 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
     cookies: () => cookieStore.host(),
     history: historyService,
-    onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
-    onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
-    onExchange: (entry) => broadcast(events.exchange.logged, { entry }),
+    onHistoryAppended: (entry) => {
+      emitToCaller(events.history.appended, { entry });
+    },
+    onSendFailed: (failure) => {
+      emitToCaller(events.exchange.failed, { failure });
+    },
+    onExchange: (entry) => {
+      emitToCaller(events.exchange.logged, { entry });
+    },
     preferences: preferencesService,
     dialogPicks,
     oauth2: oauth2Service,
@@ -636,11 +774,13 @@ void app.whenReady().then(() => {
     secretsFor,
     scripts,
     registry: exchanges,
-    // Queued to the open workspace's outbox; the reporter drops it unless the workspace records.
+    // Queued to the outbox of the window whose workspace it happened in; that reporter drops it unless
+    // the workspace records. A run that ends after its workspace closed is credited to no window.
     audit: (event, workspaceId) => {
-      void auditReporter.enqueue(event, workspaceId);
+      const scope = scopes.all().find((candidate) => candidate.audit.workspaceId === workspaceId);
+      void scope?.audit.enqueue(event, workspaceId);
     },
-    auditWorkspace: () => auditReporter.workspaceId,
+    auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
   };
   registerRequestChannels(engineService, requestDeps);
   // A sequence's steps go through the engine as a single send does, with the same dependencies.
@@ -648,8 +788,12 @@ void app.whenReady().then(() => {
     service: engineService,
     requests: requestDeps,
     modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
-    emit: (event) => broadcast(events.sequence.progress, event),
-    emitWaiting: (event) => broadcast(events.sequence.waiting, event),
+    emit: (event) => {
+      emitToCaller(events.sequence.progress, event);
+    },
+    emitWaiting: (event) => {
+      emitToCaller(events.sequence.waiting, event);
+    },
     // Read per run: the workspace, its link and the account can all change between runs.
     captures: () =>
       desktopCaptureSource(
@@ -676,18 +820,15 @@ void app.whenReady().then(() => {
   registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
-  // Signing in to the open workspace's server sends what its audit outbox kept while signed out.
-  let auditSignedIn = false;
+  // Signing in to a window's workspace's server sends what its audit outbox kept while signed out.
   accountService.onChange((servers) => {
-    const target = workspaceService.auditTarget();
-    const origin = target === undefined ? undefined : sameOrigin(target.url);
-    const signedIn =
-      origin !== undefined &&
-      servers.some((account) => sameOrigin(account.url) === origin && account.signedOut !== true);
-    if (signedIn && !auditSignedIn) {
-      void auditReporter.onSignedIn();
+    for (const scope of scopes.all()) {
+      const signedIn = auditSignedInFor(scope, servers);
+      if (signedIn && !scope.auditSignedIn) {
+        void scope.audit.onSignedIn();
+      }
+      scope.auditSignedIn = signedIn;
     }
-    auditSignedIn = signedIn;
   });
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed
   // shows as signed out now rather than on the first action; no account, no call (§3.8).
@@ -702,6 +843,15 @@ void app.whenReady().then(() => {
   registerHistoryChannels(historyService, {
     project: workspaceService,
     send: toSendDeps(engineService, requestDeps),
+    // One window's History is its own workspace's projects (another window may have others open).
+    projectIds: () =>
+      scopes
+        .callerOrOnly()
+        ?.workspace.hosts()
+        .flatMap((host) => {
+          const id = host.snapshot()?.id;
+          return id === undefined ? [] : [id];
+        }),
   });
   registerProjectChannels({
     router: workspaceService,
@@ -715,10 +865,12 @@ void app.whenReady().then(() => {
     picks: dialogPicks,
     ensureWorkspaceEnvironments: async (names) => await workspaceService.ensureEnvironments(names),
   });
-  /** A Globals change, told to every window and to the current-values overlay. */
+  /** A Globals change, told to every window and to every window's current-values overlay. */
   const onGlobalsChanged = (state: ReturnType<GlobalProperties['get']>): void => {
     broadcast(events.globals.changed, state);
-    currentValues.syncGlobals(state);
+    for (const scope of scopes.all()) {
+      scope.currentValues.syncGlobals(state);
+    }
   };
   registerApiChannels({
     router: workspaceService,
@@ -798,18 +950,11 @@ void app.whenReady().then(() => {
       secrets: teamSecretStore,
     }),
   });
-  // The launch-time reopen of the last workspace. It waits for preferences (every host folds
-  // them into its send defaults, and a workspace opened before the load would hold the
-  // defaults), and a workspace that will not open is not an error the app dies of: the picker
-  // shows `lastError()`. `workspace.snapshot`/`list` wait on it, so the renderer's first answer
-  // is already the reopened workspace (or the picker with its error), never a flash of both.
-  const startup = preferencesService.ready().then(async () => {
-    await workspaceService.openLast().catch(() => null);
-  });
   registerWorkspaceChannels({
     service: workspaceService,
     suggestions: async () => await readLeftoverProjectFolders(app.getPath('userData')),
-    ready: () => startup,
+    // The calling window's reopen of the last workspace (see `openWindow`).
+    ready: () => scopes.callerOrOnly()?.ready ?? Promise.resolve(),
     reveal: (dir) => {
       shell.showItemInFolder(dir);
     },
@@ -822,21 +967,24 @@ void app.whenReady().then(() => {
     // Turning autosave on mid-session must pick up whatever is already outstanding, rather than
     // waiting for one more edit to arm the timer.
     if (preferences.editor.autosave) {
-      for (const host of workspaceService.hosts()) {
-        host.onAutosaveEnabled();
+      for (const scope of scopes.all()) {
+        for (const host of scope.workspace.hosts()) {
+          host.onAutosaveEnabled();
+        }
       }
     }
   });
+  // Settings picks are the app's: preferences apply to every window (design D4).
   registerSslChannels({
     preferences: preferencesService,
-    picks: dialogPicks,
+    picks: appPicks,
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
     },
   });
   registerGitChannels({
     preferences: preferencesService,
-    picks: dialogPicks,
+    picks: appPicks,
     // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
     // `git.path`, then discovery) — no configured-path logic of its own, so a marked preference
     // can never bypass the e2e "no git" override. `git.locate` keeps probing the picked file
@@ -926,7 +1074,9 @@ void app.whenReady().then(() => {
     (state) => {
       broadcast(events.globals.changed, state);
       // The committed globals a global current value needs, once the file has been read.
-      currentValues.syncGlobals(state);
+      for (const scope of scopes.all()) {
+        scope.currentValues.syncGlobals(state);
+      }
     },
     (error: unknown) => {
       // A globals file this build refuses (one stamped with a newer format version) must not
@@ -942,9 +1092,9 @@ void app.whenReady().then(() => {
     // and only one carrying the `caBundlePickedByMain` marker, so a hand-edited preferences
     // file cannot smuggle a path into the read-pick set. It has to happen after the load
     // resolves: before it, the in-memory document is still the defaults.
-    rememberPickedCaBundle(preferences, dialogPicks);
+    rememberPickedCaBundle(preferences, appPicks);
     // Same evidence, same reason, for a git executable main itself picked (`git.pathPickedByMain`).
-    rememberPickedGit(preferences, dialogPicks);
+    rememberPickedGit(preferences, appPicks);
     const policy = preferencesService.policy();
     if (policy.error !== undefined) {
       console.error(`Managed-preferences policy ${policy.path} not applied: ${policy.error}`);
@@ -954,26 +1104,96 @@ void app.whenReady().then(() => {
     }
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
-  createMainWindow();
-  applyWindowTitle(workspaceService.snapshot());
+  const first = openWindow({ reopenLast: true });
 
   // Opt-in, and only after the preferences are actually loaded — the default is off, so a
   // check that ran before the load would read "off" for every user who turned it on.
-  void startup.then(async () => {
+  void first.ready.then(async () => {
     await updates.checkOnLaunch(() => preferencesService.get().updates.checkOnLaunch);
   });
 
+  // The first window after every one closed (macOS) picks up where the last left off, as at launch.
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      openWindow({ reopenLast: true });
     }
   });
 });
 
+/** Set once the app's quit path ran: the windows then close without each running its own again. */
+let quitting = false;
+/** Whether a window has been opened this launch; only the first sweeps `.joining/`. */
+let openedOne = false;
+
+/**
+ * Opens a window with its own services (design D1, D6). `reopenLast` reopens the last workspace, as
+ * the launch's first window does; New Window opens at the picker. Closing the window runs the quit
+ * path for it alone before it goes.
+ */
+function openWindow(options: { readonly reopenLast: boolean }): WindowScope {
+  const window = createMainWindow();
+  const scope = createWindowScope(window, !openedOne);
+  openedOne = true;
+  scopes.add(scope.id, scope);
+  if (options.reopenLast) {
+    // It waits for preferences (every host folds them into its send defaults, and a workspace
+    // opened before the load would hold the defaults), and a workspace that will not open is not
+    // an error the app dies of: the picker shows `lastError()`. `workspace.snapshot`/`list` wait on
+    // it, so the renderer's first answer is already the reopened workspace (or the picker with its
+    // error), never a flash of both.
+    scope.ready = preferencesService.ready().then(async () => {
+      await scope.workspace.openLast().catch(() => null);
+    });
+  }
+  applyWindowTitle(window, null);
+  window.on('close', (event) => {
+    if (quitting) {
+      return;
+    }
+    // The window stays until its workspace has kept what is unsaved; a second close waits too.
+    event.preventDefault();
+    void closeWindowScope(scope).finally(() => {
+      if (!window.isDestroyed()) {
+        window.destroy();
+      }
+    });
+  });
+  window.on('closed', () => {
+    scopes.remove(scope.id);
+  });
+  return scope;
+}
+
+/**
+ * The quit path for one window (design D6): it hands over its staged request edits (briefly — a hung
+ * window cannot hold the close), then its workspace closes, recording every open project's unsaved
+ * state, and its cookie jar and audit reporter wind down. Runs once per window.
+ */
+function closeWindowScope(scope: WindowScope): Promise<void> {
+  scope.closing ??= (async () => {
+    if (!scope.window.isDestroyed()) {
+      const stashed = scope.workspace.nextDraftsStash(QUIT_DRAFTS_TIMEOUT_MS);
+      emitEvent(scope.window.webContents, events.workspace.flushDrafts, {});
+      await stashed.catch(() => undefined);
+    }
+    // Its timers must not hold up the close; what is queued stays in the outbox for the next open.
+    scope.audit.dispose();
+    try {
+      await scope.workspace.close();
+    } finally {
+      // Cookies with an expiry still waiting on the debounce are written before the window goes,
+      // even when closing the workspace failed.
+      await scope.cookies.flush().catch(() => undefined);
+      scope.cookies.dispose();
+      scope.workspace.dispose();
+    }
+  })().catch(() => undefined);
+  return scope.closing;
+}
+
 // Quitting writes nothing to a project. Unsaved changes are kept with the workspace instead
-// and come back, still unsaved, the next time it opens (`unsaved-store.ts`): the window is asked
-// to hand over its staged request edits first (briefly — a hung window cannot hold the quit),
-// then the workspace closes, recording every open project's unsaved state.
+// and come back, still unsaved, the next time it opens (`unsaved-store.ts`): every window runs its
+// own quit path (`closeWindowScope`) at once, then the app goes.
 const QUIT_DRAFTS_TIMEOUT_MS = 2_000;
 let quitStashDone = false;
 app.on('before-quit', (event) => {
@@ -981,14 +1201,10 @@ app.on('before-quit', (event) => {
     return;
   }
   event.preventDefault();
-  const windowOpen = BrowserWindow.getAllWindows().some((window) => !window.isDestroyed());
-  const stashed = windowOpen ? workspaceService.nextDraftsStash(QUIT_DRAFTS_TIMEOUT_MS) : Promise.resolve();
-  if (windowOpen) {
-    broadcast(events.workspace.flushDrafts, {});
-  }
+  quitting = true;
   // Asked to close here so the sockets are already closing while the drafts are stashed; the
   // *waiting* — for each session's History entry, written by its own pending `request.openWs` —
-  // happens inside `workspaceService.close()` below, which owns the history files. Guarded: a
+  // happens inside each workspace's `close()`, which owns the history files. Guarded: a
   // failure to close a socket must never be the reason the app fails to quit.
   try {
     exchanges.endWhere(() => true, 'websocket');
@@ -997,8 +1213,6 @@ app.on('before-quit', (event) => {
   }
   // The catch URL views and their subscriptions go first; nothing of them outlives the process.
   hooksService.dispose();
-  // Its timers must not hold up the quit; what is queued stays in the outbox for the next launch.
-  auditReporter.dispose();
   // The live sockets close 1000, so the server drops this device from presence now rather than at
   // its next heartbeat (live-updates §3.4). Not awaited: a socket that will not close must never
   // hold up the quit.
@@ -1027,17 +1241,7 @@ app.on('before-quit', (event) => {
       error instanceof Error ? error.message : String(error),
     );
   });
-  void stashed
-    .then(async () => {
-      try {
-        await workspaceService.close();
-      } finally {
-        // Cookies with an expiry still waiting on the debounce are written before the app goes,
-        // even when closing the workspace failed.
-        await cookieStore.flush().catch(() => undefined);
-        cookieStore.dispose();
-      }
-    })
+  void Promise.all(scopes.all().map(async (scope) => await closeWindowScope(scope)))
     .catch(() => undefined)
     .finally(() => {
       quitStashDone = true;

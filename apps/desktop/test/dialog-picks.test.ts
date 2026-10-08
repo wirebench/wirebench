@@ -39,4 +39,20 @@ describe('DialogPicks', () => {
     picks.rememberRead('/a/./b/../b/logo.png');
     expect(picks.hasRead('/a/b/logo.png')).toBe(true);
   });
+
+  it("a window sees the app-wide picks, but not another window's", () => {
+    const app = new DialogPicks();
+    const first = new DialogPicks(app);
+    const second = new DialogPicks(app);
+    app.rememberRead('/etc/ca.pem');
+    first.rememberRead('/tmp/attach.png');
+    first.rememberWrite('/tmp/dump.xml');
+
+    expect(first.hasRead('/etc/ca.pem')).toBe(true);
+    expect(second.hasRead('/etc/ca.pem')).toBe(true);
+    expect(second.hasRead('/tmp/attach.png')).toBe(false);
+    expect(second.hasWrite('/tmp/dump.xml')).toBe(false);
+    // A window's own pick never reaches the app set.
+    expect(app.hasRead('/tmp/attach.png')).toBe(false);
+  });
 });
