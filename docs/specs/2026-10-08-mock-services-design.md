@@ -573,8 +573,9 @@ A mock adds the first listening socket to the engine, and three kinds of untrust
 
 ## Follow-ups (issues to open)
 
-- Lifecycle scripts (start, stop, on-request and after-request) under ADR-0016.
-- Response templating from request values, under ADR-0015's rules turned around.
-- Serving the OpenAPI document from a REST mock.
-- Validating stub responses against the contract, as a lint in the mock tab.
-- HTTPS mocks.
+- Lifecycle scripts (start, stop, on-request and after-request) under ADR-0016 (#322).
+- Response templating from request values, under ADR-0015's rules turned around (#323).
+- Serving the OpenAPI document from a REST mock (#324).
+- Validating stub responses against the contract, as a lint in the mock tab (#325).
+- HTTPS mocks (#326).
+- Generated REST response stubs keep `readOnly` properties (#327).
