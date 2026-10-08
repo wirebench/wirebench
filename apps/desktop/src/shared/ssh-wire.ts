@@ -110,3 +110,40 @@ export const sshSecretNamesResponseSchema = z.object({ names: z.array(sshSecretN
 /** A write-only value for a workspace-scoped name; the value never comes back. */
 export const sshSetSecretRequestSchema = z.strictObject({ name: z.string(), value: z.string() });
 export type SshSecretNameWire = z.infer<typeof sshSecretNameSchema>;
+
+/** Opens a shell on a host; the answer is the session id the terminal addresses from then on. */
+export const sshConnectRequestSchema = z.strictObject({
+  hostId: z.string(),
+  cols: z.number().int().positive(),
+  rows: z.number().int().positive(),
+});
+export const sshConnectResponseSchema = z.object({ sessionId: z.string() });
+/** `data` is base64: terminal bytes are not always valid UTF-8. */
+export const sshWriteRequestSchema = z.strictObject({ sessionId: z.string(), data: z.string() });
+export const sshResizeRequestSchema = z.strictObject({
+  sessionId: z.string(),
+  cols: z.number().int().positive(),
+  rows: z.number().int().positive(),
+});
+export const sshCloseRequestSchema = z.strictObject({ sessionId: z.string() });
+/** Records a host key after the user's click; `replace` is a second, separate confirmation for a changed key. */
+export const sshTrustRequestSchema = z.strictObject({
+  host: z.string(),
+  keyType: z.string(),
+  fingerprint: z.string(),
+  replace: z.boolean().default(false),
+});
+
+export const sshDataEventSchema = z.object({ sessionId: z.string(), data: z.string() });
+export const sshExitEventSchema = z.object({
+  sessionId: z.string(),
+  code: z.number().nullable(),
+  signal: z.string().optional(),
+});
+export const sshStateEventSchema = z.object({ sessionId: z.string(), state: z.enum(['open', 'closed']) });
+
+export type SshConnectRequest = z.infer<typeof sshConnectRequestSchema>;
+export type SshWriteRequest = z.infer<typeof sshWriteRequestSchema>;
+export type SshResizeRequest = z.infer<typeof sshResizeRequestSchema>;
+export type SshCloseRequest = z.infer<typeof sshCloseRequestSchema>;
+export type SshTrustRequest = z.infer<typeof sshTrustRequestSchema>;

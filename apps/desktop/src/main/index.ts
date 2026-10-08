@@ -43,6 +43,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { enabledAreasFromEnv, registerEnabledAreaChannels } from './areas.js';
 import { HostsService } from './hosts-service.js';
+import { SshService } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
@@ -181,7 +182,7 @@ const secretsFor = (projectId: string | undefined) =>
  * The getter for the SSH area, composed as {@link secretsFor} is but reading the open workspace's scoped
  * entries (`wirebench-secret:workspace:<id>:<name>`) instead of a project's. Bound to the workspace open at call time.
  */
-export const sshSecretsFor = () =>
+const sshSecretsFor = () =>
   secretSources.wrap(
     teamSecretGetter(
       workspaceSecretGetter(secretStore, workspaceServiceRef.current?.openWorkspaceId(), recordSecretValue),
@@ -532,6 +533,8 @@ const workspaceService = new WorkspaceService({
       currentValues.syncWorkspace(workspace);
       secretSources.noteChange();
       hostsService.invalidate();
+      // A session belongs to the workspace it was opened in; its credentials were that workspace's.
+      sshService.disposeAll();
     },
     onDeleted: (workspaceId) => {
       void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
@@ -596,6 +599,15 @@ const hostsService = new HostsService({
   },
 });
 workspaceServiceRef.current = workspaceService;
+
+/** The SSH sessions, each owned by the window that opened it; secrets resolve at connect, for the open workspace. */
+const sshService = new SshService({
+  hosts: hostsService,
+  secretsFor: () => sshSecretsFor(),
+  knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
+  agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
+  emit: emitEvent,
+});
 
 /** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */
 const secretScans: SecretScanSessions = new SecretScanSessions({
@@ -955,8 +967,7 @@ void app.whenReady().then(() => {
   registerKeystoreChannels({ project: workspaceService, picks: dialogPicks });
   registerWsaChannels({ project: workspaceService });
   registerWssChannels({ project: workspaceService });
-  // Sessions arrive with the SSH session service; until then the area has its hosts file only.
-  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, secrets: sshSecrets, ssh: {} });
+  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, secrets: sshSecrets, ssh: sshService });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
@@ -1030,6 +1041,8 @@ app.on('before-quit', (event) => {
   }
   // The catch URL views and their subscriptions go first; nothing of them outlives the process.
   hooksService.dispose();
+  // SSH sessions end with the app; closing never throws or waits.
+  sshService.disposeAll();
   // Its timers must not hold up the quit; what is queued stays in the outbox for the next launch.
   auditReporter.dispose();
   // The live sockets close 1000, so the server drops this device from presence now rather than at

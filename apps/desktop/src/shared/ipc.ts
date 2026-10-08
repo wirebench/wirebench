@@ -1,9 +1,18 @@
 import { z } from 'zod';
 import {
+  sshCloseRequestSchema,
+  sshConnectRequestSchema,
+  sshConnectResponseSchema,
+  sshDataEventSchema,
+  sshExitEventSchema,
   sshListHostsResponseSchema,
+  sshResizeRequestSchema,
   sshSaveHostsRequestSchema,
   sshSecretNamesResponseSchema,
   sshSetSecretRequestSchema,
+  sshStateEventSchema,
+  sshTrustRequestSchema,
+  sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
   ciTokenCreateRequestWireSchema,
@@ -1190,6 +1199,11 @@ export const channels = {
     saveHosts: defineChannel('ssh.saveHosts', sshSaveHostsRequestSchema, sshListHostsResponseSchema),
     secretNames: defineChannel('ssh.secretNames', z.undefined(), sshSecretNamesResponseSchema),
     setSecret: defineChannel('ssh.setSecret', sshSetSecretRequestSchema, z.object({})),
+    connect: defineChannel('ssh.connect', sshConnectRequestSchema, sshConnectResponseSchema),
+    write: defineChannel('ssh.write', sshWriteRequestSchema, z.object({})),
+    resize: defineChannel('ssh.resize', sshResizeRequestSchema, z.object({})),
+    close: defineChannel('ssh.close', sshCloseRequestSchema, z.object({})),
+    trustHostKey: defineChannel('ssh.trustHostKey', sshTrustRequestSchema, z.object({})),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),
@@ -1229,6 +1243,11 @@ export const events = {
   ssh: {
     /** `hosts.yaml` was written: a view re-lists. */
     hostsChanged: defineEvent('ssh.hostsChanged', z.object({})),
+    /** Terminal output (stdout and stderr), base64, to the window that opened the session only. */
+    data: defineEvent('ssh.data', sshDataEventSchema),
+    /** The remote shell ended; the session id is gone. */
+    exit: defineEvent('ssh.exit', sshExitEventSchema),
+    state: defineEvent('ssh.state', sshStateEventSchema),
   },
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),

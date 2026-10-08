@@ -108,7 +108,7 @@ function authToWire(auth: SshAuth | undefined): SshAuthWire | undefined {
   };
 }
 /** `SshModelError` is not a `WirebenchError`; without this it would cross IPC as `internal-error`. */
-function asWirebenchError(error: unknown): unknown {
+export function asWirebenchError(error: unknown): unknown {
   return error instanceof SshModelError
     ? new WirebenchError(error.code, error.message, { details: error.details })
     : error;
