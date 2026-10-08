@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
   existing client, the report is written as Markdown, HTML or JSON, and the exit code fails a CI job
   on a breaking change. Either side can be a file, a URL, or the project's cached definition
   (`project:<name>`) (#56).
+- **JSON Schemas for project files.** Every kind of YAML file in a project folder has a published JSON
+  Schema, generated from the schemas Wirebench reads the files with, so an editor can validate a project
+  as you type. They are served from the documentation site, one folder per project format version, and
+  attached to each release. The project-format reference shows the editor settings (#66).
 
 ## [4.0.0] - 2026-10-08
 
