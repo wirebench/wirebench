@@ -87,6 +87,27 @@ describe('ImportCurlDialog', () => {
     expect(preview.textContent).not.toContain('Basic');
   });
 
+  it('notes that a --negotiate account needs a password on Windows and is refused elsewhere', async () => {
+    installWirebenchApi();
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={{ kind: 'rest', apiId: 'api-1' }} />);
+
+    await userEvent.click(screen.getByLabelText('cURL command'));
+    await userEvent.paste("curl --negotiate -u 'ada:' https://api.test/pets");
+
+    const note = screen.getByTestId('import-curl-negotiate-note');
+    expect(note.textContent).toContain('needs a password on Windows');
+    expect(note.textContent).toContain('refused on macOS and Linux');
+  });
+
+  it('shows no Kerberos account note without a user or without --negotiate', async () => {
+    installWirebenchApi();
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={{ kind: 'rest', apiId: 'api-1' }} />);
+
+    await userEvent.click(screen.getByLabelText('cURL command'));
+    await userEvent.paste('curl --negotiate https://api.test/pets');
+    expect(screen.queryByTestId('import-curl-negotiate-note')).toBeNull();
+  });
+
   it('imports through request.importCurl and opens the new request', async () => {
     const importCurl = vi.fn().mockResolvedValue({ ok: true, value: { requestId: 'req-2', problems: [] } });
     const snapshot = vi.fn().mockResolvedValue({ ok: true, value: { project: null } });

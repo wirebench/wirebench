@@ -93,6 +93,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Import cURL warns about a `--negotiate` account with no password.** The preview now notes that the
+  Kerberos account needs a password on Windows and is refused on macOS and Linux until you use **Clear
+  account** (#272).
 - **Update Definition from another host** no longer reuses the interface's Kerberos SPN or Basic credentials: a URL on a different origin is fetched with the SPN defaulted to that host, and without the interface's username and password (#271).
 - **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
   by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
