@@ -330,6 +330,59 @@ describe('WorkspaceService lifecycle', () => {
   });
 });
 
+describe('WorkspaceService across windows', () => {
+  it('refuses to open, rename or delete a workspace another window holds', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Held');
+    await bootstrap.close();
+    const service = newService({ heldElsewhere: (id) => id === created.id, trash: () => Promise.resolve() });
+
+    await expect(service.open(created.id)).rejects.toMatchObject({ code: 'workspace-open-elsewhere' });
+    await expect(service.rename(created.id, 'Renamed')).rejects.toMatchObject({ code: 'workspace-open-elsewhere' });
+    await expect(service.delete(created.id)).rejects.toMatchObject({ code: 'workspace-open-elsewhere' });
+    expect(service.snapshot()).toBeNull();
+    expect((await service.list()).map((summary) => summary.name)).toEqual(['Held']);
+  });
+
+  it("closing one window's workspace keeps a project the other window has open in History", async () => {
+    const bootstrap = newService();
+    const first = await bootstrap.create('First');
+    const second = await bootstrap.create('Second');
+    await bootstrap.close();
+    const shared = await seedProject(workspaceDir(root, first.id), 'shared', 'Shared');
+    await registerProjects(workspaceDir(root, first.id), [shared]);
+    // The same project folder linked into a second workspace.
+    await registerProjects(workspaceDir(root, second.id), [
+      {
+        id: shared.id,
+        slug: 'shared',
+        source: 'linked',
+        path: workspaceProjectDir(workspaceDir(root, first.id), 'shared'),
+      },
+    ]);
+
+    const history = new HistoryService(root);
+    const one = newService({ history, sweepJoining: false });
+    const two = newService({ history, sweepJoining: false });
+    await one.open(first.id);
+    await two.open(second.id);
+    expect(history.openProjectIds()).toEqual([shared.id]);
+
+    await one.close();
+    expect(history.openProjectIds()).toEqual([shared.id]);
+    await two.close();
+    expect(history.openProjectIds()).toEqual([]);
+  }, 60_000);
+
+  it('only the service told to sweeps `.joining/`', async () => {
+    const joining = join(root, 'workspaces', '.joining');
+    await mkdir(join(joining, 'half-made'), { recursive: true });
+    const later = newService({ sweepJoining: false });
+    await later.list();
+    expect(existsSync(join(joining, 'half-made'))).toBe(true);
+  });
+});
+
 describe('WorkspaceService manifest operations', () => {
   it('renames the open workspace and a closed one', async () => {
     const service = newService();

@@ -35,6 +35,11 @@ export interface HistoryChannelDeps {
    * it a re-send is refused as `history-resend-unsupported`.
    */
   readonly send?: SendThroughEngineDeps;
+  /**
+   * The caller's window's open projects: a list or clear that names no project covers these only, so
+   * one window's History never shows or empties another's. Absent, every open file.
+   */
+  readonly projectIds?: () => readonly string[];
 }
 
 /** Refuses a re-send when there is no engine send to put it through (a test that registers none). */
@@ -397,14 +402,18 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
         ...(request.query !== undefined ? { query: request.query } : {}),
         limit: request.limit ?? 200,
         ...(request.before !== undefined ? { before: request.before } : {}),
-        ...(request.projectId !== undefined ? { projectId: request.projectId } : {}),
+        ...(request.projectId !== undefined
+          ? { projectId: request.projectId }
+          : deps.projectIds !== undefined
+            ? { projectIds: deps.projectIds() }
+            : {}),
       }),
     ),
   );
 
   registerHandler(channels.history.get, (request) => Promise.resolve({ entry: history.get(request.id) }));
 
-  registerHandler(channels.history.clear, async () => ({ cleared: await history.clear() }));
+  registerHandler(channels.history.clear, async () => ({ cleared: await history.clear(deps.projectIds?.()) }));
 
   registerHandler(channels.history.resend, (request) => {
     const entry = history.get(request.id);
