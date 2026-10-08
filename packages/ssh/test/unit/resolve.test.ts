@@ -1,4 +1,3 @@
-// packages/ssh/test/unit/resolve.test.ts
 import { describe, expect, it } from 'vitest';
 import { jumpChain, listResolvedHosts, parseHostsFile, resolveHost } from '../../src/index.js';
 

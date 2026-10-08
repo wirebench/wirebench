@@ -1,4 +1,4 @@
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml, YAMLParseError } from 'yaml';
 import { z } from 'zod';
 import { SshModelError } from './errors.js';
 import { resolveSettings } from './resolve.js';
@@ -105,8 +105,24 @@ function findLiteralSecret(issues: readonly IssueLike[], prefix: readonly Proper
   return undefined;
 }
 
+/** Never forwards the library's message: it quotes the offending source line, which may hold a credential. */
+function readYaml(text: string): unknown {
+  try {
+    return parseYaml(text);
+  } catch (error) {
+    if (!(error instanceof YAMLParseError)) throw error;
+    const line = error.linePos?.[0]?.line;
+    const column = error.linePos?.[0]?.col;
+    const where = line === undefined ? '' : ` at line ${line}, column ${column ?? 1}`;
+    throw new SshModelError('ssh-hosts-invalid', `hosts.yaml: YAML syntax error${where}`, {
+      ...(line === undefined ? {} : { line, column: column ?? 1 }),
+    });
+  }
+}
+
 export function parseHostsFile(text: string): HostsFile {
-  const raw: unknown = text.trim() === '' ? { version: 1 } : parseYaml(text);
+  const document = readYaml(text);
+  const raw: unknown = document === null || document === undefined ? { version: 1 } : document;
   const parsed = fileSchema.safeParse(raw);
   if (!parsed.success) {
     const literal = findLiteralSecret(parsed.error.issues);

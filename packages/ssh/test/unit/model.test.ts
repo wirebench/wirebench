@@ -1,6 +1,5 @@
-// packages/ssh/test/unit/model.test.ts
 import { describe, expect, it } from 'vitest';
-import { EMPTY_HOSTS_FILE, parseHostsFile, serializeHostsFile, SshModelError } from '../../src/index.js';
+import { EMPTY_HOSTS_FILE, parseHostsFile, secretNameOf, serializeHostsFile, SshModelError } from '../../src/index.js';
 
 const SAMPLE = `
 version: 1
@@ -106,5 +105,54 @@ describe('parseHostsFile', () => {
   it('round-trips through serializeHostsFile', () => {
     const file = parseHostsFile(SAMPLE);
     expect(parseHostsFile(serializeHostsFile(file))).toEqual(file);
+  });
+  it('a comments-only file is the empty file', () => {
+    expect(parseHostsFile('# nothing yet\n')).toEqual(EMPTY_HOSTS_FILE);
+  });
+  it('refuses a literal key, passphrase, and one inside a group', () => {
+    expectCode(
+      () => parseHostsFile(`version: 1\nhosts:\n  - { id: a, name: a, address: a, ssh: { auth: { key: hunter2 } } }\n`),
+      'ssh-literal-secret',
+    );
+    const e = expectCode(
+      () =>
+        parseHostsFile(
+          `version: 1\nhosts:\n  - { id: a, name: a, address: a, ssh: { auth: { key: '\${secret:k}', passphrase: hunter2 } } }\n`,
+        ),
+      'ssh-literal-secret',
+    );
+    expect(e.details).toMatchObject({ path: 'hosts[0].ssh.auth.passphrase' });
+    const g = expectCode(
+      () => parseHostsFile(`version: 1\ngroups:\n  - { id: g, name: g, ssh: { auth: { key: hunter2 } } }\n`),
+      'ssh-literal-secret',
+    );
+    expect(g.details).toMatchObject({ path: 'groups[0].ssh.auth.key' });
+    expect(g.message).not.toContain('hunter2');
+  });
+  it('malformed YAML is reported without echoing the source', () => {
+    const e = expectCode(
+      () => parseHostsFile(`version: 1\npassword: hunter2\n  bad: [unclosed\n`),
+      'ssh-hosts-invalid',
+    );
+    expect(e.message).toMatch(/YAML syntax error/);
+    expect(e.message).not.toContain('hunter2');
+    expect(JSON.stringify(e.details)).not.toContain('hunter2');
+  });
+  it('round-trips passphrase, keepAlive and connectTimeout', () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - id: a\n    name: a\n    address: a\n    ssh: { auth: { key: '\${secret:k}', passphrase: '\${secret:p}' }, keepAlive: 30, connectTimeout: 5 }\n`,
+    );
+    expect(file.hosts[0]?.ssh).toMatchObject({ keepAlive: 30, connectTimeout: 5 });
+    expect(parseHostsFile(serializeHostsFile(file))).toEqual(file);
+  });
+});
+
+describe('secretNameOf', () => {
+  it('returns the name of a token', () => {
+    expect(secretNameOf('${secret:prod_key}')).toBe('prod_key');
+  });
+  it('refuses anything else', () => {
+    expectCode(() => secretNameOf('hunter2'), 'ssh-literal-secret');
+    expectCode(() => secretNameOf('${secret:1bad}'), 'ssh-literal-secret');
   });
 });

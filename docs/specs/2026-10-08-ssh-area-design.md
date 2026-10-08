@@ -236,8 +236,8 @@ its only consumer). It holds:
   with `check(entry) → 'known' | 'new' | 'changed'`. Persistence is the caller's (D4); the package only
   serialises to and from JSON.
 
-`ssh2` is pure JavaScript; it brings no native build step, so the packaging traps recorded for Kerberos
-(ADR-0019) do not apply. Its optional `cpu-features` native helper is left uninstalled.
+`ssh2` ships an optional native binding (and an optional `cpu-features` helper) that the repo never builds;
+ssh2 falls back to its pure-JS ciphers, so the Kerberos packaging traps (ADR-0019) do not apply.
 
 ### D4. Main process: `ssh-service.ts` and channels
 

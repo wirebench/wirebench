@@ -32,6 +32,9 @@ files:
   # happened to be installed on the runner, in the wrong architecture for half the builds. The app
   # loads the vendored copy under `Resources/kerberos/` and never this one.
   - '!**/node_modules/kerberos/**'
+  # ssh2's optional native cipher binding is never built; ssh2 falls back to its pure-JS ciphers.
+  - '!**/node_modules/ssh2/lib/protocol/crypto/build/**'
+  - '!**/node_modules/cpu-features/**'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve
