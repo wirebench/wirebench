@@ -224,3 +224,38 @@ export function moveHost(file: HostsFileWire, id: string, toGroupId: string | un
   const host = findHost(file, id);
   return host === undefined ? file : putHost(withoutHost(file, id), host, toGroupId);
 }
+
+/** Every host and group id in the file. */
+export function allIds(file: HostsFileWire): Set<string> {
+  const ids = new Set<string>();
+  const walk = (groups: readonly GroupEntryWire[], hosts: readonly HostEntryWire[]): void => {
+    for (const h of hosts) ids.add(h.id);
+    for (const g of groups) {
+      ids.add(g.id);
+      walk(g.groups, g.hosts);
+    }
+  };
+  walk(file.groups, file.hosts);
+  return ids;
+}
+
+/** `base`, or `base-2`, `base-3`, … — the first id no host or group in the file uses. */
+export function freeId(file: HostsFileWire, base: string): string {
+  const taken = allIds(file);
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${String(n)}`;
+  return id;
+}
+
+/** Every group in the file with its nesting depth, outermost first. */
+export function flattenGroups(file: HostsFileWire): { group: GroupEntryWire; depth: number }[] {
+  const out: { group: GroupEntryWire; depth: number }[] = [];
+  const walk = (groups: readonly GroupEntryWire[], depth: number): void => {
+    for (const group of groups) {
+      out.push({ group, depth });
+      walk(group.groups, depth + 1);
+    }
+  };
+  walk(file.groups, 0);
+  return out;
+}

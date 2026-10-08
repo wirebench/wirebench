@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 export const INPUT_CLASS =
   'rounded border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent disabled:text-fg-subtle';
@@ -27,7 +27,9 @@ export function InheritedField<T extends string | number>({
   type = 'text',
 }: InheritedFieldProps<T>) {
   const id = useId();
-  const overridden = override !== undefined;
+  // A cleared field reports `undefined` (inherit) but stays editable until the switch is turned off.
+  const [editing, setEditing] = useState(false);
+  const overridden = override !== undefined || editing;
   const source =
     typeof provenance.from === 'object'
       ? `from ${provenance.from.group}`
@@ -44,8 +46,13 @@ export function InheritedField<T extends string | number>({
           type={type}
           disabled={!overridden}
           className={INPUT_CLASS}
-          value={shown === undefined ? '' : String(shown)}
+          value={override === undefined && editing ? '' : shown === undefined ? '' : String(shown)}
           onChange={(e) => {
+            if (e.target.value === '') {
+              setEditing(true);
+              onChange(undefined);
+              return;
+            }
             onChange((type === 'number' ? Number(e.target.value) : e.target.value) as T);
           }}
         />
@@ -58,6 +65,7 @@ export function InheritedField<T extends string | number>({
         aria-label={`Override ${label}`}
         className={`mb-1 inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-hairline-strong px-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${overridden ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
         onClick={() => {
+          setEditing(!overridden);
           onChange(overridden ? undefined : (provenance.value ?? ((type === 'number' ? 0 : '') as T)));
         }}
       >

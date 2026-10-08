@@ -1,12 +1,13 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listHosts = vi.fn();
 const saveHosts = vi.fn();
-const sourcesGet = vi.fn();
+const secretNames = vi.fn();
+const setSecret = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { listHosts, saveHosts }, secretSources: { get: sourcesGet } }),
+  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret } }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
@@ -56,10 +57,16 @@ beforeEach(() => {
     value: { file: STATE.file, resolved: STATE.resolved, problems: STATE.problems },
   });
   saveHosts.mockResolvedValue({ ok: true, value: { file: STATE.file, resolved: STATE.resolved, problems: [] } });
-  sourcesGet.mockResolvedValue({
+  secretNames.mockResolvedValue({
     ok: true,
-    value: { open: true, entries: [{ name: 'DEPLOY_KEY' }], trusted: true, changes: [] },
+    value: {
+      names: [
+        { name: 'DEPLOY_KEY', local: true, external: false },
+        { name: 'UNSET', local: false, external: false },
+      ],
+    },
   });
+  setSecret.mockResolvedValue({ ok: true, value: {} });
   useHostsStore.setState({ ...STATE, filter: '', selectedTags: [], dialog: null });
 });
 afterEach(cleanup);
@@ -95,5 +102,52 @@ describe('HostsView', () => {
     expect(saveHosts).toHaveBeenCalledTimes(1);
     const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
     expect(sent.file.hosts.map((h) => h.id)).toEqual(['b', 'gamma']);
+  });
+  it('duplicating twice makes two distinct copies', async () => {
+    render(<HostsView />);
+    for (let i = 0; i < 2; i++) {
+      fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+      await userEvent.click(await screen.findByText('Duplicate'));
+      const sent = saveHosts.mock.calls[i]?.[0] as { file: typeof STATE.file };
+      useHostsStore.setState({ file: sent.file });
+    }
+    const last = saveHosts.mock.calls[1]?.[0] as { file: typeof STATE.file };
+    expect(last.file.hosts.map((h) => h.id)).toEqual(['b', 'b-copy', 'b-copy-2']);
+  });
+  it('a host missing from resolved still renders, degraded', () => {
+    useHostsStore.setState({ resolved: STATE.resolved.filter((r) => r.id !== 'b') });
+    render(<HostsView />);
+    expect(screen.getByText('beta')).toBeDefined();
+    expect(screen.getByText('unresolved')).toBeDefined();
+  });
+  it('Move to… lists the top level and other groups and moves the host', async () => {
+    render(<HostsView />);
+    fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+    await userEvent.click(await screen.findByText('Move to…'));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Production' }));
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    expect(sent.file.hosts).toEqual([]);
+    expect(sent.file.groups[0]?.hosts.map((h) => h.id)).toEqual(['a', 'b']);
+  });
+  it('the auth picker lists names with a hint for unset ones and Set value stores write-only', async () => {
+    render(<HostsView />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Password' }));
+    expect(await screen.findByRole('option', { name: 'DEPLOY_KEY' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'UNSET (not set on this machine)' })).toBeDefined();
+    await userEvent.click(screen.getByRole('button', { name: 'Set value…' }));
+    await userEvent.type(screen.getByLabelText('Secret name'), 'NEW_ONE');
+    await userEvent.type(screen.getByLabelText('Secret value'), 'pw');
+    await userEvent.click(screen.getByRole('button', { name: 'Store' }));
+    expect(setSecret).toHaveBeenCalledWith({ name: 'NEW_ONE', value: 'pw' });
+    expect(secretNames).toHaveBeenCalledTimes(2);
+  });
+  it('Save stays disabled until a password secret is chosen', async () => {
+    render(<HostsView />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    await userEvent.type(await screen.findByLabelText('Name'), 'x');
+    await userEvent.type(screen.getByLabelText('Address'), 'y');
+    await userEvent.click(screen.getByRole('radio', { name: 'Password' }));
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
   });
 });

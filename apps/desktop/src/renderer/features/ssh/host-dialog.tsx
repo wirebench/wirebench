@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
-import type { GroupEntryWire, HostEntryWire, HostsFileWire, SshSettingsWire } from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, HostsFileWire, SshSettingsWire } from '../../../shared/ssh-wire.js';
 import { HostAuthSection } from './host-auth-section.js';
-import { ancestorsOf, findGroup, findHost, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
+import { SSH_DEFAULTS } from '../../../shared/ssh-wire.js';
+import { ancestorsOf, findGroup, findHost, freeId, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
 import { INPUT_CLASS, InheritedField, type Provenance } from './inherited-field.js';
-
-/** What a setting resolves to when nothing in the group chain sets it (the resolver's defaults). */
-const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
 
 type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout';
 
@@ -20,19 +18,22 @@ function inheritedFrom<K extends keyof SshSettingsWire>(
     const value = g.ssh[field];
     if (value !== undefined) return { value, from: { group: g.name } };
   }
-  const fallback = (DEFAULTS as Record<string, number>)[field];
+  const fallback = (SSH_DEFAULTS as Record<string, number>)[field];
   return { value: fallback as NonNullable<SshSettingsWire[K]> | undefined, from: 'default' };
 }
 
-function slug(name: string, taken: (id: string) => boolean): string {
-  const base =
+function slug(name: string): string {
+  return (
     name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'host';
-  let id = base;
-  for (let n = 2; taken(id); n++) id = `${base}-${String(n)}`;
-  return id;
+      .replace(/^-+|-+$/g, '') || 'host'
+  );
+}
+
+/** An override left empty is not saved: it would be a literal empty string in the file. */
+function dropEmpty(ssh: SshSettingsWire): SshSettingsWire {
+  return Object.fromEntries(Object.entries(ssh).filter(([, v]) => v !== ''));
 }
 
 function withField(ssh: SshSettingsWire, key: keyof SshSettingsWire, value: unknown): SshSettingsWire {
@@ -40,19 +41,6 @@ function withField(ssh: SshSettingsWire, key: keyof SshSettingsWire, value: unkn
   void dropped;
   return value === undefined ? rest : { ...rest, [key]: value };
 }
-
-const allIds = (file: HostsFileWire): Set<string> => {
-  const ids = new Set<string>();
-  const walk = (groups: readonly GroupEntryWire[], hosts: readonly HostEntryWire[]): void => {
-    for (const h of hosts) ids.add(h.id);
-    for (const g of groups) {
-      ids.add(g.id);
-      walk(g.groups, g.hosts);
-    }
-  };
-  walk(file.groups, file.hosts);
-  return ids;
-};
 
 interface FormProps {
   readonly file: HostsFileWire;
@@ -91,20 +79,22 @@ function HostForm({ file, dialog }: FormProps) {
   const set = (key: Inheritable | 'auth') => (value: unknown) => {
     setSsh((prev) => withField(prev, key, value));
   };
+  const jumpInherited = inheritedFrom(chain, 'jump');
   const selfId = dialog.mode === 'edit-host' ? dialog.id : undefined;
   const jumpOptions = resolved.filter((h) => h.id !== selfId);
   const tagList = tags
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t !== '');
-  const valid = name.trim() !== '' && (!isHost || address.trim() !== '');
+  const authReady = ssh.auth === undefined || ssh.auth.kind === 'agent' || ssh.auth.secret !== '';
+  const valid = name.trim() !== '' && (!isHost || address.trim() !== '') && authReady;
 
   const submit = async (): Promise<void> => {
-    const ids = allIds(file);
-    const id = existing?.id ?? slug(name, (candidate) => ids.has(candidate));
+    const id = existing?.id ?? freeId(file, slug(name));
+    const clean = dropEmpty(ssh);
     const next = isHost
-      ? upsertHost(file, { id, name: name.trim(), address: address.trim(), tags: tagList, ssh }, parent)
-      : upsertGroup(file, { id, name: name.trim(), tags: tagList, ssh, groups: [], hosts: [] }, parent);
+      ? upsertHost(file, { id, name: name.trim(), address: address.trim(), tags: tagList, ssh: clean }, parent)
+      : upsertGroup(file, { id, name: name.trim(), tags: tagList, ssh: clean, groups: [], hosts: [] }, parent);
     if (await save(next)) closeDialog();
     else setFailed(true);
   };
@@ -176,7 +166,7 @@ function HostForm({ file, dialog }: FormProps) {
               set('jump')(e.target.value === '' ? undefined : e.target.value);
             }}
           >
-            <option value="">{`Inherit${inheritedFrom(chain, 'jump').value === undefined ? ' (none)' : ''}`}</option>
+            <option value="">{`Inherit${jumpInherited.value === undefined ? ' (none)' : ''}`}</option>
             {jumpOptions.map((h) => (
               <option key={h.id} value={h.id}>
                 {h.name}
@@ -184,6 +174,9 @@ function HostForm({ file, dialog }: FormProps) {
             ))}
           </select>
         </label>
+        {ssh.jump === undefined && jumpInherited.value !== undefined && typeof jumpInherited.from === 'object' && (
+          <span className="pb-1.5 text-xs text-fg-subtle">{`${jumpInherited.value} from ${jumpInherited.from.group}`}</span>
+        )}
       </div>
       <InheritedField
         label="Keep-alive (s)"

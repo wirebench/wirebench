@@ -1,21 +1,50 @@
 import { useState } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { ChevronDown, ChevronRight, Circle } from 'lucide-react';
-import type { GroupEntryWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
-import { findHost, removeGroup, removeHost, upsertHost, useHostsStore } from './hosts-store.js';
+import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
+import {
+  ancestorsOf,
+  findHost,
+  flattenGroups,
+  freeId,
+  moveHost,
+  removeGroup,
+  removeHost,
+  upsertHost,
+  useHostsStore,
+} from './hosts-store.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
-function HostRow({ host, depth }: { readonly host: ResolvedHostWire; readonly depth: number }) {
+/** A row for a host of the file; `resolved` adds the badge and is missing when the resolver could not place the host. */
+function allHostIds(file: HostsFileWire): string[] {
+  const out = file.hosts.map((h) => h.id);
+  for (const { group } of flattenGroups(file)) out.push(...group.hosts.map((h) => h.id));
+  return out;
+}
+
+function HostRow({
+  host,
+  resolved,
+  depth,
+}: {
+  readonly host: HostEntryWire;
+  readonly resolved: ResolvedHostWire | undefined;
+  readonly depth: number;
+}) {
   const { file, save, openDialog } = useHostsStore();
+  const parent = ancestorsOf(file, 'host', host.id).at(-1);
+  const targets = flattenGroups(file).filter(({ group }) => group.id !== parent?.id);
   const edit = (): void => {
     openDialog({ mode: 'edit-host', id: host.id });
   };
   const duplicate = (): void => {
     const entry = findHost(file, host.id);
     if (entry === undefined) return;
-    void save(upsertHost(file, { ...entry, id: `${entry.id}-copy`, name: `${entry.name} copy` }, host.path.at(-1)));
+    void save(
+      upsertHost(file, { ...entry, id: freeId(file, `${entry.id}-copy`), name: `${entry.name} copy` }, parent?.id),
+    );
   };
   return (
     <ContextMenu.Root>
@@ -35,10 +64,16 @@ function HostRow({ host, depth }: { readonly host: ResolvedHostWire; readonly de
           <Circle size={8} aria-label="not connected" className="shrink-0 text-fg-faint" />
           <span className="truncate text-fg-default">{host.name}</span>
           <span className="truncate text-xs text-fg-subtle">{host.address}</span>
-          {host.incomplete !== undefined && (
+          {resolved === undefined ? (
             <span className="ml-auto shrink-0 rounded-full border border-status-warning px-1.5 text-xs text-status-warning">
-              {`needs ${host.incomplete.field}`}
+              unresolved
             </span>
+          ) : (
+            resolved.incomplete !== undefined && (
+              <span className="ml-auto shrink-0 rounded-full border border-status-warning px-1.5 text-xs text-status-warning">
+                {`needs ${resolved.incomplete.field}`}
+              </span>
+            )
           )}
         </li>
       </ContextMenu.Trigger>
@@ -50,6 +85,35 @@ function HostRow({ host, depth }: { readonly host: ResolvedHostWire; readonly de
           <ContextMenu.Item className={ITEM_CLASS} onSelect={duplicate}>
             Duplicate
           </ContextMenu.Item>
+          <ContextMenu.Sub>
+            <ContextMenu.SubTrigger className={ITEM_CLASS}>Move to…</ContextMenu.SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
+                {parent !== undefined && (
+                  <ContextMenu.Item
+                    className={ITEM_CLASS}
+                    onSelect={() => {
+                      void save(moveHost(file, host.id, undefined));
+                    }}
+                  >
+                    (top level)
+                  </ContextMenu.Item>
+                )}
+                {targets.map(({ group, depth: d }) => (
+                  <ContextMenu.Item
+                    key={group.id}
+                    className={ITEM_CLASS}
+                    style={{ paddingLeft: `${String(d * 12 + 8)}px` }}
+                    onSelect={() => {
+                      void save(moveHost(file, host.id, group.id));
+                    }}
+                  >
+                    {group.name}
+                  </ContextMenu.Item>
+                ))}
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
           <ContextMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
@@ -158,9 +222,8 @@ function GroupNode(props: {
             <GroupNode key={g.id} {...props} group={g} depth={depth + 1} />
           ))}
           {group.hosts.map((h) => {
-            const resolved = hostsById.get(h.id);
-            return resolved !== undefined && visible.has(h.id) ? (
-              <HostRow key={h.id} host={resolved} depth={depth + 1} />
+            return visible.has(h.id) ? (
+              <HostRow key={h.id} host={h} resolved={hostsById.get(h.id)} depth={depth + 1} />
             ) : null;
           })}
         </ul>
@@ -178,9 +241,11 @@ export function HostTree() {
   const visibleHosts = useHostsStore((s) => s.visibleHosts);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
-  const visible = new Set(visibleHosts().map((h) => h.id));
-  const hostsById = new Map(resolved.map((h) => [h.id, h] as const));
   const narrowed = filter.trim() !== '' || selectedTags.length > 0;
+  const hostsById = new Map(resolved.map((h) => [h.id, h] as const));
+  // A host the resolver did not place still shows (degraded) unless a filter is active: it has nothing to match on.
+  const visible = new Set(visibleHosts().map((h) => h.id));
+  if (!narrowed) for (const id of allHostIds(file)) visible.add(id);
   const toggle = (id: string): void => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -208,8 +273,7 @@ export function HostTree() {
         />
       ))}
       {file.hosts.map((h) => {
-        const r = hostsById.get(h.id);
-        return r !== undefined && visible.has(h.id) ? <HostRow key={h.id} host={r} depth={0} /> : null;
+        return visible.has(h.id) ? <HostRow key={h.id} host={h} resolved={hostsById.get(h.id)} depth={0} /> : null;
       })}
     </ul>
   );

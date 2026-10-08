@@ -48,4 +48,19 @@ describe('InheritedField', () => {
     await userEvent.click(screen.getByRole('switch', { name: 'Override User' }));
     expect(onChange).toHaveBeenCalledWith('');
   });
+  it('clearing a number reports undefined, not 0, and the field stays editable', async () => {
+    const onChange = vi.fn();
+    render(
+      <InheritedField
+        label="Port"
+        type="number"
+        provenance={{ value: 22, from: 'default' }}
+        override={2200}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.clear(screen.getByLabelText('Port'));
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
+    expect(screen.getByLabelText<HTMLInputElement>('Port').disabled).toBe(false);
+  });
 });
