@@ -54,38 +54,38 @@ lives in core like the OpenCollection importer (protocol modules spec §7.2). Pu
 takes a project and returns text; the host writes the files.
 
 ```ts
-type ExportFormat = 'postman' | 'opencollection';
+type CollectionExportFormat = 'postman' | 'opencollection';
 
-interface ExportInput {
+interface CollectionExportInput {
   readonly project: Project;
   /** The whole project, or one REST/gRPC/WebSocket API or SOAP interface by id. */
   readonly target: { readonly kind: 'project' } | { readonly kind: 'container'; readonly id: string };
   /** Properties the host adds below the project's own (the workspace's). Default: none. */
   readonly workspaceProperties?: PropertyMap;
   /** Environments to write; the host passes the workspace's and the project's. Default: the project's. */
-  readonly environments?: readonly ExportEnvironment[];
+  readonly environments?: readonly CollectionExportEnvironment[];
 }
 
-interface ExportEnvironment {
+interface CollectionExportEnvironment {
   readonly name: string;
   readonly properties: PropertyMap;
   readonly disabledProperties: readonly string[];
 }
 
-interface ExportedFile {
+interface CollectionExportFile {
   /** A bare file name: no folder, no `..`; the host joins it under the folder the user picked. */
   readonly name: string;
   readonly text: string;
 }
 
-interface ExportResult {
-  readonly files: readonly ExportedFile[];
+interface CollectionExportResult {
+  readonly files: readonly CollectionExportFile[];
   readonly counts: { readonly requests: number; readonly folders: number; readonly environments: number };
   /** `warnings`: what was lost. `notes`: what was changed to fit. Same shape as an import's report. */
   readonly report: ImportReport;
 }
 
-function exportCollection(format: ExportFormat, input: ExportInput): ExportResult;
+function exportCollection(format: CollectionExportFormat, input: CollectionExportInput): CollectionExportResult;
 ```
 
 `exportCollection` throws `ExportError` with `export-target-not-found` for an unknown container id and

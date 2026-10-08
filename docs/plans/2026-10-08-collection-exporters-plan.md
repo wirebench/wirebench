@@ -26,12 +26,14 @@ This file and the spec.
 
 ### Task 2 — Shared export core
 
-- `packages/engine/src/export/model.ts`: `ExportFormat`, `ExportInput`, `ExportEnvironment`,
-  `ExportedFile`, `ExportResult`.
+- `packages/engine/src/export/model.ts`: `CollectionExportFormat`, `CollectionExportInput`, `CollectionExportEnvironment`,
+  `CollectionExportFile`, `CollectionExportResult`.
 - `packages/engine/src/errors.ts`: `ExportError` (`export-target-not-found`, `export-nothing`).
-- `packages/engine/src/export/shared.ts`: `toMustache(text, ctx)` (§3.1 table), `absoluteUrl(base, url)`,
-  `colonPath(url)`, `soapAsHttp(iface, request, ctx)`, `credentialWarnings(auth, owner, ctx)`,
-  lost settings, script notes, unique file names, the export context (report, secret names).
+- `packages/engine/src/export/shared.ts`: `ExportContext` (report, declared secret names, `mustache`, the
+  §3.1 table), `colonPath`, `isSecretOnly`, `uniqueFileStem`.
+- `packages/engine/src/export/tree.ts`: the project or container as a neutral tree (absolute URLs, SOAP as
+  HTTP POST, credentials dropped, scripts, lost settings reported). The only export file that imports a
+  protocol folder; its edges are listed in `scripts/engine-import-graph.mjs`.
 - Tests: `packages/engine/test/unit/export/shared.test.ts`.
 
 **Done:** every row of the §3.1 table and the SOAP rules is tested.

@@ -49,7 +49,8 @@ export const GROUP_FOLDERS = Object.freeze({
  * `index.ts`); and the project model, History, the loader and the writer, which hold protocol
  * types until the phases of #184 that split them. Format detection and the `.http` and
  * OpenCollection importers, which turn one file or collection into several protocols' APIs, wait
- * for phase 7, which decides import's API. Each importer keeps its protocol imports in its `map.ts`.
+ * for phase 7, which decides import's API. Each importer keeps its protocol imports in its `map.ts`;
+ * the collection exporters, which read every protocol's APIs, keep theirs in `export/tree.ts`.
  *
  * The spec's table also names `project/save.ts`; it imports no protocol folder, so it has no entry
  * here, and an entry nothing uses fails the check.
@@ -96,6 +97,10 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import/opencollection/map.ts', to: 'rest/url.ts', until: 'phase 7' },
   { from: 'import/opencollection/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
   { from: 'import/opencollection/map.ts', to: 'ws/model.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'rest/model.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'rest/url.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'grpc/model.ts', typeOnly: true, until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'ws/model.ts', typeOnly: true, until: 'phase 7' },
 ]);
 
 /**
