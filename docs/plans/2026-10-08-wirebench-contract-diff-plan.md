@@ -25,8 +25,8 @@ definition cache, and maps the diff to an exit code.
 
 ### Task 1 — Core model and JSON Schema differ
 
-- `contract-diff/model.ts`: §2 types, `summarize`, `sortChanges` (breaking first, then operation, then
-  location), the §3.3 severity table.
+- `contract-diff/model.ts`: §2 types, `summarize`, `sortChanges` (breaking first, otherwise in contract
+  order), the §3.3 severity table.
 - `contract-diff/schema-diff.ts`: `diffSchemas(old, next, options)` with `$defs` resolution per root,
   type sets (`integer` ⊂ `number`, `nullable`), properties and `required`, `items`, enumerations,
   constraints, `format` widenings, combinators by position, XML occurrence, pair-visited recursion.

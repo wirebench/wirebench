@@ -57,7 +57,7 @@ interface ContractDiff {
   readonly old: ContractSide;            // { label, title?, version? }
   readonly new: ContractSide;
   readonly operationsCompared: number;   // operations both sides have
-  readonly changes: readonly ContractChange[];  // breaking first, then by operation, then location
+  readonly changes: readonly ContractChange[];  // breaking first, otherwise in contract order
   readonly notes: readonly string[];     // what could not be compared (unresolved types, …)
 }
 ```
