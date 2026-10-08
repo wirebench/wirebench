@@ -153,3 +153,17 @@ describe('rememberPickedCaBundle', () => {
     expect(rememberPickedCaBundle(DEFAULT_PREFERENCES, picks)).toBeUndefined();
   });
 });
+
+describe('a CA bundle locked by policy', () => {
+  it.each(['ssl.pickCaBundle', 'ssl.clearCaBundle'])('%s refuses before any dialog opens', async (channel) => {
+    const policyFile = join(dir, 'policy.yaml');
+    writeFileSync(policyFile, 'ssl:\n  caBundlePath: /etc/ssl/corp.pem\n', 'utf8');
+    showOpenDialog.mockClear();
+    registerSslChannels({ preferences: new PreferencesService(dir, { policyFile }), picks: new DialogPicks() });
+
+    const result = await invoke(channel, {});
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'preference-locked' } });
+    expect(showOpenDialog).not.toHaveBeenCalled();
+  });
+});

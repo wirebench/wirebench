@@ -118,6 +118,7 @@ import {
   dialogsOpenFileResponseSchema,
   dialogsSaveFileRequestSchema,
   dialogsSaveFileResponseSchema,
+  preferencesPolicyResponseSchema,
   preferencesResetRequestSchema,
   preferencesResponseSchema,
   preferencesUpdateRequestSchema,
@@ -277,10 +278,15 @@ import {
   wsaRemoveHeadersRequestSchema,
   wsaEnvelopeResponseSchema,
   wssPreviewOutgoingRequestSchema,
+  wssPreviewResponseSchema,
   wssInsertEntryRequestSchema,
   wssRemoveOutgoingRequestSchema,
   wssEnvelopeResponseSchema,
+  wssPolicyStatusRequestSchema,
+  wssPolicyStatusResponseSchema,
   keystoresInspectRequestSchema,
+  certificatesCheckRequestSchema,
+  certificatesCheckResponseSchema,
   keystoresInspectResponseSchema,
   keystoresPickFileRequestSchema,
   keystoresPickFileResponseSchema,
@@ -968,6 +974,8 @@ export const channels = {
     get: defineChannel('preferences.get', z.undefined(), preferencesResponseSchema),
     update: defineChannel('preferences.update', preferencesUpdateRequestSchema, preferencesResponseSchema),
     reset: defineChannel('preferences.reset', preferencesResetRequestSchema, preferencesResponseSchema),
+    /** The managed-preferences policy; read once at startup, so the renderer asks once. */
+    policy: defineChannel('preferences.policy', z.undefined(), preferencesPolicyResponseSchema),
   },
   // The CA bundle preference has channels of its own because only main may set it: the path is
   // a file main reads on every send, so it comes from a native picker main ran, never from a
@@ -1164,6 +1172,9 @@ export const channels = {
       attachmentsAddDroppedResponseSchema,
     ),
   },
+  certificates: {
+    check: defineChannel('certificates.check', certificatesCheckRequestSchema, certificatesCheckResponseSchema),
+  },
   keystores: {
     inspect: defineChannel('keystores.inspect', keystoresInspectRequestSchema, keystoresInspectResponseSchema),
     pickFile: defineChannel('keystores.pickFile', keystoresPickFileRequestSchema, keystoresPickFileResponseSchema),
@@ -1173,9 +1184,10 @@ export const channels = {
     removeHeaders: defineChannel('wsa.removeHeaders', wsaRemoveHeadersRequestSchema, wsaEnvelopeResponseSchema),
   },
   wss: {
-    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssPreviewResponseSchema),
     insertEntry: defineChannel('wss.insertEntry', wssInsertEntryRequestSchema, wssEnvelopeResponseSchema),
     removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    policyStatus: defineChannel('wss.policyStatus', wssPolicyStatusRequestSchema, wssPolicyStatusResponseSchema),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),

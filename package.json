@@ -34,6 +34,7 @@
     "typecheck": "tsc -b && pnpm --filter @wirebench/desktop typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json && tsc --noEmit -p site/tsconfig.json",
     "check": "pnpm typecheck && pnpm lint && pnpm wsi:docs --check && pnpm docs:commands --check && pnpm docs:script-api --check && pnpm docs:server-config --check && pnpm contrast:check && pnpm check:doc-paths && pnpm check:docs-images && pnpm check:banned-terms && pnpm check:engine-layers && pnpm licenses:third-party --check && pnpm test && pnpm test:perf",
     "check:tests": "pnpm typecheck && pnpm test && pnpm test:perf",
+    "check:docs": "prettier --check \"**/*.{md,mdx}\" && pnpm wsi:docs --check && pnpm docs:commands --check && pnpm docs:script-api --check && pnpm docs:server-config --check && pnpm licenses:third-party --check && pnpm check:doc-paths && pnpm check:docs-images && pnpm check:banned-terms",
     "fixtures:refresh": "node scripts/fixtures-refresh.ts",
     "wsi:docs": "node scripts/wsi-docs.ts",
     "contrast:check": "node scripts/contrast-check.ts",

@@ -9,7 +9,7 @@ import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/w
 import { processIncomingWss } from '../../../../src/wss/incoming/index.js';
 import { loadKeystore } from '../../../../src/keystore/index.js';
 import type { WssIncomingConfig, WssPart } from '../../../../src/wss/model.js';
-import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
+import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
 
 const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';
 
@@ -121,6 +121,42 @@ describe('processIncomingWss', () => {
     );
     expect(result.actions.map((action) => action.kind)).toEqual(['decrypt', 'signature']);
     expect(result.errors).toHaveLength(1);
+  });
+
+  it('names the certificate the message was encrypted for beside the alias it tried', async () => {
+    const recipient = generateClientCert(ca);
+    const encrypted = await applyOutgoingWss(
+      ENVELOPE,
+      {
+        id: 'o',
+        name: 'O',
+        mustUnderstand: false,
+        entries: [
+          {
+            kind: 'encryption',
+            keystoreRef: 'recipient',
+            keyIdentifierType: 'Thumbprint',
+            symmetricAlgorithm: 'aes256-gcm',
+            keyTransportAlgorithm: 'rsa-oaep',
+            embedKey: true,
+            encryptSymmetricKey: true,
+            parts: [{ name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' }],
+          },
+        ],
+      },
+      createWssContext({
+        keystores: () => Promise.resolve(loadKeystore(Buffer.from(recipient.certPem, 'utf-8'), { type: 'pem' })),
+      }),
+    );
+    const result = await processIncomingWss(
+      encrypted,
+      config({ decryptKeystoreRef: 'k' }),
+      createWssContext({ keystores: () => Promise.resolve(signerStore) }),
+    );
+    expect(result.actions[0]?.kind).toBe('decrypt');
+    expect(result.actions[0]?.detail).toMatch(
+      /The message's xenc:EncryptedKey names its certificate by ThumbprintSHA1 [A-Za-z0-9+/]+=*; the decryption alias "[^"]+" has [A-Za-z0-9+/]+=*\.$/,
+    );
   });
 
   it('does not touch an unsecured response even with a usable decryption key', async () => {

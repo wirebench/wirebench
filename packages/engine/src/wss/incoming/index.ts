@@ -10,10 +10,13 @@
 
 import { isWirebenchError } from '../../errors.js';
 import { selectAlias } from '../../keystore/index.js';
-import { decryptIncoming } from './decrypt.js';
+import { decryptIncoming, encryptedKeyMismatch } from './decrypt.js';
 import { verifyIncoming } from './verify.js';
-import type { Keystore } from '../../keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { WssContext, WssIncomingConfig } from '../model.js';
+import type { WssSignatureCheck } from './check.js';
+import { describeSecurityHeader } from '../timeline.js';
+import type { WssTimelineStep } from '../timeline.js';
 
 /** Which of the three incoming steps an action reports on. */
 export type WssActionKind = 'decrypt' | 'signature' | 'timestamp';
@@ -32,10 +35,16 @@ export interface WssAction {
   readonly created?: string;
   /** `wsu:Expires`; only on a `timestamp` action that had one. */
   readonly expires?: string;
+  /** This machine's clock minus `wsu:Created`, in seconds (negative: Created is ahead); `timestamp` only. */
+  readonly skewSeconds?: number;
+  /** The clock skew tolerated, in seconds; `timestamp` only. */
+  readonly toleranceSeconds?: number;
   /** The covered parts' element names (the reference id when unresolvable); `signature` only. */
   readonly references?: readonly string[];
   /** Whether a valid reference covers the envelope's `Body`; `signature` only. */
   readonly coversBody?: boolean;
+  /** Every reference's expected and computed digest; `signature` only, when it was checked. */
+  readonly check?: WssSignatureCheck;
 }
 
 /** What {@link processIncomingWss} made of a response. */
@@ -46,6 +55,11 @@ export interface WssResult {
   readonly decryptedXml?: string;
   /** Every failure, as a message safe to log. Empty when every action succeeded. */
   readonly errors: readonly string[];
+  /**
+   * The response's `wsse:Security` header step by step, in header order, read from the message as
+   * it arrived (so encryption is visible). Absent when the response carries no such header.
+   */
+  readonly timeline?: readonly WssTimelineStep[];
 }
 
 /** Options for {@link processIncomingWss}. */
@@ -60,6 +74,36 @@ function messageOf(error: unknown): string {
     return error.message;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Why a checked signature failed, from its per-reference report: the first reference that did not
+ * match, or — when every reference matched — the SignatureValue. `undefined` when the report has
+ * nothing to add to the verifier's own message.
+ */
+function failureDetail(check: WssSignatureCheck | undefined): string | undefined {
+  if (check === undefined) {
+    return undefined;
+  }
+  const failed = check.references.find((reference) => !reference.ok);
+  if (failed !== undefined) {
+    const name = failed.element !== undefined && failed.element !== '' ? ` (${failed.element})` : '';
+    if (failed.computedDigest === undefined) {
+      return `Reference #${failed.uri}${name} could not be checked: ${failed.problem ?? 'unknown error.'}`;
+    }
+    const transforms = failed.transforms.length === 0 ? 'no transform' : failed.transforms.join(' + ');
+    return (
+      `Reference #${failed.uri}${name} does not match: the digest computed with ${transforms} and ` +
+      `${failed.digestAlgorithm} differs from the one in the message.`
+    );
+  }
+  if (check.references.length > 0 && !check.signatureValueOk) {
+    return (
+      "Every reference matches, but the SignatureValue does not verify with the signer's certificate: " +
+      'SignedInfo was changed, or the message names the wrong certificate.'
+    );
+  }
+  return undefined;
 }
 
 /** The decrypt step: the (possibly restored) XML plus the action it produced, if any. */
@@ -86,8 +130,9 @@ async function runDecrypt(
       action: { kind: 'decrypt', ok: false, detail: 'The decryption keystore is not available.' },
     };
   }
+  let alias: KeystoreAlias | undefined;
   try {
-    const alias = selectAlias(keystore, config.decryptAlias);
+    alias = selectAlias(keystore, config.decryptAlias);
     const password =
       config.decryptKeyPasswordRef === undefined ? undefined : await ctx.secrets(config.decryptKeyPasswordRef);
     const result = decryptIncoming(xml, {
@@ -110,7 +155,14 @@ async function runDecrypt(
       },
     };
   } catch (error) {
-    return { xml, action: { kind: 'decrypt', ok: false, detail: messageOf(error) } };
+    // "No key opened" alone leaves the user guessing which certificate the sender used: say what
+    // the message asked for beside what the alias has.
+    const mismatch =
+      alias !== undefined && isWirebenchError(error) && error.code === 'wss-decrypt-failed'
+        ? encryptedKeyMismatch(xml, alias.certPem, alias.alias)
+        : undefined;
+    const detail = mismatch === undefined ? messageOf(error) : `${messageOf(error)} ${mismatch}`;
+    return { xml, action: { kind: 'decrypt', ok: false, detail } };
   }
 }
 
@@ -129,6 +181,18 @@ export async function processIncomingWss(
   config: WssIncomingConfig,
   ctx: WssContext,
   options?: ProcessIncomingWssOptions,
+): Promise<WssResult> {
+  const result = await processSteps(xml, config, ctx, options);
+  const timeline = describeSecurityHeader(xml);
+  return timeline.length === 0 ? result : { ...result, timeline };
+}
+
+/** The decrypt, signature and timestamp steps of {@link processIncomingWss}. */
+async function processSteps(
+  xml: string,
+  config: WssIncomingConfig,
+  ctx: WssContext,
+  options: ProcessIncomingWssOptions | undefined,
 ): Promise<WssResult> {
   const clock = options?.clock ?? ctx.clock;
   const actions: WssAction[] = [];
@@ -192,7 +256,7 @@ export async function processIncomingWss(
       ? signature.trusted
         ? `Signature valid over ${covered}; signer trusted.`
         : `Signature valid over ${covered}, ${untrusted}`
-      : (signature.error ?? 'The signature did not verify.');
+      : (failureDetail(signature.check) ?? signature.error ?? 'The signature did not verify.');
     actions.push({
       kind: 'signature',
       ok,
@@ -201,6 +265,7 @@ export async function processIncomingWss(
       trusted: signature.trusted,
       references: [...signature.referenceNames],
       coversBody: signature.coversBody,
+      ...(signature.check !== undefined ? { check: signature.check } : {}),
     });
     if (!ok) {
       errors.push(detail);
@@ -229,6 +294,8 @@ export async function processIncomingWss(
       detail,
       created: timestamp.created,
       ...(timestamp.expires !== undefined ? { expires: timestamp.expires } : {}),
+      ...(timestamp.skewSeconds !== undefined ? { skewSeconds: timestamp.skewSeconds } : {}),
+      toleranceSeconds: timestamp.toleranceSeconds,
     });
     if (!timestamp.fresh) {
       errors.push(detail);

@@ -17,10 +17,13 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat } from 'no
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { rootCertificates } from 'node:tls';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { isInsideAny, isInsideReal, realpathOfPrefix } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import { resolveProxy, resolveTrustAnchors } from './network-options.js';
+import { endpointCandidates, resolveEndpointTargets } from './certificate-expiry.js';
+import type { KeystoreCertificates, ProjectCertificateSources } from './certificate-expiry.js';
 import {
   apiDefinitionDir,
   applyUpdate,
@@ -197,8 +200,10 @@ import type {
   ProxyOptionsWire,
   TlsOptionsWire,
   UpdatePlanWire,
+  WssPolicyWire,
 } from '../shared/wire-types.js';
-import { isEndpointAuth, nextApiOrder } from '@wirebench/engine';
+import { isEndpointAuth, nextApiOrder, pemCertificates } from '@wirebench/engine';
+import type { PemCertificateSummary } from '@wirebench/engine';
 import type {
   DefinitionAuth,
   EndpointAuth,
@@ -1600,6 +1605,69 @@ export class ProjectHost {
   }
 
   /**
+   * What this project contributes to the workspace's certificate check: the TLS endpoints it
+   * names, resolved under every environment it can be sent under, and each keystore's
+   * certificates (every alias's leaf and the chain it carries) or why the keystore did not load.
+   * See `certificate-expiry.ts`.
+   */
+  async certificateSources(): Promise<ProjectCertificateSources> {
+    const open = this.require();
+    const context = this.workspaceContext?.();
+    // Inside a workspace its environments override this project's endpoints under
+    // `<projectSlug>/<slug>`; those overrides are this project's endpoints too.
+    const overrides =
+      context === undefined
+        ? []
+        : context.workspace.environments.flatMap((environment) =>
+            Object.entries(environment.endpoints)
+              .filter(([key]) => key.startsWith(`${context.projectSlug}/`))
+              .map(([, url]) => url),
+          );
+    const envIds = [undefined, ...this.sendEnvironments().environments.map((environment) => environment.id)];
+    const endpoints = resolveEndpointTargets(
+      endpointCandidates(open.project, overrides),
+      envIds.map((envId) => this.scopesFor(envId)),
+    );
+    const keystores: KeystoreCertificates[] = [];
+    for (const ref of open.project.wss.keystores) {
+      const def = this.keystoreDef(ref.id);
+      if (def === undefined) continue;
+      try {
+        const keystore = await this.loadKeystoreFor(def);
+        // A keystore that also carries its CA holds that certificate in several places; report it once.
+        const seen = new Set<string>();
+        const certificates = keystore.aliases
+          .flatMap((alias) =>
+            pemCertificates([alias.certPem, ...alias.chainPem].join('\n')).map((cert) => ({
+              ...cert,
+              alias: alias.alias,
+            })),
+          )
+          .filter((cert) => {
+            if (seen.has(cert.fingerprint256)) return false;
+            seen.add(cert.fingerprint256);
+            return true;
+          });
+        keystores.push({ name: def.name, certificates });
+      } catch (error) {
+        keystores.push({ name: def.name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { projectId: open.project.id, endpoints, keystores };
+  }
+
+  /**
+   * The CA bundle's own certificates — not the system roots {@link trustAnchors} puts in front of
+   * them — or none when no bundle is configured or it may not be read.
+   */
+  async caBundleCertificates(): Promise<PemCertificateSummary[]> {
+    const anchors = await this.trustAnchors();
+    if (anchors === undefined) return [];
+    const roots = new Set(rootCertificates);
+    return pemCertificates(anchors.filter((anchor) => !roots.has(anchor)).join('\n'));
+  }
+
+  /**
    * The credentials configured on one API, folder or REST request — its own, not its chain's.
    *
    * What the Auth inspector edits and what the OAuth2 channels read: a token is obtained for the
@@ -2228,6 +2296,37 @@ export class ProjectHost {
     }
     const outgoingId = findRequest(this.open.project, requestId)?.request.wssOutgoingRef;
     return outgoingId !== undefined && outgoingId.length > 0;
+  }
+
+  /**
+   * What the Auth inspector's policy panel judges (#58): the WS-SecurityPolicy the WSDL attaches to
+   * the request's operation, the entries of the outgoing configuration the request selects (none
+   * when it selects none, or one that no longer reads), and the URL a send goes to. `undefined`
+   * when the operation carries no policy, or the definition has not loaded yet.
+   */
+  wssPolicyInputs(
+    requestId: string,
+  ): { policy: WssPolicyWire; entries: readonly WssEntry[]; endpoint?: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const policy = this.open.runtime
+      .get(location.iface.id)
+      ?.summary?.operations.find(
+        (operation) =>
+          operation.binding === location.operation.bindingName && operation.name === location.operation.name,
+      )?.wssPolicy;
+    if (policy === undefined) {
+      return undefined;
+    }
+    const outgoingId = location.request.wssOutgoingRef;
+    const entries = outgoingId === undefined ? [] : (this.wssOutgoingConfig(outgoingId)?.entries ?? []);
+    const endpoint = this.resolveEndpointFor(this.open.project, location.iface, location.request).url;
+    return { policy, entries, ...(endpoint !== undefined ? { endpoint } : {}) };
   }
 
   wssFor(requestId: string): Promise<SoapSendWss | undefined> {
@@ -3110,6 +3209,28 @@ export class ProjectHost {
     return this.basicImportAuth(iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined);
   }
 
+  /**
+   * The auth an Update Definition fetch is given. A URL on another origin than the interface's
+   * definition is a host the interface's credentials were not set up for: a Basic username and
+   * password are not sent to it, and a Kerberos auth keeps its account but drops the SPN, so the
+   * token targets the host that was typed (the SPN defaults to it) rather than the old service.
+   */
+  private async updateAuthFor(
+    iface: Interface,
+    source: DefinitionUpdateSource,
+  ): Promise<{ username: string; password: string } | KerberosSendAuth | undefined> {
+    const auth = await this.importAuthFor(iface);
+    if (source.kind !== 'url' || auth === undefined || sameOrigin(iface.definitionUrl, source.url)) {
+      return auth;
+    }
+    if ('type' in auth) {
+      const withoutSpn: KerberosSendAuth = { ...auth };
+      delete (withoutSpn as { spn?: string }).spn;
+      return withoutSpn;
+    }
+    return undefined;
+  }
+
   private async basicImportAuth(
     auth: EndpointAuth | undefined,
   ): Promise<{ username: string; password: string } | undefined> {
@@ -3127,7 +3248,7 @@ export class ProjectHost {
   async planDefinitionUpdate(interfaceId: string, source: DefinitionUpdateSource): Promise<UpdatePlanWire> {
     const iface = this.requireInterface(interfaceId);
     const current = this.engine.resultFor(interfaceId);
-    const auth = await this.importAuthFor(iface);
+    const auth = await this.updateAuthFor(iface, source);
     const next = await this.engine.importPreview(await this.updateSource(source), auth);
     return toUpdatePlanWire(planUpdate(current, next));
   }
@@ -3145,7 +3266,7 @@ export class ProjectHost {
     const open = this.require();
     const iface = this.requireInterface(interfaceId);
     const previous = this.engine.resultFor(interfaceId);
-    const auth = await this.importAuthFor(iface);
+    const auth = await this.updateAuthFor(iface, source);
     // Fetched into a scratch result only: nothing about the live `WsdlImportResult` or the
     // definition cache changes here. If the save below fails, the interface must look exactly
     // as it did before this call — see the fix1 finding on this method.
@@ -4080,4 +4201,13 @@ function withoutUndefinedProxy(proxy: ProxyOptionsWire): ProxyOptions {
   return Object.fromEntries(
     Object.entries(proxy).filter(([, value]) => value !== undefined),
   ) as unknown as ProxyOptions;
+}
+
+/** True when both URLs parse and share a scheme, host and port; anything unparsable counts as different. */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin && new URL(a).origin !== 'null';
+  } catch {
+    return false;
+  }
 }

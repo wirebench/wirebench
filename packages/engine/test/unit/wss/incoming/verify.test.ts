@@ -67,6 +67,9 @@ async function sign(
 
 const options = { clock: () => new Date(), skewSeconds: 300, verifyChain: true } as const;
 
+/** A fixed "now" for the skew arithmetic. */
+const FIXED_NOW = new Date('2026-10-07T10:00:00Z');
+
 describe('verifyIncoming', () => {
   it.each<WssKeyIdentifierType>([
     'BinarySecurityToken',
@@ -87,7 +90,42 @@ describe('verifyIncoming', () => {
     const xml = await sign('Thumbprint');
     const result = verifyIncoming(xml, options);
     expect(result.signatures[0]).toMatchObject({ ok: false, trusted: false });
-    expect(result.signatures[0]?.error).toContain('could not be resolved');
+    expect(result.signatures[0]?.error).toMatch(
+      /^KeyInfo names the signer by ThumbprintSHA1 [A-Za-z0-9+/]+=*, and no truststore is configured to look it up in\.$/,
+    );
+  });
+
+  it('names the token a KeyInfo reference points at when no element carries it', async () => {
+    const xml = (await sign('BinarySecurityToken')).replace(
+      /(<wsse:BinarySecurityToken[^>]*wsu:Id=")X509-/,
+      '$1Moved-',
+    );
+    const error = verifyIncoming(xml, { ...options, truststore }).signatures[0]?.error;
+    expect(error).toMatch(/^KeyInfo refers to token #X509-[\w-]+, but no element in the message carries that id\.$/);
+  });
+
+  it('names the issuer and serial no truststore certificate matches', async () => {
+    const xml = await sign('IssuerSerial');
+    const other = keystoreOf(generateUntrustedCert().certPem);
+    const error = verifyIncoming(xml, { ...options, truststore: other }).signatures[0]?.error;
+    expect(error).toMatch(
+      /^KeyInfo names the signer by issuer ".+" and serial \d+, and no truststore certificate matches\.$/,
+    );
+  });
+
+  it('says when a signature carries no KeyInfo, or a form it cannot resolve', async () => {
+    const signed = await sign('BinarySecurityToken');
+    const bare = signed.replace(/<ds:KeyInfo>[\s\S]*?<\/ds:KeyInfo>/, '');
+    expect(verifyIncoming(bare, { ...options, truststore }).signatures[0]?.error).toBe(
+      'The signature carries no ds:KeyInfo, so its signer cannot be found.',
+    );
+    const named = signed.replace(
+      /<ds:KeyInfo>[\s\S]*?<\/ds:KeyInfo>/,
+      '<ds:KeyInfo><ds:KeyName>k</ds:KeyName></ds:KeyInfo>',
+    );
+    expect(verifyIncoming(named, { ...options, truststore }).signatures[0]?.error).toBe(
+      'KeyInfo uses a form this build cannot resolve: KeyName.',
+    );
   });
 
   it('verifies but does not trust a signer the truststore does not know', async () => {
@@ -104,11 +142,15 @@ describe('verifyIncoming', () => {
     expect(result.timestamp?.expires).toMatch(/Z$/);
   });
 
-  it('rejects a Timestamp created in the future beyond the skew', () => {
-    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const xml = timestampEnvelope(`<wsu:Created>${future}</wsu:Created>`);
-    const result = verifyIncoming(xml, options);
-    expect(result.timestamp).toMatchObject({ fresh: false, error: 'The message was created in the future.' });
+  it('rejects a Timestamp created in the future beyond the skew, saying by how much', () => {
+    const xml = timestampEnvelope('<wsu:Created>2026-10-07T10:01:35Z</wsu:Created>');
+    const result = verifyIncoming(xml, { ...options, clock: () => FIXED_NOW, skewSeconds: 30 });
+    expect(result.timestamp).toMatchObject({
+      fresh: false,
+      skewSeconds: -95,
+      toleranceSeconds: 30,
+      error: "Created 95 s ahead of this machine's clock; 30 s of clock skew is tolerated.",
+    });
   });
 
   it('rejects a Timestamp older than the skew when it has no Expires', () => {
@@ -129,12 +171,34 @@ describe('verifyIncoming', () => {
     expect(verifyIncoming(xml, options).timestamp).toMatchObject({ fresh: false });
   });
 
-  it('rejects an expired Timestamp', () => {
-    const past = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  it('rejects an expired Timestamp, saying how long ago it expired', () => {
     const xml = timestampEnvelope(
-      `<wsu:Created>${past}</wsu:Created><wsu:Expires>${new Date(Date.now() - 3_600_000).toISOString()}</wsu:Expires>`,
+      '<wsu:Created>2026-10-07T09:55:00Z</wsu:Created><wsu:Expires>2026-10-07T09:59:20Z</wsu:Expires>',
     );
-    expect(verifyIncoming(xml, options).timestamp).toMatchObject({ fresh: false, error: 'The message expired.' });
+    expect(verifyIncoming(xml, { ...options, clock: () => FIXED_NOW, skewSeconds: 30 }).timestamp).toMatchObject({
+      fresh: false,
+      skewSeconds: 300,
+      toleranceSeconds: 30,
+      error: 'Expired 40 s ago (Expires 2026-10-07T09:59:20Z); 30 s of clock skew is tolerated.',
+    });
+  });
+
+  it('rejects a stale Timestamp with no Expires, saying its age', () => {
+    const xml = timestampEnvelope('<wsu:Created>2026-10-07T09:53:20Z</wsu:Created>');
+    expect(verifyIncoming(xml, { ...options, clock: () => FIXED_NOW, skewSeconds: 300 }).timestamp).toMatchObject({
+      fresh: false,
+      skewSeconds: 400,
+      error: 'Created 400 s ago and carries no Expires; 300 s of clock skew is tolerated.',
+    });
+  });
+
+  it('measures the skew of a fresh Timestamp too', () => {
+    const xml = timestampEnvelope('<wsu:Created>2026-10-07T09:59:57Z</wsu:Created>');
+    expect(verifyIncoming(xml, { ...options, clock: () => FIXED_NOW }).timestamp).toMatchObject({
+      fresh: true,
+      skewSeconds: 3,
+      toleranceSeconds: 300,
+    });
   });
 
   it('reports nothing for a plain or unparsable message', () => {

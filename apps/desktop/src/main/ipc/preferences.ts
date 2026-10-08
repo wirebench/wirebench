@@ -17,7 +17,9 @@ import { registerHandler } from './register.js';
  * be called before the startup warm-up's `load()` resolves, and an early caller must see on-disk
  * state rather than the defaults with no way to be corrected later.
  *
- * Some fields are not the renderer's to set: see {@link MAIN_ONLY_KEYS}.
+ * Some fields are not the renderer's to set: see {@link MAIN_ONLY_KEYS}. Keys a managed-preferences
+ * policy locks are refused by the service itself (`preference-locked`); `preferences.policy`
+ * tells the renderer which they are, so it can show them as locked rather than let a user try.
  */
 
 /**
@@ -64,6 +66,12 @@ export function registerPreferencesChannels(
     const next = toPreferencesWire(await preferences.update(request.patch));
     onChanged(next);
     return { preferences: next };
+  });
+
+  registerHandler(channels.preferences.policy, async () => {
+    await preferences.ready();
+    const { path, locked, ignored, error } = preferences.policy();
+    return { path, locked: [...locked], ignored: [...ignored], ...(error !== undefined ? { error } : {}) };
   });
 
   registerHandler(channels.preferences.reset, async (request) => {

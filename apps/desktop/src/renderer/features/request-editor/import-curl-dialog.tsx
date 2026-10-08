@@ -64,6 +64,15 @@ function Preview({ preview, target }: { readonly preview: CurlPreview; readonly 
           <PreviewRow label="Body" value={preview.hasBody ? `${preview.bodyLength} characters` : '—'} />
         </>
       )}
+      {target === 'rest' &&
+        preview.negotiate &&
+        preview.basicUsername !== undefined &&
+        preview.basicUsername !== '' && (
+          <p data-testid="import-curl-negotiate-note" className="mt-1 text-sm text-fg-muted">
+            The Kerberos account “{preview.basicUsername}” is saved without a password. It needs a password on Windows
+            and is refused on macOS and Linux until you use Clear account.
+          </p>
+        )}
       {preview.problems.length > 0 && (
         <ul aria-label="Import problems" className="mt-1 list-disc pl-5 text-sm text-fg-muted">
           {preview.problems.map((problem) => (

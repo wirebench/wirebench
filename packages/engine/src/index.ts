@@ -436,6 +436,20 @@ export type { SystemProxyResolution } from './http/proxy.js';
 export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
+export {
+  certificateExpiry,
+  isCertificateVerifyError,
+  pemCertificates,
+  probeTlsChain,
+  tlsProbeTarget,
+} from './http/cert-expiry.js';
+export type {
+  CertificateExpiry,
+  CertificateExpiryStatus,
+  PemCertificateSummary,
+  ProbeTlsChainOptions,
+  TlsProbeTarget,
+} from './http/cert-expiry.js';
 
 export { importWsdl } from './soap/import.js';
 export { sendSoapRequest } from './soap/send.js';
@@ -1107,8 +1121,30 @@ export {
   wsaNamespace,
 } from './wsa/headers.js';
 export type { WsaHeaderContext } from './wsa/headers.js';
-export { defaultAction, detectWsaDefaults, summarizeWsa } from './wsa/policy-detect.js';
+export { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from './wsa/policy-detect.js';
 export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
+export { detectWssPolicy, summarizeWssPolicy } from './wss/policy/detect.js';
+export {
+  checkWssPolicy,
+  describeWssPolicy,
+  proposeWssEntries,
+  requiredSignatureParts,
+  suiteAlgorithms,
+} from './wss/policy/plan.js';
+export type {
+  WssPolicyCheck,
+  WssPolicyCheckResult,
+  WssPolicyLine,
+  WssPolicyProposal,
+  WssSuiteAlgorithms,
+} from './wss/policy/plan.js';
+export type {
+  WssPolicy,
+  WssPolicyKeyReference,
+  WssPolicyPart,
+  WssPolicyToken,
+  WssPolicyTokenRole,
+} from './wss/policy/model.js';
 
 export { createIssuedTokenSource, issuedCacheKey, ISSUED_TOKEN_REFRESH_MARGIN_MS } from './run/issued-token.js';
 export type { IssuedTokenSource, IssuedTokenSourceOptions, IssuedTokenStatus } from './run/issued-token.js';
@@ -1160,6 +1196,9 @@ export { signEnvelope, verifySignature } from './wss/outgoing/signature.js';
 export type { ResolvedSigningKey, VerifySignatureOptions, VerifySignatureResult } from './wss/outgoing/signature.js';
 export { processIncomingWss } from './wss/incoming/index.js';
 export type { ProcessIncomingWssOptions, WssAction, WssActionKind, WssResult } from './wss/incoming/index.js';
+export type { WssReferenceCheck, WssSignatureCheck } from './wss/incoming/check.js';
+export { describeSecurityHeader } from './wss/timeline.js';
+export type { WssTimelineStep, WssTimelineStepKind } from './wss/timeline.js';
 export { decryptIncoming } from './wss/incoming/decrypt.js';
 export type { DecryptIncomingResult, ResolvedDecryptionKey } from './wss/incoming/decrypt.js';
 export { verifyIncoming } from './wss/incoming/verify.js';

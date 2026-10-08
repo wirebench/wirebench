@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **WS-Security debugger.** The response's **WSS** inspector now says why a signature, decryption or
+  timestamp failed. It shows the part that changed, with its expected and computed digest and the
+  transforms used, or a SignatureValue that fails while every part matches. It names the signer token
+  or decryption certificate the message asked for and did not find, and the clock skew against the
+  timestamp. It also lists the Security header step by step. **Preview secured request** shows a
+  request's secured envelope and its steps before Send (#57).
+- **WS-Security from the WSDL's policy.** When a WSDL attaches a WS-SecurityPolicy to an operation, the
+  request's Auth inspector shows the tokens, the signed and encrypted parts, the algorithm suite and
+  whether TLS is required. **Apply policy** turns it into an outgoing WS-Security configuration in one
+  click, and a badge says whether the request satisfies the policy or lists what is still missing (#58).
+- **Managed preferences.** On a managed machine, a `policy.yaml` in a system location
+  (`%ProgramData%\Wirebench`, `/Library/Application Support/Wirebench` or `/etc/wirebench`) locks the
+  proxy, the minimum TLS version, the CA bundle and update checks. Locked settings are read-only in
+  **Preferences** and marked **Locked by policy**; the user's own values come back if the policy is
+  removed (#67).
+- **Certificate expiry warnings.** Problems warns before a certificate in the workspace expires:
+  keystores and the CA bundle are checked on their own, and **Check Certificate Expiry** also reads
+  the chain every TLS endpoint of the open projects presents, from a verified handshake alone; an
+  endpoint whose chain doesn't verify is an error. The window is
+  **Preferences → SSL → Expiry warning** (30 days); the SSL inspector uses it too (#70).
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only
@@ -73,6 +93,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Import cURL warns about a `--negotiate` account with no password.** The preview now notes that the
+  Kerberos account needs a password on Windows and is refused on macOS and Linux until you use **Clear
+  account** (#272).
+- **Update Definition from another host** no longer reuses the interface's Kerberos SPN or Basic credentials: a URL on a different origin is fetched with the SPN defaulted to that host, and without the interface's username and password (#271).
 - **A REST contract tool no longer asks for a query API key.** When the API's auth is a query API
   key, the tool's `query` argument leaves that parameter out, so the request carries the key once
   instead of `key=<argument>&key=<secret>` (#225).

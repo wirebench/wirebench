@@ -86,6 +86,19 @@ describe('toInterfaceSummary', () => {
     ]);
     expect(summary.operations.find((op) => op.name === 'SendRef')?.inputMimeParts).toEqual([]);
   });
+
+  it('carries each operation’s WS-SecurityPolicy, and none where the WSDL attaches none', async () => {
+    const location = fixturePath('wsdl/crafted/ws-security-policy/service.wsdl');
+    const result = await importWsdl({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
+    const summary = toInterfaceSummary(result, 'iface-5', location);
+    const of = (binding: string) => summary.operations.find((op) => op.bindingLocal === binding && op.name === 'Echo');
+    expect(of('TransportUtBinding')?.wssPolicy).toMatchObject({
+      binding: 'transport',
+      requiresTls: true,
+      tokens: [{ kind: 'username', password: 'digest' }],
+    });
+    expect(of('PlainBinding')).not.toHaveProperty('wssPolicy');
+  });
 });
 
 /** A completed exchange whose response carries two attachment parts (one unnamed). */
@@ -305,6 +318,47 @@ describe('toExchangeSummary', () => {
 
     const shown = toExchangeSummary(exchange, 'send-4', { show: true });
     expect(shown.http.rawHeaders).toContainEqual(['Set-Cookie', 'sid=abc; HttpOnly']);
+  });
+
+  it('carries the WS-Security debugger fields: reference checks, clock skew and timeline (#57)', () => {
+    const check = {
+      canonicalization: 'exc-c14n',
+      signatureMethod: 'rsa-sha256',
+      signatureValueOk: true,
+      references: [
+        {
+          uri: 'Id-1',
+          element: 'Body',
+          ok: false,
+          transforms: ['exc-c14n'],
+          inclusivePrefixes: ['soapenv'],
+          digestAlgorithm: 'sha256',
+          expectedDigest: 'A=',
+          computedDigest: 'B=',
+        },
+      ],
+    };
+    const exchange: SoapExchange = {
+      http: fakeHttpExchange(),
+      durationMs: 1,
+      problems: [],
+      wss: {
+        incoming: {
+          actions: [
+            { kind: 'signature', ok: false, detail: 'd', check },
+            { kind: 'timestamp', ok: true, detail: 't', created: 'T0', skewSeconds: 3, toleranceSeconds: 300 },
+          ],
+          errors: ['d'],
+          timeline: [{ kind: 'signature', summary: 'Signed Body', covers: ['Body'], actor: 'urn:gw' }],
+        },
+      },
+    };
+    const incoming = toExchangeSummary(exchange, 'send-wss').wss?.incoming;
+    expect(incoming?.actions[0]?.check).toEqual(check);
+    expect(incoming?.actions[1]).toMatchObject({ skewSeconds: 3, toleranceSeconds: 300 });
+    expect(incoming?.timeline).toEqual([
+      { kind: 'signature', summary: 'Signed Body', covers: ['Body'], actor: 'urn:gw' },
+    ]);
   });
 
   it('omits `response` when the exchange had none', () => {

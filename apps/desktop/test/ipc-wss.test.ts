@@ -30,6 +30,7 @@ const project = {
   previewOutgoingWss: vi.fn().mockResolvedValue(SECURED),
   insertWssEntry: vi.fn().mockResolvedValue(SECURED),
   removeOutgoingWssFrom: vi.fn().mockReturnValue('<clean/>'),
+  wssPolicyInputs: vi.fn().mockReturnValue(undefined),
 };
 
 describe('wss.* IPC', () => {
@@ -46,6 +47,25 @@ describe('wss.* IPC', () => {
     expect(envelopeXml).toContain('wsse:UsernameToken');
     expect(envelopeXml).not.toContain('hunter2');
     expect(project.previewOutgoingWss).toHaveBeenCalledWith('r1', '<x/>');
+  });
+
+  it('returns the timeline of the previewed envelope (#57)', async () => {
+    project.previewOutgoingWss.mockResolvedValueOnce(
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header>' +
+        '<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
+        'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' +
+        '<wsu:Timestamp><wsu:Created>T0</wsu:Created></wsu:Timestamp>' +
+        '<wsse:UsernameToken><wsse:Username>bob</wsse:Username>' +
+        '<wsse:Password Type="urn:x#PasswordText">hunter2</wsse:Password></wsse:UsernameToken>' +
+        '</wsse:Security></soapenv:Header><soapenv:Body/></soapenv:Envelope>',
+    );
+    const result = await invoke('wss.previewOutgoing', { requestId: 'r1', envelopeXml: '<x/>' });
+    const value = (result as { value: { envelopeXml: string; timeline: unknown[] } }).value;
+    expect(value.timeline).toEqual([
+      { kind: 'timestamp', summary: 'Timestamp (created T0)' },
+      { kind: 'username-token', summary: 'UsernameToken (PasswordText)' },
+    ]);
+    expect(JSON.stringify(value)).not.toContain('hunter2');
   });
 
   it('masks the password of an inserted entry, and folds in the password ref', async () => {

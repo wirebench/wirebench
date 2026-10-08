@@ -25,6 +25,8 @@ import {
 /** One request the NTLM server saw, with the identity of the socket it arrived on. */
 export interface NtlmRequestRecord {
   readonly leg: 1 | 2 | 3;
+  readonly method: string;
+  readonly path: string;
   readonly socketId: number;
   readonly contentLength: number;
   readonly authorization: string | undefined;
@@ -36,6 +38,8 @@ export interface NtlmServer {
   readonly url: string;
   /** Every request, in order, with its socket identity. */
   readonly requests: NtlmRequestRecord[];
+  /** How many requests the `redirect` option redirected; `requests` leaves them out. */
+  redirected(): number;
   /** True when every leg of every handshake arrived on the same socket. */
   sameSocket(): boolean;
   close(): Promise<void>;
@@ -52,6 +56,8 @@ export interface NtlmServerOptions {
   readonly noAuthRequired?: boolean;
   /** Delay (ms) before answering leg 2, so a test can abort mid-handshake. */
   readonly delayLeg2Ms?: number;
+  /** Redirect a request to `from` to `/svc` on this server before any challenge. */
+  readonly redirect?: { readonly from: string; readonly status: 302 | 307 };
 }
 
 /** Builds the Type 2 CHALLENGE message a real server would send. */
@@ -223,6 +229,7 @@ export async function startNtlmServer(options: NtlmServerOptions): Promise<NtlmS
     domain: options.domain ?? '',
   };
   const requests: NtlmRequestRecord[] = [];
+  let redirected = 0;
   const socketIds = new WeakMap<Socket, number>();
   let nextSocketId = 1;
 
@@ -252,9 +259,17 @@ export async function startNtlmServer(options: NtlmServerOptions): Promise<NtlmS
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
     req.on('end', () => {
       const body = Buffer.concat(chunks);
+      if (options.redirect !== undefined && req.url === options.redirect.from) {
+        redirected++;
+        res.writeHead(options.redirect.status, { Location: '/svc', 'content-length': '0' });
+        res.end();
+        return;
+      }
       const record = (leg: 1 | 2 | 3): void => {
         requests.push({
           leg,
+          method: req.method ?? '',
+          path: req.url ?? '',
           socketId,
           contentLength: body.length,
           authorization: req.headers.authorization,
@@ -285,6 +300,7 @@ export async function startNtlmServer(options: NtlmServerOptions): Promise<NtlmS
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    redirected: () => redirected,
     sameSocket(): boolean {
       return new Set(requests.map((entry) => entry.socketId)).size === 1;
     },

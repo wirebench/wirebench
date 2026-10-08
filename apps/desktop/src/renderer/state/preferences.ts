@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_PREFERENCES_WIRE } from './preferences-defaults.js';
 import type {
   PreferencesPatchWire,
+  PreferencesPolicyResponse,
   PreferencesResponse,
   PreferencesStoredSectionWire,
   PreferencesWire,
@@ -30,6 +31,17 @@ export interface PreferencesStore {
   readonly reset: (section?: PreferencesStoredSectionWire) => Promise<void>;
   /** Replaces the mirror wholesale; used by the `preferences.changed` subscription. */
   readonly applyPreferences: (preferences: PreferencesWire) => void;
+  /**
+   * The managed-preferences policy main loaded at startup, or `undefined` until it has been
+   * asked for. Main reads the policy once per session, so it is fetched once too.
+   */
+  readonly policy: PreferencesPolicyResponse | undefined;
+  readonly loadPolicy: () => Promise<void>;
+}
+
+/** Whether the policy locks the dotted preference key (`proxy.mode`). */
+export function isLockedByPolicy(policy: PreferencesPolicyResponse | undefined, key: string): boolean {
+  return policy?.locked.includes(key) ?? false;
 }
 
 export const usePreferencesStore = create<PreferencesStore>((set, get) => {
@@ -48,8 +60,16 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
   return {
     preferences: DEFAULT_PREFERENCES_WIRE,
     loaded: false,
+    policy: undefined,
 
     applyPreferences: apply,
+
+    loadPolicy: async () => {
+      const result = await ipc().preferences.policy(undefined);
+      if (result.ok) {
+        set({ policy: result.value });
+      }
+    },
 
     load: async () => {
       const result = await ipc().preferences.get(undefined);
@@ -91,6 +111,7 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
  */
 export function subscribeToPreferences(): () => void {
   void usePreferencesStore.getState().load();
+  void usePreferencesStore.getState().loadPolicy();
   // `defineEvent` types every event's `name` as `string`, so the derived event map cannot narrow
   // a payload by channel; the cast below is the same one the other mirrors use.
   return window.wirebench.on('preferences.changed', ((payload: PreferencesResponse) => {

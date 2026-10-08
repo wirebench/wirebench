@@ -1,0 +1,85 @@
+---
+title: Managed preferences
+description: Lock the proxy, the CA bundle and update checks on managed machines with a policy file.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+On a machine IT manages, a **policy file** sets preferences the user cannot change: the proxy every
+send goes through, the CA bundle that adds your organization's trust anchors, the minimum TLS version,
+and whether Wirebench checks for updates. Every setting the file names is shown in
+**Preferences** as **Locked by policy**, and a note at the top of Preferences names the file.
+
+## Where the file goes
+
+Wirebench reads `policy.yaml` from a system location only an administrator can write:
+
+| OS | Path |
+| --- | --- |
+| Windows | `%ProgramData%\Wirebench\policy.yaml` (usually `C:\ProgramData\Wirebench\policy.yaml`) |
+| macOS | `/Library/Application Support/Wirebench/policy.yaml` |
+| Linux | `/etc/wirebench/policy.yaml` |
+
+The file is read once, when Wirebench starts. After you deploy or change it, users need to restart
+Wirebench. Make the file and its folder writable by administrators only — anyone who can write it can
+change what it locks.
+
+## What goes in it
+
+The file uses the same YAML shape as the user's own preferences. Every key present is locked; anything
+left out stays the user's choice.
+
+```yaml
+version: 1
+proxy:
+  mode: manual # none | system | manual
+  host: proxy.corp.example
+  port: 8080
+  username: svc-wirebench
+  excludes: [localhost, '*.corp.example', 10.0.0.0/8]
+ssl:
+  minVersion: TLSv1.2 # TLSv1.2 | TLSv1.3
+  caBundlePath: /etc/ssl/certs/corp-ca.pem
+updates:
+  checkOnLaunch: false
+```
+
+These are the keys a policy can lock:
+
+| Key | Values |
+| --- | --- |
+| `proxy.mode` | `none`, `system` or `manual` |
+| `proxy.host`, `proxy.port`, `proxy.username` | The manual proxy's host, port and user name |
+| `proxy.excludes` | Hosts that bypass the proxy: names, `*.wildcards`, IPv4 CIDR blocks or `localhost` |
+| `ssl.minVersion` | `TLSv1.2` or `TLSv1.3` |
+| `ssl.caBundlePath` | An absolute path to a PEM file of extra trust anchors, or `''` to lock "no bundle" |
+| `updates.checkOnLaunch` | `true` or `false` |
+
+The proxy password is never part of a policy: it's kept in each user's OS keychain, so users with a
+locked manual proxy still enter their own password in **Preferences → Proxy**.
+
+A CA bundle named by the policy is trusted without the user picking it, because the policy file sits
+where only an administrator can write. The bundle adds to the system's trust store; it never replaces
+it.
+
+## What users see
+
+- Each locked setting is read-only and marked **Locked by policy**. The CA bundle's **Browse…** and
+  **Clear** buttons are unavailable while it is locked.
+- **Reset section** restores the user's own values; locked values stay in force.
+- The user's own preferences file keeps only their own values. If the policy is removed, their
+  previous settings come back at the next start.
+
+## When something is wrong
+
+- **A key that can't be locked**, or a value that isn't valid (a relative CA bundle path, a proxy mode
+  that isn't one of the three), is ignored. The note in Preferences lists every ignored key, so you can
+  see which ones had no effect; the rest of the policy still applies.
+- **A file that can't be read or isn't valid YAML** locks nothing. Preferences shows an error naming the
+  file and the reason.
+
+<Aside type="tip" title="Testing a policy">
+Try a policy on one machine before rolling it out: deploy the file, restart Wirebench, and check that
+**Preferences → Proxy**, **SSL** and **Updates** show the settings you expect as locked, and that the
+note at the top lists no ignored keys.
+</Aside>

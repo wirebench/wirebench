@@ -22,6 +22,7 @@ import type { WssResult } from '../wss/incoming/index.js';
 import type { WssRequestProperties } from '../wss/apply.js';
 import type { WsaConfig } from '../wsa/model.js';
 import type { WsaSummary } from '../wsa/policy-detect.js';
+import type { WssPolicy } from '../wss/policy/model.js';
 
 /** Where a WSDL definition comes from. */
 export type WsdlImportSource =
@@ -104,6 +105,11 @@ export interface WsdlImportResult {
   readonly operations: readonly SoapOperationSummary[];
   /** What the definition itself says about WS-Addressing; see `summarizeWsa`. */
   readonly wsa: WsaSummary;
+  /**
+   * Each binding operation's WS-SecurityPolicy, keyed like `wsa.defaultActionByOperation`;
+   * operations without one are absent. See `summarizeWssPolicy`.
+   */
+  readonly wssPolicy: Readonly<Record<string, WssPolicy>>;
   /** True when this result was resolved entirely from the definition cache, with no network access. */
   readonly fromCache?: boolean;
 }

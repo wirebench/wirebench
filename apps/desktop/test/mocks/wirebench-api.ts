@@ -216,6 +216,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
         Promise.resolve({ ok: true as const, value: { preferences: mergedPreferences(request.patch) } }),
       ),
       reset: vi.fn().mockResolvedValue({ ok: true, value: { preferences: DEFAULT_PREFERENCES_WIRE } }),
+      policy: vi.fn().mockResolvedValue({ ok: true, value: { path: '', locked: [], ignored: [] } }),
     },
     secrets: {
       set: fail('secrets.set'),
@@ -313,6 +314,14 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       pickFiles: fail('attachments.pickFiles'),
       addDropped: fail('attachments.addDropped'),
     },
+    certificates: {
+      // The shell's automatic keystore check runs in every renderer test that mounts it; an empty
+      // workspace has nothing to report.
+      check: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { warnDays: 30, certificates: [], skipped: [], untrusted: [], probedEndpoints: false },
+      }),
+    },
     keystores: {
       inspect: fail('keystores.inspect'),
       pickFile: fail('keystores.pickFile'),
@@ -321,6 +330,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       previewOutgoing: fail('wss.previewOutgoing'),
       insertEntry: fail('wss.insertEntry'),
       removeOutgoing: fail('wss.removeOutgoing'),
+      policyStatus: fail('wss.policyStatus'),
     },
     history: {
       list: fail('history.list'),

@@ -130,6 +130,39 @@ export type WsaSummaryWire = z.infer<typeof wsaSummaryWireSchema>;
 export const mimePartWireSchema = z.object({ part: z.string(), type: z.string().optional() });
 export type MimePartWire = z.infer<typeof mimePartWireSchema>;
 
+const wssPolicyPartWireSchema = z.object({ name: z.string(), namespace: z.string() });
+
+/**
+ * An operation's WS-SecurityPolicy, as the import read it; mirrors the engine's `WssPolicy`
+ * — main proposes a configuration from it and checks one against it (`wss.policyStatus`).
+ */
+export const wssPolicyWireSchema = z.object({
+  version: z.enum(['1.1', '1.2']),
+  soapVersion: z.enum(['1.1', '1.2']),
+  binding: z.enum(['transport', 'asymmetric', 'symmetric', 'none']),
+  requiresTls: z.boolean(),
+  includeTimestamp: z.boolean(),
+  encryptBeforeSigning: z.boolean(),
+  algorithmSuite: z.string().optional(),
+  tokens: z.array(
+    z.object({
+      kind: z.enum(['username', 'x509', 'issued', 'saml', 'kerberos', 'other']),
+      role: z.enum(['initiator', 'recipient', 'supporting', 'signed-supporting', 'endorsing', 'signed-endorsing']),
+      password: z.enum(['text', 'digest', 'none']).optional(),
+      reference: z
+        .enum(['BinarySecurityToken', 'IssuerSerial', 'SubjectKeyIdentifier', 'X509KeyIdentifier', 'Thumbprint'])
+        .optional(),
+      issuer: z.string().optional(),
+      name: z.string().optional(),
+    }),
+  ),
+  signedParts: z.array(wssPolicyPartWireSchema),
+  encryptedParts: z.array(wssPolicyPartWireSchema),
+  unsupported: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+export type WssPolicyWire = z.infer<typeof wssPolicyWireSchema>;
+
 const operationSummaryWireSchema = z.object({
   name: z.string(),
   binding: z.string(),
@@ -146,6 +179,8 @@ const operationSummaryWireSchema = z.object({
    * and `z.infer` still yields a required array, so every reader can index it unconditionally.
    */
   inputMimeParts: z.array(mimePartWireSchema).default([]),
+  /** The WS-SecurityPolicy the WSDL attaches to this operation; absent when it attaches none. */
+  wssPolicy: wssPolicyWireSchema.optional(),
 });
 
 const importProblemSchema = z.object({
@@ -875,6 +910,39 @@ export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
  * engine's `WssAction` exactly — booleans, a human-readable detail and the signer's subject.
  * No key material, no secret reference, nothing that could carry one.
  */
+/** One `ds:Reference` as the WS-Security debugger reports it; mirrors the engine's `WssReferenceCheck`. */
+export const wssReferenceCheckWireSchema = z.object({
+  uri: z.string(),
+  element: z.string().optional(),
+  ok: z.boolean(),
+  transforms: z.array(z.string()),
+  inclusivePrefixes: z.array(z.string()),
+  digestAlgorithm: z.string(),
+  expectedDigest: z.string(),
+  computedDigest: z.string().optional(),
+  problem: z.string().optional(),
+});
+export type WssReferenceCheckWire = z.infer<typeof wssReferenceCheckWireSchema>;
+
+/** One `ds:Signature` as the debugger reports it; mirrors the engine's `WssSignatureCheck`. */
+export const wssSignatureCheckWireSchema = z.object({
+  canonicalization: z.string(),
+  signatureMethod: z.string(),
+  references: z.array(wssReferenceCheckWireSchema),
+  signatureValueOk: z.boolean(),
+});
+export type WssSignatureCheckWire = z.infer<typeof wssSignatureCheckWireSchema>;
+
+/** One child of a `wsse:Security` header, in header order; mirrors the engine's `WssTimelineStep`. */
+export const wssTimelineStepWireSchema = z.object({
+  kind: z.enum(['timestamp', 'username-token', 'token', 'signature', 'encryption', 'other']),
+  summary: z.string(),
+  covers: z.array(z.string()).optional(),
+  id: z.string().optional(),
+  actor: z.string().optional(),
+});
+export type WssTimelineStepWire = z.infer<typeof wssTimelineStepWireSchema>;
+
 export const wssActionWireSchema = z.object({
   kind: z.enum(['decrypt', 'signature', 'timestamp']),
   ok: z.boolean(),
@@ -886,6 +954,12 @@ export const wssActionWireSchema = z.object({
   /** Names of the parts a signature covered (`Body`, `Timestamp`, …); signature actions only. */
   references: z.array(z.string()).optional(),
   coversBody: z.boolean().optional(),
+  /** Every reference's expected and computed digest; signature actions only. */
+  check: wssSignatureCheckWireSchema.optional(),
+  /** This machine's clock minus `wsu:Created`, in seconds; timestamp actions only. */
+  skewSeconds: z.number().optional(),
+  /** The clock skew tolerated, in seconds; timestamp actions only. */
+  toleranceSeconds: z.number().optional(),
 });
 export type WssActionWire = z.infer<typeof wssActionWireSchema>;
 
@@ -898,6 +972,8 @@ export const wssExchangeWireSchema = z.object({
     .object({
       actions: z.array(wssActionWireSchema),
       errors: z.array(z.string()),
+      /** The response's `wsse:Security` header, in header order, as it arrived. */
+      timeline: z.array(wssTimelineStepWireSchema).optional(),
     })
     .optional(),
 });
@@ -5100,8 +5176,37 @@ export const wssPreviewOutgoingRequestSchema = z.object({
   envelopeXml: z.string().optional(),
 });
 export const wssEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
+/**
+ * `wss.previewOutgoing`: the secured envelope plus its `wsse:Security` timeline (#57), read from
+ * the redacted envelope, so the preview shows exactly what the timeline describes.
+ */
+export const wssPreviewResponseSchema = z.object({
+  envelopeXml: z.string(),
+  timeline: z.array(wssTimelineStepWireSchema),
+});
 export type WssPreviewOutgoingRequest = z.infer<typeof wssPreviewOutgoingRequestSchema>;
 export type WssEnvelopeResponse = z.infer<typeof wssEnvelopeResponseSchema>;
+export type WssPreviewResponse = z.infer<typeof wssPreviewResponseSchema>;
+
+/**
+ * `wss.policyStatus`: the WS-SecurityPolicy of a request's operation as the Auth inspector shows it
+ * (#58) — its summary lines, whether the request as configured now satisfies it (each requirement
+ * met or not, and why), and the entries "Apply policy" would store. `status` is absent when the
+ * operation carries no policy. Main runs the engine's check; the renderer only renders it.
+ */
+export const wssPolicyStatusRequestSchema = z.object({ requestId: z.string() });
+export const wssPolicyStatusResponseSchema = z.object({
+  status: z
+    .object({
+      lines: z.array(z.object({ label: z.string(), value: z.string() })),
+      satisfied: z.boolean(),
+      results: z.array(z.object({ requirement: z.string(), met: z.boolean(), reason: z.string().optional() })),
+      proposal: z.array(wssEntryWireSchema),
+      notes: z.array(z.string()),
+    })
+    .optional(),
+});
+export type WssPolicyStatusResponse = z.infer<typeof wssPolicyStatusResponseSchema>;
 
 /** `wss.insertEntry`: applies one ad-hoc entry, with no configuration involved. */
 export const wssInsertEntryRequestSchema = z.object({
@@ -5142,6 +5247,65 @@ export type WssRemoveOutgoingRequest = z.infer<typeof wssRemoveOutgoingRequestSc
 /** `keystores.pickFile`: an Open dialog filtered to keystore files; records a read pick. */
 export const keystoresPickFileRequestSchema = z.object({});
 export const keystoresPickFileResponseSchema = z.object({ path: z.string().optional() });
+
+/**
+ * `certificates.check`: how long the certificates the open workspace relies on have left —
+ * every keystore alias (leaf and the chain it carries), the CA bundle, and, when
+ * `probeEndpoints` is set, the chain each TLS endpoint presents. Probing reaches the network (one
+ * verified TLS handshake per `host:port`, no request), so it is asked for; the local reads are not.
+ * Certificates only — no key, no PEM.
+ */
+export const certificatesCheckRequestSchema = z.object({ probeEndpoints: z.boolean() });
+export type CertificatesCheckRequest = z.infer<typeof certificatesCheckRequestSchema>;
+/** Where a checked certificate came from. */
+export const certificateSourceSchema = z.enum(['endpoint', 'keystore', 'ca-bundle']);
+export type CertificateSourceWire = z.infer<typeof certificateSourceSchema>;
+export const certificateFindingSchema = z.object({
+  source: certificateSourceSchema,
+  /** The project that names it; absent for the CA bundle, which is the user's, not a project's. */
+  projectId: z.string().optional(),
+  /** `host:port`, `<keystore> › <alias>`, or `CA bundle`. */
+  where: z.string(),
+  subject: z.string(),
+  /** ISO 8601. */
+  validTo: z.string(),
+  status: z.enum(['ok', 'expiring', 'expired']),
+  /** Whole days left, rounded up; `0` or less once expired. */
+  daysLeft: z.number(),
+});
+export type CertificateFindingWire = z.infer<typeof certificateFindingSchema>;
+/** Something that could not be checked: an endpoint that did not answer, a keystore that did not load. */
+export const certificateSkippedSchema = z.object({
+  source: certificateSourceSchema,
+  projectId: z.string().optional(),
+  where: z.string(),
+  message: z.string(),
+});
+export type CertificateSkippedWire = z.infer<typeof certificateSkippedSchema>;
+/**
+ * An endpoint whose chain does not verify as a send would verify it: expired, untrusted, or not
+ * issued for the host. The probe verifies, so nothing of such a chain is read; `code` says why.
+ */
+export const certificateUntrustedSchema = z.object({
+  projectId: z.string().optional(),
+  /** `host:port`. */
+  where: z.string(),
+  /** OpenSSL's reason, e.g. `CERT_HAS_EXPIRED`, or Node's `ERR_TLS_CERT_ALTNAME_INVALID`. */
+  code: z.string(),
+  message: z.string(),
+});
+export type CertificateUntrustedWire = z.infer<typeof certificateUntrustedSchema>;
+export const certificatesCheckResponseSchema = z.object({
+  /** The warning window the statuses were judged against (`ssl.expiryWarningDays`). */
+  warnDays: z.number(),
+  certificates: z.array(certificateFindingSchema),
+  skipped: z.array(certificateSkippedSchema),
+  /** Probed endpoints whose chain did not verify; always empty when endpoints were not probed. */
+  untrusted: z.array(certificateUntrustedSchema),
+  /** Whether endpoints were probed; `false` means only keystores and the CA bundle were read. */
+  probedEndpoints: z.boolean(),
+});
+export type CertificatesCheckResponse = z.infer<typeof certificatesCheckResponseSchema>;
 
 export const attachmentsPickFilesRequestSchema = z.object({});
 export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.string()) });
@@ -5355,6 +5519,8 @@ export const preferencesWireSchema = z.object({
     /** True when main picked `caBundlePath` through a native dialog; see `SslPreferences`. */
     caBundlePickedByMain: z.boolean().optional(),
     clientKeystoreRef: z.string().optional(),
+    /** Days before a certificate's expiry that `certificates.check` starts warning. */
+    expiryWarningDays: z.number(),
     trustAll: z.literal(false),
   }),
   git: z.object({
@@ -5457,6 +5623,19 @@ export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
 /** Response for every `preferences.*` channel, and the payload of `preferences.changed`. */
 export const preferencesResponseSchema = z.object({ preferences: preferencesWireSchema });
 export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
+
+/**
+ * Response for `preferences.policy`: the managed-preferences policy main loaded at startup.
+ * `locked` and `ignored` are dotted keys (`proxy.mode`); `error` says why a policy file that
+ * exists could not be applied, in which case nothing is locked.
+ */
+export const preferencesPolicyResponseSchema = z.object({
+  path: z.string(),
+  locked: z.array(z.string()),
+  ignored: z.array(z.string()),
+  error: z.string().optional(),
+});
+export type PreferencesPolicyResponse = z.infer<typeof preferencesPolicyResponseSchema>;
 
 /** Request payload for `preferences.update`. */
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });

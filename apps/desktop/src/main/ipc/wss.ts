@@ -7,19 +7,32 @@
  * `wsse:Password` comes back masked. What these produce is about to be pasted into the editor
  * — and therefore autosaved into a project file — and a secret must never land there. The real
  * password is substituted by the send path alone, inside main.
+ *
+ * `wss.policyStatus` sits beside them and writes nothing: it judges the request against the
+ * WS-SecurityPolicy its WSDL attaches (#58).
  */
 
 import { channels } from '../../shared/ipc.js';
 import { redactXml } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
-import type { WssEntryWire } from '../../shared/wire-types.js';
-import { WssError } from '@wirebench/engine';
-import type { WssEntry } from '@wirebench/engine';
+import type { WssEntryWire, WssPolicyStatusResponse } from '../../shared/wire-types.js';
+import {
+  checkWssPolicy,
+  describeSecurityHeader,
+  describeWssPolicy,
+  proposeWssEntries,
+  WssError,
+} from '@wirebench/engine';
+import type { WssEntry, WssPolicy } from '@wirebench/engine';
+import { toTimelineStepWire } from '../engine-wire.js';
 import { registerHandler } from './register.js';
 
 /** What the `wss.*` channels need; a stub stands in for it in tests. */
 export interface WssChannelDeps {
-  readonly project: Pick<ProjectRouter, 'previewOutgoingWss' | 'insertWssEntry' | 'removeOutgoingWssFrom'>;
+  readonly project: Pick<
+    ProjectRouter,
+    'previewOutgoingWss' | 'insertWssEntry' | 'removeOutgoingWssFrom' | 'wssPolicyInputs'
+  >;
 }
 
 /** The wire entry as the engine's model, with `undefined` optionals stripped for exactOptionalPropertyTypes. */
@@ -59,11 +72,35 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
   return entry as unknown as WssEntry;
 }
 
+/**
+ * The policy panel's status for one request: the engine's summary, check and proposal over what
+ * main holds. The wire policy is the engine's `WssPolicy` field for field (only zod types its
+ * optionals `T | undefined`), and the proposed entries are plain data the wire schema accepts.
+ */
+export function wssPolicyStatus(inputs: ReturnType<ProjectRouter['wssPolicyInputs']>): WssPolicyStatusResponse {
+  if (inputs === undefined) {
+    return {};
+  }
+  const policy = inputs.policy as WssPolicy;
+  const check = checkWssPolicy(policy, inputs.entries, inputs.endpoint);
+  const proposal = proposeWssEntries(policy);
+  return {
+    status: {
+      lines: [...describeWssPolicy(policy)],
+      satisfied: check.satisfied,
+      results: [...check.results],
+      proposal: structuredClone(proposal.entries) as WssEntryWire[],
+      notes: [...policy.notes, ...proposal.notes.filter((note) => !policy.unsupported.includes(note))],
+    },
+  };
+}
+
 /** Registers the `wss.*` channels. */
 export function registerWssChannels(deps: WssChannelDeps): void {
   registerHandler(channels.wss.previewOutgoing, async (request) => {
-    const envelopeXml = await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml);
-    return { envelopeXml: redactXml(envelopeXml) };
+    const envelopeXml = redactXml(await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml));
+    // Read from the redacted envelope, so the timeline describes exactly what the preview shows.
+    return { envelopeXml, timeline: describeSecurityHeader(envelopeXml).map(toTimelineStepWire) };
   });
 
   registerHandler(channels.wss.insertEntry, async (request) => {
@@ -71,6 +108,10 @@ export function registerWssChannels(deps: WssChannelDeps): void {
     const envelopeXml = await deps.project.insertWssEntry(request.requestId, entry, request.envelopeXml);
     return { envelopeXml: redactXml(envelopeXml) };
   });
+
+  registerHandler(channels.wss.policyStatus, (request) =>
+    Promise.resolve(wssPolicyStatus(deps.project.wssPolicyInputs(request.requestId))),
+  );
 
   registerHandler(channels.wss.removeOutgoing, (request) =>
     Promise.resolve({ envelopeXml: deps.project.removeOutgoingWssFrom(request.requestId, request.envelopeXml) }),
