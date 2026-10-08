@@ -10,11 +10,14 @@ import {
   VERB_HELP,
 } from './args-ops.js';
 import type { CallArgs, McpArgs, OpArgs } from './args-ops.js';
+import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
+import type { MockRecordArgs } from './args-mock-record.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
 export type { CallArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
+export type { MockRecordArgs } from './args-mock-record.js';
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
 export const HELP_TEXT = `wirebench run <path> [selector…] [options]
@@ -58,6 +61,8 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        secret-sources hash.
 
 ${OPS_HELP_TEXT}
+
+${MOCK_RECORD_HELP}
 
 wirebench --version | --help
 wirebench <verb> --help`;
@@ -106,6 +111,7 @@ export type ParsedArgs =
   | OpArgs
   | McpArgs
   | CallArgs
+  | MockRecordArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -186,6 +192,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean' },
         ...OP_OPTIONS,
+        ...MOCK_RECORD_OPTIONS,
       },
     });
   } catch (error) {
@@ -199,7 +206,9 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (values.help) {
     const [topic] = positionals;
-    return topic !== undefined && Object.hasOwn(VERB_HELP, topic) ? { command: 'help', topic } : { command: 'help' };
+    return topic !== undefined && (Object.hasOwn(VERB_HELP, topic) || topic === 'mock')
+      ? { command: 'help', topic }
+      : { command: 'help' };
   }
   if (values.version) {
     return { command: 'version' };
@@ -217,6 +226,11 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   if (word === undefined) {
     return { command: 'help' };
   }
+
+  if (word === 'mock') {
+    return parseMock(rest, values);
+  }
+  refuseMockRecordOnly(values, `wirebench ${word}`);
 
   if (word === 'run') {
     refuseOpOnly(values, 'wirebench run');

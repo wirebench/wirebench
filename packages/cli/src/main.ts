@@ -1,5 +1,6 @@
 import { callCommand } from './commands/call.js';
 import { mcpCommand } from './commands/mcp.js';
+import { mockRecordCommand } from './commands/mock-record.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
@@ -7,6 +8,7 @@ import { ExitCode } from './exit-codes.js';
 import { cliVersion } from './version.js';
 import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
 import { VERB_HELP } from './args-ops.js';
+import { MOCK_RECORD_HELP } from './args-mock-record.js';
 
 /** The I/O surface `main` writes through, so tests can capture output without touching the real process. */
 export interface CliIo {
@@ -25,7 +27,8 @@ export async function main(
 
     switch (args.command) {
       case 'help': {
-        const topic = args.topic !== undefined ? VERB_HELP[args.topic] : undefined;
+        const topic =
+          args.topic === 'mock' ? MOCK_RECORD_HELP : args.topic !== undefined ? VERB_HELP[args.topic] : undefined;
         io.stdout.write(`${topic ?? HELP_TEXT}\n`);
         return ExitCode.Ok;
       }
@@ -47,6 +50,9 @@ export async function main(
       }
       case 'mcp': {
         return await mcpCommand(args, io);
+      }
+      case 'mock-record': {
+        return await mockRecordCommand(args, io);
       }
     }
   } catch (error) {
