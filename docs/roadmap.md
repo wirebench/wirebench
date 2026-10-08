@@ -502,9 +502,6 @@ wizard; code generation. The TCP monitor proxy is no longer a separate item: the
   native `<table>` markup instead of the `role="grid"` convention `history-view.tsx` and
   `keystores-view.tsx` use. Three views, two conventions; worth reconciling before another grid
   is added.
-- The panel handle's hover tint (the `group-hover:bg-handle-hover` class in
-  `apps/desktop/src/renderer/shell/panel-handle.tsx`) has no end-to-end coverage; it exists only
-  as a CSS pseudo-class, unasserted by any unit or e2e test.
 
 ## Audience fit
 
