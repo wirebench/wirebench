@@ -487,9 +487,10 @@ export async function startRecorder(input: StartRecorderInput): Promise<RunningR
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const timeout = error instanceof HttpError && error.code === 'timeout';
+      // The client gets a fixed text; the cause, which may echo what the network said, goes to the log only.
       refuse(
         timeout ? 504 : 502,
-        `The recorder could not reach the target: ${message}`,
+        timeout ? 'The target did not answer in time' : 'The recorder could not reach the target',
         'mock-record-upstream-failed',
         message,
       );

@@ -244,11 +244,14 @@ describe('startRecorder', () => {
   it('answers 502 when the target is down and 504 when it times out', async () => {
     const events: RecordExchangeEvent[] = [];
     const down = await record('http://127.0.0.1:1/', events);
-    expect((await send(down, '/m/x')).status).toBe(502);
+    const refused = await send(down, '/m/x');
+    expect(refused).toMatchObject({ status: 502, body: 'The recorder could not reach the target\n' });
     const slow = await record(await upstream(() => ({ hang: true })), events, { timeoutMs: 200 });
     expect((await send(slow, '/m/x')).status).toBe(504);
     expect(events.map((e) => e.error?.code)).toEqual(['mock-record-upstream-failed', 'mock-record-upstream-failed']);
     expect(down.recordings()).toEqual([]);
+    // The cause stays in the log, never in the client's reply.
+    expect(events[0]?.error?.message).not.toBe('');
   });
 
   it('relays without recording a definition request, an unrouted request and a binary body', async () => {
