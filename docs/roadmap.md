@@ -493,16 +493,6 @@ wizard; code generation. The TCP monitor proxy is no longer a separate item: the
 - A 1.0.0 build cannot open a project or workspace saved by 1.1.0 (`formatVersion: 2`). Moot in
   practice, since 1.0.0 was never published, but the format bump is the first one the loaders refuse.
 
-### Known limitations carried from the layout and environments work
-
-- The Environments view's rows (`apps/desktop/src/renderer/features/environments/
-  environments-view.tsx`) use `role="row"` without `gridcell` children or `aria-rowindex`, and the
-  environment page's variables and endpoint-overrides tables
-  (`apps/desktop/src/renderer/features/environments/{variables-table,endpoints-table}.tsx`) use
-  native `<table>` markup instead of the `role="grid"` convention `history-view.tsx` and
-  `keystores-view.tsx` use. Three views, two conventions; worth reconciling before another grid
-  is added.
-
 ## Audience fit
 
 | Audience   | Already there                                                                                                                                                                                                                                                                                                                                                         | Missing                                                                                                                                                                                                                 |
