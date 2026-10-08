@@ -205,13 +205,11 @@ enabled checkbox, and the `disabled` list format bump
   platforms rely on; every client that displaced one began as an importer.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
 - **HTTP/2.** Evaluate making it the default once enough servers negotiate it cleanly.
-- **Same-host `http://` → `https://` 301 on a POST.** Wirebench does not follow redirects on send by
-  default, because `fetch`/undici semantics downgrade a redirected POST to a GET, which would silently
-  turn a SOAP call into a page fetch and lose the envelope. That is the right default, but a same-host,
-  same-path upgrade is common enough (the `tempconvert` interop fixture is a live example) to deserve a
-  purpose-built case: either preserve the method and body across exactly that redirect shape, or detect
-  it and surface a Problem saying the request was declined. Which of the two, and how narrow "same-host,
-  upgrade-only" needs to be, is a design decision a bug-fix pass should not make in passing.
+- **Same-host `http://` → `https://` 301 on a POST** (shipped, #71). Wirebench still does not follow
+  redirects on a SOAP send by default, because a redirected POST becomes a GET and loses the envelope. The
+  exact upgrade shape (same host, path and query, default ports, 301/302/307/308) is followed anyway, with
+  the method, body and credentials kept, and a Problem says to change the endpoint. See
+  `docs/specs/2026-10-08-https-upgrade-redirect-design.md`.
 
 ### Contracts
 
