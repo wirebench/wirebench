@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureSslInfo, type TlsSocketLike } from '../../../src/http/tls.js';
+import { captureSslInfo, splitPemBundle, type TlsSocketLike } from '../../../src/http/tls.js';
 
 interface FakeCert {
   subject?: Record<string, string | string[]>;
@@ -134,5 +134,28 @@ describe('captureSslInfo', () => {
   it('omits the client identity when none was presented', () => {
     expect(captureSslInfo(socket(LEAF, { getCertificate: () => ({}) })).clientCertificate).toBeUndefined();
     expect(captureSslInfo(socket(LEAF)).clientCertificate).toBeUndefined();
+  });
+});
+
+describe('splitPemBundle', () => {
+  const block = (body: string): string => `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----`;
+
+  it('returns each certificate block in order, dropping text around and between them', () => {
+    expect(splitPemBundle(`# corp roots\nBag Attributes\n${block('AAA')}\nnoise\n${block('BBB')}\n`)).toEqual([
+      block('AAA'),
+      block('BBB'),
+    ]);
+  });
+
+  it('ignores a block that never ends, and a bundle with no certificate', () => {
+    expect(splitPemBundle(`${block('AAA')}\n-----BEGIN CERTIFICATE-----\nCCC`)).toEqual([block('AAA')]);
+    expect(splitPemBundle('-----BEGIN PRIVATE KEY-----\nX\n-----END PRIVATE KEY-----')).toEqual([]);
+  });
+
+  it('stays linear on many BEGIN lines with no END', () => {
+    const hostile = '-----BEGIN CERTIFICATE-----'.repeat(200_000);
+    const started = performance.now();
+    expect(splitPemBundle(hostile)).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });

@@ -3,6 +3,8 @@ import { registerCommand } from '../lib/commands.js';
 import { hasSignedInServer } from './register-account-commands.js';
 import { projectRowActions } from '../features/explorer/project-actions.js';
 import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
+import { runCertificateCheckCommand } from '../state/certificate-expiry.js';
+import { useProjectStore } from '../state/project.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -71,6 +73,17 @@ export function registerWorkspaceCommands(): void {
 
   // The map from a `${secret:name}` to an external secret manager belongs to the workspace, not to a
   // project, so an open workspace is all it needs. No shortcut; the palette finds it by name.
+  // Reaches every TLS endpoint the open projects name (one handshake each), so it runs only when
+  // asked; keystores and the CA bundle are re-checked on their own. Results land in Problems.
+  registerCommand({
+    ...catalogEntry('workspace.checkCertificates'),
+    when: () => Object.keys(useProjectStore.getState().projects).length > 0,
+    whenScope: 'project',
+    run: () => {
+      void runCertificateCheckCommand();
+    },
+  });
+
   registerCommand({
     ...catalogEntry('workspace.secretSources'),
     when: workspaceIsOpen,

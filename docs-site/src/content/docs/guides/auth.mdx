@@ -204,7 +204,28 @@ Keystores serve two purposes:
 
 The **SSL** inspector on a sent request's response shows the negotiated protocol, cipher, and the
 peer's certificate chain, including expiry — and, when a client certificate was presented, its
-subject.
+subject. A certificate that expires within the warning window reads in amber, one that has expired
+in red.
+
+## Certificate expiry warnings
+
+Wirebench warns before a certificate your workspace relies on runs out. Every expired certificate is
+an error in **Problems**, and every one that expires within the warning window (30 days by default;
+**Preferences → SSL → Expiry warning**) is a warning, so the problem count in the status bar shows it
+wherever you are. Each row names the certificate's subject, the days left, and where it is: a
+keystore and alias, the CA bundle, or an endpoint's `host:port`.
+
+- **Keystores and the CA bundle** are checked on their own — when a workspace opens, when a keystore
+  is added or changed, and when the warning window changes. This only reads files on your machine.
+- **Endpoints** are checked when you run **Check Certificate Expiry** from the command palette.
+  Wirebench reaches every TLS endpoint the open projects name — SOAP endpoints, REST base URLs and
+  servers, WebSocket and gRPC targets, and the endpoint overrides of every environment, with
+  `${…}` properties resolved under each one — and reads the chain each presents. It opens a TLS
+  connection through the proxy a send would use, verifies the chain as a send would (including your
+  CA bundle), and closes it once the certificates arrive; no request is sent. Each `host:port` is
+  reached once, however many projects name it. An endpoint whose chain doesn't verify — already
+  expired, untrusted, or issued for another host — is an error in Problems with the reason. An
+  endpoint that doesn't answer is listed in the summary rather than in Problems.
 
 <Aside type="tip" title="Trusting a custom CA">
 To trust a corporate or internal root CA without disabling certificate validation, add its PEM
