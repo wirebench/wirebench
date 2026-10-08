@@ -170,3 +170,66 @@ describe('diffSchemas — structure', () => {
     expect(change?.message).toBe('type string became integer');
   });
 });
+
+describe('diffSchemas — review cases', () => {
+  it('compares a shared schema at every place it is used', () => {
+    const shared = { type: 'string' };
+    const before = object({ a: shared, b: shared });
+    const after = object({ a: shared, b: { anyOf: [shared, { type: 'null' }] } });
+    expect(diff(before, after, 'response')).toEqual(['type-widened breaking response.b']);
+
+    const oldItem = object({ x: S });
+    const newItem = object({ x: S, z: S }, ['z']);
+    expect(diff(object({ a: oldItem, b: oldItem }), object({ a: newItem, b: newItem }), 'request')).toEqual([
+      'field-added breaking request.a.z',
+      'field-added breaking request.b.z',
+    ]);
+  });
+
+  it('compares properties named like documentation keywords', () => {
+    const before = { oneOf: [object({ description: S }), S] };
+    const after = { oneOf: [object({ description: { type: 'integer' } }), S] };
+    expect(diff(before, after, 'request')).toEqual(['type-changed breaking request.description']);
+  });
+
+  it('reads a dropped items or properties as allowing anything', () => {
+    expect(diff({ type: 'array', items: S }, { type: 'array' }, 'response')).toEqual([
+      'type-widened breaking response[]',
+    ]);
+    expect(diff(object({ a: S }), { type: 'object' }, 'request')).toEqual(['field-removed breaking request.a']);
+    expect(diff({ type: 'object' }, { type: 'object', additionalProperties: false }, 'request')).toEqual([
+      'constraint-narrowed breaking request',
+    ]);
+  });
+
+  it('calls a changed bare choice rule breaking on both sides, and a reordered oneOf no change', () => {
+    const before = { oneOf: [{ required: ['a'] }, { required: ['b'] }] };
+    const after = { oneOf: [{ required: ['a'] }, { required: ['c'] }] };
+    expect(diff(before, after, 'response')).toEqual(['constraint-changed breaking response']);
+    expect(diff({ oneOf: [S, { type: 'integer' }] }, { oneOf: [{ type: 'integer' }, S] }, 'request')).toEqual([]);
+  });
+
+  it('treats a malformed $ref as unresolved instead of failing', () => {
+    expect(diff({ $ref: '#/a%b' }, { $ref: '#/a%b' }, 'request')).toEqual([]);
+  });
+
+  it('follows equal $refs in combinators to targets that changed', () => {
+    const before = { $defs: { B: S }, oneOf: [{ $ref: '#/$defs/B' }, { type: 'boolean' }] };
+    const after = { $defs: { B: { type: 'integer' } }, oneOf: [{ $ref: '#/$defs/B' }, { type: 'boolean' }] };
+    expect(diff(before, after, 'request')).toEqual(['type-changed breaking request']);
+  });
+
+  it('stops at the comparison budget and says so', () => {
+    // A chain of shared nodes, each used twice: comparing every path doubles at each level.
+    let oldNode: unknown = S;
+    let newNode: unknown = { type: 'integer' };
+    for (let level = 0; level < 20; level += 1) {
+      oldNode = object({ l: oldNode, r: oldNode });
+      newNode = object({ l: newNode, r: newNode });
+    }
+    const notes: string[] = [];
+    const changes = diffSchemas(oldNode, newNode, { side: 'request', location: 'request', notes });
+    expect(changes.length).toBeGreaterThan(0);
+    expect(notes).toEqual([expect.stringContaining('stopped after comparing 50000 schema nodes')]);
+  });
+});

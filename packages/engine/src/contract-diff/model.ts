@@ -27,6 +27,7 @@ export type ContractChangeKind =
   | 'enum-values-removed'
   | 'constraint-narrowed'
   | 'constraint-widened'
+  | 'constraint-changed'
   | 'media-type-added'
   | 'media-type-removed'
   | 'response-added'

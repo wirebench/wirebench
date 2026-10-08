@@ -7,7 +7,7 @@
 import { diffEndpoints } from '../../contract-diff/endpoints.js';
 import type { ContractChange, ContractDiff, ContractSide, MessageSide } from '../../contract-diff/model.js';
 import { sortChanges } from '../../contract-diff/model.js';
-import { diffSchemas, sameSchema } from '../../contract-diff/schema-diff.js';
+import { diffSchemas } from '../../contract-diff/schema-diff.js';
 import type {
   OpenApiDocument,
   OpenApiOperation,
@@ -17,7 +17,7 @@ import type {
   OpenApiSecurityRequirement,
 } from './model.js';
 import { serverUrl } from './model.js';
-import { planRestUpdate } from './update.js';
+import { planRestUpdate, sameStructure } from './update.js';
 
 const keyOf = (op: { readonly method: string; readonly path: string }): string =>
   `${op.method.toLowerCase()} ${op.path}`;
@@ -32,14 +32,17 @@ const isSuccess = (status: string): boolean => /^2/.test(status) || status === '
 class OperationDiff {
   readonly changes: ContractChange[] = [];
 
-  constructor(readonly operation: string) {}
+  constructor(
+    readonly operation: string,
+    private readonly notes: string[],
+  ) {}
 
   add(change: Omit<ContractChange, 'operation'>): void {
     this.changes.push({ ...change, operation: this.operation });
   }
 
   schemas(before: unknown, after: unknown, side: MessageSide, location: string): void {
-    this.changes.push(...diffSchemas(before, after, { side, location, operation: this.operation }));
+    this.changes.push(...diffSchemas(before, after, { side, location, operation: this.operation, notes: this.notes }));
   }
 }
 
@@ -174,6 +177,7 @@ export function diffOpenApiContracts(
 ): ContractDiff {
   const plan = planRestUpdate(oldDocument, newDocument);
   const changes: ContractChange[] = [];
+  const notes: string[] = [];
 
   for (const ref of plan.removed) {
     const operation = openApiOperationLabel(ref);
@@ -199,8 +203,8 @@ export function diffOpenApiContracts(
     }
     done.add(key);
     operationsCompared += 1;
-    const diff = new OperationDiff(openApiOperationLabel(after));
-    if (!sameSchema(effectiveSecurity(oldDocument, before), effectiveSecurity(newDocument, after))) {
+    const diff = new OperationDiff(openApiOperationLabel(after), notes);
+    if (!sameStructure(effectiveSecurity(oldDocument, before), effectiveSecurity(newDocument, after))) {
       diff.add({ kind: 'security-changed', severity: 'breaking', message: 'the security requirements changed' });
     }
     for (const location of PARAMETER_LOCATIONS) {
@@ -227,6 +231,6 @@ export function diffOpenApiContracts(
     new: withInfo(sides.new, newDocument),
     operationsCompared,
     changes: sortChanges(changes),
-    notes: [],
+    notes,
   };
 }

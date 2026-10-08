@@ -62,6 +62,7 @@ export function diffWsdlContracts(
   const plan = planUpdate(oldImport, newImport);
   const changes: ContractChange[] = [];
   const notes = new Set<string>();
+  const budget: string[] = [];
 
   for (const ref of plan.removedOperations) {
     const operation = wsdlOperationLabel(ref);
@@ -89,7 +90,9 @@ export function diffWsdlContracts(
       const now = operationJsonSchema(newImport, ref, side);
       for (const note of was.notes) notes.add(`${sides.old.label}: ${note}`);
       for (const note of now.notes) notes.add(`${sides.new.label}: ${note}`);
-      changes.push(...diffSchemas(was.schema, now.schema, { side, location: side, operation, xmlOccurrence: true }));
+      changes.push(
+        ...diffSchemas(was.schema, now.schema, { side, location: side, operation, xmlOccurrence: true, notes: budget }),
+      );
     }
   }
 
@@ -99,6 +102,6 @@ export function diffWsdlContracts(
     new: sides.new,
     operationsCompared,
     changes: sortChanges(changes),
-    notes: [...notes],
+    notes: [...notes, ...budget],
   };
 }

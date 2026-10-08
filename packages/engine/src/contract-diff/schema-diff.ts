@@ -19,6 +19,8 @@ export interface DiffSchemasOptions {
   /** The documents `$ref`s resolve against; each schema itself when absent. */
   readonly oldRoot?: unknown;
   readonly newRoot?: unknown;
+  /** Receives what could not be compared (the comparison budget ran out). */
+  readonly notes?: string[];
 }
 
 type Schema = Readonly<Record<string, unknown>>;
@@ -28,6 +30,12 @@ const isSchema = (value: unknown): value is Schema =>
 
 const MAX_REF_HOPS = 32;
 
+/**
+ * How many schema nodes one diff compares at most. A schema reused in many places is compared at
+ * each of them, so a document whose shared types fan out widely could otherwise take very long.
+ */
+export const MAX_COMPARISONS = 50_000;
+
 /** A local `$ref` (`#/a/b`) looked up in `root`; undefined when it leads nowhere. */
 function pointer(root: unknown, ref: string): unknown {
   if (!ref.startsWith('#')) {
@@ -35,7 +43,12 @@ function pointer(root: unknown, ref: string): unknown {
   }
   let node = root;
   for (const raw of ref.slice(1).split('/').slice(1)) {
-    const key = decodeURIComponent(raw).replaceAll('~1', '/').replaceAll('~0', '~');
+    let key: string;
+    try {
+      key = decodeURIComponent(raw).replaceAll('~1', '/').replaceAll('~0', '~');
+    } catch {
+      return undefined;
+    }
     if (!isSchema(node) || !Object.hasOwn(node, key)) {
       return undefined;
     }
@@ -119,6 +132,9 @@ function contains(outer: Set<string> | undefined, inner: Set<string> | undefined
 
 const sameTypes = (a: Set<string> | undefined, b: Set<string> | undefined): boolean => contains(a, b) && contains(b, a);
 
+/** Whether a schema with these types can be a value of type `type`. */
+const allows = (types: Set<string> | undefined, type: string): boolean => types === undefined || types.has(type);
+
 const typeText = (types: Set<string> | undefined): string => (types === undefined ? 'any' : [...types].join(' | '));
 
 const valueText = (value: unknown): string => JSON.stringify(value) ?? String(value);
@@ -140,10 +156,45 @@ const FORMAT_WIDENINGS: ReadonlySet<string> = new Set(['int32>int64', 'float>dou
 
 /** Keywords that make a combinator option a schema of its own rather than a bare constraint. */
 const SHAPE_KEYWORDS = ['type', 'properties', 'items', '$ref', 'enum', 'const', 'allOf', 'oneOf', 'anyOf'];
+/** Documentation keywords of a schema node; a property of that name is not one. */
 const IGNORED_KEYWORDS: ReadonlySet<string> = new Set(['description', 'title', 'example', 'examples', '$comment']);
 
-/** Structural equality, cycle-safe, ignoring documentation keywords. */
-function sameValue(a: unknown, b: unknown, seen = new Map<object, Set<object>>()): boolean {
+/** What a value inside a schema is: a schema node, a map of names to schemas, or plain data (an enum value). */
+type Mode = 'schema' | 'map' | 'data';
+
+const SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
+  'items',
+  'additionalProperties',
+  'additionalItems',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+  'not',
+  'if',
+  'then',
+  'else',
+  'contains',
+  'propertyNames',
+  'allOf',
+  'anyOf',
+  'oneOf',
+  'prefixItems',
+]);
+const MAP_KEYWORDS: ReadonlySet<string> = new Set([
+  'properties',
+  'patternProperties',
+  '$defs',
+  'definitions',
+  'dependentSchemas',
+]);
+
+function childMode(mode: Mode, key: string): Mode {
+  if (mode === 'map') return 'schema';
+  if (mode === 'data') return 'data';
+  return SCHEMA_KEYWORDS.has(key) ? 'schema' : MAP_KEYWORDS.has(key) ? 'map' : 'data';
+}
+
+/** Structural equality, cycle-safe, ignoring documentation keywords on schema nodes only. */
+function sameValue(a: unknown, b: unknown, mode: Mode, seen = new Map<object, Set<object>>()): boolean {
   if (a === b) {
     return true;
   }
@@ -161,25 +212,40 @@ function sameValue(a: unknown, b: unknown, seen = new Map<object, Set<object>>()
       Array.isArray(a) &&
       Array.isArray(b) &&
       a.length === b.length &&
-      a.every((item, index) => sameValue(item, b[index], seen))
+      a.every((item, index) => sameValue(item, b[index], mode, seen))
     );
   }
   const left = a as Schema;
   const right = b as Schema;
-  const keys = (record: Schema): string[] => Object.keys(record).filter((key) => !IGNORED_KEYWORDS.has(key));
+  const keys = (record: Schema): string[] =>
+    Object.keys(record).filter((key) => mode !== 'schema' || !IGNORED_KEYWORDS.has(key));
   const leftKeys = keys(left);
   const rightKeys = keys(right);
   return (
     leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key], seen))
+    leftKeys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key], childMode(mode, key), seen))
   );
+}
+
+/** Whether a value holds a `$ref` anywhere: two equal ones may still point at different targets. */
+function hasRef(value: unknown, seen = new Set<object>()): boolean {
+  if (typeof value !== 'object' || value === null || seen.has(value)) {
+    return false;
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.some((item) => hasRef(item, seen));
+  }
+  return Object.entries(value as Schema).some(([key, item]) => key === '$ref' || hasRef(item, seen));
 }
 
 class Differ {
   private readonly changes: ContractChange[] = [];
-  private readonly seen = new Map<object, Set<object>>();
+  /** The pairs being compared on the current path: a pair met again there is a cycle. */
+  private readonly active = new Map<object, Set<object>>();
   /** The documents `$ref`s resolve against, old then new. */
   private roots: readonly [unknown, unknown] = [undefined, undefined];
+  private comparisons = 0;
 
   constructor(private readonly options: DiffSchemasOptions) {}
 
@@ -188,6 +254,12 @@ class Differ {
     const newRoot = this.options.newRoot ?? newSchema;
     this.roots = [oldRoot, newRoot];
     this.node(oldSchema, newSchema, this.options.location);
+    if (this.comparisons > MAX_COMPARISONS) {
+      const where = [this.options.operation, this.options.location].filter((part) => part !== undefined).join(' ');
+      this.options.notes?.push(
+        `${where}: stopped after comparing ${String(MAX_COMPARISONS)} schema nodes; deeper changes are not listed`,
+      );
+    }
     return this.changes;
   }
 
@@ -206,23 +278,26 @@ class Differ {
   }
 
   private node(oldValue: unknown, newValue: unknown, location: string): void {
-    this.compare(unwrap(oldValue, this.roots[0]), unwrap(newValue, this.roots[1]), location);
-  }
-
-  private firstVisit(a: object, b: object): boolean {
-    const pairs = this.seen.get(a) ?? new Set<object>();
-    if (pairs.has(b)) {
-      return false;
+    const before = unwrap(oldValue, this.roots[0]);
+    const after = unwrap(newValue, this.roots[1]);
+    const pairs = this.active.get(before.schema) ?? new Set<object>();
+    if (pairs.has(after.schema)) {
+      return;
     }
-    pairs.add(b);
-    this.seen.set(a, pairs);
-    return true;
+    this.comparisons += 1;
+    if (this.comparisons > MAX_COMPARISONS) {
+      return;
+    }
+    pairs.add(after.schema);
+    this.active.set(before.schema, pairs);
+    try {
+      this.compare(before, after, location);
+    } finally {
+      pairs.delete(after.schema);
+    }
   }
 
   private compare(before: Node, after: Node, location: string): void {
-    if (!this.firstVisit(before.schema, after.schema)) {
-      return;
-    }
     const oldTypes = typesOf(before);
     const newTypes = typesOf(after);
 
@@ -248,11 +323,14 @@ class Differ {
     if (!typeChanged) {
       this.constraints(before.schema, after.schema, location);
     }
-    this.object(before.schema, after.schema, location);
+    if (allows(oldTypes, 'object') && allows(newTypes, 'object')) {
+      this.object(before.schema, after.schema, location);
+    }
     const oldItems = before.schema['items'];
     const newItems = after.schema['items'];
-    if (oldItems !== undefined && newItems !== undefined) {
-      this.node(oldItems, newItems, `${location}[]`);
+    if ((oldItems !== undefined || newItems !== undefined) && allows(oldTypes, 'array') && allows(newTypes, 'array')) {
+      // A missing `items` allows any item.
+      this.node(oldItems ?? true, newItems ?? true, `${location}[]`);
     }
     for (const keyword of ['allOf', 'oneOf', 'anyOf'] as const) {
       this.combinator(keyword, before.schema, after.schema, location);
@@ -305,7 +383,8 @@ class Differ {
       );
       return;
     }
-    const has = (values: unknown[], value: unknown): boolean => values.some((candidate) => sameValue(candidate, value));
+    const has = (values: unknown[], value: unknown): boolean =>
+      values.some((candidate) => sameValue(candidate, value, 'data'));
     const removed = oldValues.filter((value) => !has(newValues, value));
     const added = newValues.filter((value) => !has(oldValues, value));
     if (removed.length > 0) {
@@ -338,7 +417,7 @@ class Differ {
     const bound = (keyword: string, lower: boolean): void => {
       const was = before[keyword];
       const now = after[keyword];
-      if (sameValue(was, now)) {
+      if (sameValue(was, now, 'data')) {
         return;
       }
       const text = changeText(keyword, was, now);
@@ -357,7 +436,7 @@ class Differ {
     for (const keyword of ['pattern', 'multipleOf'] as const) {
       const was = before[keyword];
       const now = after[keyword];
-      if (!sameValue(was, now)) {
+      if (!sameValue(was, now, 'data')) {
         // A different pattern cannot be proved wider, so it counts as narrower.
         if (now === undefined) this.widened(location, changeText(keyword, was, now));
         else this.narrowed(location, changeText(keyword, was, now));
@@ -366,7 +445,7 @@ class Differ {
 
     const oldFormat = before['format'];
     const newFormat = after['format'];
-    if (!sameValue(oldFormat, newFormat)) {
+    if (!sameValue(oldFormat, newFormat, 'data')) {
       const wider =
         newFormat === undefined ||
         (typeof oldFormat === 'string' &&
@@ -383,11 +462,6 @@ class Differ {
   }
 
   private object(before: Schema, after: Schema, location: string): void {
-    const oldProperties = isSchema(before['properties']) ? before['properties'] : undefined;
-    const newProperties = isSchema(after['properties']) ? after['properties'] : undefined;
-    if (oldProperties === undefined || newProperties === undefined) {
-      return;
-    }
     const oldClosed = before['additionalProperties'] === false;
     const newClosed = after['additionalProperties'] === false;
     if (!oldClosed && newClosed) {
@@ -395,21 +469,26 @@ class Differ {
     } else if (oldClosed && !newClosed) {
       this.widened(location, 'other properties are now allowed');
     }
+    const oldProperties = isSchema(before['properties']) ? before['properties'] : undefined;
+    const newProperties = isSchema(after['properties']) ? after['properties'] : undefined;
+    if (oldProperties === undefined && newProperties === undefined) {
+      return;
+    }
     const requiredOf = (schema: Schema): ReadonlySet<unknown> =>
       new Set(Array.isArray(schema['required']) ? (schema['required'] as unknown[]) : []);
     const oldRequired = requiredOf(before);
     const newRequired = requiredOf(after);
-    const oldKeys = Object.keys(oldProperties);
-    const newKeys = Object.keys(newProperties);
+    const oldMap = oldProperties ?? {};
+    const newMap = newProperties ?? {};
     const at = (key: string): string => `${location}.${key}`;
 
-    for (const key of oldKeys) {
-      if (!Object.hasOwn(newProperties, key)) {
+    for (const key of Object.keys(oldMap)) {
+      if (!Object.hasOwn(newMap, key)) {
         this.add('field-removed', 'breaking', at(key), `${key} removed`);
       }
     }
-    for (const key of newKeys) {
-      if (Object.hasOwn(oldProperties, key)) {
+    for (const key of Object.keys(newMap)) {
+      if (Object.hasOwn(oldMap, key)) {
         continue;
       }
       if (newRequired.has(key)) {
@@ -418,8 +497,8 @@ class Differ {
         this.add('field-added', 'compatible', at(key), `${key} added, optional`);
       }
     }
-    for (const key of oldKeys) {
-      if (!Object.hasOwn(newProperties, key)) {
+    for (const key of Object.keys(oldMap)) {
+      if (!Object.hasOwn(newMap, key)) {
         continue;
       }
       if (!oldRequired.has(key) && newRequired.has(key)) {
@@ -427,7 +506,7 @@ class Differ {
       } else if (oldRequired.has(key) && !newRequired.has(key)) {
         this.add('field-optional', this.sided('compatible', 'breaking'), at(key), `${key} is now optional`);
       }
-      this.node(oldProperties[key], newProperties[key], at(key));
+      this.node(oldMap[key], newMap[key], at(key));
     }
   }
 
@@ -435,29 +514,36 @@ class Differ {
     const listOf = (schema: Schema): unknown[] =>
       Array.isArray(schema[keyword]) ? (schema[keyword] as unknown[]) : [];
     const oldOptions = listOf(before);
-    const newOptions = listOf(after);
-    if (sameValue(oldOptions, newOptions)) {
+    const allNew = listOf(after);
+    // An option equal on both sides is unchanged wherever it sits, so a reordered oneOf is no change;
+    // one holding a `$ref` is always compared, since an equal reference may point at a changed target.
+    const newOptions = [...allNew];
+    const unmatched: unknown[] = [];
+    for (const option of oldOptions) {
+      const match = hasRef(option) ? -1 : newOptions.findIndex((candidate) => sameValue(option, candidate, 'schema'));
+      if (match === -1) unmatched.push(option);
+      else newOptions.splice(match, 1);
+    }
+    if (unmatched.length === 0 && newOptions.length === 0) {
       return;
     }
-    if (oldOptions.length !== newOptions.length) {
-      const more = newOptions.length > oldOptions.length;
+    if (unmatched.length !== newOptions.length) {
+      const more = newOptions.length > unmatched.length;
       // More alternatives widen what is allowed; more parts of an allOf narrow it.
       const wider = keyword === 'allOf' ? !more : more;
-      const text = `${keyword} has ${String(newOptions.length)} schemas, was ${String(oldOptions.length)}`;
+      const text = `${keyword} has ${String(allNew.length)} schemas, was ${String(oldOptions.length)}`;
       if (wider) this.add('type-widened', this.sided('compatible', 'breaking'), location, text);
       else this.add('type-narrowed', this.sided('breaking', 'compatible'), location, text);
       return;
     }
     const shaped = (option: unknown): boolean => isSchema(option) && SHAPE_KEYWORDS.some((key) => key in option);
-    oldOptions.forEach((oldOption, index) => {
+    unmatched.forEach((oldOption, index) => {
       const newOption = newOptions[index];
-      if (sameValue(oldOption, newOption)) {
-        return;
-      }
       if (shaped(oldOption) && shaped(newOption)) {
         this.node(oldOption, newOption, location);
       } else {
-        this.narrowed(location, `a ${keyword} constraint changed`);
+        // A bare rule (a choice branch's) changed; whether it allows more or less cannot be told.
+        this.add('constraint-changed', 'breaking', location, `a ${keyword} rule changed`);
       }
     });
   }
@@ -468,7 +554,7 @@ export function diffSchemas(oldSchema: unknown, newSchema: unknown, options: Dif
   return new Differ(options).run(oldSchema, newSchema);
 }
 
-/** Whether two schemas (or any two JSON values) are the same, documentation aside; cycle-safe. */
+/** Whether two schemas are the same, documentation keywords aside; cycle-safe. */
 export function sameSchema(a: unknown, b: unknown): boolean {
-  return sameValue(a, b);
+  return sameValue(a, b, 'schema');
 }

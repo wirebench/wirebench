@@ -36,7 +36,7 @@ type ContractChangeKind =
   | 'field-added' | 'field-removed' | 'field-required' | 'field-optional'
   | 'type-changed' | 'type-narrowed' | 'type-widened'
   | 'enum-values-added' | 'enum-values-removed'
-  | 'constraint-narrowed' | 'constraint-widened'
+  | 'constraint-narrowed' | 'constraint-widened' | 'constraint-changed'
   | 'media-type-added' | 'media-type-removed'
   | 'response-added' | 'response-removed'
   | 'soap-action-changed' | 'soap-version-changed' | 'style-changed' | 'security-changed';
@@ -126,11 +126,17 @@ Notes on the rules:
   repeating particle; n→1 is a narrowing. In JSON (OpenAPI) a value becoming an array is
   `type-changed`.
 - `null` is part of the type: OpenAPI 3.0 `nullable: true` reads as `type: [..., 'null']`.
-- `oneOf`/`anyOf`/`allOf` options are compared by position; an option added or removed is a type
-  widening or narrowing of that node.
-- **Recursion**: `$ref`s into `$defs` (WSDL) and cyclic resolved schemas (OpenAPI) are followed once
-  per pair of nodes; a pair already being compared is not compared again.
-- Descriptions, titles, examples and documentation are not compared.
+- `oneOf`/`anyOf`/`allOf` options equal on both sides are matched wherever they sit, so a reordering
+  is no change; the rest are compared by position. An option added or removed is a type widening or
+  narrowing of that node. A changed bare rule (an option with no type of its own, as an XSD choice's
+  branch rules are) is `constraint-changed`, breaking on both sides: whether it allows more or less
+  cannot be told.
+- **Recursion**: `$ref`s into `$defs` (WSDL) and cyclic resolved schemas (OpenAPI) are followed; a
+  pair of nodes met again on the path being compared is a cycle and is not compared again. A schema
+  shared by several fields is compared at each of them. One diff compares at most 50 000 nodes; past
+  that it stops and says so in `notes`.
+- Descriptions, titles, examples and documentation keywords of a schema are not compared (a property
+  of that name is).
 
 ## 4. Engine API
 
