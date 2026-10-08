@@ -30,8 +30,8 @@ stopped, and its requests are shown in a log.
 ## Decisions taken here
 
 - **The dispatch script is edited as TypeScript with syntax colouring only.** Type checking against the
-  dispatch API needs a new target in the script host. That host is keyed by request and phase. The checking is
-  a follow-up issue.
+  dispatch API needs a new target in the script host. That host is keyed by request and phase, so the checking is
+  follow-up #352.
 - **The Record button for #60 is not in this PR.** The recorder is not on main yet; whichever of the two lands
   second adds the button to the mock tab.
 - **The preference lives in a new `mocks` section,** `mocks.listenOnAllInterfaces`, off by default.
@@ -94,5 +94,5 @@ One commit, not two: the explorer's New Mock opens the tab, so neither half is u
 
 - [ ] e2e `mocks.spec.ts`: generate a mock from a REST API, start it, send to it and see the row in the log.
 - [ ] `guides/mock-services.mdx`, a sidebar entry, success-criteria rows and a CHANGELOG entry.
-- [ ] Open the follow-up issue for typed dispatch scripts.
+- [ ] Open the follow-up issue for typed dispatch scripts (#352).
 - [ ] Gate, commit `docs: mock services guide (#59)`.
