@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/api-definition-manifest.schema.json",
+  "title": "Wirebench project file: API definition cache manifest",
+  "description": "Project format 8: `apis/*/definition/manifest.yaml`.",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "formatVersion": { "type": "number", "const": 1 },
+        "rootLocation": { "type": "string", "minLength": 1 },
+        "fetchedAt": { "type": "string", "minLength": 1 },
+        "declaredVersion": { "type": "string" },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": { "type": "string", "minLength": 1 },
+              "location": { "type": "string", "minLength": 1 },
+              "requestedLocation": { "type": "string" },
+              "sha256": { "type": "string", "minLength": 1 },
+              "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+            },
+            "required": ["file", "location", "sha256", "bytes"],
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": ["formatVersion", "rootLocation", "fetchedAt", "documents"],
+      "additionalProperties": {}
+    },
+    {
+      "type": "object",
+      "properties": {
+        "formatVersion": { "type": "number", "const": 1 },
+        "kind": { "type": "string", "const": "proto" },
+        "source": { "type": "string", "minLength": 1 },
+        "fetchedAt": { "type": "string", "minLength": 1 },
+        "roots": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "minLength": 1 },
+              "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+            },
+            "required": ["path", "sha256", "bytes"],
+            "additionalProperties": {}
+          }
+        }
+      },
+      "required": ["formatVersion", "kind", "source", "fetchedAt", "roots", "files"],
+      "additionalProperties": {}
+    },
+    {
+      "type": "object",
+      "properties": {
+        "formatVersion": { "type": "number", "const": 1 },
+        "kind": { "type": "string", "const": "descriptors" },
+        "source": { "type": "string", "minLength": 1 },
+        "fetchedAt": { "type": "string", "minLength": 1 },
+        "roots": { "default": [], "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "reflectionVersion": { "type": "string", "enum": ["v1", "v1alpha"] },
+        "file": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "minLength": 1 },
+            "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          },
+          "required": ["path", "sha256", "bytes"],
+          "additionalProperties": {}
+        }
+      },
+      "required": ["formatVersion", "kind", "source", "fetchedAt", "file"],
+      "additionalProperties": {}
+    }
+  ]
+}
