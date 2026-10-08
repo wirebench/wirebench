@@ -38,6 +38,7 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
+import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
@@ -275,6 +276,7 @@ export function AppShell() {
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
   useEffect(() => subscribeToHosts(), []);
+  useEffect(() => subscribeToSshEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
   useEffect(() => subscribeToAccounts(), []);
   useEffect(() => {

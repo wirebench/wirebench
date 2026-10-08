@@ -1,5 +1,5 @@
 import { catalogEntry } from '@shared/command-catalog.js';
-import { connectToHost, DEFAULT_TERMINAL_SIZE } from '../features/ssh/connect.js';
+import { openTerminalFor } from '../features/ssh/connect.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { registerCommand } from '../lib/commands.js';
 import { useUiStore } from '../state/ui.js';
@@ -10,7 +10,7 @@ function revealHosts(): void {
   if (!sidebar.visible || sidebar.view !== 'ssh') showSidebarView('ssh');
 }
 
-/** Registers the `ssh.*` commands of the Hosts area: they open the host / group dialog. */
+/** Registers the `ssh.*` commands of the Hosts area: the host / group dialog, and a host's terminal. */
 export function registerSshCommands(): void {
   registerCommand({
     ...catalogEntry('ssh.newHost'),
@@ -37,7 +37,7 @@ export function registerSshCommands(): void {
   registerCommand({
     ...catalogEntry('ssh.connect'),
     run: (_context, arg) => {
-      if (typeof arg === 'string') void connectToHost(arg, DEFAULT_TERMINAL_SIZE);
+      if (typeof arg === 'string') openTerminalFor(arg);
     },
   });
 }

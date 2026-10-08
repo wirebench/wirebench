@@ -1,0 +1,187 @@
+import { useEffect, useRef, useState } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import '@xterm/xterm/css/xterm.css';
+import { useEditorsStore } from '../../state/editors.js';
+import { ipc } from '../../state/ipc-client.js';
+import { connectToHost, terminalTabId } from './connect.js';
+import { useHostsStore } from './hosts-store.js';
+import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
+import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
+
+/** How long a layout change settles before the new size goes to the remote pty. */
+const RESIZE_DEBOUNCE_MS = 100;
+
+/** The terminal one mount of the tab owns, with what the session was last told its size is. */
+interface Live {
+  readonly term: Terminal;
+  /** Fits the terminal to its holder (never while the holder is hidden) and, debounced, tells the session. */
+  readonly refit: () => void;
+  /** Tells the session the terminal's size now, when it differs from what it was last told. */
+  readonly syncSize: () => void;
+}
+
+const encoder = new TextEncoder();
+
+function hasSize(element: HTMLElement): boolean {
+  return element.clientWidth > 0 && element.clientHeight > 0;
+}
+
+/** Closes a host's session for good: no more output routed, main told, the host idle again. */
+function endSession(hostId: string, sessionId: string): void {
+  detachTerminal(sessionId);
+  void ipc().ssh.close({ sessionId });
+  const hosts = useHostsStore.getState();
+  if (hosts.sessions[hostId]?.sessionId === sessionId) hosts.setSession(hostId, undefined);
+}
+
+/**
+ * One host's shell. The tab stays mounted while another tab is in front (the editor area hides it),
+ * so only closing the tab — or Reconnect, which bumps the host's nonce — ends the session. The tab
+ * attaches to whatever session the hosts store records for its host, so a connect that went through
+ * the trust prompt lands here too.
+ */
+export function TerminalTab({ hostId, active }: { readonly hostId: string; readonly active: boolean }) {
+  const holder = useRef<HTMLDivElement>(null);
+  const live = useRef<Live | null>(null);
+  /** The session keystrokes go to; unset until attached and again once the session has ended. */
+  const target = useRef<string | undefined>(undefined);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const nonce = useHostsStore((s) => s.reconnectNonce[hostId] ?? 0);
+  const session = useHostsStore((s) => s.sessions[hostId]);
+  const sessionId = session?.sessionId;
+  const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
+
+  // The terminal and the connect, once per mount and again per Reconnect.
+  useEffect(() => {
+    const element = holder.current;
+    if (element === null) return;
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: monoFontFromCss(),
+      fontSize: 13,
+      theme: themeFromCss(),
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    // The default handler opens a blank window first, which main refuses; this hands main the URL.
+    term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, '_blank', 'noopener')));
+    term.open(element);
+    if (hasSize(element)) fit.fit();
+
+    let sent = { cols: term.cols, rows: term.rows };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const syncSize = (): void => {
+      const id = target.current;
+      if (id === undefined || (term.cols === sent.cols && term.rows === sent.rows)) return;
+      sent = { cols: term.cols, rows: term.rows };
+      void ipc().ssh.resize({ sessionId: id, ...sent });
+    };
+    const refit = (): void => {
+      if (!hasSize(element)) return;
+      fit.fit();
+      clearTimeout(timer);
+      timer = setTimeout(syncSize, RESIZE_DEBOUNCE_MS);
+    };
+    live.current = { term, refit, syncSize };
+    const observer = new ResizeObserver(refit);
+    observer.observe(element);
+
+    const send = (bytes: Uint8Array): void => {
+      const id = target.current;
+      if (id !== undefined) void ipc().ssh.write({ sessionId: id, data: bytesToBase64(bytes) });
+    };
+    const input = term.onData((text) => {
+      send(encoder.encode(text));
+    });
+    // Some mouse reports are raw bytes, one per char code.
+    const binary = term.onBinary((text) => {
+      send(Uint8Array.from(text, (c) => c.charCodeAt(0) & 0xff));
+    });
+    const themeWatch = new MutationObserver(() => {
+      term.options.theme = themeFromCss();
+    });
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    let disposed = false;
+    void connectToHost(hostId, sent).then((result) => {
+      if (!disposed) return;
+      // Torn down while connecting. A remount of the same tab picks the session up from the store;
+      // with the tab gone, nothing will, so the session and any trust prompt go with it.
+      if (useEditorsStore.getState().tabs.some((t) => t.id === terminalTabId(hostId))) return;
+      if (result) endSession(hostId, result.sessionId);
+      const hosts = useHostsStore.getState();
+      if (hosts.trustPrompt?.hostId === hostId) hosts.setTrustPrompt(null);
+    });
+
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      observer.disconnect();
+      themeWatch.disconnect();
+      input.dispose();
+      binary.dispose();
+      const current = useHostsStore.getState().sessions[hostId]?.sessionId;
+      if (current !== undefined) endSession(hostId, current);
+      target.current = undefined;
+      live.current = null;
+      term.dispose();
+    };
+  }, [hostId, nonce]);
+
+  // Attach to the host's session once the store has one: from the connect above, or from the trust prompt.
+  useEffect(() => {
+    const current = live.current;
+    if (sessionId === undefined || current === null) return;
+    // A render from before a Reconnect still names the session the teardown just closed.
+    if (useHostsStore.getState().sessions[hostId]?.sessionId !== sessionId) return;
+    target.current = sessionId;
+    attachTerminal(sessionId, {
+      write: (data) => {
+        current.term.write(data);
+      },
+      exit: (code) => {
+        if (target.current === sessionId) target.current = undefined;
+        setExit({ sessionId, code });
+      },
+    });
+    current.syncSize();
+    if (activeRef.current) current.term.focus();
+    return () => {
+      detachTerminal(sessionId);
+      if (target.current === sessionId) target.current = undefined;
+    };
+  }, [hostId, sessionId, nonce]);
+
+  // Coming back to the front: the holder had no size while hidden, so fit it now.
+  useEffect(() => {
+    if (!active) return;
+    live.current?.refit();
+    live.current?.term.focus();
+  }, [active]);
+
+  const exitCode = sessionId !== undefined && exit?.sessionId === sessionId ? exit.code : undefined;
+  const ended = sessionId !== undefined && (exitCode !== undefined || session?.state === 'closed');
+
+  return (
+    <div className="flex h-full flex-col">
+      <div ref={holder} className="min-h-0 flex-1 bg-surface-sunken p-2" data-testid="ssh-terminal" />
+      {ended && (
+        <div className="flex items-center gap-3 border-t border-hairline px-3 py-2 text-sm text-fg-default">
+          <span>{`Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`}</span>
+          <button
+            type="button"
+            className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
+            onClick={() => {
+              useHostsStore.getState().bumpReconnect(hostId);
+            }}
+          >
+            Reconnect
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,14 +1,12 @@
+import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
-import { useHostsStore } from './hosts-store.js';
+import { findHost, useHostsStore } from './hosts-store.js';
 
 interface Size {
   cols: number;
   rows: number;
 }
-
-/** What a connect asks for before a terminal exists to measure; the terminal resizes the session on mount. */
-export const DEFAULT_TERMINAL_SIZE: Size = { cols: 80, rows: 24 };
 
 function recordProblem(hostId: string, code: string, message: string): void {
   useProblemsStore
@@ -87,4 +85,16 @@ export async function confirmTrust(replace: boolean): Promise<{ sessionId: strin
   if (code === 'ssh-host-key-unexpected') return connectToHost(prompt.hostId, prompt.size);
   recordProblem(prompt.hostId, code, message);
   return undefined;
+}
+
+/** The editor-tab id of a host's terminal: one terminal tab per host. */
+export function terminalTabId(hostId: string): string {
+  return `ssh:${hostId}`;
+}
+
+/** Opens (or brings forward) the host's terminal tab; the tab connects itself when it mounts. */
+export function openTerminalFor(hostId: string): void {
+  const { resolved, file } = useHostsStore.getState();
+  const title = resolved.find((h) => h.id === hostId)?.name ?? findHost(file, hostId)?.name ?? hostId;
+  useEditorsStore.getState().open({ id: terminalTabId(hostId), kind: 'ssh-terminal', title, hostId });
 }

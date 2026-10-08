@@ -45,6 +45,8 @@ interface HostsState {
   /** The session state per host id; a host absent from the record is idle. */
   sessions: Readonly<Record<string, HostSession>>;
   trustPrompt: TrustPrompt | null;
+  /** Bumped by a terminal tab's Reconnect; the tab keyed on it tears down and connects afresh. */
+  reconnectNonce: Readonly<Record<string, number>>;
   refresh: () => Promise<void>;
   /** Sends the whole file; `false` when main refused it (the old state stays, the refusal is a problem). */
   save: (file: HostsFileWire) => Promise<boolean>;
@@ -55,6 +57,9 @@ interface HostsState {
   /** `undefined` removes the host's entry (idle). */
   setSession: (hostId: string, session: HostSession | undefined) => void;
   setTrustPrompt: (prompt: TrustPrompt | null) => void;
+  /** Main's `ssh.state`: a session that closed marks its host `closed` (the id stays, for the tab to see). */
+  noteSessionState: (sessionId: string, state: 'open' | 'closed') => void;
+  bumpReconnect: (hostId: string) => void;
   visibleHosts: () => readonly ResolvedHostWire[];
 }
 
@@ -70,6 +75,7 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   dialog: null,
   sessions: {},
   trustPrompt: null,
+  reconnectNonce: {},
   async refresh() {
     apply(await ipc().ssh.listHosts(undefined));
   },
@@ -97,6 +103,16 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   },
   setTrustPrompt: (trustPrompt) => {
     set({ trustPrompt });
+  },
+  noteSessionState: (sessionId, state) => {
+    if (state !== 'closed') return;
+    const { sessions } = get();
+    const hostId = Object.keys(sessions).find((id) => sessions[id]?.sessionId === sessionId);
+    if (hostId !== undefined) set({ sessions: { ...sessions, [hostId]: { sessionId, state: 'closed' } } });
+  },
+  bumpReconnect: (hostId) => {
+    const { reconnectNonce } = get();
+    set({ reconnectNonce: { ...reconnectNonce, [hostId]: (reconnectNonce[hostId] ?? 0) + 1 } });
   },
   visibleHosts() {
     const { resolved, filter, selectedTags } = get();

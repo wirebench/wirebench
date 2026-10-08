@@ -6,12 +6,12 @@ const listHosts = vi.fn();
 const saveHosts = vi.fn();
 const secretNames = vi.fn();
 const setSecret = vi.fn();
-const connect = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, connect } }),
+  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret } }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 
 const defaults = {
   user: { value: undefined, from: 'default' },
@@ -68,7 +68,7 @@ beforeEach(() => {
     },
   });
   setSecret.mockResolvedValue({ ok: true, value: {} });
-  useHostsStore.setState({ ...STATE, filter: '', selectedTags: [], dialog: null });
+  useHostsStore.setState({ ...STATE, filter: '', selectedTags: [], dialog: null, sessions: {} });
 });
 afterEach(cleanup);
 
@@ -95,12 +95,19 @@ describe('HostsView', () => {
     expect(await screen.findByText('from Production')).toBeDefined();
     expect(screen.getByLabelText<HTMLInputElement>('User').disabled).toBe(true);
   });
-  it('double-clicking a host connects and shows it as connected', async () => {
-    connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+  it('double-clicking a host opens its terminal tab', async () => {
+    useEditorsStore.getState().reset();
     render(<HostsView />);
     await userEvent.dblClick(screen.getByTestId('host-row-b'));
-    expect(connect).toHaveBeenCalledWith({ hostId: 'b', cols: 80, rows: 24 });
-    expect(await screen.findByLabelText('connected')).toBeDefined();
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'ssh:b', kind: 'ssh-terminal', title: 'beta', hostId: 'b' },
+    ]);
+    expect(useEditorsStore.getState().activeId).toBe('ssh:b');
+  });
+  it('a connected host shows it in its row', () => {
+    useHostsStore.setState({ sessions: { b: { sessionId: 's1', state: 'open' } } });
+    render(<HostsView />);
+    expect(screen.getByLabelText('connected')).toBeDefined();
   });
   it('saving a new host sends the whole file', async () => {
     render(<HostsView />);

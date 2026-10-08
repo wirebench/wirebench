@@ -5,6 +5,7 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: { 
 import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 
 describe('ssh commands', () => {
@@ -27,12 +28,11 @@ describe('ssh commands', () => {
     expect(useUiStore.getState().sidebar.visible).toBe(true);
     expect(useHostsStore.getState().dialog).toEqual({ mode: 'edit-host', id: 'a' });
   });
-  it('ssh.connect with a host id connects at the default size', async () => {
-    connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+  it('ssh.connect with a host id opens its terminal tab', async () => {
+    useEditorsStore.getState().reset();
+    useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
     await runCommand('ssh.connect', {} as never, 'a');
-    await vi.waitFor(() => {
-      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
-    });
-    expect(connect).toHaveBeenCalledWith({ hostId: 'a', cols: 80, rows: 24 });
+    expect(useEditorsStore.getState().tabs).toEqual([{ id: 'ssh:a', kind: 'ssh-terminal', title: 'a', hostId: 'a' }]);
+    expect(connect).not.toHaveBeenCalled();
   });
 });
