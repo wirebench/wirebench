@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
-import { openSecretSourcesDialog } from '../secret-sources/actions.js';
-import type { SshAuthWire } from '../../../shared/ssh-wire.js';
+import type { SshAuthWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, type Provenance } from './inherited-field.js';
 
 type Kind = 'inherit' | 'password' | 'key' | 'agent';
@@ -21,7 +20,7 @@ function describe(auth: SshAuthWire | undefined): string {
 function SecretSelect(props: {
   readonly label: string;
   readonly value: string;
-  readonly names: readonly string[];
+  readonly names: readonly SshSecretNameWire[];
   readonly optional?: boolean;
   readonly onChange: (name: string) => void;
 }) {
@@ -38,10 +37,10 @@ function SecretSelect(props: {
         }}
       >
         <option value="">{optional ? 'None' : 'Choose a secret…'}</option>
-        {value !== '' && !names.includes(value) && <option value={value}>{value}</option>}
+        {value !== '' && !names.some((n) => n.name === value) && <option value={value}>{`${value} (not set)`}</option>}
         {names.map((n) => (
-          <option key={n} value={n}>
-            {n}
+          <option key={n.name} value={n.name}>
+            {n.local || n.external ? n.name : `${n.name} (not set on this machine)`}
           </option>
         ))}
       </select>
@@ -56,20 +55,29 @@ export function HostAuthSection(props: {
   readonly onChange: (next: SshAuthWire | undefined) => void;
 }) {
   const { value, inherited, onChange } = props;
-  const [names, setNames] = useState<readonly string[]>([]);
+  const [names, setNames] = useState<readonly SshSecretNameWire[]>([]);
+  const [setting, setSetting] = useState<{ name: string; value: string; error?: string } | undefined>(undefined);
 
-  // The names a `${secret:NAME}` can take are the workspace's secret-source entries.
+  const loadNames = async (): Promise<void> => {
+    const result = await ipc().ssh.secretNames(undefined);
+    if (result.ok) setNames(result.value.names);
+  };
   useEffect(() => {
-    let live = true;
-    void ipc()
-      .secretSources.get(undefined)
-      .then((result) => {
-        if (live && result.ok) setNames(result.value.entries.map((e) => e.name));
-      });
-    return () => {
-      live = false;
-    };
+    void loadNames();
   }, []);
+
+  // Write-only: the value goes to main and is never read back; the file only ever gets the name.
+  const storeValue = async (): Promise<void> => {
+    if (setting === undefined) return;
+    const result = await ipc().ssh.setSecret({ name: setting.name, value: setting.value });
+    if (!result.ok) {
+      setSetting({ ...setting, value: '', error: result.error.message });
+      return;
+    }
+    await loadNames();
+    if (value !== undefined && value.kind !== 'agent') onChange({ ...value, secret: setting.name });
+    setSetting(undefined);
+  };
 
   const kind: Kind = value?.kind ?? 'inherit';
   const pick = (next: Kind): void => {
@@ -126,12 +134,59 @@ export function HostAuthSection(props: {
           )}
           <Button
             onClick={() => {
-              openSecretSourcesDialog();
+              setSetting({ name: '', value: '' });
             }}
           >
-            New secret…
+            Set value…
           </Button>
         </div>
+      )}
+      {setting !== undefined && (
+        <div className="flex items-end gap-2">
+          <label className="flex flex-1 flex-col gap-1 text-xs">
+            <span className="text-fg-subtle">Secret name</span>
+            <input
+              className={INPUT_CLASS}
+              value={setting.name}
+              onChange={(e) => {
+                setSetting({ ...setting, name: e.target.value });
+              }}
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1 text-xs">
+            <span className="text-fg-subtle">Secret value</span>
+            <input
+              type="password"
+              autoComplete="off"
+              className={INPUT_CLASS}
+              value={setting.value}
+              onChange={(e) => {
+                setSetting({ ...setting, value: e.target.value });
+              }}
+            />
+          </label>
+          <Button
+            variant="primary"
+            disabled={setting.name === '' || setting.value === ''}
+            onClick={() => {
+              void storeValue();
+            }}
+          >
+            Store
+          </Button>
+          <Button
+            onClick={() => {
+              setSetting(undefined);
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+      {setting?.error !== undefined && (
+        <p role="alert" className="text-sm text-status-danger">
+          {setting.error}
+        </p>
       )}
     </fieldset>
   );

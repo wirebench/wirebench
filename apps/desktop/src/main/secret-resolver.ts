@@ -80,6 +80,40 @@ export function projectSecretGetter(
 }
 
 /**
+ * The store label a host's `${secret:NAME}` value is kept under on this machine: a host belongs to the
+ * workspace, not to a project, so the workspace id scopes the name (A5 of the SSH area design).
+ */
+export function workspaceSecretLabel(workspaceId: string, name: string): string {
+  return `wirebench-secret:workspace:${workspaceId}:${name}`;
+}
+
+/**
+ * The `GetSecret` for the SSH area: like {@link projectSecretGetter}, but a `secret:<name>` pseudo-ref reads
+ * the entry labelled {@link workspaceSecretLabel} (nothing, with no workspace open). Values are recorded first.
+ */
+export function workspaceSecretGetter(
+  store: SecretLookup,
+  workspaceId: string | undefined,
+  record: (value: string) => void,
+): GetSecret {
+  return async (ref) => {
+    const name = parseSecretPseudoRef(ref);
+    if (name === undefined) {
+      return await store.get(ref);
+    }
+    if (workspaceId === undefined) {
+      return undefined;
+    }
+    const stored = await store.findByLabel(workspaceSecretLabel(workspaceId, name));
+    const value = stored === undefined ? undefined : await store.get(stored);
+    if (value !== undefined) {
+      record(value);
+    }
+    return value;
+  };
+}
+
+/**
  * True for a well-formed `${secret:name}` token an expansion without its value left unresolved.
  * A dry run (a preflight, a cURL export) reads no secret, so it leaves every token so; the send
  * resolves it, and refuses as `secret-missing` when nothing is stored — so it is not "unresolved".

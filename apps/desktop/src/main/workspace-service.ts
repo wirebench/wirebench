@@ -1370,6 +1370,11 @@ export class WorkspaceService implements ProjectRouter {
     return { kind: 'local', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 };
   }
 
+  /** The open workspace's id, or `undefined` when none is open. */
+  openWorkspaceId(): string | undefined {
+    return this.current?.workspace.id;
+  }
+
   /** The open workspace's tree root: `sync.revealTree` joins its (tree-relative) path against this. */
   treeDir(): string {
     return this.requireOpen().tree;

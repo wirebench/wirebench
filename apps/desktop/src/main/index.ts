@@ -33,7 +33,8 @@ import { readLeftoverProjectFolders, WorkspaceService } from './workspace-servic
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
-import { projectSecretGetter } from './secret-resolver.js';
+import { projectSecretGetter, workspaceSecretGetter } from './secret-resolver.js';
+import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
 import { TeamSecretsService } from './team-secrets-service.js';
 import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
@@ -175,6 +176,25 @@ const secretsFor = (projectId: string | undefined) =>
   secretSources.wrap(
     teamSecretGetter(projectSecretGetter(secretStore, projectId, recordSecretValue), teamSecrets, projectId),
   );
+
+/**
+ * The getter for the SSH area, composed as {@link secretsFor} is but reading the open workspace's scoped
+ * entries (`wirebench-secret:workspace:<id>:<name>`) instead of a project's. Bound to the workspace open at call time.
+ */
+export const sshSecretsFor = () =>
+  secretSources.wrap(
+    teamSecretGetter(
+      workspaceSecretGetter(secretStore, workspaceServiceRef.current?.openWorkspaceId(), recordSecretValue),
+      teamSecrets,
+      undefined,
+    ),
+  );
+
+const sshSecrets = new SshSecretsService({
+  store: secretStore,
+  workspaceId: () => workspaceServiceRef.current?.openWorkspaceId(),
+  mappedNames: () => secretSources.mappedNames(),
+});
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
@@ -936,7 +956,7 @@ void app.whenReady().then(() => {
   registerWsaChannels({ project: workspaceService });
   registerWssChannels({ project: workspaceService });
   // Sessions arrive with the SSH session service; until then the area has its hosts file only.
-  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, ssh: {} });
+  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, secrets: sshSecrets, ssh: {} });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));

@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { sshListHostsResponseSchema, sshSaveHostsRequestSchema } from './ssh-wire.js';
+import {
+  sshListHostsResponseSchema,
+  sshSaveHostsRequestSchema,
+  sshSecretNamesResponseSchema,
+  sshSetSecretRequestSchema,
+} from './ssh-wire.js';
 import {
   ciTokenCreateRequestWireSchema,
   ciTokenCreatedWireSchema,
@@ -1183,6 +1188,8 @@ export const channels = {
   ssh: {
     listHosts: defineChannel('ssh.listHosts', z.undefined(), sshListHostsResponseSchema),
     saveHosts: defineChannel('ssh.saveHosts', sshSaveHostsRequestSchema, sshListHostsResponseSchema),
+    secretNames: defineChannel('ssh.secretNames', z.undefined(), sshSecretNamesResponseSchema),
+    setSecret: defineChannel('ssh.setSecret', sshSetSecretRequestSchema, z.object({})),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),

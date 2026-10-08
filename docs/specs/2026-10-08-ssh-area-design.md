@@ -384,6 +384,7 @@ All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs r
 - **A4. The layer rule is a test.** `scripts/engine-layers.test.ts` checks that nothing under
   `packages/engine/src` imports `@wirebench/ssh`, and nothing under `packages/ssh/src` imports
   `@wirebench/engine` or `electron`.
+- **A5. Host secrets are workspace-scoped on this machine.** Local `${secret:NAME}` values are stored per project today, and a host belongs to the workspace, not a project. SSH resolves a host's `${secret:NAME}` through the same chain as a send (environment variable, secret sources, team secrets) and then a workspace-scoped local entry (`wirebench-secret:workspace:<workspaceId>:<name>`). The host form lists names with where they resolve from and sets a local value write-only (`ssh.secretNames`, `ssh.setSecret`).
 
 ## Docs
 
