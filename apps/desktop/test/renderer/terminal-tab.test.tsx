@@ -297,11 +297,14 @@ describe('the terminal tab', () => {
       });
       return firePaste(text);
     }
+    /** Called when a paste reaches the textarea itself, the way xterm's own listener would be. */
+    const reachedTextarea = vi.fn();
     function firePaste(text: string): Event {
       const event = new Event('paste', { bubbles: true, cancelable: true });
       Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } });
       // xterm listens on its hidden textarea, which sits inside the holder.
       const target = document.createElement('textarea');
+      target.addEventListener('paste', reachedTextarea);
       screen.getByTestId('ssh-terminal').appendChild(target);
       act(() => {
         target.dispatchEvent(event);
@@ -309,9 +312,14 @@ describe('the terminal tab', () => {
       return event;
     }
 
+    beforeEach(() => {
+      reachedTextarea.mockReset();
+    });
+
     it('leaves a single-line paste to the terminal', async () => {
       const event = await pasteInto('ls -la');
       expect(event.defaultPrevented).toBe(false);
+      expect(reachedTextarea).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(lastTerminal()?.pasted).toEqual([]);
     });
@@ -319,6 +327,8 @@ describe('the terminal tab', () => {
     it('holds a multi-line paste behind the dialog and sends it through term.paste on Paste', async () => {
       const event = await pasteInto('ls\nrm -rf /tmp/x\n');
       expect(event.defaultPrevented).toBe(true);
+      // Stopped in the capture phase: the terminal's own listener never sees a held paste.
+      expect(reachedTextarea).not.toHaveBeenCalled();
       expect(await screen.findByRole('dialog')).toBeDefined();
       expect(lastTerminal()?.pasted).toEqual([]);
       expect(write).not.toHaveBeenCalled();
@@ -387,14 +397,21 @@ describe('the terminal tab', () => {
       for (const listener of term.selectionListeners) listener();
     };
 
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('does nothing by default', async () => {
       await mount();
+      vi.useFakeTimers();
       select('hello');
+      vi.advanceTimersByTime(1000);
       expect(writeText).not.toHaveBeenCalled();
     });
 
     it('copies a non-empty selection once the preference is on, read live', async () => {
       await mount();
+      vi.useFakeTimers();
       usePreferencesStore.setState({
         preferences: {
           ...DEFAULT_PREFERENCES_WIRE,
@@ -402,9 +419,30 @@ describe('the terminal tab', () => {
         },
       });
       select('hello');
+      vi.advanceTimersByTime(200);
       expect(writeText).toHaveBeenCalledWith('hello');
       select('');
+      vi.advanceTimersByTime(200);
       expect(writeText).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes once for a drag that changes the selection many times', async () => {
+      await mount();
+      vi.useFakeTimers();
+      usePreferencesStore.setState({
+        preferences: {
+          ...DEFAULT_PREFERENCES_WIRE,
+          terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, copyOnSelect: true },
+        },
+      });
+      for (const text of ['h', 'he', 'hel', 'hell', 'hello']) {
+        select(text);
+        vi.advanceTimersByTime(20);
+      }
+      expect(writeText).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(200);
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(writeText).toHaveBeenCalledWith('hello');
     });
   });
 });

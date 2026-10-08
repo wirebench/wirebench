@@ -48,6 +48,14 @@ describe('ssh.connectPalette', () => {
     expect(openPalette).toHaveBeenCalledWith('hosts');
   });
 
+  it('ssh.connect with no host id asks which host, like ssh.connectPalette', async () => {
+    const openPalette = vi.fn();
+    resetCommands();
+    registerSshCommands(openPalette);
+    await runCommand('ssh.connect', {} as never);
+    expect(openPalette).toHaveBeenCalledWith('hosts');
+  });
+
   it('is registered through the area only, so it disappears when ssh is off', () => {
     useUiStore.setState({ enabledAreas: ['explorer', 'ssh'] } as never);
     registerShellCommands(vi.fn());

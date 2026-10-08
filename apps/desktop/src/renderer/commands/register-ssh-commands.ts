@@ -42,7 +42,9 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
   registerCommand({
     ...catalogEntry('ssh.connect'),
     run: (_context, arg) => {
+      // From the palette there is no host to name yet, so it asks which one.
       if (typeof arg === 'string') openTerminalFor(arg);
+      else openPalette('hosts');
     },
   });
   registerCommand({

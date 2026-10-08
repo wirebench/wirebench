@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const connect = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: { connect } }) }));
+import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
+import type { PaletteMode } from '../../src/renderer/shell/command-palette.js';
 import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { resetCommands } from '../../src/renderer/lib/commands.js';
@@ -25,6 +28,18 @@ const context: CommandContext = {
 };
 
 const HOST = { id: 'a', name: 'api-1', address: '10.0.1.5', tags: ['prod'], path: ['prod', 'eu'], ssh: {} as never };
+
+/** What the app shell does with the palette: holds open and mode, and hands commands a way to reopen it. */
+function Shell() {
+  const [open, setOpen] = useState(true);
+  const [mode, setMode] = useState<PaletteMode>('commands');
+  resetCommands();
+  registerSshCommands((next = 'commands') => {
+    setMode(next);
+    setOpen(true);
+  });
+  return <CommandPalette open={open} onOpenChange={setOpen} context={context} mode={mode} />;
+}
 
 describe('hosts in the palette', () => {
   beforeEach(() => {
@@ -76,5 +91,18 @@ describe('hosts in the palette', () => {
     });
     render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="quick-open" />);
     expect(screen.queryByText('broken')).toBeNull();
+  });
+
+  it('switching from the command list to the host picker clears the typed search', () => {
+    render(<Shell />);
+    const input = screen.getByTestId<HTMLInputElement>('command-palette-input');
+    fireEvent.change(input, { target: { value: 'connect' } });
+    expect(input.value).toBe('connect');
+    fireEvent.click(screen.getByText('Connect to Host…'));
+
+    const picker = screen.getByTestId<HTMLInputElement>('quick-open-input');
+    expect(picker.value).toBe('');
+    expect(screen.getByText('api-1')).toBeDefined();
+    expect(screen.queryByText('No matching host.')).toBeNull();
   });
 });

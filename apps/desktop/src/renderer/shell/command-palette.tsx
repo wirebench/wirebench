@@ -112,7 +112,12 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           className="fixed top-[18%] left-1/2 z-50 w-[min(560px,90vw)] -translate-x-1/2 overflow-hidden rounded-lg border border-hairline-strong bg-surface-overlay shadow-2xl"
         >
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
-          <Command loop label={hostsOnly ? 'Hosts' : quickOpen ? 'Operations, requests and hosts' : 'Commands'}>
+          {/* Keyed on the mode so a switch (⌘K to the host picker) starts with an empty search. */}
+          <Command
+            key={mode}
+            loop
+            label={hostsOnly ? 'Hosts' : quickOpen ? 'Operations, requests and hosts' : 'Commands'}
+          >
             <Command.Input
               autoFocus
               data-testid={picker ? 'quick-open-input' : 'command-palette-input'}

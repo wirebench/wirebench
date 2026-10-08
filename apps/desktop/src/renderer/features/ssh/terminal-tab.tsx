@@ -15,6 +15,8 @@ import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
 
 /** How long a layout change settles before the new size goes to the remote pty. */
 const RESIZE_DEBOUNCE_MS = 100;
+/** How long a selection holds still before copy-on-select writes it, so a drag copies once. */
+const COPY_ON_SELECT_DEBOUNCE_MS = 150;
 
 /** Opens a link from the terminal; main hands only http(s) to the OS browser. */
 function openLink(uri: string): void {
@@ -132,10 +134,14 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       setHeldPaste(text);
     };
     element.addEventListener('paste', onPaste, true);
+    let copyTimer: ReturnType<typeof setTimeout> | undefined;
     const selection = term.onSelectionChange(() => {
-      if (!usePreferencesStore.getState().preferences.terminal.copyOnSelect) return;
-      const selected = term.getSelection();
-      if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        if (!usePreferencesStore.getState().preferences.terminal.copyOnSelect) return;
+        const selected = term.getSelection();
+        if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
+      }, COPY_ON_SELECT_DEBOUNCE_MS);
     });
     const themeWatch = new MutationObserver(() => {
       term.options.theme = themeFromCss();
@@ -160,6 +166,7 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       themeWatch.disconnect();
       element.removeEventListener('paste', onPaste, true);
       selection.dispose();
+      clearTimeout(copyTimer);
       input.dispose();
       binary.dispose();
       const current = useHostsStore.getState().sessions[hostId]?.sessionId;
