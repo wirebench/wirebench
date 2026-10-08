@@ -200,6 +200,7 @@ import type {
   ProxyOptionsWire,
   TlsOptionsWire,
   UpdatePlanWire,
+  WssPolicyWire,
 } from '../shared/wire-types.js';
 import { isEndpointAuth, nextApiOrder, pemCertificates } from '@wirebench/engine';
 import type { PemCertificateSummary } from '@wirebench/engine';
@@ -2295,6 +2296,37 @@ export class ProjectHost {
     }
     const outgoingId = findRequest(this.open.project, requestId)?.request.wssOutgoingRef;
     return outgoingId !== undefined && outgoingId.length > 0;
+  }
+
+  /**
+   * What the Auth inspector's policy panel judges (#58): the WS-SecurityPolicy the WSDL attaches to
+   * the request's operation, the entries of the outgoing configuration the request selects (none
+   * when it selects none, or one that no longer reads), and the URL a send goes to. `undefined`
+   * when the operation carries no policy, or the definition has not loaded yet.
+   */
+  wssPolicyInputs(
+    requestId: string,
+  ): { policy: WssPolicyWire; entries: readonly WssEntry[]; endpoint?: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const policy = this.open.runtime
+      .get(location.iface.id)
+      ?.summary?.operations.find(
+        (operation) =>
+          operation.binding === location.operation.bindingName && operation.name === location.operation.name,
+      )?.wssPolicy;
+    if (policy === undefined) {
+      return undefined;
+    }
+    const outgoingId = location.request.wssOutgoingRef;
+    const entries = outgoingId === undefined ? [] : (this.wssOutgoingConfig(outgoingId)?.entries ?? []);
+    const endpoint = this.resolveEndpointFor(this.open.project, location.iface, location.request).url;
+    return { policy, entries, ...(endpoint !== undefined ? { endpoint } : {}) };
   }
 
   wssFor(requestId: string): Promise<SoapSendWss | undefined> {

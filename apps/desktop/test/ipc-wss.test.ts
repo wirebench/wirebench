@@ -30,6 +30,7 @@ const project = {
   previewOutgoingWss: vi.fn().mockResolvedValue(SECURED),
   insertWssEntry: vi.fn().mockResolvedValue(SECURED),
   removeOutgoingWssFrom: vi.fn().mockReturnValue('<clean/>'),
+  wssPolicyInputs: vi.fn().mockReturnValue(undefined),
 };
 
 describe('wss.* IPC', () => {

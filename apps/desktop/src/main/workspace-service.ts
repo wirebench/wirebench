@@ -3367,6 +3367,11 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  wssPolicyInputs(...args: Parameters<ProjectRouter['wssPolicyInputs']>): ReturnType<ProjectRouter['wssPolicyInputs']> {
+    return this.hostOfEntity(args[0]).wssPolicyInputs(...args);
+  }
+
+  /** @inheritdoc */
   validationTargetFor(
     ...args: Parameters<ProjectRouter['validationTargetFor']>
   ): ReturnType<ProjectRouter['validationTargetFor']> {
