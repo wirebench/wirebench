@@ -1,0 +1,68 @@
+---
+title: Exporting collections
+description: Write a project, an API or a SOAP interface as a Postman Collection v2.1 or an OpenCollection document, with a report of what could not be represented.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Exporting writes what you built in Wirebench in a format other tools read, so a project is never
+stuck here. Export a whole project, or one REST, gRPC or WebSocket API or SOAP interface.
+
+| Format | Files written |
+| --- | --- |
+| Postman Collection v2.1 | `<name>.postman_collection.json`, and one `<environment>.postman_environment.json` per environment |
+| OpenCollection 1.0 | `<name>.opencollection.yml`, with the environments inside it |
+
+## Export from the app
+
+<Steps>
+
+1. Right-click a project, an API or an interface in the explorer and choose **Export as Postman
+   Collection…** or **Export as OpenCollection…**. For the selected project, the command palette has
+   **Export Project as Postman Collection…** and **Export Project as OpenCollection…**.
+
+2. Pick the folder to write to. Files of the same name in it are replaced.
+
+3. Read the report. It names the files written, then lists **things to look at** — what was lost —
+   and **notes** — what was changed to fit. **Copy report** puts it all on the clipboard.
+
+</Steps>
+
+The workspace's environments and properties are exported with the project's own.
+
+## What is carried over
+
+- **Structure.** A whole project becomes one folder per API and interface; one API puts its folders
+  and requests at the top. A SOAP interface becomes a folder per operation.
+- **Requests.** Method, URL (made absolute from the API's base URL), path and query parameters,
+  headers, body — raw, form, multipart or file — descriptions and saved response examples.
+- **Variables.** `${name}` is written `{{name}}`. `${#Env#name}` and the other property scopes are
+  flattened to `{{name}}`, with a note. `${#System#…}` and `${#Sequence#…}` have no equivalent: they
+  stay as written, with a warning.
+- **Auth.** The type and its settings — user name, key name and placement, token and authorization
+  URLs, client id, scopes — on the collection, folder or request that has it. Kerberos is written as
+  no auth, with a warning.
+- **Scripts.** Every pre-request and post-response script, as text. A script written against
+  Wirebench's own script API is flagged: the other tool will not run it.
+- **SOAP.** Each SOAP request becomes an HTTP POST of its envelope to its endpoint, with its
+  `Content-Type` and `SOAPAction`. WS-Security, WS-Addressing, attachments and MTOM are reported.
+
+<Aside type="caution" title="No credential is ever written">
+Passwords, tokens, API keys and client secrets stay in the secret store. The exported auth keeps its
+shape with the secret left empty, and a `${secret:name}` becomes a secret variable with no value: set
+them in the other tool after importing.
+</Aside>
+
+## Format differences
+
+| | Postman Collection v2.1 | OpenCollection |
+| --- | --- | --- |
+| gRPC and WebSocket requests | Left out, reported | Written |
+| Assertions | Left out, reported | Status, response time and JSON-path checks; the rest reported |
+| Timeout | Reported | Written |
+| Follow redirects, URL encoding | Written | Written |
+
+## From the command line
+
+`wirebench export postman` and `wirebench export opencollection` write the same files from a
+pipeline. See the [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#export-to-another-tool).

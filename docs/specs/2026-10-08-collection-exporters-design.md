@@ -191,16 +191,17 @@ importer reads with.
 
 ## 4. Desktop
 
-- **Commands.** `workspace.exportPostman` and `workspace.exportOpenCollection` (*Export Project As
-  Postman Collection…*, *…As OpenCollection…*) act on the selected project.
-- **Explorer.** The project, API and interface context menus gain *Export As → Postman Collection…*
-  and *OpenCollection…*.
-- **Channel.** `project.exportCollection { projectId, containerId?, format }` →
-  `{ cancelled, dir?, files, report }`. Main builds the input (the workspace's environments and
-  properties with the project's), asks for a folder with a native dialog, and writes each file
-  atomically under it. The renderer never names a path (ADR-0005).
-- **Report.** After writing, a dialog names the folder and the files and lists the warnings and notes;
-  with none it says "Everything was exported".
+- **Commands.** `workspace.exportPostman` and `workspace.exportOpenCollection` (*Export Project as
+  Postman Collection…*, *Export Project as OpenCollection…*) act on the selected project.
+- **Explorer.** The project, API (REST, gRPC, WebSocket) and interface context menus gain *Export as
+  Postman Collection…* and *Export as OpenCollection…*.
+- **Channel.** `workspace.exportCollection { projectId?, containerId?, format }` →
+  `{ cancelled, dir?, files, requests, warnings, notes }`. Main finds the project (by id, or as the
+  one holding the container), builds the export first (so a target with nothing to export is refused
+  before any dialog), asks for a folder with a native dialog, and writes each file atomically under
+  it, replacing a file of the same name. The renderer never names a path (ADR-0005).
+- **Report.** After writing, a dialog names the folder and the files and lists the warnings and notes,
+  with **Copy report**; with none it says "Everything was exported".
 
 ## 5. CLI
 
@@ -211,7 +212,8 @@ wirebench export <postman|opencollection> [--project <dir>] [--api <name|slug|id
 `--out` defaults to the current folder and is created if missing. The project's workspace, when
 `workspace-lookup` finds one, adds its environments and properties as the desktop does. Prints the files
 written, then the report (`Warning:` / `Note:` lines); `--json` prints `{ files, counts, report }`.
-Exit 0 on success, even with warnings; 2 on a usage error; 1 when the target is not found or empty.
+Exit 0 on success, even with warnings; 2 on a usage error; 3 (a run error) when the target is not
+found or empty.
 
 ## 6. Testing
 
