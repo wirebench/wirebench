@@ -529,7 +529,7 @@ A mock adds the first listening socket to the engine, and three kinds of untrust
   - every limit, version refusal and duplicate ids;
   - body files by language, and a missing body;
   - header refusals;
-  - a format-v7 fixture with a `mocks/` folder, opened and saved with `formatVersion` unchanged;
+  - a format-v8 project with a `mocks/` folder, opened and saved with `formatVersion` unchanged;
   - a refused file surviving a save, and `mock-file-conflict`.
 - **Generate.** SOAP document/literal, RPC and one-way operations; a WSDL with two bindings. REST with
   example, schema sample and no-content responses.

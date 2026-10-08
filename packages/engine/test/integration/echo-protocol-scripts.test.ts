@@ -57,6 +57,7 @@ function project(requests: readonly EchoRequest[]): Project {
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
     sequences: [],
+    mocks: [],
     extraContainers: { echo: [api] },
   } as unknown as Project;
 }

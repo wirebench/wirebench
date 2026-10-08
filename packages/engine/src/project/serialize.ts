@@ -10,6 +10,7 @@ import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
 import type { RestRequestDef } from '../rest/model.js';
 import { signingDocument, writeRestRequest } from '../rest/storage.js';
+import { mockFiles } from '../mock/file.js';
 import { sequenceDocument, sequenceFilePath } from '../sequence/file.js';
 import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import type { Project, PropertyMap, WssRef } from './model.js';
@@ -159,6 +160,11 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
   for (const sequence of project.sequences) {
     assertPathSegment(sequence.slug);
     files.set(sequenceFilePath(sequence.slug), sequenceDocument(sequence));
+  }
+  for (const mock of project.mocks) {
+    for (const [relative, content] of mockFiles(mock)) {
+      files.set(relative, content);
+    }
   }
   // REST requests in a tree of their own: written only while REST is on (spec §3.2).
   if (project.webhooks !== undefined && registry.features.isEnabled(WEBHOOKS_FEATURE)) {

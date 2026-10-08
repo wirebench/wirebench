@@ -18,6 +18,7 @@ import type { ContainerBase, LoadContext, ProtocolStorage } from '../protocol/mo
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
 import { restRequestReader, signingOf } from '../rest/storage.js';
+import { readMocks } from '../mock/load.js';
 import { readSequences } from '../sequence/load.js';
 import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import type { FsLike } from './fs.js';
@@ -75,6 +76,12 @@ export interface ProjectProblem {
     | 'sequence-version-too-new'
     /** A sequence file whose id another file already has; it is skipped and left as it is. */
     | 'sequence-duplicate-id'
+    /** A mock file that is malformed, over a limit, or not a mock; it (or its whole mock) is skipped and left as it is. */
+    | 'mock-file-invalid'
+    /** A mock written by a newer build; it is skipped and left as it is. */
+    | 'mock-version-too-new'
+    /** A mock, operation or response whose id another already has; it is skipped and left as it is. */
+    | 'mock-duplicate-id'
     /** A script the request names whose file is gone; the request refuses to send until it is back (#63). */
     | 'script-file-missing'
     /** A script file over the size limit; kept as it is, and the request refuses to send (#63). */
@@ -330,6 +337,8 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
 
   const sequenceFiles = await readSequences(fs, root);
   problems.push(...sequenceFiles.problems);
+  const mockFiles = await readMocks(fs, root);
+  problems.push(...mockFiles.problems);
 
   // The collection is REST requests: with REST off it is not read, and a save leaves it alone.
   const webhooks = registry.features.isEnabled(WEBHOOKS_FEATURE) ? await loadWebhooks(fs, root, problems) : undefined;
@@ -348,6 +357,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     grpcApis: [],
     wsApis: [],
     sequences: sequenceFiles.loaded.map((entry) => entry.sequence).sort(byOrder),
+    mocks: mockFiles.loaded.map((entry) => entry.mock).sort(byOrder),
     ...(webhooks !== undefined ? { webhooks } : {}),
     environments: await loadEnvironments(fs, root),
     wss: {

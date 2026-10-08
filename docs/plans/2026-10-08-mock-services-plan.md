@@ -44,7 +44,7 @@ Issue: [#59](https://github.com/wirebench/wirebench/issues/59)
 - **No new dependencies.**
 - **Layers.** `mock/` is core and imports no protocol folder. Only `soap/`, `rest/` and the composition files
   name a protocol (`pnpm check:engine-layers`).
-- **No `formatVersion` change.** `FORMAT_VERSION` stays 7, and a version-7 fixture with `mocks/` must save
+- **No `formatVersion` change.** `FORMAT_VERSION` stays 8, and a version-8 project with `mocks/` must save
   with its `wirebench.yaml` unchanged.
 - **The script sandbox worker** loads from `dist/`, so a test that runs scripts needs `pnpm --filter
   @wirebench/engine build` first, as the existing script tests do.
@@ -119,7 +119,7 @@ Issue: [#59](https://github.com/wirebench/wirebench/issues/59)
   - load, save, and pruning a removed response's two files;
   - a refused file surviving a save;
   - the conflict;
-  - a version-7 fixture with `mocks/`, opened and saved, with `wirebench.yaml` byte-identical.
+  - a version-8 project with `mocks/`, opened and saved, with `wirebench.yaml` byte-identical.
 - [ ] Gate, then commit `feat(engine): load and save mocks with the project (#59)`.
 
 ### Task 4: The contract types and dispatch

@@ -154,7 +154,7 @@ body only from its own request's `<slug>.examples/` directory, named from the re
 so a hand-edited path cannot point elsewhere. Save treats the `<id>.body.<ext>` files in that directory as managed,
 so renaming a request moves its examples and removing an example removes its file.
 
-**Update (2026-10-08, mock services): `formatVersion` stays `7`; `mocks/` carries its own `version`.** Mock
+**Update (2026-10-08, mock services): `formatVersion` stays `8`; `mocks/` carries its own `version`.** Mock
 services (#59, [ADR-0021](0021-mock-stubs-are-files-under-mocks.md)) are a new file kind in a new top-level folder,
 `mocks/<slug>/`, with `mock.yaml`, `operations/<slug>/operation.yaml`, one `<slug>.response.yaml` per stub and its
 body beside it. This is the sequences case again: no build before this one reads `mocks/` or counts a file there as
