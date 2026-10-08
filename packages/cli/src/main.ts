@@ -1,4 +1,5 @@
 import { callCommand } from './commands/call.js';
+import { exportCommand } from './commands/export.js';
 import { mcpCommand } from './commands/mcp.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
@@ -47,6 +48,9 @@ export async function main(
       }
       case 'mcp': {
         return await mcpCommand(args, io);
+      }
+      case 'export': {
+        return await exportCommand(args, io);
       }
     }
   } catch (error) {

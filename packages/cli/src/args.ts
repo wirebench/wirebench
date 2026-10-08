@@ -5,16 +5,17 @@ import {
   OPS_HELP_TEXT,
   parseCall,
   parseMcp,
+  parseExport,
   parseOpVerb,
   refuseOpOnly,
   VERB_HELP,
 } from './args-ops.js';
-import type { CallArgs, McpArgs, OpArgs } from './args-ops.js';
+import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
-export type { CallArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
+export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
 export const HELP_TEXT = `wirebench run <path> [selector…] [options]
@@ -106,6 +107,7 @@ export type ParsedArgs =
   | OpArgs
   | McpArgs
   | CallArgs
+  | ExportArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -294,6 +296,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'mcp') {
     return parseMcp(rest, values);
+  }
+
+  if (word === 'export') {
+    return parseExport(rest, values);
   }
 
   if (isOpVerb(word)) {
