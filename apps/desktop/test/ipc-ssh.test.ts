@@ -141,7 +141,7 @@ describe('ssh channels', () => {
       const ssh = register();
       const key = { host: '10.0.0.1:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:k' };
       expect(await invokeAs(window, 'ssh.trustHostKey', key)).toEqual({ ok: true, value: {} });
-      expect(ssh.trust).toHaveBeenCalledWith({ ...key, replace: false });
+      expect(ssh.trust).toHaveBeenCalledWith(window, { ...key, replace: false });
     });
     it('a refused connect keeps its code and details across the bridge', async () => {
       const { WirebenchError } = await import('@wirebench/engine');

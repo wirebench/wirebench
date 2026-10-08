@@ -43,7 +43,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { enabledAreasFromEnv, registerEnabledAreaChannels } from './areas.js';
 import { HostsService } from './hosts-service.js';
-import { SshService } from './ssh-service.js';
+import { SshService, whenWorkspaceSwitches } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
@@ -534,7 +534,7 @@ const workspaceService = new WorkspaceService({
       secretSources.noteChange();
       hostsService.invalidate();
       // A session belongs to the workspace it was opened in; its credentials were that workspace's.
-      sshService.disposeAll();
+      sshSessionsEndOnSwitch(workspace?.id);
     },
     onDeleted: (workspaceId) => {
       void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
@@ -607,6 +607,10 @@ const sshService = new SshService({
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
   emit: emitEvent,
+});
+/** Only a switch to another workspace (or a close) ends the sessions; a rename or reload does not. */
+const sshSessionsEndOnSwitch = whenWorkspaceSwitches(() => {
+  sshService.disposeAll();
 });
 
 /** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */

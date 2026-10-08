@@ -52,13 +52,15 @@ describe('openSession', () => {
   it('reports the host key to verifyHostKey and refuses when rejected', async () => {
     const f = await fixture('pw');
     const seen: string[] = [];
+    const told: string[][] = [];
     await expect(
       openSession({
         hops: [hop(f.port, 'pw')],
         cols: 80,
         rows: 24,
-        verifyHostKey: (_h, key) => {
+        verifyHostKey: (h, key) => {
           seen.push(key.fingerprint);
+          told.push(Object.keys(h).sort());
           return Promise.resolve('reject' as const);
         },
       }),
@@ -67,6 +69,7 @@ describe('openSession', () => {
       details: { host: `127.0.0.1:${f.port}`, fingerprint: f.hostKey.fingerprint, keyType: f.hostKey.keyType },
     });
     expect(seen).toEqual([f.hostKey.fingerprint]);
+    expect(told).toEqual([['address', 'port']]);
   });
   it('a wrong password is ssh-auth-failed and never carries the value', async () => {
     const f = await fixture('pw');

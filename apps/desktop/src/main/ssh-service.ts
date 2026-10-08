@@ -36,6 +36,31 @@ export interface SshServiceDeps {
   readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
   /** Tests inject a fake. */
   readonly open?: typeof openSession;
+  /** Milliseconds; tests inject a clock. */
+  readonly now?: () => number;
+}
+
+/** A key a connect refused, which that window may now trust (and nothing else). */
+interface Refusal extends KnownHostEntry {
+  readonly kind: 'new' | 'changed';
+  readonly at: number;
+}
+
+/** How long a refused key stays trustable without connecting again. */
+export const REFUSAL_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Calls `onSwitch` when the open workspace id differs from the last one seen (closing counts), and not for
+ * a rename, a settings change or a reload of the same workspace.
+ */
+export function whenWorkspaceSwitches(onSwitch: () => void): (workspaceId: string | null | undefined) => void {
+  let last: string | null = null;
+  return (workspaceId) => {
+    const next = workspaceId ?? null;
+    if (next === last) return;
+    last = next;
+    onSwitch();
+  };
 }
 
 interface Live {
@@ -51,8 +76,12 @@ interface Live {
  */
 export class SshService {
   private readonly live = new Map<string, Live>();
-  /** Senders whose 'destroyed' already closes their sessions (one listener per window, not per session). */
+  /** Senders already watched for going away or reloading (one set of listeners per window, not per session). */
   private readonly watched = new Set<number>();
+  /** Keys each window's connects refused, by sender id: the only keys `trust` will record for it. */
+  private readonly refused = new Map<number, Refusal[]>();
+  /** `trust` reads, changes and writes the file; one at a time, so no entry is lost. */
+  private trustQueue: Promise<void> = Promise.resolve();
   /** Bumped by {@link disposeAll}; a connect that straddles it closes what it opened. */
   private epoch = 0;
 
@@ -70,7 +99,7 @@ export class SshService {
     const known = await this.readKnownHosts();
     // The last key refused as changed (hops connect in order and a refusal ends the connect).
     let changed: { entry: KnownHostEntry; previous: string } | undefined;
-    const verifyHostKey = (_hop: HopCredentials, key: KnownHostEntry): Promise<'accept' | 'reject'> => {
+    const verifyHostKey = (_hop: unknown, key: KnownHostEntry): Promise<'accept' | 'reject'> => {
       const check = checkKnownHost(known, key);
       if (check === 'known') return Promise.resolve('accept');
       const previous = known.find((e) => e.host === key.host && e.keyType === key.keyType);
@@ -83,6 +112,18 @@ export class SshService {
     } catch (error) {
       const code = (error as { code?: unknown }).code;
       const details = (error as { details?: Record<string, unknown> }).details;
+      if (code === 'ssh-host-key-new' && details) {
+        const refusedKey = {
+          host: String(details['host']),
+          keyType: String(details['keyType']),
+          fingerprint: String(details['fingerprint']),
+        };
+        const wasChanged =
+          changed !== undefined &&
+          changed.entry.host === refusedKey.host &&
+          changed.entry.fingerprint === refusedKey.fingerprint;
+        this.recordRefusal(sender, { ...refusedKey, kind: wasChanged ? 'changed' : 'new', at: this.now() });
+      }
       if (
         changed &&
         code === 'ssh-host-key-new' &&
@@ -99,7 +140,7 @@ export class SshService {
     }
     if (epoch !== this.epoch || sender.isDestroyed()) {
       session.close();
-      throw new WirebenchError('ssh-session-unknown', 'The session was closed while it was opening');
+      throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     }
     const sessionId = session.id;
     const offData = session.onData((data) => {
@@ -144,18 +185,37 @@ export class SshService {
     this.drop(request.sessionId);
   }
 
-  /** @throws WirebenchError `ssh-host-key-changed` when a different key is stored and `replace` is not set. */
-  async trust(request: SshTrustRequest): Promise<void> {
-    const known = await this.readKnownHosts();
-    const entry: KnownHostEntry = { host: request.host, keyType: request.keyType, fingerprint: request.fingerprint };
-    if (checkKnownHost(known, entry) === 'changed' && !request.replace) {
+  /**
+   * Records a key a connect from this window refused in the last {@link REFUSAL_TTL_MS}; nothing else.
+   * A changed key needs `replace: true`; a new one never does. Serialised, so concurrent trusts all land.
+   *
+   * @throws WirebenchError `ssh-host-key-unexpected` | `ssh-host-key-changed`
+   */
+  trust(sender: WebContents, request: SshTrustRequest): Promise<void> {
+    const run = this.trustQueue.then(() => this.trustNow(sender, request));
+    this.trustQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async trustNow(sender: WebContents, request: SshTrustRequest): Promise<void> {
+    const refusal = this.refusalsOf(sender.id).find(
+      (r) => r.host === request.host && r.keyType === request.keyType && r.fingerprint === request.fingerprint,
+    );
+    if (!refusal) throw new WirebenchError('ssh-host-key-unexpected', 'Connect to the host again to review its key');
+    const entry: KnownHostEntry = { host: refusal.host, keyType: refusal.keyType, fingerprint: refusal.fingerprint };
+    if (refusal.kind === 'changed' && !request.replace) {
       throw new WirebenchError(
         'ssh-host-key-changed',
         `${request.host} already has a different ${request.keyType} key; replacing it needs confirmation`,
         { details: { ...entry } },
       );
     }
+    const known = await this.readKnownHosts();
     await writeFileAtomic(nodeFs, this.deps.knownHostsFile, serializeKnownHosts(rememberKnownHost(known, entry)));
+    this.refused.set(
+      sender.id,
+      this.refusalsOf(sender.id).filter((r) => r !== refusal),
+    );
   }
 
   /** Closes every session (workspace switch, quit). */
@@ -169,6 +229,7 @@ export class SshService {
 
   /** Closes the sessions one window owns (the window went away). */
   disposeFor(sender: WebContents): void {
+    this.refused.delete(sender.id);
     for (const [sessionId, live] of [...this.live]) {
       if (live.sender.id !== sender.id) continue;
       live.session.close();
@@ -179,10 +240,35 @@ export class SshService {
   private watch(sender: WebContents): void {
     if (this.watched.has(sender.id)) return;
     this.watched.add(sender.id);
+    // A reload or a crash starts a renderer that knows nothing of the old sessions; they go too.
+    sender.on('render-process-gone', () => this.disposeFor(sender));
+    sender.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument) this.disposeFor(sender);
+    });
     sender.once('destroyed', () => {
       this.watched.delete(sender.id);
       this.disposeFor(sender);
     });
+  }
+
+  private now(): number {
+    return (this.deps.now ?? Date.now)();
+  }
+
+  /** The window's refusals still within the TTL (expired ones are dropped on the way). */
+  private refusalsOf(senderId: number): Refusal[] {
+    const fresh = (this.refused.get(senderId) ?? []).filter((r) => this.now() - r.at <= REFUSAL_TTL_MS);
+    if (fresh.length > 0) this.refused.set(senderId, fresh);
+    else this.refused.delete(senderId);
+    return fresh;
+  }
+
+  private recordRefusal(sender: WebContents, refusal: Refusal): void {
+    const others = this.refusalsOf(sender.id).filter(
+      (r) => !(r.host === refusal.host && r.keyType === refusal.keyType && r.fingerprint === refusal.fingerprint),
+    );
+    this.refused.set(sender.id, [...others, refusal]);
+    this.watch(sender);
   }
 
   private owned(sender: WebContents, sessionId: string): Live {

@@ -13,8 +13,8 @@ the protocol modules design (`docs/specs/2026-09-30-wirebench-protocol-modules-d
 
 This is slice 1 of a larger area. The slices, each with its own spec, are:
 
-| Slice | Scope                                                                                          |
-| ----- | ---------------------------------------------------------------------------------------------- |
+| Slice | Scope                                                                                           |
+| ----- | ----------------------------------------------------------------------------------------------- |
 | S1    | **This spec.** The area seam, the host model, the Hosts view, an interactive terminal tab.      |
 | S2    | Snippets: saved commands in packages, run on one or many hosts, offered while typing.           |
 | S3    | SFTP: two-pane browser, drag and drop, edit a remote file locally and upload on save.           |
@@ -32,15 +32,15 @@ needs no edit when a later slice extends it.
 
 ## Decisions (owner rulings, 2026-10-08)
 
-| #   | Question                                | Ruling                                                                                                                                                                                                            |
-| --- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | How much of a client is the area?       | A full one over time (hosts, terminal, snippets, SFTP, forwarding, workspaces), delivered as the five slices above. S1 is hosts and terminal only.                                                                 |
-| R2  | What does "as a plugin" mean?           | An in-repo module behind one contract, switchable by a feature switch, composed statically. Not a loadable third-party plugin API: the contract is marked `@internal` like the protocol modules.                    |
+| #   | Question                                | Ruling                                                                                                                                                                                                                |
+| --- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | How much of a client is the area?       | A full one over time (hosts, terminal, snippets, SFTP, forwarding, workspaces), delivered as the five slices above. S1 is hosts and terminal only.                                                                    |
+| R2  | What does "as a plugin" mean?           | An in-repo module behind one contract, switchable by a feature switch, composed statically. Not a loadable third-party plugin API: the contract is marked `@internal` like the protocol modules.                      |
 | R3  | Where do hosts live?                    | In workspace files committed with the workspace (`hosts.yaml`), with every credential as a `${secret:name}` reference. No server vault, no per-machine store. Team sharing is git plus team secrets, as for the rest. |
-| R4  | Which surfaces?                         | Desktop only in S1. CLI and MCP wait until the model has settled.                                                                                                                                                 |
-| R5  | Do requests tunnel through hosts in S1? | No. That is S5, once forwarding rules exist (S4).                                                                                                                                                                 |
-| R6  | How does the area plug in?              | Approach A: a desktop `AreaModule` contract with a static registry and a feature switch. The five existing views become modules of the same contract first, as a refactor with no behaviour change.               |
-| R7  | Which edition unlocks it?               | All editions. The switch exists for operators and developers (and as the kill switch), not as a product boundary.                                                                                                 |
+| R4  | Which surfaces?                         | Desktop only in S1. CLI and MCP wait until the model has settled.                                                                                                                                                     |
+| R5  | Do requests tunnel through hosts in S1? | No. That is S5, once forwarding rules exist (S4).                                                                                                                                                                     |
+| R6  | How does the area plug in?              | Approach A: a desktop `AreaModule` contract with a static registry and a feature switch. The five existing views become modules of the same contract first, as a refactor with no behaviour change.                   |
+| R7  | Which edition unlocks it?               | All editions. The switch exists for operators and developers (and as the kill switch), not as a product boundary.                                                                                                     |
 
 ## Non-goals
 
@@ -245,14 +245,14 @@ ssh2 falls back to its pure-JS ciphers, so the Kerberos packaging traps (ADR-001
 
 Channels, all under `ssh.` in `shared/ipc.ts`:
 
-| Channel            | Request                             | Response / notes                                                                                   |
-| ------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Channel            | Request                             | Response / notes                                                                                    |
+| ------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `ssh.listHosts`    | `{}`                                | `{ groups, hosts, problems }`: the tree as written plus every resolved host; secret names only.     |
 | `ssh.saveHosts`    | `{ file: HostsFile }`               | Validates, writes `hosts.yaml` atomically, answers the reloaded model. Refuses literal secrets.     |
 | `ssh.connect`      | `{ hostId, cols, rows }`            | `{ sessionId }` once the shell is open. Errors carry the code and, for a host key, the fingerprint. |
-| `ssh.write`        | `{ sessionId, data: base64 }`       | Refused unless the session belongs to the calling `WebContents` (`ssh-session-unknown`).           |
-| `ssh.resize`       | `{ sessionId, cols, rows }`         |                                                                                                    |
-| `ssh.close`        | `{ sessionId }`                     | Idempotent.                                                                                        |
+| `ssh.write`        | `{ sessionId, data: base64 }`       | Refused unless the session belongs to the calling `WebContents` (`ssh-session-unknown`).            |
+| `ssh.resize`       | `{ sessionId, cols, rows }`         |                                                                                                     |
+| `ssh.close`        | `{ sessionId }`                     | Idempotent.                                                                                         |
 | `ssh.trustHostKey` | `{ hostId, fingerprint, replace? }` | Records the key. `replace: true` is required to overwrite a changed key.                            |
 
 Events: `ssh.data { sessionId, data: base64 }`, `ssh.exit { sessionId, code, signal? }`,
@@ -294,8 +294,7 @@ channel is considered.
 ### D6. Renderer: the terminal tab
 
 - A new editor tab kind `'ssh-terminal'`, **not persisted** (a session is a moment, like a diff). Tab title is
-  the host name; the tab's icon doubles as the status dot; an `exit` turns the tab into a "Session ended (code
-  0) · Reconnect" state in place rather than closing it.
+  the host name; the tab's icon doubles as the status dot; an `exit` turns the tab into a "Session ended (code 0) · Reconnect" state in place rather than closing it.
 - `@xterm/xterm` with `@xterm/addon-fit` and `@xterm/addon-web-links`. Theme follows the app theme through the
   existing CSS tokens (the contrast check covers the colours). Fonts: the app's mono token.
 - Input goes to `ssh.write`; `ssh.data` goes to `terminal.write`; resize on tab layout change goes to
@@ -316,18 +315,18 @@ Registered by the ssh renderer half; ids added to `shared/commands.ts` and the c
 
 ### D8. Errors
 
-| Code                   | When                                            | The message says                               |
-| ---------------------- | ----------------------------------------------- | ---------------------------------------------- |
-| `ssh-duplicate-id`     | two entries share an id                         | both paths                                     |
-| `ssh-literal-secret`   | an auth value is not `${secret:…}`              | the field and the token form to use            |
-| `ssh-jump-cycle`       | a jump chain loops                              | the ids in the loop                            |
-| `ssh-jump-unknown`     | `jump` names no host                            | the id                                         |
-| `ssh-host-incomplete`  | resolved host lacks `user` or `auth`            | the field and where it can be set              |
-| `ssh-host-key-new`     | first contact                                   | the fingerprint and key type                   |
+| Code                   | When                                            | The message says                                |
+| ---------------------- | ----------------------------------------------- | ----------------------------------------------- |
+| `ssh-duplicate-id`     | two entries share an id                         | both paths                                      |
+| `ssh-literal-secret`   | an auth value is not `${secret:…}`              | the field and the token form to use             |
+| `ssh-jump-cycle`       | a jump chain loops                              | the ids in the loop                             |
+| `ssh-jump-unknown`     | `jump` names no host                            | the id                                          |
+| `ssh-host-incomplete`  | resolved host lacks `user` or `auth`            | the field and where it can be set               |
+| `ssh-host-key-new`     | first contact                                   | the fingerprint and key type                    |
 | `ssh-host-key-changed` | the stored key differs                          | both fingerprints; replacing needs confirmation |
-| `ssh-auth-failed`      | the server refused the credentials              | which method was tried; never the value        |
-| `ssh-connect-failed`   | TCP or hop failure                              | the hop that failed (host id, address, port)   |
-| `ssh-session-unknown`  | write/resize/close on a foreign or dead session | nothing more                                   |
+| `ssh-auth-failed`      | the server refused the credentials              | which method was tried; never the value         |
+| `ssh-connect-failed`   | TCP or hop failure                              | the hop that failed (host id, address, port)    |
+| `ssh-session-unknown`  | write/resize/close on a foreign or dead session | nothing more                                    |
 
 All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs render them as everything else.
 
@@ -385,6 +384,7 @@ All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs r
   `packages/engine/src` imports `@wirebench/ssh`, and nothing under `packages/ssh/src` imports
   `@wirebench/engine` or `electron`.
 - **A5. Host secrets are workspace-scoped on this machine.** Local `${secret:NAME}` values are stored per project today, and a host belongs to the workspace, not a project. SSH resolves a host's `${secret:NAME}` through the same chain as a send (environment variable, secret sources, team secrets) and then a workspace-scoped local entry (`wirebench-secret:workspace:<workspaceId>:<name>`). The host form lists names with where they resolve from and sets a local value write-only (`ssh.secretNames`, `ssh.setSecret`).
+- **A6. Credential lifetime.** A resolved password, key or passphrase is handed to the SSH client in main and stays inside that client for the session's life (the library keeps its connection settings); Wirebench's own code keeps no reference after the connect, and nothing persists, sends or logs a value. D9's 'only for the duration of the connect' reads as this.
 
 ## Docs
 

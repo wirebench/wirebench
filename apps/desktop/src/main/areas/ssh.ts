@@ -30,8 +30,8 @@ export function registerSshChannels(deps: {
     deps.ssh.close(sender, request);
     return Promise.resolve({});
   });
-  registerHandler(channels.ssh.trustHostKey, async (request) => {
-    await deps.ssh.trust(request);
+  registerHandler(channels.ssh.trustHostKey, async (request, sender) => {
+    await deps.ssh.trust(sender, request);
     return {};
   });
 }

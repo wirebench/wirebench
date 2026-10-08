@@ -29,8 +29,12 @@ export interface OpenSessionOptions {
    * ssh2 calls this on every key exchange, including server rekeys mid-session, so it must answer from a
    * store (no interactive waiting: `readyTimeout` counts time spent inside it). A throw fails the connect
    * with ssh-connect-failed. After `close()`, `onExit` still fires once with `{ code: null }`.
+   * It is told where the hop is, never its credentials, so the caller's verifier holds none.
    */
-  readonly verifyHostKey: (hop: HopCredentials, key: KnownHostEntry) => Promise<'accept' | 'reject'>;
+  readonly verifyHostKey: (
+    hop: { readonly address: string; readonly port: number },
+    key: KnownHostEntry,
+  ) => Promise<'accept' | 'reject'>;
 }
 
 export interface SshSession {
@@ -58,6 +62,7 @@ function connectHop(
     const client = new Client();
     let rejectedKey: KnownHostEntry | undefined;
     let verifierFailed = false;
+    const where = { address: hop.address, port: hop.port };
     const config: ConnectConfig = {
       host: hop.address,
       port: hop.port,
@@ -76,7 +81,7 @@ function connectHop(
           keyType: keyTypeOf(key),
           fingerprint: fingerprintOf(key),
         };
-        options.verifyHostKey(hop, entry).then(
+        options.verifyHostKey(where, entry).then(
           (decision) => {
             if (decision === 'reject') rejectedKey = entry;
             verify(decision === 'accept');
