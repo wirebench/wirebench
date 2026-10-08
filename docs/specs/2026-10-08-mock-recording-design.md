@@ -70,10 +70,13 @@ function addRecordedStubs(mock: MockDef, recordings: readonly MockRecording[],
    request path can change the host it goes to.
 3. **Forward.** The request goes upstream through `sendHttp`. The method, the body and the headers are
    sent as received, except the hop-by-hop headers (`Connection`, `Keep-Alive`, `Proxy-*`, `TE`,
-   `Trailer`, `Transfer-Encoding`, `Upgrade`), `Host` and `Content-Length`. Redirects are not followed, and
+   `Trailer`, `Transfer-Encoding`, `Upgrade`, and any field `Connection` names), `Host`,
+   `Content-Length` and the conditional headers (`If-None-Match`, `If-Modified-Since` and the rest).
+   Without the conditional headers the upstream sends a full response to keep, not a 304. Redirects are not followed, and
    the body is decompressed. A method `sendHttp` does not send gets 501.
 4. **Relay.** The client gets the upstream status, the headers without hop-by-hop fields, `Content-Encoding`
-   or `Content-Length`, and the decompressed body. It is the real response: masking applies only to what
+   or `Content-Length`, and the decompressed body. A HEAD reply keeps the upstream's `Content-Length`,
+   and a 204 or 304 gets none. It is the real response: masking applies only to what
    is kept. An upstream failure gets 502 (504 on a timeout) with a plain-text reason. A response over 64 MiB
    also gets 502.
 5. **Route.** A definition request (`?wsdl`) is relayed and not recorded. Any other request is routed with
@@ -110,7 +113,9 @@ used, and they write the redaction marker:
 - **XML bodies.** `redactXml` masks `wsse:Password`, and `redactSecurityTokens` masks SAML signatures,
   ciphertext and Kerberos tokens.
 - **JSON and form bodies.** `redactStructuredBody` masks the values under `SECRET_BODY_KEYS` (`password`,
-  `access_token`, `client_secret`, and the rest of that list).
+  `access_token`, `client_secret`, and the rest of that list). A text body that parses as a JSON object
+  or array gets the same mask, whatever its `Content-Type`. Any other text body is masked only by the known
+  values below.
 - **Known values.** `createSecretMasker(input.secrets)` masks each listed value, in all its encoded forms,
   in the header values and the body (with the XML marker in XML). The CLI passes every `WIREBENCH_SECRET_*`
   value.
@@ -180,7 +185,7 @@ wirebench mock record <path> <mock> --target <url> [--from <interface|api>] [--p
 ## Error codes
 
 - **Start:** the mock's start codes, and `mock-record-target-invalid`, for a target that is not an
-  absolute `http:` or `https:` URL.
+  absolute `http:` or `https:` URL, or that carries a user name or password.
 - **Per exchange:** `mock-record-unrouted`, `mock-record-binary`, `mock-record-too-large` and
   `mock-record-upstream-failed`.
 

@@ -349,8 +349,50 @@ describe('startRecorder', () => {
     });
   });
 
+  it('forwards the query, and drops conditional and Connection-named headers', async () => {
+    const seen: Seen[] = [];
+    const recorder = await record(await upstream(() => ({ body: 'ok' }), seen));
+    await send(recorder, '/m/x?sig=ab&n=%7e', {
+      headers: {
+        'If-None-Match': '"v1"',
+        'If-Modified-Since': 'Thu, 01 Jan 2026 00:00:00 GMT',
+        Connection: 'X-Hop',
+        'X-Hop': '1',
+        'X-Keep': '2',
+      },
+    });
+    expect(seen[0]?.url).toBe('/x?sig=ab&n=%7e');
+    expect(seen[0]?.headers['if-none-match']).toBeUndefined();
+    expect(seen[0]?.headers['if-modified-since']).toBeUndefined();
+    expect(seen[0]?.headers['x-hop']).toBeUndefined();
+    expect(seen[0]?.headers['x-keep']).toBe('2');
+  });
+
+  it('keeps the upstream length on a HEAD reply and sends none on a 204', async () => {
+    const recorder = await record(
+      await upstream((seen) =>
+        seen.method === 'HEAD'
+          ? { headers: { 'Content-Type': 'text/plain', 'Content-Length': '42' } }
+          : { status: 204 },
+      ),
+    );
+    const head = await send(recorder, '/m/x', { method: 'HEAD' });
+    expect(head.headers['content-length']).toBe('42');
+    const empty = await send(recorder, '/m/x', { method: 'DELETE' });
+    expect(empty.status).toBe(204);
+    expect(empty.headers['content-length']).toBeUndefined();
+  });
+
+  it('masks secret keys in JSON served as text', async () => {
+    const recorder = await record(
+      await upstream(() => ({ headers: { 'Content-Type': 'text/plain' }, body: '{"password":"pw-123","n":1}' })),
+    );
+    await send(recorder, '/m/x');
+    expect(JSON.parse(recorder.recordings()[0]?.bodyText ?? '')).toEqual({ password: '<redacted>', n: 1 });
+  });
+
   it('refuses a target that is not an http or https URL', async () => {
-    for (const target of ['not a url', 'file:///etc/passwd']) {
+    for (const target of ['not a url', 'file:///etc/passwd', 'https://user:pass@real.example/']) {
       const error = await startRecorder({ project, root: '/', mockId: 'M1', target, registry }).catch(
         (e: unknown) => e,
       );

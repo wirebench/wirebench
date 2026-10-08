@@ -135,6 +135,14 @@ function parseTarget(target: string): URL {
   } catch {
     url = undefined;
   }
+  if (url !== undefined && (url.username !== '' || url.password !== '')) {
+    // The forwarded URL is built from the origin, which has no userinfo: refuse rather than drop it.
+    throw new WirebenchError(
+      'mock-record-target-invalid',
+      'The target must not carry credentials; the client sends its own with each request',
+      { details: { target: `${url.protocol}//${url.host}` } },
+    );
+  }
   if (url === undefined || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
     throw new WirebenchError(
       'mock-record-target-invalid',
@@ -160,13 +168,42 @@ function upstreamUrl(target: URL, prefix: string, request: MockRequest): string 
   return `${target.origin}${path === '' ? '/' : path}${request.rawQuery === '' ? '' : `?${request.rawQuery}`}`;
 }
 
-/** The request's headers for `sendHttp`: no hop-by-hop field, no `Host`, no `Content-Length`. */
+/**
+ * Conditional request headers: forwarded, they would let the upstream answer 304 with no body, and a
+ * recording needs the full response.
+ */
+const CONDITIONAL: ReadonlySet<string> = new Set([
+  'if-match',
+  'if-none-match',
+  'if-modified-since',
+  'if-unmodified-since',
+  'if-range',
+]);
+
+/** The hop-by-hop fields, and every field the message's own `Connection` header names (RFC 9110 §7.6.1). */
+function hopByHop(pairs: readonly (readonly [string, string])[]): Set<string> {
+  const names = new Set(HOP_BY_HOP);
+  for (const [name, value] of pairs) {
+    if (name.toLowerCase() !== 'connection') continue;
+    for (const token of value.split(',')) {
+      const field = token.trim().toLowerCase();
+      if (field !== '') names.add(field);
+    }
+  }
+  return names;
+}
+
+/**
+ * The request's headers for `sendHttp`: no hop-by-hop field, no `Host`, no `Content-Length` and no
+ * conditional header.
+ */
 function forwardHeaders(pairs: readonly HeaderPair[]): Record<string, string> {
   const headers: Record<string, string> = {};
   const names = new Map<string, string>();
+  const hop = hopByHop(pairs);
   for (const [name, value] of pairs) {
     const lower = name.toLowerCase();
-    if (HOP_BY_HOP.has(lower) || lower === 'host' || lower === 'content-length') continue;
+    if (hop.has(lower) || CONDITIONAL.has(lower) || lower === 'host' || lower === 'content-length') continue;
     const first = names.get(lower);
     if (first === undefined) {
       names.set(lower, name);
@@ -180,10 +217,11 @@ function forwardHeaders(pairs: readonly HeaderPair[]): Record<string, string> {
 
 /** The upstream's headers as the client gets them: the body is relayed decompressed and re-measured. */
 function relayHeaders(pairs: readonly (readonly [string, string])[]): HeaderPair[] {
+  const hop = hopByHop(pairs);
   return pairs
     .filter(([name]) => {
       const lower = name.toLowerCase();
-      return !HOP_BY_HOP.has(lower) && lower !== 'content-encoding' && lower !== 'content-length';
+      return !hop.has(lower) && lower !== 'content-encoding' && lower !== 'content-length';
     })
     .map(([name, value]): HeaderPair => [name, value]);
 }
@@ -208,6 +246,18 @@ function utf8ContentType(value: string): string {
   return charset === undefined || charset === 'utf-8' || charset === 'utf8'
     ? value
     : value.replace(/charset=("[^"]*"|[^;]*)/i, 'charset=utf-8');
+}
+
+/** Whether `text` is a JSON object or array, whatever its `Content-Type` says. */
+function looksLikeJson(text: string): boolean {
+  const start = text.trimStart()[0];
+  if (start !== '{' && start !== '[') return false;
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface Masks {
@@ -248,19 +298,20 @@ function keep(
     bodyText = masks.xml?.(bodyText) ?? bodyText;
   } else if (language !== 'none') {
     bodyText = decodeBody(exchange.body, contentType).text;
+    // JSON served as text is still JSON: its secret keys are masked as for application/json.
+    const maskedAs = language === 'text' && looksLikeJson(bodyText) ? 'application/json' : contentType;
     // The structured mask re-serialises JSON; the server's own text stays when it masked nothing,
     // which is when the result equals the same re-serialisation with no key counted secret.
-    const structured = redactStructuredBody(bodyText, contentType);
-    if (structured !== redactStructuredBody(bodyText, contentType, { isSecretKey: () => false })) {
+    const structured = redactStructuredBody(bodyText, maskedAs);
+    if (structured !== redactStructuredBody(bodyText, maskedAs, { isSecretKey: () => false })) {
       bodyText = structured;
     }
     bodyText = masks.text?.(bodyText) ?? bodyText;
   }
+  const hop = hopByHop(exchange.rawHeaders);
   const kept = exchange.rawHeaders.filter(([name]) => {
     const lower = name.toLowerCase();
-    return (
-      !HOP_BY_HOP.has(lower) && !MOCK_RESERVED_HEADERS.has(lower) && lower !== 'content-encoding' && lower !== 'date'
-    );
+    return !hop.has(lower) && !MOCK_RESERVED_HEADERS.has(lower) && lower !== 'content-encoding' && lower !== 'date';
   });
   const headers = redactHeaderPairs(kept).map(([name, value]): MockHeader => {
     const own = name.toLowerCase() === 'content-type' ? utf8ContentType(value) : value;
@@ -280,7 +331,24 @@ function keep(
 }
 
 /** Writes the upstream's status, headers and decompressed bytes to the client. */
-function relay(res: ServerResponse, exchange: HttpExchange, headers: readonly HeaderPair[]): void {
+function relay(res: ServerResponse, exchange: HttpExchange, headers: readonly HeaderPair[], method: string): void {
+  // A HEAD reply's length is the representation's, and a 204 or 304 carries none (RFC 9110 §8.6).
+  if (method === 'HEAD' || exchange.status === 204 || exchange.status === 304) {
+    const length = method === 'HEAD' ? headerValue(exchange.rawHeaders, 'content-length') : undefined;
+    const grouped = new Map<string, { name: string; values: string[] }>();
+    for (const [name, value] of headers) {
+      const entry = grouped.get(name.toLowerCase()) ?? { name, values: [] };
+      entry.values.push(value);
+      grouped.set(name.toLowerCase(), entry);
+    }
+    for (const { name, values } of grouped.values()) {
+      res.setHeader(name, values.length === 1 ? (values[0] as string) : values);
+    }
+    if (length !== undefined) res.setHeader('Content-Length', length);
+    res.writeHead(exchange.status);
+    res.end();
+    return;
+  }
   write(res, { status: exchange.status, headers, body: Buffer.from(exchange.body) });
 }
 
@@ -396,6 +464,10 @@ export async function startRecorder(input: StartRecorderInput): Promise<RunningR
 
     const controller = new AbortController();
     inflight.add(controller);
+    // A client that goes away does not need its answer: stop waiting for the upstream.
+    res.on('close', () => {
+      if (!res.writableEnded) controller.abort();
+    });
     let exchange: HttpExchange;
     try {
       const forward: HttpRequest = {
@@ -439,7 +511,7 @@ export async function startRecorder(input: StartRecorderInput): Promise<RunningR
     const relayed = relayHeaders(exchange.rawHeaders);
     const relayedText = (): string => decodeBody(exchange.body, headerValue(exchange.rawHeaders, 'content-type')).text;
     const done = (extra: Parameters<typeof emit>[3]): void => {
-      relay(res, exchange, relayed);
+      relay(res, exchange, relayed, method);
       emit(exchange.status, relayed, relayedText(), extra);
     };
     const mockUrl = `http://${req.headers.host ?? `${urlHost(host)}:${String(running.port)}`}${mock.path}`;
