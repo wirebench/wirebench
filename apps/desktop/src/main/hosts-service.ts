@@ -81,7 +81,14 @@ export class HostsService {
     try {
       text = await readFile(join(dir, HOSTS_FILE), 'utf8');
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const errno = (error as NodeJS.ErrnoException).code;
+      if (errno !== 'ENOENT') {
+        // Raw, it would cross IPC as `internal-error`. `details.path` is a location inside the file, so not set.
+        throw new WirebenchError('ssh-hosts-invalid', `${HOSTS_FILE} could not be read (${errno ?? 'unknown error'})`, {
+          details: { file: HOSTS_FILE, ...(errno === undefined ? {} : { errno }) },
+          cause: error,
+        });
+      }
     }
     let file = EMPTY_HOSTS_FILE;
     const problems: SshProblemWire[] = [];

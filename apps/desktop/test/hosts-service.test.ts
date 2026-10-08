@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,6 +13,15 @@ describe('HostsService', () => {
       file: { version: 1, groups: [], hosts: [] },
       resolved: [],
       problems: [],
+    });
+  });
+  it('a hosts.yaml that cannot be read is a WirebenchError naming the errno, not an internal error', async () => {
+    const d = dir();
+    mkdirSync(join(d, 'hosts.yaml')); // reading a directory fails with EISDIR
+    await expect(new HostsService({ treeDir: () => d }).list()).rejects.toMatchObject({
+      name: 'WirebenchError',
+      code: 'ssh-hosts-invalid',
+      details: { file: 'hosts.yaml', errno: 'EISDIR' },
     });
   });
   it('a malformed file is a problem, not a throw, and never echoes the literal', async () => {

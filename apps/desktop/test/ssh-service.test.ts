@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
@@ -113,6 +113,17 @@ const as = (s: FakeSender) => s as never;
 const CONNECT = { hostId: 'a', cols: 80, rows: 24 };
 
 describe('SshService', () => {
+  it('a known-hosts file that cannot be read is a WirebenchError naming the errno, not an internal error', async () => {
+    const { service, knownHostsFile, open } = make();
+    mkdirSync(knownHostsFile); // reading a directory fails with EISDIR
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({
+      name: 'WirebenchError',
+      code: 'ssh-hosts-invalid',
+      details: { file: 'known-hosts', errno: 'EISDIR' },
+    });
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it('first contact fails with ssh-host-key-new and the fingerprint, and trusts nothing', async () => {
     const { service, knownHostsFile } = make();
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({

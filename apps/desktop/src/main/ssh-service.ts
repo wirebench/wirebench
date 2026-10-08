@@ -395,8 +395,14 @@ export class SshService {
     try {
       return parseKnownHosts(await readFile(this.deps.knownHostsFile, 'utf8'));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      throw error;
+      const errno = (error as NodeJS.ErrnoException).code;
+      if (errno === 'ENOENT') return [];
+      // Raw, it would cross IPC as `internal-error`; no host is trusted or refused without the file.
+      throw new WirebenchError(
+        'ssh-hosts-invalid',
+        `The trusted host keys file could not be read (${errno ?? 'unknown error'}): ${this.deps.knownHostsFile}`,
+        { details: { file: 'known-hosts', ...(errno === undefined ? {} : { errno }) }, cause: error },
+      );
     }
   }
 }
