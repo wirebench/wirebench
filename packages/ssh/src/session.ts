@@ -25,6 +25,11 @@ export interface OpenSessionOptions {
   readonly hops: readonly HopCredentials[];
   readonly cols: number;
   readonly rows: number;
+  /**
+   * ssh2 calls this on every key exchange, including server rekeys mid-session, so it must answer from a
+   * store (no interactive waiting: `readyTimeout` counts time spent inside it). A throw fails the connect
+   * with ssh-connect-failed. After `close()`, `onExit` still fires once with `{ code: null }`.
+   */
   readonly verifyHostKey: (hop: HopCredentials, key: KnownHostEntry) => Promise<'accept' | 'reject'>;
 }
 
@@ -42,10 +47,17 @@ export class SshConnectError extends SshModelError {}
 
 const hostOf = (hop: HopCredentials): string => `${hop.address}:${hop.port}`;
 
-function connectHop(hop: HopCredentials, index: number, options: OpenSessionOptions, sock?: Duplex): Promise<Client> {
+function connectHop(
+  hop: HopCredentials,
+  index: number,
+  options: OpenSessionOptions,
+  sock: Duplex | undefined,
+  onLost: () => void,
+): Promise<Client> {
   return new Promise((resolve, reject) => {
     const client = new Client();
     let rejectedKey: KnownHostEntry | undefined;
+    let verifierFailed = false;
     const config: ConnectConfig = {
       host: hop.address,
       port: hop.port,
@@ -70,16 +82,15 @@ function connectHop(hop: HopCredentials, index: number, options: OpenSessionOpti
             verify(decision === 'accept');
           },
           () => {
-            rejectedKey = entry;
+            verifierFailed = true;
             verify(false);
           },
         );
       },
     };
-    client.once('ready', () => resolve(client));
-    client.once('error', (error: Error & { level?: string }) => {
+    const onConnectError = (error: Error & { level?: string }): void => {
       const host = hostOf(hop);
-      if (rejectedKey) {
+      if (rejectedKey && !verifierFailed) {
         reject(new SshConnectError('ssh-host-key-new', `${host} presented an untrusted key`, { ...rejectedKey }));
       } else if (error.level === 'client-authentication') {
         reject(
@@ -91,8 +102,25 @@ function connectHop(hop: HopCredentials, index: number, options: OpenSessionOpti
       } else {
         reject(new SshConnectError('ssh-connect-failed', `${host}: ${error.message}`, { host, hop: index }));
       }
+    };
+    client.once('ready', () => {
+      client.removeListener('error', onConnectError);
+      // Any later error (reset, rekey failure) ends the whole chain; the session then exits via its channel.
+      client.on('error', onLost);
+      resolve(client);
     });
-    client.connect(config);
+    client.once('error', onConnectError);
+    try {
+      client.connect(config);
+    } catch {
+      // The library message can describe the key material, so it is never forwarded.
+      const host = hostOf(hop);
+      reject(
+        hop.auth.kind === 'key'
+          ? new SshConnectError('ssh-auth-failed', `${host} could not use the private key`, { host, method: 'key' })
+          : new SshConnectError('ssh-connect-failed', `${host}: invalid connection settings`, { host, hop: index }),
+      );
+    }
   });
 }
 
@@ -119,16 +147,24 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
   try {
     let sock: Duplex | undefined;
     for (const [index, hop] of options.hops.entries()) {
-      const client = await connectHop(hop, index, options, sock);
+      const client = await connectHop(hop, index, options, sock, endAll);
       clients.push(client);
       const next = options.hops[index + 1];
       if (next) sock = await forwardOut(client, next, index + 1);
     }
     const target = clients[clients.length - 1];
     if (!target) throw new SshConnectError('ssh-connect-failed', 'no hops to connect through', { host: '', hop: 0 });
+    const lastHop = options.hops[options.hops.length - 1] as HopCredentials;
     const channel = await new Promise<ClientChannel>((resolve, reject) =>
       target.shell({ term: 'xterm-256color', cols: options.cols, rows: options.rows }, (error, ch) =>
-        error ? reject(error) : resolve(ch),
+        error
+          ? reject(
+              new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
+                host: hostOf(lastHop),
+                hop: options.hops.length - 1,
+              }),
+            )
+          : resolve(ch),
       ),
     );
     return wrap(channel, endAll);
@@ -142,9 +178,11 @@ function wrap(channel: ClientChannel, endAll: () => void): SshSession {
   const dataListeners = new Set<(data: Uint8Array) => void>();
   const exitListeners = new Set<(exit: { code: number | null; signal?: string }) => void>();
   let exited = false;
+  let closed = false;
   const exit = (code: number | null, signal?: string): void => {
     if (exited) return;
     exited = true;
+    closed = true;
     for (const listener of exitListeners) listener({ code, ...(signal ? { signal } : {}) });
     endAll();
   };
@@ -156,15 +194,17 @@ function wrap(channel: ClientChannel, endAll: () => void): SshSession {
   });
   channel.on('exit', (code: number | null, signal?: string) => exit(code, signal));
   channel.on('close', () => exit(null));
+  channel.on('error', () => exit(null));
   return {
     id: randomUUID(),
     write: (data) => {
-      channel.write(Buffer.from(data));
+      if (!closed) channel.write(Buffer.from(data));
     },
     resize: (cols, rows) => {
-      channel.setWindow(rows, cols, 0, 0);
+      if (!closed) channel.setWindow(rows, cols, 0, 0);
     },
     close: () => {
+      closed = true;
       channel.end();
       endAll();
     },

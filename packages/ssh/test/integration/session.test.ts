@@ -99,4 +99,101 @@ describe('openSession', () => {
       { code: 'ssh-connect-failed', details: { host: '127.0.0.1:1', hop: 0 } },
     );
   });
+  it('write and resize after close or after the shell exited are no-ops', async () => {
+    const errors: unknown[] = [];
+    const spy = (e: unknown) => errors.push(e);
+    process.on('uncaughtException', spy);
+    try {
+      const f = await fixture('pw');
+      session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+      const exited = new Promise<{ code: number | null }>((r) => session!.onExit(r));
+      session.close();
+      expect(() => {
+        session!.write(Buffer.from('x'));
+        session!.resize(10, 10);
+      }).not.toThrow();
+      expect((await exited).code).toBeNull();
+      const g = await fixture('pw');
+      const s2 = await openSession({ hops: [hop(g.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+      const done = new Promise<{ code: number | null }>((r) => s2.onExit(r));
+      s2.write(Buffer.from('exit 0\n'));
+      await done;
+      expect(() => {
+        s2.write(Buffer.from('x'));
+        s2.resize(10, 10);
+      }).not.toThrow();
+      await new Promise((r) => setTimeout(r, 100));
+      expect(errors).toEqual([]);
+    } finally {
+      process.off('uncaughtException', spy);
+    }
+  });
+  it('losing the outer connection mid-session ends the session', async () => {
+    const inner = await fixture('in');
+    const outer = await fixture('out', true);
+    session = await openSession({
+      hops: [hop(outer.port, 'out'), hop(inner.port, 'in')],
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+    });
+    const exited = new Promise<{ code: number | null }>((r) => session!.onExit(r));
+    await outer.close();
+    expect((await exited).code).toBeNull();
+  });
+  it('a host key rejected on a jump hop names that hop', async () => {
+    const inner = await fixture('in');
+    const outer = await fixture('out', true);
+    await expect(
+      openSession({
+        hops: [hop(outer.port, 'out'), hop(inner.port, 'in')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: (h) => Promise.resolve(h.port === inner.port ? ('reject' as const) : ('accept' as const)),
+      }),
+    ).rejects.toMatchObject({ code: 'ssh-host-key-new', details: { host: `127.0.0.1:${inner.port}` } });
+  });
+  it('auth failure on the inner hop is ssh-auth-failed for that host', async () => {
+    const inner = await fixture('in');
+    const outer = await fixture('out', true);
+    await expect(
+      openSession({
+        hops: [hop(outer.port, 'out'), hop(inner.port, 'bad')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: accept,
+      }),
+    ).rejects.toMatchObject({ code: 'ssh-auth-failed', details: { host: `127.0.0.1:${inner.port}` } });
+  });
+  it('a refused jump is ssh-connect-failed at hop 1', async () => {
+    const inner = await fixture('in');
+    const outer = await fixture('out', false);
+    await expect(
+      openSession({
+        hops: [hop(outer.port, 'out'), hop(inner.port, 'in')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: accept,
+      }),
+    ).rejects.toMatchObject({ code: 'ssh-connect-failed', details: { hop: 1 } });
+  });
+  it('a throwing verifyHostKey is ssh-connect-failed', async () => {
+    const f = await fixture('pw');
+    await expect(
+      openSession({
+        hops: [hop(f.port, 'pw')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: () => Promise.reject(new Error('boom')),
+      }),
+    ).rejects.toMatchObject({ code: 'ssh-connect-failed' });
+  });
+  it('an unparsable private key is ssh-auth-failed without the library message', async () => {
+    const f = await fixture('pw');
+    const bad = { ...hop(f.port, ''), auth: { kind: 'key' as const, privateKey: 'not a key' } };
+    const error: unknown = await openSession({ hops: [bad], cols: 80, rows: 24, verifyHostKey: accept }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({ code: 'ssh-auth-failed', details: { method: 'key' } });
+  });
 });
