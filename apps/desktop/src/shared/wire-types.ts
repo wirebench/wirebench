@@ -6022,6 +6022,7 @@ export const updateStatusSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('declined'), version: z.string() }),
   z.object({ kind: z.literal('downloaded'), version: z.string() }),
   z.object({ kind: z.literal('installing'), version: z.string() }),
+  z.object({ kind: z.literal('release-page'), version: z.string() }),
   z.object({ kind: z.literal('error'), message: z.string() }),
 ]);
 export type UpdateStatusWire = z.infer<typeof updateStatusSchema>;
