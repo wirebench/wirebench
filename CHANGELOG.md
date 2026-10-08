@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   Schema, generated from the schemas Wirebench reads the files with, so an editor can validate a project
   as you type. They are served from the documentation site, one folder per project format version, and
   attached to each release. The project-format reference shows the editor settings (#66).
+- **Mock services (engine).** A project can hold mock services under `mocks/`, one reviewable file per
+  canned response with its body beside it. A mock is generated from a SOAP interface or a REST API,
+  validates each request against the contract (answering a SOAP fault or a 4xx when it does not
+  conform), picks a response by sequence, random, XPath/JSONPath/query match or a sandboxed script, keeps
+  scenario state, and serves its WSDL. It listens on loopback unless told otherwise and runs without the
+  desktop, for the CLI to build on. The desktop tab follows (#59).
 
 ## [4.0.0] - 2026-10-08
 

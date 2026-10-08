@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/mock.schema.json",
+  "title": "Wirebench project file: Mock service",
+  "description": "Project format 8: `mocks/*/mock.yaml`.",
+  "type": "object",
+  "properties": {
+    "kind": { "type": "string", "const": "mock" },
+    "version": { "type": "number", "const": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "order": { "default": 0, "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+    "description": { "type": "string" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "container": { "type": "string", "minLength": 1 },
+        "binding": { "type": "string", "minLength": 1 }
+      },
+      "required": ["container"],
+      "additionalProperties": {}
+    },
+    "port": { "default": 0, "type": "integer", "minimum": 0, "maximum": 65535 },
+    "path": { "default": "/", "type": "string", "maxLength": 1024, "pattern": "^\\/[^?#\\s]*$" },
+    "validation": { "default": "reject", "type": "string", "enum": ["reject", "report", "off"] }
+  },
+  "required": ["kind", "version", "id", "name", "source"],
+  "additionalProperties": {}
+}

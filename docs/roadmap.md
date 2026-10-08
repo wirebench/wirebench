@@ -90,8 +90,9 @@ the issues are where the work is tracked, and each one carries its own "done whe
 it waits for. The milestones carry no dates, for the reason the legend gives. The version numbers are
 intentions, and they were renumbered on 2026-09-30: the major that renames the engine's public
 exports (#184, [ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)) took 3.0, so the milestone that
-held that number moved. The 3.0 and 3.1 milestones shipped together as 3.1.0 on 2026-10-04, the first release after 2.2.1; there is no 3.0.0 tag. On 2026-10-08 the numbers moved again: Enterprise trust became 4.0 and Contracts, mocks and testing 5.0. 5.0 is a major because mock stubs are a new file kind, which is the kind of one-way
-door 2.0 was. No issue sits in an earlier milestone than one it is blocked by. An item that has shipped
+held that number moved. The 3.0 and 3.1 milestones shipped together as 3.1.0 on 2026-10-04, the first release after 2.2.1; there is no 3.0.0 tag. On 2026-10-08 the numbers moved again: Enterprise trust became 4.0 and Contracts, mocks and testing 5.0. Mock stubs do not force 5.0 to be a major: they are a new file kind
+with its own version, as sequences were in 3.0, and an older build leaves them alone
+([ADR-0021](adr/0021-mock-stubs-are-files-under-mocks.md)). No issue sits in an earlier milestone than one it is blocked by. An item that has shipped
 but sits under a later milestone is already in 3.1.0 — the WebSocket request kind (#98, item 17), for one,
 sits under 5.0; the milestone records where it was planned, not the release it arrived in.
 
@@ -411,6 +412,10 @@ or query match, plus stateful scenarios; stubs stored as plain files in the proj
 them; start, stop, on-request and after-request scripts; serves the WSDL; a headless `wirebench mock` for
 CI; and a built-in recording proxy that turns live traffic into stubs, which is also what people used the
 deferred TCP monitor for.
+
+The engine half of #59 is in place: mocks generated from a WSDL or an OpenAPI document, contract validation,
+every dispatch style with scenarios, the WSDL served, and the file format of ADR-0021. Lifecycle scripts and
+response templating are left for later issues; the desktop tab follows.
 
 ### Teams and sign-in
 

@@ -81,6 +81,7 @@ function makeProject(auth: AuthConfig): Project {
     grpcApis: [grpcApi],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

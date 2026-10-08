@@ -18,6 +18,8 @@ import { ProjectError } from '../errors.js';
 import type { ContainerDir } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
+import { MOCKS_DIR } from '../mock/file.js';
+import { readMocks } from '../mock/load.js';
 import { SEQUENCES_DIR } from '../sequence/file.js';
 import { readSequences } from '../sequence/load.js';
 import type { FsLike } from './fs.js';
@@ -102,6 +104,7 @@ export interface SaveProjectOptions {
  * - `webhooks/requests/**` (the collection's own request tree, same layout as an API's), while the
  *   `rest` feature is on
  * - the `sequences/*.sequence.yaml` this build loaded
+ * - the files under `mocks/` of every mock, operation and response this build loaded
  *
  * A container's files are its protocol's to list (`storage.managed`). Anything else on disk — a
  * README, a `.gitkeep`, notes — is a foreign file and is never a deletion candidate, even when it
@@ -147,6 +150,10 @@ async function listCoreManagedFiles(fs: FsLike, root: string, registry: Protocol
   for (const { file } of (await readSequences(fs, root)).loaded) {
     managed.push(file);
   }
+  // The same rule for mocks, file by file: a refused response stays while the rest of its mock is saved.
+  for (const { files } of (await readMocks(fs, root)).loaded) {
+    managed.push(...files);
+  }
   return managed;
 }
 
@@ -173,14 +180,21 @@ async function pruneEmptyDirs(fs: FsLike, root: string, relativeDirs: ReadonlySe
   return pruned;
 }
 
+/** The folders whose files are managed only when this build loaded them, and the code a clash raises. */
+const LOADED_ONLY_DIRS = [
+  { dir: SEQUENCES_DIR, code: 'sequence-file-conflict', what: 'sequence' },
+  { dir: MOCKS_DIR, code: 'mock-file-conflict', what: 'mock' },
+] as const;
+
 /**
- * Refuses a save that would write over a sequence file this build did not load. A new sequence whose
- * slug matches a file from a newer build (or one mid-merge) would otherwise replace it unseen; the
- * mutation layer picks slugs around such files, so this is the backstop, not the usual path.
+ * Refuses a save that would write over a sequence or mock file this build did not load. A new
+ * sequence or stub whose slug matches a file from a newer build (or one mid-merge) would otherwise
+ * replace it unseen; the mutation layer picks slugs around such files, so this is the backstop, not
+ * the usual path.
  *
- * @throws ProjectError `sequence-file-conflict`
+ * @throws ProjectError `sequence-file-conflict`, `mock-file-conflict`
  */
-async function refuseOverwritingForeignSequences(
+async function refuseOverwritingForeignFiles(
   fs: FsLike,
   root: string,
   desired: ReadonlyMap<string, string>,
@@ -188,14 +202,15 @@ async function refuseOverwritingForeignSequences(
 ): Promise<void> {
   const loaded = new Set(managed);
   for (const relative of desired.keys()) {
+    const kind = LOADED_ONLY_DIRS.find(({ dir }) => relative.startsWith(`${dir}/`));
     if (
-      relative.startsWith(`${SEQUENCES_DIR}/`) &&
+      kind !== undefined &&
       !loaded.has(relative) &&
       (await readFileIfExists(fs, toAbsolute(root, relative))) !== undefined
     ) {
       throw new ProjectError(
-        'sequence-file-conflict',
-        `${relative} exists but could not be loaded by this build; rename the sequence instead of replacing it`,
+        kind.code,
+        `${relative} exists but could not be loaded by this build; rename the ${kind.what} instead of replacing it`,
         { details: { file: relative } },
       );
     }
@@ -244,7 +259,7 @@ function refusePlaceholderConflicts(project: Project, registry: ProtocolRegistry
  *
  * @returns which files were written, removed and left untouched.
  * @throws ProjectError `container-slug-conflict` when a container has the slug of a placeholder in
- * its directory; `sequence-file-conflict`; what {@link projectFiles} throws
+ * its directory; `sequence-file-conflict`; `mock-file-conflict`; what {@link projectFiles} throws
  */
 export async function saveProject(project: Project, root: string, options?: SaveProjectOptions): Promise<SaveResult> {
   const fs = options?.fs ?? nodeFs;
@@ -281,7 +296,7 @@ export async function saveProject(project: Project, root: string, options?: Save
       existing.push(...(await storage.managed(fs, root, container.slug)));
     }
   }
-  await refuseOverwritingForeignSequences(fs, root, desired, existing);
+  await refuseOverwritingForeignFiles(fs, root, desired, existing);
 
   const backupsWritten: string[] = [];
   for (const backup of options?.backups ?? []) {

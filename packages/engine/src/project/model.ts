@@ -20,6 +20,7 @@ import type { WsaConfig } from '../wsa/model.js';
 import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
+import type { MockDef } from '../mock/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
 import type { ContainerBase, ContainerDir } from '../protocol/module.js';
@@ -476,6 +477,11 @@ export interface Project {
    */
   readonly sequences: readonly SequenceDef[];
   /**
+   * The project's mock services, one folder each under `mocks/` (ADR-0021). Like a sequence, a mock
+   * refers to the interface or API it implements by id and holds no requests.
+   */
+  readonly mocks: readonly MockDef[];
+  /**
    * The project's webhook collection (spec `…-openapi-webhooks-import-design.md`), absent until the
    * first webhook is created or imported. Not a list like the API containers: one per project.
    */
@@ -581,6 +587,7 @@ export function createProject(name: string, options?: CreateOptions): Project {
     grpcApis: [],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

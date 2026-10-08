@@ -75,6 +75,7 @@ const SNAPSHOT = {
   wsApis: [],
   wsRequests: [],
   sequences: [],
+  mocks: [],
   properties: {},
   disabledProperties: [],
   environments: [],

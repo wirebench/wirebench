@@ -34,6 +34,13 @@ my-service/
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth
   sequences/
     <Sequence>.sequence.yaml  # kind: sequence, version, steps (request ids), transfers, assertions
+  mocks/<Mock>/
+    mock.yaml                 # kind: mock, version, source (interface or API id), port, path, validation
+    operations/<Operation>/
+      operation.yaml          # the contract operation's key, dispatch style, default response id
+      <Response>.response.yaml  # status, headers, delay, match conditions, scenario state
+      <Response>.body.xml     # the response body, sent byte for byte (.json/.txt by its language)
+      dispatch.ts             # the dispatch script, only when the operation dispatches by script
   wss/…                       # outgoing/incoming WS-Security configs and keystore entries (no secrets)
   attachments/                 # content-addressed by sha256
 ```
@@ -58,6 +65,9 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `<Request>.pre.ts`, `<Request>.post.ts` | A request's pre-request and post-response scripts, named by its `scripts` key. They are TypeScript, or JavaScript (`.pre.js`, `.post.js`) for scripts imported from Postman. Renaming or moving the request moves them |
 | `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/docs/guides/snapshot-regression/) |
 | `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/docs/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
+| `mocks/<Mock>/mock.yaml` | One mock service: the interface or API it implements (by id), for SOAP the binding it speaks, the port, the path and how it treats a request that breaks the contract (`reject`, `report` or `off`). It carries `kind: mock` and its own `version` (see below). The listening host is never in the file: it is chosen when the mock is started and defaults to loopback |
+| `mocks/<Mock>/operations/<Operation>/operation.yaml` | One operation of a mock: the contract operation it answers (the operation name for SOAP, `<method> <path template>` for REST), how it picks a response (`sequence`, `random`, `match` or `script`) and its default response |
+| `<Response>.response.yaml` + `<Response>.body.<ext>` | One canned response: status, headers, delay, the conditions under which it is picked and the scenario state it needs and sets. The body sits beside it in its own language and is sent exactly as written — no `${…}` is expanded in it |
 | `definition/` | The fetched or imported API definition (WSDL, XSD, OpenAPI), kept byte-exact, plus a manifest mapping each URL to its cached file and checksum |
 | `wss/` | WS-Security configuration and keystore entries — no secret values |
 | `attachments/` | Files attached to a request, stored by content hash |
@@ -118,6 +128,15 @@ workspace's `.vscode/settings.json`:
     ],
     "https://wirebench.github.io/wirebench/docs/schemas/v8/sequence.schema.json": [
       "**/sequences/*.sequence.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock.schema.json": [
+      "**/mocks/*/mock.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-operation.schema.json": [
+      "**/mocks/*/operations/*/operation.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-response.schema.json": [
+      "**/mocks/*/operations/*/*.response.yaml"
     ],
     "https://wirebench.github.io/wirebench/docs/schemas/v8/webhooks.schema.json": [
       "**/webhooks/webhooks.yaml"
@@ -198,6 +217,12 @@ A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. 
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it
 was. A build that finds a sequence file newer than it understands, malformed, or sharing another's
 id reports it as a problem, skips it, and never deletes or overwrites it on save.
+
+Mock files follow the same rule: `mock.yaml` carries `version: 1`, and the operation and response files
+under it belong to that version. An older build leaves `mocks/` exactly as it was. A build that finds a
+mock file it cannot load (`mock-file-invalid`, `mock-version-too-new`, `mock-duplicate-id`) skips that
+file — a bad `mock.yaml` skips its whole mock — and a save never deletes or overwrites it
+(`mock-file-conflict`). See [ADR-0021](https://github.com/wirebench/wirebench/blob/main/docs/adr/0021-mock-stubs-are-files-under-mocks.md).
 
 A workspace manifest has its own, independent format version (`WORKSPACE_FORMAT_VERSION`, currently
 3), versioned and migrated the same way, with the same "created by a newer version" error when a

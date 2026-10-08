@@ -106,6 +106,7 @@ export function projectWithWss(entries: readonly WssEntry[]): { project: Project
     grpcApis: [],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [],
     wss: {
       outgoing: [toWssOutgoingRef({ id: 'w1', name: 'w1', mustUnderstand: false, entries: [...entries] })],
