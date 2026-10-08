@@ -32,6 +32,12 @@ files:
   # happened to be installed on the runner, in the wrong architecture for half the builds. The app
   # loads the vendored copy under `Resources/kerberos/` and never this one.
   - '!**/node_modules/kerberos/**'
+  # …and so would everything only `kerberos` depends on: `node-addon-api` (headers for building it)
+  # and the `prebuild-install` tree that fetches a binding at install time. Nothing loads them at
+  # runtime. Top-level folders only, and only packages nothing else in the app depends on;
+  # `scripts/check-desktop-asar.ts` fails the release if this list ever drops a package some other
+  # dependency needs, or if the tree grows a package this list misses.
+  - '!node_modules/{node-addon-api,prebuild-install,base64-js,bl,buffer,chownr,decompress-response,deep-extend,detect-libc,end-of-stream,expand-template,fs-constants,github-from-package,ieee754,inherits,ini,mimic-response,minimist,mkdirp-classic,napi-build-utils,node-abi,once,pump,rc,readable-stream,safe-buffer,simple-concat,simple-get,string_decoder,strip-json-comments,tar-fs,tar-stream,tunnel-agent,util-deprecate,wrappy}/**'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve
@@ -40,13 +46,13 @@ afterPack: after-pack.ts
 
 # The generated third-party attribution file, alongside the app's own LICENSE obligations.
 # Regenerated and verified by `pnpm licenses:third-party [--check]`.
-# `kerberos/` is vendored by `scripts/vendor-kerberos.ts`, one binding per architecture (ADR-0019);
-# it sits outside the asar so the OS loader can map it, and it is signed with the app.
+# The Kerberos binding is added per platform below (`mac`, `win`, `linux`): `scripts/vendor-kerberos.ts`
+# vendors one binding per architecture into `build-resources/kerberos/` (ADR-0019), it sits outside
+# the asar so the OS loader can map it, and it is signed with the app. Platform `extraResources` add
+# to this list rather than replace it.
 extraResources:
   - from: ../../THIRD-PARTY-LICENSES.md
     to: THIRD-PARTY-LICENSES.md
-  - from: build-resources/kerberos
-    to: kerberos
 
 asar: true
 asarUnpack:
@@ -82,6 +88,11 @@ mac:
   # builds, and @electron/universal already skips identical fat Mach-O files; this only matters if
   # the prebuild ever stops being universal.
   x64ArchFiles: Contents/Resources/kerberos/**
+  # Both darwin folders in every mac build: the universal build packs an x64 and an arm64 app and
+  # merges them, and the merge refuses two apps whose files differ.
+  extraResources:
+    - from: build-resources/kerberos
+      to: kerberos
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
@@ -103,6 +114,12 @@ win:
     - target: msi
       arch: [x64, arm64]
   icon: resources/icon.png
+  # Only this build's own architecture. There is no win32-arm64 prebuild, so the arm64 app carries
+  # no binding at all and shows Kerberos as unavailable (the source folder is absent, and
+  # electron-builder skips it).
+  extraResources:
+    - from: build-resources/kerberos/win32-${arch}
+      to: kerberos/win32-${arch}
 
 nsis:
   artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
@@ -154,6 +171,10 @@ linux:
   desktop:
     entry:
       StartupWMClass: Wirebench
+  # Only this build's own architecture: the x64 packages never carry the arm64 ELF, or the reverse.
+  extraResources:
+    - from: build-resources/kerberos/linux-${arch}
+      to: kerberos/linux-${arch}
 
 # Both package formats take their name and file name from the npm package name by default —
 # `@wirebench/desktop`, whose slash becomes a directory the packager never creates.

@@ -93,10 +93,21 @@ from it, so it is `asarUnpack`ed into `app.asar.unpacked/`. The engine's XPath w
 both still work in a packaged build; if either ever stops, that spec is where it shows up.
 
 `Resources/kerberos/<platform>-<arch>/kerberos.node` ships through `extraResources`, outside the
-asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. macOS gets one
-universal file in both architecture folders. `@electron/universal` already skips identical fat
+asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. A Linux or Windows
+build carries only its own architecture's binding (`${arch}` in the platform's `extraResources`);
+the Windows arm64 build carries none, since there is no win32-arm64 prebuild. macOS gets one
+universal file in both architecture folders, in every mac build, because the universal merge needs
+the x64 and arm64 apps to hold the same files. `@electron/universal` already skips identical fat
 Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
 universal.
+
+The `kerberos` package itself stays out of the asar, and so does everything only it depends on:
+`node-addon-api` and the `prebuild-install` tree it uses to fetch a binding at install time. The
+`files` list in `electron-builder.yml` names those packages, and `scripts/check-desktop-asar.ts`
+runs in every release job to prove the asar holds exactly what the app's own dependencies reach —
+it fails when an exclusion drops a package something else needs, and when a `kerberos` upgrade
+brings a package the list does not name yet. (`THIRD-PARTY-LICENSES.md` still lists that tree:
+Wirebench Server's image installs the engine's optional dependencies, `kerberos` included.)
 
 ## Electron fuses
 
