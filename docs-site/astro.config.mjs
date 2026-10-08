@@ -60,6 +60,7 @@ export default defineConfig({
             { label: 'Webhook signatures', slug: 'guides/webhook-signatures' },
             { label: 'Callback assertions', slug: 'guides/callback-assertions' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
+            { label: 'Managed preferences', slug: 'guides/managed-preferences' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
             { label: 'Agents (MCP)', slug: 'guides/agents-mcp' },
           ],

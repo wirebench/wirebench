@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { detectPlatform } from '../../lib/platform.js';
 import type { CommandContext } from '../../lib/commands.js';
-import { usePreferencesStore } from '../../state/preferences.js';
+import { isLockedByPolicy, usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 import type { PreferencesSectionWire } from '../../../shared/wire-types.js';
 import { HttpSection } from './sections/http-section.js';
@@ -57,6 +57,7 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
   const preferences = usePreferencesStore((state) => state.preferences);
   const update = usePreferencesStore((state) => state.update);
   const reset = usePreferencesStore((state) => state.reset);
+  const policy = usePreferencesStore((state) => state.policy);
 
   const platform = useMemo(() => detectPlatform(), []);
   const uiSnapshot = useUiStore((state) => state.snapshot);
@@ -69,7 +70,8 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
   const apply = (patch: Parameters<typeof update>[0]): void => {
     void update(patch);
   };
-  const sectionProps = { preferences, update: apply };
+  const sectionProps = { preferences, update: apply, locked: (key: string) => isLockedByPolicy(policy, key) };
+  const managed = policy !== undefined && policy.locked.length > 0;
 
   return (
     <div data-testid="preferences-editor" className="flex h-full min-h-0">
@@ -95,6 +97,29 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
       </nav>
 
       <div className="min-w-0 flex-1 overflow-auto px-4 py-3">
+        {managed && (
+          <p
+            role="note"
+            data-testid="preferences-policy"
+            className="mb-3 rounded-md border border-hairline px-3 py-2 text-sm text-fg-muted"
+          >
+            Some settings are managed by your organization and marked “Locked by policy”. They come from{' '}
+            <code className="font-mono">{policy.path}</code>.
+            {policy.ignored.length > 0 && (
+              <> The policy also names settings it cannot lock: {policy.ignored.join(', ')}.</>
+            )}
+          </p>
+        )}
+        {policy?.error !== undefined && (
+          <p
+            role="alert"
+            data-testid="preferences-policy-error"
+            className="mb-3 rounded-md border border-hairline px-3 py-2 text-sm text-fg-muted"
+          >
+            The managed-preferences policy at <code className="font-mono">{policy.path}</code> was not applied:{' '}
+            {policy.error}
+          </p>
+        )}
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-md font-medium text-fg-default">
             {SECTIONS.find((section) => section.id === active)?.label}
