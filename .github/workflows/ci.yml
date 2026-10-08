@@ -201,7 +201,8 @@ jobs:
 
   # Builds the container image the way a release tag will and proves it actually runs a
   # project: `docker run --version` sanity-checks the entrypoint, then `cli:smoke --via docker`
-  # runs the same four checks the other recipes run (packages/cli/Dockerfile, task 3 of #31).
+  # runs the same four checks the other recipes run (packages/cli/Dockerfile, task 3 of #31);
+  # `--mock` then serves a mock from the image and stops it with `docker stop` (#61).
   image-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -224,6 +225,7 @@ jobs:
       - run: docker run --rm wirebench-cli:ci --version
       - run: pnpm cli:smoke --via docker --image wirebench-cli:ci
       - run: pnpm cli:smoke --via docker --image wirebench-cli:ci --gitlab
+      - run: pnpm cli:smoke --via docker --image wirebench-cli:ci --mock
 
   # Proves the npm recipe end to end: pack both packages the way a release would, install the
   # tarballs into an empty directory (no workspace, no `workspace:*` protocol to fall back on),

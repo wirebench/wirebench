@@ -19,6 +19,10 @@
  * On the first failed expectation, this prints one line naming it and exits 1. A usage mistake
  * (bad or missing flags) exits 2, matching the CLI's own convention.
  *
+ * `--via docker --mock` checks the image's `wirebench mock` instead (#61): on Docker's default bridge
+ * network, with only the port published, the mock answers from outside the container (so the image's
+ * `WIREBENCH_MOCK_HOST=0.0.0.0` is in effect), and `docker stop` ends it with exit 0.
+ *
  * `--via docker` and `--gitlab` need care because they aren't exercised by `cli-smoke.test.ts`
  * (no `docker` guarantee in every environment this repo is checked out in) — they're covered by
  * `image-smoke` in CI once Tasks 3 and 5 land. `--gitlab`'s template doesn't exist until Task 5;
@@ -28,6 +32,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { appendFile, chmod, cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -355,6 +361,87 @@ async function smokeGitlab(demoUrl: string, image: string): Promise<void> {
   }
 }
 
+const MOCK_FIXTURE = join(repoRoot, 'packages', 'cli', 'test', 'fixtures', 'mock-project');
+
+/** A port free on the host's loopback right now, for `docker run -p`. */
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+  return port;
+}
+
+/** Polls `url` until it answers, for at most `ms`. */
+async function firstAnswer(url: string, ms: number): Promise<Response> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    try {
+      return await fetch(url);
+    } catch (error) {
+      if (Date.now() > deadline) {
+        fail(`--mock: ${url} did not answer within ${String(ms)} ms: ${String(error)}`);
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+    }
+  }
+}
+
+/**
+ * `--via docker --mock`: starts the fixture's `orders` mock in the image, detached, on the default
+ * bridge network with its port published to the host's loopback, calls it from the host, then stops
+ * the container and checks it exited 0 and logged the request.
+ */
+async function smokeDockerMock(image: string): Promise<void> {
+  const workDir = await mkdtemp(join(tmpdir(), 'wirebench-cli-smoke-mock-'));
+  const name = `wirebench-mock-smoke-${String(process.pid)}`;
+  const docker = (args: readonly string[]): Promise<RunOutcome> => execCapture('docker', args, {});
+  try {
+    await cp(MOCK_FIXTURE, workDir, { recursive: true });
+    await openUpForContainer(workDir);
+    const port = await freePort();
+    const started = await docker([
+      'run',
+      '-d',
+      '--name',
+      name,
+      '-p',
+      `127.0.0.1:${String(port)}:8089`,
+      '-v',
+      `${workDir}:/work`,
+      image,
+      'mock',
+      '.',
+      'orders',
+      '--port',
+      '8089',
+    ]);
+    assertExit(started, 0, 'docker run -d … mock');
+
+    const response = await firstAnswer(`http://127.0.0.1:${String(port)}/orders-api/orders`, 30_000);
+    const body = await response.text();
+    if (response.status !== 200 || !body.includes('"id"')) {
+      fail(`--mock: expected 200 with the stub's body, got ${String(response.status)}: ${body.slice(0, 200)}`);
+    }
+
+    assertExit(await docker(['stop', '--time', '10', name]), 0, 'docker stop');
+    const exitCode = (await docker(['inspect', '--format', '{{.State.ExitCode}}', name])).stdout.trim();
+    const logs = await docker(['logs', name]);
+    if (exitCode !== '0') {
+      fail(`--mock: the container exited ${exitCode}, not 0\n${logs.stdout}${logs.stderr}`);
+    }
+    if (!/^listening Orders http:\/\/0\.0\.0\.0:8089\/orders-api$/m.test(logs.stdout)) {
+      fail(`--mock: no listening line on 0.0.0.0:8089 in the logs\n${logs.stdout}${logs.stderr}`);
+    }
+    if (!/ Orders GET \/orders-api\/orders 200 /.test(logs.stdout)) {
+      fail(`--mock: the request is not in the logs\n${logs.stdout}${logs.stderr}`);
+    }
+  } finally {
+    await docker(['rm', '-f', name]);
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+
 /** `--serve-only`: starts the demo server and stays up until killed, for another CI step to hit. */
 async function serveOnly(): Promise<void> {
   const demo = await startDemoServer();
@@ -387,6 +474,7 @@ async function main(): Promise<void> {
       via: { type: 'string' },
       image: { type: 'string' },
       gitlab: { type: 'boolean' },
+      mock: { type: 'boolean' },
       'serve-only': { type: 'boolean' },
     },
   });
@@ -399,6 +487,15 @@ async function main(): Promise<void> {
   const via = values.via;
   if (via !== 'node' && via !== 'npm' && via !== 'docker') {
     usageError(`--via must be one of node, npm, docker (got ${via ?? 'nothing'})`);
+  }
+
+  if (values.mock === true) {
+    if (via !== 'docker' || values.image === undefined || values.image.length === 0) {
+      usageError('--mock requires --via docker --image <ref>');
+    }
+    await smokeDockerMock(values.image);
+    process.stdout.write('cli-smoke --via docker --mock: ok\n');
+    return;
   }
 
   if (values.gitlab === true) {
