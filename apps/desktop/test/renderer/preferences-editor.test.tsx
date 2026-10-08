@@ -253,3 +253,63 @@ describe('PreferencesEditor — REST', () => {
     expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
   });
 });
+
+describe('PreferencesEditor under a managed-preferences policy', () => {
+  const POLICY = {
+    path: '/etc/wirebench/policy.yaml',
+    locked: ['proxy.mode', 'ssl.caBundlePath', 'updates.checkOnLaunch'],
+    ignored: ['editor'],
+  };
+
+  beforeEach(() => {
+    installWirebenchApi();
+    usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true, policy: POLICY });
+    registerShellCommands(() => undefined);
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    usePreferencesStore.setState({ policy: undefined });
+  });
+
+  it('names the policy file and what it could not lock', () => {
+    render(<PreferencesEditor />);
+    const note = screen.getByTestId('preferences-policy');
+    expect(note.textContent).toContain('/etc/wirebench/policy.yaml');
+    expect(note.textContent).toContain('editor');
+  });
+
+  it('shows a locked proxy mode as such and leaves the rest editable', () => {
+    render(<PreferencesEditor initialSection="proxy" />);
+    const mode = screen.getByTestId('proxy-mode');
+    expect(mode.hasAttribute('disabled')).toBe(true);
+    expect(mode.closest('[data-locked]')?.textContent).toContain('Locked by policy');
+    const port = screen.getByTestId('proxy-port');
+    expect(port.hasAttribute('disabled')).toBe(false);
+    expect(port.closest('[data-locked]')).toBeNull();
+  });
+
+  it('locks the CA bundle pickers', () => {
+    usePreferencesStore.setState({
+      preferences: { ...DEFAULTS, ssl: { ...DEFAULTS.ssl, caBundlePath: '/etc/ssl/corp.pem' } },
+    });
+    render(<PreferencesEditor initialSection="ssl" />);
+    expect(screen.getByTestId('ssl-ca-bundle-browse').hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByTestId('ssl-ca-bundle-clear')).toBeNull();
+    expect(screen.getByTestId('ssl-ca-bundle').closest('[data-locked]')).not.toBeNull();
+  });
+
+  it('locks update checks', () => {
+    render(<PreferencesEditor initialSection="updates" />);
+    expect(screen.getByLabelText('Check for updates on launch').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('reports a policy that could not be applied', () => {
+    usePreferencesStore.setState({
+      policy: { path: POLICY.path, locked: [], ignored: [], error: 'The policy file is not valid YAML' },
+    });
+    render(<PreferencesEditor />);
+    expect(screen.queryByTestId('preferences-policy')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('not valid YAML');
+  });
+});

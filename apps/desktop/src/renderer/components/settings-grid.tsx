@@ -36,16 +36,27 @@ interface RowProps {
   readonly label: string;
   readonly htmlFor: string;
   readonly hint?: string;
+  /** Set by a managed-preferences policy: the control is disabled and the row says why. */
+  readonly locked?: boolean;
   readonly children: React.ReactNode;
 }
 
-function Row({ label, htmlFor, hint, children }: RowProps) {
+/** What a locked row says. */
+export const LOCKED_LABEL = 'Locked by policy';
+const LOCKED_TITLE = "Set by your organization's managed-preferences policy; it cannot be changed here.";
+
+function Row({ label, htmlFor, hint, locked = false, children }: RowProps) {
   return (
-    <div className="flex items-center gap-2 py-0.5">
+    <div className="flex items-center gap-2 py-0.5" {...(locked ? { 'data-locked': 'true' } : {})}>
       <label htmlFor={htmlFor} className="w-44 shrink-0 truncate text-sm text-fg-muted" title={hint ?? label}>
         {label}
       </label>
       <div className="min-w-0 flex-1">{children}</div>
+      {locked && (
+        <span className="shrink-0 text-xs text-fg-subtle" title={LOCKED_TITLE}>
+          {LOCKED_LABEL}
+        </span>
+      )}
     </div>
   );
 }
@@ -59,6 +70,8 @@ export interface TextSettingProps {
   readonly hint?: string;
   readonly monospace?: boolean;
   readonly testId?: string;
+  /** Locked by a managed-preferences policy: read-only, and the row says so. */
+  readonly locked?: boolean;
 }
 
 /** A free-text row. Commits on blur or Enter; Escape restores the last committed value. */
@@ -67,19 +80,21 @@ export function TextSetting({
   value,
   onCommit,
   placeholder,
-  readOnly = false,
+  readOnly: readOnlyProp = false,
   hint,
   monospace = false,
   testId,
+  locked = false,
 }: TextSettingProps) {
   const id = useId();
+  const readOnly = readOnlyProp || locked;
   const [draft, setDraft] = useState(value);
   useEffect(() => {
     setDraft(value);
   }, [value]);
 
   return (
-    <Row label={label} htmlFor={id} {...(hint !== undefined ? { hint } : {})}>
+    <Row label={label} htmlFor={id} locked={locked} {...(hint !== undefined ? { hint } : {})}>
       <input
         id={id}
         aria-label={label}
@@ -120,6 +135,8 @@ export interface NumberSettingProps {
   readonly max?: number;
   readonly hint?: string;
   readonly testId?: string;
+  /** Locked by a managed-preferences policy: disabled, and the row says so. */
+  readonly locked?: boolean;
 }
 
 /**
@@ -127,7 +144,17 @@ export interface NumberSettingProps {
  * not parse as a finite number is rejected and the field snaps back, rather than persisting a
  * `NaN` that would silently disable a timeout.
  */
-export function NumberSetting({ label, value, onCommit, placeholder, min, max, hint, testId }: NumberSettingProps) {
+export function NumberSetting({
+  label,
+  value,
+  onCommit,
+  placeholder,
+  min,
+  max,
+  hint,
+  testId,
+  locked = false,
+}: NumberSettingProps) {
   const id = useId();
   const asText = value === undefined ? '' : String(value);
   const [draft, setDraft] = useState(asText);
@@ -154,11 +181,12 @@ export function NumberSetting({ label, value, onCommit, placeholder, min, max, h
   };
 
   return (
-    <Row label={label} htmlFor={id} {...(hint !== undefined ? { hint } : {})}>
+    <Row label={label} htmlFor={id} locked={locked} {...(hint !== undefined ? { hint } : {})}>
       <input
         id={id}
         aria-label={label}
         {...(testId !== undefined ? { 'data-testid': testId } : {})}
+        disabled={locked}
         inputMode="numeric"
         className={CONTROL}
         value={draft}
@@ -187,19 +215,29 @@ export interface BooleanSettingProps {
   readonly hint?: string;
   readonly disabled?: boolean;
   readonly testId?: string;
+  /** Locked by a managed-preferences policy: disabled, and the row says so. */
+  readonly locked?: boolean;
 }
 
 /** A checkbox row. Commits immediately — there is no half-typed state to protect. */
-export function BooleanSetting({ label, value, onChange, hint, disabled = false, testId }: BooleanSettingProps) {
+export function BooleanSetting({
+  label,
+  value,
+  onChange,
+  hint,
+  disabled = false,
+  testId,
+  locked = false,
+}: BooleanSettingProps) {
   const id = useId();
   return (
-    <Row label={label} htmlFor={id} {...(hint !== undefined ? { hint } : {})}>
+    <Row label={label} htmlFor={id} locked={locked} {...(hint !== undefined ? { hint } : {})}>
       <input
         id={id}
         type="checkbox"
         aria-label={label}
         {...(testId !== undefined ? { 'data-testid': testId } : {})}
-        disabled={disabled}
+        disabled={disabled || locked}
         checked={value}
         onChange={(event) => {
           onChange(event.target.checked);
@@ -222,17 +260,20 @@ export interface EnumSettingProps {
   readonly onChange: (value: string) => void;
   readonly hint?: string;
   readonly testId?: string;
+  /** Locked by a managed-preferences policy: disabled, and the row says so. */
+  readonly locked?: boolean;
 }
 
 /** A `<select>` row, for a closed set of values. */
-export function EnumSetting({ label, value, options, onChange, hint, testId }: EnumSettingProps) {
+export function EnumSetting({ label, value, options, onChange, hint, testId, locked = false }: EnumSettingProps) {
   const id = useId();
   return (
-    <Row label={label} htmlFor={id} {...(hint !== undefined ? { hint } : {})}>
+    <Row label={label} htmlFor={id} locked={locked} {...(hint !== undefined ? { hint } : {})}>
       <select
         id={id}
         aria-label={label}
         {...(testId !== undefined ? { 'data-testid': testId } : {})}
+        disabled={locked}
         className={CONTROL}
         value={value}
         onChange={(event) => {

@@ -13,6 +13,7 @@
 
 import { BrowserWindow, dialog } from 'electron';
 import type { WebContents } from 'electron';
+import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
@@ -23,7 +24,7 @@ import { registerHandler } from './register.js';
 /** What the `ssl.*` channels need; a stub stands in for each of these in tests. */
 export interface SslChannelDeps {
   /** The preferences document; main writes `ssl.caBundlePath` through it and nothing else does. */
-  readonly preferences: Pick<PreferencesService, 'update'>;
+  readonly preferences: Pick<PreferencesService, 'update' | 'ready' | 'isLocked'>;
   /** The session's picked-path memory, the only evidence `ProjectHost.trustAnchors` accepts. */
   readonly picks: RecordsReadPicks;
   /** Called after each change so main can broadcast `preferences.changed` to every window. */
@@ -52,9 +53,24 @@ async function pickThroughDialog(sender: WebContents): Promise<string | undefine
   return result.canceled ? undefined : result.filePaths[0];
 }
 
+/**
+ * Refuses before anything else happens — in particular before a dialog opens — when a
+ * managed-preferences policy locks the CA bundle. The service would refuse the write anyway;
+ * this spares the user picking a file only to be told it cannot be used.
+ */
+async function assertCaBundleUnlocked(preferences: SslChannelDeps['preferences']): Promise<void> {
+  await preferences.ready();
+  if (preferences.isLocked('ssl.caBundlePath')) {
+    throw new WirebenchError('preference-locked', 'The CA bundle is locked by the managed-preferences policy', {
+      details: { keys: ['ssl.caBundlePath'] },
+    });
+  }
+}
+
 /** Registers the `ssl.*` channels. */
 export function registerSslChannels(deps: SslChannelDeps): void {
   registerHandler(channels.ssl.pickCaBundle, async (_request, sender) => {
+    await assertCaBundleUnlocked(deps.preferences);
     // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises
     // the containment path a user does rather than a bypass of it. Comma-separated for symmetry
     // with `attachments.pickFiles`; only the first entry is used here.
@@ -76,6 +92,7 @@ export function registerSslChannels(deps: SslChannelDeps): void {
   });
 
   registerHandler(channels.ssl.clearCaBundle, async () => {
+    await assertCaBundleUnlocked(deps.preferences);
     // The marker goes with the path: what is cleared must not be re-recorded as a pick at the
     // next startup either.
     const next = toPreferencesWire(

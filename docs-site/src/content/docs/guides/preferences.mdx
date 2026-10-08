@@ -43,6 +43,10 @@ password goes through the same secret store as any other credential (see
 [Secrets](/wirebench/docs/guides/secrets/)); the CA bundle path is set only through **Browse…**, which
 runs a native file picker, since Wirebench never trusts a path the interface alone claims.
 
+On a managed machine, your organization can lock the proxy, the minimum TLS version, the CA bundle and
+update checks. Locked settings are read-only and marked **Locked by policy**; see
+[Managed preferences](/wirebench/docs/guides/managed-preferences/).
+
 ### Locating git
 
 Preferences → Git only ever asks Wirebench to detect, locate, or clear the git executable — it

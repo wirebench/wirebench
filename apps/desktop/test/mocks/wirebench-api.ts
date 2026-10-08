@@ -216,6 +216,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
         Promise.resolve({ ok: true as const, value: { preferences: mergedPreferences(request.patch) } }),
       ),
       reset: vi.fn().mockResolvedValue({ ok: true, value: { preferences: DEFAULT_PREFERENCES_WIRE } }),
+      policy: vi.fn().mockResolvedValue({ ok: true, value: { path: '', locked: [], ignored: [] } }),
     },
     secrets: {
       set: fail('secrets.set'),

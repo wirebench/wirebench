@@ -5519,6 +5519,19 @@ export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
 export const preferencesResponseSchema = z.object({ preferences: preferencesWireSchema });
 export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
 
+/**
+ * Response for `preferences.policy`: the managed-preferences policy main loaded at startup.
+ * `locked` and `ignored` are dotted keys (`proxy.mode`); `error` says why a policy file that
+ * exists could not be applied, in which case nothing is locked.
+ */
+export const preferencesPolicyResponseSchema = z.object({
+  path: z.string(),
+  locked: z.array(z.string()),
+  ignored: z.array(z.string()),
+  error: z.string().optional(),
+});
+export type PreferencesPolicyResponse = z.infer<typeof preferencesPolicyResponseSchema>;
+
 /** Request payload for `preferences.update`. */
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
 /** Request payload for `preferences.reset`. */
