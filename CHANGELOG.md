@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Several workspaces open at once.** **New Window** (<kbd>⌘⌥N</kbd> / <kbd>Ctrl+Alt+N</kbd>) opens another
+  window at the workspace picker, and each window holds its own workspace: its edits, sync, environment,
+  cookie jar, current values, secret sources, team secrets, History and audit reporting stay its own. A
+  workspace is open in one window at a time; opening it from another brings that window forward. Closing a
+  window keeps its unsaved changes as quitting does (#72).
+
 ## [4.0.0] - 2026-10-08
 
 ### Added

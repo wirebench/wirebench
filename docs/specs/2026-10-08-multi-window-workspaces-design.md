@@ -96,8 +96,8 @@ change. "Per window" objects live in a `WindowScope`; everything else stays one 
 ## Testing
 
 - Unit: `WindowScopes` routing (entity by owner, workspace by caller, `no-window` with two and no caller),
-  `DialogPicks` parent set, `HistoryService` reference counting, `WorkspaceService` `heldElsewhere` for
-  open/rename/delete, `closeWsSessions` matching only the closing workspace.
+  `DialogPicks` parent set, `HistoryService` owners and per-window listing, `WorkspaceService`
+  `heldElsewhere` for open/rename/delete and the one-time `.joining/` sweep.
 - e2e (`e2e/specs/multi-window.spec.ts`, CI only): open workspace A, New Window, open workspace B in it;
   each window's title and explorer show its own workspace; opening A from the second window is refused
   and the first window gets focus; closing the second window leaves the first untouched.
