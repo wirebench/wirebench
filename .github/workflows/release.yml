@@ -37,6 +37,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        # Type-aware ESLint over the whole tree has outgrown Node's default heap (about 4 GB), as in ci.yml.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
 
   build:
     needs: check
@@ -130,13 +133,37 @@ jobs:
           done
           pnpm ${{ matrix.script }}
 
+      # Every mac build carries both darwin bindings (the universal merge needs identical apps); a
+      # Linux build carries only its own architecture's.
       - name: Check the vendored Kerberos bindings
         run: |
           if [ "${{ matrix.os }}" = macos-latest ]; then
             node scripts/check-kerberos-vendor.ts darwin apps/desktop/release/mac*/Wirebench.app/Contents/Resources
           else
-            node scripts/check-kerberos-vendor.ts linux apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+            node scripts/check-kerberos-vendor.ts linux-x64 apps/desktop/release/linux-unpacked/resources
+            node scripts/check-kerberos-vendor.ts linux-arm64 apps/desktop/release/linux-arm64-unpacked/resources
           fi
+
+      # The asar holds exactly the packages the app depends on: none dropped by the `files`
+      # exclusions, and none of the `prebuild-install` tree that only the unloaded `kerberos` needs.
+      - name: Check the packed node_modules
+        run: |
+          if [ "${{ matrix.os }}" = macos-latest ]; then
+            node scripts/check-desktop-asar.ts apps/desktop/release/mac*/Wirebench.app/Contents/Resources
+          else
+            node scripts/check-desktop-asar.ts apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+          fi
+
+      # Kerberos needs the system GSSAPI library; the deb and rpm recommend it (#268).
+      - name: Check the Linux packages recommend GSSAPI
+        if: runner.os == 'Linux'
+        run: |
+          for deb in apps/desktop/release/*.deb; do
+            dpkg-deb -f "$deb" Recommends | tee /dev/stderr | grep -q 'libgssapi-krb5-2' || { echo "::error::$deb does not recommend libgssapi-krb5-2"; exit 1; }
+          done
+          for rpm in apps/desktop/release/*.rpm; do
+            rpm -qp --recommends "$rpm" | tee /dev/stderr | grep -qF '(krb5-libs or krb5)' || { echo "::error::$rpm does not recommend krb5-libs"; exit 1; }
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -326,7 +353,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `--dir` stops after packing: the unpacked apps, fuses already flipped by afterPack.
       - run: pnpm build && node scripts/vendor-kerberos.ts win32 && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
-      - run: node scripts/check-kerberos-vendor.ts win32 apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
+      - run: |
+          node scripts/check-kerberos-vendor.ts win32-x64 apps/desktop/release/win-unpacked/resources
+          node scripts/check-kerberos-vendor.ts win32-arm64 apps/desktop/release/win-arm64-unpacked/resources
+          node scripts/check-desktop-asar.ts apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
       - uses: actions/upload-artifact@v7
         id: upload
         with:
@@ -401,16 +431,15 @@ jobs:
           TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         run: echo "enabled=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       # SignPath signs only what its app configuration lists; a binding it skipped would ship unsigned.
+      # Only the x64 app carries one: there is no win32-arm64 prebuild.
       - name: Check the Kerberos binding is signed
         if: steps.signpath.outputs.enabled == 'true'
         shell: pwsh
         run: |
-          foreach ($app in 'win-unpacked', 'win-arm64-unpacked') {
-            $path = "apps/desktop/prepackaged/$app/resources/kerberos/win32-x64/kerberos.node"
-            $sig = Get-AuthenticodeSignature $path
-            Write-Output "${path}: $($sig.Status)"
-            if ($sig.Status -ne 'Valid') { exit 1 }
-          }
+          $path = "apps/desktop/prepackaged/win-unpacked/resources/kerberos/win32-x64/kerberos.node"
+          $sig = Get-AuthenticodeSignature $path
+          Write-Output "${path}: $($sig.Status)"
+          if ($sig.Status -ne 'Valid') { exit 1 }
       # One run per architecture: `--prepackaged` takes a single app. Each run writes a latest.yml
       # naming only its own installer, so arm64 builds into a directory of its own and is folded
       # into the x64 manifest below.

@@ -436,6 +436,20 @@ export type { SystemProxyResolution } from './http/proxy.js';
 export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
+export {
+  certificateExpiry,
+  isCertificateVerifyError,
+  pemCertificates,
+  probeTlsChain,
+  tlsProbeTarget,
+} from './http/cert-expiry.js';
+export type {
+  CertificateExpiry,
+  CertificateExpiryStatus,
+  PemCertificateSummary,
+  ProbeTlsChainOptions,
+  TlsProbeTarget,
+} from './http/cert-expiry.js';
 
 export { importWsdl } from './soap/import.js';
 export { sendSoapRequest } from './soap/send.js';

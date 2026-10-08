@@ -5193,6 +5193,65 @@ export type WssRemoveOutgoingRequest = z.infer<typeof wssRemoveOutgoingRequestSc
 export const keystoresPickFileRequestSchema = z.object({});
 export const keystoresPickFileResponseSchema = z.object({ path: z.string().optional() });
 
+/**
+ * `certificates.check`: how long the certificates the open workspace relies on have left —
+ * every keystore alias (leaf and the chain it carries), the CA bundle, and, when
+ * `probeEndpoints` is set, the chain each TLS endpoint presents. Probing reaches the network (one
+ * verified TLS handshake per `host:port`, no request), so it is asked for; the local reads are not.
+ * Certificates only — no key, no PEM.
+ */
+export const certificatesCheckRequestSchema = z.object({ probeEndpoints: z.boolean() });
+export type CertificatesCheckRequest = z.infer<typeof certificatesCheckRequestSchema>;
+/** Where a checked certificate came from. */
+export const certificateSourceSchema = z.enum(['endpoint', 'keystore', 'ca-bundle']);
+export type CertificateSourceWire = z.infer<typeof certificateSourceSchema>;
+export const certificateFindingSchema = z.object({
+  source: certificateSourceSchema,
+  /** The project that names it; absent for the CA bundle, which is the user's, not a project's. */
+  projectId: z.string().optional(),
+  /** `host:port`, `<keystore> › <alias>`, or `CA bundle`. */
+  where: z.string(),
+  subject: z.string(),
+  /** ISO 8601. */
+  validTo: z.string(),
+  status: z.enum(['ok', 'expiring', 'expired']),
+  /** Whole days left, rounded up; `0` or less once expired. */
+  daysLeft: z.number(),
+});
+export type CertificateFindingWire = z.infer<typeof certificateFindingSchema>;
+/** Something that could not be checked: an endpoint that did not answer, a keystore that did not load. */
+export const certificateSkippedSchema = z.object({
+  source: certificateSourceSchema,
+  projectId: z.string().optional(),
+  where: z.string(),
+  message: z.string(),
+});
+export type CertificateSkippedWire = z.infer<typeof certificateSkippedSchema>;
+/**
+ * An endpoint whose chain does not verify as a send would verify it: expired, untrusted, or not
+ * issued for the host. The probe verifies, so nothing of such a chain is read; `code` says why.
+ */
+export const certificateUntrustedSchema = z.object({
+  projectId: z.string().optional(),
+  /** `host:port`. */
+  where: z.string(),
+  /** OpenSSL's reason, e.g. `CERT_HAS_EXPIRED`, or Node's `ERR_TLS_CERT_ALTNAME_INVALID`. */
+  code: z.string(),
+  message: z.string(),
+});
+export type CertificateUntrustedWire = z.infer<typeof certificateUntrustedSchema>;
+export const certificatesCheckResponseSchema = z.object({
+  /** The warning window the statuses were judged against (`ssl.expiryWarningDays`). */
+  warnDays: z.number(),
+  certificates: z.array(certificateFindingSchema),
+  skipped: z.array(certificateSkippedSchema),
+  /** Probed endpoints whose chain did not verify; always empty when endpoints were not probed. */
+  untrusted: z.array(certificateUntrustedSchema),
+  /** Whether endpoints were probed; `false` means only keystores and the CA bundle were read. */
+  probedEndpoints: z.boolean(),
+});
+export type CertificatesCheckResponse = z.infer<typeof certificatesCheckResponseSchema>;
+
 export const attachmentsPickFilesRequestSchema = z.object({});
 export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.string()) });
 
@@ -5405,6 +5464,8 @@ export const preferencesWireSchema = z.object({
     /** True when main picked `caBundlePath` through a native dialog; see `SslPreferences`. */
     caBundlePickedByMain: z.boolean().optional(),
     clientKeystoreRef: z.string().optional(),
+    /** Days before a certificate's expiry that `certificates.check` starts warning. */
+    expiryWarningDays: z.number(),
     trustAll: z.literal(false),
   }),
   git: z.object({

@@ -33,6 +33,7 @@ export const COMMAND_IDS = [
   'workspace.switch',
   'workspace.manage',
   'workspace.secretSources',
+  'workspace.checkCertificates',
   'workspace.newProject',
   'workspace.linkProject',
   'workspace.importProjectFolder',

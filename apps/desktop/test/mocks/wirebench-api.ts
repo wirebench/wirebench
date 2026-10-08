@@ -313,6 +313,14 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       pickFiles: fail('attachments.pickFiles'),
       addDropped: fail('attachments.addDropped'),
     },
+    certificates: {
+      // The shell's automatic keystore check runs in every renderer test that mounts it; an empty
+      // workspace has nothing to report.
+      check: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { warnDays: 30, certificates: [], skipped: [], untrusted: [], probedEndpoints: false },
+      }),
+    },
     keystores: {
       inspect: fail('keystores.inspect'),
       pickFile: fail('keystores.pickFile'),

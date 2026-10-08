@@ -23,7 +23,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     allowH2: false,
   },
   proxy: { mode: 'none', excludes: [] },
-  ssl: { minVersion: 'TLSv1.2', trustAll: false },
+  ssl: { minVersion: 'TLSv1.2', expiryWarningDays: 30, trustAll: false },
   git: {},
   wsdl: {
     cacheDefinitions: true,

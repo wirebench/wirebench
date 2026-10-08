@@ -74,6 +74,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Switch Workspace… | — | — |
 | Manage Workspaces… | — | — |
 | Secret Sources… | — | — |
+| Check Certificate Expiry | — | — |
 | New Project… | <kbd>⌘⇧N</kbd> | <kbd>Ctrl+Shift+N</kbd> |
 | Link Project Folder… | — | — |
 | Import Project Folder… | — | — |

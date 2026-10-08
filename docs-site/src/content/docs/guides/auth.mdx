@@ -105,6 +105,12 @@ How the token is sent depends on where it goes:
   preemptive mode for these requests. Once a challenge succeeded, a SOAP response line reads
   "Authenticated with Kerberos as" and the SPN, in the platform's form (`HTTP/host` on Windows,
   `HTTP@host` elsewhere); the REST status line does not change.
+  When the request follows a redirect before the server challenges, the token is made for the
+  host that challenged and sent straight to it, with the method and body that host received (a
+  302 or 303 turns a `POST` into a bodyless `GET`). That host must be on the request's own
+  origin: a challenge from a redirect target on another origin gets no token, and the send fails
+  with `kerberos-cross-origin`, naming that target. NTLM follows the same rule, failing with
+  `ntlm-cross-origin`.
 - **Definition fetches** (OpenAPI, AsyncAPI, WSDL) send one preemptive token, to the definition's
   own origin only, never to a redirect target on another origin.
 - **WebSocket upgrades and gRPC calls** send one preemptive token.
@@ -123,8 +129,11 @@ account with `kerberos-explicit-credentials-unsupported`; run `kinit user@REALM`
 
 Kerberos is the only mechanism. Nothing falls back to NTLM, so if the server needs NTLM, choose
 NTLM instead. Kerberos is not available on Windows on ARM. On Linux, Kerberos needs the deb, rpm
-or AppImage build. Where the Kerberos support cannot load, the type is shown disabled with the
-reason.
+or AppImage build: the snap's confinement keeps it away from `/etc/krb5.conf` and the ticket cache,
+so Kerberos is not supported there. It also needs the system's GSSAPI library (`libgssapi-krb5-2`
+on Debian and Ubuntu, `krb5-libs` on Fedora and RHEL), which the deb and rpm install as a
+recommended package; an AppImage uses the one already on the machine. Where the Kerberos support
+cannot load, the type is shown disabled with the reason.
 
 A cURL export of a REST or SOAP request uses `curl --negotiate -u :`. A gRPC or WebSocket command
 export leaves Kerberos out and says so in a note.
@@ -135,13 +144,14 @@ download, the 20-second limit on each request.
 
 | Code | Message | Fix |
 | --- | --- | --- |
-| `kerberos-unavailable` | The reason Kerberos support could not load. | Use a build for a supported platform (not Windows on ARM; on Linux the deb, rpm or AppImage build). |
+| `kerberos-unavailable` | The reason Kerberos support could not load. | Use a build for a supported platform (not Windows on ARM; on Linux the deb, rpm or AppImage build, not the snap). On Linux, install the GSSAPI library if the reason names it. |
 | `kerberos-explicit-credentials-unsupported` | Explicit Kerberos credentials are Windows-only. Run `kinit user@REALM` and leave username and password empty. | Clear the username and password, and run `kinit`. |
 | `kerberos-no-credentials` | No Kerberos ticket. Sign in to the domain, or run `kinit`. | Sign in to the domain, or run `kinit user@REALM`, then send again. |
 | `kerberos-unknown-spn` | The KDC does not know the SPN. Set the SPN to the name the service is registered under. Also shown for a blank or unparseable SPN. | Set the SPN to the registered name, or clear it to use the default. |
 | `kerberos-clock-skew` | This machine's clock differs from the domain's by more than allowed. | Sync the system clock. |
 | `kerberos-mutual-auth-failed` | The server's Kerberos reply could not be verified. | Check that the server is the service the SPN names. |
-| `kerberos-rejected` | The server refused the Kerberos token (HTTP 401). | Ask the service owner whether your account may use it. |
+| `kerberos-rejected` | The server at the URL that challenged refused the Kerberos token (HTTP 401). | Ask the service owner whether your account may use it. |
+| `kerberos-cross-origin` | A redirect target on another origin asked for Kerberos; credentials go to the request's own origin only. | Send the request to the URL the message names. |
 | `kerberos-failed` | Kerberos failed, with the operating system's own text. | Read the text; it is what the OS reported. |
 | `timeout` | Timed out waiting for a Kerberos ticket for the SPN. | Check that this machine can reach the domain's KDC, or raise the request's timeout. |
 | `kerberos-failed` (busy) | Kerberos is still waiting on earlier requests to the Kerberos server; try again shortly. | Wait for the KDC to answer or time out, then send again. |
@@ -217,7 +227,28 @@ Keystores serve two purposes:
 
 The **SSL** inspector on a sent request's response shows the negotiated protocol, cipher, and the
 peer's certificate chain, including expiry — and, when a client certificate was presented, its
-subject.
+subject. A certificate that expires within the warning window reads in amber, one that has expired
+in red.
+
+## Certificate expiry warnings
+
+Wirebench warns before a certificate your workspace relies on runs out. Every expired certificate is
+an error in **Problems**, and every one that expires within the warning window (30 days by default;
+**Preferences → SSL → Expiry warning**) is a warning, so the problem count in the status bar shows it
+wherever you are. Each row names the certificate's subject, the days left, and where it is: a
+keystore and alias, the CA bundle, or an endpoint's `host:port`.
+
+- **Keystores and the CA bundle** are checked on their own — when a workspace opens, when a keystore
+  is added or changed, and when the warning window changes. This only reads files on your machine.
+- **Endpoints** are checked when you run **Check Certificate Expiry** from the command palette.
+  Wirebench reaches every TLS endpoint the open projects name — SOAP endpoints, REST base URLs and
+  servers, WebSocket and gRPC targets, and the endpoint overrides of every environment, with
+  `${…}` properties resolved under each one — and reads the chain each presents. It opens a TLS
+  connection through the proxy a send would use, verifies the chain as a send would (including your
+  CA bundle), and closes it once the certificates arrive; no request is sent. Each `host:port` is
+  reached once, however many projects name it. An endpoint whose chain doesn't verify — already
+  expired, untrusted, or issued for another host — is an error in Problems with the reason. An
+  endpoint that doesn't answer is listed in the summary rather than in Problems.
 
 <Aside type="tip" title="Trusting a custom CA">
 To trust a corporate or internal root CA without disabling certificate validation, add its PEM

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SslInspector } from '../../src/renderer/features/request-editor/inspectors/ssl-inspector.js';
+import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { makeExchange } from '../mocks/exchange-fixtures.js';
 import type { ExchangeSummary, SslInfoWire } from '../../src/shared/wire-types.js';
 
@@ -95,6 +96,28 @@ describe('SslInspector', () => {
     expect(screen.getByText(/expires in 10 days/i)).toBeDefined();
   });
 
+  it('warns about a certificate inside the expiry warning window, and only that one', () => {
+    renderInspector(withTls(tlsInfo()));
+
+    const [leaf, root] = screen.getAllByTestId('ssl-cert-expiry');
+    // The leaf has 10 days left, inside the default 30-day window; the root has 100.
+    expect(leaf?.className).toContain('text-status-warning');
+    expect(root?.className).toContain('text-fg-faint');
+  });
+
+  it('follows the warning window preference', () => {
+    const { preferences } = usePreferencesStore.getState();
+    usePreferencesStore.setState({
+      preferences: { ...preferences, ssl: { ...preferences.ssl, expiryWarningDays: 5 } },
+    });
+    try {
+      renderInspector(withTls(tlsInfo()));
+      expect(screen.getAllByTestId('ssl-cert-expiry')[0]?.className).toContain('text-fg-faint');
+    } finally {
+      usePreferencesStore.setState({ preferences });
+    }
+  });
+
   it('badges an already-expired certificate', () => {
     const info = tlsInfo();
     const leaf = info.peerChain[0]!;
@@ -103,6 +126,7 @@ describe('SslInspector', () => {
     );
 
     expect(screen.getByText(/expired/i)).toBeDefined();
+    expect(screen.getByTestId('ssl-cert-expiry').className).toContain('text-status-danger');
   });
 
   it('lists the SANs and copies the fingerprint', async () => {

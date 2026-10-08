@@ -250,6 +250,9 @@ leg 2  Authorization: Negotiate <token>, the real body again
   request. A Kerberos AP-REQ stands on its own, so this is valid, which it is not for NTLM.
 - **The SPN** defaults to `HTTP` plus the hostname of the request URL. That is the host after redirect
   scoping, without the port, as Windows does by default.
+- **A challenge after a redirect** (#266). Leg 2 goes straight to the hop that challenged, with the method
+  and body it received, and its SPN comes from that hop. A hop on another origin gets no token: the send
+  fails with `kerberos-cross-origin`, naming it. NTLM's legs 2 and 3 follow the same rule (`ntlm-cross-origin`).
 
 Errors are `HttpError`s with the codes below; the D1 seam raises them all. Every message names the SPN tried
 and carries the OS's text in `details.osMessage`.
