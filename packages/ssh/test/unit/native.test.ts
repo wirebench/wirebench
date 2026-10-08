@@ -11,3 +11,10 @@ it('ssh2 is used without its optional native binding (pure-JS ciphers)', () => {
     require('ssh2');
   }).not.toThrow();
 });
+
+it('the optional cpu-features helper is not installed (pnpm override removes it)', () => {
+  const require = createRequire(import.meta.url);
+  const fromSsh2 = createRequire(require.resolve('ssh2/package.json'));
+  expect(() => fromSsh2.resolve('cpu-features')).toThrow();
+  expect(() => require.resolve('cpu-features')).toThrow();
+});
