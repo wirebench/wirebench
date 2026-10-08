@@ -34,8 +34,8 @@ Windows, GSSAPI on macOS and Linux. Four options were weighed:
   the runner. A packaging script downloads the pinned prebuilt tarballs for every architecture of the target
   platform and checks their SHA-256 against hashes committed in the repository. It places them at
   `resources/kerberos/<platform>-<arch>/kerberos.node`, unpacked from the asar, so they are signed with the
-  app and listed in the SBOM. Every architecture's build carries the same files, so the macOS universal merge
-  is a plain copy.
+  app and listed in the SBOM. Every macOS build carries both darwin folders, so the universal merge is a plain
+  copy; a Linux or Windows build carries only its own architecture's binding (issue #269).
 - **Kerberos only, never NTLM.** The client is initialised with the Kerberos mechanism (`GSS_MECH_OID_KRB5`,
   which on Windows selects the SSPI `Kerberos` package rather than `Negotiate`). A failure says so, rather
   than quietly authenticating with NTLM. The NTLM scheme already exists for anyone who wants it.

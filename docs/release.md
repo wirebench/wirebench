@@ -53,7 +53,9 @@ means here — the snap is unsigned, not unsafe. Publishing to the Snap Store in
 the flag and bring automatic updates, at the cost of a `snapcraft` account and review; nothing
 in the repository does that today. Confinement is `strict`, so the app can reach the network
 and `$HOME` and nothing else: **a WSDL stored outside the home directory is not readable from a
-snap install**. The AppImage and `.deb` have no such restriction.
+snap install**. The AppImage and `.deb` have no such restriction. **Kerberos is not supported in
+the snap** for the same reason: it cannot read `/etc/krb5.conf` or the ticket cache, so the app
+shows Kerberos disabled there and names the deb, rpm and AppImage builds instead.
 
 ## Building locally
 
@@ -93,10 +95,21 @@ from it, so it is `asarUnpack`ed into `app.asar.unpacked/`. The engine's XPath w
 both still work in a packaged build; if either ever stops, that spec is where it shows up.
 
 `Resources/kerberos/<platform>-<arch>/kerberos.node` ships through `extraResources`, outside the
-asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. macOS gets one
-universal file in both architecture folders. `@electron/universal` already skips identical fat
+asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. A Linux or Windows
+build carries only its own architecture's binding (`${arch}` in the platform's `extraResources`);
+the Windows arm64 build carries none, since there is no win32-arm64 prebuild. macOS gets one
+universal file in both architecture folders, in every mac build, because the universal merge needs
+the x64 and arm64 apps to hold the same files. `@electron/universal` already skips identical fat
 Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
 universal.
+
+The `kerberos` package itself stays out of the asar, and so does everything only it depends on:
+`node-addon-api` and the `prebuild-install` tree it uses to fetch a binding at install time. The
+`files` list in `electron-builder.yml` names those packages, and `scripts/check-desktop-asar.ts`
+runs in every release job to prove the asar holds exactly what the app's own dependencies reach —
+it fails when an exclusion drops a package something else needs, and when a `kerberos` upgrade
+brings a package the list does not name yet. (`THIRD-PARTY-LICENSES.md` still lists that tree:
+Wirebench Server's image installs the engine's optional dependencies, `kerberos` included.)
 
 ## Electron fuses
 
@@ -160,6 +173,16 @@ release candidate installed:
 3. The SPN set to `HTTP/nowhere.invalid` fails with "The KDC does not know HTTP/nowhere.invalid…".
 4. On Windows on ARM, the Kerberos option is disabled and reads "Kerberos is not available on Windows
    on ARM."
+
+CI's KDC runs the engine against the real binding, not the packaged Linux app. On a Linux x64
+machine with a reachable KDC and a `kinit` ticket:
+
+1. `dpkg-deb -f wirebench_<version>_amd64.deb Recommends` lists `libgssapi-krb5-2`, and
+   `rpm -qp --recommends wirebench-<version>.x86_64.rpm` lists `(krb5-libs or krb5)`.
+2. The deb installed with `apt install ./wirebench_<version>_amd64.deb`: a REST GET with auth
+   **Kerberos** against an SPNEGO-protected site returns 200.
+3. The snap installed with `snap install --dangerous`: the Kerberos option is disabled and reads
+   "Kerberos is not supported in the snap. Install the deb, rpm or AppImage build."
 
 ## Publishing the CLI: image and npm
 

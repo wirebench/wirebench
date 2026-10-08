@@ -158,6 +158,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Secret Sources…',
     category: 'Workspace',
   },
+  'workspace.checkCertificates': {
+    id: 'workspace.checkCertificates',
+    label: 'Check Certificate Expiry',
+    category: 'Workspace',
+  },
   'workspace.newProject': {
     id: 'workspace.newProject',
     label: 'New Project…',

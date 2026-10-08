@@ -43,6 +43,7 @@ import { registerAppChannels } from './ipc/app.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
+import { registerCertificateChannels } from './ipc/certificates.js';
 import { registerWsaChannels } from './ipc/wsa.js';
 import { registerWssChannels } from './ipc/wss.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
@@ -913,6 +914,7 @@ void app.whenReady().then(() => {
     userDataDir: app.getPath('userData'),
   });
   registerKeystoreChannels({ project: workspaceService, picks: dialogPicks });
+  registerCertificateChannels({ project: workspaceService, preferences: preferencesService });
   registerWsaChannels({ project: workspaceService });
   registerWssChannels({ project: workspaceService });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without

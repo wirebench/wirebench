@@ -186,6 +186,15 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
         ]}
         onChange={(clientKeystoreRef) => update({ ssl: { clientKeystoreRef } })}
       />
+      <NumberSetting
+        label="Expiry warning (days)"
+        value={ssl.expiryWarningDays}
+        min={0}
+        max={3650}
+        testId="ssl-expiry-warning-days"
+        hint="Warn in Problems this many days before a keystore, CA bundle or endpoint certificate expires. 0 warns only once expired."
+        onCommit={(expiryWarningDays) => update({ ssl: { expiryWarningDays: expiryWarningDays ?? 30 } })}
+      />
       <BooleanSetting
         label="Trust all certificates"
         value={ssl.trustAll}
