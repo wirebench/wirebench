@@ -14,7 +14,6 @@ All notable changes to this project are documented here. The format follows
   or decryption certificate the message asked for and did not find, and the clock skew against the
   timestamp. It also lists the Security header step by step. **Preview secured request** shows a
   request's secured envelope and its steps before Send (#57).
-
 - **Certificate expiry warnings.** Problems warns before a certificate in the workspace expires:
   keystores and the CA bundle are checked on their own, and **Check Certificate Expiry** also reads
   the chain every TLS endpoint of the open projects presents, from a verified handshake alone; an
