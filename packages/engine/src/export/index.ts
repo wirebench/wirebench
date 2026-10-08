@@ -1,6 +1,7 @@
 /** Exporting a project, an API or an interface to a collection format (spec `2026-10-08-collection-exporters-design.md`). */
 
 import type { CollectionExportFormat, CollectionExportInput, CollectionExportResult } from './model.js';
+import { writeOpenCollection } from './opencollection.js';
 import { writePostman } from './postman.js';
 import { ExportContext } from './shared.js';
 import { buildTree } from './tree.js';
@@ -25,8 +26,8 @@ const randomId = (): string => globalThis.crypto.randomUUID();
 export function exportCollection(format: CollectionExportFormat, input: CollectionExportInput): CollectionExportResult {
   const ctx = new ExportContext();
   const tree = buildTree(input, ctx);
-  if (format !== 'postman') throw new Error(`The ${format} exporter is not built yet`);
-  const written = writePostman(tree, ctx, input.newId ?? randomId);
+  const written =
+    format === 'postman' ? writePostman(tree, ctx, input.newId ?? randomId) : writeOpenCollection(tree, ctx);
   return {
     files: written.files,
     counts: {
