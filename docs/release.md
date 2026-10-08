@@ -1,7 +1,8 @@
 # Releasing Wirebench
 
 Wirebench ships as an Electron app packaged by [electron-builder]: macOS `.dmg` and `.zip`
-(universal, Intel and Apple silicon), a Windows NSIS installer, and Linux `AppImage`, `.deb`,
+(universal, Intel and Apple silicon), Windows NSIS and MSI installers and a portable `.zip`, and
+Linux `AppImage`, `.deb`,
 `.rpm` and `.snap` packages. The
 configuration lives in `apps/desktop/electron-builder.yml`; the release pipeline is
 `.github/workflows/release.yml`.
@@ -17,6 +18,7 @@ a file keeps its meaning once it is out of the release page and sitting in a dow
 | macOS | the same three as `.zip`, which is what the updater downloads |
 | Windows | `Wirebench-1.0.0-windows-x64-setup.exe`, `Wirebench-1.0.0-windows-arm64-setup.exe` |
 | Windows | `Wirebench-1.0.0-windows-x64.msi`, `Wirebench-1.0.0-windows-arm64.msi`, for fleet deployment |
+| Windows | `Wirebench-1.0.0-windows-x64-portable.zip`, `Wirebench-1.0.0-windows-arm64-portable.zip`, nothing to install |
 | Linux | `Wirebench-1.0.0-linux-x86_64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
 | Linux | `wirebench_1.0.0_amd64.deb`, `wirebench_1.0.0_arm64.deb` |
 | Linux | `wirebench-1.0.0.x86_64.rpm` |
@@ -39,6 +41,27 @@ architecture, so both names must keep their `${arch}` segment.
 `universal` is the download to point people at: it runs on both Macs. The `x64` (Intel) and
 `arm64` (Apple silicon) builds are there for anyone who knows which Mac they have and would
 rather not carry both architectures — roughly half the size.
+
+### The portable Windows zip
+
+For machines where nothing may be installed. The zip holds one folder,
+`Wirebench-<version>-windows-<arch>-portable/`: the same signed app the installers wrap, plus a
+`data` folder, holding only a README, beside `Wirebench.exe`. While that folder is there the app uses
+it as its profile (`apps/desktop/src/main/portable.ts`), so workspaces, preferences, history and
+Chromium's caches stay beside the executable and nothing is written to `%APPDATA%`. Deleting the
+folder makes the copy an ordinary one.
+
+`win-installers` packs the zips by hand after the installers, not through electron-builder's `zip`
+target: that target packs the same files as the installers, and an installed copy must never carry
+a `data` folder. The step runs `check-kerberos-vendor.ts` and `check-desktop-asar.ts` on each
+unpacked folder before zipping it, and checks the zip holds `Wirebench.exe`, `data/README.txt` and
+the asar. The zips go straight to the `wirebench-windows-portable` artifact: their executables were
+signed in `win-sign-app`, and a zip cannot be signed itself.
+
+The portable copy never updates itself. `electron-updater` can only run the setup `.exe`, which
+would install a second copy rather than replace the unpacked one, so **Check for Updates…** offers
+the release page instead. Saved secrets are encrypted with the Windows user's key (DPAPI): they open
+for the same user on the same machine only, and need entering again anywhere else.
 
 ### Installing the snap
 
@@ -234,6 +257,7 @@ The release workflow signs twice:
    file, not only the setup file.
 2. **`win-sign-installers`** signs the NSIS and MSI installers that `win-installers` built around the
    signed apps with `electron-builder --prepackaged`.
+   The portable zips are packed from the same signed apps and skip this job.
 
 Signing rewrites an installer's bytes, so `scripts/update-metadata.ts` then recomputes the `sha512`
 and `size` in `latest.yml` and checks them (`--check`). Without that step, auto-update would reject

@@ -127,8 +127,8 @@ on 3.1, so the two can swap the day an enterprise evaluation arrives first.
 - **Supply chain.** Done: a CycloneDX SBOM on every release, and build and SBOM attestations on tags.
 - **Managed preferences.** A policy file at a system location that locks the proxy, CA bundle and update
   settings for managed machines.
-- **Portable build.** A Windows zip with a relative data directory, for locked-down machines where nothing
-  may be installed.
+- **Portable build.** Done: a Windows zip per architecture whose `data` folder beside `Wirebench.exe` holds
+  the profile, for locked-down machines where nothing may be installed.
 - **Localisation.** English only today.
 
 ### Documentation site

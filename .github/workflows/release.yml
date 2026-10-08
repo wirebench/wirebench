@@ -450,6 +450,35 @@ jobs:
           pnpm exec electron-builder --win nsis msi --arm64 --prepackaged prepackaged/win-arm64-unpacked \
             --config.directories.output=release-arm64 --publish never
           cp release-arm64/*.exe release-arm64/*.msi release-arm64/*.blockmap release/
+      # The portable zips (#68): the same (signed) app, plus the `data` folder that makes it keep
+      # its profile beside `Wirebench.exe` (`src/main/portable.ts`). Packed here rather than by
+      # electron-builder's zip target, which takes the installers' files: an installed copy must
+      # never carry the folder. One top-level folder, so unpacking makes one directory. The zip
+      # itself is not signed (nothing signs a zip); the executables inside are the signed ones.
+      - name: Pack the portable zips
+        working-directory: apps/desktop
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          for arch in x64 arm64; do
+            app=prepackaged/win-unpacked
+            if [ "$arch" = arm64 ]; then app=prepackaged/win-arm64-unpacked; fi
+            name="Wirebench-${version}-windows-${arch}-portable"
+            mkdir -p "portable/$name/data"
+            cp -R "$app/." "portable/$name/"
+            cp resources/portable/README.txt "portable/$name/data/README.txt"
+            node ../../scripts/check-kerberos-vendor.ts "win32-$arch" "portable/$name/resources"
+            node ../../scripts/check-desktop-asar.ts "portable/$name/resources"
+            (cd portable && 7z a -tzip -mx=9 "../release/$name.zip" "$name" > /dev/null)
+            listing="$(7z l -ba "release/$name.zip" | tr '\\' '/' | tr -d '\r')"
+            for entry in "$name/Wirebench.exe" "$name/data/README.txt" "$name/resources/app.asar"; do
+              grep -q " $entry\$" <<< "$listing" || { echo "::error::$name.zip has no $entry"; exit 1; }
+            done
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wirebench-windows-portable
+          if-no-files-found: error
+          path: apps/desktop/release/*-portable.zip
       - uses: actions/upload-artifact@v7
         id: upload
         with:
@@ -593,6 +622,7 @@ jobs:
             artifacts/*.dmg
             artifacts/*.exe
             artifacts/*.msi
+            artifacts/*-portable.zip
             artifacts/*.AppImage
             artifacts/*.deb
             artifacts/*.rpm
