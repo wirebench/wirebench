@@ -372,6 +372,19 @@ All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs r
 - Switching the area off removes every trace of it from the UI and the IPC surface.
 - `grep` of the audit trail and the logs after a session shows host ids and timestamps and no credential.
 
+## Amendments (2026-10-08, with the plan)
+
+- **A1. No audit entries in S1.** The desktop has no local activity log; `DesktopAuditEvent`
+  (`packages/engine/src/server-api/audit.ts`) is a strict union the server validates. A `desktop.ssh_session`
+  action is a follow-up with the server. D4 step 4 and the audit success criterion move to it.
+- **A2. `hosts.yaml` is owned by the desktop's `HostsService`.** `loadWorkspace` is untouched; the service
+  reads and writes `<tree>/hosts.yaml` with `writeFileAtomic`. Parse problems come back on `ssh.listHosts`
+  and show in the Hosts view and the Problems tab (source `hosts`).
+- **A3. The host form is a dialog** (`@radix-ui/react-dialog`, as `SecretSourcesDialog`), not the slide-over.
+- **A4. The layer rule is a test.** `scripts/engine-layers.test.ts` checks that nothing under
+  `packages/engine/src` imports `@wirebench/ssh`, and nothing under `packages/ssh/src` imports
+  `@wirebench/engine` or `electron`.
+
 ## Docs
 
 - `site/` docs page "Hosts and terminals": the file format, inheritance, secrets, host keys, the switch.
