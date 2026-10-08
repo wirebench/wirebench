@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { EndpointsTable } from '../../src/renderer/features/environments/endpoints-table.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
@@ -191,6 +191,38 @@ describe('EndpointsTable — APIs', () => {
     });
     render(<EndpointsTable environmentId={env.id} />);
   }
+
+  it('is a grid whose rows are indexed, the column and project headers included', () => {
+    setUp();
+    const grid = screen.getByRole('grid', { name: 'Endpoint overrides' });
+    // Headers, the Demo group header, the interface row, the API row.
+    expect(grid.getAttribute('aria-rowcount')).toBe('4');
+    const rows = within(grid).getAllByRole('row');
+    expect(rows.map((row) => row.getAttribute('aria-rowindex'))).toEqual(['1', '2', '3', '4']);
+    for (const row of screen.getAllByTestId('env-endpoint-row')) {
+      expect(within(row).getAllByRole('gridcell').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('is one tab stop across the override rows, walked with Up/Down/Home/End', () => {
+    setUp();
+    const rows = (): HTMLElement[] => screen.getAllByTestId('env-endpoint-row');
+    const tabIndexes = (): number[] => rows().map((row) => row.tabIndex);
+    expect(tabIndexes()).toEqual([0, -1]);
+    // The project's header row is indexed but never takes the tab stop.
+    expect(screen.getByTestId('env-endpoints-group').closest('tr')?.hasAttribute('tabindex')).toBe(false);
+
+    fireEvent.keyDown(rows()[0] as HTMLElement, { key: 'ArrowDown' });
+    expect(tabIndexes()).toEqual([-1, 0]);
+    expect(document.activeElement).toBe(rows()[1]);
+
+    fireEvent.keyDown(rows()[1] as HTMLElement, { key: 'Home' });
+    expect(tabIndexes()).toEqual([0, -1]);
+
+    // A key aimed at the URL field stays the field's.
+    fireEvent.keyDown(screen.getByLabelText('Endpoint override for Demo › Calculator'), { key: 'End' });
+    expect(tabIndexes()).toEqual([0, -1]);
+  });
 
   it("lists an API after the project's interfaces, badged, in the same group", () => {
     setUp();

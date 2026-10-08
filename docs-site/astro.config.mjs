@@ -41,6 +41,7 @@ export default defineConfig({
             { label: 'WebSocket', slug: 'guides/websocket' },
             { label: 'AsyncAPI contracts', slug: 'guides/asyncapi' },
             { label: 'Importing APIs', slug: 'guides/importers' },
+            { label: 'Exporting collections', slug: 'guides/exporters' },
             { label: 'Environments and properties', slug: 'guides/environments' },
             { label: 'Authentication', slug: 'guides/auth' },
             { label: 'Secrets', slug: 'guides/secrets' },

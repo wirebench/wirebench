@@ -23,6 +23,7 @@ export type WorkspaceChannelService = Pick<
   | 'importProjectFolder'
   | 'importKnownProjectFolder'
   | 'exportProject'
+  | 'exportCollection'
   | 'locateProject'
   | 'setActiveEnvironment'
   | 'mutate'
@@ -179,6 +180,21 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   registerHandler(channels.workspace.exportProject, async (request, sender) => {
     const exported = await service.exportProject(request.projectId, sender);
     return { dir: exported?.dir ?? null };
+  });
+
+  registerHandler(channels.workspace.exportCollection, async (request, sender) => {
+    const exported = await service.exportCollection(request, sender);
+    if (exported === null) {
+      return { cancelled: true, files: [], requests: 0, warnings: [], notes: [] };
+    }
+    return {
+      cancelled: false,
+      dir: exported.dir,
+      files: [...exported.files],
+      requests: exported.result.counts.requests,
+      warnings: [...exported.result.report.warnings],
+      notes: [...exported.result.report.notes],
+    };
   });
 
   registerHandler(channels.workspace.locateProject, async (request, sender) => ({

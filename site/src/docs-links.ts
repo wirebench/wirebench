@@ -9,6 +9,7 @@ export const DOCS_LINKS = {
   websocket: 'guides/websocket',
   asyncapi: 'guides/asyncapi',
   importers: 'guides/importers',
+  exporters: 'guides/exporters',
   switchingPostman: 'switching/postman',
   environments: 'guides/environments',
   auth: 'guides/auth',

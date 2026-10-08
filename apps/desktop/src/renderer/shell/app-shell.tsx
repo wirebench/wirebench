@@ -50,6 +50,7 @@ import { OpenTeamWorkspaceDialog } from '../features/workspace/open-team-workspa
 import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
 import { SecretSourcesApproveDialog } from '../features/secret-sources/approve-dialog.js';
 import { SecretSourcesDialog } from '../features/secret-sources/secret-sources-dialog.js';
+import { CollectionExportReportDialog } from '../features/explorer/export-collection.js';
 import { SecretTokenDialog } from '../features/secrets/secret-token-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
 import { ConflictResolver } from '../features/sync/conflict-resolver.js';
@@ -474,6 +475,7 @@ export function AppShell() {
       <SecretTokenDialog />
       <SecretSourcesDialog />
       <SecretSourcesApproveDialog />
+      <CollectionExportReportDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

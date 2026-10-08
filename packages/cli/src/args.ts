@@ -5,18 +5,19 @@ import {
   OPS_HELP_TEXT,
   parseCall,
   parseMcp,
+  parseExport,
   parseOpVerb,
   refuseOpOnly,
   VERB_HELP,
 } from './args-ops.js';
-import type { CallArgs, McpArgs, OpArgs } from './args-ops.js';
+import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
 import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
 import type { DiffContractArgs } from './args-diff-contract.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
-export type { CallArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
+export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
 export type { DiffContractArgs } from './args-diff-contract.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
@@ -117,6 +118,7 @@ export type ParsedArgs =
   | OpArgs
   | McpArgs
   | CallArgs
+  | ExportArgs
   | DiffContractArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
@@ -320,6 +322,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'mcp') {
     return parseMcp(rest, values);
+  }
+
+  if (word === 'export') {
+    return parseExport(rest, values);
   }
 
   if (isOpVerb(word)) {

@@ -38,6 +38,20 @@ export interface GridNavigationOptions {
  * inside its cells, and stealing the arrow keys from a focused text field would be worse for a
  * keyboard user than the extra Tab presses.
  *
+ * The convention a grid built on this hook follows (History, Keystores and the environments view
+ * and tables are the reference):
+ *
+ * - The container carries `role="grid"` and an `aria-label`; a `<table>` keeps its native markup
+ *   but still says `role="grid"`.
+ * - Every row carries `role="row"` and holds nothing but cells: `role="gridcell"` spelled out on
+ *   each cell (a `<th>` stays a column or row header), one cell wrapping the whole entry when the
+ *   row is a single unit rather than columns.
+ * - `aria-rowindex` numbers every row of the grid from 1 in document order — column and group
+ *   headers included — against an `aria-rowcount` on the grid, so a virtualised grid reads the
+ *   same as a static one.
+ * - Only the record rows take part in this hook; headers and an empty message are indexed but
+ *   never hold the tab stop. An empty state that is not a row sits outside the grid.
+ *
  * @param rowCount - How many rows the grid renders; the active row is clamped to it.
  */
 export function useGridNavigation(rowCount: number, options: GridNavigationOptions = {}): GridNavigation {

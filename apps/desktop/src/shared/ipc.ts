@@ -315,6 +315,8 @@ import {
   workspaceRestoredResponseSchema,
   workspaceStashDraftsRequestSchema,
   workspaceCreateRequestSchema,
+  workspaceExportCollectionRequestSchema,
+  workspaceExportCollectionResponseSchema,
   workspaceExportProjectResponseSchema,
   workspaceIdRequestSchema,
   workspaceImportSuggestionRequestSchema,
@@ -903,6 +905,12 @@ export const channels = {
       'workspace.exportProject',
       workspaceProjectIdRequestSchema,
       workspaceExportProjectResponseSchema,
+    ),
+    // A project, API or interface as a Postman Collection or an OpenCollection; main picks the folder.
+    exportCollection: defineChannel(
+      'workspace.exportCollection',
+      workspaceExportCollectionRequestSchema,
+      workspaceExportCollectionResponseSchema,
     ),
     locateProject: defineChannel(
       'workspace.locateProject',

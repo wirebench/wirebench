@@ -199,8 +199,9 @@ enabled checkbox, and the `disabled` list format bump
 
 - **Importers and exporters.** In, shipped in 2.1.0: OpenAPI 3.0/3.1/3.2, Swagger 1.x and 2.0, and
   Postman Collections v2.0/v2.1. Still wanted in: Postman environment files, HAR 1.2, `.http` request
-  files as the JetBrains and VS Code clients write them, OpenCollection YAML; others when asked. Out:
-  Postman Collection v2.1 and OpenCollection YAML, neither written yet. A published JSON Schema for
+  files as the JetBrains and VS Code clients write them, OpenCollection YAML; others when asked. Out
+  ([#65](https://github.com/wirebench/wirebench/issues/65)): Postman Collection v2.1 with an environment
+  file per environment, and OpenCollection YAML, each with a report of what did not fit. A published JSON Schema for
   Wirebench's own project files, so any editor validates them. Switching cost is the moat the cloud
   platforms rely on; every client that displaced one began as an importer.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
@@ -489,16 +490,6 @@ wizard; code generation. The TCP monitor proxy is no longer a separate item: the
 - English only.
 - A 1.0.0 build cannot open a project or workspace saved by 1.1.0 (`formatVersion: 2`). Moot in
   practice, since 1.0.0 was never published, but the format bump is the first one the loaders refuse.
-
-### Known limitations carried from the layout and environments work
-
-- The Environments view's rows (`apps/desktop/src/renderer/features/environments/
-  environments-view.tsx`) use `role="row"` without `gridcell` children or `aria-rowindex`, and the
-  environment page's variables and endpoint-overrides tables
-  (`apps/desktop/src/renderer/features/environments/{variables-table,endpoints-table}.tsx`) use
-  native `<table>` markup instead of the `role="grid"` convention `history-view.tsx` and
-  `keystores-view.tsx` use. Three views, two conventions; worth reconciling before another grid
-  is added.
 
 ## Audience fit
 

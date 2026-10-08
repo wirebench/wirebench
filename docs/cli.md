@@ -86,6 +86,10 @@ wirebench history diff <from-id> <to-id> [--ignore <path>]…
 wirebench diff-contract <old> <new> [--fail-on breaking|any|none] [--reporter <kind>=<file>]… [--project <dir>] [-q]
                        Compares two versions of a WSDL or an OpenAPI document: see "Contract diff" below.
 
+wirebench export <postman|opencollection> [--api <name|slug|id>] [--out <dir>] [--project <dir>] [--json]
+                       Writes the project, or one API or interface, as a Postman Collection v2.1 or an
+                       OpenCollection document: see "Export to another tool" below.
+
 wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
                        Serves those verbs as MCP tools to a coding agent, over stdio or on 127.0.0.1.
 
@@ -750,6 +754,33 @@ The error goes to stderr as `code: message`. Exit 2 is exactly these codes: `inv
 `environment-not-allowed`, `history-entry-not-found`, `history-no-response`, `unsupported-kind`,
 `unsupported-format`, `write-not-allowed`, `send-not-allowed`, `definition-cache-missing`,
 `query-failed`, `operation-gone`, `no-endpoint` and `too-many-tools`.
+
+## Export to another tool
+
+`wirebench export` writes the project — or the one API or SOAP interface `--api` names, by name, slug
+or id — to `--out` (default: the current directory, created when missing). It reads the project and
+never changes it.
+
+| Format           | Files                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `postman`        | `<name>.postman_collection.json` (Collection v2.1), and `<env>.postman_environment.json` per environment |
+| `opencollection` | `<name>.opencollection.yml` (OpenCollection 1.0), its environments inside it             |
+
+- `${name}` references become `{{name}}`; `${#Env#name}` and the other property scopes are flattened.
+  `${#System#…}` and `${#Sequence#…}` have no equivalent and stay as written.
+- No credential is ever written. Auth keeps its shape (type, user name, key name, token URL, client
+  id) with every secret left empty; a `${secret:name}` becomes a secret variable with no value.
+- A SOAP request becomes an HTTP POST of its envelope, with its `Content-Type` and `SOAPAction`.
+  WS-Security, WS-Addressing, attachments and MTOM are reported, not written.
+- Postman Collection v2.1 has no gRPC or WebSocket requests and no declarative assertions; they are
+  left out and reported. OpenCollection carries both, and the status, response-time and JSON-path
+  assertions.
+- When the project sits inside a workspace, the workspace's environments and properties are exported
+  with the project's.
+
+The files written are printed, then `Warning:` lines for what was lost and `Note:` lines for what was
+changed to fit. `--json` prints `{ files, counts, report }`. Exit 0, even with warnings; 2 for a usage
+error; 3 when `--api` names nothing or there is nothing to export.
 
 ## `wirebench mcp`
 
