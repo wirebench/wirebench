@@ -114,6 +114,40 @@ the hood, with no other setup.
 `--baseline` also compares each response with its committed golden; see
 [Snapshot regression](/wirebench/docs/guides/snapshot-regression/#in-ci).
 
+## Mocks in a pipeline
+
+`wirebench mock` serves a project's [mock services](/wirebench/docs/reference/project-format/) without the
+app, so the tests in a pipeline can call a mock instead of an upstream system that is down or does not
+exist yet. It prints a `listening <name> <url>` line per mock, then one line per request (`--json` for one
+JSON object per line), and serves until it gets SIGINT or SIGTERM, which exits `0`.
+
+```bash
+npx --yes @wirebench/cli@5.0.0 mock ./project orders --port 8089 > mock.log &
+MOCK=$!
+until grep -q '^listening ' mock.log; do sleep 0.2; done
+npx --yes @wirebench/cli@5.0.0 run ./api-tests --env mocked
+kill -TERM "$MOCK"; wait "$MOCK"
+```
+
+In the container image the mock listens on every interface (`WIREBENCH_MOCK_HOST=0.0.0.0`), since loopback
+inside a container is out of reach; publish the port and `docker stop` ends it cleanly:
+
+```bash
+docker run -d --name orders-mock -p 8089:8089 -v "$PWD:/work" \
+  ghcr.io/wirebench/wirebench-cli:5.0.0 mock ./project orders --port 8089
+```
+
+<Aside type="caution" title="Off loopback, anyone who can reach the port can call it">
+Outside a container the mock listens on `127.0.0.1` unless you pass `--host` or set
+`WIREBENCH_MOCK_HOST`, and the project can never choose the address. A mock holds no secrets, but it
+answers whoever reaches it.
+</Aside>
+
+Name mocks by name, folder slug or id; with none, every mock in the project starts. A port that is taken,
+a definition that is not cached, or an unknown mock fails at once (exit `3` or `2`) rather than leaving the
+tests to time out. See the
+[CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-mock) for every flag.
+
 ## Secret tokens
 
 A `${secret:name}` token in a request reads `WIREBENCH_SECRET_<NAME>`, with the name upper-cased:
@@ -203,6 +237,8 @@ Every recipe above is the same CLI underneath, so the outcome is identical which
 
 ## Related
 
+- [Project format](/wirebench/docs/reference/project-format/) — the `mocks/` folder `wirebench mock`
+  serves.
 - [Secrets](/wirebench/docs/guides/secrets/) — how a secret reference resolves, on the desktop and in
   the CLI.
 - [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md) — the full

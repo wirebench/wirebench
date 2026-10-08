@@ -23,6 +23,10 @@ All notable changes to this project are documented here. The format follows
   conform), picks a response by sequence, random, XPath/JSONPath/query match or a sandboxed script, keeps
   scenario state, and serves its WSDL. It listens on loopback unless told otherwise and runs without the
   desktop, for the CLI to build on. The desktop tab follows (#59).
+- **`wirebench mock`.** Serves a project's mocks from the command line until SIGINT or SIGTERM, for a
+  pipeline or a container: pick mocks by name, slug or id, override the port of one, and read the request
+  log as text or JSON lines. It listens on loopback unless `--host` or `WIREBENCH_MOCK_HOST` says
+  otherwise; the CLI image sets the latter to `0.0.0.0` (#61).
 
 ## [4.0.0] - 2026-10-08
 

@@ -414,7 +414,8 @@ deferred TCP monitor for.
 
 The engine half of #59 is in place: mocks generated from a WSDL or an OpenAPI document, contract validation,
 every dispatch style with scenarios, the WSDL served, and the file format of ADR-0021. Lifecycle scripts and
-response templating are left for later issues; the desktop tab follows.
+response templating are left for later issues; the desktop tab follows. `wirebench mock` (#61) serves
+those mocks from the CLI and the container image.
 
 ### Teams and sign-in
 
