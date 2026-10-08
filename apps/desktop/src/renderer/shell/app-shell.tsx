@@ -39,6 +39,7 @@ import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
+import { TrustDialog } from '../features/ssh/trust-dialog.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
@@ -118,6 +119,7 @@ export function AppShell() {
   const consoleState = useUiStore((state) => state.console);
   const slideOver = useUiStore((state) => state.slideOver);
   const theme = useUiStore((state) => state.theme);
+  const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorLayout = useUiStore((state) => state.editorLayout);
   const selection = useUiStore((state) => state.selection);
@@ -491,6 +493,8 @@ export function AppShell() {
       <SecretTokenDialog />
       <SecretSourcesDialog />
       <SecretSourcesApproveDialog />
+      {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
+      {sshEnabled && <TrustDialog />}
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

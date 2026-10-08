@@ -4,7 +4,6 @@ import { Button } from '../../components/button.js';
 import { HostDialog } from './host-dialog.js';
 import { HostTree } from './host-tree.js';
 import { useHostsStore } from './hosts-store.js';
-import { TrustDialog } from './trust-dialog.js';
 
 const INPUT_CLASS =
   'w-full rounded border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -91,7 +90,6 @@ export function HostsView() {
       )}
       <HostTree />
       <HostDialog />
-      <TrustDialog />
     </div>
   );
 }
