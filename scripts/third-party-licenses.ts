@@ -58,7 +58,13 @@ const BUNDLED_DEV_DEPENDENCIES = [
 ] as const;
 
 /** Workspace packages: Wirebench's own code, covered by the repository's own LICENSE. */
-const OWN_PACKAGES = new Set(['@wirebench/engine', '@wirebench/desktop', '@wirebench/cli', '@wirebench/server']);
+const OWN_PACKAGES = new Set([
+  '@wirebench/engine',
+  '@wirebench/desktop',
+  '@wirebench/cli',
+  '@wirebench/server',
+  '@wirebench/ssh',
+]);
 
 /** File names that may carry a license or notice, in the order they are looked for. */
 const LICENSE_FILE_PATTERN = /^(licen[cs]e|notice|copying)(\.(md|txt|markdown))?$/i;
@@ -249,10 +255,12 @@ export async function renderThirdPartyLicenses(): Promise<string> {
   const desktopDir = join(repoRoot, 'apps', 'desktop');
   const engineDir = join(repoRoot, 'packages', 'engine');
   const serverDir = join(repoRoot, 'packages', 'server');
+  const sshDir = join(repoRoot, 'packages', 'ssh');
   const desktop = await readManifest(desktopDir);
   const engine = await readManifest(engineDir);
   const server = await readManifest(serverDir);
-  if (desktop === undefined || engine === undefined || server === undefined) {
+  const ssh = await readManifest(sshDir);
+  if (desktop === undefined || engine === undefined || server === undefined || ssh === undefined) {
     throw new Error('Cannot read the workspace manifests');
   }
   const roots = [
@@ -262,6 +270,7 @@ export async function renderThirdPartyLicenses(): Promise<string> {
       from: engineDir,
     })),
     ...Object.keys(server.dependencies ?? {}).map((name) => ({ name, from: serverDir })),
+    ...Object.keys(ssh.dependencies ?? {}).map((name) => ({ name, from: sshDir })),
     ...BUNDLED_DEV_DEPENDENCIES.map((name) => ({ name, from: desktopDir })),
   ];
   return render(await collect(roots));

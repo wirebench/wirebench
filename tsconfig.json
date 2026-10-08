@@ -5,6 +5,8 @@
     { "path": "packages/engine/tsconfig.test.json" },
     { "path": "packages/cli" },
     { "path": "packages/cli/tsconfig.test.json" },
+    { "path": "packages/ssh" },
+    { "path": "packages/ssh/tsconfig.test.json" },
     { "path": "packages/server" },
     { "path": "packages/server/tsconfig.test.json" }
   ]

@@ -3,6 +3,7 @@
  * fixture tree that breaks each rule once, and against the real tree.
  */
 import { spawnSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -104,4 +105,23 @@ describe('engine-import-graph.mjs', () => {
     expect(result.stdout).toMatch(/^engine layers: 0 violation\(s\), 0 stale exception\(s\), \d+ allowed import\(s\)/);
     expect(result.status).toBe(0);
   }, 30_000);
+});
+
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+
+function listSourceFiles(dir: string): string[] {
+  const root = join(repoRoot, dir);
+  return readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => join(root, f));
+}
+
+describe('packages/ssh layering', () => {
+  it('the engine and packages/ssh never import each other, and ssh never imports electron', () => {
+    const engineFiles = listSourceFiles('packages/engine/src');
+    const sshFiles = listSourceFiles('packages/ssh/src');
+    expect(sshFiles.length).toBeGreaterThan(0);
+    expect(engineFiles.filter((f) => readFileSync(f, 'utf8').includes("from '@wirebench/ssh"))).toEqual([]);
+    expect(sshFiles.filter((f) => /from '(@wirebench\/engine|electron)/.test(readFileSync(f, 'utf8')))).toEqual([]);
+  });
 });

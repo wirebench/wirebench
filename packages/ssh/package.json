@@ -1,0 +1,31 @@
+{
+  "name": "@wirebench/ssh",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./test-helpers": "./test/helpers/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --root ../.. --project ssh-unit --project ssh-integration",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "ssh2": "1.17.0",
+    "yaml": "2.9.0",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@types/ssh2": "1.15.6"
+  }
+}
