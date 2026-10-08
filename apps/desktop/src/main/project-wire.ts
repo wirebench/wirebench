@@ -69,6 +69,7 @@ import type {
   RequestScriptsWire,
   RequestWire,
 } from '../shared/wire-types.js';
+import { toMockWire } from './project-mock-mutations.js';
 import { toSequenceWire } from './project-sequence-mutations.js';
 import { webhookCollectionId } from './webhook-ids.js';
 
@@ -812,6 +813,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     wsApis: project.wsApis.map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
     wsRequests: wsTree.requests,
     sequences: project.sequences.map(toSequenceWire),
+    mocks: project.mocks.map(toMockWire),
     properties: { ...project.properties },
     disabledProperties: [...project.disabledProperties],
     environments: project.environments.map(toEnvironmentWire),

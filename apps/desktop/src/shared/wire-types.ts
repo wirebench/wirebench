@@ -3046,6 +3046,123 @@ export type SequenceWaitingEvent = z.infer<typeof sequenceWaitingEventSchema>;
 export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
 export type LogExportHarResponse = z.infer<typeof logExportHarResponseSchema>;
 
+// --- Mock services (#59) ------------------------------------------------------------------------
+
+const mockCheckWire = {
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+};
+
+/** One match condition of a response: a body expression, or a named query, header or path value. */
+export const mockMatchWireSchema = z.union([
+  z.object({
+    from: z.literal('body'),
+    language: z.enum(['xpath', 'jsonpath']),
+    expression: z.string(),
+    namespaces: z.record(z.string(), z.string()).optional(),
+    ...mockCheckWire,
+  }),
+  z.object({ from: z.enum(['query', 'header', 'path']), name: z.string(), ...mockCheckWire }),
+]);
+export type MockMatchWire = z.infer<typeof mockMatchWireSchema>;
+
+export const mockScenarioWireSchema = z.object({
+  name: z.string(),
+  state: z.string().optional(),
+  next: z.string().optional(),
+});
+export type MockScenarioWire = z.infer<typeof mockScenarioWireSchema>;
+
+export const mockHeaderWireSchema = z.object({ name: z.string(), value: z.string() });
+export type MockHeaderWire = z.infer<typeof mockHeaderWireSchema>;
+
+export const mockBodyLanguageSchema = z.enum(['xml', 'json', 'text', 'none']);
+export type MockBodyLanguageWire = z.infer<typeof mockBodyLanguageSchema>;
+
+/** One canned response: `<slug>.response.yaml` and its body file. */
+export const mockResponseWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  status: z.number(),
+  headers: z.array(mockHeaderWireSchema),
+  delayMs: z.number(),
+  body: mockBodyLanguageSchema,
+  bodyText: z.string(),
+  match: z.array(mockMatchWireSchema),
+  scenario: mockScenarioWireSchema.optional(),
+});
+export type MockResponseWire = z.infer<typeof mockResponseWireSchema>;
+
+export const mockDispatchSchema = z.enum(['sequence', 'random', 'match', 'script']);
+export type MockDispatchWire = z.infer<typeof mockDispatchSchema>;
+
+/** One operation of a mock: `operations/<slug>/operation.yaml`, its responses and `dispatch.ts`. */
+export const mockOperationWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  /** The contract's key: a SOAP operation name, or REST `<method> <path>`. */
+  operation: z.string(),
+  dispatch: mockDispatchSchema,
+  defaultResponseId: z.string().optional(),
+  script: z.string().optional(),
+  responses: z.array(mockResponseWireSchema),
+});
+export type MockOperationWire = z.infer<typeof mockOperationWireSchema>;
+
+export const mockValidationSchema = z.enum(['reject', 'report', 'off']);
+export type MockValidationWire = z.infer<typeof mockValidationSchema>;
+
+/** A mock as the renderer sees it: `mocks/<slug>/` and everything under it. */
+export const mockWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  source: z.object({ containerId: z.string(), binding: z.string().optional() }),
+  port: z.number(),
+  path: z.string(),
+  validation: mockValidationSchema,
+  operations: z.array(mockOperationWireSchema),
+});
+export type MockWire = z.infer<typeof mockWireSchema>;
+
+/** What `update-mock` may change. */
+export const mockPatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  port: z.number().int().min(0).max(65_535).optional(),
+  path: z.string().optional(),
+  validation: mockValidationSchema.optional(),
+});
+export type MockPatch = z.infer<typeof mockPatchSchema>;
+
+/** What `update-mock-operation` may change; `null` clears the default or the script. */
+export const mockOperationPatchSchema = z.object({
+  dispatch: mockDispatchSchema.optional(),
+  defaultResponseId: z.string().nullable().optional(),
+  script: z.string().nullable().optional(),
+});
+export type MockOperationPatch = z.infer<typeof mockOperationPatchSchema>;
+
+/** What `update-mock-response` may change; `scenario: null` takes the response out of its scenario. */
+export const mockResponsePatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  status: z.number().int().optional(),
+  headers: z.array(mockHeaderWireSchema).optional(),
+  delayMs: z.number().int().optional(),
+  body: mockBodyLanguageSchema.optional(),
+  bodyText: z.string().optional(),
+  match: z.array(mockMatchWireSchema).optional(),
+  scenario: mockScenarioWireSchema.nullable().optional(),
+});
+export type MockResponsePatch = z.infer<typeof mockResponsePatchSchema>;
+
 /** The whole open project, as mirrored by the renderer. Always a complete replacement. */
 export const projectWireSchema = z.object({
   id: z.string(),
@@ -3076,6 +3193,8 @@ export const projectWireSchema = z.object({
   wsRequests: z.array(wsRequestWireSchema),
   /** The project's sequences (`sequences/`), in `order`. */
   sequences: z.array(sequenceWireSchema),
+  /** The project's mocks (`mocks/`), in `order`. */
+  mocks: z.array(mockWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -3279,6 +3398,49 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-sequence'), sequenceId: z.string(), patch: sequencePatchSchema }),
   z.object({ kind: z.literal('remove-sequence'), sequenceId: z.string() }),
   z.object({ kind: z.literal('duplicate-sequence'), sequenceId: z.string() }),
+  z.object({
+    kind: z.literal('add-mock'),
+    containerId: z.string(),
+    name: z.string().min(1),
+    /** SOAP: the binding the mock speaks, in Clark notation; the first SOAP 1.1 binding when absent. */
+    binding: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-mock'), mockId: z.string(), patch: mockPatchSchema }),
+  z.object({
+    kind: z.literal('update-mock-operation'),
+    mockId: z.string(),
+    operationId: z.string(),
+    patch: mockOperationPatchSchema,
+  }),
+  z.object({
+    kind: z.literal('add-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    /** Copy this response rather than start from an empty 200. */
+    copyOf: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('update-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    responseId: z.string(),
+    patch: mockResponsePatchSchema,
+  }),
+  z.object({
+    kind: z.literal('remove-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    responseId: z.string(),
+  }),
+  z.object({
+    kind: z.literal('move-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    responseId: z.string(),
+    to: z.number().int().min(0),
+  }),
+  z.object({ kind: z.literal('remove-mock'), mockId: z.string() }),
+  z.object({ kind: z.literal('duplicate-mock'), mockId: z.string() }),
   z.object({
     kind: z.literal('add-ws-request'),
     apiId: z.string(),
