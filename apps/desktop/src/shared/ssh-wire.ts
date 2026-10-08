@@ -99,11 +99,6 @@ export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type SshProblemWire = z.infer<typeof sshProblemSchema>;
 export type SshListHostsResponse = z.infer<typeof sshListHostsResponseSchema>;
 
-/** What a setting resolves to when no host or group sets it; the resolver in `@wirebench/ssh` must agree (tested). */
-export const SSH_DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
-
-export const SSH_SECRET_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
 /** One name a host can reference: stored on this machine for the workspace, and/or mapped by a secret source. */
 export const sshSecretNameSchema = z.object({ name: z.string(), local: z.boolean(), external: z.boolean() });
 export const sshSecretNamesResponseSchema = z.object({ names: z.array(sshSecretNameSchema) });

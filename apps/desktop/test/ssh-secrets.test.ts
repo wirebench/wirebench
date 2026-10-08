@@ -4,7 +4,7 @@ import { resolveHost } from '@wirebench/ssh';
 import { parseSecretPseudoRef, secretPseudoRef } from '@wirebench/engine';
 import { workspaceSecretGetter, workspaceSecretLabel } from '../src/main/secret-resolver.js';
 import { SshSecretsService } from '../src/main/ssh-secrets.js';
-import { SSH_DEFAULTS } from '../src/shared/ssh-wire.js';
+import { SSH_DEFAULTS } from '../src/shared/ssh-defaults.js';
 
 /** A tiny in-memory stand-in for the parts of SecretStore the SSH secrets use. */
 function fakeStore() {

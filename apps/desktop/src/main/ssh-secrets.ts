@@ -1,5 +1,6 @@
 import { WirebenchError } from '@wirebench/engine';
-import { SSH_SECRET_NAME_PATTERN, type SshSecretNameWire } from '../shared/ssh-wire.js';
+import { SSH_SECRET_NAME_PATTERN } from '../shared/ssh-defaults.js';
+import type { SshSecretNameWire } from '../shared/ssh-wire.js';
 import { workspaceSecretLabel } from './secret-resolver.js';
 import type { SecretStore } from './secrets.js';
 

@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import type { GroupEntryWire, HostsFileWire, SshSettingsWire } from '../../../shared/ssh-wire.js';
 import { HostAuthSection } from './host-auth-section.js';
-import { SSH_DEFAULTS } from '../../../shared/ssh-wire.js';
+import { SSH_DEFAULTS } from '../../../shared/ssh-defaults.js';
 import { ancestorsOf, findGroup, findHost, freeId, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
 import { INPUT_CLASS, InheritedField, type Provenance } from './inherited-field.js';
 
