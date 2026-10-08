@@ -148,6 +148,7 @@ export {
   HarError,
   HttpFileError,
   OpenCollectionError,
+  ExportError,
   LegacyProjectError,
   ProtoError,
   GrpcError,
@@ -841,6 +842,16 @@ export type {
   OcScript,
   OcVariable,
 } from './import/opencollection/index.js';
+// Exporters: a project, an API or an interface as a Postman Collection v2.1 or an OpenCollection.
+export { COLLECTION_EXPORT_FORMATS, exportCollection } from './export/index.js';
+export type {
+  CollectionExportEnvironment,
+  CollectionExportFile,
+  CollectionExportFormat,
+  CollectionExportInput,
+  CollectionExportResult,
+  CollectionExportTarget,
+} from './export/index.js';
 // Import helpers shared by every importer.
 export {
   formatImportReport,
@@ -2046,3 +2057,7 @@ export {
 } from './project/sequence-guards.js';
 
 export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';
+
+export * from './contract-diff/index.js';
+export { diffWsdlContracts, wsdlOperationLabel } from './wsdl/contract-diff.js';
+export { diffOpenApiContracts, openApiOperationLabel } from './rest/openapi/contract-diff.js';

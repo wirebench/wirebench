@@ -113,6 +113,9 @@ win:
     # `msiexec /i … /qn`. It does not auto-update; the fleet tool pushes each new version.
     - target: msi
       arch: [x64, arm64]
+  # The portable zip (#68) is not a target here: electron-builder's `zip` packs the installers' files,
+  # and only the portable copy may carry the `data` folder that keeps its profile beside the exe
+  # (`src/main/portable.ts`). `release.yml` packs it from the same signed `win-unpacked` apps.
   icon: resources/icon.png
   # Only this build's own architecture. There is no win32-arm64 prebuild, so the arm64 app carries
   # no binding at all and shows Kerberos as unavailable (the source folder is absent, and

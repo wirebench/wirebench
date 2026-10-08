@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentsView } from '../../src/renderer/features/environments/environments-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -226,5 +226,44 @@ describe('EnvironmentsView', () => {
     setUp();
     fireEvent.click(screen.getByTestId('environments-cookies'));
     expect(useEditorsStore.getState().activeId).toBe('cookies');
+  });
+
+  it('exposes the view as a grid of indexed rows, each holding a gridcell', () => {
+    setUp();
+    const grid = screen.getByRole('grid', { name: 'Environments' });
+    expect(grid.getAttribute('aria-rowcount')).toBe('4');
+    const rows = within(grid).getAllByRole('row');
+    expect(rows.map((row) => row.getAttribute('aria-rowindex'))).toEqual(['1', '2', '3', '4']);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('gridcell')).toHaveLength(1);
+    }
+  });
+
+  it('is one tab stop, with Up/Down/Home/End moving between rows', () => {
+    setUp();
+    const rows = (): HTMLElement[] => screen.getAllByRole('row');
+    const tabIndexes = (): number[] => rows().map((row) => row.tabIndex);
+    expect(tabIndexes()).toEqual([0, -1, -1, -1]);
+
+    fireEvent.keyDown(rows()[0] as HTMLElement, { key: 'ArrowDown' });
+    expect(tabIndexes()).toEqual([-1, 0, -1, -1]);
+    expect(document.activeElement).toBe(rows()[1]);
+
+    fireEvent.keyDown(rows()[1] as HTMLElement, { key: 'End' });
+    expect(tabIndexes()).toEqual([-1, -1, -1, 0]);
+
+    fireEvent.keyDown(rows()[3] as HTMLElement, { key: 'ArrowUp' });
+    expect(tabIndexes()).toEqual([-1, -1, 0, -1]);
+
+    fireEvent.keyDown(rows()[2] as HTMLElement, { key: 'Home' });
+    expect(tabIndexes()).toEqual([0, -1, -1, -1]);
+  });
+
+  it('keeps the empty state out of the grid, which holds only the two fixed rows', () => {
+    setUp({ environments: [] });
+    const grid = screen.getByRole('grid', { name: 'Environments' });
+    expect(within(grid).getAllByRole('row')).toHaveLength(2);
+    expect(grid.textContent).not.toContain('No environments yet.');
+    expect(screen.getByText('No environments yet.')).toBeTruthy();
   });
 });

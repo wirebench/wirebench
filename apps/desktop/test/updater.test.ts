@@ -29,12 +29,19 @@ function fakeBackend(script: Partial<UpdaterBackend> = {}): UpdaterBackend & { r
 /** A fake UI that answers every consent prompt the same way and records what it was told. */
 function fakeUi(answers: { download?: boolean; install?: boolean } = {}): UpdaterUi & {
   readonly statuses: UpdateStatus[];
+  readonly opened: string[];
 } {
   const statuses: UpdateStatus[] = [];
+  const opened: string[] = [];
   return {
     statuses,
+    opened,
     confirmDownload: () => Promise.resolve(answers.download ?? false),
     confirmInstall: () => Promise.resolve(answers.install ?? false),
+    openReleasePage: (version) => {
+      opened.push(version);
+      return Promise.resolve();
+    },
     report: (status) => statuses.push(status),
   };
 }
@@ -137,6 +144,29 @@ describe('UpdateController', () => {
       await new UpdateController(backend, fakeUi({ download: true, install: true })).check({ trigger: 'user' }),
     ).toEqual({ kind: 'installing', version: '9.9.9' });
     expect(backend.calls).toEqual(['check', 'download', 'install']);
+  });
+
+  it('opens the release page instead of downloading when the copy cannot install itself', async () => {
+    const backend = fakeBackend({ checkForUpdates: () => Promise.resolve(AVAILABLE) });
+    const ui = fakeUi({ download: true, install: true });
+
+    expect(await new UpdateController(backend, ui, { selfInstall: false }).check({ trigger: 'user' })).toEqual({
+      kind: 'release-page',
+      version: '9.9.9',
+    });
+    expect(backend.calls).toEqual(['check']);
+    expect(ui.opened).toEqual(['9.9.9']);
+  });
+
+  it('opens nothing for a copy that cannot install itself when the user says no', async () => {
+    const backend = fakeBackend({ checkForUpdates: () => Promise.resolve(AVAILABLE) });
+    const ui = fakeUi({ download: false });
+
+    expect(await new UpdateController(backend, ui, { selfInstall: false }).check({ trigger: 'user' })).toEqual({
+      kind: 'declined',
+      version: '9.9.9',
+    });
+    expect(ui.opened).toEqual([]);
   });
 
   it('reports download progress as it arrives', async () => {
