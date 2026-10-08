@@ -1,6 +1,10 @@
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import { SshModelError } from './errors.js';
+import { resolveSettings } from './resolve.js';
+import { walk } from './tree.js';
+
+export { walk };
 
 export const SECRET_TOKEN = /^\$\{secret:([A-Za-z_][A-Za-z0-9_]*)\}$/;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -124,23 +128,6 @@ export function parseHostsFile(text: string): HostsFile {
   return parsed.data;
 }
 
-export function walk(file: HostsFile): Array<{
-  entry: HostEntry | GroupEntry;
-  kind: 'host' | 'group';
-  path: readonly string[];
-}> {
-  const out: Array<{ entry: HostEntry | GroupEntry; kind: 'host' | 'group'; path: readonly string[] }> = [];
-  const visit = (groups: GroupEntry[], hosts: HostEntry[], path: readonly string[]): void => {
-    for (const group of groups) {
-      out.push({ entry: group, kind: 'group', path });
-      visit(group.groups, group.hosts, [...path, group.id]);
-    }
-    for (const host of hosts) out.push({ entry: host, kind: 'host', path });
-  };
-  visit(file.groups, file.hosts, []);
-  return out;
-}
-
 function checkIds(file: HostsFile): void {
   const seen = new Map<string, readonly string[]>();
   for (const { entry, path } of walk(file)) {
@@ -155,10 +142,9 @@ function checkIds(file: HostsFile): void {
   }
 }
 
-/** Follows each host's own `ssh.jump` only; inherited jumps are checked once resolution exists (resolve.ts). */
 function checkJumps(file: HostsFile): void {
   const items = walk(file);
-  const hosts = new Map(items.filter((i) => i.kind === 'host').map((i) => [i.entry.id, i.entry as HostEntry]));
+  const hosts = new Set(items.filter((i) => i.kind === 'host').map((i) => i.entry.id));
   for (const { entry, kind } of items) {
     const jump = entry.ssh.jump;
     if (jump !== undefined && !hosts.has(jump)) {
@@ -168,9 +154,9 @@ function checkJumps(file: HostsFile): void {
       });
     }
   }
-  for (const id of hosts.keys()) {
+  for (const id of hosts) {
     const chain = [id];
-    let next = hosts.get(id)?.ssh.jump;
+    let next = resolveSettings(file, id).jump;
     while (next !== undefined) {
       if (chain.includes(next)) {
         throw new SshModelError('ssh-jump-cycle', `jump chain loops: ${[...chain, next].join(' → ')}`, {
@@ -178,7 +164,7 @@ function checkJumps(file: HostsFile): void {
         });
       }
       chain.push(next);
-      next = hosts.get(next)?.ssh.jump;
+      next = resolveSettings(file, next).jump;
     }
   }
 }
