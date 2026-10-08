@@ -69,7 +69,9 @@ import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
+import { registerMockChannels } from './ipc/mock.js';
 import { registerSequenceChannels } from './ipc/sequence.js';
+import { MOCK_ALL_INTERFACES_HOST, MOCK_LOOPBACK_HOST, MockRunner } from './mock-runner.js';
 import { SequenceRunner } from './sequence-runner.js';
 import { ScriptHost } from './script-host.js';
 import { registerScriptChannels } from './ipc/script.js';
@@ -229,6 +231,8 @@ const appPicks = new DialogPicks();
 const dialogPicks = scoped(scopes, (scope) => scope.picks);
 /** The calling window's workspace for workspace-level calls; for entity-addressed ones, the holder's (design D2). */
 const workspaceService = routeWorkspaces(scopes, (scope) => scope.workspace);
+/** Every mock this app is serving, across windows; each one's events go to the window that started it. */
+const mockRunner = new MockRunner();
 
 /** Opens an external URL, gated the same way for every flow that hands off to a browser. */
 const openExternalChecked = async (url: string): Promise<void> => {
@@ -593,6 +597,11 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
       // REST send of the project still in flight), and its History entry — written by its own pending
       // `request.sendRest` — waited for alongside.
       exchanges.endWhere(matches, 'rest');
+      // A mock goes with its project; a whole workspace closing takes every mock this window started.
+      const owner = window.webContents.id;
+      const stoppingMocks = mockRunner.stopWhere((entry) =>
+        projectId === undefined ? entry.owner === owner : entry.projectId === projectId,
+      );
       // Always awaited, never guarded by "did we just close anything": a session already asked to
       // close is not closed again, yet its pending `request.openWs` may not have written the History
       // entry. A session that closed a moment ago is therefore invisible here while its write is
@@ -604,6 +613,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
         whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
         exchanges.whenRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+        stoppingMocks,
       ]);
     },
     trash: trashFolder,
@@ -631,6 +641,14 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
       },
       onProjectChanged: (projectId, project) => {
         secretScans.projectChanged(projectId, project);
+        // A running mock follows its edits: restarted with the new definition, or stopped when removed.
+        let model;
+        try {
+          model = project === null ? undefined : workspace.hostFor(projectId).model();
+        } catch {
+          model = undefined;
+        }
+        void mockRunner.projectChanged(projectId, model);
         currentValues.syncProject(projectId, project);
         send(events.project.changed, { projectId, project });
       },
@@ -796,6 +814,18 @@ void app.whenReady().then(() => {
     auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
   };
   registerRequestChannels(engineService, requestDeps);
+  registerMockChannels(mockRunner, {
+    locate: (mockId) => {
+      const projectId = workspaceService.projectId(mockId);
+      const saved = workspaceService.hostOfEntity(mockId).savedProject();
+      if (projectId === undefined || saved === undefined) {
+        throw new WirebenchError('mock-not-found', `No open project has the mock ${mockId}`, { details: { mockId } });
+      }
+      return { projectId, project: saved.project, dir: saved.dir };
+    },
+    host: () => (preferencesService.get().mocks.listenOnAllInterfaces ? MOCK_ALL_INTERFACES_HOST : MOCK_LOOPBACK_HOST),
+    owns: (mockId) => workspaceService.projectId(mockId) !== undefined,
+  });
   // A sequence's steps go through the engine as a single send does, with the same dependencies.
   registerSequenceChannels(new SequenceRunner(), {
     service: engineService,
@@ -1226,6 +1256,10 @@ app.on('before-quit', (event) => {
   }
   // The catch URL views and their subscriptions go first; nothing of them outlives the process.
   hooksService.dispose();
+  // A mock's port is released now; not awaited, so a server that will not close never holds up the quit.
+  void mockRunner.stopAll().catch((error: unknown) => {
+    console.warn('[mock] stopping the mocks on quit failed', error instanceof Error ? error.message : String(error));
+  });
   // The live sockets close 1000, so the server drops this device from presence now rather than at
   // its next heartbeat (live-updates §3.4). Not awaited: a socket that will not close must never
   // hold up the quit.

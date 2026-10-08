@@ -3163,6 +3163,63 @@ export const mockResponsePatchSchema = z.object({
 });
 export type MockResponsePatch = z.infer<typeof mockResponsePatchSchema>;
 
+// --- Running a mock (#59) ---
+
+export const mockIdRequestSchema = z.object({ mockId: z.string() });
+export type MockIdRequest = z.infer<typeof mockIdRequestSchema>;
+
+/** A mock's running state; `url` is set while it runs, `error` when it failed to start. */
+export const mockStateEventSchema = z.object({
+  mockId: z.string(),
+  running: z.boolean(),
+  url: z.string().optional(),
+  /** True when the mock listens on every interface (the preference) rather than loopback. */
+  exposed: z.boolean().optional(),
+  warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+  error: z.string().optional(),
+});
+export type MockStateEvent = z.infer<typeof mockStateEventSchema>;
+
+export const mockStopResponseSchema = z.object({ stopped: z.boolean() });
+export const mockResetResponseSchema = z.object({ reset: z.boolean() });
+export const mockStatesResponseSchema = z.object({ states: z.array(mockStateEventSchema) });
+
+const mockEventMessageWireSchema = z.object({
+  headers: z.array(z.tuple([z.string(), z.string()])),
+  body: z.string(),
+  truncated: z.boolean(),
+});
+
+/** One request a running mock answered, with sensitive headers and query values masked. */
+export const mockExchangeEventSchema = z.object({
+  mockId: z.string(),
+  seq: z.number(),
+  at: z.string(),
+  method: z.string(),
+  url: z.string(),
+  operation: z.string().optional(),
+  responseId: z.string().optional(),
+  responseName: z.string().optional(),
+  status: z.number(),
+  durationMs: z.number(),
+  problems: z.array(
+    z.object({
+      code: z.string(),
+      message: z.string(),
+      in: z.string().optional(),
+      name: z.string().optional(),
+      path: z.string().optional(),
+      line: z.number().optional(),
+      column: z.number().optional(),
+    }),
+  ),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+  log: z.array(z.string()).optional(),
+  request: mockEventMessageWireSchema,
+  response: mockEventMessageWireSchema,
+});
+export type MockExchangeEventWire = z.infer<typeof mockExchangeEventSchema>;
+
 /** The whole open project, as mirrored by the renderer. Always a complete replacement. */
 export const projectWireSchema = z.object({
   id: z.string(),
