@@ -1,5 +1,8 @@
+import { AREAS } from '@shared/area-module.js';
+import type { AreaId } from '@shared/area-module.js';
+
 /** Which view the sidebar shows; mirrors the activity bar's icons. */
-export type SidebarView = 'explorer' | 'environments' | 'search' | 'history' | 'wss';
+export type SidebarView = AreaId;
 
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
@@ -205,7 +208,7 @@ function mergeConsole(stored: unknown): UiSnapshot['console'] {
   return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
 }
 
-const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'environments', 'search', 'history', 'wss'];
+const SIDEBAR_VIEWS: readonly SidebarView[] = AREAS.map((area) => area.id);
 
 /** Reads one persisted tab, or `undefined` for anything that is not a `{ kind, id }` pair. */
 function readTab(value: unknown): PersistedTab | undefined {
