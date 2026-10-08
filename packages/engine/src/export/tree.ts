@@ -5,7 +5,7 @@
  * cannot hold is reported by that format.
  */
 
-import type { Assertion } from '../assert/model.js';
+import type { Assertion, StatusAssertion } from '../assert/model.js';
 import { ExportError } from '../errors.js';
 import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../grpc/model.js';
 import type { KeyValueEntry } from '../http/entries.js';
@@ -295,7 +295,7 @@ class TreeBuilder {
     // The URL usually repeats the table's query (composeUrl): a URL row the table holds is that row.
     const rows = [...request.query];
     const extra = query.filter((q) => {
-      const index = rows.findIndex((row) => row.name === q.name && row.value === q.value);
+      const index = rows.findIndex((row) => row.enabled && row.name === q.name && row.value === q.value);
       if (index === -1) return true;
       rows.splice(index, 1);
       return false;
@@ -328,7 +328,7 @@ class TreeBuilder {
         ...(maxRedirects !== undefined ? { maxRedirects } : {}),
         ...(encodeUrl !== undefined ? { encodeUrl } : {}),
       },
-      assertions: request.assertions,
+      assertions: this.assertions(request.assertions),
       scripts: this.scripts(request.scripts, label),
       examples: (request.examples ?? []).map((e) => {
         const ext = exampleBodyExtension(e.contentType);
@@ -438,7 +438,7 @@ class TreeBuilder {
         ...(request.properties.timeoutMs !== undefined ? { timeoutMs: request.properties.timeoutMs } : {}),
         followRedirects: request.properties.followRedirects,
       },
-      assertions: request.assertions,
+      assertions: this.assertions(request.assertions),
       scripts: this.scripts(request.scripts, label),
       examples: [],
     };
@@ -488,7 +488,7 @@ class TreeBuilder {
       metadata: this.rows([...request.metadata, ...inherited]),
       auth: this.auth(request.auth, label),
       ...(request.settings.timeoutMs !== undefined ? { timeoutMs: request.settings.timeoutMs } : {}),
-      assertions: request.assertions ?? [],
+      assertions: this.assertions(request.assertions ?? []),
       scripts: this.scripts(request.scripts, label),
     };
   }
@@ -543,11 +543,35 @@ class TreeBuilder {
       auth: this.auth(request.auth, label),
       messages: text.map((m) => this.ctx.mustache(m.content)),
       ...(request.settings.handshakeTimeoutMs !== undefined ? { timeoutMs: request.settings.handshakeTimeoutMs } : {}),
-      assertions: request.assertions,
+      assertions: this.assertions(request.assertions),
     };
   }
 
   // --- shared ---
+
+  /** The assertions with the references in their expected values rewritten. */
+  private assertions(list: readonly Assertion[]): Assertion[] {
+    const m = (text: string): string => this.ctx.mustache(text);
+    return list.map((a) => {
+      if (a.type === 'status') {
+        const each = (v: number | string): number | string => (typeof v === 'string' ? m(v) : v);
+        const equals: StatusAssertion['equals'] = Array.isArray(a.equals)
+          ? (a.equals as readonly (number | string)[]).map(each)
+          : typeof a.equals === 'string'
+            ? m(a.equals)
+            : a.equals;
+        return { ...a, equals };
+      }
+      if (a.type === 'match') {
+        return {
+          ...a,
+          ...(typeof a.equals === 'string' ? { equals: m(a.equals) } : {}),
+          ...(a.matches !== undefined ? { matches: m(a.matches) } : {}),
+        };
+      }
+      return a;
+    });
+  }
 
   private rows(rows: readonly KeyValueEntry[]): KeyValueEntry[] {
     return rows.map((row) => ({

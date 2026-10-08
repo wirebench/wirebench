@@ -106,9 +106,13 @@ export function isSecretOnly(value: string): boolean {
   return match !== null && SECRET_NAME_PATTERN.test(match[1]!);
 }
 
-/** `{name}` path parameters written `:name`, the spelling both formats read; `${…}` and `{{…}}` left alone. */
+/**
+ * `{name}` path parameters that fill a whole path segment written `:name`, the spelling both
+ * formats read back; one inside a segment (`/v{ver}`) stays as written, since `:name` is only read
+ * as a whole segment. `${…}` and `{{…}}` are left alone.
+ */
 export function colonPath(url: string): string {
-  return url.replace(/(?<![${])\{([A-Za-z0-9_-]+)\}(?!\})/g, ':$1');
+  return url.replace(/(?<=\/)\{([A-Za-z0-9_-]+)\}(?=\/|\?|#|$)/g, ':$1');
 }
 
 /** `name` slugified, lower-cased and made unique among `taken`, which it joins. */

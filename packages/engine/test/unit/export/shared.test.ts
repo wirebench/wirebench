@@ -42,6 +42,9 @@ describe('helpers', () => {
     expect(colonPath('https://h/users/{id}/pets/{petId}')).toBe('https://h/users/:id/pets/:petId');
     expect(colonPath('{{base}}/users/{id}')).toBe('{{base}}/users/:id');
     expect(colonPath('${base}/x')).toBe('${base}/x');
+    // Only a whole segment: the importers read :name nowhere else.
+    expect(colonPath('/v{ver}/p/{a}-{b}?q=1')).toBe('/v{ver}/p/{a}-{b}?q=1');
+    expect(colonPath('/p/{id}?q=1')).toBe('/p/:id?q=1');
   });
 
   it('knows a value made of one secret reference', () => {

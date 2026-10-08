@@ -21,6 +21,8 @@ const optional = (key: string, value: unknown): Json =>
 /** `$.a.b[0]`: a JSON path the importer reads back as `res.body.a.b[0]`. */
 const JSON_PATH = /^\$((?:\.[\w$]+)(?:\.[\w$]+|\[\d+\])*)$/;
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/;
+/** Text the importer reads back as a number or a boolean rather than as the text it is. */
+const READS_AS_SCALAR = /^(?:true|false|-?\d+(?:\.\d+)?)$/;
 
 export function writeOpenCollection(tree: XCollection, ctx: ExportContext): WrittenFiles {
   const writer = new OcWriter(ctx);
@@ -100,6 +102,9 @@ export function ocAssertion(a: Assertion): Json | undefined {
       const path = JSON_PATH.exec(a.expression)?.[1];
       if (path === undefined) return undefined;
       const expression = `res.body${path}`;
+      // One OpenCollection assertion checks one thing: a match asking for more is not represented.
+      if ([a.equals, a.exists, a.matches].filter((v) => v !== undefined).length > 1) return undefined;
+      if (typeof a.equals === 'string' && READS_AS_SCALAR.test(a.equals)) return undefined;
       if (a.equals !== undefined) return { expression, operator: 'eq', value: String(a.equals) };
       if (a.exists !== undefined) return { expression, operator: a.exists ? 'isNotNull' : 'isNull' };
       if (a.matches !== undefined) {
@@ -276,13 +281,18 @@ class OcWriter {
       case 'multipart':
         return {
           type: 'multipart-form',
-          data: body.parts.map((part) => ({
-            name: part.name,
-            type: part.kind,
-            value: part.kind === 'text' ? part.value : part.source.kind === 'path' ? part.source.path : '',
-            ...optional('contentType', part.contentType),
-            ...(part.enabled ? {} : { disabled: true }),
-          })),
+          data: body.parts.map((part) => {
+            if (part.kind === 'file' && part.fileName !== undefined) {
+              this.ctx.report.warn(`${label}: the file name of part "${part.name}" is not represented.`);
+            }
+            return {
+              name: part.name,
+              type: part.kind,
+              value: part.kind === 'text' ? part.value : part.source.kind === 'path' ? part.source.path : '',
+              ...optional('contentType', part.contentType),
+              ...(part.enabled ? {} : { disabled: true }),
+            };
+          }),
         };
       case 'binary':
         return {

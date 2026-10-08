@@ -166,3 +166,36 @@ describe('SOAP 1.2', () => {
     ]);
   });
 });
+
+describe('review fixes', () => {
+  it('rewrites references in assertion values', () => {
+    const request = {
+      ...createRestRequest('R', { newId, method: 'GET', url: '/r' }),
+      assertions: [
+        { type: 'match' as const, language: 'jsonpath' as const, expression: '$.id', equals: '${#Env#userId}' },
+      ],
+    };
+    const api = createApi('A', { newId, baseUrl: 'https://h', requests: [request] });
+    const project = { ...createProject('P', { newId }), apis: [api] };
+    const oc = exportCollection('opencollection', { project, target: { kind: 'project' } });
+    const back = mapOpenCollection(parseOpenCollection(oc.files[0]!.text), { newId }).rest!.folders[0]!.requests[0]!;
+    expect(back.assertions).toEqual([{ type: 'match', language: 'jsonpath', expression: '$.id', equals: '${userId}' }]);
+  });
+
+  it('keeps a URL query row a switched-off table row repeats', () => {
+    const request = createRestRequest('R', {
+      newId,
+      method: 'GET',
+      url: '/r?a=1',
+      query: [{ name: 'a', value: '1', enabled: false }],
+    });
+    const api = createApi('A', { newId, baseUrl: 'https://h', requests: [request] });
+    const project = { ...createProject('P', { newId }), apis: [api] };
+    const oc = exportCollection('opencollection', { project, target: { kind: 'project' } });
+    const back = mapOpenCollection(parseOpenCollection(oc.files[0]!.text), { newId }).rest!.folders[0]!.requests[0]!;
+    expect(back.query).toEqual([
+      { name: 'a', value: '1', enabled: true },
+      { name: 'a', value: '1', enabled: false },
+    ]);
+  });
+});

@@ -132,5 +132,10 @@ describe('ocAssertion', () => {
     expect(ocAssertion({ type: 'match', language: 'jsonpath', expression: '$.a', matches: 'a.*' })).toBeUndefined();
     expect(ocAssertion({ type: 'match', language: 'xpath', expression: '//a', exists: true })).toBeUndefined();
     expect(ocAssertion({ type: 'schema' })).toBeUndefined();
+    // Text that would be read back as a number or a boolean, and a match checking two things.
+    expect(ocAssertion({ type: 'match', language: 'jsonpath', expression: '$.a', equals: '123' })).toBeUndefined();
+    expect(
+      ocAssertion({ type: 'match', language: 'jsonpath', expression: '$.a', equals: 1, exists: true }),
+    ).toBeUndefined();
   });
 });
