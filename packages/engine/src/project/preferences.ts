@@ -66,6 +66,11 @@ export interface SslPreferences {
   /** Id of a `wss/keystores.yaml` entry used as the client identity when a request selects none. */
   readonly clientKeystoreRef?: string;
   /**
+   * How many days before a certificate expires the workspace's certificate check starts warning
+   * about it: endpoint chains, keystores and the CA bundle alike. `0` warns only once expired.
+   */
+  readonly expiryWarningDays: number;
+  /**
    * Always `false`: trusting every certificate globally is not an option Wirebench offers.
    * The only escape hatch is an endpoint's `trustInvalid`, which is badged in red wherever
    * that endpoint appears.
@@ -244,7 +249,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     allowH2: false,
   }),
   proxy: Object.freeze({ mode: 'none', excludes: Object.freeze([]) }),
-  ssl: Object.freeze({ minVersion: 'TLSv1.2', trustAll: false }),
+  ssl: Object.freeze({ minVersion: 'TLSv1.2', expiryWarningDays: 30, trustAll: false }),
   git: Object.freeze({}),
   wsdl: Object.freeze({
     cacheDefinitions: true,
@@ -321,6 +326,7 @@ export const preferencesSchema = z.object({
       caBundlePath: z.string().optional(),
       caBundlePickedByMain: z.boolean().optional(),
       clientKeystoreRef: z.string().optional(),
+      expiryWarningDays: z.number().int().min(0).max(3650).optional(),
     })
     .optional(),
   git: z.object({ path: z.string().optional(), pathPickedByMain: z.boolean().optional() }).optional(),

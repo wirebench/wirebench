@@ -61,10 +61,11 @@ const sections: Section[] = [
   },
   {
     heading: 'Authentication and secrets',
-    text: 'Request auth attaches credentials to the HTTP request; WS-Security signs or encrypts parts of a SOAP envelope; client certificates prove your identity at the TLS layer.',
+    text: 'Request auth attaches credentials to the HTTP request; WS-Security signs or encrypts parts of a SOAP envelope; client certificates prove your identity at the TLS layer. On managed machines, IT can lock the proxy, the CA bundle and update checks with a policy file.',
     links: [
       { label: 'Read the auth guide', slug: DOCS_LINKS.auth },
       { label: 'Read the secrets guide', slug: DOCS_LINKS.secrets },
+      { label: 'Managed preferences', slug: DOCS_LINKS.managedPreferences },
     ],
   },
   {

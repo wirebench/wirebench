@@ -1,9 +1,15 @@
 name: CI
 
+# A change that touches only Markdown skips this workflow: no build, test or package reads a tracked
+# `.md`/`.mdx` file, so the 17 jobs below would only re-prove the code that was already green.
+# What Markdown can break — formatting, the generated docs, cited paths, images, banned terms — is
+# checked by `docs.yml`. A change that mixes Markdown with anything else still runs everything.
 on:
   push:
     branches: [main]
+    paths-ignore: ['**/*.md', '**/*.mdx']
   pull_request:
+    paths-ignore: ['**/*.md', '**/*.mdx']
 
 permissions:
   contents: read

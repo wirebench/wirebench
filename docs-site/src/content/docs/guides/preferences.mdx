@@ -19,7 +19,7 @@ section's defaults without touching any other.
 | --- | --- |
 | **HTTP** | User-Agent, request/response compression, keep-alive vs. `Connection: close`, socket timeout, max connections, whether to offer HTTP/2, and the chunking threshold |
 | **Proxy** | No proxy / system proxy / manual, with host, port, username, password, and a comma-separated exclude list (hosts, `*.wildcards`, CIDR blocks, `localhost`) |
-| **SSL** | Minimum TLS version, a CA bundle to trust in addition to the system store, the default client keystore, and why there's no global "trust all certificates" switch |
+| **SSL** | Minimum TLS version, a CA bundle to trust in addition to the system store, the default client keystore, how many days ahead certificate expiry warnings start, and why there's no global "trust all certificates" switch |
 | **REST** | Follow redirects and the maximum redirect chain length, the default `Accept` header, and the pretty-print size threshold — all floors a request's own Settings tab can override |
 | **Git** | The `git` executable Wirebench runs for shared workspaces: auto-detected, or located with a picker |
 | **WSDL** | Definition caching and compression, strict schema handling, and defaults for generated requests (sample values, type comments, optional elements, pretty print) |
@@ -42,6 +42,10 @@ Proxy and SSL preferences aren't just stored for later — they're read on every
 password goes through the same secret store as any other credential (see
 [Secrets](/wirebench/docs/guides/secrets/)); the CA bundle path is set only through **Browse…**, which
 runs a native file picker, since Wirebench never trusts a path the interface alone claims.
+
+On a managed machine, your organization can lock the proxy, the minimum TLS version, the CA bundle and
+update checks. Locked settings are read-only and marked **Locked by policy**; see
+[Managed preferences](/wirebench/docs/guides/managed-preferences/).
 
 ### Locating git
 

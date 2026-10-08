@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
+import { sendWithAuth } from '../../../src/http/auth/apply.js';
 import { sendSoapRequest } from '../../../src/soap/send.js';
 import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { startNtlmServer, type NtlmServer } from '../../helpers/ntlm-server.js';
+import { startRedirectServer, type RedirectServer } from '../../helpers/redirect-server.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
 const ENVELOPE = `<?xml version="1.0" encoding="utf-8"?>
@@ -18,12 +20,15 @@ const CREDENTIALS: SendAuth = {
 
 let ntlm: NtlmServer | undefined;
 let soap: TestSoapServer | undefined;
+let redirector: RedirectServer | undefined;
 
 afterEach(async () => {
   await ntlm?.close();
   await soap?.close();
+  await redirector?.close();
   ntlm = undefined;
   soap = undefined;
+  redirector = undefined;
 });
 
 function send(url: string, auth: SendAuth, extra?: { signal?: AbortSignal; timeoutMs?: number }) {
@@ -212,5 +217,64 @@ describe('NTLM handshake over HTTP', () => {
     const raw = Buffer.from(exchange.http.rawRequest).toString('latin1');
     expect(raw).not.toContain('sup3rsecret');
     expect(Buffer.from(raw, 'latin1').toString('utf16le')).not.toContain('sup3rsecret');
+  });
+
+  describe('after a redirect (#266)', () => {
+    const post = (url: string) => ({
+      url,
+      method: 'POST' as const,
+      headers: { 'content-type': 'text/xml' },
+      body: Buffer.from(ENVELOPE),
+      timeoutMs: 10_000,
+      followRedirects: true,
+    });
+
+    it('runs legs 2 and 3 straight against the hop that challenged', async () => {
+      ntlm = await startNtlmServer({
+        username: 'user',
+        password: 'pass',
+        domain: 'WORKGROUP',
+        redirect: { from: '/old', status: 307 },
+      });
+      const result = await sendWithAuth(post(`${ntlm.url}/old`), CREDENTIALS);
+      expect(result.http.status).toBe(200);
+      expect(result.auth).toEqual({ scheme: 'ntlm', challenged: true, attempts: 3 });
+      expect(result.http.request.url).toBe(`${ntlm.url}/svc`);
+      expect(result.http.redirects).toEqual([{ url: `${ntlm.url}/old`, status: 307 }]);
+      expect(ntlm.redirected()).toBe(1);
+      expect(ntlm.requests.map((entry) => [entry.leg, entry.path])).toEqual([
+        [1, '/svc'],
+        [2, '/svc'],
+        [3, '/svc'],
+      ]);
+      expect(ntlm.sameSocket()).toBe(true);
+    });
+
+    it('repeats the hop’s method too: a 302 turned the POST into a bodyless GET', async () => {
+      ntlm = await startNtlmServer({
+        username: 'user',
+        password: 'pass',
+        domain: 'WORKGROUP',
+        redirect: { from: '/old', status: 302 },
+      });
+      const result = await sendWithAuth(post(`${ntlm.url}/old`), CREDENTIALS);
+      expect(result.http.status).toBe(200);
+      expect(ntlm.requests.map((entry) => [entry.method, entry.contentLength])).toEqual([
+        ['GET', 0],
+        ['GET', 0],
+        ['GET', 0],
+      ]);
+    });
+
+    it('sends no NTLM message to a hop on another origin, and names that hop', async () => {
+      ntlm = await startNtlmServer({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
+      const target = `${ntlm.url}/svc`;
+      redirector = await startRedirectServer(() => target);
+      const sent = sendWithAuth(post(redirector.url), CREDENTIALS);
+      await expect(sent).rejects.toMatchObject({ code: 'ntlm-cross-origin', details: { url: target } });
+      await expect(sent).rejects.toThrow(target);
+      expect(ntlm.requests.map((entry) => entry.authorization)).toEqual([undefined]);
+      expect(redirector.authorizations).toEqual([undefined]);
+    });
   });
 });

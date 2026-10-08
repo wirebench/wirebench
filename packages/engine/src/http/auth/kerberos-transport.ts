@@ -6,7 +6,8 @@
  *   leg 2  Authorization: Negotiate <token>, the real body again → the final response; a
  *          `WWW-Authenticate: Negotiate <reply>` on it is verified (mutual auth)
  *
- * The token is only made once the server asks, so an unchallenged send never loads the binding.
+ * The token is only made once the server asks, so an unchallenged send never loads the binding. When leg 1
+ * followed a redirect, leg 2 and its SPN are for the hop that challenged (see `challenged-hop.ts`).
  * The one-request paths send a preemptive token through `negotiateBearer` instead.
  */
 
@@ -15,6 +16,7 @@ import { HttpError } from '../../errors.js';
 import { createSingleConnectionDispatcher, sendHttp } from '../client.js';
 import { headerValue } from '../headers.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
+import { challengedRequest, hopLabel, withLegOneRedirects } from './challenged-hop.js';
 import { defaultSpn, kerberosField, startKerberosContext, type KerberosSendAuth } from './kerberos-token.js';
 
 export interface KerberosHandshakeResult {
@@ -71,9 +73,9 @@ export async function kerberosHandshake(
   }
   const sendOptions = { dispatcher, ...(options.now !== undefined ? { now: options.now } : {}) };
   let durationMs = 0;
-  const leg = async (headers: Readonly<Record<string, string>>): Promise<HttpExchange> => {
+  const leg = async (target: HttpRequest, headers: Readonly<Record<string, string>>): Promise<HttpExchange> => {
     const exchange = await sendHttp(
-      { ...request, headers, body: request.body ?? EMPTY_BODY, timeoutMs: Math.max(1, remaining()) },
+      { ...target, headers, body: target.body ?? EMPTY_BODY, timeoutMs: Math.max(1, remaining()) },
       sendOptions,
     );
     durationMs += exchange.timings.totalMs;
@@ -81,27 +83,30 @@ export async function kerberosHandshake(
   };
 
   try {
-    const first = await leg(request.headers);
+    const first = await leg(request, request.headers);
     if (first.status !== 401 || !offersNegotiate(headerValue(first.headers, 'www-authenticate'))) {
       return { http: first, attempts: 1, challenged: first.status === 401, durationMs, spn: spnWanted };
     }
     if (remaining() <= 0) return { http: first, attempts: 1, challenged: true, durationMs, spn: spnWanted };
 
-    const context = await startKerberosContext(spnWanted, auth, wait());
+    const hop = challengedRequest(request, first, 'kerberos');
+    const context = await startKerberosContext(kerberosField(auth.spn) ?? defaultSpn(hop.url), auth, wait());
     // A token that lands exactly at the limit leaves nothing for leg 2; report leg 1's 401.
     if (remaining() <= 0) return { http: first, attempts: 1, challenged: true, durationMs, spn: context.spn };
-    const final = await leg({
-      ...request.headers,
+    const final = await leg(hop, {
+      ...hop.headers,
       Authorization: `Negotiate ${Buffer.from(context.token).toString('base64')}`,
     });
     if (final.status === 401) {
-      throw new HttpError('kerberos-rejected', `The server refused the Kerberos token for ${context.spn} (HTTP 401).`, {
-        details: { spn: context.spn, status: 401 },
-      });
+      throw new HttpError(
+        'kerberos-rejected',
+        `The server at ${hopLabel(hop.url)} refused the Kerberos token for ${context.spn} (HTTP 401).`,
+        { details: { spn: context.spn, status: 401, url: hopLabel(hop.url) } },
+      );
     }
     const reply = negotiateToken(headerValue(final.headers, 'www-authenticate'));
     if (reply !== undefined) await context.verify(reply, wait(VERIFY_FLOOR_MS));
-    return { http: final, attempts: 2, challenged: true, durationMs, spn: context.spn };
+    return { http: withLegOneRedirects(final, first), attempts: 2, challenged: true, durationMs, spn: context.spn };
   } finally {
     if (ownDispatcher !== undefined) await ownDispatcher.close().catch(() => undefined);
   }
