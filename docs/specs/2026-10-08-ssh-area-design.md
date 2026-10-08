@@ -1,7 +1,7 @@
 # SSH area: hosts and terminal — design
 
-**Issue:** not filed yet · **Date:** 2026-10-08 · **Status:** approved 2026-10-08 (design sections signed off in
-session; spec written from them)
+**Issue:** #316 · **Date:** 2026-10-08 · **Status:** approved 2026-10-08 (design sections signed off in session;
+spec written from them)
 
 Builds on: [ADR-0017](../adr/0017-a-protocol-is-a-module-behind-one-interface.md) (a module behind one interface,
 switchable), [ADR-0002](../adr/0002-engine-in-main-process.md) (the engine runs in main),
