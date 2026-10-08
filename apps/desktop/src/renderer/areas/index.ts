@@ -6,6 +6,7 @@ import { EnvironmentsView } from '../features/environments/environments-view.js'
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
 import { SearchView } from '../features/search/search-view.js';
+import type { PaletteMode } from '../shell/command-palette.js';
 import { registerSshCommands } from '../commands/register-ssh-commands.js';
 import { HostsView } from '../features/ssh/hosts-view.js';
 import { WssSection } from '../features/wss/wss-section.js';
@@ -13,7 +14,7 @@ import { WssSection } from '../features/wss/wss-section.js';
 export interface RendererArea {
   readonly View: ComponentType;
   /** Commands the area owns beyond `view.show*`; called by `registerShellCommands` for enabled areas. */
-  readonly registerCommands?: () => void;
+  readonly registerCommands?: (openPalette: (mode?: PaletteMode) => void) => void;
 }
 
 export const AREA_ICONS: Readonly<Record<AreaModule['rail']['icon'], LucideIcon>> = {

@@ -5,8 +5,11 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { connectToHost, terminalTabId } from './connect.js';
 import { useHostsStore } from './hosts-store.js';
+import { PasteDialog } from './paste-dialog.js';
+import { guardPaste } from './paste-guard.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
 import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
 
@@ -60,6 +63,8 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
   const failed = useHostsStore((s) => s.connectFailed[hostId] === true) && session === undefined;
   const sessionId = session?.sessionId;
   const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
+  /** A multi-line paste held for the user's yes; xterm never saw it. */
+  const [heldPaste, setHeldPaste] = useState<string | null>(null);
 
   // The terminal and the connect, once per mount and again per Reconnect.
   useEffect(() => {
@@ -117,6 +122,21 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
     const binary = term.onBinary((text) => {
       send(Uint8Array.from(text, (c) => c.charCodeAt(0) & 0xff));
     });
+    // Capture phase, so a held paste is stopped before xterm's own listener on its textarea sees it. The
+    // preferences are read per paste, so "Don't ask again" and the Preferences toggle take effect at once.
+    const onPaste = (event: ClipboardEvent): void => {
+      const text = event.clipboardData?.getData('text') ?? '';
+      if (guardPaste(text, usePreferencesStore.getState().preferences.terminal) === 'send') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setHeldPaste(text);
+    };
+    element.addEventListener('paste', onPaste, true);
+    const selection = term.onSelectionChange(() => {
+      if (!usePreferencesStore.getState().preferences.terminal.copyOnSelect) return;
+      const selected = term.getSelection();
+      if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
+    });
     const themeWatch = new MutationObserver(() => {
       term.options.theme = themeFromCss();
     });
@@ -138,6 +158,8 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       clearTimeout(timer);
       observer.disconnect();
       themeWatch.disconnect();
+      element.removeEventListener('paste', onPaste, true);
+      selection.dispose();
       input.dispose();
       binary.dispose();
       const current = useHostsStore.getState().sessions[hostId]?.sessionId;
@@ -187,8 +209,24 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       ? `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`
       : undefined;
 
+  const closePaste = (): void => {
+    setHeldPaste(null);
+    live.current?.term.focus();
+  };
+
   return (
     <div className="flex h-full flex-col">
+      <PasteDialog
+        text={heldPaste}
+        onCancel={closePaste}
+        onConfirm={(dontAskAgain) => {
+          // term.paste keeps bracketed-paste mode and newline handling the same as an unguarded paste, and
+          // fires no DOM paste event, so the guard cannot catch it again.
+          if (heldPaste !== null) live.current?.term.paste(heldPaste);
+          if (dontAskAgain) void usePreferencesStore.getState().update({ terminal: { confirmMultilinePaste: false } });
+          closePaste();
+        }}
+      />
       <div ref={holder} className="min-h-0 flex-1 bg-surface-sunken p-2" data-testid="ssh-terminal" />
       {notice !== undefined && (
         <div className="flex items-center gap-3 border-t border-hairline px-3 py-2 text-sm text-fg-default">

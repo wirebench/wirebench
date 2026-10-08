@@ -91,6 +91,23 @@ describe('secrets preferences', () => {
   });
 });
 
+describe('terminal preferences', () => {
+  it('defaults to asking before a multi-line paste and not copying on select', () => {
+    expect(DEFAULT_PREFERENCES.terminal).toEqual({ confirmMultilinePaste: true, copyOnSelect: false });
+  });
+
+  it('reads both booleans and ignores a value of the wrong type', () => {
+    const merged = mergePreferences({ terminal: { confirmMultilinePaste: false, copyOnSelect: true } });
+    expect(merged.terminal).toEqual({ confirmMultilinePaste: false, copyOnSelect: true });
+    expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
+  });
+
+  it('a patch of one field leaves the other alone', () => {
+    const merged = mergePreferences({ terminal: { copyOnSelect: true } });
+    expect(merged.terminal.confirmMultilinePaste).toBe(true);
+  });
+});
+
 describe('resetPreferences', () => {
   it('resets one section, leaving the others alone', () => {
     const current = mergePreferences({ editor: { tabSize: 8 }, http: { userAgent: 'Keep/1' } });

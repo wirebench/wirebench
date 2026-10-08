@@ -208,6 +208,14 @@ function clampSourceCacheSeconds(value: number): number {
   return Math.min(3600, Math.max(0, Math.round(value)));
 }
 
+/** The SSH terminal (SSH area spec D6). */
+export interface TerminalPreferences {
+  /** Ask before a multi-line paste goes to the shell, because a pasted script runs line by line. */
+  readonly confirmMultilinePaste: boolean;
+  /** Copy the selection to the clipboard as soon as it is made. */
+  readonly copyOnSelect: boolean;
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -222,6 +230,7 @@ export interface Preferences {
   readonly updates: UpdatePreferences;
   readonly accounts: AccountPreferences;
   readonly secrets: SecretsPreferences;
+  readonly terminal: TerminalPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -282,6 +291,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   updates: Object.freeze({ checkOnLaunch: false }),
   accounts: Object.freeze({ showInStatusBar: true }),
   secrets: Object.freeze({ sourceCacheSeconds: 300 }),
+  terminal: Object.freeze({ confirmMultilinePaste: true, copyOnSelect: false }),
   shortcuts: Object.freeze({}),
 });
 
@@ -375,6 +385,9 @@ export const preferencesSchema = z.object({
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
   secrets: z.object({ sourceCacheSeconds: z.number().finite().optional() }).optional(),
+  terminal: z
+    .object({ confirmMultilinePaste: z.boolean().optional(), copyOnSelect: z.boolean().optional() })
+    .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -436,6 +449,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     updates: parseSection(shape.updates, root['updates']),
     accounts: parseSection(shape.accounts, root['accounts']),
     secrets: parseSection(shape.secrets, root['secrets']),
+    terminal: parseSection(shape.terminal, root['terminal']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -457,6 +471,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     secrets: {
       sourceCacheSeconds: clampSourceCacheSeconds(value.secrets?.sourceCacheSeconds ?? base.secrets.sourceCacheSeconds),
     },
+    terminal: mergeSection(base.terminal, value.terminal),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

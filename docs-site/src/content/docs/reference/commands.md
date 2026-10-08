@@ -51,6 +51,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: New Group… | — | — |
 | Hosts: Edit Host… | — | — |
 | Connect to Host | — | — |
+| Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
 
 ## Definition
 

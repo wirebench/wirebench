@@ -25,6 +25,7 @@ export const COMMAND_IDS = [
   'ssh.newGroup',
   'ssh.editHost',
   'ssh.connect',
+  'ssh.connectPalette',
   'view.showCookies',
   'view.showSettings',
   'view.toggleTheme',

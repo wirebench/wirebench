@@ -114,6 +114,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Connect to Host',
     category: 'Hosts',
   },
+  'ssh.connectPalette': {
+    id: 'ssh.connectPalette',
+    label: 'Connect to Host…',
+    category: 'Hosts',
+    shortcut: 'Mod+Shift+H',
+  },
   'view.showCookies': {
     id: 'view.showCookies',
     label: 'Show Cookies',
