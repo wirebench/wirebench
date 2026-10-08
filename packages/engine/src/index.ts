@@ -1027,6 +1027,7 @@ export type {
   EditorPreferences,
   HttpPreferences,
   LayoutPreference,
+  MockPreferences,
   Preferences,
   PreferencesPatch,
   PreferencesSection,

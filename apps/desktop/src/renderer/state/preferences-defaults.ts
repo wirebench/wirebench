@@ -56,5 +56,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   updates: { checkOnLaunch: false },
   accounts: { showInStatusBar: true },
   secrets: { sourceCacheSeconds: 300 },
+  mocks: { listenOnAllInterfaces: false },
   shortcuts: {},
 };

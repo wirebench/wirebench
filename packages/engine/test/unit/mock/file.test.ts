@@ -15,6 +15,7 @@ import {
   parseResponseFile,
   responseDocument,
   responseSlugOf,
+  validateMock,
 } from '../../../src/mock/file.js';
 import {
   createMock,
@@ -246,5 +247,42 @@ describe('mockPathPrefix', () => {
     const started = performance.now();
     expect(mockPathPrefix(path)).toBe(path);
     expect(performance.now() - started).toBeLessThan(200);
+  });
+});
+
+describe('validateMock', () => {
+  const ok = (): MockDef =>
+    createMock(
+      'Orders',
+      { containerId: 'C1' },
+      {
+        operations: [
+          createMockOperation('Place', 'PlaceOrder', {
+            responses: [createMockResponse('Accepted', { body: 'xml', bodyText: '<ok/>' })],
+          }),
+        ],
+      },
+    );
+
+  it('accepts a mock its files would load', () => {
+    expect(() => validateMock(ok())).not.toThrow();
+  });
+
+  it('refuses what a load would refuse: a split header, a server-computed one, a body too large', () => {
+    const withResponse = (patch: Partial<MockDef['operations'][number]['responses'][number]>): MockDef => {
+      const mock = ok();
+      const operation = mock.operations[0]!;
+      return { ...mock, operations: [{ ...operation, responses: [{ ...operation.responses[0]!, ...patch }] }] };
+    };
+    expect(codeOf(() => validateMock(withResponse({ headers: [{ name: 'X-A', value: 'a\r\nb' }] })))).toBe(
+      'mock-file-invalid',
+    );
+    expect(codeOf(() => validateMock(withResponse({ headers: [{ name: 'Content-Length', value: '1' }] })))).toBe(
+      'mock-file-invalid',
+    );
+    expect(codeOf(() => validateMock(withResponse({ bodyText: 'x'.repeat(MOCK_LIMITS.bodyBytes + 1) })))).toBe(
+      'mock-file-invalid',
+    );
+    expect(codeOf(() => validateMock({ ...ok(), path: 'no-slash' }))).toBe('mock-file-invalid');
   });
 });

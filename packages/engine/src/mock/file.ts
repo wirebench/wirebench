@@ -410,3 +410,59 @@ export function mockFiles(mock: MockDef): Map<string, string> {
   }
   return files;
 }
+
+/**
+ * Checks `mock` as a load of its files would: every file rendered and parsed back by its own parser,
+ * and the counts and sizes the loader bounds. An editor calls it before accepting an edit, so a mock
+ * edited in the app is held to exactly the rules a mock pulled from a teammate is.
+ *
+ * @throws ProjectError `mock-file-invalid` naming the file and what is wrong; `project-path-invalid`
+ * for a slug that is not a safe path segment
+ */
+export function validateMock(mock: MockDef): void {
+  const files = mockFiles(mock);
+  parseMockFile(files.get(mockFilePath(mock.slug)) ?? '', mockFilePath(mock.slug), mock.slug);
+  if (mock.operations.length > MOCK_LIMITS.operations) {
+    refuse('mock-file-invalid', `A mock holds at most ${MOCK_LIMITS.operations} operations`, mockFilePath(mock.slug));
+  }
+  let totalBodyBytes = 0;
+  for (const operation of mock.operations) {
+    const dir = operationDirPath(mock.slug, operation.slug);
+    const operationFile = `${dir}/${OPERATION_FILE}`;
+    parseOperationFile(files.get(operationFile) ?? '', operationFile, operation.slug);
+    if (operation.script !== undefined && Buffer.byteLength(operation.script, 'utf8') > MOCK_LIMITS.scriptBytes) {
+      refuse(
+        'mock-file-invalid',
+        `The dispatch script is larger than ${MOCK_LIMITS.scriptBytes} bytes`,
+        `${dir}/${DISPATCH_SCRIPT_FILE}`,
+      );
+    }
+    if (operation.responses.length > MOCK_LIMITS.responsesPerOperation) {
+      refuse(
+        'mock-file-invalid',
+        `An operation holds at most ${MOCK_LIMITS.responsesPerOperation} responses`,
+        operationFile,
+      );
+    }
+    for (const response of operation.responses) {
+      const file = responseFilePath(dir, response.slug);
+      parseResponseFile(files.get(file) ?? '', file, response.slug);
+      const bytes = Buffer.byteLength(response.bodyText, 'utf8');
+      if (bytes > MOCK_LIMITS.bodyBytes) {
+        refuse(
+          'mock-file-invalid',
+          `The body of "${response.name}" is larger than ${MOCK_LIMITS.bodyBytes} bytes`,
+          file,
+        );
+      }
+      totalBodyBytes += bytes;
+    }
+  }
+  if (totalBodyBytes > MOCK_LIMITS.totalBodyBytes) {
+    refuse(
+      'mock-file-invalid',
+      `The mock's bodies together exceed ${MOCK_LIMITS.totalBodyBytes} bytes`,
+      mockFilePath(mock.slug),
+    );
+  }
+}
