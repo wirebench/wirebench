@@ -43,9 +43,8 @@ Every export ends in a **report** of what could not be represented, or was chang
 | 2 | SOAP interfaces | Each SOAP request becomes an HTTP POST of its envelope; what HTTP cannot carry is reported |
 | 3 | Postman environments | A folder: the collection file plus one environment file per environment |
 | 4 | Scripts | Every script is exported as text, whichever API it is written against; incompatibilities are reported |
-
-Not an MCP tool: an export writes files outside the project, and the MCP gates have no notion of an
-output folder. A follow-up may add one.
+| 5 | Credentials typed as plain text | Blanked by the rules the importers use, and each one reported where it was (§3.1) |
+| 6 | MCP tool | None, and no follow-up issue: an export writes files outside the project, and the MCP gates have no notion of an output folder |
 
 ## 3. Engine
 
@@ -108,6 +107,21 @@ reference (rewritten as above), never a resolved value: the exporter has no acce
 store. Auth keeps its shape and leaves every credential field empty; each auth with a credential
 reference (`passwordRef`, `tokenRef`, `valueRef`, `clientSecretRef`, `refreshTokenRef`) or CI name
 (`…Env`) gets one warning: "re-enter the credential in the target tool".
+
+**Credentials typed as plain text** (decision 5) are blanked by the importers' own rules, so an export
+and an import agree on what a credential is:
+
+- A header, query, path, form, multipart text, gRPC metadata or WebSocket row whose name looks like a
+  credential (`Authorization`, `Cookie`, `X-Api-Key`, `access_token`, `password`, …) and whose value is
+  not only references (`blankIfLiteral`) is written with an empty value.
+- `user:pass@` in a URL is dropped, and so is a credential query parameter in it (`blankUrlCredentials`);
+  this covers the request, SOAP endpoint, WebSocket and OAuth token and authorization URLs.
+- A project, workspace or environment property with a credential name (`isCredentialName`) and a
+  literal value becomes a secret variable with no value.
+
+Each gets a warning naming the request (or property set) and the value's name, for example
+"A / Get: the plain-text value of Authorization was not exported; set it in the target tool". A value
+made only of references is kept.
 
 **URLs.** A request URL relative to its API's base URL is written absolute: base URL joined with the
 request URL (one `/` between them). An absolute request URL is kept. Path parameters `{id}` are written

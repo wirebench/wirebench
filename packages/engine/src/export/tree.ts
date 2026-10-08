@@ -7,6 +7,9 @@
 
 import type { Assertion, StatusAssertion } from '../assert/model.js';
 import { ExportError } from '../errors.js';
+import { isCredentialName } from '../import/credentials.js';
+import { blankIfLiteral, blankUrlCredentials } from '../import/credential-values.js';
+import { referencesOnly } from '../import/values.js';
 import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../grpc/model.js';
 import type { KeyValueEntry } from '../http/entries.js';
 import type { AuthConfig, Interface, Project, PropertyMap, SoapOwnerAuth, SoapRequestDef } from '../project/model.js';
@@ -220,6 +223,12 @@ class TreeBuilder {
         this.ctx.report.note(`${owner}: ${name} holds a secret and is written as a secret variable with no value.`);
         return { name, value: '', enabled, secret: true };
       }
+      if (value !== '' && isCredentialName(name) && !referencesOnly(value)) {
+        this.ctx.report.warn(
+          `${owner}: the plain-text value of ${name} was not exported; it is written as a secret variable with no value.`,
+        );
+        return { name, value: '', enabled, secret: true };
+      }
       return { name, value: this.ctx.mustache(value), enabled, secret: false };
     });
   }
@@ -291,7 +300,7 @@ class TreeBuilder {
 
   private restRequest(api: RestApi, request: RestRequestDef, label: string): XHttp {
     this.requests += 1;
-    const { path, query } = splitQueryKeepingReferences(joinBase(api.baseUrl, request.url));
+    const { path, query } = splitQueryKeepingReferences(this.url(joinBase(api.baseUrl, request.url), label));
     // The URL usually repeats the table's query (composeUrl): a URL row the table holds is that row.
     const rows = [...request.query];
     const extra = query.filter((q) => {
@@ -317,9 +326,9 @@ class TreeBuilder {
       ...(request.description !== undefined ? { description: request.description } : {}),
       method: request.method,
       url: this.ctx.mustache(colonPath(path)),
-      pathParams: this.rows(request.pathParams),
-      query: this.rows([...extra, ...request.query]),
-      headers: this.rows(request.headers),
+      pathParams: this.rows(request.pathParams, label),
+      query: this.rows([...extra, ...request.query], label),
+      headers: this.rows(request.headers, label),
       body: this.body(request.body, label),
       auth: this.auth(request.auth, label),
       settings: {
@@ -344,7 +353,7 @@ class TreeBuilder {
       case 'raw':
         return { ...body, text: this.ctx.mustache(body.text) };
       case 'form':
-        return { kind: 'form', fields: this.rows(body.fields) };
+        return { kind: 'form', fields: this.rows(body.fields, label) };
       case 'multipart':
         return { kind: 'multipart', parts: body.parts.map((part) => this.part(part, label)) };
       case 'binary':
@@ -353,8 +362,12 @@ class TreeBuilder {
   }
 
   private part(part: MultipartFormPart, label: string): MultipartFormPart {
-    if (part.kind === 'text')
-      return { ...part, name: this.ctx.mustache(part.name), value: this.ctx.mustache(part.value) };
+    if (part.kind === 'text') {
+      const blanked = new Set<string>();
+      const value = this.ctx.mustache(blankIfLiteral(part.name, part.value, blanked));
+      this.reportBlanked(label, blanked);
+      return { ...part, name: this.ctx.mustache(part.name), value };
+    }
     return { ...part, name: this.ctx.mustache(part.name), source: this.source(part.source, label) };
   }
 
@@ -428,10 +441,10 @@ class TreeBuilder {
       label,
       ...(request.description !== undefined ? { description: request.description } : {}),
       method: 'POST',
-      url: this.ctx.mustache(url),
+      url: this.ctx.mustache(this.url(url, label)),
       pathParams: [],
       query: [],
-      headers: this.rows(headers),
+      headers: this.rows(headers, label),
       body: { kind: 'raw', language: 'xml', text: this.ctx.mustache(request.envelopeXml) },
       auth: auth === undefined ? { type: 'inherit' } : this.auth(auth, label),
       settings: {
@@ -485,7 +498,7 @@ class TreeBuilder {
       method: request.method,
       methodKind: request.methodKind,
       message: this.ctx.mustache(request.message),
-      metadata: this.rows([...request.metadata, ...inherited]),
+      metadata: this.rows([...request.metadata, ...inherited], label),
       auth: this.auth(request.auth, label),
       ...(request.settings.timeoutMs !== undefined ? { timeoutMs: request.settings.timeoutMs } : {}),
       assertions: this.assertions(request.assertions ?? []),
@@ -525,7 +538,7 @@ class TreeBuilder {
     if (request.subprotocols.length > 0) this.ctx.report.warn(`${label}: its subprotocols are not represented.`);
     const absolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(request.url);
     const joined = absolute ? request.url : request.url === '' ? api.url : joinBase(api.url, request.url);
-    const { path, query } = splitQueryKeepingReferences(joined);
+    const { path, query } = splitQueryKeepingReferences(this.url(joined, label));
     const inherited = api.headers.filter((row) => !hasName(request.headers, row.name));
     if (inherited.length > 0) this.ctx.report.note(`${label}: the API's headers were added to the request.`);
     const text = request.messages.filter((m) => m.format === 'text');
@@ -538,8 +551,8 @@ class TreeBuilder {
       label,
       ...(request.description !== undefined ? { description: request.description } : {}),
       url: this.ctx.mustache(path),
-      query: this.rows([...query, ...request.query]),
-      headers: this.rows([...request.headers, ...inherited]),
+      query: this.rows([...query, ...request.query], label),
+      headers: this.rows([...request.headers, ...inherited], label),
       auth: this.auth(request.auth, label),
       messages: text.map((m) => this.ctx.mustache(m.content)),
       ...(request.settings.handshakeTimeoutMs !== undefined ? { timeoutMs: request.settings.handshakeTimeoutMs } : {}),
@@ -573,12 +586,43 @@ class TreeBuilder {
     });
   }
 
-  private rows(rows: readonly KeyValueEntry[]): KeyValueEntry[] {
-    return rows.map((row) => ({
+  /**
+   * The rows with their text rewritten, and the plain-text value of each one whose name looks
+   * like a credential blanked, by the rule the importers apply (`blankIfLiteral`).
+   */
+  private rows(rows: readonly KeyValueEntry[], label: string): KeyValueEntry[] {
+    const blanked = new Set<string>();
+    const out = rows.map((row) => ({
       ...row,
       name: this.ctx.mustache(row.name),
-      value: this.ctx.mustache(row.value),
+      value: this.ctx.mustache(blankIfLiteral(row.name, row.value, blanked)),
     }));
+    this.reportBlanked(label, blanked);
+    return out;
+  }
+
+  /** `url` without literal user info and with the plain-text credentials of its query blanked. */
+  private url(url: string, label: string): string {
+    const blanked = new Set<string>();
+    const cleaned = blankUrlCredentials(url, blanked);
+    if (cleaned.stripped) {
+      this.ctx.report.warn(
+        `${label}: the user name and password in the URL were not exported; set them in the target tool.`,
+      );
+    }
+    this.reportBlanked(label, blanked);
+    return cleaned.url;
+  }
+
+  private reportBlanked(label: string, blanked: ReadonlySet<string>): void {
+    if (blanked.size > 0) {
+      const names = [...blanked].join(', ');
+      this.ctx.report.warn(
+        blanked.size === 1
+          ? `${label}: the plain-text value of ${names} was not exported; set it in the target tool.`
+          : `${label}: the plain-text values of ${names} were not exported; set them in the target tool.`,
+      );
+    }
   }
 
   private lostSettings(label: string, settings: object, keys: readonly string[]): void {
@@ -654,8 +698,11 @@ class TreeBuilder {
         return {
           type: 'oauth2',
           grant: auth.grant,
-          tokenUrl: m(auth.tokenUrl),
-          ...opt('authorizationUrl', auth.authorizationUrl),
+          tokenUrl: m(this.url(auth.tokenUrl, label)),
+          ...opt(
+            'authorizationUrl',
+            auth.authorizationUrl !== undefined ? this.url(auth.authorizationUrl, label) : undefined,
+          ),
           clientId: m(auth.clientId),
           scopes: auth.scopes,
           clientAuth: auth.clientAuth,
