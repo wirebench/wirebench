@@ -105,6 +105,12 @@ How the token is sent depends on where it goes:
   preemptive mode for these requests. Once a challenge succeeded, a SOAP response line reads
   "Authenticated with Kerberos as" and the SPN, in the platform's form (`HTTP/host` on Windows,
   `HTTP@host` elsewhere); the REST status line does not change.
+  When the request follows a redirect before the server challenges, the token is made for the
+  host that challenged and sent straight to it, with the method and body that host received (a
+  302 or 303 turns a `POST` into a bodyless `GET`). That host must be on the request's own
+  origin: a challenge from a redirect target on another origin gets no token, and the send fails
+  with `kerberos-cross-origin`, naming that target. NTLM follows the same rule, failing with
+  `ntlm-cross-origin`.
 - **Definition fetches** (OpenAPI, AsyncAPI, WSDL) send one preemptive token, to the definition's
   own origin only, never to a redirect target on another origin.
 - **WebSocket upgrades and gRPC calls** send one preemptive token.
@@ -141,7 +147,8 @@ download, the 20-second limit on each request.
 | `kerberos-unknown-spn` | The KDC does not know the SPN. Set the SPN to the name the service is registered under. Also shown for a blank or unparseable SPN. | Set the SPN to the registered name, or clear it to use the default. |
 | `kerberos-clock-skew` | This machine's clock differs from the domain's by more than allowed. | Sync the system clock. |
 | `kerberos-mutual-auth-failed` | The server's Kerberos reply could not be verified. | Check that the server is the service the SPN names. |
-| `kerberos-rejected` | The server refused the Kerberos token (HTTP 401). | Ask the service owner whether your account may use it. |
+| `kerberos-rejected` | The server at the URL that challenged refused the Kerberos token (HTTP 401). | Ask the service owner whether your account may use it. |
+| `kerberos-cross-origin` | A redirect target on another origin asked for Kerberos; credentials go to the request's own origin only. | Send the request to the URL the message names. |
 | `kerberos-failed` | Kerberos failed, with the operating system's own text. | Read the text; it is what the OS reported. |
 | `timeout` | Timed out waiting for a Kerberos ticket for the SPN. | Check that this machine can reach the domain's KDC, or raise the request's timeout. |
 | `kerberos-failed` (busy) | Kerberos is still waiting on earlier requests to the Kerberos server; try again shortly. | Wait for the KDC to answer or time out, then send again. |
