@@ -184,6 +184,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Export Project…',
     category: 'Workspace',
   },
+  'workspace.exportPostman': {
+    id: 'workspace.exportPostman',
+    label: 'Export Project as Postman Collection…',
+    category: 'Workspace',
+  },
+  'workspace.exportOpenCollection': {
+    id: 'workspace.exportOpenCollection',
+    label: 'Export Project as OpenCollection…',
+    category: 'Workspace',
+  },
   'workspace.removeProject': {
     id: 'workspace.removeProject',
     label: 'Remove Project from Workspace…',

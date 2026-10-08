@@ -56,4 +56,12 @@ describe('helpers', () => {
     expect(uniqueFileStem('staging', taken)).toBe('staging-2');
     expect(uniqueFileStem('Pet Store', taken)).toBe('pet-store');
   });
+
+  it('never makes a stem that names another folder', () => {
+    for (const name of ['../../etc/passwd', '..', 'a\\b', 'CON']) {
+      const stem = uniqueFileStem(name, new Set());
+      expect(stem).not.toMatch(/[/\\]/);
+      expect(stem.startsWith('.')).toBe(false);
+    }
+  });
 });

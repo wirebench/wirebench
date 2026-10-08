@@ -79,6 +79,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Link Project Folder… | — | — |
 | Import Project Folder… | — | — |
 | Export Project… | — | — |
+| Export Project as Postman Collection… | — | — |
+| Export Project as OpenCollection… | — | — |
 | Remove Project from Workspace… | — | — |
 | Share Workspace… | — | — |
 | Join Shared Workspace… | — | — |
