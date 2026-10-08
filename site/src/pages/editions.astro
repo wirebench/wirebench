@@ -1,0 +1,206 @@
+---
+import Base from '../layouts/Base.astro';
+import { DOCS_LINKS, docsUrl } from '../docs-links.ts';
+
+interface Link {
+  label: string;
+  slug: (typeof DOCS_LINKS)[keyof typeof DOCS_LINKS];
+}
+interface Section {
+  heading: string;
+  paragraphs: string[];
+  links: Link[];
+}
+
+/** Every statement here is what the server does today; the guides behind the links hold the detail. */
+const sections: Section[] = [
+  {
+    heading: 'Seats',
+    paragraphs: [
+      'A seat is an enabled account, server admins included, and an open invitation counts too. A disabled account frees its seat at once. The server checks seats only when an account would become enabled: an invitation created or accepted, or a disabled account enabled again.',
+      'The server never disables anyone to get under a limit. A server with more enabled accounts than its edition allows keeps every one of them working and refuses only the next new account.',
+    ],
+    links: [{ label: 'Seats and editions', slug: DOCS_LINKS.serverLicensing }],
+  },
+  {
+    heading: 'Licenses',
+    paragraphs: [
+      "A license is one signed line of text. A server admin installs it from the License tab in Account: Manage teams, or with wirebench-server admin license install on the server's console, and the new edition applies from the next request, without a restart. A license that fails its check is not stored, so a bad paste never replaces a working one.",
+      'The server checks the signature against a key built into it, so the check works offline. The server never contacts anyone about its license and sends no usage report.',
+      'A license can be bound to one server. Every server has an id, shown on the License tab and by admin license show; a license that carries an id works only on that server. A license without one works on any server.',
+    ],
+    links: [{ label: 'Installing a license', slug: DOCS_LINKS.serverLicensing }],
+  },
+  {
+    heading: 'When a license expires',
+    paragraphs: [
+      'An expired license has 30 days of grace. The edition holds during grace, and server admins see a banner with the date it ends. After grace the server is Community again: nobody is signed out, no workspace is locked, and sync keeps working.',
+    ],
+    links: [{ label: 'Expiry and grace', slug: DOCS_LINKS.serverLicensing }],
+  },
+  {
+    heading: 'Audit log',
+    paragraphs: [
+      'The server records who did what: sign-ins, accounts and invitations, teams and their members, workspaces and every push, team secrets, catch URLs, CI tokens and license changes. Most events are written in the same transaction as the change, so a change that is not saved leaves no event. An event never carries a secret, a token, a password hash or the body of a request.',
+      "Recording is on for every edition. Reading and exporting the log in the app or over the API needs Enterprise. Server admins read every event; a team admin reads and exports their own team's events and nothing else. On any edition, wirebench-server admin audit export writes the log as newline-delimited JSON from the server's console. Events are kept for 365 days unless you set another age.",
+    ],
+    links: [{ label: 'Read the audit log guide', slug: DOCS_LINKS.serverAuditLog }],
+  },
+  {
+    heading: 'Desktop activity',
+    paragraphs: [
+      'A team that has to show what was sent where can have the desktop app report each request it sends and each test-suite run to the audit log. It is off for every workspace until a workspace admin turns on Record desktop activity, and while it is on the status bar shows Recorded, so nobody is recorded without knowing.',
+      'An event carries the protocol, the method, the URL, the status and the timing, never headers, bodies or responses. The URL is masked before it leaves the app: a password in it, secret-like query parameters and any secret value the app knows become redacted. Like the rest of the log, recording works on every edition.',
+      'The app queues events in the workspace folder and sends them when the server can be reached, so a send made offline is still reported. When the queue is full the oldest events are dropped and their count is recorded, so a gap in the trail is itself on the record. Events queued while one person was signed in are never sent as someone else.',
+    ],
+    links: [{ label: 'Desktop activity', slug: DOCS_LINKS.serverAuditLog }],
+  },
+  {
+    heading: 'Forwarding to a collector',
+    paragraphs: [
+      'An Enterprise server can push every audit event as it is recorded to one collector: syslog over TCP or TLS, or batches posted to an HTTPS endpoint with an optional bearer token. Certificates are always verified. A failed batch stays queued and is tried again, and delivery is at least once, so a receiver can de-duplicate on the event id.',
+    ],
+    links: [{ label: 'Forwarding', slug: DOCS_LINKS.serverAuditLog }],
+  },
+  {
+    heading: 'Tamper evidence',
+    paragraphs: [
+      'The server can link its audit events into a keyed hash chain, so that an edited, removed or reordered event is found by wirebench-server admin audit verify. It is on for every edition, needs no license, and is off until you set a key kept outside the database. Someone who holds both the database and the key can still rewrite the chain; the guide lists what the chain does and does not detect.',
+    ],
+    links: [{ label: 'Tamper evidence', slug: DOCS_LINKS.serverAuditLog }],
+  },
+];
+
+const slugify = (heading: string): string =>
+  heading
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+---
+
+<Base
+  title="Editions — Wirebench Server"
+  description="Community, Team and Enterprise editions of Wirebench Server: seats, offline licenses, 30 days of grace, the audit log, desktop activity, forwarding and tamper evidence."
+>
+  <div class="editions">
+    <h1>Editions</h1>
+    <p class="lead">
+      Wirebench Server runs as Community, Team or Enterprise. The code is the same for all three, under the same
+      Apache-2.0 license; a license file tells a server which edition it is. A server with no license is Community,
+      and everything the server did before licenses existed stays in Community: sign-in, teams, shared workspaces,
+      live updates, webhooks and CI tokens.
+    </p>
+    <div class="editions__scroll">
+      <table>
+        <caption class="visually-hidden">What each edition includes</caption>
+        <thead>
+          <tr>
+            <th scope="col">Edition</th>
+            <th scope="col">Seats</th>
+            <th scope="col">Audit log</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Community</th>
+            <td>5 seats, no license needed</td>
+            <td>Recorded; exported from the server's console</td>
+          </tr>
+          <tr>
+            <th scope="row">Team</th>
+            <td>The number on the license</td>
+            <td>Recorded; exported from the server's console</td>
+          </tr>
+          <tr>
+            <th scope="row">Enterprise</th>
+            <td>The number on the license</td>
+            <td>Recorded, read and exported in the app and the API, forwarded to a collector</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">A license may also allow unlimited seats.</p>
+    {
+      sections.map((section) => (
+        <section class="edition-section" aria-labelledby={slugify(section.heading)}>
+          <h2 id={slugify(section.heading)}>{section.heading}</h2>
+          {section.paragraphs.map((paragraph) => (
+            <p>{paragraph}</p>
+          ))}
+          <p class="edition-section__links">
+            {section.links.map((link) => (
+              <a href={docsUrl(link.slug)}>{link.label}</a>
+            ))}
+          </p>
+        </section>
+      ))
+    }
+  </div>
+</Base>
+
+<style>
+  .editions {
+    padding-block: 2rem;
+  }
+
+  h1 {
+    margin: 0 0 1rem;
+  }
+
+  .lead {
+    max-width: 48rem;
+    margin: 0 0 1.5rem;
+  }
+
+  .editions__scroll {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--wb-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  thead th {
+    color: var(--wb-fg-muted);
+    font-weight: 600;
+  }
+
+  tbody th {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .note {
+    margin: 0.75rem 0 1rem;
+    color: var(--wb-fg-muted);
+  }
+
+  .edition-section {
+    max-width: 48rem;
+    padding-block: 2rem;
+    border-top: 1px solid var(--wb-border);
+  }
+
+  h2 {
+    margin: 0 0 0.5rem;
+  }
+
+  .edition-section p {
+    margin: 0 0 0.75rem;
+  }
+
+  .edition-section__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+  }
+</style>

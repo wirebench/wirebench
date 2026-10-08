@@ -3,6 +3,7 @@ import { RotateCcw, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import type { PropertyMapWire } from '../../../shared/wire-types.js';
 import type { CurrentColumn } from '../../state/current-values.js';
@@ -257,7 +258,7 @@ function CurrentCell({
     },
   };
   return (
-    <td className="px-2 py-1">
+    <td role="gridcell" className="px-2 py-1">
       <div className="flex items-center gap-1">
         <input
           aria-label={`Current value of ${name}`}
@@ -283,7 +284,14 @@ function CurrentCell({
   );
 }
 
+/**
+ * What a navigable row spreads onto its `<tr>`: its 1-based position among every row of the grid
+ * (the column headers and group headers included) and its roving-tabindex props.
+ */
+type GridRowAttributes = GridRowProps & { readonly 'aria-rowindex': number };
+
 interface RowProps {
+  readonly gridRow: GridRowAttributes;
   readonly name: string;
   readonly value: string;
   readonly enabled: boolean;
@@ -299,6 +307,7 @@ interface RowProps {
 
 /** One name/value pair. Edits are local until Enter, Tab or blur, so a keystroke is never a mutation. */
 function VariableRow({
+  gridRow,
   name,
   value,
   enabled,
@@ -315,10 +324,12 @@ function VariableRow({
 
   return (
     <tr
+      role="row"
+      {...gridRow}
       data-testid="env-variable-row"
       className={`border-b border-hairline hover:bg-surface-hover ${enabled ? '' : 'opacity-50'}`}
     >
-      <td className="px-2 py-1 text-center">
+      <td role="gridcell" className="px-2 py-1 text-center">
         <input
           type="checkbox"
           aria-label={`Enable ${name}`}
@@ -333,7 +344,7 @@ function VariableRow({
           }}
         />
       </td>
-      <td className="px-2 py-1">
+      <td role="gridcell" className="px-2 py-1">
         <div className="flex items-center gap-1">
           <input
             aria-label={`Name of ${name}`}
@@ -344,7 +355,7 @@ function VariableRow({
           {currentCell?.current !== undefined && <CurrentDot />}
         </div>
       </td>
-      <td className="px-2 py-1">
+      <td role="gridcell" className="px-2 py-1">
         <input
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
@@ -353,10 +364,10 @@ function VariableRow({
         />
       </td>
       {currentCell !== undefined && <CurrentCell name={name} committed={value} {...currentCell} />}
-      <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
+      <td role="gridcell" className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {origin}
       </td>
-      <td className="px-2 py-1 text-center">
+      <td role="gridcell" className="px-2 py-1 text-center">
         <IconButton label={`Remove ${name}`} data-testid="env-variable-delete" onClick={onRemove}>
           <Trash2 size={13} aria-hidden="true" />
         </IconButton>
@@ -366,6 +377,7 @@ function VariableRow({
 }
 
 interface InheritedRowProps {
+  readonly gridRow: GridRowAttributes;
   readonly name: string;
   readonly value: string;
   readonly enabled: boolean;
@@ -389,6 +401,7 @@ interface InheritedRowProps {
  * to an override, written into this scope's own properties via `onCommitValue`.
  */
 function InheritedVariableRow({
+  gridRow,
   name,
   value,
   enabled,
@@ -401,10 +414,12 @@ function InheritedVariableRow({
 
   return (
     <tr
+      role="row"
+      {...gridRow}
       data-testid="env-variable-row"
       className={`border-b border-hairline hover:bg-surface-hover ${enabled ? '' : 'opacity-50'}`}
     >
-      <td className="px-2 py-1 text-center">
+      <td role="gridcell" className="px-2 py-1 text-center">
         <input
           type="checkbox"
           aria-label={`Enable ${name}`}
@@ -415,7 +430,7 @@ function InheritedVariableRow({
           readOnly
         />
       </td>
-      <td className="px-2 py-1">
+      <td role="gridcell" className="px-2 py-1">
         <div className="flex items-center gap-1">
           <input
             aria-label={`Name of ${name}`}
@@ -427,7 +442,7 @@ function InheritedVariableRow({
           {currentCell?.current !== undefined && <CurrentDot />}
         </div>
       </td>
-      <td className="px-2 py-1">
+      <td role="gridcell" className="px-2 py-1">
         <input
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
@@ -437,10 +452,10 @@ function InheritedVariableRow({
         />
       </td>
       {currentCell !== undefined && <CurrentCell name={name} committed={value} {...currentCell} />}
-      <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
+      <td role="gridcell" className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {origin}
       </td>
-      <td className="px-2 py-1" />
+      <td role="gridcell" className="px-2 py-1" />
     </tr>
   );
 }
@@ -574,6 +589,37 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
   const shadowedByInherited = trimmedNewName.length === 0 ? undefined : nearestDefining(trimmedNewName, inherited);
   const addRowOrigin = shadowedByInherited === undefined ? '' : `will shadow ${shadowedByInherited.label}`;
 
+  // `inheritedOnlyNames` was built from these same scopes, so a definer always exists; resolving
+  // up front still keeps a row that could not render from holding a place in the navigation.
+  const inheritedRows = inheritedOnlyNames.flatMap((name) => {
+    const resolved = inheritedOrigin(name, inherited);
+    return resolved === undefined ? [] : [{ name, ...resolved }];
+  });
+
+  // A grid, as History and Keystores are: the variable rows and the add row are one tab stop,
+  // Up/Down/Home/End between them. Every row counts toward `aria-rowindex` — the column headers,
+  // a group header, the empty message — but only those editable rows take the tab stop.
+  const empty = names.length === 0 && inheritedRows.length === 0;
+  const { gridProps, rowProps } = useGridNavigation(names.length + inheritedRows.length + 1);
+  const totalRows =
+    1 +
+    (empty ? 1 : 0) +
+    (names.length > 0 ? 1 + names.length : 0) +
+    (inheritedRows.length > 0 ? 1 + inheritedRows.length : 0) +
+    1;
+  // Handed out in document order while the rows below render.
+  let rowIndex = 1;
+  let navigableIndex = 0;
+  const nextRowIndex = (): number => {
+    rowIndex += 1;
+    return rowIndex;
+  };
+  const nextGridRow = (): GridRowAttributes => {
+    const row = { 'aria-rowindex': nextRowIndex(), ...rowProps(navigableIndex) };
+    navigableIndex += 1;
+    return row;
+  };
+
   const applyPaste = (): void => {
     if (pasteItems === undefined) {
       return;
@@ -618,9 +664,12 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     <div className="flex flex-col gap-2">
       <div className="overflow-hidden rounded-md border border-hairline">
         <table
+          role="grid"
           aria-label={label}
+          aria-rowcount={totalRows}
           data-testid="env-variable-table"
           className="w-full table-fixed border-collapse text-sm"
+          {...gridProps}
         >
           <colgroup>
             <col className="w-11" />
@@ -631,7 +680,10 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
             <col className="w-9" />
           </colgroup>
           <thead>
-            <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase">
+            <tr
+              aria-rowindex={1}
+              className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase"
+            >
               <th className="px-2 py-1.5 font-medium" title="Enabled">
                 On
               </th>
@@ -659,15 +711,15 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
             </tr>
           </thead>
           <tbody>
-            {names.length === 0 && inheritedOnlyNames.length === 0 && (
-              <tr className="border-b border-hairline">
-                <td colSpan={columns} className="px-2 py-2 text-sm text-fg-subtle">
+            {empty && (
+              <tr aria-rowindex={nextRowIndex()} className="border-b border-hairline">
+                <td role="gridcell" colSpan={columns} className="px-2 py-2 text-sm text-fg-subtle">
                   {emptyMessage}
                 </td>
               </tr>
             )}
             {names.length > 0 && (
-              <tr data-testid="env-variable-group" className="bg-surface-raised">
+              <tr aria-rowindex={nextRowIndex()} data-testid="env-variable-group" className="bg-surface-raised">
                 <th
                   scope="colgroup"
                   colSpan={columns}
@@ -682,6 +734,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               return (
                 <VariableRow
                   key={name}
+                  gridRow={nextGridRow()}
                   name={name}
                   value={properties[name] ?? ''}
                   enabled={enabled}
@@ -719,8 +772,8 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                 />
               );
             })}
-            {inheritedOnlyNames.length > 0 && (
-              <tr data-testid="env-variable-group" className="bg-surface-raised">
+            {inheritedRows.length > 0 && (
+              <tr aria-rowindex={nextRowIndex()} data-testid="env-variable-group" className="bg-surface-raised">
                 <th
                   scope="colgroup"
                   colSpan={columns}
@@ -730,17 +783,12 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                 </th>
               </tr>
             )}
-            {inheritedOnlyNames.map((name) => {
-              const resolved = inheritedOrigin(name, inherited);
-              // `inheritedOnlyNames` was built from these same scopes, so a definer always exists.
-              if (resolved === undefined) {
-                return null;
-              }
-              const { owner, enabled, origin } = resolved;
+            {inheritedRows.map(({ name, owner, enabled, origin }) => {
               const ownerValue = owner.properties[name] ?? '';
               return (
                 <InheritedVariableRow
                   key={name}
+                  gridRow={nextGridRow()}
                   name={name}
                   value={ownerValue}
                   enabled={enabled}
@@ -765,13 +813,13 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                 />
               );
             })}
-            <tr data-testid="env-variable-row" className="hover:bg-surface-hover">
-              <td className="px-2 py-1 text-center">
+            <tr role="row" {...nextGridRow()} data-testid="env-variable-row" className="hover:bg-surface-hover">
+              <td role="gridcell" className="px-2 py-1 text-center">
                 {/* Neutral until a name exists — a variable that isn't there yet can't be disabled — then
                   checked the moment one is typed. Never interactive: there's nothing to toggle yet. */}
                 <input type="checkbox" aria-label="New variable enabled" checked={trimmedNewName.length > 0} disabled />
               </td>
-              <td className="px-2 py-1">
+              <td role="gridcell" className="px-2 py-1">
                 <input
                   ref={newNameRef}
                   aria-label="New variable name"
@@ -793,7 +841,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                   }}
                 />
               </td>
-              <td className="px-2 py-1">
+              <td role="gridcell" className="px-2 py-1">
                 <input
                   aria-label="New variable value"
                   data-testid="env-variable-value"
@@ -814,11 +862,11 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                   }}
                 />
               </td>
-              {current !== undefined && <td className="px-2 py-1" />}
-              <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
+              {current !== undefined && <td role="gridcell" className="px-2 py-1" />}
+              <td role="gridcell" className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
                 {addRowOrigin}
               </td>
-              <td className="px-2 py-1" />
+              <td role="gridcell" className="px-2 py-1" />
             </tr>
           </tbody>
         </table>

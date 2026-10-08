@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import {
   VariablesTable,
@@ -39,9 +39,62 @@ describe('VariablesTable', () => {
 
   it('renders the Enabled/Variable/Value header and one row per property', () => {
     renderTable(baseTarget({ properties: { host: 'one.test', port: '80' } }));
-    expect(screen.getByRole('table', { name: 'Test variables' })).toBeTruthy();
+    expect(screen.getByRole('grid', { name: 'Test variables' })).toBeTruthy();
     // One row per property, plus the always-present add row.
     expect(screen.getAllByTestId('env-variable-row')).toHaveLength(3);
+  });
+
+  it('indexes every row of the grid, the column and group headers included', () => {
+    renderTable(
+      baseTarget({
+        properties: { host: 'one.test', port: '80' },
+        inherited: [scope({ label: 'Globals', properties: { token: 'abc' } })],
+      }),
+    );
+    const grid = screen.getByRole('grid', { name: 'Test variables' });
+    // Headers, "Set here", host, port, "Inherited", token, the add row.
+    expect(grid.getAttribute('aria-rowcount')).toBe('7');
+    const rows = within(grid).getAllByRole('row');
+    expect(rows.map((row) => row.getAttribute('aria-rowindex'))).toEqual(['1', '2', '3', '4', '5', '6', '7']);
+    expect(within(rows[2] as HTMLElement).getAllByRole('gridcell').length).toBeGreaterThan(0);
+  });
+
+  it('indexes the empty message as a row, without making it a tab stop', () => {
+    renderTable(baseTarget({ properties: {} }));
+    const grid = screen.getByRole('grid', { name: 'Test variables' });
+    expect(grid.getAttribute('aria-rowcount')).toBe('3');
+    const rows = within(grid).getAllByRole('row');
+    expect(rows.map((row) => row.getAttribute('aria-rowindex'))).toEqual(['1', '2', '3']);
+    expect(rows[1]?.hasAttribute('tabindex')).toBe(false);
+    expect(screen.getByTestId('env-variable-row').tabIndex).toBe(0);
+  });
+
+  it('is one tab stop across the variable rows and the add row, walked with Up/Down/Home/End', () => {
+    renderTable(
+      baseTarget({
+        properties: { host: 'one.test' },
+        inherited: [scope({ label: 'Globals', properties: { token: 'abc' } })],
+      }),
+    );
+    const rows = (): HTMLElement[] => screen.getAllByTestId('env-variable-row');
+    const tabIndexes = (): number[] => rows().map((row) => row.tabIndex);
+    expect(tabIndexes()).toEqual([0, -1, -1]);
+
+    fireEvent.keyDown(rows()[0] as HTMLElement, { key: 'ArrowDown' });
+    expect(tabIndexes()).toEqual([-1, 0, -1]);
+    expect(document.activeElement).toBe(rows()[1]);
+
+    fireEvent.keyDown(rows()[1] as HTMLElement, { key: 'End' });
+    expect(tabIndexes()).toEqual([-1, -1, 0]);
+
+    fireEvent.keyDown(rows()[2] as HTMLElement, { key: 'Home' });
+    expect(tabIndexes()).toEqual([0, -1, -1]);
+  });
+
+  it('leaves the arrow keys to a focused field', () => {
+    renderTable(baseTarget({ properties: { host: 'one.test' } }));
+    fireEvent.keyDown(screen.getByLabelText('Value of host'), { key: 'ArrowDown' });
+    expect(screen.getAllByTestId('env-variable-row').map((row) => row.tabIndex)).toEqual([0, -1]);
   });
 
   it('commits a value edit on Enter', () => {

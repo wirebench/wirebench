@@ -18,6 +18,8 @@ export function updateStatusMessage(status: UpdateStatusWire): string | undefine
       return `Wirebench ${status.version} was not downloaded`;
     case 'downloaded':
       return `Wirebench ${status.version} is ready — install it from Check for Updates`;
+    case 'release-page':
+      return `Download Wirebench ${status.version} from the release page that just opened`;
     case 'error':
       return status.message;
     default:

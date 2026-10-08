@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Contract diff and breaking-change report.** `wirebench diff-contract <old> <new>` compares two
+  versions of a WSDL or of an OpenAPI document operation by operation: operations added or removed,
+  fields added, removed, made required or optional, types narrowed or widened, enumerations changed,
+  constraints tightened, endpoints moved. Each change is classified breaking or compatible for an
+  existing client, the report is written as Markdown, HTML or JSON, and the exit code fails a CI job
+  on a breaking change. Either side can be a file, a URL, or the project's cached definition
+  (`project:<name>`) (#56).
 - **Several workspaces open at once.** **New Window** (<kbd>⌘⌥N</kbd> / <kbd>Ctrl+Alt+N</kbd>) opens another
   window at the workspace picker, and each window holds its own workspace: its edits, sync, environment,
   cookie jar, current values, secret sources, team secrets, History and audit reporting stay its own. A

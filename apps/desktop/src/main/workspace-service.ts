@@ -29,6 +29,8 @@ import {
   createWorkspaceEnvironment,
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
+  exportCollection,
+  nodeFs,
   shareSyncSettings,
   isTeamSecretsPath,
   loadLocalState,
@@ -60,6 +62,7 @@ import {
   workspaceDir,
   workspaceManifestFile,
   workspaceProjectDir,
+  writeFileAtomic,
   assertBranchName,
   assertRemoteUrl,
 } from '@wirebench/engine';
@@ -83,6 +86,7 @@ import type {
   WorkspaceProjectRef,
   WorkspaceShare,
 } from '@wirebench/engine';
+import type { CollectionExportFormat, CollectionExportResult } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
@@ -2266,6 +2270,64 @@ export class WorkspaceService implements ProjectRouter {
     await saveProject(model, dir, this.fsOption());
     await copyProjectPayload(entry.dir, dir, model);
     return { dir };
+  }
+
+  /**
+   * Writes a project, or one of its APIs or interfaces, as a collection another tool reads
+   * (collection exporters spec §4), into a folder the user picks. The project is named by
+   * `projectId`, or found as the one holding `containerId`. The export is built before the dialog,
+   * so a target with nothing to export says so rather than asking where to put nothing. The
+   * workspace's environments and properties go with the project's.
+   *
+   * @returns `null` when the dialog was cancelled.
+   * @throws ExportError `export-target-not-found` or `export-nothing`; WirebenchError `unknown-project`.
+   */
+  async exportCollection(
+    request: {
+      readonly projectId?: string | undefined;
+      readonly containerId?: string | undefined;
+      readonly format: CollectionExportFormat;
+    },
+    sender: WebContents,
+  ): Promise<{
+    readonly dir: string;
+    readonly files: readonly string[];
+    readonly result: CollectionExportResult;
+  } | null> {
+    const open = this.requireOpen();
+    const holds = (entry: OpenProjectEntry): boolean => {
+      const model = entry.host?.model();
+      if (model === undefined || request.containerId === undefined) return false;
+      const id = request.containerId;
+      return [...model.interfaces, ...model.apis, ...model.grpcApis, ...model.wsApis].some((c) => c.id === id);
+    };
+    const entry = request.projectId !== undefined ? this.requireEntry(request.projectId) : open.entries.find(holds);
+    const model = entry?.host?.model();
+    if (model === undefined) {
+      throw new WirebenchError('unknown-project', 'The project to export is not open.', {
+        details: { ...(request.projectId !== undefined ? { projectId: request.projectId } : {}) },
+      });
+    }
+    const result = exportCollection(request.format, {
+      project: model,
+      target: request.containerId !== undefined ? { kind: 'container', id: request.containerId } : { kind: 'project' },
+      environments: [...open.workspace.environments, ...model.environments],
+      workspaceProperties: open.workspace.properties,
+      workspaceDisabledProperties: open.workspace.disabledProperties,
+    });
+    const picked = await this.dialogs().pickFolderToWrite(sender, this.requirePicks(), {
+      title:
+        request.format === 'postman' ? 'Export as Postman Collection to folder' : 'Export as OpenCollection to folder',
+    });
+    if (picked === undefined) {
+      return null;
+    }
+    const dir = await realpath(picked);
+    // Each name is a bare file name the exporter made from a slug, so joining it cannot leave `dir`.
+    for (const file of result.files) {
+      await writeFileAtomic(nodeFs, join(dir, file.name), file.text);
+    }
+    return { dir, files: result.files.map((file) => file.name), result };
   }
 
   /**

@@ -117,6 +117,15 @@ function fakeService() {
     linkProject: vi.fn().mockResolvedValue(WORKSPACE),
     importProjectFolder: vi.fn().mockResolvedValue(null),
     exportProject: vi.fn().mockResolvedValue({ dir: '/picked/export' }),
+    exportCollection: vi.fn().mockResolvedValue({
+      dir: '/picked/out',
+      files: ['pets.postman_collection.json'],
+      result: {
+        files: [],
+        counts: { requests: 2, folders: 1, environments: 0 },
+        report: { warnings: ['w'], notes: ['n'] },
+      },
+    }),
     locateProject: vi.fn().mockResolvedValue(WORKSPACE),
     setActiveEnvironment: vi.fn().mockResolvedValue(WORKSPACE),
     mutate: vi.fn().mockResolvedValue({ workspace: WORKSPACE, createdEnvironmentId: 'e1' }),
@@ -195,7 +204,7 @@ describe('workspace.* channels', () => {
       channels.project.moveToWorkspace.name,
     ];
     expect([...handlers.keys()].sort()).toEqual([...declared].sort());
-    expect(declared).toHaveLength(30);
+    expect(declared).toHaveLength(31);
   });
 
   it('share/shareToFolder/join/joinFromFolder/stopSharing route to the service', async () => {
@@ -440,6 +449,38 @@ describe('workspace.* channels', () => {
   it('removeProject forwards deleteFiles as an option', async () => {
     await invoke('workspace.removeProject', { projectId: 'p1', deleteFiles: true });
     expect(service.removeProject).toHaveBeenCalledWith('p1', { deleteFiles: true });
+  });
+
+  it('exportCollection passes the request and window on and returns the files and the report', async () => {
+    const request = { containerId: 'api-1', format: 'postman' } as const;
+    await expect(invoke('workspace.exportCollection', request)).resolves.toEqual({
+      ok: true,
+      value: {
+        cancelled: false,
+        dir: '/picked/out',
+        files: ['pets.postman_collection.json'],
+        requests: 2,
+        warnings: ['w'],
+        notes: ['n'],
+      },
+    });
+    expect(service.exportCollection).toHaveBeenCalledWith(request, SENDER);
+
+    service.exportCollection.mockResolvedValueOnce(null);
+    await expect(invoke('workspace.exportCollection', { projectId: 'p1', format: 'opencollection' })).resolves.toEqual({
+      ok: true,
+      value: { cancelled: true, files: [], requests: 0, warnings: [], notes: [] },
+    });
+  });
+
+  it('exportCollection refuses a format it does not know and never takes a path', () => {
+    expect(() => channels.workspace.exportCollection.request.parse({ projectId: 'p1', format: 'har' })).toThrow();
+    const parsed = channels.workspace.exportCollection.request.parse({
+      projectId: 'p1',
+      format: 'postman',
+      dir: '/etc',
+    });
+    expect(parsed).toEqual({ projectId: 'p1', format: 'postman' });
   });
 
   it('link, import, export and locate hand the invoking window to the service, and nothing else', async () => {

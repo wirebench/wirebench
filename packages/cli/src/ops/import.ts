@@ -66,7 +66,7 @@ export interface ImportOutput {
   readonly problems: readonly ImportProblemView[];
 }
 
-interface ReadSource {
+export interface ReadSource {
   readonly text: string;
   /** The absolute location relative references resolve against: a `file:` URL or the fetched URL. */
   readonly location: string;
@@ -86,7 +86,7 @@ const input = z.object({
 });
 
 /** The fetcher for URLs and for the documents a definition references, through the proxy the environment names. */
-function fetcherFor(env: NodeJS.ProcessEnv): FetchDocument {
+export function fetcherFor(env: NodeJS.ProcessEnv): FetchDocument {
   // Read on the first network fetch: a malformed proxy variable must not fail an import from a file.
   let proxyFor: ReturnType<typeof proxyFromEnv> | undefined;
   return createHttpFetchDocument({
@@ -98,7 +98,7 @@ function fetcherFor(env: NodeJS.ProcessEnv): FetchDocument {
   });
 }
 
-async function readSource(source: string, fetchDocument: FetchDocument): Promise<ReadSource> {
+export async function readSource(source: string, fetchDocument: FetchDocument): Promise<ReadSource> {
   if (/^https?:\/\//i.test(source)) {
     const fetched = await fetchDocument(source);
     return { text: fetched.text, location: fetched.location, source, url: source };

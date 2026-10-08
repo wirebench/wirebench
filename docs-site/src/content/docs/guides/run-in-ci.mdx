@@ -185,6 +185,24 @@ webhook at a catch URL of a Wirebench Server workspace. To check it in a pipelin
 - A wrong or revoked token errors every callback assertion with the server's answer, and the run exits 3.
   With the variables unset, callback assertions error the same way and the rest of the run goes on.
 
+## Contract changes as a gate
+
+`wirebench diff-contract <old> <new>` compares two versions of a WSDL or of an OpenAPI document and
+fails the job when a change would break an existing client: a removed operation or field, a field
+made required, a narrowed type or enumeration, a moved endpoint. Either side can be a file, a URL, or
+`project:<name>` — the definition the project already caches for that interface or API — so a job can
+check the contract it just built against the one the project was built from:
+
+```bash
+npx @wirebench/cli diff-contract project:Orders build/openapi.yaml --reporter markdown=contract-diff.md
+```
+
+Exit `0` when nothing breaks and `1` when something does; `--fail-on any` fails on any change, and
+`--fail-on none` only reports. `--reporter markdown=<file>`, `html=<file>` and `json=<file>` write the
+report, breaking changes first. The
+[CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#contract-diff) lists
+what counts as breaking.
+
 ## What comes back
 
 Every recipe above is the same CLI underneath, so the outcome is identical whichever one runs it:

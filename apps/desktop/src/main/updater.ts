@@ -35,6 +35,8 @@ export interface UpdaterBackend {
 export interface UpdaterUi {
   confirmDownload(version: string): Promise<boolean>;
   confirmInstall(version: string): Promise<boolean>;
+  /** Opens the release's download page; only a copy that cannot install itself gets here. */
+  openReleasePage(version: string): Promise<void>;
   report(status: UpdateStatus): void;
 }
 
@@ -50,15 +52,22 @@ export type UpdateStatus =
   | { readonly kind: 'declined'; readonly version: string }
   | { readonly kind: 'downloaded'; readonly version: string }
   | { readonly kind: 'installing'; readonly version: string }
+  | { readonly kind: 'release-page'; readonly version: string }
   | { readonly kind: 'error'; readonly message: string };
 
 /** Shown for every failed check, whatever went wrong — the user can only do one thing about it. */
 const CHECK_FAILED = 'Could not check for updates';
 const DOWNLOAD_FAILED = 'Could not download the update';
 
-/** Options; `feedConfigured` is false when `package.json` carries no usable `repository`. */
+/**
+ * Options; `feedConfigured` is false when `package.json` carries no usable `repository`.
+ * `selfInstall` is false for the portable Windows build: the updater only knows how to run the
+ * setup `.exe`, which would install a second copy in `%LOCALAPPDATA%` rather than replace the
+ * unpacked one, so a newer release is offered as its download page instead.
+ */
 export interface UpdateControllerOptions {
   readonly feedConfigured?: boolean;
+  readonly selfInstall?: boolean;
 }
 
 /**
@@ -140,6 +149,10 @@ export class UpdateController {
       const version = result.updateInfo.version;
       if (!(await this.ui.confirmDownload(version))) {
         return this.settle({ kind: 'declined', version }, 'user');
+      }
+      if (this.options.selfInstall === false) {
+        await this.ui.openReleasePage(version);
+        return this.settle({ kind: 'release-page', version }, 'user');
       }
       try {
         await this.backend.downloadUpdate();

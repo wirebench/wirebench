@@ -7,6 +7,7 @@ import { openCookiesTab } from '../cookies/cookie-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
 import { duplicateEnvironment, nextEnvironmentName, openEnvironmentTab } from './environment-actions.js';
 
@@ -17,7 +18,13 @@ const NAME_INPUT_CLASS =
   'h-6 min-w-0 flex-1 rounded bg-surface-base px-1 text-sm text-fg-default outline-none ring-1 ring-accent';
 
 const ROW_CLASS =
-  'group flex cursor-pointer items-center gap-1.5 rounded border-l-2 py-1 pr-2 pl-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-accent';
+  'group flex cursor-pointer items-center rounded border-l-2 py-1 pr-2 pl-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-accent';
+
+/**
+ * The one `gridcell` every row holds, carrying the row's own layout. One cell, not one per
+ * part, as in the keystores grid: the check, the name and the action are one entry, not columns.
+ */
+const CELL_CLASS = 'flex min-w-0 flex-1 items-center gap-1.5';
 
 /**
  * How a row shows that its target is the one the editor is on. The left bar and the selected
@@ -53,6 +60,9 @@ function useRevealWhenOpen(open: boolean): React.RefObject<HTMLLIElement | null>
   return ref;
 }
 
+/** Globals and Workspace: the rows above the environments, always present. */
+const FIXED_ROWS = 2;
+
 /** A stable empty list, so the view does not rerender while no workspace is open. */
 const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
 
@@ -65,12 +75,18 @@ function ScopeRow({
   label,
   icon: Icon,
   open,
+  rowIndex,
+  rowProps,
   onOpen,
 }: {
   readonly kind: 'globals' | 'workspace';
   readonly label: string;
   readonly icon: typeof Globe;
   readonly open: boolean;
+  /** 1-based position in the grid, for `aria-rowindex`. */
+  readonly rowIndex: number;
+  /** Roving-tabindex props from {@link useGridNavigation}; the view is one tab stop. */
+  readonly rowProps: GridRowProps;
   readonly onOpen: () => void;
 }) {
   const ref = useRevealWhenOpen(open);
@@ -83,7 +99,8 @@ function ScopeRow({
       data-open={open}
       aria-current={open ? 'page' : undefined}
       role="row"
-      tabIndex={0}
+      aria-rowindex={rowIndex}
+      {...rowProps}
       className={`${ROW_CLASS} ${open ? OPEN_ROW_CLASS : CLOSED_ROW_CLASS}`}
       onClick={onOpen}
       onKeyDown={(event) => {
@@ -92,8 +109,10 @@ function ScopeRow({
         }
       }}
     >
-      <Icon size={13} aria-hidden="true" className="shrink-0 text-fg-subtle" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <div role="gridcell" className={CELL_CLASS}>
+        <Icon size={13} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      </div>
     </li>
   );
 }
@@ -104,6 +123,10 @@ interface EnvironmentRowProps {
   /** True when this environment is the one the active editor tab is editing. */
   readonly open: boolean;
   readonly renaming: boolean;
+  /** 1-based position in the grid, for `aria-rowindex`. */
+  readonly rowIndex: number;
+  /** Roving-tabindex props from {@link useGridNavigation}; the view is one tab stop. */
+  readonly rowProps: GridRowProps;
   readonly onStartRename: () => void;
   readonly onFinishRename: (name: string | undefined) => void;
   readonly onDelete: () => void;
@@ -114,6 +137,8 @@ function EnvironmentRow({
   active,
   open,
   renaming,
+  rowIndex,
+  rowProps,
   onStartRename,
   onFinishRename,
   onDelete,
@@ -136,7 +161,8 @@ function EnvironmentRow({
           data-open={open}
           aria-current={open ? 'page' : undefined}
           role="row"
-          tabIndex={0}
+          aria-rowindex={rowIndex}
+          {...rowProps}
           className={`${ROW_CLASS} ${open ? OPEN_ROW_CLASS : CLOSED_ROW_CLASS}`}
           onClick={() => {
             if (!renaming) {
@@ -149,53 +175,55 @@ function EnvironmentRow({
             }
           }}
         >
-          <button
-            type="button"
-            aria-label={active ? `Deactivate ${environment.name}` : `Set ${environment.name} active`}
-            className="flex size-4 shrink-0 items-center justify-center"
-            onClick={(event) => {
-              event.stopPropagation();
-              setActive();
-            }}
-          >
-            {active ? <Check size={13} aria-hidden="true" className="text-accent" /> : null}
-          </button>
-          {renaming ? (
-            <input
-              autoFocus
-              aria-label={`Rename ${environment.name}`}
-              defaultValue={environment.name}
-              className={NAME_INPUT_CLASS}
-              onClick={(event) => {
-                event.stopPropagation();
-              }}
-              onBlur={(event) => {
-                onFinishRename(event.currentTarget.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  onFinishRename(event.currentTarget.value);
-                }
-                if (event.key === 'Escape') {
-                  onFinishRename(undefined);
-                }
-              }}
-            />
-          ) : (
-            <span className="min-w-0 flex-1 truncate">{environment.name}</span>
-          )}
-          {!active && !renaming && (
+          <div role="gridcell" className={CELL_CLASS}>
             <button
               type="button"
-              className="hidden shrink-0 text-xs text-fg-subtle hover:text-fg-default group-hover:inline"
+              aria-label={active ? `Deactivate ${environment.name}` : `Set ${environment.name} active`}
+              className="flex size-4 shrink-0 items-center justify-center"
               onClick={(event) => {
                 event.stopPropagation();
                 setActive();
               }}
             >
-              Set active
+              {active ? <Check size={13} aria-hidden="true" className="text-accent" /> : null}
             </button>
-          )}
+            {renaming ? (
+              <input
+                autoFocus
+                aria-label={`Rename ${environment.name}`}
+                defaultValue={environment.name}
+                className={NAME_INPUT_CLASS}
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+                onBlur={(event) => {
+                  onFinishRename(event.currentTarget.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    onFinishRename(event.currentTarget.value);
+                  }
+                  if (event.key === 'Escape') {
+                    onFinishRename(undefined);
+                  }
+                }}
+              />
+            ) : (
+              <span className="min-w-0 flex-1 truncate">{environment.name}</span>
+            )}
+            {!active && !renaming && (
+              <button
+                type="button"
+                className="hidden shrink-0 text-xs text-fg-subtle hover:text-fg-default group-hover:inline"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActive();
+                }}
+              >
+                Set active
+              </button>
+            )}
+          </div>
         </li>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
@@ -257,6 +285,9 @@ export function EnvironmentsView() {
 
   const pendingDelete = environments.find((candidate) => candidate.id === pendingDeleteId);
 
+  // Globals, Workspace, then every environment: one tab stop, Up/Down/Home/End between rows.
+  const { gridProps, rowProps } = useGridNavigation(FIXED_ROWS + environments.length);
+
   return (
     <section data-testid="environments-view" className="flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="flex h-8 shrink-0 items-center justify-end gap-1 px-2">
@@ -284,12 +315,22 @@ export function EnvironmentsView() {
         </IconButton>
       </div>
 
-      <ul aria-label="Environments" role="grid" className="flex flex-col gap-0.5 px-1 pb-2">
+      {/* A grid, as History and Keystores are: Up/Down move between rows while the view stays a
+          single tab stop. The empty state sits after it — a grid may hold nothing but rows. */}
+      <ul
+        aria-label="Environments"
+        role="grid"
+        aria-rowcount={FIXED_ROWS + environments.length}
+        className="flex flex-col gap-0.5 px-1 pb-2"
+        {...gridProps}
+      >
         <ScopeRow
           kind="globals"
           label="Globals"
           icon={Globe}
           open={openTarget === 'globals'}
+          rowIndex={1}
+          rowProps={rowProps(0)}
           onOpen={() => {
             openEnvironmentTab({ kind: 'globals' });
           }}
@@ -299,6 +340,8 @@ export function EnvironmentsView() {
           label="Workspace"
           icon={Layers}
           open={openTarget === 'workspace'}
+          rowIndex={2}
+          rowProps={rowProps(1)}
           onOpen={() => {
             openEnvironmentTab({ kind: 'workspace' });
           }}
@@ -306,18 +349,15 @@ export function EnvironmentsView() {
         {/* Decorative only: a `separator` is not a valid child of a `grid`, whose children are
             rows, so this one is hidden from assistive tech rather than mis-typed. */}
         <li role="presentation" aria-hidden="true" className="my-1 h-px bg-hairline" />
-        {environments.length === 0 && (
-          <li className="px-2 py-1 text-sm text-fg-subtle">
-            {hasWorkspace ? 'No environments yet.' : 'Open a workspace to add environments.'}
-          </li>
-        )}
-        {environments.map((environment) => (
+        {environments.map((environment, index) => (
           <EnvironmentRow
             key={environment.id}
             environment={environment}
             active={environment.id === activeId}
             open={environment.id === openTarget}
             renaming={renamingId === environment.id}
+            rowIndex={FIXED_ROWS + index + 1}
+            rowProps={rowProps(FIXED_ROWS + index)}
             onStartRename={() => {
               // Deferred: selecting "Rename" from the context menu closes it, and Radix's own
               // close sequence briefly contests focus; queuing the switch to the input lets that
@@ -343,6 +383,11 @@ export function EnvironmentsView() {
           />
         ))}
       </ul>
+      {environments.length === 0 && (
+        <p className="px-3 py-1 text-sm text-fg-subtle">
+          {hasWorkspace ? 'No environments yet.' : 'Open a workspace to add environments.'}
+        </p>
+      )}
 
       <ConfirmDialog
         open={pendingDeleteId !== undefined}
