@@ -43,8 +43,13 @@ export interface SshServiceDeps {
 /** A key a connect refused, which that window may now trust (and nothing else). */
 interface Refusal extends KnownHostEntry {
   readonly kind: 'new' | 'changed';
+  /** The stored fingerprint a `changed` key differed from. */
+  readonly previous?: string;
   readonly at: number;
 }
+
+/** The same host and key type: the slot a known-hosts entry fills. */
+const sameSlot = (a: KnownHostEntry, b: KnownHostEntry): boolean => a.host === b.host && a.keyType === b.keyType;
 
 /** How long a refused key stays trustable without connecting again. */
 export const REFUSAL_TTL_MS = 10 * 60 * 1000;
@@ -122,7 +127,12 @@ export class SshService {
           changed !== undefined &&
           changed.entry.host === refusedKey.host &&
           changed.entry.fingerprint === refusedKey.fingerprint;
-        this.recordRefusal(sender, { ...refusedKey, kind: wasChanged ? 'changed' : 'new', at: this.now() });
+        this.recordRefusal(sender, {
+          ...refusedKey,
+          kind: wasChanged ? 'changed' : 'new',
+          ...(wasChanged && changed ? { previous: changed.previous } : {}),
+          at: this.now(),
+        });
       }
       if (
         changed &&
@@ -207,20 +217,34 @@ export class SshService {
       throw new WirebenchError(
         'ssh-host-key-changed',
         `${request.host} already has a different ${request.keyType} key; replacing it needs confirmation`,
-        { details: { ...entry } },
+        { details: { ...entry, ...(refusal.previous ? { previous: refusal.previous } : {}) } },
       );
     }
+    // The file may have gained a key for this host since the refusal (another prompt, another window):
+    // overwriting it is a replace, whatever the refusal was.
     const known = await this.readKnownHosts();
+    const stored = known.find((e) => e.host === entry.host && e.keyType === entry.keyType);
+    if (stored && stored.fingerprint !== entry.fingerprint && !request.replace) {
+      throw new WirebenchError(
+        'ssh-host-key-changed',
+        `${request.host} already has a different ${request.keyType} key; replacing it needs confirmation`,
+        { details: { ...entry, previous: stored.fingerprint } },
+      );
+    }
     await writeFileAtomic(nodeFs, this.deps.knownHostsFile, serializeKnownHosts(rememberKnownHost(known, entry)));
-    this.refused.set(
-      sender.id,
-      this.refusalsOf(sender.id).filter((r) => r !== refusal),
-    );
+    // What was just decided settles this host and key type for every window: no older prompt can undo it.
+    for (const senderId of [...this.refused.keys()]) {
+      this.refused.set(
+        senderId,
+        this.refusalsOf(senderId).filter((r) => !sameSlot(r, entry)),
+      );
+    }
   }
 
   /** Closes every session (workspace switch, quit). */
   disposeAll(): void {
     this.epoch += 1;
+    this.refused.clear();
     for (const [sessionId, live] of [...this.live]) {
       live.session.close();
       this.drop(sessionId);
@@ -264,9 +288,8 @@ export class SshService {
   }
 
   private recordRefusal(sender: WebContents, refusal: Refusal): void {
-    const others = this.refusalsOf(sender.id).filter(
-      (r) => !(r.host === refusal.host && r.keyType === refusal.keyType && r.fingerprint === refusal.fingerprint),
-    );
+    // Only the latest key a host presented to this window stays trustable.
+    const others = this.refusalsOf(sender.id).filter((r) => !sameSlot(r, refusal));
     this.refused.set(sender.id, [...others, refusal]);
     this.watch(sender);
   }

@@ -148,6 +148,63 @@ describe('SshService', () => {
     expect(() => readFileSync(knownHostsFile)).toThrow();
   });
 
+  it('a stale prompt for an older key cannot replace the key trusted since (one window)', async () => {
+    const K1: KnownHostEntry = { ...KEY, fingerprint: 'SHA256:k1' };
+    const K2: KnownHostEntry = { ...KEY, fingerprint: 'SHA256:k2' };
+    const keys = [K1];
+    const { service, knownHostsFile } = make({ keys });
+    const s = sender(1);
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    keys[0] = K2;
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    await service.trust(as(s), { ...K2, replace: false });
+    // Only the latest key the host presented was trustable; K1's prompt is stale.
+    await expect(service.trust(as(s), { ...K1, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([K2]);
+  });
+
+  it('a stale prompt in another window cannot replace the key trusted since', async () => {
+    const K1: KnownHostEntry = { ...KEY, fingerprint: 'SHA256:k1' };
+    const K2: KnownHostEntry = { ...KEY, fingerprint: 'SHA256:k2' };
+    const keys = [K1];
+    const { service, knownHostsFile } = make({ keys });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    keys[0] = K2;
+    await expect(service.connect(as(sender(2)), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    await service.trust(as(sender(2)), { ...K2, replace: false });
+    await expect(service.trust(as(sender(1)), { ...K1, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([K2]);
+  });
+
+  it('a new refusal still needs replace when the file gained a different key since', async () => {
+    const K2: KnownHostEntry = { ...KEY, fingerprint: 'SHA256:k2' };
+    const { service, knownHostsFile } = make();
+    const s = sender(1);
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    writeFileSync(knownHostsFile, JSON.stringify([K2])); // written outside this prompt
+    await expect(service.trust(as(s), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-changed',
+      details: { fingerprint: 'SHA256:k', previous: 'SHA256:k2' },
+    });
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([K2]);
+    await service.trust(as(s), { ...KEY, replace: true });
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([KEY]);
+  });
+
+  it('disposeAll forgets every refusal', async () => {
+    const { service } = make();
+    const s = sender(1);
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    service.disposeAll();
+    await expect(service.trust(as(s), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+  });
+
   it('a refusal expires after ten minutes and is forgotten when the window goes away', async () => {
     let now = 0;
     const { service } = make({ now: () => now });
