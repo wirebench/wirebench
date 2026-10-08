@@ -1,5 +1,6 @@
 /** SOAP as a protocol module (spec §3). */
 import { defineProtocol } from '../protocol/module.js';
+import { soapMocking } from './mock.js';
 import { soapRun } from './run.js';
 import { soapScripting } from './scripting.js';
 import { soapStorage } from './storage.js';
@@ -11,4 +12,5 @@ export const soapProtocol = defineProtocol({
   storage: soapStorage,
   run: soapRun,
   scripting: soapScripting,
+  mock: soapMocking,
 });
