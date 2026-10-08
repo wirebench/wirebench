@@ -3,6 +3,7 @@ export type SshErrorCode =
   | 'ssh-literal-secret'
   | 'ssh-jump-cycle'
   | 'ssh-jump-unknown'
+  | 'ssh-host-unknown'
   | 'ssh-host-incomplete'
   | 'ssh-hosts-invalid'
   | 'ssh-host-key-new'

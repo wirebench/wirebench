@@ -448,7 +448,7 @@ describe('SshService', () => {
     const { service } = make();
     await expect(service.connect(as(sender(1)), { hostId: 'nope', cols: 80, rows: 24 })).rejects.toMatchObject({
       name: 'WirebenchError',
-      code: 'ssh-jump-unknown',
+      code: 'ssh-host-unknown',
     });
     const broken = make();
     broken.list.mockResolvedValueOnce({

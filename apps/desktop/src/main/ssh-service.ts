@@ -93,7 +93,7 @@ export class SshService {
   constructor(private readonly deps: SshServiceDeps) {}
 
   /**
-   * @throws WirebenchError `workspace-not-open` | a hosts.yaml refusal | `ssh-jump-unknown` |
+   * @throws WirebenchError `workspace-not-open` | a hosts.yaml refusal | `ssh-host-unknown` | `ssh-jump-unknown` |
    *   `ssh-host-incomplete` | `secret-missing` | `ssh-auth-failed` | `ssh-host-key-new` |
    *   `ssh-host-key-changed` | `ssh-connect-failed`
    */

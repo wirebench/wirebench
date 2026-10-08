@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { jumpChain, listResolvedHosts, parseHostsFile, resolveHost } from '../../src/index.js';
+import { jumpChain, listResolvedHosts, parseHostsFile, resolveHost, resolveSettings } from '../../src/index.js';
+import type { HostsFile } from '../../src/index.js';
 
 const FILE = parseHostsFile(`
 version: 1
@@ -55,5 +56,19 @@ describe('resolveHost', () => {
   });
   it('a group id or unknown id is not a host', () => {
     expect(() => resolveHost(FILE, 'prod')).toThrow(/not a host/);
+  });
+  it('an unknown target is ssh-host-unknown; an unknown hop on the way is ssh-jump-unknown', () => {
+    expect(() => resolveHost(FILE, 'nope')).toThrow(expect.objectContaining({ code: 'ssh-host-unknown' }));
+    expect(() => resolveSettings(FILE, 'nope')).toThrow(expect.objectContaining({ code: 'ssh-host-unknown' }));
+    expect(() => jumpChain(FILE, 'nope')).toThrow(expect.objectContaining({ code: 'ssh-host-unknown' }));
+    // Parsing refuses a dangling jump; a model built in code can still carry one.
+    const dangling: HostsFile = {
+      version: 1,
+      groups: [],
+      hosts: [{ id: 'a', name: 'a', address: 'a', tags: [], ssh: { jump: 'gone' } }],
+    };
+    expect(() => jumpChain(dangling, 'a')).toThrow(
+      expect.objectContaining({ code: 'ssh-jump-unknown', details: { id: 'gone' } }),
+    );
   });
 });
