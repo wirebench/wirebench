@@ -28,7 +28,7 @@ import { useProjectStore } from '../../state/project.js';
 import type { SectionProps } from './sections/section-props.js';
 
 /** Proxy preferences, applied to every send. */
-export function ProxySection({ preferences, update }: SectionProps) {
+export function ProxySection({ preferences, update, locked = () => false }: SectionProps) {
   const proxy = preferences.proxy;
   const manual = proxy.mode === 'manual';
   return (
@@ -40,6 +40,7 @@ export function ProxySection({ preferences, update }: SectionProps) {
         label="Mode"
         value={proxy.mode}
         testId="proxy-mode"
+        locked={locked('proxy.mode')}
         options={[
           { value: 'none', label: 'No proxy' },
           { value: 'system', label: 'System proxy' },
@@ -52,6 +53,7 @@ export function ProxySection({ preferences, update }: SectionProps) {
         value={proxy.host ?? ''}
         readOnly={!manual}
         testId="proxy-host"
+        locked={locked('proxy.host')}
         onCommit={(host) => update({ proxy: { host } })}
       />
       <NumberSetting
@@ -59,6 +61,7 @@ export function ProxySection({ preferences, update }: SectionProps) {
         value={proxy.port}
         min={1}
         testId="proxy-port"
+        locked={locked('proxy.port')}
         onCommit={(port) => update({ proxy: { port: port ?? undefined } })}
       />
       <TextSetting
@@ -66,6 +69,7 @@ export function ProxySection({ preferences, update }: SectionProps) {
         value={proxy.username ?? ''}
         readOnly={!manual}
         testId="proxy-username"
+        locked={locked('proxy.username')}
         onCommit={(username) => update({ proxy: { username } })}
       />
       <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
@@ -81,6 +85,7 @@ export function ProxySection({ preferences, update }: SectionProps) {
         label="Excludes"
         value={proxy.excludes.join(', ')}
         testId="proxy-excludes"
+        locked={locked('proxy.excludes')}
         hint="Comma-separated: host names, *.wildcards, IPv4 CIDR blocks (10.0.0.0/8) or localhost. No port numbers."
         onCommit={(value) =>
           update({
@@ -98,8 +103,9 @@ export function ProxySection({ preferences, update }: SectionProps) {
 }
 
 /** TLS preferences, folded into every send's TLS options by the main process. */
-export function SslSection({ preferences, update }: SectionProps) {
+export function SslSection({ preferences, update, locked = () => false }: SectionProps) {
   const ssl = preferences.ssl;
+  const bundleLocked = locked('ssl.caBundlePath');
   const keystores = useProjectStore((state) => state.keystores);
   const [picking, setPicking] = useState(false);
 
@@ -121,6 +127,7 @@ export function SslSection({ preferences, update }: SectionProps) {
         label="Minimum version"
         value={ssl.minVersion}
         testId="ssl-min-version"
+        locked={locked('ssl.minVersion')}
         options={[
           { value: 'TLSv1.2', label: 'TLS 1.2' },
           { value: 'TLSv1.3', label: 'TLS 1.3' },
@@ -133,6 +140,7 @@ export function SslSection({ preferences, update }: SectionProps) {
         monospace
         readOnly
         testId="ssl-ca-bundle"
+        locked={bundleLocked}
         hint="A PEM file of extra trust anchors, chosen with Browse…. Added to the system store; nothing is replaced."
         onCommit={() => undefined}
       />
@@ -141,7 +149,7 @@ export function SslSection({ preferences, update }: SectionProps) {
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            disabled={picking}
+            disabled={picking || bundleLocked}
             data-testid="ssl-ca-bundle-browse"
             onClick={() => {
               void pickBundle();
@@ -149,7 +157,7 @@ export function SslSection({ preferences, update }: SectionProps) {
           >
             Browse…
           </Button>
-          {ssl.caBundlePath !== undefined && ssl.caBundlePath.length > 0 && (
+          {!bundleLocked && ssl.caBundlePath !== undefined && ssl.caBundlePath.length > 0 && (
             <Button
               variant="secondary"
               data-testid="ssl-ca-bundle-clear"

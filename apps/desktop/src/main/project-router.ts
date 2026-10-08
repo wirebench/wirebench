@@ -168,6 +168,7 @@ export interface ProjectRouter {
   /** What History names a WebSocket send by: the request, its API, and its folder path. */
   wsMeta(...args: Parameters<ProjectHost['wsMeta']>): ReturnType<ProjectHost['wsMeta']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
+  wssPolicyInputs(...args: Parameters<ProjectHost['wssPolicyInputs']>): ReturnType<ProjectHost['wssPolicyInputs']>;
   validationTargetFor(
     ...args: Parameters<ProjectHost['validationTargetFor']>
   ): ReturnType<ProjectHost['validationTargetFor']>;

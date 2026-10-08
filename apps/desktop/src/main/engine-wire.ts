@@ -4,7 +4,14 @@
  * `ipcMain` imports so they can be unit-tested directly against real engine output.
  */
 
-import { capSseRows, endpointUrlFromContract, findBinding, qnameToString, SSE_SUMMARY_LIMITS } from '@wirebench/engine';
+import {
+  capSseRows,
+  endpointUrlFromContract,
+  findBinding,
+  qnameToString,
+  SSE_SUMMARY_LIMITS,
+  wsaActionKey,
+} from '@wirebench/engine';
 import {
   redactHeaderPairs,
   redactHeaders,
@@ -23,6 +30,7 @@ import type {
   GrpcCallResult,
   GrpcResponseMessage,
   HttpExchange,
+  QName,
   WsdlImportResult,
   SoapExchange,
   SoapFault,
@@ -70,6 +78,17 @@ function basenameOf(location: string): string {
   return segments.at(-1) ?? location;
 }
 
+/** The operation's WS-SecurityPolicy as a spreadable `{ wssPolicy }`, or nothing when it has none. */
+function wssPolicyOf(
+  result: WsdlImportResult,
+  bindingName: QName,
+  operationName: string,
+): { wssPolicy?: OperationSummaryWire['wssPolicy'] } {
+  const policy = result.wssPolicy[wsaActionKey(bindingName, operationName)];
+  // The engine's model and the wire schema are field for field the same plain data.
+  return policy === undefined ? {} : { wssPolicy: structuredClone(policy) as OperationSummaryWire['wssPolicy'] };
+}
+
 /** Converts a `WsdlImportResult` plus its assigned id into the `InterfaceSummary` sent over IPC. */
 export function toInterfaceSummary(result: WsdlImportResult, id: string, definitionUrl: string): InterfaceSummary {
   const { definition } = result;
@@ -108,6 +127,7 @@ export function toInterfaceSummary(result: WsdlImportResult, id: string, definit
       part: mimePart.part,
       ...(mimePart.type !== undefined ? { type: mimePart.type } : {}),
     })),
+    ...wssPolicyOf(result, op.bindingName, op.operationName),
   }));
 
   const problems: ImportProblemWire[] = result.problems.map((problem) => ({

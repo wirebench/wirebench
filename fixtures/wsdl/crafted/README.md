@@ -87,6 +87,15 @@ Each is deliberately tiny but structurally valid.
   addressing, so detection reports `usingAddressing: false, optional: true` rather than
   auto-enabling.
 
+- **ws-security-policy/** — WS-SecurityPolicy attachments (`urn:wb:sp`) over one `SpPortType`.
+  `TransportUtBinding` carries an inline TLS transport binding with a timestamp and a hashed
+  signed-supporting `UsernameToken`; `AsymmetricBinding` (SOAP 1.2) references `#AsymmetricPolicy`
+  — X.509 initiator (thumbprint) and recipient (issuer/serial) tokens, `Basic256Sha256`, the Body
+  and `wsa:To` signed, the Body encrypted — and its `Secure` input adds `#EncryptFirstPolicy`;
+  `AlternativesBinding` puts a WS-SP 1.1 / WS-Policy 2004 `ExactlyOne` on the operation (a text
+  username token and an issued token first); `SymmetricBinding` holds what a configuration cannot
+  express (symmetric binding, XPath `SignedElements`); `PlainBinding` has no policy.
+
 - **wsi-compliant/** — a minimal `document/literal` SOAP 1.1 description (`urn:wb:wsi`) that
   conforms to every WS-I Basic Profile 1.1 assertion implemented in
   `packages/engine/src/validate/wsi/assertions/`. One `Echo` operation with a `soap:header`, a

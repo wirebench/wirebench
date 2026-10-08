@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions name="WsSecurityPolicyService"
+                  targetNamespace="urn:wb:sp"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+                  xmlns:tns="urn:wb:sp"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:wsp="http://www.w3.org/ns/ws-policy"
+                  xmlns:wsp04="http://schemas.xmlsoap.org/ws/2004/09/policy"
+                  xmlns:sp="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702"
+                  xmlns:sp11="http://schemas.xmlsoap.org/ws/2005/07/securitypolicy"
+                  xmlns:wsa="http://www.w3.org/2005/08/addressing"
+                  xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+  <!-- Shape 2's endpoint policy, attached by reference: X.509 both ways (thumbprint references),
+       Basic256Sha256, a signed timestamp, the Body and one header signed, the Body encrypted. -->
+  <wsp:Policy wsu:Id="AsymmetricPolicy">
+    <wsp:ExactlyOne>
+      <wsp:All>
+        <sp:AsymmetricBinding>
+          <wsp:Policy>
+            <sp:InitiatorToken>
+              <wsp:Policy>
+                <sp:X509Token sp:IncludeToken="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/IncludeToken/AlwaysToRecipient">
+                  <wsp:Policy>
+                    <sp:RequireThumbprintReference/>
+                    <sp:WssX509V3Token10/>
+                  </wsp:Policy>
+                </sp:X509Token>
+              </wsp:Policy>
+            </sp:InitiatorToken>
+            <sp:RecipientToken>
+              <wsp:Policy>
+                <sp:X509Token sp:IncludeToken="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/IncludeToken/Never">
+                  <wsp:Policy>
+                    <sp:RequireIssuerSerialReference/>
+                    <sp:WssX509V3Token10/>
+                  </wsp:Policy>
+                </sp:X509Token>
+              </wsp:Policy>
+            </sp:RecipientToken>
+            <sp:AlgorithmSuite>
+              <wsp:Policy><sp:Basic256Sha256/></wsp:Policy>
+            </sp:AlgorithmSuite>
+            <sp:Layout><wsp:Policy><sp:Strict/></wsp:Policy></sp:Layout>
+            <sp:IncludeTimestamp/>
+            <sp:OnlySignEntireHeadersAndBody/>
+          </wsp:Policy>
+        </sp:AsymmetricBinding>
+        <sp:Wss11><wsp:Policy><sp:MustSupportRefThumbprint/></wsp:Policy></sp:Wss11>
+        <sp:SignedParts>
+          <sp:Body/>
+          <sp:Header Name="To" Namespace="http://www.w3.org/2005/08/addressing"/>
+        </sp:SignedParts>
+        <sp:EncryptedParts>
+          <sp:Body/>
+        </sp:EncryptedParts>
+      </wsp:All>
+    </wsp:ExactlyOne>
+  </wsp:Policy>
+
+  <!-- Shape 2's message policy for `Secure`'s input only: encrypt before signing. -->
+  <wsp:Policy wsu:Id="EncryptFirstPolicy">
+    <sp:AsymmetricBinding>
+      <wsp:Policy>
+        <sp:EncryptBeforeSigning/>
+      </wsp:Policy>
+    </sp:AsymmetricBinding>
+  </wsp:Policy>
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:sp" elementFormDefault="qualified">
+      <xsd:element name="Echo">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="EchoResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="EchoRequest">
+    <wsdl:part name="body" element="tns:Echo"/>
+  </wsdl:message>
+  <wsdl:message name="EchoResponse">
+    <wsdl:part name="body" element="tns:EchoResponse"/>
+  </wsdl:message>
+
+  <wsdl:portType name="SpPortType">
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="Secure">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <!-- Shape 1: TLS plus a hashed username token, inline on the binding (WS-SP 1.2). -->
+  <wsdl:binding name="TransportUtBinding" type="tns:SpPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsp:Policy>
+      <wsp:ExactlyOne>
+        <wsp:All>
+          <sp:TransportBinding>
+            <wsp:Policy>
+              <sp:TransportToken>
+                <wsp:Policy><sp:HttpsToken><wsp:Policy/></sp:HttpsToken></wsp:Policy>
+              </sp:TransportToken>
+              <sp:AlgorithmSuite><wsp:Policy><sp:Basic128/></wsp:Policy></sp:AlgorithmSuite>
+              <sp:Layout><wsp:Policy><sp:Lax/></wsp:Policy></sp:Layout>
+              <sp:IncludeTimestamp/>
+            </wsp:Policy>
+          </sp:TransportBinding>
+          <sp:SignedSupportingTokens>
+            <wsp:Policy>
+              <sp:UsernameToken sp:IncludeToken="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/IncludeToken/AlwaysToRecipient">
+                <wsp:Policy>
+                  <sp:HashPassword/>
+                  <sp:WssUsernameToken10/>
+                </wsp:Policy>
+              </sp:UsernameToken>
+            </wsp:Policy>
+          </sp:SignedSupportingTokens>
+        </wsp:All>
+      </wsp:ExactlyOne>
+    </wsp:Policy>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:sp:Echo" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- Shape 2: the asymmetric policy by reference on the binding (SOAP 1.2), plus a message
+       policy on `Secure`'s input. -->
+  <wsdl:binding name="AsymmetricBinding" type="tns:SpPortType">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsp:PolicyReference URI="#AsymmetricPolicy"/>
+    <wsdl:operation name="Echo">
+      <soap12:operation soapAction="urn:wb:sp:Echo" style="document"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Secure">
+      <soap12:operation soapAction="urn:wb:sp:Secure" style="document"/>
+      <wsdl:input>
+        <wsp:PolicyReference URI="#EncryptFirstPolicy"/>
+        <soap12:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- Shape 3: WS-SP 1.1 and WS-Policy 2004 namespaces on the operation, two alternatives (the
+       first one wins), a plain-text username token and an issued token from an STS. -->
+  <wsdl:binding name="AlternativesBinding" type="tns:SpPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <wsp04:Policy>
+        <wsp04:ExactlyOne>
+          <wsp04:All>
+            <sp11:SupportingTokens>
+              <wsp04:Policy>
+                <sp11:UsernameToken/>
+                <sp11:IssuedToken>
+                  <sp11:Issuer><wsa:Address>https://sts.example.invalid/trust</wsa:Address></sp11:Issuer>
+                </sp11:IssuedToken>
+              </wsp04:Policy>
+            </sp11:SupportingTokens>
+          </wsp04:All>
+          <wsp04:All>
+            <sp11:TransportBinding/>
+          </wsp04:All>
+        </wsp04:ExactlyOne>
+      </wsp04:Policy>
+      <soap:operation soapAction="urn:wb:sp:Echo" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- Shape 4: a symmetric binding and an XPath-signed element — both beyond what a proposal
+       can express, so they must come back as notes. -->
+  <wsdl:binding name="SymmetricBinding" type="tns:SpPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsp:Policy>
+      <sp:SymmetricBinding>
+        <wsp:Policy>
+          <sp:ProtectionToken>
+            <wsp:Policy><sp:X509Token><wsp:Policy><sp:WssX509V3Token10/></wsp:Policy></sp:X509Token></wsp:Policy>
+          </sp:ProtectionToken>
+          <sp:AlgorithmSuite><wsp:Policy><sp:TripleDesRsa15/></wsp:Policy></sp:AlgorithmSuite>
+        </wsp:Policy>
+      </sp:SymmetricBinding>
+      <sp:SignedElements>
+        <sp:XPath>/soap:Envelope/soap:Body/tns:Echo</sp:XPath>
+      </sp:SignedElements>
+    </wsp:Policy>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:sp:Echo" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- Shape 5: no security policy at all. -->
+  <wsdl:binding name="PlainBinding" type="tns:SpPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:sp:Echo" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="WsSecurityPolicyService">
+    <wsdl:port name="TransportUtPort" binding="tns:TransportUtBinding">
+      <soap:address location="https://example.invalid/sp"/>
+    </wsdl:port>
+    <wsdl:port name="AsymmetricPort" binding="tns:AsymmetricBinding">
+      <soap12:address location="http://example.invalid/sp"/>
+    </wsdl:port>
+    <wsdl:port name="AlternativesPort" binding="tns:AlternativesBinding">
+      <soap:address location="http://example.invalid/sp"/>
+    </wsdl:port>
+    <wsdl:port name="SymmetricPort" binding="tns:SymmetricBinding">
+      <soap:address location="http://example.invalid/sp"/>
+    </wsdl:port>
+    <wsdl:port name="PlainPort" binding="tns:PlainBinding">
+      <soap:address location="http://example.invalid/sp"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

@@ -184,6 +184,22 @@ envelope before it's sent:
 
 </Steps>
 
+### From the WSDL's security policy
+
+When the WSDL attaches a WS-SecurityPolicy to an operation, the request's **Auth** inspector shows what
+it asks for: the tokens, which parts are signed and encrypted, the algorithm suite, whether TLS is
+required and whether a timestamp is included. A badge next to it says **Satisfies policy**, or how many
+requirements the request does not meet yet, with each one listed underneath. It follows every change to
+the selected configuration and to the endpoint.
+
+**Apply policy** creates an outgoing configuration named after the operation (`Add policy`, say) with
+the entries the policy needs, in the order it needs them, and selects it for the request. Keystores,
+usernames and passwords are left for you to fill in, in the WS-Security view. Applying again refreshes
+that configuration and keeps what you filled in.
+
+Some policies ask for more than a configuration can express: a symmetric binding, parts named by
+XPath, a Kerberos token. Those are listed as unmet, so the badge never claims a fit it cannot check.
+
 An **Incoming configuration** works the other way: it states what a response must satisfy — a
 valid signature, a decrypted body, a timestamp within tolerance — so a response that doesn't meet
 it is flagged rather than silently accepted.

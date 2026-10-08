@@ -14,6 +14,15 @@ All notable changes to this project are documented here. The format follows
   or decryption certificate the message asked for and did not find, and the clock skew against the
   timestamp. It also lists the Security header step by step. **Preview secured request** shows a
   request's secured envelope and its steps before Send (#57).
+- **WS-Security from the WSDL's policy.** When a WSDL attaches a WS-SecurityPolicy to an operation, the
+  request's Auth inspector shows the tokens, the signed and encrypted parts, the algorithm suite and
+  whether TLS is required. **Apply policy** turns it into an outgoing WS-Security configuration in one
+  click, and a badge says whether the request satisfies the policy or lists what is still missing (#58).
+- **Managed preferences.** On a managed machine, a `policy.yaml` in a system location
+  (`%ProgramData%\Wirebench`, `/Library/Application Support/Wirebench` or `/etc/wirebench`) locks the
+  proxy, the minimum TLS version, the CA bundle and update checks. Locked settings are read-only in
+  **Preferences** and marked **Locked by policy**; the user's own values come back if the policy is
+  removed (#67).
 - **Certificate expiry warnings.** Problems warns before a certificate in the workspace expires:
   keystores and the CA bundle are checked on their own, and **Check Certificate Expiry** also reads
   the chain every TLS endpoint of the open projects presents, from a verified handshake alone; an
