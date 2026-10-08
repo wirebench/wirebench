@@ -107,8 +107,15 @@ describe('resetPreferences', () => {
 describe('network preference defaults', () => {
   it('starts with no proxy, no extra anchors, a TLS 1.2 floor and HTTP/2 off', () => {
     expect(DEFAULT_PREFERENCES.proxy).toEqual({ mode: 'none', excludes: [] });
-    expect(DEFAULT_PREFERENCES.ssl).toEqual({ minVersion: 'TLSv1.2', trustAll: false });
+    expect(DEFAULT_PREFERENCES.ssl).toEqual({ minVersion: 'TLSv1.2', expiryWarningDays: 30, trustAll: false });
     expect(DEFAULT_PREFERENCES.http.allowH2).toBe(false);
+  });
+
+  it('keeps a certificate expiry warning window in range, and falls back to 30 days otherwise', () => {
+    expect(mergePreferences({ ssl: { expiryWarningDays: 7 } }).ssl.expiryWarningDays).toBe(7);
+    expect(mergePreferences({ ssl: { expiryWarningDays: 0 } }).ssl.expiryWarningDays).toBe(0);
+    expect(mergePreferences({ ssl: { expiryWarningDays: -1 } }).ssl.expiryWarningDays).toBe(30);
+    expect(mergePreferences({ ssl: { expiryWarningDays: 2.5 } }).ssl.expiryWarningDays).toBe(30);
   });
 
   it('keeps the manual proxy fields, including the passwordRef, across a merge', () => {

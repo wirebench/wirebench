@@ -283,6 +283,8 @@ import {
   wssPolicyStatusRequestSchema,
   wssPolicyStatusResponseSchema,
   keystoresInspectRequestSchema,
+  certificatesCheckRequestSchema,
+  certificatesCheckResponseSchema,
   keystoresInspectResponseSchema,
   keystoresPickFileRequestSchema,
   keystoresPickFileResponseSchema,
@@ -1165,6 +1167,9 @@ export const channels = {
       attachmentsAddDroppedRequestSchema,
       attachmentsAddDroppedResponseSchema,
     ),
+  },
+  certificates: {
+    check: defineChannel('certificates.check', certificatesCheckRequestSchema, certificatesCheckResponseSchema),
   },
   keystores: {
     inspect: defineChannel('keystores.inspect', keystoresInspectRequestSchema, keystoresInspectResponseSchema),

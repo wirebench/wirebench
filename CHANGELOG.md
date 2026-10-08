@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format follows
   request's Auth inspector shows the tokens, the signed and encrypted parts, the algorithm suite and
   whether TLS is required. **Apply policy** turns it into an outgoing WS-Security configuration in one
   click, and a badge says whether the request satisfies the policy or lists what is still missing (#58).
+- **Certificate expiry warnings.** Problems warns before a certificate in the workspace expires:
+  keystores and the CA bundle are checked on their own, and **Check Certificate Expiry** also reads
+  the chain every TLS endpoint of the open projects presents, from a verified handshake alone; an
+  endpoint whose chain doesn't verify is an error. The window is
+  **Preferences → SSL → Expiry warning** (30 days); the SSL inspector uses it too (#70).
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only
@@ -77,6 +82,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Update Definition from another host** no longer reuses the interface's Kerberos SPN or Basic credentials: a URL on a different origin is fetched with the SPN defaulted to that host, and without the interface's username and password (#271).
 - **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
   by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
   can no longer corrupt the frames (#182).

@@ -19,6 +19,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { z } from 'zod';
+import { probeTlsChain } from '@wirebench/engine';
+import type { PemCertificateSummary } from '@wirebench/engine';
 import {
   assertPathSegment,
   createProject,
@@ -97,6 +99,7 @@ import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
 import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
+import { checkCertificates } from './certificate-expiry.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
@@ -165,6 +168,7 @@ import type {
   UnsavedRestoreNoticeWire,
   WorkspaceRestoredResponse,
   WsRequestPatchWire,
+  CertificatesCheckResponse,
 } from '../shared/wire-types.js';
 
 /**
@@ -3314,6 +3318,47 @@ export class WorkspaceService implements ProjectRouter {
       }
     }
     return trustInvalid ? { rejectUnauthorized: false } : undefined;
+  }
+
+  /**
+   * `certificates.check`: every certificate the open workspace relies on, judged against
+   * `warnDays` — each project's keystores and the CA bundle always, and the chains its TLS
+   * endpoints present when `probeEndpoints` is set. Each probe goes through the proxy and judges
+   * trust against the anchors a send from that project would use. See `certificate-expiry.ts`.
+   *
+   * @param options `probe` stands in for the network in tests
+   */
+  async checkCertificates(options: {
+    readonly probeEndpoints: boolean;
+    readonly warnDays: number;
+    readonly probe?: typeof probeTlsChain;
+  }): Promise<CertificatesCheckResponse> {
+    const hosts = this.hosts();
+    const sources = await Promise.all(hosts.map(async (host) => await host.certificateSources()));
+    // The bundle is a preference, the same for every host; the first that may read it answers.
+    let caBundle: PemCertificateSummary[] = [];
+    for (const host of hosts) {
+      caBundle = await host.caBundleCertificates();
+      if (caBundle.length > 0) break;
+    }
+    const probe = options.probe ?? probeTlsChain;
+    return await checkCertificates({
+      sources,
+      caBundle,
+      warnDays: options.warnDays,
+      probeEndpoints: options.probeEndpoints,
+      probe: async (projectId, target) => {
+        const host = this.hostFor(projectId);
+        const proxy = await host.proxyFor(target.url);
+        const ca = await host.trustAnchors();
+        return await probe(target, {
+          ...(proxy !== undefined
+            ? { proxy: { url: proxy.url, ...(proxy.auth !== undefined ? { auth: proxy.auth } : {}) } }
+            : {}),
+          ...(ca !== undefined ? { ca } : {}),
+        });
+      },
+    });
   }
 
   /** @inheritdoc */

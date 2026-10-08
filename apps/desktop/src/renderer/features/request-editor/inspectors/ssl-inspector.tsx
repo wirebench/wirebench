@@ -1,5 +1,6 @@
 import { Copy } from 'lucide-react';
 import type { HttpExchangeWire, PeerCertWire, SslInfoWire } from '../../../../shared/wire-types.js';
+import { usePreferencesStore } from '../../../state/preferences.js';
 import { InspectorIconButton } from './inspector-strip.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -9,19 +10,25 @@ export interface SslInspectorProps {
   readonly http: HttpExchangeWire | undefined;
 }
 
-/** How long this certificate has left, as a phrase — or that it is already past its `validTo`. */
-function expiry(validTo: string): { readonly text: string; readonly expired: boolean } {
+/**
+ * How long this certificate has left, as a phrase, and the tone to say it in: danger once past its
+ * `validTo`, warning inside the `ssl.expiryWarningDays` window, faint otherwise.
+ */
+function expiry(validTo: string, warnDays: number): { readonly text: string; readonly tone: string } {
   const end = new Date(validTo).getTime();
   if (Number.isNaN(end)) {
-    return { text: validTo, expired: false };
+    return { text: validTo, tone: 'text-fg-faint' };
   }
   const remaining = end - Date.now();
   if (remaining <= 0) {
-    return { text: 'Expired', expired: true };
+    return { text: 'Expired', tone: 'text-status-danger' };
   }
   // Rounded up, so a certificate with hours left reads "expires in 1 day" rather than "0 days".
   const days = Math.ceil(remaining / DAY_MS);
-  return { text: `expires in ${String(days)} day${days === 1 ? '' : 's'}`, expired: false };
+  return {
+    text: `expires in ${String(days)} day${days === 1 ? '' : 's'}`,
+    tone: remaining <= warnDays * DAY_MS ? 'text-status-warning' : 'text-fg-faint',
+  };
 }
 
 /** A label/value pair of the connection summary; absent values are simply not rendered. */
@@ -44,7 +51,8 @@ function formatDate(iso: string): string {
 }
 
 function CertCard({ cert, index }: { readonly cert: PeerCertWire; readonly index: number }) {
-  const { text, expired } = expiry(cert.validTo);
+  const warnDays = usePreferencesStore((state) => state.preferences.ssl.expiryWarningDays);
+  const { text, tone } = expiry(cert.validTo, warnDays);
   return (
     <details data-testid="ssl-cert-card" open={index === 0} className="rounded border border-hairline">
       <summary className="cursor-pointer px-2 py-1 text-xs text-fg-default">
@@ -58,7 +66,9 @@ function CertCard({ cert, index }: { readonly cert: PeerCertWire; readonly index
           <span className="min-w-0 font-mono break-all text-fg-default">
             {formatDate(cert.validFrom)} → {formatDate(cert.validTo)}
           </span>
-          <span className={expired ? 'shrink-0 text-status-danger' : 'shrink-0 text-fg-faint'}>{text}</span>
+          <span data-testid="ssl-cert-expiry" className={`shrink-0 ${tone}`}>
+            {text}
+          </span>
         </div>
         <Field label="Serial" value={cert.serialNumber} />
         <Field label="SANs" value={cert.sans.length > 0 ? cert.sans.join(', ') : undefined} />
