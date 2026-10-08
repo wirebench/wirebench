@@ -17,6 +17,7 @@ import type {
   MockRoute,
   ProtocolMocking,
 } from '../mock/contract.js';
+import { mockPathPrefix } from '../mock/model.js';
 import type { MockResponse, MockValidation } from '../mock/model.js';
 import { apiDefinitionDir } from '../project/paths.js';
 import type { Project } from '../project/model.js';
@@ -205,7 +206,7 @@ function bodyKindOf(contentType: string | undefined): 'xml' | 'json' | 'other' {
 
 function createContract(document: OpenApiDocument, resolved: unknown, mockPath: string): MockContract {
   const operations = document.operations.map((operation) => withFullSchemas(resolved, operation));
-  const prefix = mockPath === '/' ? '' : mockPath.replace(/\/+$/, '');
+  const prefix = mockPathPrefix(mockPath);
   const relative = (path: string): string => {
     const rest = path.slice(prefix.length);
     return rest === '' ? '/' : rest;

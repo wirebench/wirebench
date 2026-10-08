@@ -16,7 +16,13 @@ import {
   responseDocument,
   responseSlugOf,
 } from '../../../src/mock/file.js';
-import { createMock, createMockOperation, createMockResponse, MOCK_LIMITS } from '../../../src/mock/model.js';
+import {
+  createMock,
+  createMockOperation,
+  createMockResponse,
+  MOCK_LIMITS,
+  mockPathPrefix,
+} from '../../../src/mock/model.js';
 import type { MockDef } from '../../../src/mock/model.js';
 
 function orders(): MockDef {
@@ -225,5 +231,20 @@ describe('mock files', () => {
   it('refuse to write a slug that leaves its folder', () => {
     const mock = { ...orders(), slug: '..' };
     expect(codeOf(() => mockFiles(mock))).toBe('project-path-invalid');
+  });
+});
+
+describe('mockPathPrefix', () => {
+  it('drops trailing slashes, and a lone slash is no prefix', () => {
+    expect(mockPathPrefix('/')).toBe('');
+    expect(mockPathPrefix('/orders')).toBe('/orders');
+    expect(mockPathPrefix('/orders///')).toBe('/orders');
+  });
+
+  it('takes linear time over a path of many slashes', () => {
+    const path = `/a${'/'.repeat(200_000)}b`;
+    const started = performance.now();
+    expect(mockPathPrefix(path)).toBe(path);
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });

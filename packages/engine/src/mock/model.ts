@@ -146,6 +146,17 @@ export interface CreateMockInput extends CreateOptions {
   readonly operations?: readonly MockOperation[];
 }
 
+/**
+ * The prefix a mock's `path` puts before every request path: the path without its trailing slashes,
+ * and empty for `/`. A loop, not a regular expression, so a request path of many slashes costs
+ * linear time.
+ */
+export function mockPathPrefix(path: string): string {
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 0x2f) end -= 1;
+  return path.slice(0, end);
+}
+
 export function createMock(name: string, source: MockSource, input: CreateMockInput = {}): MockDef {
   return {
     id: idOf(input),

@@ -20,6 +20,7 @@ import { createScriptSandbox } from '../script/sandbox/host.js';
 import type { ScriptSandbox } from '../script/sandbox/host.js';
 import type { MockContract, MockProblem, MockReply, MockRequest } from './contract.js';
 import { MockState, dispatch } from './dispatch.js';
+import { mockPathPrefix } from './model.js';
 import type { MockDef, MockOperation, MockResponse } from './model.js';
 import { createDispatchScriptRunner } from './script.js';
 
@@ -179,9 +180,9 @@ function queryOf(search: URLSearchParams): Record<string, string[]> {
 
 /** Path and query with sensitive query values masked; `redactUrl` wants an absolute URL. */
 function maskedUrl(pathAndQuery: string): string {
-  const origin = 'http://mock.invalid';
-  const masked = redactUrl(`${origin}${pathAndQuery.startsWith('/') ? '' : '/'}${pathAndQuery}`);
-  return masked.startsWith(origin) ? masked.slice(origin.length) : masked;
+  const origin = 'http://mock.invalid/';
+  const masked = redactUrl(`${origin}${pathAndQuery.startsWith('/') ? pathAndQuery.slice(1) : pathAndQuery}`);
+  return masked.startsWith(origin) ? masked.slice(origin.length - 1) : masked;
 }
 
 function cut(text: string): { body: string; truncated: boolean } {
@@ -277,7 +278,7 @@ export async function startMock(input: StartMockInput): Promise<RunningMock> {
   let seq = 0;
   let stopped = false;
 
-  const prefix = mock.path === '/' ? '' : mock.path.replace(/\/+$/, '');
+  const prefix = mockPathPrefix(mock.path);
   const underPath = (path: string): boolean => prefix === '' || path === prefix || path.startsWith(`${prefix}/`);
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
