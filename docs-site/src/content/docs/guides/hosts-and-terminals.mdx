@@ -82,7 +82,7 @@ unless **EU** or the host sets its own.
 the group's key completely instead of adding a password to it.
 
 In the host form, a field you haven't set shows the value it inherits, greyed, with where it came
-from, for example `from prod` (or `default` for the built-in values). Turn on **Override** to edit the
+from, for example `from prod` (or `default` for the built-in values). Turn on the override switch next to the field to edit the
 field on that host; turn it off again to go back to inheriting. Changing a group's key changes every
 host under it that doesn't override it.
 
@@ -123,8 +123,8 @@ From the keyboard:
 The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
 pagers, resize), and a host that is reached through a jump host is dialled hop by hop.
 
-- Switching to another tab keeps the session alive; closing the tab ends it. Closing the workspace
-  ends every session.
+- Switching to another tab keeps the session alive; closing the tab ends it. Switching to another
+  workspace or closing it ends every session.
 - Terminal tabs are not restored when you restart Wirebench.
 - When the remote shell exits, the tab stays and shows **Session ended (code N)** with **Reconnect**.
   If the connection could not be made, it shows **Could not connect** with **Reconnect**, and the
@@ -142,7 +142,7 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   Check it with the host's owner, then choose **Trust and connect**. Nothing is trusted without that
   click.
 - **A host whose key has changed.** The connect is refused and the prompt shows the stored and the
-  new fingerprint, in red. The only way on is to tick **I understand the key changed** and choose
+  new fingerprint. The only way on is to tick **I understand the key changed** and choose
   **Replace key and connect**. A changed key can mean the machine was reinstalled, or that something
   is in the way; find out which before you replace it.
 
