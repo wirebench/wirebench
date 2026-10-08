@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Version 1 of the contract diff fixture pair (#56). From v1 to v2: PlaceOrder's quantity narrows
+  from xsd:decimal to xsd:int, its note becomes required and its priority loses "low"; PlaceOrder's
+  response gains an optional eta; GetStatus's response status gains "cancelled" and its SOAP action
+  changes; CancelOrder is removed, TrackOrder added; the soap:address moves.
+-->
+<wsdl:definitions name="OrderService"
+                  targetNamespace="urn:wb:orders"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="urn:wb:orders"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:orders" elementFormDefault="qualified">
+      <xsd:simpleType name="Priority">
+        <xsd:restriction base="xsd:string"><xsd:enumeration value="low"/><xsd:enumeration value="normal"/><xsd:enumeration value="high"/></xsd:restriction>
+      </xsd:simpleType>
+      <xsd:simpleType name="Status">
+        <xsd:restriction base="xsd:string"><xsd:enumeration value="open"/><xsd:enumeration value="shipped"/></xsd:restriction>
+      </xsd:simpleType>
+      <xsd:element name="PlaceOrder">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="customerId" type="xsd:string"/>
+            <xsd:element name="quantity" type="xsd:decimal"/>
+            <xsd:element name="note" minOccurs="0" type="xsd:string"/>
+            <xsd:element name="priority" type="tns:Priority"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="PlaceOrderResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderId" type="xsd:string"/>
+
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="OrderRef">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="StatusResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="status" type="tns:Status"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="PlaceOrderRequest"><wsdl:part name="body" element="tns:PlaceOrder"/></wsdl:message>
+  <wsdl:message name="PlaceOrderReply"><wsdl:part name="body" element="tns:PlaceOrderResponse"/></wsdl:message>
+  <wsdl:message name="OrderRefMessage"><wsdl:part name="body" element="tns:OrderRef"/></wsdl:message>
+  <wsdl:message name="StatusReply"><wsdl:part name="body" element="tns:StatusResponse"/></wsdl:message>
+
+  <wsdl:portType name="OrderPortType">
+    <wsdl:operation name="PlaceOrder">
+      <wsdl:input message="tns:PlaceOrderRequest"/>
+      <wsdl:output message="tns:PlaceOrderReply"/>
+    </wsdl:operation>
+    <wsdl:operation name="GetStatus">
+      <wsdl:input message="tns:OrderRefMessage"/>
+      <wsdl:output message="tns:StatusReply"/>
+    </wsdl:operation>
+    <wsdl:operation name="CancelOrder">
+      <wsdl:input message="tns:OrderRefMessage"/>
+      <wsdl:output message="tns:StatusReply"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="OrderBinding" type="tns:OrderPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="PlaceOrder">
+      <soap:operation soapAction="urn:wb:orders:PlaceOrder" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetStatus">
+      <soap:operation soapAction="urn:wb:orders:GetStatus" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CancelOrder">
+      <soap:operation soapAction="urn:wb:orders:CancelOrder" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="OrderService">
+    <wsdl:port name="OrderPort" binding="tns:OrderBinding">
+      <soap:address location="http://example.invalid/orders/v1"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

@@ -83,6 +83,9 @@ wirebench history diff <from-id> <to-id> [--ignore <path>]…
                        (default: the current directory) and --json; the ones that touch History take
                        --history-dir <dir>.
 
+wirebench diff-contract <old> <new> [--fail-on breaking|any|none] [--reporter <kind>=<file>]… [--project <dir>] [-q]
+                       Compares two versions of a WSDL or an OpenAPI document: see "Contract diff" below.
+
 wirebench export <postman|opencollection> [--api <name|slug|id>] [--out <dir>] [--project <dir>] [--json]
                        Writes the project, or one API or interface, as a Postman Collection v2.1 or an
                        OpenCollection document: see "Export to another tool" below.
@@ -881,6 +884,74 @@ else; there is no flag to bind another address.
   There is no idle timeout below the cap: stop the process to drop every session.
 - A request body is capped at 16 MiB. The server accepts at most 128 connections at once, and drops a
   connection that has not finished its headers after about 10 seconds.
+
+## Contract diff
+
+`wirebench diff-contract <old> <new>` compares two versions of a WSDL, or two versions of an OpenAPI
+document, operation by operation (issue #56, see the
+[design spec](specs/2026-10-08-wirebench-contract-diff-design.md)). Each side is a file, an `http(s)`
+URL (fetched through the proxy the environment names, as `import` fetches), or `project:<name>`: the
+cached definition of the interface or REST API of that name or slug in `--project` (default: the
+current directory), read with no network access. A pipeline can so check a freshly built contract
+against the one the project was built from.
+
+```bash
+wirebench diff-contract project:OrderService build/OrderService.wsdl --reporter markdown=contract-diff.md
+```
+
+What it compares:
+
+- **Operations** added or removed, by the identity Update Definition uses (`{ns}Binding#Operation`,
+  `METHOD /path`): a renamed binding or path is a removal and an addition.
+- **Endpoints**: `soap:address` locations or OpenAPI `servers`. One removed and one added is a move.
+- **Transport**: a WSDL operation's SOAP action, SOAP version and style; an OpenAPI operation's
+  effective security.
+- **Messages**: the request and the response of each operation, field by field — a WSDL body read
+  through its XSD, an OpenAPI operation's parameters (as `request.query.<name>` and so on), request
+  body and responses. Fields added, removed, made required or optional; types narrowed, widened or
+  changed; enumeration values added or removed; constraints (lengths, bounds, patterns, formats)
+  tightened or relaxed; media types and responses added or removed.
+
+Each change is **breaking** or **compatible** for an existing client. The client writes the request
+and reads the response, so the same change can be either:
+
+| Change | Request | Response |
+| --- | --- | --- |
+| Operation removed, endpoint moved or removed, SOAP action, version, style or security changed | breaking | breaking |
+| Field removed; type changed to an unrelated one; media type removed | breaking | breaking |
+| Field added and required; field made required; type narrowed; enumeration value removed; constraint tightened | breaking | compatible |
+| Field made optional; type widened; enumeration value added | compatible | breaking |
+| Operation, endpoint, optional field or media type added; constraint relaxed | compatible | compatible |
+| Response removed: a 2xx status or `default` / any other status | — | breaking / compatible |
+
+In a WSDL a single element that becomes repeating (`maxOccurs` raised) is a widening, since one
+element is still valid. Descriptions and documentation are not compared. Webhooks, callbacks, SOAP
+headers and faults are not compared yet.
+
+| Option | Does |
+| --- | --- |
+| `--fail-on breaking` | Default. Exit 1 when any change is breaking. |
+| `--fail-on any` | Exit 1 on any change. |
+| `--fail-on none` | Exit 0 whatever changed: report only. |
+| `--reporter markdown=<file>` | A Markdown report: the two sides, the counts, a table of breaking changes and one of compatible changes. |
+| `--reporter html=<file>` | The same as one self-contained HTML page, light and dark. |
+| `--reporter json=<file>` | The diff as JSON: `format`, `old`, `new`, `operationsCompared`, `changes` (`kind`, `severity`, `operation`, `location`, `message`), `notes`, `summary`. |
+| `-q`, `--quiet` | Print the counts only. |
+
+stdout lists one change per line, breaking first, then the counts:
+
+```text
+BREAKING    OrderBinding#PlaceOrder request.note  note is now required
+compatible  OrderBinding#PlaceOrder response.eta  eta added, optional
+1 breaking, 1 compatible changes in 2 operations compared
+```
+
+Exit 0 when the gate passes and 1 when it fails. Exit 2 for a usage error, an unreadable file
+(`file-not-found`), a missing cache (`definition-cache-missing`), an unknown `project:` name
+(`container-not-found`), a document that is neither a WSDL nor an OpenAPI document
+(`unsupported-format`) or two different formats (`contract-formats-differ`). Exit 3 when a document
+cannot be fetched or parsed. What a definition could not resolve, and what its schema could not
+express, is printed to stderr as a warning and does not change the exit code.
 
 ## Run in CI
 

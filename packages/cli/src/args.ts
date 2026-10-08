@@ -11,11 +11,17 @@ import {
   VERB_HELP,
 } from './args-ops.js';
 import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
+import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
+import type { DiffContractArgs } from './args-diff-contract.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
 export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
+export type { DiffContractArgs } from './args-diff-contract.js';
+
+/** `wirebench <verb> --help` for every verb that has its own help. */
+export const HELP_TOPICS: Readonly<Record<string, string>> = { ...VERB_HELP, 'diff-contract': DIFF_CONTRACT_HELP };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
 export const HELP_TEXT = `wirebench run <path> [selector…] [options]
@@ -59,6 +65,11 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        secret-sources hash.
 
 ${OPS_HELP_TEXT}
+
+${DIFF_CONTRACT_USAGE}
+                       Compares two versions of a WSDL or an OpenAPI document (files, URLs or
+                       project:<name>) and classifies each change breaking or compatible. Exit 1
+                       when the --fail-on gate fails (default: any breaking change).
 
 wirebench --version | --help
 wirebench <verb> --help`;
@@ -108,6 +119,7 @@ export type ParsedArgs =
   | McpArgs
   | CallArgs
   | ExportArgs
+  | DiffContractArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -158,6 +170,13 @@ function parsePositiveInt(raw: string, flagName: string): number {
   return n;
 }
 
+/** `--fail-on` belongs to `diff-contract` alone. */
+function refuseDiffOnly(values: { readonly 'fail-on'?: string | undefined }, verb: string): void {
+  if (values['fail-on'] !== undefined) {
+    throw new UsageError(`--fail-on does not apply to ${verb}`);
+  }
+}
+
 /** Parses `process.argv.slice(2)` into a {@link ParsedArgs}, or throws {@link UsageError}. */
 export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   let parsed;
@@ -187,6 +206,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         verbose: { type: 'boolean', short: 'v' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean' },
+        'fail-on': { type: 'string' },
         ...OP_OPTIONS,
       },
     });
@@ -201,7 +221,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (values.help) {
     const [topic] = positionals;
-    return topic !== undefined && Object.hasOwn(VERB_HELP, topic) ? { command: 'help', topic } : { command: 'help' };
+    return topic !== undefined && Object.hasOwn(HELP_TOPICS, topic) ? { command: 'help', topic } : { command: 'help' };
   }
   if (values.version) {
     return { command: 'version' };
@@ -222,6 +242,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'run') {
     refuseOpOnly(values, 'wirebench run');
+    refuseDiffOnly(values, 'wirebench run');
     const [path, ...selectors] = rest;
     if (path === undefined) {
       throw new UsageError('wirebench run <path> [selector…] [options]: <path> is required');
@@ -271,6 +292,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'secrets') {
     refuseOpOnly(values, 'wirebench secrets list');
+    refuseDiffOnly(values, 'wirebench secrets list');
     const [sub, path, ...selectors] = rest;
     if (sub !== 'list') {
       throw new UsageError(`wirebench secrets list <path> [selector…] [-e <name>]: unknown subcommand "${sub ?? ''}"`);
@@ -292,6 +314,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'call') {
     return parseCall(rest, values);
+  }
+
+  if (word === 'diff-contract') {
+    return parseDiffContract(rest, values);
   }
 
   if (word === 'mcp') {

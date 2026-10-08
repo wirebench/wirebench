@@ -2057,3 +2057,7 @@ export {
 } from './project/sequence-guards.js';
 
 export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';
+
+export * from './contract-diff/index.js';
+export { diffWsdlContracts, wsdlOperationLabel } from './wsdl/contract-diff.js';
+export { diffOpenApiContracts, openApiOperationLabel } from './rest/openapi/contract-diff.js';

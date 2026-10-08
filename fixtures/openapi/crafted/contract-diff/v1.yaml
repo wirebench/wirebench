@@ -1,0 +1,51 @@
+# Version 1 of the contract diff fixture pair (#56); see v2.yaml for what changes.
+openapi: 3.0.3
+info:
+  title: Orders
+  version: 1.0.0
+servers:
+  - url: https://orders.example.invalid/v1
+paths:
+  /orders:
+    get:
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Order' } }
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewOrder' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+  /orders/{id}:
+    delete:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '204': { description: gone } }
+components:
+  schemas:
+    NewOrder:
+      type: object
+      required: [customerId, quantity]
+      properties:
+        customerId: { type: string }
+        quantity: { type: number }
+        note: { type: string }
+        priority: { type: string, enum: [low, normal, high] }
+    Order:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [open, shipped] }
+        parent: { $ref: '#/components/schemas/Order' }
