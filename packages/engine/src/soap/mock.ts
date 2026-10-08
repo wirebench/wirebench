@@ -30,6 +30,7 @@ import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { parseXml } from '../xml/parse.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
+import { definitionReply } from './mock-wsdl.js';
 import { buildSampleMessage } from './request-builder.js';
 
 const SOAP11_ENV = 'http://schemas.xmlsoap.org/soap/envelope/';
@@ -268,7 +269,7 @@ function createContract(contract: Contract): MockContract {
   return {
     operations: operations.map(({ operation }) => ({ key: operation.name, name: operation.name })),
 
-    definition: () => undefined,
+    definition: (request, mockUrl) => definitionReply(contract.bundle, request, mockUrl),
 
     async route(request: MockRequest, mode: MockValidation): Promise<MockRoute> {
       if (request.method !== 'POST') {
