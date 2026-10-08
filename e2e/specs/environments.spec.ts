@@ -174,4 +174,37 @@ test.describe('environments', () => {
     await expect(page.getByTestId('status-bar')).toContainText('200', { timeout: 20_000 });
     expect(lastIntA(imported)).toBe('200');
   });
+
+  test('the Environments view and the environment page are grids, each one tab stop walked with the arrow keys', async () => {
+    imported = await startTestSoapServer({ fixture: 'calculator' });
+    launched = await launchApp();
+    const page = launched.window;
+    await createProjectWithCalculator(page, imported);
+
+    await openEnvironmentsView(page);
+    await page.getByRole('button', { name: 'Add environment' }).click();
+    await expect(environmentRow(page, 'Environment 1')).toBeVisible();
+
+    // --- the sidebar: Globals, Workspace, Environment 1 ----------------------
+    const environments = page.getByRole('grid', { name: 'Environments' });
+    await expect(environments).toHaveAttribute('aria-rowcount', '3');
+    const rows = environments.getByRole('row');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(2)).toHaveAttribute('aria-rowindex', '3');
+    await expect(rows.nth(0).getByRole('gridcell')).toHaveCount(1);
+    await rows.nth(0).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(rows.nth(1)).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(rows.nth(2)).toBeFocused();
+    await expect(rows.nth(0)).toHaveAttribute('tabindex', '-1');
+
+    // --- the page "Add environment" opened: variables, then endpoint overrides -
+    await expect(page.getByRole('grid', { name: 'Variables of Environment 1' })).toBeVisible({ timeout: 20_000 });
+    const overrides = page.getByRole('grid', { name: 'Endpoint overrides' });
+    await expect(overrides).toBeVisible();
+    const overrideRow = overrides.getByTestId('env-endpoint-row').first();
+    await expect(overrideRow).toHaveAttribute('tabindex', '0');
+    await expect(overrideRow.getByRole('gridcell').first()).toBeAttached();
+  });
 });
