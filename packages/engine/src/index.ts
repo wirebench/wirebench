@@ -2045,3 +2045,4 @@ export {
 export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';
 
 export * from './contract-diff/index.js';
+export { diffWsdlContracts, wsdlOperationLabel } from './wsdl/contract-diff.js';
