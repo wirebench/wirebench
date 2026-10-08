@@ -45,9 +45,9 @@ export const GROUP_FOLDERS = Object.freeze({
 /**
  * The imports core makes of a protocol group (spec §7.2, rule 2). Rule 1 has no exceptions.
  *
- * Two kinds, told apart by `until`: the two files that are what they are (`protocols.ts`,
- * `index.ts`); and the project model, History, the loader and the writer, which hold protocol
- * types until the phases of #184 that split them. Format detection and the `.http` and
+ * Two kinds, told apart by `until`: the three files that are what they are (`protocols.ts`,
+ * `index.ts`, `project-files.ts`); and the project model, History, the loader and the writer, which
+ * hold protocol types until the phases of #184 that split them. Format detection and the `.http` and
  * OpenCollection importers, which turn one file or collection into several protocols' APIs, wait
  * for phase 7, which decides import's API. Each importer keeps its protocol imports in its `map.ts`.
  *
@@ -59,6 +59,7 @@ export const GROUP_FOLDERS = Object.freeze({
 export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'protocols.ts', to: '*', until: 'stays: the composition file' },
   { from: 'index.ts', to: '*', until: 'stays: the public exports' },
+  { from: 'project-files.ts', to: '*', until: 'stays: the published schemas list every protocol file' },
   { from: 'project/schema.ts', to: 'wss/model.ts', until: 'phase 3' },
   { from: 'run/issued-token.ts', to: 'wss/model.ts', typeOnly: true, until: 'the SOAP send moves out of run (#184)' },
   { from: 'run/issued-token.ts', to: 'wss/trust/client.ts', until: 'the SOAP send moves out of run (#184)' },

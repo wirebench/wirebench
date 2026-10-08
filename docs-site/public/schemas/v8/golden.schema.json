@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/golden.schema.json",
+  "title": "Wirebench project file: Snapshot",
+  "description": "Project format 8: `**/*.golden.yaml`.",
+  "type": "object",
+  "properties": {
+    "contentType": { "type": "string" },
+    "savedAt": { "type": "string" },
+    "ignore": { "type": "array", "items": { "type": "string" } },
+    "body": { "type": "string" }
+  },
+  "required": ["savedAt", "ignore", "body"]
+}

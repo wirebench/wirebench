@@ -248,6 +248,10 @@ importers:
       kerberos:
         specifier: 7.0.0
         version: 7.0.0
+    devDependencies:
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
 
   packages/server:
     dependencies:

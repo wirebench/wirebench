@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/interface-definition-manifest.schema.json",
+  "title": "Wirebench project file: SOAP definition cache manifest",
+  "description": "Project format 8: `interfaces/*/definition/manifest.yaml`.",
+  "type": "object",
+  "properties": {
+    "formatVersion": { "type": "number", "const": 1 },
+    "rootLocation": { "type": "string", "minLength": 1 },
+    "fetchedAt": { "type": "string", "minLength": 1 },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "location": { "type": "string", "minLength": 1 },
+          "requestedLocation": { "type": "string" },
+          "kind": { "type": "string", "enum": ["wsdl", "xsd"] },
+          "sha256": { "type": "string", "minLength": 1 },
+          "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "importedBy": { "type": "string" },
+          "namespace": { "type": "string" },
+          "chameleonFor": { "type": "string" }
+        },
+        "required": ["file", "location", "kind", "sha256", "bytes"],
+        "additionalProperties": {}
+      }
+    }
+  },
+  "required": ["formatVersion", "rootLocation", "fetchedAt", "documents"],
+  "additionalProperties": {}
+}

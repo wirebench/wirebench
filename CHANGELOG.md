@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
   cookie jar, current values, secret sources, team secrets, History and audit reporting stay its own. A
   workspace is open in one window at a time; opening it from another brings that window forward. Closing a
   window keeps its unsaved changes as quitting does (#72).
+- **JSON Schemas for project files.** Every kind of YAML file in a project folder has a published JSON
+  Schema, generated from the schemas Wirebench reads the files with, so an editor can validate a project
+  as you type. They are served from the documentation site, one folder per project format version, and
+  attached to each release. The project-format reference shows the editor settings (#66).
 
 ## [4.0.0] - 2026-10-08
 
