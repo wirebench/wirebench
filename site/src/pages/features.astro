@@ -68,6 +68,11 @@ const sections: Section[] = [
     ],
   },
   {
+    heading: 'Hosts and terminals',
+    text: 'Describe the machines your APIs run on once, in groups, with the user, key and jump host inherited by every host below. Open an SSH terminal to any of them from the Hosts view, the command palette or quick-open. Credentials stay in the main process as secret references, and a new or changed host key needs your explicit click.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.hostsAndTerminals }],
+  },
+  {
     heading: 'HTTP Log and history',
     text: 'The HTTP Log is the raw record of what went over the wire this session, failed sends included, with a waterfall of timings, a compare of two rows and Export HAR. History is the persistent record: re-send an entry, or compare two runs. Any request copies as a curl, grpcurl or websocat command.',
     links: [

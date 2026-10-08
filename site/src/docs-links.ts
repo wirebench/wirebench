@@ -24,6 +24,7 @@ export const DOCS_LINKS = {
   webhookSignatures: 'guides/webhook-signatures',
   callbackAssertions: 'guides/callback-assertions',
   secrets: 'guides/secrets',
+  hostsAndTerminals: 'guides/hosts-and-terminals',
   runInCi: 'guides/run-in-ci',
   snapshotRegression: 'guides/snapshot-regression',
   sharedWorkspaces: 'guides/shared-workspaces',

@@ -44,6 +44,7 @@ export default defineConfig({
             { label: 'Environments and properties', slug: 'guides/environments' },
             { label: 'Authentication', slug: 'guides/auth' },
             { label: 'Secrets', slug: 'guides/secrets' },
+            { label: 'Hosts and terminals', slug: 'guides/hosts-and-terminals' },
             { label: 'HTTP Log', slug: 'guides/http-log' },
             { label: 'History', slug: 'guides/history' },
             { label: 'Copy as a command', slug: 'guides/copy-as-command' },

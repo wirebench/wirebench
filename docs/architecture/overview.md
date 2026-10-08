@@ -317,6 +317,7 @@ introduced.
 | IPC handlers | `apps/desktop/src/main/ipc/` |
 | WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |
 | Secrets, path safety, redaction | `apps/desktop/src/main/{secrets,path-*,redact}.ts` |
+| Desktop areas: the `AreaModule` contract and the static `AREAS` list; renderer and main halves; the SSH area (hosts, terminal) | `apps/desktop/src/shared/area-module.ts` and `shared/areas/`, `renderer/areas/index.ts`, `main/areas.ts`; `packages/ssh`, `main/{hosts-service,ssh-service}.ts` |
 | OAuth2 flows and the loopback listener | `apps/desktop/src/main/oauth2.ts` |
 | REST send path, OpenAPI import, REST project mutations | `apps/desktop/src/main/{rest-send,openapi-import,project-rest-mutations}.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
@@ -325,6 +326,18 @@ introduced.
 | Right rail, Code slide-over, resizable/collapsible panel handles | `apps/desktop/src/renderer/shell/{right-rail,code-panel,panel-handle}.tsx` |
 | Request details inspector, project tab | `apps/desktop/src/renderer/features/request-editor/inspectors/details-inspector.tsx`, `apps/desktop/src/renderer/features/project/project-tab.tsx` |
 | Global properties file (`disabled` list, `version: 2`) | `apps/desktop/src/main/global-properties.ts` |
+
+## Desktop areas
+
+The activity bar, the sidebar views, their `view.show*` commands and their IPC channels are not named by the shell. Each
+is an *area*: an `AreaModule` (`apps/desktop/src/shared/area-module.ts`) with an id, an engine feature descriptor, a rail
+item and sidebar copy, composed in the static `AREAS` list, from which `AreaId` is derived. The renderer half
+(`renderer/areas/index.ts`) supplies the sidebar view and the area's extra commands; the main half (`main/areas.ts`)
+registers its channels. `WIREBENCH_AREAS="ssh=off"` switches an area off: main registers none of its channels, the
+renderer none of its commands, and the rail leaves it out (`app.areas` carries the enabled ids). The contract is
+`@internal`, not a plugin API. The SSH area is the first area to bring its own tab kind and channels; its model and
+sessions live in `packages/ssh`, which imports neither the engine nor Electron. See
+[ADR-0021](../adr/0021-a-desktop-area-is-a-module-behind-one-interface.md).
 
 ## Further reading
 
@@ -341,5 +354,7 @@ introduced.
   is one Fastify process over PostgreSQL
 - [ADR-0017](../adr/0017-a-protocol-is-a-module-behind-one-interface.md) — a protocol is a module
   behind one interface
+- [ADR-0021](../adr/0021-a-desktop-area-is-a-module-behind-one-interface.md) — a desktop area is a
+  module behind one interface
 - [Security model](../security.md)
 - [Success criteria and their evidence](../success-criteria.md)
