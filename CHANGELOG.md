@@ -18,6 +18,15 @@ All notable changes to this project are documented here. The format follows
   as you type. They are served from the documentation site, one folder per project format version, and
   attached to each release. The project-format reference shows the editor settings (#66).
 
+### Changed
+
+- **A same-host `http://` → `https://` redirect is followed with the request intact.** When a server answers
+  `http://host/path` with a 301, 302, 307 or 308 to `https://host/path` (same host, path and query, default
+  ports), a send follows it even with Follow Redirects off, and resends the same method, body and
+  credentials there, rather than returning the redirect page (SOAP) or turning a `POST` into a bodyless
+  `GET`. A SOAP response carries an `https-upgrade` Problem saying to change the endpoint; the redirect list
+  marks the hop. NTLM and Kerberos handshakes continue on the `https://` URL (#71).
+
 ## [4.0.0] - 2026-10-08
 
 ### Added
