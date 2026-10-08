@@ -26,6 +26,7 @@ const base = import.meta.env.BASE_URL; // "/wirebench/"
       <a class="wordmark" href={base}><img src={`${base}hero-mark.svg`} alt="" width="28" height="28" /> Wirebench</a>
       <nav aria-label="Site">
         <a href={`${base}features/`}>Features</a>
+        <a href={`${base}editions/`}>Editions</a>
         <a href={`${base}download/`}>Download</a>
         <a href={docsUrl(DOCS_LINKS.home)}>Docs</a>
         <a href="https://github.com/wirebench/wirebench">GitHub</a>
@@ -35,6 +36,7 @@ const base = import.meta.env.BASE_URL; // "/wirebench/"
     <main id="main" class="column"><slot /></main>
     <footer class="column">
       <a href={`${base}features/`}>Features</a>
+      <a href={`${base}editions/`}>Editions</a>
       <a href={`${base}download/`}>Download</a>
       <a href={docsUrl(DOCS_LINKS.home)}>Docs</a>
       <a href="https://github.com/wirebench/wirebench">GitHub</a>
