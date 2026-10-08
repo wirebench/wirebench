@@ -8,6 +8,7 @@ import { cp, readFile } from 'node:fs/promises';
 import { join, matchesGlob } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
+import { createMock, createMockOperation, createMockResponse } from '../../src/mock/model.js';
 import { PROJECT_FILE_KINDS, PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from '../../src/project-files.js';
 import { loadProject } from '../../src/project/load.js';
 import { FORMAT_VERSION } from '../../src/project/model.js';
@@ -73,6 +74,49 @@ describe('projectJsonSchemas', () => {
   it('accepts every YAML file of a sample project as saved', async () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
+    await expectValidTree(dir);
+  });
+
+  it('accepts the files of a saved mock, every field set', async () => {
+    const dir = await tempProjectDir();
+    const response = createMockResponse('Out of stock', {
+      status: 500,
+      headers: [{ name: 'X-Trace', value: 'mock' }],
+      delayMs: 250,
+      body: 'xml',
+      bodyText: '<fault/>',
+      match: [
+        {
+          from: 'body',
+          language: 'xpath',
+          expression: '//ord:sku',
+          namespaces: { ord: 'urn:orders' },
+          equals: 'SKU-0',
+        },
+        { from: 'query', name: 'dryRun', exists: false },
+      ],
+      scenario: { name: 'stock', state: 'Empty', next: 'Restocked' },
+    });
+    const mock = createMock(
+      'Orders mock',
+      { containerId: 'C1', binding: '{urn:orders}OrderSoap' },
+      {
+        description: 'Stands in for orders.',
+        port: 8089,
+        path: '/orders',
+        validation: 'report',
+        operations: [
+          createMockOperation('PlaceOrder', 'PlaceOrder', {
+            dispatch: 'match',
+            defaultResponseId: response.id,
+            responses: [response],
+          }),
+        ],
+      },
+    );
+    await saveProject({ ...sampleProject(), mocks: [mock] }, dir);
+    const files = await listTree(dir);
+    expect(files.filter((file) => file.startsWith('mocks/') && file.endsWith('.yaml'))).toHaveLength(3);
     await expectValidTree(dir);
   });
 

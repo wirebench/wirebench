@@ -31,6 +31,7 @@ import {
   wssOutgoingFileSchema,
 } from './project/schema.js';
 import { apiFileSchema, restRequestFileSchema } from './rest/files.js';
+import { mockFileSchema, operationFileSchema, responseFileSchema } from './mock/file.js';
 import { sequenceFileSchema } from './sequence/file.js';
 import { goldenFileSchema } from './snapshot/golden-file.js';
 import { interfaceFileSchema, requestFileSchema } from './soap/files.js';
@@ -91,6 +92,19 @@ export const PROJECT_FILE_KINDS: readonly ProjectFileKind[] = [
   },
   { name: 'golden', title: 'Snapshot', files: ['**/*.golden.yaml'], schema: goldenFileSchema },
   { name: 'sequence', title: 'Sequence', files: ['sequences/*.sequence.yaml'], schema: sequenceFileSchema },
+  { name: 'mock', title: 'Mock service', files: ['mocks/*/mock.yaml'], schema: mockFileSchema },
+  {
+    name: 'mock-operation',
+    title: 'Mock operation',
+    files: ['mocks/*/operations/*/operation.yaml'],
+    schema: operationFileSchema,
+  },
+  {
+    name: 'mock-response',
+    title: 'Mock response',
+    files: ['mocks/*/operations/*/*.response.yaml'],
+    schema: responseFileSchema,
+  },
   { name: 'webhooks', title: 'Webhook collection', files: ['webhooks/webhooks.yaml'], schema: webhooksFileSchema },
   {
     name: 'webhook-request',

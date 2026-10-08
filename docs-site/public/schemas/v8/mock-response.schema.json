@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-response.schema.json",
+  "title": "Wirebench project file: Mock response",
+  "description": "Project format 8: `mocks/*/operations/*/*.response.yaml`.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "order": { "default": 0, "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+    "status": { "default": 200, "type": "integer", "minimum": 100, "maximum": 599 },
+    "headers": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": { "name": { "type": "string" }, "value": { "type": ["string", "number", "boolean"] } },
+        "required": ["name", "value"],
+        "additionalProperties": {}
+      }
+    },
+    "delayMs": { "default": 0, "type": "integer", "minimum": 0, "maximum": 60000 },
+    "body": { "default": "none", "type": "string", "enum": ["xml", "json", "text", "none"] },
+    "match": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "body" },
+              "language": { "type": "string", "enum": ["xpath", "jsonpath"] },
+              "expression": { "type": "string", "minLength": 1 },
+              "namespaces": {
+                "type": "object",
+                "propertyNames": { "type": "string" },
+                "additionalProperties": { "type": "string" }
+              },
+              "equals": { "type": ["string", "number", "boolean"] },
+              "matches": { "type": "string" },
+              "exists": { "type": "boolean" }
+            },
+            "required": ["from", "language", "expression"],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "query" },
+              "name": { "type": "string", "minLength": 1 },
+              "equals": { "type": ["string", "number", "boolean"] },
+              "matches": { "type": "string" },
+              "exists": { "type": "boolean" }
+            },
+            "required": ["from", "name"],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "header" },
+              "name": { "type": "string", "minLength": 1 },
+              "equals": { "type": ["string", "number", "boolean"] },
+              "matches": { "type": "string" },
+              "exists": { "type": "boolean" }
+            },
+            "required": ["from", "name"],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "path" },
+              "name": { "type": "string", "minLength": 1 },
+              "equals": { "type": ["string", "number", "boolean"] },
+              "matches": { "type": "string" },
+              "exists": { "type": "boolean" }
+            },
+            "required": ["from", "name"],
+            "additionalProperties": {}
+          }
+        ]
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" },
+        "state": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" },
+        "next": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" }
+      },
+      "required": ["name"],
+      "additionalProperties": {}
+    }
+  },
+  "required": ["id", "name"],
+  "additionalProperties": {}
+}

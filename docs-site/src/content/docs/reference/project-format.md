@@ -129,6 +129,15 @@ workspace's `.vscode/settings.json`:
     "https://wirebench.github.io/wirebench/docs/schemas/v8/sequence.schema.json": [
       "**/sequences/*.sequence.yaml"
     ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock.schema.json": [
+      "**/mocks/*/mock.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-operation.schema.json": [
+      "**/mocks/*/operations/*/operation.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-response.schema.json": [
+      "**/mocks/*/operations/*/*.response.yaml"
+    ],
     "https://wirebench.github.io/wirebench/docs/schemas/v8/webhooks.schema.json": [
       "**/webhooks/webhooks.yaml"
     ],
