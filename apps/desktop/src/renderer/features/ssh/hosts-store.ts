@@ -69,22 +69,35 @@ interface HostsState {
   /** The user dismissed the trust prompt: no session, so the host's connect failed. */
   cancelTrust: () => void;
   visibleHosts: () => readonly ResolvedHostWire[];
+  /**
+   * Forgets the open workspace's hosts: the file, its problems, every session, failure and prompt, and an
+   * open form (which would otherwise save into the next workspace). The filter and tags stay.
+   */
+  reset: () => void;
 }
 
 const EMPTY: HostsFileWire = { version: 1, groups: [], hosts: [] };
 
-export const useHostsStore = create<HostsState>()((set, get) => ({
+/** The part of the state that belongs to the open workspace; `reset` puts it back. */
+const WORKSPACE_STATE = {
   file: EMPTY,
   resolved: [],
   problems: [],
   loaded: false,
-  filter: '',
-  selectedTags: [],
   dialog: null,
   sessions: {},
   trustPrompt: null,
   reconnectNonce: {},
   connectFailed: {},
+} satisfies Partial<HostsState>;
+
+export const useHostsStore = create<HostsState>()((set, get) => ({
+  ...WORKSPACE_STATE,
+  filter: '',
+  selectedTags: [],
+  reset: () => {
+    set(WORKSPACE_STATE);
+  },
   async refresh() {
     apply(await ipc().ssh.listHosts(undefined));
   },

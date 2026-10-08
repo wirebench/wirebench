@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInterfaceEditorStore } from '../../src/renderer/features/interface-editor/interface-editor-state.js';
+import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -144,6 +145,10 @@ describe('useWorkspaceStore', () => {
     useEditorsStore.getState().open({ id: 'request:r1', kind: 'request', title: 'Request 1', requestId: 'r1' });
     useExchangesStore.setState({ byRequest: { r1: { status: 'sending', sendId: 's1' } } });
     useInterfaceEditorStore.getState().setTab('i1', 'schema');
+    useHostsStore.setState({
+      file: { version: 1, groups: [], hosts: [{ id: 'h', name: 'h', address: 'h.example', tags: [], ssh: {} }] },
+      sessions: { h: { sessionId: 's1', state: 'open' } },
+    });
 
     useWorkspaceStore.getState().applySnapshot(null);
 
@@ -153,6 +158,8 @@ describe('useWorkspaceStore', () => {
     expect(useEditorsStore.getState().activeId).toBeUndefined();
     expect(useExchangesStore.getState().byRequest).toEqual({});
     expect(useInterfaceEditorStore.getState().tabs).toEqual({});
+    expect(useHostsStore.getState().file.hosts).toEqual([]);
+    expect(useHostsStore.getState().sessions).toEqual({});
   });
 
   it('applySnapshot(workspace) leaves the other stores alone', () => {

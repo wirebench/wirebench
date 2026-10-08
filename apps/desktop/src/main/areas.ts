@@ -24,3 +24,16 @@ export function registerEnabledAreaChannels(
 ): void {
   if (enabled.includes('ssh')) registerSshChannels(deps);
 }
+
+/**
+ * A workspace change: the cached `hosts.yaml` belongs to the workspace left, so it is dropped; when the ssh
+ * area is on, the renderer is told to read the new workspace's file (its store was reset on the switch).
+ */
+export function hostsOnWorkspaceChange(
+  enabled: readonly AreaId[],
+  hosts: { invalidate: () => void },
+  notify: () => void,
+): void {
+  hosts.invalidate();
+  if (enabled.includes('ssh')) notify();
+}

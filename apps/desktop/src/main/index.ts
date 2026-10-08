@@ -41,7 +41,7 @@ import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
-import { enabledAreasFromEnv, registerEnabledAreaChannels } from './areas.js';
+import { enabledAreasFromEnv, hostsOnWorkspaceChange, registerEnabledAreaChannels } from './areas.js';
 import { HostsService } from './hosts-service.js';
 import { SshService, whenWorkspaceSwitches } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
@@ -532,7 +532,9 @@ const workspaceService = new WorkspaceService({
       });
       currentValues.syncWorkspace(workspace);
       secretSources.noteChange();
-      hostsService.invalidate();
+      hostsOnWorkspaceChange(enabledAreas, hostsService, () => {
+        broadcast(events.ssh.hostsChanged, {});
+      });
       // A session belongs to the workspace it was opened in; its credentials were that workspace's.
       sshSessionsEndOnSwitch(workspace?.id);
     },

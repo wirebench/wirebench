@@ -121,6 +121,35 @@ describe('hosts store', () => {
   it('removeGroup refuses a non-empty group', () => {
     expect(() => removeGroup(RESPONSE.file as never, 'g')).toThrow(/not empty/);
   });
+  it('reset drops the workspace-bound state: the file, its problems, sessions, failures and prompts', async () => {
+    await useHostsStore.getState().refresh();
+    useHostsStore.setState({ problems: [{ code: 'ssh-hosts-invalid', message: 'bad' }], filter: 'al' });
+    useHostsStore.getState().setSession('a', { sessionId: 's1', state: 'open' });
+    useHostsStore.getState().noteConnectFailed('b');
+    useHostsStore.getState().bumpReconnect('a');
+    useHostsStore.getState().openDialog({ mode: 'edit-host', id: 'a' });
+    useHostsStore.getState().setTrustPrompt({
+      hostId: 'a',
+      size: { cols: 80, rows: 24 },
+      host: '10.0.0.1',
+      keyType: 'ssh-ed25519',
+      fingerprint: 'SHA256:x',
+    });
+
+    useHostsStore.getState().reset();
+
+    const state = useHostsStore.getState();
+    expect(state.file).toEqual({ version: 1, groups: [], hosts: [] });
+    expect(state.resolved).toEqual([]);
+    expect(state.problems).toEqual([]);
+    expect(state.loaded).toBe(false);
+    expect(state.sessions).toEqual({});
+    expect(state.connectFailed).toEqual({});
+    expect(state.reconnectNonce).toEqual({});
+    expect(state.trustPrompt).toBeNull();
+    expect(state.dialog).toBeNull();
+    expect(state.filter).toBe('al'); // a view preference, not the workspace's
+  });
   it('moveHost moves a host between a group and the root', () => {
     const moved = moveHost(RESPONSE.file as never, 'a', undefined);
     expect(moved.groups[0]?.hosts).toEqual([]);
