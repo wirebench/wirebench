@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { kerberosBindingPath } from '../src/main/kerberos.js';
+import { kerberosBindingPath, kerberosProviderFor, SNAP_KERBEROS_REASON } from '../src/main/kerberos.js';
 import { channels } from '../src/shared/ipc.js';
 
 describe('kerberosBindingPath', () => {
@@ -14,6 +14,33 @@ describe('kerberosBindingPath', () => {
     expect(
       kerberosBindingPath({ isPackaged: false, resourcesPath: '/x', platform: 'linux', arch: 'x64' }),
     ).toBeUndefined();
+  });
+});
+
+describe('kerberosProviderFor', () => {
+  const packaged = { isPackaged: true, resourcesPath: '/nowhere', platform: 'linux', arch: 'x64' } as const;
+
+  it('refuses inside the snap, naming the builds where Kerberos works', async () => {
+    const provider = kerberosProviderFor({ ...packaged, snap: '/snap/wirebench/x1' });
+    expect(provider.availability()).toEqual({ available: false, reason: SNAP_KERBEROS_REASON });
+    await expect(provider.initClient({ spn: 'HTTP@host' })).rejects.toThrow(SNAP_KERBEROS_REASON);
+  });
+
+  it('loads the vendored binding outside the snap', () => {
+    const availability = kerberosProviderFor({ ...packaged, snap: undefined }).availability();
+    expect(availability).toMatchObject({ available: false, reason: 'The Kerberos component is not installed.' });
+  });
+
+  it('ignores an empty $SNAP and $SNAP off Linux', () => {
+    for (const input of [
+      { ...packaged, snap: '' },
+      { ...packaged, platform: 'darwin', snap: '/snap/wirebench/x1' },
+    ]) {
+      expect(kerberosProviderFor(input).availability()).not.toEqual({
+        available: false,
+        reason: SNAP_KERBEROS_REASON,
+      });
+    }
   });
 });
 
