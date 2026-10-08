@@ -1,0 +1,102 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { openSession } from '../../src/index.js';
+import type { SshSession } from '../../src/index.js';
+import { startSshFixture } from '../helpers/ssh-fixture.js';
+import type { SshFixture } from '../helpers/ssh-fixture.js';
+
+const accept = () => Promise.resolve('accept' as const);
+const hop = (port: number, password: string) => ({
+  address: '127.0.0.1',
+  port,
+  user: 'tester',
+  auth: { kind: 'password' as const, password },
+  keepAlive: 0,
+  connectTimeout: 5,
+});
+const open: SshFixture[] = [];
+let session: SshSession | undefined;
+afterEach(async () => {
+  session?.close();
+  session = undefined;
+  await Promise.all(open.splice(0).map((f) => f.close()));
+});
+async function fixture(password: string, allowForwardOut = false) {
+  const f = await startSshFixture({ password: { user: 'tester', password }, allowForwardOut });
+  open.push(f);
+  return f;
+}
+function until(s: SshSession, predicate: (text: string) => boolean): Promise<string> {
+  let text = '';
+  return new Promise((resolve) => {
+    s.onData((d) => {
+      text += Buffer.from(d).toString('utf8');
+      if (predicate(text)) resolve(text);
+    });
+  });
+}
+
+describe('openSession', () => {
+  it('connects with a password, echoes bytes, resizes and reports the exit code', async () => {
+    const f = await fixture('pw');
+    session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+    const echoed = until(session, (t) => t.includes('hello'));
+    session.write(Buffer.from('hello'));
+    expect(await echoed).toContain('hello');
+    session.resize(132, 40);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(f.lastResize).toEqual({ cols: 132, rows: 40 });
+    const exit = new Promise<{ code: number | null }>((r) => session!.onExit(r));
+    session.write(Buffer.from('exit 3\n'));
+    expect((await exit).code).toBe(3);
+  });
+  it('reports the host key to verifyHostKey and refuses when rejected', async () => {
+    const f = await fixture('pw');
+    const seen: string[] = [];
+    await expect(
+      openSession({
+        hops: [hop(f.port, 'pw')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: (_h, key) => {
+          seen.push(key.fingerprint);
+          return Promise.resolve('reject' as const);
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'ssh-host-key-new',
+      details: { host: `127.0.0.1:${f.port}`, fingerprint: f.hostKey.fingerprint, keyType: f.hostKey.keyType },
+    });
+    expect(seen).toEqual([f.hostKey.fingerprint]);
+  });
+  it('a wrong password is ssh-auth-failed and never carries the value', async () => {
+    const f = await fixture('pw');
+    const error: unknown = await openSession({
+      hops: [hop(f.port, 'wrong-one')],
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+    }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'ssh-auth-failed', details: { method: 'password' } });
+    expect(JSON.stringify({ m: (error as Error).message, d: (error as { details: unknown }).details })).not.toContain(
+      'wrong-one',
+    );
+  });
+  it('dials through a jump host', async () => {
+    const inner = await fixture('in');
+    const outer = await fixture('out', true);
+    session = await openSession({
+      hops: [hop(outer.port, 'out'), hop(inner.port, 'in')],
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+    });
+    const echoed = until(session, (t) => t.includes('via'));
+    session.write(Buffer.from('via'));
+    expect(await echoed).toContain('via');
+  });
+  it('a closed port is ssh-connect-failed naming the hop', async () => {
+    await expect(openSession({ hops: [hop(1, 'x')], cols: 80, rows: 24, verifyHostKey: accept })).rejects.toMatchObject(
+      { code: 'ssh-connect-failed', details: { host: '127.0.0.1:1', hop: 0 } },
+    );
+  });
+});
