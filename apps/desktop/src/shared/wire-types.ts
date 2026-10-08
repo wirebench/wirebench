@@ -6317,6 +6317,28 @@ export const workspaceProjectIdRequestSchema = z.object({ projectId: z.string() 
 export const workspaceExportProjectResponseSchema = z.object({ dir: z.string().nullable() });
 export type WorkspaceExportProjectResponse = z.infer<typeof workspaceExportProjectResponseSchema>;
 
+/**
+ * Request for `workspace.exportCollection` (collection exporters spec §4): the project by id, or
+ * the one holding `containerId`; with `containerId`, only that API or interface is exported.
+ */
+export const workspaceExportCollectionRequestSchema = z.object({
+  projectId: z.string().optional(),
+  containerId: z.string().optional(),
+  format: z.enum(['postman', 'opencollection']),
+});
+export type WorkspaceExportCollectionRequest = z.infer<typeof workspaceExportCollectionRequestSchema>;
+
+/** Response for `workspace.exportCollection`: the folder and file names written, and the report. */
+export const workspaceExportCollectionResponseSchema = z.object({
+  cancelled: z.boolean(),
+  dir: z.string().optional(),
+  files: z.array(z.string()),
+  requests: z.number().int().nonnegative(),
+  warnings: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+export type WorkspaceExportCollectionResponse = z.infer<typeof workspaceExportCollectionResponseSchema>;
+
 /** Request for `workspace.setActiveEnvironment`; `null` deactivates. */
 export const workspaceSetActiveEnvironmentRequestSchema = z.object({ environmentId: z.string().nullable() });
 

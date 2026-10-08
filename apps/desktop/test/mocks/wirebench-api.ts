@@ -164,6 +164,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       importSuggestion: fail('workspace.importSuggestion'),
       reveal: fail('workspace.reveal'),
       exportProject: fail('workspace.exportProject'),
+      exportCollection: fail('workspace.exportCollection'),
       locateProject: fail('workspace.locateProject'),
       removeProject: fail('workspace.removeProject'),
       setActiveEnvironment: fail('workspace.setActiveEnvironment'),

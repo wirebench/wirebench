@@ -39,6 +39,8 @@ export const COMMAND_IDS = [
   'workspace.linkProject',
   'workspace.importProjectFolder',
   'workspace.exportProject',
+  'workspace.exportPostman',
+  'workspace.exportOpenCollection',
   'workspace.removeProject',
   'explorer.importAnother',
   'explorer.removeInterface',

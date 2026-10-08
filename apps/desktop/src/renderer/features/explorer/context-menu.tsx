@@ -2,6 +2,7 @@ import { Fragment, useRef, type ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { recreateRequest, type RecreateMode } from '../request-editor/request-actions.js';
 import { explorerActions } from './explorer-actions.js';
+import { exportCollection, type CollectionExportTarget } from './export-collection.js';
 import { projectRowActions } from './project-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
@@ -66,6 +67,22 @@ function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]
   return [...menu.slice(0, 1), [item], ...menu.slice(1)];
 }
 
+/** **Export as Postman Collection…** and **Export as OpenCollection…** for a project, API or interface. */
+function exportItems(target: CollectionExportTarget): ExplorerMenuItem[] {
+  return [
+    {
+      key: 'export-postman',
+      label: 'Export as Postman Collection…',
+      run: () => void exportCollection(target, 'postman'),
+    },
+    {
+      key: 'export-opencollection',
+      label: 'Export as OpenCollection…',
+      run: () => void exportCollection(target, 'opencollection'),
+    },
+  ];
+}
+
 function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (node.kind === 'project' && node.projectId !== undefined) {
     const projectId = node.projectId;
@@ -99,6 +116,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       [
         { key: 'reveal', label: REVEAL_LABEL, run: () => projectRowActions.reveal(projectId) },
         { key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) },
+        ...exportItems({ projectId }),
       ],
       [
         {
@@ -142,6 +160,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
           label: 'Export Definition…',
           run: () => explorerActions.exportDefinition(node.interfaceId),
         },
+        ...(node.interfaceId !== undefined ? exportItems({ containerId: node.interfaceId }) : []),
         {
           key: 'generate-docs',
           label: 'Generate Documentation…',
@@ -235,6 +254,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
             { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
           ]
         : [],
+      exportItems({ containerId: apiId }),
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
     );
@@ -248,6 +268,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newGrpcRequest(apiId) },
       ],
+      exportItems({ containerId: apiId }),
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeGrpcApi(apiId) }],
     );
@@ -382,6 +403,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newWsRequest(apiId) },
       ],
+      exportItems({ containerId: apiId }),
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeWsApi(apiId) }],
     );
