@@ -27,6 +27,8 @@ import type { PlacedSamlToken } from './saml.js';
 import { assertionsWithId, referencedId, registerStrTransform } from './str-transform.js';
 import { STR_TRANSFORM } from '../saml/uris.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
+import { signatureCheck } from '../incoming/check.js';
+import type { WssSignatureCheck } from '../incoming/check.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
 const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
@@ -60,6 +62,8 @@ export interface VerifySignatureResult {
   readonly references: readonly string[];
   /** Why verification failed; absent when `ok`. */
   readonly error?: string;
+  /** Every reference's expected and computed digest; absent when the signature could not be loaded. */
+  readonly check?: WssSignatureCheck;
 }
 
 /** What {@link verifySignature} needs to check a signature. */
@@ -372,9 +376,18 @@ export function verifySignature(xml: string, options: VerifySignatureOptions): V
   registerStrTransform(verifier);
   try {
     verifier.loadSignature(serializeXml(signature));
-    const ok = verifier.checkSignature(xml);
-    return ok ? { ok, references } : { ok, references, error: 'One or more references failed validation.' };
   } catch (error) {
     return { ok: false, references, error: error instanceof Error ? error.message : String(error) };
   }
+  let ok: boolean;
+  let error: string | undefined;
+  try {
+    ok = verifier.checkSignature(xml);
+    if (!ok) error = 'One or more references failed validation.';
+  } catch (thrown) {
+    ok = false;
+    error = thrown instanceof Error ? thrown.message : String(thrown);
+  }
+  const check = signatureCheck(verifier, xml, options.certPem, ok);
+  return { ok, references, ...(error !== undefined ? { error } : {}), check };
 }

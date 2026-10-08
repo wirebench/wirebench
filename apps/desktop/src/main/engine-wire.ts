@@ -42,6 +42,8 @@ import type {
   WsFrame,
   WsFrameContract,
   WsHandshake,
+  WssSignatureCheck,
+  WssTimelineStep,
 } from '@wirebench/engine';
 import type {
   RestEventStreamWire,
@@ -65,6 +67,8 @@ import type {
   WsFrameContractWire,
   WsFrameWire,
   WsHandshakeWire,
+  WssSignatureCheckWire,
+  WssTimelineStepWire,
 } from '../shared/wire-types.js';
 
 /** Base name of a URL or file path (its last `/`-separated, query/fragment-free segment). */
@@ -646,6 +650,40 @@ export function toResponseAttachmentWires(
 }
 
 /** Converts a `SoapExchange` plus its `sendId` into the `request.send` response payload. */
+/**
+ * The debugger's per-reference report as it crosses the bridge: digests, algorithm names and
+ * element names only — nothing here can carry key material or a secret.
+ */
+export function toSignatureCheckWire(check: WssSignatureCheck): WssSignatureCheckWire {
+  return {
+    canonicalization: check.canonicalization,
+    signatureMethod: check.signatureMethod,
+    references: check.references.map((reference) => ({
+      uri: reference.uri,
+      ...(reference.element !== undefined ? { element: reference.element } : {}),
+      ok: reference.ok,
+      transforms: [...reference.transforms],
+      inclusivePrefixes: [...reference.inclusivePrefixes],
+      digestAlgorithm: reference.digestAlgorithm,
+      expectedDigest: reference.expectedDigest,
+      ...(reference.computedDigest !== undefined ? { computedDigest: reference.computedDigest } : {}),
+      ...(reference.problem !== undefined ? { problem: reference.problem } : {}),
+    })),
+    signatureValueOk: check.signatureValueOk,
+  };
+}
+
+/** One `wsse:Security` timeline step as it crosses the bridge. */
+export function toTimelineStepWire(step: WssTimelineStep): WssTimelineStepWire {
+  return {
+    kind: step.kind,
+    summary: step.summary,
+    ...(step.covers !== undefined ? { covers: [...step.covers] } : {}),
+    ...(step.id !== undefined ? { id: step.id } : {}),
+    ...(step.actor !== undefined ? { actor: step.actor } : {}),
+  };
+}
+
 export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?: { show?: boolean }): ExchangeSummary {
   return {
     sendId,
@@ -701,8 +739,14 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
                       ...(action.expires !== undefined ? { expires: action.expires } : {}),
                       ...(action.references !== undefined ? { references: [...action.references] } : {}),
                       ...(action.coversBody !== undefined ? { coversBody: action.coversBody } : {}),
+                      ...(action.check !== undefined ? { check: toSignatureCheckWire(action.check) } : {}),
+                      ...(action.skewSeconds !== undefined ? { skewSeconds: action.skewSeconds } : {}),
+                      ...(action.toleranceSeconds !== undefined ? { toleranceSeconds: action.toleranceSeconds } : {}),
                     })),
                     errors: [...exchange.wss.incoming.errors],
+                    ...(exchange.wss.incoming.timeline !== undefined
+                      ? { timeline: exchange.wss.incoming.timeline.map(toTimelineStepWire) }
+                      : {}),
                   },
                 }
               : {}),

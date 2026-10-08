@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { IncomingConfigEditor } from '../../src/renderer/features/wss/incoming-config-editor.js';
 import { WssInspector, wssTabLabel } from '../../src/renderer/features/request-editor/inspectors/wss-inspector.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { makeDraft } from '../mocks/exchange-fixtures.js';
 import type { ExchangeSummary, KeystoreWire, ProjectWire, WssIncomingWire } from '../../src/shared/wire-types.js';
 
 const project = { id: 'p1', name: 'Demo', dir: '/tmp/demo' } as unknown as ProjectWire;
@@ -145,6 +146,147 @@ describe('WssInspector', () => {
     expect(useEditorsStore.getState().responseViewFor('r1')).toBe('xml');
   });
 
+  it('lists every reference of a failed signature with its digests (#57)', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [
+            {
+              kind: 'signature',
+              ok: false,
+              detail: 'Reference #Id-1 (Body) does not match.',
+              check: {
+                canonicalization: 'exc-c14n',
+                signatureMethod: 'rsa-sha256',
+                signatureValueOk: true,
+                references: [
+                  {
+                    uri: 'Id-1',
+                    element: 'Body',
+                    ok: false,
+                    transforms: ['exc-c14n'],
+                    inclusivePrefixes: ['soapenv'],
+                    digestAlgorithm: 'sha256',
+                    expectedDigest: 'EXPECTED=',
+                    computedDigest: 'COMPUTED=',
+                  },
+                  {
+                    uri: 'TS-1',
+                    element: 'Timestamp',
+                    ok: true,
+                    transforms: ['exc-c14n'],
+                    inclusivePrefixes: [],
+                    digestAlgorithm: 'sha256',
+                    expectedDigest: 'SAME=',
+                    computedDigest: 'SAME=',
+                  },
+                ],
+              },
+            },
+          ],
+          errors: ['Reference #Id-1 (Body) does not match.'],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.getAllByTestId('wss-reference-check')).toHaveLength(2);
+    expect(screen.getByText('differs')).toBeTruthy();
+    expect(screen.getByText('matches')).toBeTruthy();
+    expect(screen.getByText('EXPECTED=')).toBeTruthy();
+    expect(screen.getByText('COMPUTED=')).toBeTruthy();
+    // Only the failing reference spells out its digests.
+    expect(screen.queryByText('SAME=')).toBeNull();
+    expect(screen.queryByText('SignatureValue invalid')).toBeNull();
+  });
+
+  it('flags a SignatureValue that fails while every reference matches', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [
+            {
+              kind: 'signature',
+              ok: false,
+              detail: 'Every reference matches, but the SignatureValue does not verify.',
+              check: {
+                canonicalization: 'exc-c14n',
+                signatureMethod: 'rsa-sha256',
+                signatureValueOk: false,
+                references: [
+                  {
+                    uri: 'Id-1',
+                    element: 'Body',
+                    ok: true,
+                    transforms: ['exc-c14n'],
+                    inclusivePrefixes: [],
+                    digestAlgorithm: 'sha256',
+                    expectedDigest: 'SAME=',
+                    computedDigest: 'SAME=',
+                  },
+                ],
+              },
+            },
+          ],
+          errors: [],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.getByText('SignatureValue invalid')).toBeTruthy();
+  });
+
+  it('shows the clock skew a timestamp was judged with', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [
+            {
+              kind: 'timestamp',
+              ok: false,
+              detail: 'Created 95 s ahead.',
+              created: 'T0',
+              skewSeconds: -95,
+              toleranceSeconds: 30,
+            },
+          ],
+          errors: [],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.getByTestId('wss-clock-skew').textContent).toBe(
+      'Clock: created 95 s ahead of this clock; 30 s skew tolerated',
+    );
+  });
+
+  it('lists the Security header in header order', () => {
+    render(
+      <WssInspector
+        exchange={exchangeWith({
+          actions: [],
+          errors: [],
+          timeline: [
+            { kind: 'timestamp', summary: 'Timestamp (created T0)' },
+            {
+              kind: 'signature',
+              summary: 'Signed Body, Timestamp (rsa-sha256, exc-c14n)',
+              covers: ['Body', 'Timestamp'],
+            },
+            { kind: 'encryption', summary: 'Encrypted Body (content)', actor: 'urn:gw' },
+          ],
+        })}
+        requestId="r1"
+      />,
+    );
+    expect(screen.queryByTestId('wss-actions-table')).toBeNull();
+    const steps = screen.getAllByTestId('wss-timeline-step').map((step) => step.textContent);
+    expect(steps).toEqual([
+      'Timestamp (created T0)',
+      'Signed Body, Timestamp (rsa-sha256, exc-c14n)',
+      'Encrypted Body (content) (for urn:gw)',
+    ]);
+  });
+
   it('has no note to show when nothing was decrypted', () => {
     render(
       <WssInspector
@@ -156,5 +298,60 @@ describe('WssInspector', () => {
       />,
     );
     expect(screen.queryByTestId('wss-decrypted-note')).toBeNull();
+  });
+});
+
+describe('WssInspector outgoing preview (#57)', () => {
+  const PREVIEW = {
+    envelopeXml: '<soapenv:Envelope><soapenv:Header><wsse:Security/></soapenv:Header></soapenv:Envelope>',
+    timeline: [
+      { kind: 'timestamp', summary: 'Timestamp (created T0)' },
+      { kind: 'signature', summary: 'Signed Body, Timestamp (rsa-sha256, exc-c14n)', covers: ['Body', 'Timestamp'] },
+    ],
+  };
+
+  function setUpPreview(previewOutgoing: ReturnType<typeof vi.fn>) {
+    const editRequest = vi.fn();
+    installWirebenchApi({ wss: { previewOutgoing } as Record<string, unknown> });
+    useProjectStore.setState({ requests: { r1: makeDraft({ envelopeXml: '<plain/>' }) }, editRequest } as never);
+    render(<WssInspector exchange={undefined} requestId="r1" />);
+    return editRequest;
+  }
+
+  it('shows the secured envelope and its timeline without touching the editor', async () => {
+    const previewOutgoing = vi.fn().mockResolvedValue({ ok: true, value: PREVIEW });
+    const editRequest = setUpPreview(previewOutgoing);
+    fireEvent.click(screen.getByTestId('wss-preview-button'));
+    expect(await screen.findByTestId('wss-preview-envelope')).toBeTruthy();
+    expect(previewOutgoing).toHaveBeenCalledWith({ requestId: 'r1', envelopeXml: '<plain/>' });
+    expect(screen.getAllByTestId('wss-timeline-step').map((step) => step.textContent)).toEqual([
+      'Timestamp (created T0)',
+      'Signed Body, Timestamp (rsa-sha256, exc-c14n)',
+    ]);
+    expect(screen.getByText(/applied in this order/)).toBeTruthy();
+    expect(editRequest).not.toHaveBeenCalled();
+  });
+
+  it('drops the preview once the envelope on screen changes', async () => {
+    setUpPreview(vi.fn().mockResolvedValue({ ok: true, value: PREVIEW }));
+    fireEvent.click(screen.getByTestId('wss-preview-button'));
+    expect(await screen.findByTestId('wss-preview-envelope')).toBeTruthy();
+    act(() => {
+      useProjectStore.setState({ requests: { r1: makeDraft({ envelopeXml: '<edited/>' }) } } as never);
+    });
+    expect(screen.queryByTestId('wss-preview-envelope')).toBeNull();
+  });
+
+  it('says why there is nothing to preview', async () => {
+    setUpPreview(
+      vi.fn().mockResolvedValue({
+        ok: false,
+        error: { code: 'wss-config-missing', message: 'This request has no outgoing WS-Security configuration.' },
+      }),
+    );
+    fireEvent.click(screen.getByTestId('wss-preview-button'));
+    expect((await screen.findByTestId('wss-preview-error')).textContent).toBe(
+      'This request has no outgoing WS-Security configuration.',
+    );
   });
 });

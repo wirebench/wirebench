@@ -16,8 +16,15 @@ import { channels } from '../../shared/ipc.js';
 import { redactXml } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
 import type { WssEntryWire, WssPolicyStatusResponse } from '../../shared/wire-types.js';
-import { checkWssPolicy, describeWssPolicy, proposeWssEntries, WssError } from '@wirebench/engine';
+import {
+  checkWssPolicy,
+  describeSecurityHeader,
+  describeWssPolicy,
+  proposeWssEntries,
+  WssError,
+} from '@wirebench/engine';
 import type { WssEntry, WssPolicy } from '@wirebench/engine';
+import { toTimelineStepWire } from '../engine-wire.js';
 import { registerHandler } from './register.js';
 
 /** What the `wss.*` channels need; a stub stands in for it in tests. */
@@ -91,8 +98,9 @@ export function wssPolicyStatus(inputs: ReturnType<ProjectRouter['wssPolicyInput
 /** Registers the `wss.*` channels. */
 export function registerWssChannels(deps: WssChannelDeps): void {
   registerHandler(channels.wss.previewOutgoing, async (request) => {
-    const envelopeXml = await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml);
-    return { envelopeXml: redactXml(envelopeXml) };
+    const envelopeXml = redactXml(await deps.project.previewOutgoingWss(request.requestId, request.envelopeXml));
+    // Read from the redacted envelope, so the timeline describes exactly what the preview shows.
+    return { envelopeXml, timeline: describeSecurityHeader(envelopeXml).map(toTimelineStepWire) };
   });
 
   registerHandler(channels.wss.insertEntry, async (request) => {

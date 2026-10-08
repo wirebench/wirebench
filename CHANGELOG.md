@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **WS-Security debugger.** The response's **WSS** inspector now says why a signature, decryption or
+  timestamp failed. It shows the part that changed, with its expected and computed digest and the
+  transforms used, or a SignatureValue that fails while every part matches. It names the signer token
+  or decryption certificate the message asked for and did not find, and the clock skew against the
+  timestamp. It also lists the Security header step by step. **Preview secured request** shows a
+  request's secured envelope and its steps before Send (#57).
 - **WS-Security from the WSDL's policy.** When a WSDL attaches a WS-SecurityPolicy to an operation, the
   request's Auth inspector shows the tokens, the signed and encrypted parts, the algorithm suite and
   whether TLS is required. **Apply policy** turns it into an outgoing WS-Security configuration in one

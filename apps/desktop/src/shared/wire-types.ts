@@ -910,6 +910,39 @@ export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
  * engine's `WssAction` exactly — booleans, a human-readable detail and the signer's subject.
  * No key material, no secret reference, nothing that could carry one.
  */
+/** One `ds:Reference` as the WS-Security debugger reports it; mirrors the engine's `WssReferenceCheck`. */
+export const wssReferenceCheckWireSchema = z.object({
+  uri: z.string(),
+  element: z.string().optional(),
+  ok: z.boolean(),
+  transforms: z.array(z.string()),
+  inclusivePrefixes: z.array(z.string()),
+  digestAlgorithm: z.string(),
+  expectedDigest: z.string(),
+  computedDigest: z.string().optional(),
+  problem: z.string().optional(),
+});
+export type WssReferenceCheckWire = z.infer<typeof wssReferenceCheckWireSchema>;
+
+/** One `ds:Signature` as the debugger reports it; mirrors the engine's `WssSignatureCheck`. */
+export const wssSignatureCheckWireSchema = z.object({
+  canonicalization: z.string(),
+  signatureMethod: z.string(),
+  references: z.array(wssReferenceCheckWireSchema),
+  signatureValueOk: z.boolean(),
+});
+export type WssSignatureCheckWire = z.infer<typeof wssSignatureCheckWireSchema>;
+
+/** One child of a `wsse:Security` header, in header order; mirrors the engine's `WssTimelineStep`. */
+export const wssTimelineStepWireSchema = z.object({
+  kind: z.enum(['timestamp', 'username-token', 'token', 'signature', 'encryption', 'other']),
+  summary: z.string(),
+  covers: z.array(z.string()).optional(),
+  id: z.string().optional(),
+  actor: z.string().optional(),
+});
+export type WssTimelineStepWire = z.infer<typeof wssTimelineStepWireSchema>;
+
 export const wssActionWireSchema = z.object({
   kind: z.enum(['decrypt', 'signature', 'timestamp']),
   ok: z.boolean(),
@@ -921,6 +954,12 @@ export const wssActionWireSchema = z.object({
   /** Names of the parts a signature covered (`Body`, `Timestamp`, …); signature actions only. */
   references: z.array(z.string()).optional(),
   coversBody: z.boolean().optional(),
+  /** Every reference's expected and computed digest; signature actions only. */
+  check: wssSignatureCheckWireSchema.optional(),
+  /** This machine's clock minus `wsu:Created`, in seconds; timestamp actions only. */
+  skewSeconds: z.number().optional(),
+  /** The clock skew tolerated, in seconds; timestamp actions only. */
+  toleranceSeconds: z.number().optional(),
 });
 export type WssActionWire = z.infer<typeof wssActionWireSchema>;
 
@@ -933,6 +972,8 @@ export const wssExchangeWireSchema = z.object({
     .object({
       actions: z.array(wssActionWireSchema),
       errors: z.array(z.string()),
+      /** The response's `wsse:Security` header, in header order, as it arrived. */
+      timeline: z.array(wssTimelineStepWireSchema).optional(),
     })
     .optional(),
 });
@@ -5135,8 +5176,17 @@ export const wssPreviewOutgoingRequestSchema = z.object({
   envelopeXml: z.string().optional(),
 });
 export const wssEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
+/**
+ * `wss.previewOutgoing`: the secured envelope plus its `wsse:Security` timeline (#57), read from
+ * the redacted envelope, so the preview shows exactly what the timeline describes.
+ */
+export const wssPreviewResponseSchema = z.object({
+  envelopeXml: z.string(),
+  timeline: z.array(wssTimelineStepWireSchema),
+});
 export type WssPreviewOutgoingRequest = z.infer<typeof wssPreviewOutgoingRequestSchema>;
 export type WssEnvelopeResponse = z.infer<typeof wssEnvelopeResponseSchema>;
+export type WssPreviewResponse = z.infer<typeof wssPreviewResponseSchema>;
 
 /**
  * `wss.policyStatus`: the WS-SecurityPolicy of a request's operation as the Auth inspector shows it
