@@ -1,0 +1,10 @@
+id: M1
+kind: mock
+name: Orders
+order: 0
+path: /orders-api
+port: 0
+source:
+  container: A1
+validation: reject
+version: 1

@@ -1,0 +1,10 @@
+id: M2
+kind: mock
+name: Orders backup
+order: 1
+path: /backup
+port: 0
+source:
+  container: A1
+validation: reject
+version: 1

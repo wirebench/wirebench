@@ -1,0 +1,5 @@
+baseUrl: ""
+id: A1
+kind: rest
+name: Orders API
+order: 0

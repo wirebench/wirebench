@@ -81,7 +81,7 @@ function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
 }
 
 /** Resolves when `stop` aborts, or, without one, on the process's first SIGINT or SIGTERM. */
-function stopped(stop: AbortSignal | undefined): Promise<void> {
+export function stopped(stop: AbortSignal | undefined): Promise<void> {
   return new Promise<void>((resolve) => {
     if (stop !== undefined) {
       if (stop.aborted) {

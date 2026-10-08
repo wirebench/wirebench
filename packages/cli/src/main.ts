@@ -1,12 +1,12 @@
 import { callCommand } from './commands/call.js';
 import { mcpCommand } from './commands/mcp.js';
+import { mockCommand } from './commands/mock.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
 import { ExitCode } from './exit-codes.js';
 import { cliVersion } from './version.js';
-import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
-import { VERB_HELP } from './args-ops.js';
+import { HELP_TEXT, UsageError, VERB_HELP, parseCliArgs } from './args.js';
 
 /** The I/O surface `main` writes through, so tests can capture output without touching the real process. */
 export interface CliIo {
@@ -47,6 +47,9 @@ export async function main(
       }
       case 'mcp': {
         return await mcpCommand(args, io);
+      }
+      case 'mock': {
+        return await mockCommand(args, io);
       }
     }
   } catch (error) {

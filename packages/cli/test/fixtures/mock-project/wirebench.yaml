@@ -1,0 +1,9 @@
+formatVersion: 8
+id: P1
+name: Mock fixture
+properties: {}
+settings:
+  cacheDefinitions: true
+  defaultTimeoutMs: 60000
+  prettyPrintResponses: true
+writtenBy: wirebench

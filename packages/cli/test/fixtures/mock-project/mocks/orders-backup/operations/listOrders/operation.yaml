@@ -1,0 +1,6 @@
+default: id0006
+dispatch: sequence
+id: id0007
+name: listOrders
+operation: get /orders
+order: 0

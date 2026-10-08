@@ -67,7 +67,7 @@ function createFileReporter(file: string, render: (result: RunResult) => string)
 }
 
 /** A workspace where a project was expected: name the projects instead of guessing which one. */
-async function refuseWorkspace(path: string, io: CliIo): Promise<ExitCode> {
+export async function refuseWorkspace(path: string, io: CliIo): Promise<ExitCode> {
   const { workspace } = await loadWorkspace(path);
   io.stderr.write('This is a workspace; run one of its projects:\n');
   for (const ref of workspace.projects) {

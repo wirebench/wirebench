@@ -7,14 +7,20 @@ import {
   parseMcp,
   parseOpVerb,
   refuseOpOnly,
-  VERB_HELP,
+  VERB_HELP as OP_VERB_HELP,
 } from './args-ops.js';
 import type { CallArgs, McpArgs, OpArgs } from './args-ops.js';
+import { MOCK_HELP, parseMock } from './args-mock.js';
+import type { MockArgs } from './args-mock.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
 export type { CallArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
+export type { MockArgs } from './args-mock.js';
+
+/** `wirebench <verb> --help`. */
+export const VERB_HELP: Readonly<Record<string, string>> = { ...OP_VERB_HELP, mock: MOCK_HELP };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
 export const HELP_TEXT = `wirebench run <path> [selector…] [options]
@@ -58,6 +64,9 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        secret-sources hash.
 
 ${OPS_HELP_TEXT}
+
+wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
+                       Serves the project's mocks until stopped (see wirebench mock --help).
 
 wirebench --version | --help
 wirebench <verb> --help`;
@@ -106,6 +115,7 @@ export type ParsedArgs =
   | OpArgs
   | McpArgs
   | CallArgs
+  | MockArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -294,6 +304,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'mcp') {
     return parseMcp(rest, values);
+  }
+
+  if (word === 'mock') {
+    return parseMock(rest, values);
   }
 
   if (isOpVerb(word)) {
