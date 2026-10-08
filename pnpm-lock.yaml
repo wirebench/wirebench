@@ -200,6 +200,9 @@ importers:
       '@wirebench/engine':
         specifier: workspace:*
         version: link:../packages/engine
+      '@wirebench/ssh':
+        specifier: workspace:*
+        version: link:../packages/ssh
 
   packages/cli:
     dependencies:

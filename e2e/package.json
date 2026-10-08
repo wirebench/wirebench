@@ -12,6 +12,7 @@
     "@electron/fuses": "^2.1.3",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.2",
-    "@wirebench/engine": "workspace:*"
+    "@wirebench/engine": "workspace:*",
+    "@wirebench/ssh": "workspace:*"
   }
 }

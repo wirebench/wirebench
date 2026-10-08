@@ -1,10 +1,14 @@
 import { generateKeyPairSync } from 'node:crypto';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { Server, utils } from 'ssh2';
+import ssh2 from 'ssh2';
 import type { Connection } from 'ssh2';
 import { fingerprintOf, keyTypeOf } from '../../src/known-hosts.js';
 import type { KnownHostEntry } from '../../src/known-hosts.js';
+
+// ssh2 is CommonJS and Node's ESM loader finds only some of its named exports (not `Server` or `utils`), so
+// the e2e runner, which loads this file natively, needs the default import. Vitest accepts either.
+const { Server, utils } = ssh2;
 
 export interface SshFixture {
   readonly port: number;
@@ -15,7 +19,7 @@ export interface SshFixture {
 
 /**
  * An in-process ssh2 server on 127.0.0.1: password auth, a shell that echoes every byte and exits with
- * code N on an `exit N` line, and (optionally) direct-tcpip forwarding so it can act as a jump host.
+ * code N on an `exit N` line (ended by a newline, or by the carriage return a terminal's Enter key sends), and (optionally) direct-tcpip forwarding so it can act as a jump host.
  */
 export async function startSshFixture(options: {
   password: { user: string; password: string };
@@ -73,7 +77,7 @@ export async function startSshFixture(options: {
           stream.on('data', (data: Buffer) => {
             stream.write(data);
             line += data.toString();
-            const match = /exit (\d+)\n/.exec(line);
+            const match = /exit (\d+)[\r\n]/.exec(line);
             if (match) {
               stream.exit(Number(match[1]));
               stream.end();
