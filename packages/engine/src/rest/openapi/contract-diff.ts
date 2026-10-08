@@ -177,11 +177,11 @@ export function diffOpenApiContracts(
 
   for (const ref of plan.removed) {
     const operation = openApiOperationLabel(ref);
-    changes.push({ kind: 'operation-removed', severity: 'breaking', operation, message: `${operation} removed` });
+    changes.push({ kind: 'operation-removed', severity: 'breaking', operation, message: 'operation removed' });
   }
   for (const ref of plan.added) {
     const operation = openApiOperationLabel(ref);
-    changes.push({ kind: 'operation-added', severity: 'compatible', operation, message: `${operation} added` });
+    changes.push({ kind: 'operation-added', severity: 'compatible', operation, message: 'operation added' });
   }
   changes.push(...diffEndpoints(oldDocument.servers.map(serverUrl), newDocument.servers.map(serverUrl)));
 
