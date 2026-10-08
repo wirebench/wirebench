@@ -15,6 +15,7 @@
  * the whole point of these methods taking a `WebContents`.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -241,8 +242,23 @@ export interface WorkspaceServiceDeps {
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** The session's issued-token cache, which every host's WS-Security preview peeks at; omitted in tests. */
   readonly issuedTokens?: IssuedTokenSource;
-  /** One history file per open project. */
-  readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'> & Partial<Pick<HistoryService, 'newestFor'>>;
+  /** One history file per open project, shared by every window's service (each holds its own). */
+  readonly history: Pick<HistoryService, 'open' | 'close'> & Partial<Pick<HistoryService, 'newestFor'>>;
+  /**
+   * `workspace-state.json`, shared by every window's service so their writes queue one after another.
+   * Omitted, the service makes its own.
+   */
+  readonly state?: WorkspaceState;
+  /**
+   * Whether this service empties `.joining/` when it starts. Only the first window's does: a later
+   * window's must not delete a clone another window's join is making. Default true.
+   */
+  readonly sweepJoining?: boolean;
+  /**
+   * Whether another window holds `workspaceId` open. Opening, renaming or deleting it from this one is
+   * refused (`workspace-open-elsewhere`), so one workspace's files have one writer. Omitted, never.
+   */
+  readonly heldElsewhere?: (workspaceId: string) => boolean;
   /**
    * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
    * and resolves once each has written its History entry.
@@ -638,16 +654,35 @@ export class WorkspaceService implements ProjectRouter {
   private workspaceOps: Promise<void> = Promise.resolve();
   /** Launch-time removal of `<workspaces>/.joining/` (clones a crash left half-made); join waits for it. */
   private readonly startup: Promise<void>;
+  /** Removes the accounts listener the constructor adds; see {@link dispose}. */
+  private stopAccountWatch: (() => void) | undefined;
+  /** What this service holds its history files as, so another window's service holding one too keeps it. */
+  private readonly historyOwner = `workspace-service-${randomUUID()}`;
 
   constructor(private readonly deps: WorkspaceServiceDeps) {
-    this.state = new WorkspaceState(deps.userDataDir);
+    this.state = deps.state ?? new WorkspaceState(deps.userDataDir);
     this.now = deps.now ?? ((): Date => new Date());
-    this.startup = this.clearJoining();
+    this.startup = deps.sweepJoining === false ? Promise.resolve() : this.clearJoining();
     // A sign-in (or any account change) may restart a server workspace's sync that a sign-out, a
-    // disabled account or removed access stopped (server-sync §3.4, R6). Lives as long as the service.
-    deps.server?.accounts.onChange((servers) => {
+    // disabled account or removed access stopped (server-sync §3.4, R6). Lives until `dispose`.
+    this.stopAccountWatch = deps.server?.accounts.onChange((servers) => {
       this.resumeServerSync(servers);
     });
+  }
+
+  /** Ends what outlives a workspace: the accounts listener. Called when this service's window closes. */
+  dispose(): void {
+    this.stopAccountWatch?.();
+    this.stopAccountWatch = undefined;
+  }
+
+  /** @throws WirebenchError `workspace-open-elsewhere` when another window holds `id`. */
+  private refuseHeldElsewhere(id: string): void {
+    if (this.deps.heldElsewhere?.(id) === true) {
+      throw new WirebenchError('workspace-open-elsewhere', 'That workspace is open in another window.', {
+        details: { workspaceId: id },
+      });
+    }
   }
 
   /** Empties `.joining/` once per service; a failure is kept for {@link lastError}, never thrown. */
@@ -787,6 +822,7 @@ export class WorkspaceService implements ProjectRouter {
     id: string,
     options: { readonly initialCommitMessage?: string; readonly teamSecrets?: boolean },
   ): Promise<WorkspaceWire> {
+    this.refuseHeldElsewhere(id);
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     const { share, tree } = await this.resolveTree(dir);
@@ -1071,7 +1107,7 @@ export class WorkspaceService implements ProjectRouter {
       }
       // History has to be open before anything can record a send against this project — and
       // before the project is announced (see `announced` above).
-      await this.deps.history.open(project.id);
+      await this.deps.history.open(project.id, this.historyOwner);
       announced = true;
       if (held !== undefined) {
         this.deps.hooks?.onProjectChanged?.(entry.projectId, held.project);
@@ -1144,7 +1180,7 @@ export class WorkspaceService implements ProjectRouter {
       // is kept so the caller (or the picker) can surface it.
       this.failure = errorMessage(error);
     }
-    // Every session, before `history.closeAll()` below: same reason as in `releaseEntry`, and one
+    // Every session, before the history files close below: same reason as in `releaseEntry`, and one
     // call rather than one per entry so sessions close in parallel.
     await this.deps.closeWsSessions?.().catch(() => undefined);
     // A snapshot: an in-flight `releaseEntry` splicing the live array must not make this skip one.
@@ -1157,7 +1193,9 @@ export class WorkspaceService implements ProjectRouter {
     this.grpcDrafts = {};
     this.wsDrafts = {};
     this.restored = undefined;
-    this.deps.history.closeAll();
+    for (const entry of open.entries) {
+      this.deps.history.close(entry.projectId, this.historyOwner);
+    }
     this.index.clear();
     this.current = undefined;
     // A pending reload (or a project-set mutation) still queued behind `workspaceOps` must not
@@ -1328,7 +1366,7 @@ export class WorkspaceService implements ProjectRouter {
     if (options.discardUnsaved) {
       await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
     }
-    this.deps.history.close(entry.projectId);
+    this.deps.history.close(entry.projectId, this.historyOwner);
     const index = open.entries.indexOf(entry);
     if (index !== -1) {
       open.entries.splice(index, 1);
@@ -1805,6 +1843,7 @@ export class WorkspaceService implements ProjectRouter {
 
   /** Renames a workspace — the open one, or any other on disk — and returns the fresh list. */
   async rename(id: string, name: string): Promise<WorkspaceSummaryWire[]> {
+    this.refuseHeldElsewhere(id);
     const open = this.current;
     if (open !== undefined && open.workspace.id === id) {
       await this.enqueueWorkspaceOp(async () => {
@@ -1840,6 +1879,7 @@ export class WorkspaceService implements ProjectRouter {
    * one, and returns the list without it. The renderer's confirmation happens before this call.
    */
   async delete(id: string): Promise<WorkspaceSummaryWire[]> {
+    this.refuseHeldElsewhere(id);
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     // Resolved *before* the close: a service with no trash must refuse outright rather than drop
     // the user at the picker and then throw with the folder still on disk.

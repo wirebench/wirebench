@@ -15,6 +15,11 @@ All notable changes to this project are documented here. The format follows
   existing client, the report is written as Markdown, HTML or JSON, and the exit code fails a CI job
   on a breaking change. Either side can be a file, a URL, or the project's cached definition
   (`project:<name>`) (#56).
+- **Several workspaces open at once.** **New Window** (<kbd>⌘⌥N</kbd> / <kbd>Ctrl+Alt+N</kbd>) opens another
+  window at the workspace picker, and each window holds its own workspace: its edits, sync, environment,
+  cookie jar, current values, secret sources, team secrets, History and audit reporting stay its own. A
+  workspace is open in one window at a time; opening it from another brings that window forward. Closing a
+  window keeps its unsaved changes as quitting does (#72).
 - **JSON Schemas for project files.** Every kind of YAML file in a project folder has a published JSON
   Schema, generated from the schemas Wirebench reads the files with, so an editor can validate a project
   as you type. They are served from the documentation site, one folder per project format version, and

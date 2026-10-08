@@ -20,6 +20,10 @@ import { resolve } from 'node:path';
  * dialog for it. Attachment reads consult only {@link hasRead}; the dump-file write check
  * consults only {@link hasWrite}.
  *
+ * Each window has its own set (multi-window design D4), so a file one window picked is not a pick
+ * in another. A window's set is built over the app's `parent` set, which holds only what preferences
+ * carry (the CA bundle and git executable picked in Settings): those apply to every window.
+ *
  * Paths are normalised with `resolve`, so the same file recorded and queried through different
  * spellings still matches. Cleared on app restart; never persisted to disk. A path that came
  * from an OS *drag-and-drop* (Task 33b) has no main-side evidence at all and is NOT in here:
@@ -30,6 +34,9 @@ export class DialogPicks {
   private readonly readPicked = new Set<string>();
   private readonly writePicked = new Set<string>();
 
+  /** `parent`: the app-wide picks this window's set also accepts; never written through. */
+  constructor(private readonly parent?: Pick<DialogPicks, 'hasRead' | 'hasWrite'>) {}
+
   /** Remembers `path` as an explicitly user-chosen read source (an Open dialog) this session. */
   rememberRead(path: string): void {
     this.readPicked.add(resolve(path));
@@ -37,7 +44,7 @@ export class DialogPicks {
 
   /** Whether `path` was chosen as a read source through a native dialog this session. */
   hasRead(path: string): boolean {
-    return this.readPicked.has(resolve(path));
+    return this.readPicked.has(resolve(path)) || this.parent?.hasRead(path) === true;
   }
 
   /** Remembers `path` as an explicitly user-chosen write target (a Save-as dialog) this session. */
@@ -47,7 +54,7 @@ export class DialogPicks {
 
   /** Whether `path` was chosen as a write target through a native dialog this session. */
   hasWrite(path: string): boolean {
-    return this.writePicked.has(resolve(path));
+    return this.writePicked.has(resolve(path)) || this.parent?.hasWrite(path) === true;
   }
 }
 
