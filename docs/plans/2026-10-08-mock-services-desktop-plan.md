@@ -69,25 +69,26 @@ stopped, and its requests are shown in a log.
 - [ ] Update the preload and API mock tests.
 - [ ] Gate, commit `feat(desktop): start and stop mocks (#59)`.
 
-### Task 4: Desktop — explorer and commands
+### Task 4: Desktop — explorer, commands and the mock tab
+
+One commit, not two: the explorer's New Mock opens the tab, so neither half is usable without the other.
 
 - [ ] The Mocks group after Sequences, with its rows and a running badge.
-- [ ] *New Mock…* on the project, the interface and the API menus. It opens a dialog for the name, and for the
-  binding when the WSDL has several.
-- [ ] The mock menu: Open, Start/Stop, Rename…, Duplicate and Delete.
-- [ ] Commands, and regenerate `commands.md`.
-- [ ] Gate, commit `feat(desktop): mocks in the explorer (#59)`.
-
-### Task 5: Desktop — the mock tab
-
-- [ ] The header: name, port, path, validation, Start/Stop, the URL with Copy, and Reset state.
+- [ ] *New Mock* on the interface, the binding (*New Mock of this binding*) and the imported REST API menus.
+  It generates the mock under the next free name and opens its tab, where the name is edited; a WSDL with
+  several bindings is covered by the binding rows, so no dialog is needed.
+- [ ] The mock menu: Open, Start/Stop, Duplicate, Rename… and Delete.
+- [ ] *Mock: Start* and *Mock: Stop* on the active mock tab, and regenerate `commands.md`.
+- [ ] The tab header: name, port, path, validation, Start/Stop, the URL with Copy, and Reset state.
 - [ ] The operations list, and the selected operation's dispatch, default and responses (add, duplicate,
   remove, reorder).
 - [ ] The response editor: status, delay, headers, scenario, match conditions and the body.
 - [ ] The script editor for `dispatch.ts`.
 - [ ] The request log, with a detail view and Clear.
 - [ ] The Preferences section, and its warning in the tab.
-- [ ] Gate, commit `feat(desktop): the mock tab (#59)`.
+- [ ] Gate, commit `feat(desktop): mocks in the explorer and the mock tab (#59)`.
+
+### Task 5: (merged into Task 4)
 
 ### Task 6: e2e and docs
 

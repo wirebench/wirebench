@@ -16,6 +16,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
+import { isMockRunning, useMockRunsStore } from '../state/mock-runs.js';
 import { useSequenceRunsStore } from '../state/sequence-runs.js';
 import { useUiStore } from '../state/ui.js';
 import {
@@ -26,6 +27,7 @@ import {
 import { restSendBlocked } from '../features/rest-editor/send-blocked.js';
 import {
   activeGrpcRequestId,
+  activeMockId,
   activeRequestId,
   activeRestRequestId,
   activeSequenceId,
@@ -107,6 +109,34 @@ export function registerRequestCommands(): void {
       const sequenceId = activeSequenceId();
       if (sequenceId !== undefined) {
         void useSequenceRunsStore.getState().start(sequenceId);
+      }
+    },
+  });
+  registerCommand({
+    ...catalogEntry('mock.start'),
+    when: () => {
+      const mockId = activeMockId();
+      return mockId !== undefined && !isMockRunning(useMockRunsStore.getState().states, mockId);
+    },
+    whenScope: 'editor.mock',
+    run: () => {
+      const mockId = activeMockId();
+      if (mockId !== undefined) {
+        void useMockRunsStore.getState().start(mockId);
+      }
+    },
+  });
+  registerCommand({
+    ...catalogEntry('mock.stop'),
+    when: () => {
+      const mockId = activeMockId();
+      return mockId !== undefined && isMockRunning(useMockRunsStore.getState().states, mockId);
+    },
+    whenScope: 'editor.mock',
+    run: () => {
+      const mockId = activeMockId();
+      if (mockId !== undefined) {
+        void useMockRunsStore.getState().stop(mockId);
       }
     },
   });
