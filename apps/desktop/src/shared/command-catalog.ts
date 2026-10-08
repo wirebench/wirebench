@@ -169,6 +169,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Workspace',
     shortcut: 'Mod+Shift+N',
   },
+  'workspace.newWindow': {
+    id: 'workspace.newWindow',
+    label: 'New Window',
+    category: 'Workspace',
+    shortcut: 'Mod+Alt+N',
+  },
   'workspace.linkProject': {
     id: 'workspace.linkProject',
     label: 'Link Project Folder…',
