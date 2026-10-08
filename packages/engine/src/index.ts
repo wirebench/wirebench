@@ -2046,3 +2046,4 @@ export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './w
 
 export * from './contract-diff/index.js';
 export { diffWsdlContracts, wsdlOperationLabel } from './wsdl/contract-diff.js';
+export { diffOpenApiContracts, openApiOperationLabel } from './rest/openapi/contract-diff.js';

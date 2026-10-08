@@ -1,0 +1,60 @@
+# Version 2 of the contract diff fixture pair (#56). From v1: the server moves; GET /orders' limit
+# becomes required; NewOrder's quantity narrows from number to integer, its note becomes required and
+# its priority loses "low"; Order's status gains "cancelled" and an optional eta is added;
+# DELETE /orders/{id} is removed and GET /orders/{id} added.
+openapi: 3.0.3
+info:
+  title: Orders
+  version: 2.0.0
+servers:
+  - url: https://orders.example.invalid/v2
+paths:
+  /orders:
+    get:
+      parameters:
+        - { name: limit, in: query, required: true, schema: { type: integer, maximum: 100 } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Order' } }
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewOrder' }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+  /orders/{id}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+components:
+  schemas:
+    NewOrder:
+      type: object
+      required: [customerId, quantity, note]
+      properties:
+        customerId: { type: string }
+        quantity: { type: integer }
+        note: { type: string }
+        priority: { type: string, enum: [normal, high] }
+    Order:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [open, shipped, cancelled] }
+        eta: { type: string, format: date }
+        parent: { $ref: '#/components/schemas/Order' }
