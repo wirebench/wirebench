@@ -15,8 +15,12 @@ interface Pending {
 /** Output kept for a session no tab has attached to yet; beyond this the oldest chunks go. */
 const PENDING_LIMIT = 1024 * 1024;
 
+/** Detached sessions remembered so their late events are dropped instead of buffered; oldest go first. */
+const ENDED_LIMIT = 256;
+
 const attached = new Map<string, TerminalHandlers>();
 const pending = new Map<string, Pending>();
+const ended = new Set<string>();
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -38,6 +42,7 @@ function pendingFor(sessionId: string): Pending {
 }
 
 function onData(sessionId: string, data: Uint8Array): void {
+  if (ended.has(sessionId)) return;
   const handlers = attached.get(sessionId);
   if (handlers) {
     handlers.write(data);
@@ -54,6 +59,7 @@ function onData(sessionId: string, data: Uint8Array): void {
 }
 
 function onExit(sessionId: string, code: number | null): void {
+  if (ended.has(sessionId)) return;
   const handlers = attached.get(sessionId);
   if (handlers) {
     handlers.exit(code);
@@ -64,6 +70,7 @@ function onExit(sessionId: string, code: number | null): void {
 
 /** Routes a session's output to a terminal, first replaying what arrived before it attached. */
 export function attachTerminal(sessionId: string, handlers: TerminalHandlers): void {
+  ended.delete(sessionId);
   attached.set(sessionId, handlers);
   const entry = pending.get(sessionId);
   if (entry === undefined) return;
@@ -72,10 +79,18 @@ export function attachTerminal(sessionId: string, handlers: TerminalHandlers): v
   if (entry.exit !== undefined) handlers.exit(entry.exit);
 }
 
-/** Stops routing a session's output, and forgets anything buffered for it. */
+/**
+ * Stops routing a session's output and forgets anything buffered for it. Events main had already sent
+ * are dropped from then on, rather than buffered for a terminal that will never attach.
+ */
 export function detachTerminal(sessionId: string): void {
   attached.delete(sessionId);
   pending.delete(sessionId);
+  ended.add(sessionId);
+  if (ended.size > ENDED_LIMIT) {
+    const oldest = ended.values().next().value;
+    if (oldest !== undefined) ended.delete(oldest);
+  }
 }
 
 /** Feeds an event as main would send it; tests only. */

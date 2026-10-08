@@ -37,14 +37,30 @@ it('replays an exit that arrived before attach', () => {
 });
 
 it('keeps at most 1 MiB of unattached output, dropping the oldest', () => {
-  const chunk = new Uint8Array(512 * 1024);
+  const chunk = (fill: number) => bytesToBase64(new Uint8Array(512 * 1024).fill(fill));
   dispatch('ssh.data', { sessionId: 'u', data: bytesToBase64(new Uint8Array([1])) });
-  dispatch('ssh.data', { sessionId: 'u', data: bytesToBase64(chunk) });
-  dispatch('ssh.data', { sessionId: 'u', data: bytesToBase64(chunk) });
-  const write = vi.fn();
+  dispatch('ssh.data', { sessionId: 'u', data: chunk(2) });
+  dispatch('ssh.data', { sessionId: 'u', data: chunk(3) });
+  const write = vi.fn<(data: Uint8Array) => void>();
   attachTerminal('u', { write, exit: vi.fn() });
-  expect(write).toHaveBeenCalledTimes(2);
+  expect(write.mock.calls.map(([data]) => [data[0], data.length])).toEqual([
+    [2, 512 * 1024],
+    [3, 512 * 1024],
+  ]);
   detachTerminal('u');
+});
+
+it('drops events that arrive for a session after it was detached', () => {
+  attachTerminal('v', { write: vi.fn(), exit: vi.fn() });
+  detachTerminal('v');
+  dispatch('ssh.data', { sessionId: 'v', data: bytesToBase64(new Uint8Array([7])) });
+  dispatch('ssh.exit', { sessionId: 'v', code: 0 });
+  const write = vi.fn();
+  const exit = vi.fn();
+  attachTerminal('v', { write, exit });
+  expect(write).not.toHaveBeenCalled();
+  expect(exit).not.toHaveBeenCalled();
+  detachTerminal('v');
 });
 
 it('base64 round-trips UTF-8 input', () => {
