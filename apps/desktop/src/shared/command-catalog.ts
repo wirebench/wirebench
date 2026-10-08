@@ -94,6 +94,21 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Show Hosts',
     category: 'View',
   },
+  'ssh.newHost': {
+    id: 'ssh.newHost',
+    label: 'Hosts: New Host…',
+    category: 'Hosts',
+  },
+  'ssh.newGroup': {
+    id: 'ssh.newGroup',
+    label: 'Hosts: New Group…',
+    category: 'Hosts',
+  },
+  'ssh.editHost': {
+    id: 'ssh.editHost',
+    label: 'Hosts: Edit Host…',
+    category: 'Hosts',
+  },
   'view.showCookies': {
     id: 'view.showCookies',
     label: 'Show Cookies',

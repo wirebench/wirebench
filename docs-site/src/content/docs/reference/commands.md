@@ -43,6 +43,14 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Response: Raw View | — | — |
 | Response: Query View | — | — |
 
+## Hosts
+
+| Command | macOS | Windows and Linux |
+| --- | --- | --- |
+| Hosts: New Host… | — | — |
+| Hosts: New Group… | — | — |
+| Hosts: Edit Host… | — | — |
+
 ## Definition
 
 | Command | macOS | Windows and Linux |

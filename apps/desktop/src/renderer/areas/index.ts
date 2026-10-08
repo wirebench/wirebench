@@ -6,6 +6,7 @@ import { EnvironmentsView } from '../features/environments/environments-view.js'
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
 import { SearchView } from '../features/search/search-view.js';
+import { registerSshCommands } from '../commands/register-ssh-commands.js';
 import { HostsView } from '../features/ssh/hosts-view.js';
 import { WssSection } from '../features/wss/wss-section.js';
 
@@ -30,5 +31,5 @@ export const RENDERER_AREAS: Readonly<Record<AreaId, RendererArea>> = {
   search: { View: SearchView },
   history: { View: HistoryView },
   wss: { View: WssSection },
-  ssh: { View: HostsView },
+  ssh: { View: HostsView, registerCommands: registerSshCommands },
 };
