@@ -104,3 +104,34 @@ it('any other trust failure records a problem', async () => {
     { groupId: 'ssh:a', source: 'hosts', problem: { code: 'ssh-known-hosts-write' } },
   ]);
 });
+
+it('a failure then a success leaves no problem for the host', async () => {
+  connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
+  await connectToHost('a', SIZE);
+  connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+  await connectToHost('a', SIZE);
+  expect(useProblemsStore.getState().items).toEqual([]);
+});
+
+it('two failures leave exactly one problem for the host', async () => {
+  connect.mockResolvedValue({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
+  await connectToHost('a', SIZE);
+  await connectToHost('a', SIZE);
+  expect(useProblemsStore.getState().items).toHaveLength(1);
+});
+
+it('a host that is open or connecting is not connected twice', async () => {
+  useHostsStore.setState({ sessions: { a: { sessionId: 's1', state: 'open' }, b: { state: 'connecting' } } });
+  expect(await connectToHost('a', SIZE)).toEqual({ sessionId: 's1' });
+  expect(await connectToHost('b', SIZE)).toBeUndefined();
+  expect(connect).not.toHaveBeenCalled();
+});
+
+it('a rejected connect clears the connecting state and records a problem', async () => {
+  connect.mockRejectedValueOnce(new Error('bridge down'));
+  expect(await connectToHost('a', SIZE)).toBeUndefined();
+  expect(useHostsStore.getState().sessions['a']).toBeUndefined();
+  expect(useProblemsStore.getState().items).toMatchObject([
+    { groupId: 'ssh:a', problem: { code: 'ssh-connect-failed', message: 'bridge down' } },
+  ]);
+});

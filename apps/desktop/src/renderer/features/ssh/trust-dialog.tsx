@@ -9,8 +9,14 @@ import { useHostsStore } from './hosts-store.js';
  */
 export function TrustDialog() {
   const prompt = useHostsStore((s) => s.trustPrompt);
-  const setTrustPrompt = useHostsStore((s) => s.setTrustPrompt);
+  // Keyed so a replacement prompt starts with the checkbox unticked.
+  return <TrustDialogBody key={prompt === null ? 'none' : `${prompt.hostId}:${prompt.fingerprint}`} />;
+}
+
+function TrustDialogBody() {
   const [understood, setUnderstood] = useState(false);
+  const prompt = useHostsStore((s) => s.trustPrompt);
+  const setTrustPrompt = useHostsStore((s) => s.setTrustPrompt);
   const changed = prompt?.previous !== undefined;
   return (
     <AlertDialog.Root

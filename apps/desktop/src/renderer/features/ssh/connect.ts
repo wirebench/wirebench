@@ -33,8 +33,24 @@ function openTrustPrompt(hostId: string, size: Size, details: Readonly<Record<st
  */
 export async function connectToHost(hostId: string, size: Size): Promise<{ sessionId: string } | undefined> {
   const store = useHostsStore.getState();
+  const existing = store.sessions[hostId];
+  if (existing?.state === 'connecting') return undefined;
+  if (existing?.state === 'open' && existing.sessionId !== undefined) return { sessionId: existing.sessionId };
+  useProblemsStore.getState().clear(`ssh:${hostId}`);
   store.setSession(hostId, { state: 'connecting' });
-  const result = await ipc().ssh.connect({ hostId, ...size });
+  let result;
+  try {
+    result = await ipc().ssh.connect({ hostId, ...size });
+  } catch (error) {
+    store.setSession(hostId, undefined);
+    const shaped = error as { code?: unknown; message?: unknown } | null;
+    recordProblem(
+      hostId,
+      typeof shaped?.code === 'string' ? shaped.code : 'ssh-connect-failed',
+      typeof shaped?.message === 'string' ? shaped.message : 'The connection could not be started',
+    );
+    return undefined;
+  }
   if (result.ok) {
     store.setSession(hostId, { sessionId: result.value.sessionId, state: 'open' });
     return result.value;

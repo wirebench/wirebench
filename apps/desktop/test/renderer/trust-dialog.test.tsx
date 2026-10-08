@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -62,4 +62,25 @@ it('Cancel dismisses the prompt without trusting', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(useHostsStore.getState().trustPrompt).toBeNull();
   expect(trustHostKey).not.toHaveBeenCalled();
+});
+
+it('a new key has no checkbox and confirms with replace false', async () => {
+  useHostsStore.setState({ trustPrompt: BASE });
+  render(<TrustDialog />);
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  const trust = screen.getByRole<HTMLButtonElement>('button', { name: 'Trust and connect' });
+  expect(trust.disabled).toBe(false);
+  await userEvent.click(trust);
+  expect(trustHostKey).toHaveBeenCalledWith(expect.objectContaining({ replace: false }));
+});
+
+it('a replacement prompt starts with the checkbox unticked', async () => {
+  useHostsStore.setState({ trustPrompt: { ...BASE, previous: 'SHA256:old' } });
+  render(<TrustDialog />);
+  await userEvent.click(screen.getByRole('checkbox', { name: 'I understand the key changed' }));
+  act(() => {
+    useHostsStore.setState({ trustPrompt: { ...BASE, fingerprint: 'SHA256:newer', previous: 'SHA256:old' } });
+  });
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'I understand the key changed' }).checked).toBe(false);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Replace key and connect' }).disabled).toBe(true);
 });
