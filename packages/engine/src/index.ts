@@ -2032,6 +2032,7 @@ export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAcc
 export type { AccountsFile, ServerAccount } from './account/schema.js';
 export * from './sequence/index.js';
 export * from './script/index.js';
+export * from './mock/index.js';
 export { readSequences } from './sequence/load.js';
 export type { SequenceFileProblem, SequenceFiles } from './sequence/load.js';
 export {
