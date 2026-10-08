@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-08
+
 ### Added
 
 - **WS-Security debugger.** The response's **WSS** inspector now says why a signature, decryption or
@@ -1097,7 +1099,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/wirebench/wirebench/compare/v2.2.1...v3.1.0
 [2.2.1]: https://github.com/wirebench/wirebench/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/wirebench/wirebench/compare/v2.1.1...v2.2.0

@@ -49,7 +49,7 @@ and keep everything as plain files in git.
 | **Collaboration**          | Shared workspaces over git or a synced folder, with in-app Sync and a conflict resolver; encrypted team secrets                                                                                               |
 | **Migration**              | Import of legacy single-file SOAP projects — interfaces, endpoints, saved requests, properties and environments — with a report of everything not carried over                                                |
 
-All of the above is in 3.1.0; the [changelog](CHANGELOG.md) says which release brought each.
+All of the above is in 4.0.0; the [changelog](CHANGELOG.md) says which release brought each.
 
 <table>
   <tr>
@@ -106,7 +106,7 @@ No service to hand? Try `http://www.dneonline.com/calculator.asmx?WSDL`.
 exit codes, and JUnit or JSON reports — as a GitHub Action, a GitLab template, a container image or plain `npx`:
 
 ```yaml
-- uses: wirebench/wirebench/action@v3.1.0
+- uses: wirebench/wirebench/action@v4.0.0
   with:
     project: ./api-tests
     env: staging
