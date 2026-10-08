@@ -13,7 +13,7 @@
 4. **Environments move up.** New environments are workspace environments. A project's own environments remain honoured only for linked (git) projects, matched by name.
 5. **Entity ids stay globally unique ULIDs**, so every IPC channel that already takes a request/interface id keeps its shape; only the project-lifecycle channels change.
 6. **No release has shipped** (no `v1.0.0` tag), so nothing needs to migrate `recent-projects.json`; it becomes an import suggestion list and nothing more.
-7. **One window, one workspace.** Multi-window stays out of scope.
+7. **One window, one workspace.** Multi-window stays out of scope. *(Lifted by #72: one workspace per window, several windows — `2026-10-08-multi-window-workspaces-design.md`.)*
 
 → Correct any of these and the spec changes accordingly.
 

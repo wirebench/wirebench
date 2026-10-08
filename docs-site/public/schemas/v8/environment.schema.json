@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/environment.schema.json",
+  "title": "Wirebench project file: Environment",
+  "description": "Project format 8: `environments/*.yaml`.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "order": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+    "endpoints": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": { "type": "string" }
+    },
+    "properties": {
+      "type": "object",
+      "propertyNames": { "type": "string" },
+      "additionalProperties": { "type": "string" }
+    },
+    "disabled": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["id", "name", "order", "endpoints", "properties"],
+  "additionalProperties": {}
+}

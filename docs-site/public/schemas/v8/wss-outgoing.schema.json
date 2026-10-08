@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/wss-outgoing.schema.json",
+  "title": "Wirebench project file: Outgoing WS-Security configuration",
+  "description": "Project format 8: `wss/outgoing/*.yaml`.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "defaultAlias": { "type": "string" },
+    "defaultPasswordRef": { "type": "string" },
+    "actor": { "type": "string" },
+    "mustUnderstand": { "type": "boolean" },
+    "entries": { "type": "array", "items": { "type": "object", "properties": {}, "additionalProperties": {} } }
+  },
+  "required": ["id", "name"],
+  "additionalProperties": {}
+}

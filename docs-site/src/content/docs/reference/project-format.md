@@ -76,6 +76,85 @@ A credential is never written into a project file. Auth fields carry a `secretRe
 into the OS keychain instead; a project file that somehow contained a plaintext `password`,
 `token` or similar key is refused rather than saved.
 
+## JSON Schemas
+
+Every kind of YAML file above has a published [JSON Schema](https://json-schema.org/) (draft
+2020-12), generated from the schemas Wirebench itself reads the files with, so an editor flags a
+mistyped key or a wrong value before Wirebench does. They are served under
+`https://wirebench.github.io/wirebench/docs/schemas/v<format>/`, one folder per project format
+version, and attached to every [GitHub release](https://github.com/wirebench/wirebench/releases).
+
+A schema describes what Wirebench accepts when it loads a file: a field with a default may be left
+out, and an unknown key is allowed, because it is ignored on load. A few checks are made only by
+Wirebench itself — a plaintext secret beside a `secretRef`, for one — so a file that passes its
+schema can still be refused when the project opens.
+
+To validate a project in Visual Studio Code, install the Red Hat YAML extension and add this to the
+workspace's `.vscode/settings.json`:
+
+<!-- schemas:start -->
+```json
+{
+  "yaml.schemas": {
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/manifest.schema.json": [
+      "**/wirebench.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/environment.schema.json": [
+      "**/environments/*.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/interface.schema.json": [
+      "**/interfaces/*/interface.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/soap-request.schema.json": [
+      "**/interfaces/*/operations/*/*.request.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/interface-definition-manifest.schema.json": [
+      "**/interfaces/*/definition/manifest.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/api.schema.json": [
+      "**/apis/*/api.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/api-request.schema.json": [
+      "**/apis/*/requests/**/*.request.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/folder.schema.json": [
+      "**/apis/*/requests/**/folder.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/api-definition-manifest.schema.json": [
+      "**/apis/*/definition/manifest.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/golden.schema.json": [
+      "**/*.golden.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/sequence.schema.json": [
+      "**/sequences/*.sequence.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/webhooks.schema.json": [
+      "**/webhooks/webhooks.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/webhook-request.schema.json": [
+      "**/webhooks/requests/**/*.request.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/webhook-folder.schema.json": [
+      "**/webhooks/requests/**/folder.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/keystores.schema.json": [
+      "**/wss/keystores.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/wss-outgoing.schema.json": [
+      "**/wss/outgoing/*.yaml"
+    ],
+    "https://wirebench.github.io/wirebench/docs/schemas/v8/wss-incoming.schema.json": [
+      "**/wss/incoming/*.yaml"
+    ]
+  }
+}
+```
+<!-- schemas:end -->
+
+Pin the version folder to the project's `formatVersion`: a project saved by a newer build moves to
+the next folder.
+
 ## Workspace layout
 
 A workspace groups several projects under one set of environments. It normally lives entirely

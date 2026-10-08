@@ -76,6 +76,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Secret Sources… | — | — |
 | Check Certificate Expiry | — | — |
 | New Project… | <kbd>⌘⇧N</kbd> | <kbd>Ctrl+Shift+N</kbd> |
+| New Window | <kbd>⌘⌥N</kbd> | <kbd>Ctrl+Alt+N</kbd> |
 | Link Project Folder… | — | — |
 | Import Project Folder… | — | — |
 | Export Project… | — | — |
