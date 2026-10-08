@@ -2043,3 +2043,5 @@ export {
 } from './project/sequence-guards.js';
 
 export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './worker-output.js';
+
+export * from './contract-diff/index.js';
