@@ -129,6 +129,37 @@ describe('sampleFromSchema', () => {
     expect(sampleFromSchema(schema, { includeOptional: true })).toEqual({ name: '' });
   });
 
+  it('keeps a write-only property in a request, the default direction', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['id', 'password'],
+      properties: { id: { type: 'integer', readOnly: true }, password: { type: 'string', writeOnly: true } },
+    };
+
+    expect(sampleFromSchema(schema)).toEqual({ password: '' });
+    expect(sampleFromSchema(schema, { direction: 'request' })).toEqual({ password: '' });
+  });
+
+  it('keeps a read-only property in a response and leaves a write-only one out', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'integer', readOnly: true },
+        password: { type: 'string', writeOnly: true },
+        owner: {
+          type: 'object',
+          properties: { createdAt: { type: 'string', readOnly: true }, token: { type: 'string', writeOnly: true } },
+        },
+      },
+    };
+
+    expect(sampleFromSchema(schema, { direction: 'response', includeOptional: true })).toEqual({
+      id: 0,
+      owner: { createdAt: '' },
+    });
+  });
+
   it('says nothing about a value the schema says nothing about', () => {
     expect(sampleFromSchema({})).toBeNull();
     expect(sampleFromSchema({ type: 'object' })).toEqual({});
@@ -207,6 +238,21 @@ describe('sampleXml', () => {
     };
 
     expect(sampleXml(schema)).toBe('<p:pet xmlns:p="urn:pets">\n  <name>Fido</name>\n</p:pet>');
+  });
+
+  it('leaves read-only properties out of a request and write-only ones out of a response', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      xml: { name: 'user' },
+      required: ['id', 'password'],
+      properties: {
+        id: { type: 'integer', readOnly: true, xml: { attribute: true } },
+        password: { type: 'string', writeOnly: true },
+      },
+    };
+
+    expect(sampleXml(schema)).toBe('<user>\n  <password></password>\n</user>');
+    expect(sampleXml(schema, { direction: 'response' })).toBe('<user id="0"/>');
   });
 
   it('escapes text and attribute values', () => {
