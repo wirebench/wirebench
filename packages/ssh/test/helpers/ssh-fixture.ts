@@ -18,13 +18,17 @@ export interface SshFixture {
 }
 
 /**
- * An in-process ssh2 server on 127.0.0.1: password auth, a shell that echoes every byte and exits with
+ * An in-process ssh2 server on 127.0.0.1: password auth (and, optionally, one public key), a shell that echoes every byte and exits with
  * code N on an `exit N` line (ended by a newline, or by the carriage return a terminal's Enter key sends), and (optionally) direct-tcpip forwarding so it can act as a jump host.
  */
 export async function startSshFixture(options: {
   password: { user: string; password: string };
+  /** Also accept public-key auth for `user` with the public half of `privateKey` (a PEM). */
+  key?: { user: string; privateKey: string };
   allowForwardOut?: boolean;
 }): Promise<SshFixture> {
+  const allowedKey = options.key === undefined ? undefined : utils.parseKey(options.key.privateKey);
+  if (allowedKey instanceof Error) throw allowedKey;
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
@@ -50,14 +54,25 @@ export async function startSshFixture(options: {
     client.on('close', () => clients.delete(client));
     client.on('error', () => undefined);
     client.on('authentication', (ctx) => {
+      const methods: ssh2.AuthenticationType[] = allowedKey === undefined ? ['password'] : ['password', 'publickey'];
       if (
         ctx.method === 'password' &&
         ctx.username === options.password.user &&
         ctx.password === options.password.password
       ) {
         ctx.accept();
+      } else if (
+        ctx.method === 'publickey' &&
+        allowedKey !== undefined &&
+        ctx.username === options.key?.user &&
+        ctx.key.algo === allowedKey.type &&
+        ctx.key.data.equals(allowedKey.getPublicSSH()) &&
+        // Without a signature the client only asks whether the key would do.
+        (ctx.signature === undefined || allowedKey.verify(ctx.blob as Buffer, ctx.signature, ctx.hashAlgo) === true)
+      ) {
+        ctx.accept();
       } else {
-        ctx.reject(['password']);
+        ctx.reject(methods);
       }
     });
     client.on('ready', () => {

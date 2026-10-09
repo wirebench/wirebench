@@ -118,7 +118,8 @@ From the keyboard:
   address, group path and tags. <kbd>Enter</kbd> connects, or focuses the terminal if one for that
   host is already open.
 - Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests.
-- The palette also has **Hosts: New Host…**, **Hosts: New Group…** and **Hosts: Edit Host…**.
+- The palette also has **Hosts: New Host…**, **Hosts: New Group…**, **Hosts: Edit Host…** and
+  **Hosts: Import from SSH Config…**.
 
 The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
 pagers, resize), and a host that is reached through a jump host is dialled hop by hop.
@@ -132,6 +133,50 @@ pagers, resize), and a host that is reached through a jump host is dialled hop b
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
+
+## Importing from an SSH config
+
+If your hosts are already in an OpenSSH client config, bring them in rather than typing them again.
+Run **Hosts: Import from SSH Config…** (or **Import…** in the Hosts view), then choose **Read
+~/.ssh/config** or **Choose a file…**. Many SSH clients can write their hosts in this format.
+
+Before anything is written, the dialog shows what the import will do: every host with its address,
+user, port, jump host and authentication, the lines that will not come across, and notes. Choose
+**Import** to add the hosts; **Cancel** leaves `hosts.yaml` as it was.
+
+| In the SSH config                          | In `hosts.yaml`                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `Host web db` (each name without `*`, `?`) | one host per name; the id is the name in lower case with `-` for other symbols  |
+| `HostName` (`%h` is the alias)             | the host's address; without one, the alias is the address                       |
+| `Port`, `User`                             | port and user                                                                   |
+| `ProxyJump a,b`, `ProxyCommand ssh -W %h:%p a` | the jump host; a hop that names no host in the file becomes a new host        |
+| `IdentityFile`                             | the key you choose for it (below)                                               |
+| `ServerAliveInterval`, `ConnectTimeout`    | keep-alive and connect timeout                                                  |
+| `Host *` and lines before the first `Host` | settings on the new group, inherited by its hosts                               |
+
+Each alias gets the settings `ssh` itself would use: the first value found for each option, in file
+order, across the blocks whose patterns match. `Include` is followed one level deep.
+
+**Keys.** For each key file the dialog asks what to do:
+
+- **Use the SSH agent** (the default). Nothing is read; the host authenticates with the agent's keys.
+- **Store as workspace secret.** When you click **Import**, Wirebench reads that one file and stores it
+  as a workspace secret on this machine; the host gets `auth: { key: '${secret:NAME}' }`. An
+  encrypted key also gets a `NAME_passphrase` reference; set its value in the host form.
+- **Use an existing secret** that already holds the key.
+
+A key file is never opened unless you choose to store it, and its contents never reach the interface.
+
+**What is not imported.** `Match` blocks, other `ProxyCommand`s, an `Include` inside an included file,
+and options such as `LocalForward`, `ForwardAgent` or `SendEnv` are listed by option name, file and line.
+Their values are never shown, because a config can hold credentials in unexpected places. Options
+with no meaning here (`IdentitiesOnly`, `StrictHostKeyChecking`, `UserKnownHostsFile` and a few
+others) are counted. Known-hosts files are not imported: host keys are still trusted on first use.
+
+**Existing hosts.** Every import adds one new group, named "SSH config" by default, and never changes
+a host or group you already have. A host with the same address, port and user as an existing one is
+skipped (you can import it anyway), and an id that is taken gets a suffix (`web-2`). Importing the
+same file again adds only the hosts that are new.
 
 ## Host keys
 
