@@ -750,7 +750,7 @@ export type { PointerTextRange } from './json/pointer-range.js';
 export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './json/schema/refs.js';
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './json/schema/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './json/schema/sample.js';
-export type { SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
+export type { SampleDirection, SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
 export { validateJsonSchema } from './json/schema-validate.js';
 export type { JsonSchemaProblem, ValidateJsonOptions } from './json/schema-validate.js';
 export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
