@@ -113,7 +113,7 @@ describe('mocks in a project folder', () => {
     const dir = await tempProjectDir();
     await saveProject(withMock(), dir);
     await mkdir(join(dir, 'mocks/newer'), { recursive: true });
-    await writeFile(join(dir, 'mocks/newer/mock.yaml'), 'kind: mock\nversion: 2\nid: M9\nname: Newer\n');
+    await writeFile(join(dir, 'mocks/newer/mock.yaml'), 'kind: mock\nversion: 3\nid: M9\nname: Newer\n');
     await writeFile(join(dir, 'mocks/newer/notes.txt'), 'kept');
     await writeFile(join(dir, `${OP}/broken.response.yaml`), 'id: R9\nname: Broken\nstatus: 42\nbody: json\n');
     await writeFile(join(dir, `${OP}/broken.body.json`), '{}');
@@ -206,5 +206,45 @@ describe('mocks in a project folder', () => {
     expect(problems).toEqual([]);
     await saveProject(project, dir);
     expect(await listTree(dir)).toContain('mocks/scratch/readme.md');
+  });
+
+  it('refuses values in a version 1 mock and keeps the stub through a save', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(withMock(), dir);
+    await writeFile(
+      join(dir, `${OP}/echo.response.yaml`),
+      'id: R9\nname: Echo\nbody: text\nvalues:\n  id: { from: query, name: id }\n',
+    );
+    await writeFile(join(dir, `${OP}/echo.body.txt`), 'order {{id}}');
+
+    const { project, problems } = await loadProject(dir);
+    expect(problems.map((p) => [p.code, p.file])).toEqual([['mock-file-invalid', `${OP}/echo.response.yaml`]]);
+    await saveProject(project, dir);
+    expect(await listTree(dir)).toEqual(expect.arrayContaining([`${OP}/echo.response.yaml`, `${OP}/echo.body.txt`]));
+    expect(await readFile(join(dir, 'mocks/orders/mock.yaml'), 'utf8')).toContain('version: 1');
+  });
+
+  it('saves a templated mock as version 2 and loads it back', async () => {
+    const dir = await tempProjectDir();
+    const base = withMock();
+    const mock = base.mocks[0]!;
+    const operation = mock.operations[0]!;
+    const echo = createMockResponse('Echo', {
+      id: 'R3',
+      slug: 'echo',
+      order: 2,
+      body: 'xml',
+      bodyText: '<id>{{id}}</id>',
+      values: { id: { from: 'query', name: 'id' } },
+    });
+    const project: Project = {
+      ...base,
+      mocks: [{ ...mock, operations: [{ ...operation, responses: [...operation.responses, echo] }] }],
+    };
+    await saveProject(project, dir);
+    expect(await readFile(join(dir, 'mocks/orders/mock.yaml'), 'utf8')).toContain('version: 2');
+    const loaded = await loadProject(dir);
+    expect(loaded.problems).toEqual([]);
+    expect(loaded.project.mocks[0]!.operations[0]!.responses.find((r) => r.id === 'R3')).toEqual(echo);
   });
 });

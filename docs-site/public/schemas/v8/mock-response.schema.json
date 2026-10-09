@@ -92,6 +92,56 @@
       },
       "required": ["name"],
       "additionalProperties": {}
+    },
+    "values": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "body" },
+              "language": { "type": "string", "enum": ["xpath", "jsonpath"] },
+              "expression": { "type": "string", "minLength": 1 },
+              "namespaces": {
+                "type": "object",
+                "propertyNames": { "type": "string" },
+                "additionalProperties": { "type": "string" }
+              }
+            },
+            "required": ["from", "language", "expression"],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "query" },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "required": ["from", "name"],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "header" },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "required": ["from", "name"],
+            "additionalProperties": {}
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string", "const": "path" },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "required": ["from", "name"],
+            "additionalProperties": {}
+          }
+        ]
+      }
     }
   },
   "required": ["id", "name"],

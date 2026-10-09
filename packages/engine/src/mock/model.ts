@@ -7,8 +7,15 @@ import { generateId } from '../project/model.js';
 import type { CreateOptions } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 
-/** The version every `mock.yaml` carries. The operation and response files belong to it. */
-export const MOCK_VERSION = 1;
+/**
+ * The newest version a `mock.yaml` may carry. The operation and response files belong to it. Version 2
+ * adds response `values` (ADR-0022); a mock is written as version 2 only when a response has them, so a
+ * mock without templates stays readable by a build that knows only version 1.
+ */
+export const MOCK_VERSION = 2;
+
+/** The version a mock with no response `values` is written as. */
+export const MOCK_BASE_VERSION = 1;
 
 export const MOCK_LIMITS = Object.freeze({
   /** `mock.yaml`, `operation.yaml` and `*.response.yaml`: larger is refused before parsing. */
@@ -24,11 +31,15 @@ export const MOCK_LIMITS = Object.freeze({
   matchesPerResponse: 20,
   headersPerResponse: 100,
   maxDelayMs: 60_000,
+  valuesPerResponse: 20,
   pathLength: 1024,
 });
 
 /** A scenario's name and every state it can be in. */
 export const SCENARIO_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/** The name of a response template value, which `{{name}}` inserts. */
+export const TEMPLATE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /** The state every scenario is in when a mock starts or is reset. */
 export const SCENARIO_START_STATE = 'Started';
@@ -65,6 +76,12 @@ export interface MockNamedMatch extends MockCheck {
 
 export type MockMatch = MockBodyMatch | MockNamedMatch;
 
+/**
+ * A request value a response template reads (ADR-0022): the source a match condition reads, without
+ * the checks. A template reads the request and nothing else.
+ */
+export type MockTemplateValue = Omit<MockBodyMatch, keyof MockCheck> | Omit<MockNamedMatch, keyof MockCheck>;
+
 /** A response's place in a scenario. */
 export interface MockScenarioStep {
   readonly name: string;
@@ -93,6 +110,11 @@ export interface MockResponse {
   readonly bodyText: string;
   readonly match: readonly MockMatch[];
   readonly scenario?: MockScenarioStep;
+  /**
+   * The request values `{{name}}` inserts into the body and header values (ADR-0022). Absent: the
+   * response is literal and sent byte for byte.
+   */
+  readonly values?: Readonly<Record<string, MockTemplateValue>>;
 }
 
 /** One contract operation of a mock, with its responses. */
@@ -207,6 +229,7 @@ export interface CreateMockResponseInput extends CreateOptions {
   readonly bodyText?: string;
   readonly match?: readonly MockMatch[];
   readonly scenario?: MockScenarioStep;
+  readonly values?: Readonly<Record<string, MockTemplateValue>>;
 }
 
 export function createMockResponse(name: string, input: CreateMockResponseInput = {}): MockResponse {
@@ -223,5 +246,6 @@ export function createMockResponse(name: string, input: CreateMockResponseInput 
     bodyText: body === 'none' ? '' : (input.bodyText ?? ''),
     match: input.match ?? [],
     ...(input.scenario !== undefined ? { scenario: input.scenario } : {}),
+    ...(input.values !== undefined ? { values: input.values } : {}),
   };
 }
