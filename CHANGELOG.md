@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-09
+
 ### Added
 
 - **Contract diff and breaking-change report.** `wirebench diff-contract <old> <new>` compares two
@@ -46,6 +48,21 @@ All notable changes to this project are documented here. The format follows
   log as text or JSON lines. It listens on loopback unless `--host` or `WIREBENCH_MOCK_HOST` says
   otherwise; the CLI image sets the latter to `0.0.0.0` (#61).
 
+- **Export to Postman Collection v2.1 and OpenCollection.** A whole project, or one REST, gRPC or
+  WebSocket API or SOAP interface, exports as a Postman Collection v2.1 folder (the collection plus one
+  environment file per environment) or one OpenCollection 1.0 YAML document, from the project, API and
+  interface menus, the command palette, or `wirebench export <postman|opencollection>`. A SOAP request
+  becomes an HTTP POST of its envelope. Auth and `${secret:…}` values are always left empty, credentials
+  typed as plain text are blanked too, and every export ends with a report of what was blanked, changed
+  or left out (#65).
+- **Portable Windows build.** `Wirebench-<version>-windows-<arch>-portable.zip` unpacks to a folder
+  holding `Wirebench.exe` and a `data` folder, which the app uses for its profile while it is there.
+  It cannot update itself, so **Check for Updates…** points to the release page instead (#68).
+- **SSH hosts and terminals.** A new Hosts area keeps SSH hosts in `hosts.yaml`, with nested groups,
+  per-field inheritance and `${secret:NAME}` credentials, and opens an interactive terminal tab per
+  session, with a host-key trust prompt and a guard on multi-line paste. The area can be switched off
+  with `WIREBENCH_AREAS="ssh=off"` (#316).
+
 ### Changed
 
 - **A same-host `http://` → `https://` redirect is followed with the request intact.** When a server answers
@@ -54,6 +71,9 @@ All notable changes to this project are documented here. The format follows
   credentials there, rather than returning the redirect page (SOAP) or turning a `POST` into a bodyless
   `GET`. A SOAP response carries an `https-upgrade` Problem saying to change the endpoint; the redirect list
   marks the hop. NTLM and Kerberos handshakes continue on the `https://` URL (#71).
+- **One grid convention for keyboard and screen-reader users.** The Environments view, an environment's
+  variables table and its endpoint overrides now work like History and Keystores: one tab stop per grid,
+  Up/Down/Home/End between rows, and rows and cells announced with their position (#84).
 
 ## [4.0.0] - 2026-10-08
 
@@ -1151,7 +1171,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/wirebench/wirebench/compare/v2.2.1...v3.1.0
 [2.2.1]: https://github.com/wirebench/wirebench/compare/v2.2.0...v2.2.1

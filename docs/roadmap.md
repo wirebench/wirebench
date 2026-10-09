@@ -29,6 +29,11 @@ the cookie jar, HTML preview and REST resend from History; it took the project f
 encrypted team secrets, Kerberos/SPNEGO, WS-Trust and SAML tokens, the WS-Security debugger,
 WS-Security from a WSDL's policy, managed preferences and certificate expiry warnings; it took the
 project format to version 8.
+5.0.0 (2026-10-09) carries most of the 5.0 milestone, contracts, mocks and testing: mock services in
+the engine, the app and `wirebench mock`, recording a mock from live traffic, the contract diff and
+breaking-change report, Postman Collection and OpenCollection export, published JSON Schemas for
+project files, several workspaces open at once, the portable Windows build, and SSH hosts and
+terminals.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
