@@ -117,6 +117,18 @@ import {
 } from './project-webhook-mutations.js';
 import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
+import {
+  addMock,
+  addMockResponse,
+  duplicateMock,
+  moveMockResponse,
+  removeMock,
+  removeMockResponse,
+  updateMock,
+  updateMockOperation,
+  updateMockResponse,
+} from './project-mock-mutations.js';
+import type { GenerateMockFn } from './project-mock-mutations.js';
 import { addSequence, duplicateSequence, removeSequence, updateSequence } from './project-sequence-mutations.js';
 
 /** The engine output `add-request` needs; supplied by the service, which owns the engine. */
@@ -152,6 +164,10 @@ export interface MutationDeps {
   readonly allowsKeystorePath?: (path: string) => Promise<boolean>;
   /** The slugs of sequence files the last load refused; a new or renamed sequence avoids them. */
   readonly reservedSequenceSlugs?: ReadonlySet<string>;
+  /** The slugs of mock folders the last load refused; a new or renamed mock avoids them. */
+  readonly reservedMockSlugs?: ReadonlySet<string>;
+  /** Generates a mock from a container's cached definition; absent only in tests that never add one. */
+  readonly generateMock?: GenerateMockFn;
   /**
    * The properties of the workspace the project is open inside, if any: creating the webhook
    * collection seeds `webhookTarget` only when neither the project nor these define it.
@@ -992,6 +1008,38 @@ export async function applyChange(
 
     case 'duplicate-sequence':
       return duplicateSequence(project, change.sequenceId, deps.reservedSequenceSlugs);
+
+    case 'add-mock':
+      return addMock(
+        project,
+        { containerId: change.containerId, name: change.name, binding: change.binding },
+        deps.generateMock,
+        deps.reservedMockSlugs,
+      );
+
+    case 'update-mock':
+      return updateMock(project, change.mockId, change.patch, deps.reservedMockSlugs);
+
+    case 'update-mock-operation':
+      return updateMockOperation(project, change.mockId, change.operationId, change.patch);
+
+    case 'add-mock-response':
+      return addMockResponse(project, change.mockId, change.operationId, change.copyOf);
+
+    case 'update-mock-response':
+      return updateMockResponse(project, change.mockId, change.operationId, change.responseId, change.patch);
+
+    case 'remove-mock-response':
+      return removeMockResponse(project, change.mockId, change.operationId, change.responseId);
+
+    case 'move-mock-response':
+      return moveMockResponse(project, change.mockId, change.operationId, change.responseId, change.to);
+
+    case 'remove-mock':
+      return removeMock(project, change.mockId);
+
+    case 'duplicate-mock':
+      return duplicateMock(project, change.mockId, deps.reservedMockSlugs);
 
     case 'add-environment': {
       const added = addEnvironment(project, change.name);
