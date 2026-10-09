@@ -1,0 +1,188 @@
+---
+title: Hosts and terminals
+description: Describe the machines your APIs run on once, in the workspace, and open an SSH terminal to any of them in one action.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A workspace can describe the machines its APIs run on: servers, bastions, jump hosts. You write them
+down once, in groups, and open an interactive SSH terminal to any of them from the **Hosts** view,
+the command palette, or quick-open. The user, port, key and jump host are set on a group and
+inherited by every host under it, and the credentials never leave Wirebench's main process.
+
+<Aside type="note">
+This is the first slice of the SSH area. It covers hosts and the terminal. See
+[What is not here yet](#what-is-not-here-yet) for what comes later.
+</Aside>
+
+## The hosts file
+
+Hosts live in `hosts.yaml`, beside `workspace.yaml` in the workspace folder, so they travel with the
+workspace the same way the rest of it does (git, or the server). A missing file is an empty list of
+hosts.
+
+```yaml
+version: 1
+groups:
+  - id: prod
+    name: Production
+    tags: [prod]
+    ssh:
+      user: deploy
+      port: 22
+      jump: bastion
+      auth: { key: '${secret:prod_key}' }
+    groups:
+      - id: eu
+        name: EU
+        hosts:
+          - id: api-1
+            name: api-1
+            address: 10.0.1.5
+            ssh:
+              auth: { password: '${secret:api1_pw}' }
+hosts:
+  - id: bastion
+    name: bastion
+    address: bastion.example.com
+    tags: [jump]
+    ssh:
+      user: ops
+      auth: { agent: true }
+```
+
+You normally don't edit the file by hand: the Hosts view reads and writes it. If you do, a problem in
+the file is shown in the Hosts view and in the Problems tab (source **hosts**), and the rest of the
+workspace still opens.
+
+The rules:
+
+- `version` is `1`. Keys Wirebench doesn't know are refused, as in `workspace.yaml`.
+- `id` is stable and unique across the whole file, made of lowercase letters, digits and hyphens
+  (`api-1`, `eu`). `name` is free text and can change; the id is what `jump` points at.
+- `ssh` on a group or a host holds `user`, `port`, `jump`, `auth`, `keepAlive` and
+  `connectTimeout` (both in seconds). Every field is optional at every level. A host must end up
+  with a `user` and an `auth`, from itself or a group above it; otherwise connecting says which
+  field is missing and where it can be set. The port defaults to 22, the keep-alive to 15 seconds
+  and the connect timeout to 20 seconds.
+- `tags` are plain strings. They feed the Hosts filter, the palette and quick-open, and carry no
+  behaviour.
+- `jump` names the id of another host. Chains are followed through that host's own `jump`; an
+  unknown id or a loop is refused when the file is read.
+- `auth` is exactly one of `{ password }`, `{ key, passphrase? }` or `{ agent: true }`. The agent
+  option signs with your local SSH agent.
+
+## Inheritance
+
+Settings flow from the root of the tree down, one field at a time: a value set on a nearer level
+wins. A host under **Production** and **EU** takes the user, port and jump host from **Production**
+unless **EU** or the host sets its own.
+
+`auth` counts as one field, not a merge of its parts. A host that sets `auth: { password: … }` drops
+the group's key completely instead of adding a password to it.
+
+In the host form, a field you haven't set shows the value it inherits, greyed, with where it came
+from, for example `from prod` (or `default` for the built-in values). Turn on the override switch next to the field to edit the
+field on that host; turn it off again to go back to inheriting. Changing a group's key changes every
+host under it that doesn't override it.
+
+## Secrets
+
+Credentials are never written in `hosts.yaml`. `${secret:NAME}` is the only form accepted: a literal
+password, key or passphrase is refused when the file is read or saved, so the file can be committed
+and shared. `NAME` follows the same rules as everywhere else: letters, digits and underscores, not
+starting with a digit. A `key` resolves to the private key _text_ (the secret holds the PEM), not to
+a path, so the workspace works on every machine that holds the secret.
+
+SSH secrets belong to the **workspace** on your machine, not to a project, because a host belongs to
+the workspace. In the host form, the password, key and passphrase fields are pickers over the known
+secret names, each marked with where it comes from. **Set value…** stores a value for a name on this
+machine; the field is write-only and the value is never shown again or sent back to the interface.
+
+When you connect, a name resolves like any other secret in the app: a name mapped to an
+[external secret manager](/wirebench/docs/guides/secrets/#secrets-from-external-managers) comes from
+its source, and any other name comes from the value stored for this workspace on this machine. A
+missing value fails the connect with `secret-missing` and the name. Project secrets don't apply: a
+secret you set on a project is not visible to a host.
+
+## Opening a terminal
+
+Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts
+appear as written; the filter box matches name, address and tags, and tag chips narrow the list.
+Double-click a host, or press <kbd>Enter</kbd>, to connect. The right-click menu has Connect, Edit,
+Duplicate, Move to…, Delete and Copy address. A group can be deleted once it is empty.
+
+From the keyboard:
+
+- <kbd>⌘⇧H</kbd> / <kbd>Ctrl+Shift+H</kbd> runs **Connect to Host…**: a searchable list over name,
+  address, group path and tags. <kbd>Enter</kbd> connects, or focuses the terminal if one for that
+  host is already open.
+- Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests.
+- The palette also has **Hosts: New Host…**, **Hosts: New Group…** and **Hosts: Edit Host…**.
+
+The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
+pagers, resize), and a host that is reached through a jump host is dialled hop by hop.
+
+- Switching to another tab keeps the session alive; closing the tab ends it. Switching to another
+  workspace or closing it ends every session.
+- Terminal tabs are not restored when you restart Wirebench.
+- When the remote shell exits, the tab stays and shows **Session ended (code N)** with **Reconnect**.
+  If the connection could not be made, it shows **Could not connect** with **Reconnect**, and the
+  reason is in the Problems tab.
+- Pasting text with more than one line asks first, with a preview, because a pasted script runs line
+  by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
+  is on by default, and **Copy on select** is off by default.
+
+## Host keys
+
+Wirebench keeps the host keys it has trusted in `ssh-known-hosts.json` in its own data folder, per
+machine, never in the workspace. A shared workspace therefore cannot pre-trust a key for you.
+
+- **A host you haven't connected to before.** The connect stops and shows the key's fingerprint.
+  Check it with the host's owner, then choose **Trust and connect**. Nothing is trusted without that
+  click.
+- **A host whose key has changed.** The connect is refused and the prompt shows the stored and the
+  new fingerprint. The only way on is to tick **I understand the key changed** and choose
+  **Replace key and connect**. A changed key can mean the machine was reinstalled, or that something
+  is in the way; find out which before you replace it.
+
+## Security notes
+
+- A password, key or passphrase is read only in the main process, when you connect. It is handed to
+  the SSH client and stays inside that client for the life of the session; Wirebench keeps no other
+  copy, and nothing stores, sends to the interface or logs a value. The interface only ever sees
+  secret _names_.
+- `hosts.yaml` cannot hold a literal secret, and the host form cannot write one.
+- A window can only write to, resize or close sessions it opened itself.
+- Host keys are trusted on first use, by an explicit click, and replaced only by a separate explicit
+  confirmation.
+
+## Switching the area off
+
+The SSH area is on by default in every edition. Operators and developers can switch it off with the
+`WIREBENCH_AREAS` environment variable, a comma-separated list of `id=on|off`:
+
+```sh
+WIREBENCH_AREAS="ssh=off"
+```
+
+With `ssh=off`, the Hosts item disappears from the activity bar, its commands (including
+**Connect to Host…**) and quick-open entries are gone, and the area's channels are not registered in
+the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
+
+## What is not here yet
+
+This first slice does not include:
+
+- snippets (saved commands run on one or many hosts),
+- SFTP (browsing, transferring and editing remote files),
+- port forwarding and tunnels, or sending requests through a host,
+- split or broadcast terminals,
+- audit entries for sessions,
+- a local terminal, SSH agent forwarding to the remote, or session recording.
+
+## Related
+
+- [Secrets](/wirebench/docs/guides/secrets/) for how `${secret:NAME}` values are stored and shared.
+- [Preferences and layout](/wirebench/docs/guides/preferences/) for the Terminal section.
+- [Workspaces and projects](/wirebench/docs/guides/workspaces/) for what sits beside `hosts.yaml`.

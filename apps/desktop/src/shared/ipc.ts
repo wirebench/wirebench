@@ -1,5 +1,20 @@
 import { z } from 'zod';
 import {
+  sshCloseRequestSchema,
+  sshConnectRequestSchema,
+  sshConnectResponseSchema,
+  sshDataEventSchema,
+  sshExitEventSchema,
+  sshListHostsResponseSchema,
+  sshResizeRequestSchema,
+  sshSaveHostsRequestSchema,
+  sshSecretNamesResponseSchema,
+  sshSetSecretRequestSchema,
+  sshStateEventSchema,
+  sshTrustRequestSchema,
+  sshWriteRequestSchema,
+} from './ssh-wire.js';
+import {
   ciTokenCreateRequestWireSchema,
   ciTokenCreatedWireSchema,
   ciTokenRevokeRequestWireSchema,
@@ -480,6 +495,8 @@ export const channels = {
      * installed without a further, separate confirmation from the user; see `main/updater.ts`.
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
+    /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
+    areas: defineChannel('app.areas', z.undefined(), z.object({ enabled: z.array(z.string()) })),
     /**
      * Opens another window at the workspace picker (the "New Window" command). Each window holds its
      * own workspace; see the multi-window design.
@@ -1218,6 +1235,17 @@ export const channels = {
     removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
     policyStatus: defineChannel('wss.policyStatus', wssPolicyStatusRequestSchema, wssPolicyStatusResponseSchema),
   },
+  ssh: {
+    listHosts: defineChannel('ssh.listHosts', z.undefined(), sshListHostsResponseSchema),
+    saveHosts: defineChannel('ssh.saveHosts', sshSaveHostsRequestSchema, sshListHostsResponseSchema),
+    secretNames: defineChannel('ssh.secretNames', z.undefined(), sshSecretNamesResponseSchema),
+    setSecret: defineChannel('ssh.setSecret', sshSetSecretRequestSchema, z.object({})),
+    connect: defineChannel('ssh.connect', sshConnectRequestSchema, sshConnectResponseSchema),
+    write: defineChannel('ssh.write', sshWriteRequestSchema, z.object({})),
+    resize: defineChannel('ssh.resize', sshResizeRequestSchema, z.object({})),
+    close: defineChannel('ssh.close', sshCloseRequestSchema, z.object({})),
+    trustHostKey: defineChannel('ssh.trustHostKey', sshTrustRequestSchema, z.object({})),
+  },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),
     namespaces: defineChannel('xpath.namespaces', xpathNamespacesRequestSchema, xpathNamespacesResponseSchema),
@@ -1253,6 +1281,15 @@ export type EventPayload<E> = E extends IpcEvent<infer Payload> ? z.infer<Payloa
 
 /** The registry of main-to-renderer events. */
 export const events = {
+  ssh: {
+    /** `hosts.yaml` was written: a view re-lists. */
+    hostsChanged: defineEvent('ssh.hostsChanged', z.object({})),
+    /** Terminal output (stdout and stderr), base64, to the window that opened the session only. */
+    data: defineEvent('ssh.data', sshDataEventSchema),
+    /** The remote shell ended; the session id is gone. */
+    exit: defineEvent('ssh.exit', sshExitEventSchema),
+    state: defineEvent('ssh.state', sshStateEventSchema),
+  },
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),
     /** Progress of an update check/download, for the status bar. */

@@ -146,6 +146,8 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-status-success', bg: '--wb-bg-base', kind: 'text', where: 'REST response contract chip (Contract ✓)' },
   { fg: '--wb-status-warning', bg: '--wb-bg-base', kind: 'text', where: 'REST response contract chip (problems)' },
   { fg: '--wb-status-info', bg: '--wb-bg-raised', kind: 'text', where: 'informational copy' },
+  // The SSH terminal paints on the sunken surface; its ANSI red/green/yellow are the rows above.
+  { fg: '--wb-status-info', bg: '--wb-bg-sunken', kind: 'text', where: 'SSH terminal ANSI blue' },
 
   // Non-text: hairlines, the focus ring, and the severity icons.
   { fg: '--wb-border-strong', bg: '--wb-bg-base', kind: 'ui', where: 'input borders' },

@@ -6,6 +6,8 @@ import { EnvironmentPage } from '../features/environments/environment-page.js';
 import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { ProjectTab } from '../features/project/project-tab.js';
+import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { sessionStatus } from '../features/ssh/session-status.js';
 import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { useEditorsStore } from '../state/editors.js';
@@ -83,6 +85,12 @@ const EnvCompareView = lazy(async () => {
 const InterfaceEditor = lazy(async () => {
   const module = await import('../features/interface-editor/interface-editor.js');
   return { default: module.InterfaceEditor };
+});
+
+// Split out so xterm loads only once a terminal is opened.
+const TerminalTab = lazy(async () => {
+  const module = await import('../features/ssh/terminal-tab.js');
+  return { default: module.TerminalTab };
 });
 
 const CatchUrlTab = lazy(async () => {
@@ -167,6 +175,9 @@ export function EditorArea() {
   const dirtyWsRequests = useDraftsStore((state) => state.wsRequests);
   const catchUrls = useWebhooksStore((state) => state.hooks);
   const catchUrlNames = Object.fromEntries(catchUrls.map((hook) => [hook.id, hook.name]));
+  const hostSessions = useHostsStore((state) => state.sessions);
+  const resolvedHosts = useHostsStore((state) => state.resolved);
+  const terminalTabs = tabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.hostId !== undefined);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -272,6 +283,7 @@ export function EditorArea() {
       ? environmentName(projects, workspaceEnvironments, tab.environmentId)
       : undefined) ??
     (tab.kind === 'catch-url' && tab.hookId !== undefined ? catchUrlNames[tab.hookId] : undefined) ??
+    (tab.kind === 'ssh-terminal' ? resolvedHosts.find((host) => host.id === tab.hostId)?.name : undefined) ??
     tab.title;
   // Only the request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean =>
@@ -354,6 +366,10 @@ export function EditorArea() {
           {tabs.map((tab) => {
             const label = labelFor(tab);
             const dirty = isDirty(tab);
+            const status =
+              tab.kind === 'ssh-terminal' && tab.hostId !== undefined
+                ? sessionStatus(hostSessions[tab.hostId])
+                : undefined;
             return (
               // One focusable control per tab. A nested close *button* would be interactive
               // content inside a `tab` widget, which screen readers do not announce reliably, so
@@ -424,6 +440,14 @@ export function EditorArea() {
                   tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
                 } ${draggingId === tab.id ? 'opacity-50' : ''} data-[drop=after]:shadow-[inset_-2px_0_0_var(--color-accent)] data-[drop=before]:shadow-[inset_2px_0_0_var(--color-accent)]`}
               >
+                {status !== undefined && (
+                  // A terminal tab's icon is its session's state, coloured like the Hosts tree's dot.
+                  <span
+                    role="img"
+                    aria-label={status.label}
+                    className={`size-1.5 shrink-0 rounded-full bg-current ${status.color}`}
+                  />
+                )}
                 <span className="min-w-0 truncate">{label}</span>
                 {dirty && (
                   // Announced, not just drawn: the dot is the only thing distinguishing a tab
@@ -586,13 +610,21 @@ export function EditorArea() {
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading…</p>}>
             <CatchUrlTab key={activeTab.hookId} hookId={activeTab.hookId} />
           </Suspense>
-        ) : activeTab.kind === 'cookies' ? (
+        ) : activeTab.kind === 'ssh-terminal' ? null : activeTab.kind === 'cookies' ? (
           <CookieManager />
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />
           </Suspense>
         ) : null}
+        {/* Terminals stay mounted behind other tabs, hidden, so switching away never ends a session. */}
+        {terminalTabs.map((tab) => (
+          <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
+            <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
+              <TerminalTab hostId={tab.hostId ?? ''} active={tab.id === activeId} />
+            </Suspense>
+          </div>
+        ))}
       </div>
     </section>
   );

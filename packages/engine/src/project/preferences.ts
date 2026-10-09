@@ -222,6 +222,14 @@ export interface MockPreferences {
   readonly listenOnAllInterfaces: boolean;
 }
 
+/** The SSH terminal (SSH area spec D6). */
+export interface TerminalPreferences {
+  /** Ask before a multi-line paste goes to the shell, because a pasted script runs line by line. */
+  readonly confirmMultilinePaste: boolean;
+  /** Copy the selection to the clipboard as soon as it is made. */
+  readonly copyOnSelect: boolean;
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -237,6 +245,7 @@ export interface Preferences {
   readonly accounts: AccountPreferences;
   readonly secrets: SecretsPreferences;
   readonly mocks: MockPreferences;
+  readonly terminal: TerminalPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -298,6 +307,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   accounts: Object.freeze({ showInStatusBar: true }),
   secrets: Object.freeze({ sourceCacheSeconds: 300 }),
   mocks: Object.freeze({ listenOnAllInterfaces: false }),
+  terminal: Object.freeze({ confirmMultilinePaste: true, copyOnSelect: false }),
   shortcuts: Object.freeze({}),
 });
 
@@ -393,6 +403,9 @@ export const preferencesSchema = z.object({
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
   secrets: z.object({ sourceCacheSeconds: z.number().finite().optional() }).optional(),
   mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
+  terminal: z
+    .object({ confirmMultilinePaste: z.boolean().optional(), copyOnSelect: z.boolean().optional() })
+    .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -455,6 +468,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     accounts: parseSection(shape.accounts, root['accounts']),
     secrets: parseSection(shape.secrets, root['secrets']),
     mocks: parseSection(shape.mocks, root['mocks']),
+    terminal: parseSection(shape.terminal, root['terminal']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -477,6 +491,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
       sourceCacheSeconds: clampSourceCacheSeconds(value.secrets?.sourceCacheSeconds ?? base.secrets.sourceCacheSeconds),
     },
     mocks: mergeSection(base.mocks, value.mocks),
+    terminal: mergeSection(base.terminal, value.terminal),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

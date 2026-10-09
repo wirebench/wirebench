@@ -57,5 +57,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   accounts: { showInStatusBar: true },
   secrets: { sourceCacheSeconds: 300 },
   mocks: { listenOnAllInterfaces: false },
+  terminal: { confirmMultilinePaste: true, copyOnSelect: false },
   shortcuts: {},
 };

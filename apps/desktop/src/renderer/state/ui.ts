@@ -1,4 +1,6 @@
 import type { Draft } from 'immer';
+import { AREAS } from '@shared/area-module.js';
+import type { AreaId } from '@shared/area-module.js';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type {
@@ -104,6 +106,9 @@ export interface UiStore extends UiSnapshot {
   readonly confirmDeleteNode: PendingNodeDeletion | undefined;
   /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
   readonly envSwitcherOpen: boolean;
+  /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly enabledAreas: readonly AreaId[];
+  readonly setEnabledAreas: (ids: readonly AreaId[]) => void;
   /** Whether the title bar's workspace dropdown is open. Transient — never persisted. */
   readonly workspaceSwitcherOpen: boolean;
   /** Whether the Manage workspaces dialog is open. Transient — never persisted. */
@@ -253,6 +258,15 @@ export const useUiStore = create<UiStore>((set, get) => {
     confirmDeleteRequestId: undefined,
     confirmDeleteNode: undefined,
     envSwitcherOpen: false,
+    enabledAreas: AREAS.map((area) => area.id),
+    setEnabledAreas: (ids) => {
+      set({ enabledAreas: ids });
+      // A restored view may belong to an area this run switched off; fall back to the first enabled one.
+      const first = ids[0];
+      if (first !== undefined && !ids.includes(get().sidebar.view)) {
+        get().setSidebarView(first);
+      }
+    },
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
     preferences: { open: false, section: undefined },
@@ -469,6 +483,7 @@ export const useUiStore = create<UiStore>((set, get) => {
 
     showSidebarView: (view) =>
       update((draft) => {
+        if (!get().enabledAreas.includes(view)) return;
         // Clicking the active view again collapses the sidebar, the way VS Code's activity bar does.
         if (draft.sidebar.visible && draft.sidebar.view === view) {
           draft.sidebar.lastSize = draft.sidebar.size;
@@ -483,6 +498,7 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
     setSidebarView: (view) =>
       update((draft) => {
+        if (!get().enabledAreas.includes(view)) return;
         draft.sidebar.view = view;
       }),
     showConsoleTab: (tab) =>

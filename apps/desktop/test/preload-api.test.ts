@@ -78,6 +78,7 @@ describe('buildApi', () => {
       'secrets',
       'sequence',
       'snapshot',
+      'ssh',
       'ssl',
       'sync',
       'team',

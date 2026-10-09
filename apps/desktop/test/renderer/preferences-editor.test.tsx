@@ -96,6 +96,27 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('sets the terminal paste and copy preferences from the Terminal section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+    const confirm = screen.getByLabelText<HTMLInputElement>('Confirm multi-line paste');
+    expect(confirm.checked).toBe(true);
+    fireEvent.click(confirm);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { confirmMultilinePaste: false } } });
+    });
+
+    const copy = screen.getByLabelText<HTMLInputElement>('Copy on select');
+    expect(copy.checked).toBe(false);
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { copyOnSelect: true } } });
+    });
+  });
+
   it('refuses a secret source cache lifetime above 3600 seconds and snaps the field back', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });

@@ -88,6 +88,20 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'ssh-unit',
+          include: ['packages/ssh/test/unit/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'ssh-integration',
+          include: ['packages/ssh/test/integration/**/*.test.ts'],
+          // Sessions run against an in-process SSH server on a loopback port.
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'server-unit',
           include: ['packages/server/test/unit/**/*.test.ts'],
         },

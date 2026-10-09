@@ -89,6 +89,37 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Show WS-Security',
     category: 'View',
   },
+  'view.showHosts': {
+    id: 'view.showHosts',
+    label: 'Show Hosts',
+    category: 'View',
+  },
+  'ssh.newHost': {
+    id: 'ssh.newHost',
+    label: 'Hosts: New Host…',
+    category: 'Hosts',
+  },
+  'ssh.newGroup': {
+    id: 'ssh.newGroup',
+    label: 'Hosts: New Group…',
+    category: 'Hosts',
+  },
+  'ssh.editHost': {
+    id: 'ssh.editHost',
+    label: 'Hosts: Edit Host…',
+    category: 'Hosts',
+  },
+  'ssh.connect': {
+    id: 'ssh.connect',
+    label: 'Connect to Host',
+    category: 'Hosts',
+  },
+  'ssh.connectPalette': {
+    id: 'ssh.connectPalette',
+    label: 'Connect to Host…',
+    category: 'Hosts',
+    shortcut: 'Mod+Shift+H',
+  },
   'view.showCookies': {
     id: 'view.showCookies',
     label: 'Show Cookies',

@@ -1,4 +1,7 @@
+import { RENDERER_AREAS } from '../areas/index.js';
+import { useUiStore } from '../state/ui.js';
 import { resetCommands } from '../lib/commands.js';
+import type { PaletteMode } from '../shell/command-palette.js';
 import { registerAccountCommands } from './register-account-commands.js';
 import { registerEditorCommands } from './register-editor-commands.js';
 import { registerExplorerCommands } from './register-explorer-commands.js';
@@ -18,7 +21,7 @@ import { registerWorkspaceCommands } from './register-workspace-commands.js';
  *
  * @param openPalette - Opens the command palette in the given mode; owned by the shell, not the store.
  */
-export function registerShellCommands(openPalette: (mode?: 'commands' | 'quick-open') => void): void {
+export function registerShellCommands(openPalette: (mode?: PaletteMode) => void): void {
   resetCommands();
   registerViewCommands(openPalette);
   registerWorkspaceCommands();
@@ -29,4 +32,5 @@ export function registerShellCommands(openPalette: (mode?: 'commands' | 'quick-o
   registerEditorCommands();
   registerExplorerCommands();
   registerHistoryCommands();
+  for (const id of useUiStore.getState().enabledAreas) RENDERER_AREAS[id].registerCommands?.(openPalette);
 }

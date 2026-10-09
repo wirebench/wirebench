@@ -38,12 +38,22 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter } from './secret-resolver.js';
+import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
 import { TeamSecretsService } from './team-secrets-service.js';
 import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
+import {
+  enabledAreasFromEnv,
+  hostsOnFileChange,
+  hostsOnWorkspaceChange,
+  registerEnabledAreaChannels,
+} from './areas.js';
+import { sshScopeOf, sshSecretsFor } from './ssh-window.js';
+import { windowHosts, type HostsService } from './hosts-service.js';
+import { SshService, sshSessionsEndOnSwitch } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
@@ -173,6 +183,8 @@ interface WindowScope {
   /** Reports the window's workspace's sends and test runs to its server's audit log (desktop audit events §2.4). */
   readonly audit: AuditReporter;
   readonly workspace: WorkspaceService;
+  /** The SSH area's cached `hosts.yaml` of this window's workspace. */
+  readonly hosts: HostsService;
   /** The reopen of the last workspace this window started with; resolved at once for one opened at the picker. */
   ready: Promise<void>;
   /** Whether the window's audit server was signed in at the last account change. */
@@ -214,6 +226,13 @@ const secretsFor = (projectId: string | undefined): GetSecret => {
     return await scope.secretSources.wrap(teamSecretGetter(plain, scope.teamSecrets, projectId))(ref);
   };
 };
+
+/** The calling window's workspace secrets for the SSH area (`ssh.secretNames`, `ssh.setSecret`). */
+const sshSecrets = new SshSecretsService({
+  store: secretStore,
+  workspaceId: () => scopes.callerOrOnly()?.workspace.openWorkspaceId(),
+  mappedNames: () => scopes.callerOrOnly()?.secretSources.mappedNames() ?? [],
+});
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
@@ -469,6 +488,24 @@ const teamSecretStore = scoped(scopes, (scope) => scope.teamSecretStore);
 const secretSources = scoped(scopes, (scope) => scope.secretSources);
 const secretScans = scoped(scopes, (scope) => scope.secretScans);
 
+/** The areas `WIREBENCH_AREAS` leaves switched on (see `areas.ts`). */
+const enabledAreas = enabledAreasFromEnv();
+
+/** The calling window's `hosts.yaml` (each window has its own, for its own workspace; see `createWindowScope`). */
+const hostsService = scoped(scopes, (scope) => scope.hosts);
+
+/**
+ * The SSH sessions, each owned by the window that opened it; hosts and secrets resolve at connect, from
+ * that window's workspace.
+ */
+const sshService = new SshService({
+  hosts: (sender) => sshScopeOf(scopes, sender).hosts,
+  secretsFor: (sender) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
+  knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
+  agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
+  emit: emitEvent,
+});
+
 /** `workspace-state.json`, one queue for every window's workspace service. */
 const workspaceState = new WorkspaceState(app.getPath('userData'));
 
@@ -483,6 +520,16 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     emitEvent(target, event, payload);
   };
   const picks = new DialogPicks(appPicks);
+  // Only a switch of this window's workspace (or a close) ends this window's SSH sessions; a rename or
+  // reload does not, and another window's sessions are its own workspace's.
+  const endSshOnSwitch = sshSessionsEndOnSwitch(sshService, target);
+  // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
+  const hosts = windowHosts(
+    () => workspace.treeDir(),
+    () => {
+      send(events.ssh.hostsChanged, {});
+    },
+  );
   const teamSecrets = new TeamSecretsService({
     store: secretStore,
     onChanged: (workspaceId, status) => {
@@ -634,6 +681,12 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         });
         currentValues.syncWorkspace(snapshot);
         secretSources.noteChange();
+        // This window's cached hosts.yaml was the workspace it left; only this window re-reads.
+        hostsOnWorkspaceChange(enabledAreas, hosts, () => {
+          send(events.ssh.hostsChanged, {});
+        });
+        // A session belongs to the workspace it was opened in; its credentials were that workspace's.
+        endSshOnSwitch(snapshot?.id);
       },
       onDeleted: (workspaceId) => {
         void cookies.deleteWorkspace(workspaceId).catch(() => undefined);
@@ -660,6 +713,11 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
       },
       onProgress: (progress) => {
         send(events.engine.progress, progress);
+      },
+      onHostsFileChanged: () => {
+        hostsOnFileChange(enabledAreas, hosts, () => {
+          send(events.ssh.hostsChanged, {});
+        });
       },
       onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
         send(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
@@ -698,6 +756,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     secretScans,
     audit,
     workspace,
+    hosts,
     ready: Promise.resolve(),
     auditSignedIn: false,
     closing: undefined,
@@ -748,6 +807,7 @@ void app.whenReady().then(() => {
     () => {
       openWindow({ reopenLast: false });
     },
+    enabledAreas,
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
@@ -1108,6 +1168,7 @@ void app.whenReady().then(() => {
   registerCertificateChannels({ project: workspaceService, preferences: preferencesService });
   registerWsaChannels({ project: workspaceService });
   registerWssChannels({ project: workspaceService });
+  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, secrets: sshSecrets, ssh: sshService });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
@@ -1256,6 +1317,8 @@ app.on('before-quit', (event) => {
   }
   // The catch URL views and their subscriptions go first; nothing of them outlives the process.
   hooksService.dispose();
+  // SSH sessions end with the app; closing never throws or waits.
+  sshService.disposeAll();
   // A mock's port is released now; not awaited, so a server that will not close never holds up the quit.
   void mockRunner.stopAll().catch((error: unknown) => {
     console.warn('[mock] stopping the mocks on quit failed', error instanceof Error ? error.message : String(error));

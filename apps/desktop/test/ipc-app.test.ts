@@ -74,6 +74,14 @@ describe('app.* IPC', () => {
     expect(registrar.send).not.toHaveBeenCalled();
   });
 
+  it('app.areas answers the enabled area ids', async () => {
+    registerAppChannels(undefined, undefined, undefined, ['explorer', 'history']);
+    expect(await invoke('app.areas', undefined, webContents())).toEqual({
+      ok: true,
+      value: { enabled: ['explorer', 'history'] },
+    });
+  });
+
   it('falls back to the registering window when nothing is focused', async () => {
     let template: unknown;
     registerAppChannels({

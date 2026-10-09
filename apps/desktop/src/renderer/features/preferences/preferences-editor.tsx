@@ -15,6 +15,7 @@ import { UpdatesSection } from './sections/updates-section.js';
 import { AccountsSection } from './sections/accounts-section.js';
 import { SecretsSection } from './sections/secrets-section.js';
 import { MocksSection } from './sections/mocks-section.js';
+import { TerminalSection } from './sections/terminal-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
 import { TokensSection } from './sections/tokens-section.js';
 
@@ -40,6 +41,7 @@ const SECTIONS: readonly SectionEntry[] = [
   { id: 'accounts', label: 'Accounts' },
   { id: 'secrets', label: 'Secrets' },
   { id: 'mocks', label: 'Mock services' },
+  { id: 'terminal', label: 'Terminal' },
   { id: 'tokens', label: 'Devices & tokens' },
   { id: 'shortcuts', label: 'Shortcuts' },
 ];
@@ -152,6 +154,7 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
         {active === 'accounts' && <AccountsSection {...sectionProps} />}
         {active === 'secrets' && <SecretsSection {...sectionProps} />}
         {active === 'mocks' && <MocksSection {...sectionProps} />}
+        {active === 'terminal' && <TerminalSection {...sectionProps} />}
         {active === 'tokens' && <TokensSection />}
         {active === 'shortcuts' && <ShortcutsSection context={commandContext} />}
       </div>

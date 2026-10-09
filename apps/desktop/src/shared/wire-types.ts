@@ -5790,6 +5790,7 @@ export const preferencesWireSchema = z.object({
   accounts: z.object({ showInStatusBar: z.boolean() }),
   secrets: z.object({ sourceCacheSeconds: z.number() }),
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
+  terminal: z.object({ confirmMultilinePaste: z.boolean(), copyOnSelect: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
@@ -5809,6 +5810,7 @@ export const preferencesSectionSchema = z.enum([
   'accounts',
   'secrets',
   'mocks',
+  'terminal',
   'tokens',
   'shortcuts',
 ]);
@@ -5839,6 +5841,7 @@ export const preferencesPatchWireSchema = z.object({
   accounts: z.record(z.string(), z.unknown()).optional(),
   secrets: z.record(z.string(), z.unknown()).optional(),
   mocks: z.record(z.string(), z.unknown()).optional(),
+  terminal: z.record(z.string(), z.unknown()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;

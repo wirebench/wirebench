@@ -68,7 +68,12 @@
   },
   "pnpm": {
     "overrides": {
-      "dompurify": "3.4.15"
-    }
+      "dompurify": "3.4.15",
+      "cpu-features": "-"
+    },
+    "neverBuiltDependencies": [
+      "ssh2",
+      "cpu-features"
+    ]
   }
 }

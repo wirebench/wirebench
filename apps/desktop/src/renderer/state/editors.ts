@@ -62,7 +62,8 @@ export interface EditorTab {
     | 'catch-url'
     | 'sequence'
     | 'mock'
-    | 'cookies';
+    | 'cookies'
+    | 'ssh-terminal';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -88,6 +89,11 @@ export interface EditorTab {
    * only: captures are never cached, so the tab is not persisted.
    */
   readonly hookId?: string;
+  /**
+   * Set when `kind` is `'ssh-terminal'`: the host this terminal is connected to. Session only: a
+   * session is a moment, so the tab is never persisted.
+   */
+  readonly hostId?: string;
   /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */
   readonly sequenceId?: string;
   /** Set when `kind` is `'mock'`: the mock this tab edits and runs. */

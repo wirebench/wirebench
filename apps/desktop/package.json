@@ -27,6 +27,7 @@
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "@wirebench/engine": "workspace:*",
+    "@wirebench/ssh": "workspace:*",
     "electron-updater": "^6.8.9",
     "yaml": "^2.9",
     "zod": "^4.6.1"
@@ -47,6 +48,9 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-web-links": "0.12.0",
+    "@xterm/xterm": "6.0.0",
     "cmdk": "^1.1.1",
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3",

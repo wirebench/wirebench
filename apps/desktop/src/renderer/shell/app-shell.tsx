@@ -10,6 +10,8 @@ import { SaveAsWebhookDialog } from '../features/webhook-items/save-as-webhook-d
 import { WebhookSettingsDialog } from '../features/webhook-items/webhook-settings-dialog.js';
 import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
+import { toAreaIds } from '@shared/area-module.js';
+import { ipc } from '../state/ipc-client.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
 import { runCommand } from '../lib/commands.js';
@@ -36,6 +38,9 @@ import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
+import { subscribeToHosts } from '../features/ssh/hosts-store.js';
+import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
+import { TrustDialog } from '../features/ssh/trust-dialog.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
@@ -117,6 +122,7 @@ export function AppShell() {
   const consoleState = useUiStore((state) => state.console);
   const slideOver = useUiStore((state) => state.slideOver);
   const theme = useUiStore((state) => state.theme);
+  const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorLayout = useUiStore((state) => state.editorLayout);
   const selection = useUiStore((state) => state.selection);
@@ -274,6 +280,8 @@ export function AppShell() {
   useEffect(() => subscribeToWorkspace(), []);
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
+  useEffect(() => subscribeToHosts(), []);
+  useEffect(() => subscribeToSshEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
   useEffect(() => subscribeToAccounts(), []);
   useEffect(() => {
@@ -301,9 +309,22 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     registerShellCommands(openPalette);
     // The manifest is built from the registry, so it can only be sent once registration ran.
     void syncAppMenu();
+    // Main knows which areas this run switched off; register again without their commands.
+    void ipc()
+      .app.areas(undefined)
+      .then((result) => {
+        if (cancelled || !result.ok) return;
+        useUiStore.getState().setEnabledAreas(toAreaIds(result.value.enabled));
+        registerShellCommands(openPalette); // resetCommands() at its top makes re-registration safe
+        void syncAppMenu();
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [openPalette]);
 
   useTheme(theme);
@@ -477,6 +498,8 @@ export function AppShell() {
       <SecretTokenDialog />
       <SecretSourcesDialog />
       <SecretSourcesApproveDialog />
+      {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
+      {sshEnabled && <TrustDialog />}
       <CollectionExportReportDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>

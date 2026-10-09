@@ -5,11 +5,12 @@ import type { ImportProblemWire, ValidationProblemWire } from '../../shared/wire
  * Where a problem came from: importing a definition, expanding properties before a send, the
  * send itself failing at the transport level (a timeout, a refused connection, …), or
  * validating a message against its schema set (`validate.message`), checking a REST response
- * against its OpenAPI contract (`contract`, whose `location` is a JSON Pointer), or a certificate
+ * against its OpenAPI contract (`contract`, whose `location` is a JSON Pointer), a certificate
  * the workspace relies on nearing or past its expiry (`certificate`, whose `location` names the
- * endpoint or keystore; see `certificate-expiry.ts`).
+ * endpoint or keystore; see `certificate-expiry.ts`), or reading `hosts.yaml` (`hosts`, whose
+ * `location` is the path of the offending key).
  */
-export type ProblemSource = 'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate';
+export type ProblemSource = 'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';

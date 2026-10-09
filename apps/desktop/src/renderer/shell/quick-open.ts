@@ -7,13 +7,14 @@
  * palette does the fuzzy matching itself (cmdk's own filter) over each entry's `value`.
  */
 
+import type { ResolvedHostWire } from '../../shared/ssh-wire.js';
 import type { InterfaceSummary, RequestWire } from '../../shared/wire-types.js';
 
 /** One quick-open row. */
 export interface QuickOpenEntry {
   /** `request:<id>` or `operation:<interfaceId>/<binding>/<name>` — unique, and a React key. */
   readonly key: string;
-  readonly kind: 'request' | 'operation';
+  readonly kind: 'request' | 'operation' | 'host';
   /** What the row shows: the request name, or the operation name. */
   readonly label: string;
   /** The breadcrumb under it: `project › interface › binding › operation`. */
@@ -22,6 +23,8 @@ export interface QuickOpenEntry {
   readonly value: string;
   /** Set for `request`: the draft to open. */
   readonly requestId?: string;
+  /** Set for `host`: the host whose terminal to open. */
+  readonly hostId?: string;
   /** Set for `operation`: what a new request needs. */
   readonly interfaceId?: string;
   readonly bindingName?: string;
@@ -100,4 +103,21 @@ export function quickOpenEntries(
   requestEntries.sort((a, b) => a.value.localeCompare(b.value));
   operationEntries.sort((a, b) => a.value.localeCompare(b.value));
   return [...requestEntries, ...operationEntries];
+}
+
+/**
+ * The hosts the Hosts area has resolved, as quick-open rows: the host name, with its address and group path
+ * under it. The match covers name, address, path and tags. Only hosts in `resolved` are listed.
+ *
+ * @param resolved - The hosts store's resolved hosts.
+ */
+export function quickOpenHostEntries(resolved: readonly ResolvedHostWire[]): readonly QuickOpenEntry[] {
+  return resolved.map((host) => ({
+    key: `host:${host.id}`,
+    kind: 'host',
+    label: host.name,
+    detail: host.path.length === 0 ? host.address : `${host.address} · ${host.path.join('/')}`,
+    value: [host.name, host.address, ...host.path, ...host.tags].join(' '),
+    hostId: host.id,
+  }));
 }

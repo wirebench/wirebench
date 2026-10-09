@@ -74,6 +74,12 @@ export class SecretSourcesService {
     }
   }
 
+  /** The names the open workspace maps to a source (shared and local, after overrides), sorted; no values. */
+  mappedNames(): string[] {
+    const snapshot = this.deps.snapshot();
+    return snapshot === undefined ? [] : [...effectiveSecretSources(snapshot.shared, snapshot.local).keys()].sort();
+  }
+
   clear(): void {
     this.cache.clear();
   }

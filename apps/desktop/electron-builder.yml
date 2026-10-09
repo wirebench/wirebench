@@ -28,6 +28,8 @@ files:
   # The engine is a workspace package: its checkout carries sources, tests and a coverage
   # report that the built `dist/` does not need and that nothing at runtime resolves.
   - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'
+  # Same for the SSH package: only its built `dist/` (and ssh2, hoisted) is resolved at runtime.
+  - '!**/node_modules/@wirebench/ssh/{src,test,coverage,node_modules}/**'
   # The engine's optional `kerberos` dependency would otherwise be packed with the binding that
   # happened to be installed on the runner, in the wrong architecture for half the builds. The app
   # loads the vendored copy under `Resources/kerberos/` and never this one.
@@ -38,6 +40,9 @@ files:
   # `scripts/check-desktop-asar.ts` fails the release if this list ever drops a package some other
   # dependency needs, or if the tree grows a package this list misses.
   - '!node_modules/{node-addon-api,prebuild-install,base64-js,bl,buffer,chownr,decompress-response,deep-extend,detect-libc,end-of-stream,expand-template,fs-constants,github-from-package,ieee754,inherits,ini,mimic-response,minimist,mkdirp-classic,napi-build-utils,node-abi,once,pump,rc,readable-stream,safe-buffer,simple-concat,simple-get,string_decoder,strip-json-comments,tar-fs,tar-stream,tunnel-agent,util-deprecate,wrappy}/**'
+  # ssh2's optional native cipher binding is never built; ssh2 falls back to its pure-JS ciphers.
+  - '!**/node_modules/ssh2/lib/protocol/crypto/build/**'
+  - '!**/node_modules/cpu-features/**'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve

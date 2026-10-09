@@ -1,52 +1,15 @@
 import { PanelLeftClose } from 'lucide-react';
 import { IconButton } from '../components/icon-button.js';
-import { EnvironmentsView } from '../features/environments/environments-view.js';
-import { ExplorerView } from '../features/explorer/explorer-view.js';
-import { HistoryView } from '../features/history/history-view.js';
-import { SearchView } from '../features/search/search-view.js';
-import { WssSection } from '../features/wss/wss-section.js';
-import type { SidebarView } from '../state/ui-state.js';
+import { areaById } from '@shared/area-module.js';
+import { RENDERER_AREAS } from '../areas/index.js';
 import { useUiStore } from '../state/ui.js';
-
-interface ViewCopy {
-  readonly title: string;
-  readonly headline: string;
-  readonly body: string;
-}
-
-const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
-  explorer: {
-    title: 'Explorer',
-    headline: 'No project open',
-    body: 'Import a WSDL or open a project to see its interfaces, operations, and requests here.',
-  },
-  environments: {
-    title: 'Environments',
-    headline: 'No workspace open',
-    body: 'Open a workspace to see its environments here.',
-  },
-  search: {
-    title: 'Search',
-    headline: 'Search the project',
-    body: 'Find operations, requests, and endpoints once a project is open.',
-  },
-  history: {
-    title: 'History',
-    headline: 'Nothing sent yet',
-    body: 'Every request you send is listed here with its status, duration, and size.',
-  },
-  wss: {
-    title: 'WS-Security',
-    headline: 'WS-Security',
-    body: 'Client keystores, and the outgoing/incoming configurations requests can apply.',
-  },
-};
 
 /** The sidebar panel: a section title plus the active view's content. */
 export function Sidebar() {
   const view = useUiStore((state) => state.sidebar.view);
   const collapseSidebar = useUiStore((state) => state.collapseSidebar);
-  const copy = VIEWS[view];
+  const copy = areaById(view).copy;
+  const View = RENDERER_AREAS[view].View;
 
   return (
     <aside
@@ -68,22 +31,7 @@ export function Sidebar() {
           <PanelLeftClose size={14} aria-hidden="true" />
         </IconButton>
       </div>
-      {view === 'explorer' ? (
-        <ExplorerView />
-      ) : view === 'environments' ? (
-        <EnvironmentsView />
-      ) : view === 'search' ? (
-        <SearchView />
-      ) : view === 'history' ? (
-        <HistoryView />
-      ) : view === 'wss' ? (
-        <WssSection />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-          <p className="text-md text-fg-muted">{copy.headline}</p>
-          <p className="mt-1 text-sm text-fg-subtle">{copy.body}</p>
-        </div>
-      )}
+      <View />
     </aside>
   );
 }

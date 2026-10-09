@@ -20,6 +20,12 @@ export const COMMAND_IDS = [
   'view.showSearch',
   'view.showHistory',
   'view.showWss',
+  'view.showHosts',
+  'ssh.newHost',
+  'ssh.newGroup',
+  'ssh.editHost',
+  'ssh.connect',
+  'ssh.connectPalette',
   'view.showCookies',
   'view.showSettings',
   'view.toggleTheme',
@@ -176,6 +182,7 @@ export type CommandCategory =
   | 'Secrets'
   | 'Editor'
   | 'History'
+  | 'Hosts'
   | 'Sync'
   | 'Account';
 

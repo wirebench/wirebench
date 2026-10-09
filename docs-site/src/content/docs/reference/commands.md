@@ -30,6 +30,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show Search | <kbd>⌘⇧S</kbd> | <kbd>Ctrl+Shift+S</kbd> |
 | Show History | <kbd>⌘⇧Y</kbd> | <kbd>Ctrl+Shift+Y</kbd> |
 | Show WS-Security | — | — |
+| Show Hosts | — | — |
 | Show Cookies | — | — |
 | Show Settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
 | Cycle Theme (Dark, Light, System) | — | — |
@@ -41,6 +42,16 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Response: Outline View | — | — |
 | Response: Raw View | — | — |
 | Response: Query View | — | — |
+
+## Hosts
+
+| Command | macOS | Windows and Linux |
+| --- | --- | --- |
+| Hosts: New Host… | — | — |
+| Hosts: New Group… | — | — |
+| Hosts: Edit Host… | — | — |
+| Connect to Host | — | — |
+| Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
 
 ## Definition
 

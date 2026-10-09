@@ -27,8 +27,11 @@ export const RENDERER_OUT_DIR = join(REPO_ROOT, 'apps', 'desktop', 'out', 'rende
  */
 export const FORBIDDEN_WORKER_ASSETS = ['ts.worker', 'css.worker', 'html.worker', 'json.worker'] as const;
 
-/** The renderer's total JavaScript budget in bytes; the trimmed build is comfortably under it. */
-export const RENDERER_JS_BUDGET_BYTES = 12 * 1024 * 1024;
+/**
+ * The renderer's total JavaScript budget in bytes; the trimmed build is comfortably under it.
+ * 13 MB since the SSH terminal (xterm, ~0.4 MB in its own lazily loaded chunk) took the build past 12.
+ */
+export const RENDERER_JS_BUDGET_BYTES = 13 * 1024 * 1024;
 
 /** What {@link inspectRendererAssets} found in a renderer build. */
 export interface RendererAssets {

@@ -7,6 +7,8 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 
 import { App } from '../../src/renderer/app.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
+import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { AREAS } from '../../src/shared/area-module.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { WorkspaceWire } from '../../src/shared/wire-types.js';
@@ -196,6 +198,40 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: 'Explorer' }));
 
     expect(screen.queryByTestId('sidebar')).toBeNull();
+  });
+
+  it('shows the trust prompt while another view is in the sidebar', async () => {
+    useUiStore.setState({ enabledAreas: AREAS.map((area) => area.id) });
+    useUiStore.getState().setSidebarView('explorer');
+    render(<App />);
+    act(() => {
+      useHostsStore.getState().setTrustPrompt({
+        hostId: 'a',
+        size: { cols: 80, rows: 24 },
+        host: 'h:22',
+        keyType: 'ssh-ed25519',
+        fingerprint: 'SHA256:k',
+      });
+    });
+    expect(await screen.findByTestId('trust-dialog')).toBeDefined();
+    act(() => {
+      useHostsStore.getState().setTrustPrompt(null);
+    });
+  });
+
+  it('mounts no trust prompt while the SSH area is switched off', () => {
+    useUiStore.setState({ enabledAreas: AREAS.map((area) => area.id).filter((id) => id !== 'ssh') });
+    useHostsStore.getState().setTrustPrompt({
+      hostId: 'a',
+      size: { cols: 80, rows: 24 },
+      host: 'h:22',
+      keyType: 'ssh-ed25519',
+      fingerprint: 'SHA256:k',
+    });
+    render(<App />);
+    expect(screen.queryByTestId('trust-dialog')).toBeNull();
+    useHostsStore.getState().setTrustPrompt(null);
+    useUiStore.setState({ enabledAreas: AREAS.map((area) => area.id) });
   });
 
   it('shows the app version from IPC in the status bar', async () => {

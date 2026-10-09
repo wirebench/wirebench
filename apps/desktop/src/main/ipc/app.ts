@@ -1,4 +1,6 @@
 import { app, BrowserWindow, Menu } from 'electron';
+import { AREAS } from '../../shared/area-module.js';
+import type { AreaId } from '../../shared/area-module.js';
 import { appVersion } from '../app-version.js';
 import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
@@ -26,6 +28,7 @@ export function registerAppChannels(
   checkForUpdates: () => Promise<UpdateStatusWire> = () =>
     Promise.resolve({ kind: 'error', message: 'Could not check for updates' }),
   newWindow: () => void = () => undefined,
+  enabledAreas: readonly AreaId[] = AREAS.map((area) => area.id),
 ): void {
   registerHandler(channels.app.version, () =>
     Promise.resolve({
@@ -34,6 +37,8 @@ export function registerAppChannels(
       node: process.versions.node,
     }),
   );
+
+  registerHandler(channels.app.areas, () => Promise.resolve({ enabled: [...enabledAreas] }));
 
   registerHandler(channels.app.checkForUpdates, async () => ({ status: await checkForUpdates() }));
 
