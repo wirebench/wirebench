@@ -2,6 +2,7 @@ import { callCommand } from './commands/call.js';
 import { diffContractCommand } from './commands/diff-contract.js';
 import { exportCommand } from './commands/export.js';
 import { mcpCommand } from './commands/mcp.js';
+import { mockRecordCommand } from './commands/mock-record.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
@@ -51,6 +52,9 @@ export async function main(
       }
       case 'mcp': {
         return await mcpCommand(args, io);
+      }
+      case 'mock-record': {
+        return await mockRecordCommand(args, io);
       }
       case 'export': {
         return await exportCommand(args, io);

@@ -54,3 +54,7 @@ export {
 export type { MockEventMessage, MockExchangeEvent, MockWarning, RunningMock, StartMockInput } from './server.js';
 export { generateMock, mockFacetFor } from './generate.js';
 export type { GenerateMockOptions } from './generate.js';
+export { addRecordedStubs } from './record-stubs.js';
+export { RECORD_RELAY_BYTES, RECORD_UPSTREAM_TIMEOUT_MS, startRecorder } from './record.js';
+export type { RecordExchangeEvent, RunningRecorder, StartRecorderInput } from './record.js';
+export type { AddRecordedStubsOptions, MockRecording, RecordedStubSkip, RecordedStubs } from './record-stubs.js';

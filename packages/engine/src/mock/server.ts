@@ -7,31 +7,38 @@
 
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
-import type { Socket } from 'node:net';
 import { WirebenchError } from '../errors.js';
 import { defaultRegistry } from '../protocols.js';
 import { nodeFs } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import type { Project } from '../project/model.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
-import { redactHeaderPairs, redactUrl } from '../redact/index.js';
+import { redactHeaderPairs } from '../redact/index.js';
 import type { HeaderPair } from '../script/model.js';
 import { createScriptSandbox } from '../script/sandbox/host.js';
 import type { ScriptSandbox } from '../script/sandbox/host.js';
 import type { MockContract, MockProblem, MockReply, MockRequest } from './contract.js';
 import { MockState, dispatch } from './dispatch.js';
+import {
+  MOCK_REQUEST_BODY_BYTES,
+  MOCK_REQUEST_TIMEOUT_MS,
+  cut,
+  headerPairs,
+  hostnameOf,
+  isLoopback,
+  listen,
+  maskedUrl,
+  plain,
+  queryOf,
+  readBody,
+  urlHost,
+  write,
+} from './http.js';
 import { mockPathPrefix } from './model.js';
 import type { MockDef, MockOperation, MockResponse } from './model.js';
 import { createDispatchScriptRunner } from './script.js';
 
-/** The largest request body a mock reads; larger is refused with 413. */
-export const MOCK_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
-/** How long a client has to send the headers, and the whole request. */
-export const MOCK_REQUEST_TIMEOUT_MS = 30_000;
-/** How much of each body a log event carries. */
-export const MOCK_EVENT_BODY_BYTES = 64 * 1024;
-
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+export { MOCK_EVENT_BODY_BYTES, MOCK_REQUEST_BODY_BYTES, MOCK_REQUEST_TIMEOUT_MS } from './http.js';
 
 export interface StartMockInput {
   readonly project: Project;
@@ -103,7 +110,8 @@ function mockError(code: string, message: string, details?: Record<string, unkno
   return new WirebenchError(code, message, details !== undefined ? { details } : undefined);
 }
 
-function findMock(project: Project, mockId: string): MockDef {
+/** @throws WirebenchError `mock-not-found` */
+export function findMock(project: Project, mockId: string): MockDef {
   const mock = project.mocks.find((candidate) => candidate.id === mockId);
   if (mock === undefined) {
     throw mockError('mock-not-found', `The project has no mock with id ${mockId}`, { mockId });
@@ -143,105 +151,11 @@ export async function openMockContract(
   );
 }
 
-function hostnameOf(hostHeader: string | undefined): string | undefined {
-  if (hostHeader === undefined) return undefined;
-  const value = hostHeader.trim().toLowerCase();
-  if (value.startsWith('[')) {
-    const end = value.indexOf(']');
-    return end === -1 ? undefined : value.slice(0, end + 1);
-  }
-  const colon = value.indexOf(':');
-  return colon === -1 ? value : value.slice(0, colon);
-}
-
-function isLoopback(host: string): boolean {
-  return LOOPBACK_HOSTS.has(host) || /^127\.\d+\.\d+\.\d+$/.test(host);
-}
-
-function urlHost(host: string): string {
-  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
-}
-
-function headerPairs(req: IncomingMessage): HeaderPair[] {
-  const pairs: HeaderPair[] = [];
-  for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) {
-    pairs.push([req.rawHeaders[i] ?? '', req.rawHeaders[i + 1] ?? '']);
-  }
-  return pairs;
-}
-
-function queryOf(search: URLSearchParams): Record<string, string[]> {
-  const query = Object.create(null) as Record<string, string[]>;
-  for (const [name, value] of search) {
-    (query[name] ??= []).push(value);
-  }
-  return query;
-}
-
-/** Path and query with sensitive query values masked; `redactUrl` wants an absolute URL. */
-function maskedUrl(pathAndQuery: string): string {
-  const origin = 'http://mock.invalid/';
-  const masked = redactUrl(`${origin}${pathAndQuery.startsWith('/') ? pathAndQuery.slice(1) : pathAndQuery}`);
-  return masked.startsWith(origin) ? masked.slice(origin.length - 1) : masked;
-}
-
-function cut(text: string): { body: string; truncated: boolean } {
-  const bytes = Buffer.from(text, 'utf8');
-  return bytes.byteLength <= MOCK_EVENT_BODY_BYTES
-    ? { body: text, truncated: false }
-    : { body: bytes.subarray(0, MOCK_EVENT_BODY_BYTES).toString('utf8'), truncated: true };
-}
-
 /** The reply's headers: the stub's own, then the protocol's defaults for names the stub did not set. */
 function replyHeaders(response: MockResponse, contract: MockContract): HeaderPair[] {
   const own = response.headers.map((header): HeaderPair => [header.name, header.value]);
   const named = new Set(own.map(([name]) => name.toLowerCase()));
   return [...own, ...contract.defaults(response).filter(([name]) => !named.has(name.toLowerCase()))];
-}
-
-function write(res: ServerResponse, reply: MockReply): void {
-  const grouped = new Map<string, { name: string; values: string[] }>();
-  for (const [name, value] of reply.headers) {
-    const key = name.toLowerCase();
-    const entry = grouped.get(key) ?? { name, values: [] };
-    entry.values.push(value);
-    grouped.set(key, entry);
-  }
-  for (const { name, values } of grouped.values()) {
-    res.setHeader(name, values.length === 1 ? (values[0] as string) : values);
-  }
-  const body = Buffer.from(reply.body, 'utf8');
-  res.setHeader('Content-Length', String(body.byteLength));
-  res.writeHead(reply.status);
-  res.end(body);
-}
-
-function plain(status: number, text: string): MockReply {
-  return { status, headers: [['Content-Type', 'text/plain; charset=utf-8']], body: `${text}\n` };
-}
-
-/** Reads the body, or `undefined` once it passes the cap. */
-function readBody(req: IncomingMessage): Promise<Buffer | undefined> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let over = false;
-    req.on('data', (chunk: Buffer) => {
-      if (over) return;
-      size += chunk.byteLength;
-      if (size > MOCK_REQUEST_BODY_BYTES) {
-        over = true;
-        chunks.length = 0;
-        resolve(undefined);
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (!over) resolve(Buffer.concat(chunks));
-    });
-    req.on('error', reject);
-  });
 }
 
 /**
@@ -273,7 +187,6 @@ export async function startMock(input: StartMockInput): Promise<RunningMock> {
   let ownSandbox: ScriptSandbox | undefined;
   const sandbox = (): ScriptSandbox => input.sandbox ?? (ownSandbox ??= createScriptSandbox());
   const script = createDispatchScriptRunner(sandbox, input.scriptTimeoutMs);
-  const sockets = new Set<Socket>();
   const timers = new Set<NodeJS.Timeout>();
   let seq = 0;
   let stopped = false;
@@ -431,31 +344,8 @@ export async function startMock(input: StartMockInput): Promise<RunningMock> {
       });
     },
   );
-  server.on('connection', (socket: Socket) => {
-    sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
-  });
-
-  const port = await new Promise<number>((resolve, reject) => {
-    const onError = (error: NodeJS.ErrnoException): void => {
-      reject(
-        error.code === 'EADDRINUSE'
-          ? mockError('mock-port-in-use', `Port ${String(input.port ?? mock.port)} is already in use`, {
-              port: input.port ?? mock.port,
-            })
-          : mockError('mock-listen-failed', `The mock could not listen on ${host}: ${error.message}`, {
-              host,
-              reason: error.code ?? error.message,
-            }),
-      );
-    };
-    server.once('error', onError);
-    server.listen(input.port ?? mock.port, host, () => {
-      server.off('error', onError);
-      const address = server.address();
-      resolve(typeof address === 'object' && address !== null ? address.port : 0);
-    });
-  });
+  const listening = await listen(server, host, input.port ?? mock.port, 'mock');
+  const port = listening.port;
 
   return {
     url: `http://${urlHost(host)}:${String(port)}${mock.path}`,
@@ -468,9 +358,7 @@ export async function startMock(input: StartMockInput): Promise<RunningMock> {
       stopped = true;
       for (const timer of timers) clearTimeout(timer);
       timers.clear();
-      const closed = new Promise<void>((resolve) => server.close(() => resolve()));
-      for (const socket of sockets) socket.destroy();
-      await closed;
+      await listening.close();
       if (ownSandbox !== undefined) await ownSandbox.dispose();
     },
   };
