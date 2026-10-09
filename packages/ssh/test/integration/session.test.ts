@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openSession } from '../../src/index.js';
 import type { SshSession } from '../../src/index.js';
@@ -198,5 +199,22 @@ describe('openSession', () => {
       (e: unknown) => e,
     );
     expect(error).toMatchObject({ code: 'ssh-auth-failed', details: { method: 'key' } });
+  });
+  it('connects with a private key', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+      publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    });
+    const f = await startSshFixture({
+      password: { user: 'tester', password: 'unused' },
+      key: { user: 'tester', privateKey },
+    });
+    open.push(f);
+    const keyed = { ...hop(f.port, ''), auth: { kind: 'key' as const, privateKey } };
+    session = await openSession({ hops: [keyed], cols: 80, rows: 24, verifyHostKey: accept });
+    const echoed = until(session, (t) => t.includes('keyed'));
+    session.write(Buffer.from('keyed'));
+    expect(await echoed).toContain('keyed');
   });
 });

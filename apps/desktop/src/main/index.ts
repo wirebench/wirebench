@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
-import { hostname } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { appVersion } from './app-version.js';
@@ -15,9 +15,10 @@ import {
   type GetSecret,
 } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
+import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
-import { saveOverride } from './native-dialogs.js';
+import { pickFile, saveOverride } from './native-dialogs.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
@@ -51,6 +52,7 @@ import {
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
 } from './areas.js';
+import { SshImportService } from './ssh-import.js';
 import { sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { SshService, sshSessionsEndOnSwitch } from './ssh-service.js';
@@ -1168,7 +1170,17 @@ void app.whenReady().then(() => {
   registerCertificateChannels({ project: workspaceService, preferences: preferencesService });
   registerWsaChannels({ project: workspaceService });
   registerWssChannels({ project: workspaceService });
-  registerEnabledAreaChannels(enabledAreas, { hosts: hostsService, secrets: sshSecrets, ssh: sshService });
+  registerEnabledAreaChannels(enabledAreas, {
+    hosts: hostsService,
+    secrets: sshSecrets,
+    ssh: sshService,
+    importer: new SshImportService<WebContents>({
+      home: () => homedir(),
+      pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
+      hosts: hostsService,
+      secrets: sshSecrets,
+    }),
+  });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));

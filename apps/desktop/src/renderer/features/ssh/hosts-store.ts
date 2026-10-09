@@ -42,6 +42,8 @@ interface HostsState {
   filter: string;
   selectedTags: readonly string[];
   dialog: HostsDialog;
+  /** Whether the "Import from SSH config" dialog is open. */
+  importOpen: boolean;
   /** The session state per host id; a host absent from the record is idle. */
   sessions: Readonly<Record<string, HostSession>>;
   trustPrompt: TrustPrompt | null;
@@ -59,6 +61,9 @@ interface HostsState {
   toggleTag: (tag: string) => void;
   openDialog: (dialog: HostsDialog) => void;
   closeDialog: () => void;
+  setImportOpen: (open: boolean) => void;
+  /** Takes main's answer to an import's apply: the reloaded file, as after a save. */
+  applyImported: (result: SshListHostsResponse) => void;
   /** `undefined` removes the host's entry (idle). */
   setSession: (hostId: string, session: HostSession | undefined) => void;
   setTrustPrompt: (prompt: TrustPrompt | null) => void;
@@ -85,6 +90,7 @@ const WORKSPACE_STATE = {
   problems: [],
   loaded: false,
   dialog: null,
+  importOpen: false,
   sessions: {},
   trustPrompt: null,
   reconnectNonce: {},
@@ -116,6 +122,12 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   },
   closeDialog: () => {
     set({ dialog: null });
+  },
+  setImportOpen: (importOpen) => {
+    set({ importOpen });
+  },
+  applyImported: (result) => {
+    apply({ ok: true, value: result });
   },
   setSession: (hostId, session) => {
     const sessions = { ...get().sessions };

@@ -1,4 +1,11 @@
-export { loadSshConfig, displayPath, type SshConfigBlock, type SshConfigDocument, type SshConfigIo } from './load.js';
+export {
+  loadSshConfig,
+  displayPath,
+  pathsFor,
+  type SshConfigBlock,
+  type SshConfigDocument,
+  type SshConfigIo,
+} from './load.js';
 export {
   planSshConfigImport,
   DEFAULT_GROUP_NAME,

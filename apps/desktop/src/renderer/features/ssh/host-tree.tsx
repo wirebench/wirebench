@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from '../../components/button.js';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { ChevronDown, ChevronRight, Circle } from 'lucide-react';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
@@ -265,7 +266,18 @@ export function HostTree() {
   };
 
   if (file.groups.length === 0 && file.hosts.length === 0) {
-    return <p className="p-3 text-sm text-fg-subtle">No hosts yet. Add one with New host.</p>;
+    return (
+      <div className="flex flex-col items-start gap-2 p-3 text-sm text-fg-subtle">
+        <p>No hosts yet. Add one with New host, or bring yours in from an SSH config.</p>
+        <Button
+          onClick={() => {
+            useHostsStore.getState().setImportOpen(true);
+          }}
+        >
+          Import from SSH config
+        </Button>
+      </div>
+    );
   }
   return (
     <ul role="tree" aria-label="Hosts" className="flex flex-col">
