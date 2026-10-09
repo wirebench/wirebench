@@ -43,6 +43,9 @@ export type {
 } from './contract.js';
 export { MockState, candidates, dispatch } from './dispatch.js';
 export type { DispatchDeps, DispatchResult, DispatchScriptRunner, ScriptDecision } from './dispatch.js';
+export { checkTemplate } from './template.js';
+export { renderResponse } from './render.js';
+export type { RenderedResponse } from './render.js';
 export { DISPATCH_SCRIPT_BODY_BYTES, createDispatchScriptRunner } from './script.js';
 export {
   MOCK_EVENT_BODY_BYTES,
