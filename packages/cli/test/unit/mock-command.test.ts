@@ -94,6 +94,18 @@ describe('wirebench mock arguments', () => {
   it('has its own --help', () => {
     expect(parseCliArgs(['mock', '--help'])).toEqual({ command: 'help', topic: 'mock' });
   });
+
+  it('leaves mock record to the recorder, and refuses its flags when serving', () => {
+    expect(parseCliArgs(['mock', 'record', 'p', 'Orders', '--target', 'http://x', '--port', '0'])).toMatchObject({
+      command: 'mock-record',
+      path: 'p',
+      mock: 'Orders',
+      port: 0,
+    });
+    expect(() => parseCliArgs(['mock', 'p', '--target', 'http://x'])).toThrow(
+      /--target does not apply to wirebench mock/,
+    );
+  });
 });
 
 describe('selectMocks', () => {

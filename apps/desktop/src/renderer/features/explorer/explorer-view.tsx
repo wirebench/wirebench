@@ -13,6 +13,7 @@ import {
   FoldVertical,
   Forward,
   ListOrdered,
+  Server,
   Globe,
   Inbox,
   Link,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
+import { useMockRunsStore } from '../../state/mock-runs.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
 import { useConflictTargets } from '../sync/use-conflict-targets.js';
@@ -93,6 +95,8 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'catch-url': Inbox,
   sequences: Folder,
   sequence: ListOrdered,
+  mocks: Folder,
+  mock: Server,
   values: Folder,
 };
 
@@ -130,6 +134,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'catch-url': 'catch-url-row',
   sequences: 'sequences-group-row',
   sequence: 'sequence-row',
+  mocks: 'mocks-group-row',
+  mock: 'mock-row',
   values: 'values-group-row',
   value: 'value-row',
 };
@@ -146,6 +152,23 @@ const INLINE_BUTTON_CLASS =
  * padding was ever asked for.
  */
 const ROW_PADDING_LEFT = 6;
+
+/** A mock row's marker while it runs: where it listens, as its tooltip. */
+function MockRunningBadge({ mockId }: { readonly mockId: string }) {
+  const state = useMockRunsStore((s) => s.states[mockId]);
+  if (state?.running !== true) {
+    return null;
+  }
+  return (
+    <span
+      data-testid="mock-running-badge"
+      title={state.url}
+      className="shrink-0 rounded-full bg-surface-base px-1.5 text-xs text-status-success"
+    >
+      running
+    </span>
+  );
+}
 
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = NODE_ICON[node.data.kind];
@@ -177,7 +200,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             node.data.kind === 'ws-request' ||
             node.data.kind === 'webhook-request' ||
             node.data.kind === 'catch-url' ||
-            node.data.kind === 'sequence'
+            node.data.kind === 'sequence' ||
+            node.data.kind === 'mock'
           ) {
             node.activate();
           } else if (node.data.kind === 'api' || node.data.kind === 'grpc-api' || node.data.kind === 'ws-api') {
@@ -265,6 +289,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             {node.data.label}
           </span>
         )}
+        {node.data.kind === 'mock' && node.data.mockId !== undefined && <MockRunningBadge mockId={node.data.mockId} />}
         {node.data.suffix !== undefined && (
           <span className="shrink-0 truncate pl-1 text-xs text-fg-subtle" data-testid="explorer-row-suffix">
             · {node.data.suffix}
@@ -390,6 +415,7 @@ export function ExplorerView() {
   const grpc = useProjectStore((state) => state.grpc);
   const ws = useProjectStore((state) => state.ws);
   const sequenceLists = useProjectStore((state) => state.sequenceLists);
+  const mockLists = useProjectStore((state) => state.mockLists);
   const scriptValues = useScriptValuesStore((state) => state.byProject);
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
@@ -452,6 +478,7 @@ export function ExplorerView() {
     webhooks,
     webhookCollections,
     scriptValues,
+    mockLists,
   );
 
   useEffect(() => {
@@ -577,7 +604,8 @@ export function ExplorerView() {
                 node.kind !== 'grpc-request' &&
                 node.kind !== 'ws-api' &&
                 node.kind !== 'ws-request' &&
-                node.kind !== 'sequence'
+                node.kind !== 'sequence' &&
+                node.kind !== 'mock'
               }
               disableDrag={(node) =>
                 node.kind !== 'rest-request' &&
@@ -691,7 +719,16 @@ export function ExplorerView() {
                   explorerActions.openSequence(node.data.sequenceId);
                   return;
                 }
-                if (node.data.kind === 'sequences' || node.data.kind === 'values' || node.data.kind === 'value') {
+                if (node.data.kind === 'mock') {
+                  explorerActions.openMock(node.data.mockId);
+                  return;
+                }
+                if (
+                  node.data.kind === 'sequences' ||
+                  node.data.kind === 'mocks' ||
+                  node.data.kind === 'values' ||
+                  node.data.kind === 'value'
+                ) {
                   // A group row has nothing to open; a click folds it. A value has nothing to open either.
                   return;
                 }
@@ -797,6 +834,9 @@ export function ExplorerView() {
                     .updateSequence(node.sequenceId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
+                if (node.kind === 'mock' && node.mockId !== undefined) {
+                  void useProjectStore.getState().updateMock(node.mockId, { name: trimmed }).catch(reportRenameFailure);
+                }
               }}
               onDelete={({ nodes }) => {
                 for (const node of nodes) {
@@ -832,6 +872,8 @@ export function ExplorerView() {
                     webhooksActions.confirm('delete', node.data.hookId);
                   } else if (node.data.kind === 'sequence') {
                     explorerActions.removeSequence(node.data.sequenceId);
+                  } else if (node.data.kind === 'mock') {
+                    explorerActions.removeMock(node.data.mockId);
                   }
                 }
               }}
@@ -878,7 +920,9 @@ export function ExplorerView() {
               ? 'Delete folder?'
               : confirmDeleteNode?.kind === 'sequence'
                 ? 'Delete sequence?'
-                : 'Delete request?'
+                : confirmDeleteNode?.kind === 'mock'
+                  ? 'Delete mock?'
+                  : 'Delete request?'
         }
         description={
           confirmDeleteNode === undefined
@@ -912,7 +956,9 @@ export function ExplorerView() {
                         ? store.removeWsRequest(id)
                         : kind === 'sequence'
                           ? store.removeSequence(id)
-                          : store.removeRestRequest(id);
+                          : kind === 'mock'
+                            ? store.removeMock(id)
+                            : store.removeRestRequest(id);
           void done.catch((error: unknown) => {
             showToast(error instanceof Error ? error.message : 'Delete failed');
           });

@@ -106,6 +106,19 @@ describe('LogDetail for an exchange', () => {
     expect(within(connection).getByTestId('ssl-authorized').textContent).toContain('Trusted');
   });
 
+  it('Connection: marks the same-host https upgrade hop', () => {
+    const base = makeRestExchange();
+    const rest = logExchange(
+      makeRestExchange({
+        http: { ...base.http, redirects: [{ url: 'http://api.test/svc', status: 301, upgrade: true }] },
+      }),
+    );
+    renderDetail(rest, 'connection');
+
+    const row = within(screen.getByTestId('log-detail-connection')).getByTestId('rest-redirect-row');
+    expect(row.textContent).toContain('upgraded to HTTPS, method and body kept');
+  });
+
   it('Connection: a plain-HTTP SOAP exchange says so and shows no method-change note', () => {
     renderDetail(exchange, 'connection');
 

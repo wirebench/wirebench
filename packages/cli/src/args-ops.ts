@@ -48,8 +48,6 @@ export const OP_OPTIONS = {
   schema: { type: 'boolean' },
   api: { type: 'string' },
   out: { type: 'string' },
-  port: { type: 'string' },
-  host: { type: 'string' },
 } as const;
 
 export type OptionValues = Readonly<Record<string, string | boolean | readonly string[] | undefined>>;

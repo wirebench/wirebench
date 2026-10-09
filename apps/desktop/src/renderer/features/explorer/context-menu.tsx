@@ -1,6 +1,7 @@
 import { Fragment, useRef, type ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { recreateRequest, type RecreateMode } from '../request-editor/request-actions.js';
+import { useMockRunsStore } from '../../state/mock-runs.js';
 import { explorerActions } from './explorer-actions.js';
 import { exportCollection, type CollectionExportTarget } from './export-collection.js';
 import { projectRowActions } from './project-actions.js';
@@ -180,8 +181,25 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         },
         { key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() },
       ],
+      [
+        {
+          key: 'new-mock',
+          label: 'New Mock',
+          run: () => explorerActions.newMock(node.interfaceId),
+        },
+      ],
       [{ key: 'remove', label: 'Remove interface', run: () => explorerActions.removeInterface(node.interfaceId) }],
     );
+  }
+
+  if (node.kind === 'binding' && node.interfaceId !== undefined) {
+    return groups([
+      {
+        key: 'new-mock',
+        label: 'New Mock of this binding',
+        run: () => explorerActions.newMock(node.interfaceId, node.bindingName),
+      },
+    ]);
   }
 
   if (node.kind === 'operation') {
@@ -252,6 +270,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
               run: () => explorerActions.updateRestDefinition(apiId),
             },
             { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
+            { key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) },
           ]
         : [],
       exportItems({ containerId: apiId }),
@@ -380,6 +399,20 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if ((node.kind === 'values' || node.kind === 'value') && node.projectId !== undefined) {
     const projectId = node.projectId;
     return groups([{ key: 'clear-values', label: 'Clear values', run: () => explorerActions.clearValues(projectId) }]);
+  }
+
+  if (node.kind === 'mock' && node.mockId !== undefined) {
+    const mockId = node.mockId;
+    const running = useMockRunsStore.getState().states[mockId]?.running === true;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openMock(mockId) },
+        { key: 'toggle', label: running ? 'Stop' : 'Start', run: () => explorerActions.toggleMock(mockId) },
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateMock(mockId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mock', mockId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeMock(mockId) }],
+    );
   }
 
   if (node.kind === 'sequence' && node.sequenceId !== undefined) {

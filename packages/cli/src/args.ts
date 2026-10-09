@@ -13,8 +13,10 @@ import {
 import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
 import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
 import type { DiffContractArgs } from './args-diff-contract.js';
-import { MOCK_HELP, parseMock } from './args-mock.js';
+import { MOCK_HELP, parseMockServe } from './args-mock.js';
 import type { MockArgs } from './args-mock.js';
+import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
+import type { MockRecordArgs } from './args-mock-record.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
@@ -22,12 +24,13 @@ export { UsageError };
 export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
 export type { DiffContractArgs } from './args-diff-contract.js';
 export type { MockArgs } from './args-mock.js';
+export type { MockRecordArgs } from './args-mock-record.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
   ...VERB_HELP,
   'diff-contract': DIFF_CONTRACT_HELP,
-  mock: MOCK_HELP,
+  mock: `${MOCK_HELP}\n\n${MOCK_RECORD_HELP}`,
 };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
@@ -81,6 +84,8 @@ ${DIFF_CONTRACT_USAGE}
 wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
                        Serves the project's mocks until stopped (see wirebench mock --help).
 
+${MOCK_RECORD_HELP}
+
 wirebench --version | --help
 wirebench <verb> --help`;
 
@@ -131,6 +136,7 @@ export type ParsedArgs =
   | ExportArgs
   | DiffContractArgs
   | MockArgs
+  | MockRecordArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -219,6 +225,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         version: { type: 'boolean' },
         'fail-on': { type: 'string' },
         ...OP_OPTIONS,
+        ...MOCK_RECORD_OPTIONS,
       },
     });
   } catch (error) {
@@ -250,6 +257,13 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   if (word === undefined) {
     return { command: 'help' };
   }
+
+  if (word === 'mock') {
+    refuseDiffOnly(values, 'wirebench mock');
+    // `mock record …` records (#60); any other `mock <path> …` serves (#61).
+    return rest[0] === 'record' ? parseMock(rest, values) : parseMockServe(rest, values);
+  }
+  refuseMockRecordOnly(values, `wirebench ${word}`);
 
   if (word === 'run') {
     refuseOpOnly(values, 'wirebench run');
@@ -333,10 +347,6 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'mcp') {
     return parseMcp(rest, values);
-  }
-
-  if (word === 'mock') {
-    return parseMock(rest, values);
   }
 
   if (word === 'export') {

@@ -1,6 +1,6 @@
 /**
  * `wirebench mock <path> [mock…]` (#61, docs/specs/2026-10-08-headless-mock-design.md): serve a
- * project's mocks until stopped.
+ * project's mocks until stopped. `wirebench mock record` (#60) parses in `args-mock-record.ts`.
  */
 import { refuseForeign } from './args-ops.js';
 import type { OptionValues } from './args-ops.js';
@@ -37,7 +37,7 @@ stdout carries the listening lines and the request log; warnings and errors go t
 Exit 2 for a usage error, an unknown mock or a project that does not load; 3 when a mock does not start.`;
 
 /** @throws UsageError */
-export function parseMock(rest: readonly string[], values: OptionValues): MockArgs {
+export function parseMockServe(rest: readonly string[], values: OptionValues): MockArgs {
   refuseForeign(values, MOCK_FLAGS, 'wirebench mock');
   const [path, ...mocks] = rest;
   if (path === undefined) {

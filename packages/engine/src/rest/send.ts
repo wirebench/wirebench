@@ -397,7 +397,9 @@ export function decodeRestResponse(
   const methodChanged =
     sentMethod !== 'GET' &&
     exchange.redirects.some(
-      (hop) => hop.status === 303 || ((hop.status === 301 || hop.status === 302) && sentMethod === 'POST'),
+      (hop) =>
+        hop.upgrade !== true &&
+        (hop.status === 303 || ((hop.status === 301 || hop.status === 302) && sentMethod === 'POST')),
     );
   if (stream !== undefined) {
     // A streamed response has an empty body and no text form of its own; the rows are the content.

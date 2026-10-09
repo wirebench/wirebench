@@ -34,7 +34,8 @@ export type RenamableNodeKind =
   | 'ws-request'
   | 'webhook-folder'
   | 'webhook-request'
-  | 'sequence';
+  | 'sequence'
+  | 'mock';
 
 const NODE_ID_PREFIX: Readonly<Record<RenamableNodeKind, string>> = {
   api: 'api',
@@ -47,6 +48,7 @@ const NODE_ID_PREFIX: Readonly<Record<RenamableNodeKind, string>> = {
   'webhook-folder': 'webhook-folder',
   'webhook-request': 'webhook-request',
   sequence: 'sequence',
+  mock: 'mock',
 };
 
 /** Enters inline edit mode for an API, folder, REST request or gRPC row. */

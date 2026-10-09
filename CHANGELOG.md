@@ -29,11 +29,31 @@ All notable changes to this project are documented here. The format follows
   validates each request against the contract (answering a SOAP fault or a 4xx when it does not
   conform), picks a response by sequence, random, XPath/JSONPath/query match or a sandboxed script, keeps
   scenario state, and serves its WSDL. It listens on loopback unless told otherwise and runs without the
-  desktop, for the CLI to build on. The desktop tab follows (#59).
+  desktop, for the CLI to build on (#59).
+- **Mock services in the app.** **New Mock** on an interface, a binding or an imported REST API makes a
+  mock from the cached definition, listed under **Mocks** in the project. Its tab edits the port, the
+  path, the validation mode and every operation's dispatch, responses, match conditions, scenarios and
+  script; starts and stops the mock and copies its URL; and logs each request it answers, with the
+  problems found in it. A mock listens on this machine only unless **Preferences → Mock services** says
+  otherwise (#59).
+- **Record a mock from live traffic.** `wirebench mock record <path> <mock> --target <url>` stands in
+  front of a real system. Each request passes through to the system, and each response that reaches a
+  contract operation is kept as a stub of the mock, saved when the recording stops. Credentials are
+  masked in what is kept, requests are never saved, and the upstream comes only from the command line
+  (#60).
 - **`wirebench mock`.** Serves a project's mocks from the command line until SIGINT or SIGTERM, for a
   pipeline or a container: pick mocks by name, slug or id, override the port of one, and read the request
   log as text or JSON lines. It listens on loopback unless `--host` or `WIREBENCH_MOCK_HOST` says
   otherwise; the CLI image sets the latter to `0.0.0.0` (#61).
+
+### Changed
+
+- **A same-host `http://` → `https://` redirect is followed with the request intact.** When a server answers
+  `http://host/path` with a 301, 302, 307 or 308 to `https://host/path` (same host, path and query, default
+  ports), a send follows it even with Follow Redirects off, and resends the same method, body and
+  credentials there, rather than returning the redirect page (SOAP) or turning a `POST` into a bodyless
+  `GET`. A SOAP response carries an `https-upgrade` Problem saying to change the endpoint; the redirect list
+  marks the hop. NTLM and Kerberos handshakes continue on the `https://` URL (#71).
 
 ## [4.0.0] - 2026-10-08
 

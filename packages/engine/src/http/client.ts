@@ -3,6 +3,7 @@ import { pipeline, type Readable } from 'node:stream';
 import { createDecompressStream, decompressBody } from './decompress.js';
 import { failedRequestFor, withFailedRequest, type FailedRequest } from './failed-request.js';
 import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js';
+import { isHttpsUpgrade } from './https-upgrade.js';
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
 import { TimingTracker } from './timings.js';
 import type {
@@ -238,6 +239,18 @@ function scopeCredentialsToOrigin(
   return { headers: scoped, url: changed ? url : toUrl };
 }
 
+/** Where a redirect to `location` goes when it is an HTTPS upgrade of `from`; `undefined` otherwise. */
+function httpsUpgradeTarget(status: number, location: string | undefined, from: URL): URL | undefined {
+  if (location === undefined || !REDIRECT_STATUSES.has(status)) return undefined;
+  let to: URL;
+  try {
+    to = new URL(location, from);
+  } catch {
+    return undefined;
+  }
+  return isHttpsUpgrade(status, from, to) ? to : undefined;
+}
+
 /** `headers` with its `Cookie` header replaced by what `hook` sends to `url`, given the hand-set one. */
 function withJarCookies(headers: Record<string, string>, hook: HttpCookieHook, url: URL): Record<string, string> {
   let handSet: string | undefined;
@@ -385,7 +398,9 @@ async function pumpStream(
  * reconstructed raw wire bytes and best-effort timings. Redirects (301/302/
  * 303/307/308) are followed manually when `req.followRedirects` is set, so we
  * can record the `redirects[]` trail and apply fetch's POST→GET downgrade on
- * 301/302/303.
+ * 301/302/303. The one exception is a same-host `http://` → `https://` upgrade
+ * (`https-upgrade.ts`): followed even without `followRedirects`, and resent with
+ * its method, body and credentials.
  *
  * Non-2xx responses are returned as a normal exchange, never thrown — only
  * transport-level failures (timeout, abort, DNS, TLS, refused connection,
@@ -419,7 +434,7 @@ export async function sendHttp(
   const dispatcher = options?.dispatcher ?? ownDispatcher ?? getDefaultAgent();
 
   const maxRedirects = req.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
-  const redirects: { url: string; status: number }[] = [];
+  const redirects: { url: string; status: number; upgrade?: true }[] = [];
 
   const tracker = new TimingTracker(options?.now);
   const deadlineController = new AbortController();
@@ -437,8 +452,12 @@ export async function sendHttp(
     // What the last attempt sent: with a cookie hook, its `Cookie` header is the jar's.
     let sentHeaders: Readonly<Record<string, string>> = req.headers;
     let result: PhysicalResult | undefined;
+    // The origin the caller's own credentials belong to; an HTTPS upgrade moves it to the https one.
+    let ownUrl = parsedUrl;
+    // An HTTPS upgrade is not counted against the cap: it can happen once, the next hop being https.
+    let upgrades = 0;
 
-    for (let attempt = 0; attempt <= maxRedirects; attempt++) {
+    for (let attempt = 0; attempt <= maxRedirects + upgrades; attempt++) {
       // Tells the tracker which origin the TLS events it is about to see belong to.
       tracker.setOrigin(currentUrl.origin);
       // The jar is matched afresh for every hop's URL (cookie jar spec §1.4). `currentHeaders` holds
@@ -491,10 +510,21 @@ export async function sendHttp(
       // Every hop's Set-Cookie is stored against that hop's URL, before a redirect is followed.
       req.cookies?.received(currentUrl.toString(), rawHeaders);
 
+      // Followed whatever Follow Redirects says, with the method, body and credentials kept (#71).
+      const upgradeUrl = httpsUpgradeTarget(response.statusCode, headers['location'], currentUrl);
+      if (upgradeUrl !== undefined) {
+        redirects.push({ url: currentUrl.toString(), status: response.statusCode, upgrade: true });
+        await drainBody(response.body).catch(() => undefined);
+        upgrades++;
+        // The same host over TLS: the caller's own credentials move with it.
+        if (originOf(currentUrl) === originOf(ownUrl)) ownUrl = upgradeUrl;
+        currentUrl = upgradeUrl;
+        continue;
+      }
       const isRedirect =
         req.followRedirects && REDIRECT_STATUSES.has(response.statusCode) && headers['location'] !== undefined;
       if (isRedirect) {
-        if (attempt === maxRedirects) {
+        if (attempt === maxRedirects + upgrades) {
           // Fully drain the body so the socket returns to the keep-alive pool, then fail.
           await drainBody(response.body).catch(() => undefined);
           throw tooManyRedirectsError(maxRedirects);
@@ -527,7 +557,7 @@ export async function sendHttp(
           // The caller's own credentials go to the request's origin only, on every hop.
           const scoped = scopeCredentialsToOrigin(
             req.originCredentials,
-            { url: parsedUrl, headers: req.headers },
+            { url: ownUrl, headers: req.headers },
             currentHeaders,
             nextUrl,
           );

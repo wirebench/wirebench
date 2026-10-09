@@ -438,6 +438,17 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Sequence: Cancel Run',
     category: 'Request',
   },
+  // A mock tab's server (#59): served from this machine until it is stopped or its project closes.
+  'mock.start': {
+    id: 'mock.start',
+    label: 'Mock: Start',
+    category: 'Request',
+  },
+  'mock.stop': {
+    id: 'mock.stop',
+    label: 'Mock: Stop',
+    category: 'Request',
+  },
   // A project's session values (#63): what single sends' scripts set, kept until the project closes.
   'script.clearValues': {
     id: 'script.clearValues',

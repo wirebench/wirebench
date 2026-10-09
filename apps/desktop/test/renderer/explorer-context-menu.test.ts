@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { explorerMenuGroups, explorerMenuItems } from '../../src/renderer/features/explorer/context-menu.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 
 function node(patch: Partial<ExplorerNode> & Pick<ExplorerNode, 'kind'>): ExplorerNode {
@@ -106,6 +107,7 @@ describe('explorerMenuItems', () => {
       'Check WSDL WS-I compliance',
       'Copy definition URL',
       'Import another WSDL…',
+      'New Mock',
       'Remove interface',
     ]);
     expect(explorerMenuItems(node({ kind: 'operation' })).map((item) => item.label)).toEqual([
@@ -194,7 +196,7 @@ describe('explorerMenuItems on a REST row', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
       ['Open', 'New folder', 'New request', 'Import cURL…'],
-      ['Update Definition…', 'Import webhooks…'],
+      ['Update Definition…', 'Import webhooks…', 'New Mock'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
       ['Rename…'],
       ['Delete'],
@@ -392,5 +394,30 @@ describe('explorerMenuItems on a project’s webhook collection (openapi-webhook
     items.find((item) => item.label === 'Auth…')?.run();
 
     expect(useUiStore.getState().folderAuthId).toBe('f1');
+  });
+});
+
+describe('explorerMenuItems on a mock row (#59)', () => {
+  beforeEach(() => {
+    useMockRunsStore.setState({ states: {} });
+  });
+
+  it('offers a binding a mock of its own', () => {
+    expect(
+      explorerMenuItems(node({ kind: 'binding', interfaceId: 'i1', bindingName: 'OrdersSoap' })).map((i) => i.label),
+    ).toEqual(['New Mock of this binding']);
+  });
+
+  it('offers a stopped mock Start and its lifecycle', () => {
+    expect(
+      explorerMenuGroups(node({ kind: 'mock', id: 'mock:m1', mockId: 'm1' })).map((group) => group.map((i) => i.label)),
+    ).toEqual([['Open', 'Start', 'Duplicate'], ['Rename…'], ['Delete']]);
+  });
+
+  it('offers a running mock Stop', () => {
+    useMockRunsStore.setState({ states: { m1: { mockId: 'm1', running: true, warnings: [] } } });
+    expect(explorerMenuItems(node({ kind: 'mock', id: 'mock:m1', mockId: 'm1' })).map((i) => i.label)).toContain(
+      'Stop',
+    );
   });
 });

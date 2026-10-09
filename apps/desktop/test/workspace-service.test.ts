@@ -553,6 +553,13 @@ describe('WorkspaceService routing', () => {
     expect(service.validationTargetFor(requestId!)?.interfaceId).toBe(interfaceId);
     expect(service.projectSnapshot(plain.id)?.requests).toEqual([]);
 
+    // `mock.start` addresses a mock by id, so a new mock routes to its project too.
+    await host.mutate({ kind: 'add-mock', containerId: interfaceId!, name: 'Calculator mock' });
+    const mockId = service.projectSnapshot(calculator.id)?.mocks[0]?.id;
+    expect(mockId).toEqual(expect.any(String));
+    expect(service.hostOfEntity(mockId!)).toBe(host);
+    expect(service.projectId(mockId!)).toBe(calculator.id);
+
     expect(() => service.hostOfEntity('01J8NOTHINGATALL')).toThrow(/No open project holds the entity/);
     expect(() => service.reload('01J8NOTAPROJECT')).toThrow(/No open project with id/);
     expect(() => service.hostFor('01J8NOTAPROJECT')).toThrow(/No open project with id/);

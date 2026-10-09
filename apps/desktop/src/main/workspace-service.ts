@@ -3096,6 +3096,10 @@ export class WorkspaceService implements ProjectRouter {
       for (const sequence of project.sequences) {
         add(sequence.id);
       }
+      // `mock.start` addresses a mock by id, so it must route like any other entity.
+      for (const mock of project.mocks) {
+        add(mock.id);
+      }
       for (const environment of project.environments) {
         add(environment.id);
       }
