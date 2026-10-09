@@ -5,8 +5,8 @@
  * sockets and no network.
  */
 
-/** Matches each `-----BEGIN CERTIFICATE-----`…`-----END CERTIFICATE-----` block of a PEM bundle. */
-const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+const PEM_BEGIN = '-----BEGIN CERTIFICATE-----';
+const PEM_END = '-----END CERTIFICATE-----';
 
 /**
  * Splits a PEM bundle into its individual certificates.
@@ -24,7 +24,19 @@ const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/
  * @returns one PEM string per certificate, in file order; empty when the text holds none
  */
 export function splitPemBundle(bundle: string): string[] {
-  return bundle.match(PEM_BLOCK) ?? [];
+  // A scan rather than a lazy regex: on text with many BEGIN lines and no END the regex retried
+  // from every BEGIN, quadratic in the input, and bundles come from files the user did not write.
+  const blocks: string[] = [];
+  let from = 0;
+  for (;;) {
+    const begin = bundle.indexOf(PEM_BEGIN, from);
+    if (begin === -1) break;
+    const end = bundle.indexOf(PEM_END, begin + PEM_BEGIN.length);
+    if (end === -1) break;
+    blocks.push(bundle.slice(begin, end + PEM_END.length));
+    from = end + PEM_END.length;
+  }
+  return blocks;
 }
 
 /** How far up the issuer chain we walk before giving up, as a defence against pathological chains. */

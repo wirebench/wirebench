@@ -261,6 +261,7 @@ function project(scripts?: RequestScripts): Project {
     grpcApis: [grpcApi('Greeter', 'greeter', 2), grpcApi('Uncached', 'uncached', 3)],
     wsApis: [],
     sequences: [],
+    mocks: [],
     webhooks: createWebhookCollection({
       target: 'https://receiver.example.test/hooks',
       signing: {

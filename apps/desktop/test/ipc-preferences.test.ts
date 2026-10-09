@@ -176,3 +176,30 @@ describe('preferences.* IPC', () => {
     expect(result.value.preferences.editor.tabSize).toBe(2);
   });
 });
+
+describe('managed-preferences policy over IPC', () => {
+  const writePolicy = (): string => {
+    const policyFile = join(dir, 'policy.yaml');
+    writeFileSync(policyFile, 'proxy:\n  mode: manual\neditor:\n  fontSize: 30\n', 'utf8');
+    return policyFile;
+  };
+
+  it('answers preferences.policy with the locked and ignored keys', async () => {
+    const policyFile = writePolicy();
+    registerPreferencesChannels(new PreferencesService(dir, { policyFile }));
+    expect(await invoke('preferences.policy', undefined)).toEqual({
+      ok: true,
+      value: { path: policyFile, locked: ['proxy.mode'], ignored: ['editor'] },
+    });
+  });
+
+  it('refuses an update to a locked key and broadcasts nothing', async () => {
+    const changed: PreferencesWire[] = [];
+    registerPreferencesChannels(new PreferencesService(dir, { policyFile: writePolicy() }), (next) =>
+      changed.push(next),
+    );
+    const result = await invoke('preferences.update', { patch: { proxy: { mode: 'none' } } });
+    expect(result).toMatchObject({ ok: false, error: { code: 'preference-locked' } });
+    expect(changed).toEqual([]);
+  });
+});

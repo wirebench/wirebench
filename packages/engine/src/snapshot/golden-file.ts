@@ -29,7 +29,8 @@ export type GoldenRead =
   | { readonly status: 'present'; readonly golden: GoldenFile }
   | { readonly status: 'unreadable'; readonly reason: 'not-a-file' | 'malformed' };
 
-const goldenFileSchema = z.object({
+/** `<Request>.golden.yaml`. */
+export const goldenFileSchema = z.object({
   contentType: z.string().optional(),
   savedAt: z.string(),
   ignore: z.array(z.string()),

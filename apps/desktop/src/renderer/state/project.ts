@@ -18,6 +18,10 @@ import type {
   WsApiPatchWire,
   SequencePatch,
   SequenceWire,
+  MockOperationPatch,
+  MockPatch,
+  MockResponsePatch,
+  MockWire,
   WsApiWire,
   WsRequestPatchWire,
   WsRequestWire,
@@ -139,6 +143,10 @@ export interface ProjectSnapshot {
   readonly sequences: Record<string, SequenceWire>;
   /** Each project's sequences, in their own `order` (they do not share the containers' ordering). */
   readonly sequenceLists: Readonly<Record<string, readonly SequenceWire[]>>;
+  /** Mocks by id, flattened across every open project. */
+  readonly mocks: Record<string, MockWire>;
+  /** Each project's mocks, in their own `order`. */
+  readonly mockLists: Readonly<Record<string, readonly MockWire[]>>;
   /** Project order, and each project's interface ids in its own order. */
   readonly order: readonly ProjectOrder[];
   /**
@@ -376,6 +384,24 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeSequence: (sequenceId: string) => Promise<void>;
   /** Copies a sequence under a new name and returns the copy's id. */
   readonly duplicateSequence: (sequenceId: string) => Promise<string>;
+  /** Generates a mock of an interface or API from its cached definition and returns its id. */
+  readonly addMock: (projectId: string, containerId: string, name: string, binding?: string) => Promise<string>;
+  readonly updateMock: (mockId: string, patch: MockPatch) => Promise<void>;
+  readonly updateMockOperation: (mockId: string, operationId: string, patch: MockOperationPatch) => Promise<void>;
+  /** Adds a response to an operation — a copy of `copyOf`, or an empty 200 — and returns its id. */
+  readonly addMockResponse: (mockId: string, operationId: string, copyOf?: string) => Promise<string>;
+  readonly updateMockResponse: (
+    mockId: string,
+    operationId: string,
+    responseId: string,
+    patch: MockResponsePatch,
+  ) => Promise<void>;
+  readonly removeMockResponse: (mockId: string, operationId: string, responseId: string) => Promise<void>;
+  /** Moves a response to index `to`, the order match and sequence dispatch try them in. */
+  readonly moveMockResponse: (mockId: string, operationId: string, responseId: string, to: number) => Promise<void>;
+  readonly removeMock: (mockId: string) => Promise<void>;
+  /** Copies a mock under a new name and returns the copy's id. */
+  readonly duplicateMock: (mockId: string) => Promise<string>;
   /** Adds a WebSocket request to an API or one of its folders. */
   readonly addWsRequest: (apiId: string, parentId?: string, name?: string, url?: string) => Promise<string>;
   readonly updateWsRequest: (requestId: string, patch: WsRequestPatchWire) => Promise<void>;
@@ -561,6 +587,8 @@ type Indexes = Pick<
   | 'ws'
   | 'sequences'
   | 'sequenceLists'
+  | 'mocks'
+  | 'mockLists'
   | 'order'
   | 'projectOf'
   | 'keystores'
@@ -718,6 +746,8 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const ws: Record<string, ExplorerWsData> = {};
   const sequences: Record<string, SequenceWire> = {};
   const sequenceLists: Record<string, readonly SequenceWire[]> = {};
+  const mocks: Record<string, MockWire> = {};
+  const mockLists: Record<string, readonly MockWire[]> = {};
   const projectOf: Record<string, string> = {};
   const order: ProjectOrder[] = [];
   const keystores: OfProject<KeystoreWire>[] = [];
@@ -787,6 +817,12 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       projectOf[sequence.id] = project.id;
     }
     sequenceLists[project.id] = projectSequences;
+    const projectMocks = [...(project.mocks ?? [])].sort((a, b) => a.order - b.order);
+    for (const mock of projectMocks) {
+      mocks[mock.id] = mock;
+      projectOf[mock.id] = project.id;
+    }
+    mockLists[project.id] = projectMocks;
     for (const environment of project.environments) {
       projectOf[environment.id] = project.id;
     }
@@ -823,6 +859,8 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     ws,
     sequences,
     sequenceLists,
+    mocks,
+    mockLists,
     order,
     projectOf,
     keystores,
@@ -965,6 +1003,8 @@ const EMPTY: ProjectSnapshot = {
   ws: {},
   sequences: {},
   sequenceLists: {},
+  mocks: {},
+  mockLists: {},
   order: [],
   projectOf: {},
   keystores: [],
@@ -1675,6 +1715,65 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { createdId } = await mutateEntity(sequenceId, { kind: 'duplicate-sequence', sequenceId });
       if (createdId === undefined) {
         throw new Error('duplicate-sequence did not return a sequence id');
+      }
+      return createdId;
+    },
+
+    addMock: async (projectId, containerId, name, binding) => {
+      const { createdId } = await mutate(projectId, {
+        kind: 'add-mock',
+        containerId,
+        name,
+        ...(binding !== undefined ? { binding } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-mock did not return a mock id');
+      }
+      return createdId;
+    },
+
+    updateMock: async (mockId, patch) => {
+      await mutateEntity(mockId, { kind: 'update-mock', mockId, patch });
+    },
+
+    updateMockOperation: async (mockId, operationId, patch) => {
+      await mutateEntity(mockId, { kind: 'update-mock-operation', mockId, operationId, patch });
+    },
+
+    addMockResponse: async (mockId, operationId, copyOf) => {
+      const { createdId } = await mutateEntity(mockId, {
+        kind: 'add-mock-response',
+        mockId,
+        operationId,
+        ...(copyOf !== undefined ? { copyOf } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-mock-response did not return a response id');
+      }
+      return createdId;
+    },
+
+    updateMockResponse: async (mockId, operationId, responseId, patch) => {
+      await mutateEntity(mockId, { kind: 'update-mock-response', mockId, operationId, responseId, patch });
+    },
+
+    removeMockResponse: async (mockId, operationId, responseId) => {
+      await mutateEntity(mockId, { kind: 'remove-mock-response', mockId, operationId, responseId });
+    },
+
+    moveMockResponse: async (mockId, operationId, responseId, to) => {
+      await mutateEntity(mockId, { kind: 'move-mock-response', mockId, operationId, responseId, to });
+    },
+
+    removeMock: async (mockId) => {
+      await mutateEntity(mockId, { kind: 'remove-mock', mockId });
+      useEditorsStore.getState().close(`mock:${mockId}`);
+    },
+
+    duplicateMock: async (mockId) => {
+      const { createdId } = await mutateEntity(mockId, { kind: 'duplicate-mock', mockId });
+      if (createdId === undefined) {
+        throw new Error('duplicate-mock did not return a mock id');
       }
       return createdId;
     },

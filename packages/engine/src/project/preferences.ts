@@ -66,6 +66,11 @@ export interface SslPreferences {
   /** Id of a `wss/keystores.yaml` entry used as the client identity when a request selects none. */
   readonly clientKeystoreRef?: string;
   /**
+   * How many days before a certificate expires the workspace's certificate check starts warning
+   * about it: endpoint chains, keystores and the CA bundle alike. `0` warns only once expired.
+   */
+  readonly expiryWarningDays: number;
+  /**
    * Always `false`: trusting every certificate globally is not an option Wirebench offers.
    * The only escape hatch is an endpoint's `trustInvalid`, which is badged in red wherever
    * that endpoint appears.
@@ -208,6 +213,15 @@ function clampSourceCacheSeconds(value: number): number {
   return Math.min(3600, Math.max(0, Math.round(value)));
 }
 
+/** Mock services (#59). */
+export interface MockPreferences {
+  /**
+   * Bind a started mock to every interface (`0.0.0.0`) rather than loopback. Off by default: a mock
+   * answers whatever reaches its port, and a project file can never turn this on.
+   */
+  readonly listenOnAllInterfaces: boolean;
+}
+
 /** The SSH terminal (SSH area spec D6). */
 export interface TerminalPreferences {
   /** Ask before a multi-line paste goes to the shell, because a pasted script runs line by line. */
@@ -230,6 +244,7 @@ export interface Preferences {
   readonly updates: UpdatePreferences;
   readonly accounts: AccountPreferences;
   readonly secrets: SecretsPreferences;
+  readonly mocks: MockPreferences;
   readonly terminal: TerminalPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
@@ -253,7 +268,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     allowH2: false,
   }),
   proxy: Object.freeze({ mode: 'none', excludes: Object.freeze([]) }),
-  ssl: Object.freeze({ minVersion: 'TLSv1.2', trustAll: false }),
+  ssl: Object.freeze({ minVersion: 'TLSv1.2', expiryWarningDays: 30, trustAll: false }),
   git: Object.freeze({}),
   wsdl: Object.freeze({
     cacheDefinitions: true,
@@ -291,6 +306,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   updates: Object.freeze({ checkOnLaunch: false }),
   accounts: Object.freeze({ showInStatusBar: true }),
   secrets: Object.freeze({ sourceCacheSeconds: 300 }),
+  mocks: Object.freeze({ listenOnAllInterfaces: false }),
   terminal: Object.freeze({ confirmMultilinePaste: true, copyOnSelect: false }),
   shortcuts: Object.freeze({}),
 });
@@ -331,6 +347,7 @@ export const preferencesSchema = z.object({
       caBundlePath: z.string().optional(),
       caBundlePickedByMain: z.boolean().optional(),
       clientKeystoreRef: z.string().optional(),
+      expiryWarningDays: z.number().int().min(0).max(3650).optional(),
     })
     .optional(),
   git: z.object({ path: z.string().optional(), pathPickedByMain: z.boolean().optional() }).optional(),
@@ -385,6 +402,7 @@ export const preferencesSchema = z.object({
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
   secrets: z.object({ sourceCacheSeconds: z.number().finite().optional() }).optional(),
+  mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
   terminal: z
     .object({ confirmMultilinePaste: z.boolean().optional(), copyOnSelect: z.boolean().optional() })
     .optional(),
@@ -449,6 +467,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     updates: parseSection(shape.updates, root['updates']),
     accounts: parseSection(shape.accounts, root['accounts']),
     secrets: parseSection(shape.secrets, root['secrets']),
+    mocks: parseSection(shape.mocks, root['mocks']),
     terminal: parseSection(shape.terminal, root['terminal']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
@@ -471,6 +490,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     secrets: {
       sourceCacheSeconds: clampSourceCacheSeconds(value.secrets?.sourceCacheSeconds ?? base.secrets.sourceCacheSeconds),
     },
+    mocks: mergeSection(base.mocks, value.mocks),
     terminal: mergeSection(base.terminal, value.terminal),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };

@@ -769,3 +769,40 @@ describe('buildExplorerTree with sequences', () => {
     expect(root?.children?.map((child) => child.kind)).toEqual(['interface', 'api']);
   });
 });
+
+describe('buildExplorerTree with mocks', () => {
+  const project = { id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/demo', status: 'ready' } as const;
+  const tree = (
+    sequences: Record<string, readonly { id: string; name: string }[]>,
+    mocks: Record<string, readonly { id: string; name: string }[]>,
+  ): ExplorerNode[] =>
+    buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      { 'iface-1': iface() },
+      [],
+      {},
+      undefined,
+      {},
+      {},
+      sequences,
+      undefined,
+      {},
+      {},
+      mocks,
+    );
+
+  it('groups a project’s mocks after its sequences', () => {
+    const [root] = tree({ p1: [{ id: 's1', name: 'Checkout' }] }, { p1: [{ id: 'm1', name: 'Orders mock' }] });
+    expect(root?.children?.map((child) => child.kind)).toEqual(['interface', 'sequences', 'mocks']);
+    expect(root?.children?.at(-1)).toMatchObject({ id: 'mocks:p1', label: 'Mocks', projectId: 'p1' });
+    expect(root?.children?.at(-1)?.children).toEqual([
+      { id: 'mock:m1', kind: 'mock', label: 'Orders mock', projectId: 'p1', mockId: 'm1' },
+    ]);
+  });
+
+  it('shows no Mocks group for a project without any', () => {
+    const [root] = tree({}, { p1: [] });
+    expect(root?.children?.map((child) => child.kind)).toEqual(['interface']);
+  });
+});

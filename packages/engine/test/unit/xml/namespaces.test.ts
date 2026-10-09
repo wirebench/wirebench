@@ -12,6 +12,8 @@ describe('NS', () => {
         "SOAP11_ENV": "http://schemas.xmlsoap.org/soap/envelope/",
         "SOAP12_ENC": "http://www.w3.org/2003/05/soap-encoding",
         "SOAP12_ENV": "http://www.w3.org/2003/05/soap-envelope",
+        "SP": "http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702",
+        "SP_2005": "http://schemas.xmlsoap.org/ws/2005/07/securitypolicy",
         "WSAM": "http://www.w3.org/2007/05/addressing/metadata",
         "WSAP_2004": "http://schemas.xmlsoap.org/ws/2004/08/addressing/policy",
         "WSAW": "http://www.w3.org/2006/05/addressing/wsdl",

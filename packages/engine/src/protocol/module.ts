@@ -5,6 +5,7 @@
  */
 import type { z } from 'zod';
 import type { Assertion } from '../assert/model.js';
+import type { ProtocolMocking } from '../mock/contract.js';
 import type { FsLike } from '../project/fs.js';
 import type { ProjectProblem } from '../project/load.js';
 import type { Project } from '../project/model.js';
@@ -245,6 +246,8 @@ export interface ProtocolModule {
   readonly run?: ProtocolRun;
   /** Absent: the protocol's requests cannot have scripts. */
   readonly scripting?: ProtocolScripting;
+  /** Absent: the protocol's containers cannot be mocked (mock services spec §The protocol facet). */
+  readonly mock?: ProtocolMocking;
 }
 
 function assertKind(module: string, item: { readonly kind: string }): void {
@@ -266,6 +269,7 @@ export function defineProtocol<S extends SelectedBase>(module: {
   readonly storage: ProtocolStorage;
   readonly run?: ProtocolRun<S>;
   readonly scripting?: ProtocolScripting;
+  readonly mock?: ProtocolMocking;
 }): ProtocolModule {
   const { run } = module;
   if (module.feature.id !== module.kind) {
@@ -276,6 +280,7 @@ export function defineProtocol<S extends SelectedBase>(module: {
     feature: module.feature,
     storage: module.storage,
     ...(module.scripting !== undefined ? { scripting: module.scripting } : {}),
+    ...(module.mock !== undefined ? { mock: module.mock } : {}),
     ...(run !== undefined
       ? {
           run: {

@@ -1,7 +1,8 @@
 # Releasing Wirebench
 
 Wirebench ships as an Electron app packaged by [electron-builder]: macOS `.dmg` and `.zip`
-(universal, Intel and Apple silicon), a Windows NSIS installer, and Linux `AppImage`, `.deb`,
+(universal, Intel and Apple silicon), Windows NSIS and MSI installers and a portable `.zip`, and
+Linux `AppImage`, `.deb`,
 `.rpm` and `.snap` packages. The
 configuration lives in `apps/desktop/electron-builder.yml`; the release pipeline is
 `.github/workflows/release.yml`.
@@ -17,6 +18,7 @@ a file keeps its meaning once it is out of the release page and sitting in a dow
 | macOS | the same three as `.zip`, which is what the updater downloads |
 | Windows | `Wirebench-1.0.0-windows-x64-setup.exe`, `Wirebench-1.0.0-windows-arm64-setup.exe` |
 | Windows | `Wirebench-1.0.0-windows-x64.msi`, `Wirebench-1.0.0-windows-arm64.msi`, for fleet deployment |
+| Windows | `Wirebench-1.0.0-windows-x64-portable.zip`, `Wirebench-1.0.0-windows-arm64-portable.zip`, nothing to install |
 | Linux | `Wirebench-1.0.0-linux-x86_64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
 | Linux | `wirebench_1.0.0_amd64.deb`, `wirebench_1.0.0_arm64.deb` |
 | Linux | `wirebench-1.0.0.x86_64.rpm` |
@@ -40,6 +42,27 @@ architecture, so both names must keep their `${arch}` segment.
 `arm64` (Apple silicon) builds are there for anyone who knows which Mac they have and would
 rather not carry both architectures — roughly half the size.
 
+### The portable Windows zip
+
+For machines where nothing may be installed. The zip holds one folder,
+`Wirebench-<version>-windows-<arch>-portable/`: the same signed app the installers wrap, plus a
+`data` folder, holding only a README, beside `Wirebench.exe`. While that folder is there the app uses
+it as its profile (`apps/desktop/src/main/portable.ts`), so workspaces, preferences, history and
+Chromium's caches stay beside the executable and nothing is written to `%APPDATA%`. Deleting the
+folder makes the copy an ordinary one.
+
+`win-installers` packs the zips by hand after the installers, not through electron-builder's `zip`
+target: that target packs the same files as the installers, and an installed copy must never carry
+a `data` folder. The step runs `check-kerberos-vendor.ts` and `check-desktop-asar.ts` on each
+unpacked folder before zipping it, and checks the zip holds `Wirebench.exe`, `data/README.txt` and
+the asar. The zips go straight to the `wirebench-windows-portable` artifact: their executables were
+signed in `win-sign-app`, and a zip cannot be signed itself.
+
+The portable copy never updates itself. `electron-updater` can only run the setup `.exe`, which
+would install a second copy rather than replace the unpacked one, so **Check for Updates…** offers
+the release page instead. Saved secrets are encrypted with the Windows user's key (DPAPI): they open
+for the same user on the same machine only, and need entering again anywhere else.
+
 ### Installing the snap
 
 The `.snap` is a file, not a Snap Store listing, so it is installed unasserted:
@@ -53,7 +76,9 @@ means here — the snap is unsigned, not unsafe. Publishing to the Snap Store in
 the flag and bring automatic updates, at the cost of a `snapcraft` account and review; nothing
 in the repository does that today. Confinement is `strict`, so the app can reach the network
 and `$HOME` and nothing else: **a WSDL stored outside the home directory is not readable from a
-snap install**. The AppImage and `.deb` have no such restriction.
+snap install**. The AppImage and `.deb` have no such restriction. **Kerberos is not supported in
+the snap** for the same reason: it cannot read `/etc/krb5.conf` or the ticket cache, so the app
+shows Kerberos disabled there and names the deb, rpm and AppImage builds instead.
 
 ## Building locally
 
@@ -93,10 +118,21 @@ from it, so it is `asarUnpack`ed into `app.asar.unpacked/`. The engine's XPath w
 both still work in a packaged build; if either ever stops, that spec is where it shows up.
 
 `Resources/kerberos/<platform>-<arch>/kerberos.node` ships through `extraResources`, outside the
-asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. macOS gets one
-universal file in both architecture folders. `@electron/universal` already skips identical fat
+asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. A Linux or Windows
+build carries only its own architecture's binding (`${arch}` in the platform's `extraResources`);
+the Windows arm64 build carries none, since there is no win32-arm64 prebuild. macOS gets one
+universal file in both architecture folders, in every mac build, because the universal merge needs
+the x64 and arm64 apps to hold the same files. `@electron/universal` already skips identical fat
 Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
 universal.
+
+The `kerberos` package itself stays out of the asar, and so does everything only it depends on:
+`node-addon-api` and the `prebuild-install` tree it uses to fetch a binding at install time. The
+`files` list in `electron-builder.yml` names those packages, and `scripts/check-desktop-asar.ts`
+runs in every release job to prove the asar holds exactly what the app's own dependencies reach —
+it fails when an exclusion drops a package something else needs, and when a `kerberos` upgrade
+brings a package the list does not name yet. (`THIRD-PARTY-LICENSES.md` still lists that tree:
+Wirebench Server's image installs the engine's optional dependencies, `kerberos` included.)
 
 ## Electron fuses
 
@@ -161,6 +197,16 @@ release candidate installed:
 4. On Windows on ARM, the Kerberos option is disabled and reads "Kerberos is not available on Windows
    on ARM."
 
+CI's KDC runs the engine against the real binding, not the packaged Linux app. On a Linux x64
+machine with a reachable KDC and a `kinit` ticket:
+
+1. `dpkg-deb -f wirebench_<version>_amd64.deb Recommends` lists `libgssapi-krb5-2`, and
+   `rpm -qp --recommends wirebench-<version>.x86_64.rpm` lists `(krb5-libs or krb5)`.
+2. The deb installed with `apt install ./wirebench_<version>_amd64.deb`: a REST GET with auth
+   **Kerberos** against an SPNEGO-protected site returns 200.
+3. The snap installed with `snap install --dangerous`: the Kerberos option is disabled and reads
+   "Kerberos is not supported in the snap. Install the deb, rpm or AppImage build."
+
 ## Publishing the CLI: image and npm
 
 The same tag that triggers the desktop packaging jobs also runs two more jobs in `release.yml`,
@@ -211,6 +257,7 @@ The release workflow signs twice:
    file, not only the setup file.
 2. **`win-sign-installers`** signs the NSIS and MSI installers that `win-installers` built around the
    signed apps with `electron-builder --prepackaged`.
+   The portable zips are packed from the same signed apps and skip this job.
 
 Signing rewrites an installer's bytes, so `scripts/update-metadata.ts` then recomputes the `sha512`
 and `size` in `latest.yml` and checks them (`--check`). Without that step, auto-update would reject

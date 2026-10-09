@@ -1,7 +1,9 @@
 import { Fragment, useRef, type ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { recreateRequest, type RecreateMode } from '../request-editor/request-actions.js';
+import { useMockRunsStore } from '../../state/mock-runs.js';
 import { explorerActions } from './explorer-actions.js';
+import { exportCollection, type CollectionExportTarget } from './export-collection.js';
 import { projectRowActions } from './project-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
@@ -66,6 +68,22 @@ function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]
   return [...menu.slice(0, 1), [item], ...menu.slice(1)];
 }
 
+/** **Export as Postman Collection…** and **Export as OpenCollection…** for a project, API or interface. */
+function exportItems(target: CollectionExportTarget): ExplorerMenuItem[] {
+  return [
+    {
+      key: 'export-postman',
+      label: 'Export as Postman Collection…',
+      run: () => void exportCollection(target, 'postman'),
+    },
+    {
+      key: 'export-opencollection',
+      label: 'Export as OpenCollection…',
+      run: () => void exportCollection(target, 'opencollection'),
+    },
+  ];
+}
+
 function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (node.kind === 'project' && node.projectId !== undefined) {
     const projectId = node.projectId;
@@ -99,6 +117,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       [
         { key: 'reveal', label: REVEAL_LABEL, run: () => projectRowActions.reveal(projectId) },
         { key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) },
+        ...exportItems({ projectId }),
       ],
       [
         {
@@ -142,6 +161,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
           label: 'Export Definition…',
           run: () => explorerActions.exportDefinition(node.interfaceId),
         },
+        ...(node.interfaceId !== undefined ? exportItems({ containerId: node.interfaceId }) : []),
         {
           key: 'generate-docs',
           label: 'Generate Documentation…',
@@ -161,8 +181,25 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         },
         { key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() },
       ],
+      [
+        {
+          key: 'new-mock',
+          label: 'New Mock',
+          run: () => explorerActions.newMock(node.interfaceId),
+        },
+      ],
       [{ key: 'remove', label: 'Remove interface', run: () => explorerActions.removeInterface(node.interfaceId) }],
     );
+  }
+
+  if (node.kind === 'binding' && node.interfaceId !== undefined) {
+    return groups([
+      {
+        key: 'new-mock',
+        label: 'New Mock of this binding',
+        run: () => explorerActions.newMock(node.interfaceId, node.bindingName),
+      },
+    ]);
   }
 
   if (node.kind === 'operation') {
@@ -233,8 +270,10 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
               run: () => explorerActions.updateRestDefinition(apiId),
             },
             { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
+            { key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) },
           ]
         : [],
+      exportItems({ containerId: apiId }),
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
     );
@@ -248,6 +287,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newGrpcRequest(apiId) },
       ],
+      exportItems({ containerId: apiId }),
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeGrpcApi(apiId) }],
     );
@@ -361,6 +401,20 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
     return groups([{ key: 'clear-values', label: 'Clear values', run: () => explorerActions.clearValues(projectId) }]);
   }
 
+  if (node.kind === 'mock' && node.mockId !== undefined) {
+    const mockId = node.mockId;
+    const running = useMockRunsStore.getState().states[mockId]?.running === true;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openMock(mockId) },
+        { key: 'toggle', label: running ? 'Stop' : 'Start', run: () => explorerActions.toggleMock(mockId) },
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateMock(mockId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('mock', mockId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeMock(mockId) }],
+    );
+  }
+
   if (node.kind === 'sequence' && node.sequenceId !== undefined) {
     const sequenceId = node.sequenceId;
     return groups(
@@ -382,6 +436,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newWsRequest(apiId) },
       ],
+      exportItems({ containerId: apiId }),
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeWsApi(apiId) }],
     );

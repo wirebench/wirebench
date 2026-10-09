@@ -70,6 +70,7 @@ function projectWith(keystorePath: string): Project {
     grpcApis: [],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [],
     wss: {
       keystores: [

@@ -10,6 +10,7 @@ import {
   dragHandle,
   expectSidebarCollapsed,
   expectSidebarVisible,
+  resolvedToken,
   sidebarWidth,
   stepHandle,
 } from '../helpers/layout.js';
@@ -50,6 +51,27 @@ test.describe('layout: collapsible, resizable panels', () => {
     await dragHandle(page, 'panel-handle-sidebar', -300, 0);
 
     await expectSidebarCollapsed(page);
+  });
+
+  test('a panel handle tints to the handle-hover colour under the pointer and relaxes when it leaves', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+    await expectSidebarVisible(page);
+
+    // The visible strip is the handle's only child; the `group-hover:bg-handle-hover` class lives
+    // on it, so a hover on the (wider) separator must reach it through the `group` ancestor.
+    const strip = page.getByTestId('panel-handle-sidebar').locator('> div');
+    const resting = await resolvedToken(page, '--wb-border-default');
+    const hovered = await resolvedToken(page, '--wb-handle-hover');
+    expect(hovered).not.toBe(resting);
+    await expect(strip).toHaveCSS('background-color', resting);
+
+    await page.getByTestId('panel-handle-sidebar').hover();
+    await expect(strip).toHaveCSS('background-color', hovered);
+
+    await page.mouse.move(0, 0);
+    await expect(strip).toHaveCSS('background-color', resting);
   });
 
   test('the activity bar reopens a collapsed sidebar', async () => {

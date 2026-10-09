@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/webhooks.schema.json",
+  "title": "Wirebench project file: Webhook collection",
+  "description": "Project format 8: `webhooks/webhooks.yaml`.",
+  "type": "object",
+  "properties": {
+    "target": { "type": "string" },
+    "auth": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["none", "basic", "ntlm"] },
+            "username": { "type": "string" },
+            "passwordRef": { "type": "string" },
+            "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "domain": { "type": "string" },
+            "workstation": { "type": "string" },
+            "preemptive": { "type": "boolean" }
+          },
+          "required": ["type"],
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": { "type": { "type": "string", "const": "inherit" } },
+          "required": ["type"],
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "const": "bearer" },
+            "tokenRef": { "type": "string" },
+            "tokenEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "scheme": { "type": "string" }
+          },
+          "required": ["type"],
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "const": "api-key" },
+            "name": { "type": "string" },
+            "valueRef": { "type": "string" },
+            "valueEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "in": { "type": "string", "enum": ["header", "query"] }
+          },
+          "required": ["type", "name", "in"],
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "const": "oauth2" },
+            "grant": { "type": "string", "enum": ["client-credentials", "authorization-code"] },
+            "tokenUrl": { "type": "string" },
+            "authorizationUrl": { "type": "string" },
+            "clientId": { "type": "string" },
+            "clientSecretRef": { "type": "string" },
+            "clientSecretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "scopes": { "default": [], "type": "array", "items": { "type": "string" } },
+            "audience": { "type": "string" },
+            "clientAuth": { "default": "basic", "type": "string", "enum": ["basic", "body"] },
+            "pkce": { "default": true, "type": "boolean" },
+            "refreshTokenRef": { "type": "string" }
+          },
+          "required": ["type", "grant", "tokenUrl", "clientId"],
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "const": "kerberos" },
+            "spn": { "type": "string" },
+            "principal": { "type": "string" },
+            "username": { "type": "string" },
+            "domain": { "type": "string" },
+            "passwordRef": { "type": "string" },
+            "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+          },
+          "required": ["type"],
+          "additionalProperties": {}
+        }
+      ]
+    },
+    "signing": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": { "mode": { "type": "string", "const": "none" } },
+          "required": ["mode"],
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": { "type": "string", "const": "sign" },
+            "scheme": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "hmac" },
+                    "algorithm": { "type": "string", "enum": ["sha1", "sha256", "sha512"] },
+                    "encoding": { "type": "string", "enum": ["hex", "base64"] },
+                    "header": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+                    },
+                    "prefix": { "type": "string", "maxLength": 32, "pattern": "^[\\x21-\\x7e]*$" }
+                  },
+                  "required": ["kind", "algorithm", "encoding", "header"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "timestamped" },
+                    "header": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+                    },
+                    "toleranceSec": { "default": 300, "type": "integer", "minimum": 1, "maximum": 86400 }
+                  },
+                  "required": ["kind", "header"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "standard" },
+                    "toleranceSec": { "default": 300, "type": "integer", "minimum": 1, "maximum": 86400 }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "secretRef": { "type": "string" },
+            "secretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+          },
+          "required": ["mode", "scheme"],
+          "additionalProperties": {}
+        }
+      ]
+    }
+  },
+  "required": ["target"],
+  "additionalProperties": {}
+}

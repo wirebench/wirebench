@@ -10,7 +10,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, dialog } from 'electron';
+import { app, dialog, shell } from 'electron';
 import { appVersion } from './app-version.js';
 // `electron-updater` is CommonJS: under this package's ESM output a named import of
 // `autoUpdater` throws at load ("Named export not found"), so the default export is
@@ -53,8 +53,14 @@ async function confirm(message: string, detail: string, confirmLabel: string): P
  * Builds the app's single {@link UpdateController}.
  *
  * @param report - broadcasts a status to every window (the status bar renders it)
+ * @param options.portable - the portable Windows build, which is updated by downloading the new
+ *   zip rather than by running an installer (see `portable.ts`)
  */
-export function createUpdateController(report: (status: UpdateStatus) => void): UpdateController {
+export function createUpdateController(
+  report: (status: UpdateStatus) => void,
+  options: { readonly portable?: boolean } = {},
+): UpdateController {
+  const portable = options.portable === true;
   const feed = githubFeedFrom(repositoryUrl(app.getAppPath()));
   if (feed !== undefined) {
     autoUpdater.setFeedURL({ provider: 'github', owner: feed.owner, repo: feed.repo });
@@ -67,19 +73,30 @@ export function createUpdateController(report: (status: UpdateStatus) => void): 
     autoUpdater,
     {
       confirmDownload: async (version) =>
-        await confirm(
-          `Wirebench ${version} is available.`,
-          `You are running ${appVersion()}. Download the update now? Nothing is installed until you say so.`,
-          'Download',
-        ),
+        portable
+          ? await confirm(
+              `Wirebench ${version} is available.`,
+              `You are running ${appVersion()}, the portable build. Open the release page to download the new zip? Unpack it and move this copy's data folder into it.`,
+              'Open Release Page',
+            )
+          : await confirm(
+              `Wirebench ${version} is available.`,
+              `You are running ${appVersion()}. Download the update now? Nothing is installed until you say so.`,
+              'Download',
+            ),
       confirmInstall: async (version) =>
         await confirm(
           `Wirebench ${version} is ready to install.`,
           'Wirebench will restart to finish installing.',
           'Restart and Install',
         ),
+      openReleasePage: async (version) => {
+        if (feed !== undefined) {
+          await shell.openExternal(`https://github.com/${feed.owner}/${feed.repo}/releases/tag/v${version}`);
+        }
+      },
       report,
     },
-    { feedConfigured: feed !== undefined && app.isPackaged },
+    { feedConfigured: feed !== undefined && app.isPackaged, selfInstall: !portable },
   );
 }

@@ -37,6 +37,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        # Type-aware ESLint over the whole tree has outgrown Node's default heap (about 4 GB), as in ci.yml.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
 
   build:
     needs: check
@@ -130,13 +133,37 @@ jobs:
           done
           pnpm ${{ matrix.script }}
 
+      # Every mac build carries both darwin bindings (the universal merge needs identical apps); a
+      # Linux build carries only its own architecture's.
       - name: Check the vendored Kerberos bindings
         run: |
           if [ "${{ matrix.os }}" = macos-latest ]; then
             node scripts/check-kerberos-vendor.ts darwin apps/desktop/release/mac*/Wirebench.app/Contents/Resources
           else
-            node scripts/check-kerberos-vendor.ts linux apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+            node scripts/check-kerberos-vendor.ts linux-x64 apps/desktop/release/linux-unpacked/resources
+            node scripts/check-kerberos-vendor.ts linux-arm64 apps/desktop/release/linux-arm64-unpacked/resources
           fi
+
+      # The asar holds exactly the packages the app depends on: none dropped by the `files`
+      # exclusions, and none of the `prebuild-install` tree that only the unloaded `kerberos` needs.
+      - name: Check the packed node_modules
+        run: |
+          if [ "${{ matrix.os }}" = macos-latest ]; then
+            node scripts/check-desktop-asar.ts apps/desktop/release/mac*/Wirebench.app/Contents/Resources
+          else
+            node scripts/check-desktop-asar.ts apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+          fi
+
+      # Kerberos needs the system GSSAPI library; the deb and rpm recommend it (#268).
+      - name: Check the Linux packages recommend GSSAPI
+        if: runner.os == 'Linux'
+        run: |
+          for deb in apps/desktop/release/*.deb; do
+            dpkg-deb -f "$deb" Recommends | tee /dev/stderr | grep -q 'libgssapi-krb5-2' || { echo "::error::$deb does not recommend libgssapi-krb5-2"; exit 1; }
+          done
+          for rpm in apps/desktop/release/*.rpm; do
+            rpm -qp --recommends "$rpm" | tee /dev/stderr | grep -qF '(krb5-libs or krb5)' || { echo "::error::$rpm does not recommend krb5-libs"; exit 1; }
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -326,7 +353,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `--dir` stops after packing: the unpacked apps, fuses already flipped by afterPack.
       - run: pnpm build && node scripts/vendor-kerberos.ts win32 && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
-      - run: node scripts/check-kerberos-vendor.ts win32 apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
+      - run: |
+          node scripts/check-kerberos-vendor.ts win32-x64 apps/desktop/release/win-unpacked/resources
+          node scripts/check-kerberos-vendor.ts win32-arm64 apps/desktop/release/win-arm64-unpacked/resources
+          node scripts/check-desktop-asar.ts apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
       - uses: actions/upload-artifact@v7
         id: upload
         with:
@@ -401,16 +431,15 @@ jobs:
           TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         run: echo "enabled=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       # SignPath signs only what its app configuration lists; a binding it skipped would ship unsigned.
+      # Only the x64 app carries one: there is no win32-arm64 prebuild.
       - name: Check the Kerberos binding is signed
         if: steps.signpath.outputs.enabled == 'true'
         shell: pwsh
         run: |
-          foreach ($app in 'win-unpacked', 'win-arm64-unpacked') {
-            $path = "apps/desktop/prepackaged/$app/resources/kerberos/win32-x64/kerberos.node"
-            $sig = Get-AuthenticodeSignature $path
-            Write-Output "${path}: $($sig.Status)"
-            if ($sig.Status -ne 'Valid') { exit 1 }
-          }
+          $path = "apps/desktop/prepackaged/win-unpacked/resources/kerberos/win32-x64/kerberos.node"
+          $sig = Get-AuthenticodeSignature $path
+          Write-Output "${path}: $($sig.Status)"
+          if ($sig.Status -ne 'Valid') { exit 1 }
       # One run per architecture: `--prepackaged` takes a single app. Each run writes a latest.yml
       # naming only its own installer, so arm64 builds into a directory of its own and is folded
       # into the x64 manifest below.
@@ -421,6 +450,35 @@ jobs:
           pnpm exec electron-builder --win nsis msi --arm64 --prepackaged prepackaged/win-arm64-unpacked \
             --config.directories.output=release-arm64 --publish never
           cp release-arm64/*.exe release-arm64/*.msi release-arm64/*.blockmap release/
+      # The portable zips (#68): the same (signed) app, plus the `data` folder that makes it keep
+      # its profile beside `Wirebench.exe` (`src/main/portable.ts`). Packed here rather than by
+      # electron-builder's zip target, which takes the installers' files: an installed copy must
+      # never carry the folder. One top-level folder, so unpacking makes one directory. The zip
+      # itself is not signed (nothing signs a zip); the executables inside are the signed ones.
+      - name: Pack the portable zips
+        working-directory: apps/desktop
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          for arch in x64 arm64; do
+            app=prepackaged/win-unpacked
+            if [ "$arch" = arm64 ]; then app=prepackaged/win-arm64-unpacked; fi
+            name="Wirebench-${version}-windows-${arch}-portable"
+            mkdir -p "portable/$name/data"
+            cp -R "$app/." "portable/$name/"
+            cp resources/portable/README.txt "portable/$name/data/README.txt"
+            node ../../scripts/check-kerberos-vendor.ts "win32-$arch" "portable/$name/resources"
+            node ../../scripts/check-desktop-asar.ts "portable/$name/resources"
+            (cd portable && 7z a -tzip -mx=9 "../release/$name.zip" "$name" > /dev/null)
+            listing="$(7z l -ba "release/$name.zip" | tr '\\' '/' | tr -d '\r')"
+            for entry in "$name/Wirebench.exe" "$name/data/README.txt" "$name/resources/app.asar"; do
+              grep -q " $entry\$" <<< "$listing" || { echo "::error::$name.zip has no $entry"; exit 1; }
+            done
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wirebench-windows-portable
+          if-no-files-found: error
+          path: apps/desktop/release/*-portable.zip
       - uses: actions/upload-artifact@v7
         id: upload
         with:
@@ -547,6 +605,12 @@ jobs:
         id: sbom
         run: echo "path=$(ls artifacts/*.cdx.json)" >> "$GITHUB_OUTPUT"
 
+      # The project file JSON Schemas (#66), every format version's folder, as the docs site serves them.
+      - name: Add the project schemas
+        run: |
+          cd docs-site/public/schemas
+          zip -qr "$GITHUB_WORKSPACE/artifacts/wirebench-project-schemas-${GITHUB_REF_NAME#v}.zip" .
+
       # Provenance for every file in the release, and the SBOM bound to each installer, so anyone
       # can check a download with `gh attestation verify <file> --repo wirebench/wirebench`.
       - uses: actions/attest-build-provenance@v4
@@ -558,6 +622,7 @@ jobs:
             artifacts/*.dmg
             artifacts/*.exe
             artifacts/*.msi
+            artifacts/*-portable.zip
             artifacts/*.AppImage
             artifacts/*.deb
             artifacts/*.rpm

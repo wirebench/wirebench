@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { openEnvironmentsView } from '../helpers/environments.js';
 import { importProto, openGrpcRequest, placeGreeterProtos, sendGrpc, setMessage } from '../helpers/grpc.js';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import {
@@ -35,8 +36,8 @@ import {
  *
  * Two things live here:
  *
- * 1. An axe-core scan of the workspace picker, the request editor (with a real response) and the interface
- *    viewer, in *both* themes. It fails on `serious` and `critical` violations.
+ * 1. An axe-core scan of the workspace picker, the request editor (with a real response), the interface
+ *    viewer and the environments grids, in *both* themes. It fails on `serious` and `critical` violations.
  * 2. Pixel snapshots of the shell in both themes at 1280x800.
  *
  * ## Disabled axe rules
@@ -304,6 +305,23 @@ test.describe('accessibility and theming', () => {
 
       await setTheme(window, theme);
       await expectNoSeriousViolations(window, `interface viewer (${theme})`);
+    });
+
+    test(`a11y: the Environments view and an environment page have no serious violations (${theme})`, async () => {
+      server = await startTestSoapServer({ fixture: 'calculator' });
+      launched = await launchApp();
+      const { window } = launched;
+
+      await createProjectWithCalculator(window, server);
+      await openEnvironmentsView(window);
+      await window.getByRole('button', { name: 'Add environment' }).click();
+      // "Add environment" opens the new environment's page, so the sidebar's grid and the
+      // page's variables and endpoint-overrides grids are all on screen for the one scan.
+      await expect(window.getByRole('grid', { name: 'Environments' })).toBeVisible();
+      await expect(window.getByRole('grid', { name: 'Endpoint overrides' })).toBeVisible({ timeout: 20_000 });
+
+      await setTheme(window, theme);
+      await expectNoSeriousViolations(window, `environments (${theme})`);
     });
 
     test(`the shell looks right in ${theme}`, async () => {

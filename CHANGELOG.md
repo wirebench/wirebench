@@ -8,6 +8,68 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Contract diff and breaking-change report.** `wirebench diff-contract <old> <new>` compares two
+  versions of a WSDL or of an OpenAPI document operation by operation: operations added or removed,
+  fields added, removed, made required or optional, types narrowed or widened, enumerations changed,
+  constraints tightened, endpoints moved. Each change is classified breaking or compatible for an
+  existing client, the report is written as Markdown, HTML or JSON, and the exit code fails a CI job
+  on a breaking change. Either side can be a file, a URL, or the project's cached definition
+  (`project:<name>`) (#56).
+- **Several workspaces open at once.** **New Window** (<kbd>⌘⌥N</kbd> / <kbd>Ctrl+Alt+N</kbd>) opens another
+  window at the workspace picker, and each window holds its own workspace: its edits, sync, environment,
+  cookie jar, current values, secret sources, team secrets, History and audit reporting stay its own. A
+  workspace is open in one window at a time; opening it from another brings that window forward. Closing a
+  window keeps its unsaved changes as quitting does (#72).
+- **JSON Schemas for project files.** Every kind of YAML file in a project folder has a published JSON
+  Schema, generated from the schemas Wirebench reads the files with, so an editor can validate a project
+  as you type. They are served from the documentation site, one folder per project format version, and
+  attached to each release. The project-format reference shows the editor settings (#66).
+- **Mock services (engine).** A project can hold mock services under `mocks/`, one reviewable file per
+  canned response with its body beside it. A mock is generated from a SOAP interface or a REST API,
+  validates each request against the contract (answering a SOAP fault or a 4xx when it does not
+  conform), picks a response by sequence, random, XPath/JSONPath/query match or a sandboxed script, keeps
+  scenario state, and serves its WSDL. It listens on loopback unless told otherwise and runs without the
+  desktop, for the CLI to build on (#59).
+- **Mock services in the app.** **New Mock** on an interface, a binding or an imported REST API makes a
+  mock from the cached definition, listed under **Mocks** in the project. Its tab edits the port, the
+  path, the validation mode and every operation's dispatch, responses, match conditions, scenarios and
+  script; starts and stops the mock and copies its URL; and logs each request it answers, with the
+  problems found in it. A mock listens on this machine only unless **Preferences → Mock services** says
+  otherwise (#59).
+
+### Changed
+
+- **A same-host `http://` → `https://` redirect is followed with the request intact.** When a server answers
+  `http://host/path` with a 301, 302, 307 or 308 to `https://host/path` (same host, path and query, default
+  ports), a send follows it even with Follow Redirects off, and resends the same method, body and
+  credentials there, rather than returning the redirect page (SOAP) or turning a `POST` into a bodyless
+  `GET`. A SOAP response carries an `https-upgrade` Problem saying to change the endpoint; the redirect list
+  marks the hop. NTLM and Kerberos handshakes continue on the `https://` URL (#71).
+
+## [4.0.0] - 2026-10-08
+
+### Added
+
+- **WS-Security debugger.** The response's **WSS** inspector now says why a signature, decryption or
+  timestamp failed. It shows the part that changed, with its expected and computed digest and the
+  transforms used, or a SignatureValue that fails while every part matches. It names the signer token
+  or decryption certificate the message asked for and did not find, and the clock skew against the
+  timestamp. It also lists the Security header step by step. **Preview secured request** shows a
+  request's secured envelope and its steps before Send (#57).
+- **WS-Security from the WSDL's policy.** When a WSDL attaches a WS-SecurityPolicy to an operation, the
+  request's Auth inspector shows the tokens, the signed and encrypted parts, the algorithm suite and
+  whether TLS is required. **Apply policy** turns it into an outgoing WS-Security configuration in one
+  click, and a badge says whether the request satisfies the policy or lists what is still missing (#58).
+- **Managed preferences.** On a managed machine, a `policy.yaml` in a system location
+  (`%ProgramData%\Wirebench`, `/Library/Application Support/Wirebench` or `/etc/wirebench`) locks the
+  proxy, the minimum TLS version, the CA bundle and update checks. Locked settings are read-only in
+  **Preferences** and marked **Locked by policy**; the user's own values come back if the policy is
+  removed (#67).
+- **Certificate expiry warnings.** Problems warns before a certificate in the workspace expires:
+  keystores and the CA bundle are checked on their own, and **Check Certificate Expiry** also reads
+  the chain every TLS endpoint of the open projects presents, from a verified handshake alone; an
+  endpoint whose chain doesn't verify is an error. The window is
+  **Preferences → SSL → Expiry warning** (30 days); the SSL inspector uses it too (#70).
 - **Secrets from external managers.** Map a `${secret:name}` to a Vault, AWS, Google Cloud or Azure
   secret, a 1Password item or the keychain, from **Secret Sources…** in the command palette. Wirebench
   fetches the value at send time with the manager's own CLI and your login, keeps it in memory only
@@ -73,6 +135,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Import cURL warns about a `--negotiate` account with no password.** The preview now notes that the
+  Kerberos account needs a password on Windows and is refused on macOS and Linux until you use **Clear
+  account** (#272).
+- **Update Definition from another host** no longer reuses the interface's Kerberos SPN or Basic credentials: a URL on a different origin is fetched with the SPN defaulted to that host, and without the interface's username and password (#271).
+- **A REST contract tool no longer asks for a query API key.** When the API's auth is a query API
+  key, the tool's `query` argument leaves that parameter out, so the request carries the key once
+  instead of `key=<argument>&key=<secret>` (#225).
 - **`wirebench mcp` on stdio keeps worker output off the protocol stream.** A line written to stdout
   by one of the engine's worker threads now goes to stderr with the rest of the server's output, so it
   can no longer corrupt the frames (#182).
@@ -1073,7 +1142,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/wirebench/wirebench/compare/v2.2.1...v3.1.0
 [2.2.1]: https://github.com/wirebench/wirebench/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/wirebench/wirebench/compare/v2.1.1...v2.2.0

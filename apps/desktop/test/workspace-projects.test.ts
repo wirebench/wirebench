@@ -336,6 +336,36 @@ describe('WorkspaceService.linkProject', () => {
     await service.close();
   }, 60_000);
 
+  it('exports a project, or one interface, as a collection into the folder picked', async () => {
+    const { service, projectId } = await workspaceWithProject('Calculator');
+    const outDir = join(root, 'collection-out');
+    await mkdir(outDir, { recursive: true });
+
+    folderPick = undefined;
+    expect(await service.exportCollection({ projectId, format: 'postman' }, SENDER)).toBeNull();
+    expect(await readdir(outDir)).toEqual([]);
+
+    folderPick = outDir;
+    const whole = await service.exportCollection({ projectId, format: 'postman' }, SENDER);
+    expect(whole?.dir).toBe(realDir(outDir));
+    expect(whole?.files).toEqual(['calculator.postman_collection.json']);
+    const collection = JSON.parse(await readFile(join(outDir, 'calculator.postman_collection.json'), 'utf8')) as {
+      item: { name: string }[];
+    };
+    expect(collection.item.map((item) => item.name)).toEqual(['Calculator']);
+
+    const interfaceId = service.projectSnapshot(projectId)!.interfaces[0]!.id;
+    const one = await service.exportCollection({ containerId: interfaceId, format: 'opencollection' }, SENDER);
+    expect(one?.files).toEqual(['calculator.opencollection.yml']);
+    expect(one?.result.counts.requests).toBeGreaterThan(0);
+    expect(await readFile(join(outDir, 'calculator.opencollection.yml'), 'utf8')).toMatch(/^opencollection:/);
+
+    await expect(service.exportCollection({ containerId: 'nope', format: 'postman' }, SENDER)).rejects.toMatchObject({
+      code: 'unknown-project',
+    });
+    await service.close();
+  }, 60_000);
+
   it('refuses the same folder twice', async () => {
     const source = await workspaceWithProject('Calculator');
     const linkedDir = workspaceProjectDir(source.workspace.dir, 'Calculator');

@@ -61,6 +61,7 @@ export interface EditorTab {
     | 'env-compare'
     | 'catch-url'
     | 'sequence'
+    | 'mock'
     | 'cookies'
     | 'ssh-terminal';
   readonly title: string;
@@ -95,6 +96,8 @@ export interface EditorTab {
   readonly hostId?: string;
   /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */
   readonly sequenceId?: string;
+  /** Set when `kind` is `'mock'`: the mock this tab edits and runs. */
+  readonly mockId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */

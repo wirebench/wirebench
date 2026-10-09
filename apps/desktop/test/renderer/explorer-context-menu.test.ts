@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { explorerMenuGroups, explorerMenuItems } from '../../src/renderer/features/explorer/context-menu.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 
 function node(patch: Partial<ExplorerNode> & Pick<ExplorerNode, 'kind'>): ExplorerNode {
@@ -39,6 +40,8 @@ describe('explorerMenuItems', () => {
       'Settings…',
       REVEAL,
       'Export project…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Move to workspace…',
       'Rename',
       'Remove from workspace',
@@ -69,6 +72,8 @@ describe('explorerMenuItems', () => {
       'Project environments (linked project)',
       REVEAL,
       'Export project…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Move to workspace…',
       'Rename',
       'Remove from workspace',
@@ -96,10 +101,13 @@ describe('explorerMenuItems', () => {
       'Show Interface Viewer',
       'Update Definition…',
       'Export Definition…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Generate Documentation…',
       'Check WSDL WS-I compliance',
       'Copy definition URL',
       'Import another WSDL…',
+      'New Mock',
       'Remove interface',
     ]);
     expect(explorerMenuItems(node({ kind: 'operation' })).map((item) => item.label)).toEqual([
@@ -139,7 +147,7 @@ describe('explorerMenuItems', () => {
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
       ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-webhook', 'new-sequence'],
       ['settings'],
-      ['reveal', 'export'],
+      ['reveal', 'export', 'export-postman', 'export-opencollection'],
       ['move-to-workspace'],
       ['rename', 'remove'],
     ]);
@@ -177,6 +185,8 @@ describe('explorerMenuItems on a REST row', () => {
       'New folder',
       'New request',
       'Import cURL…',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
       'Rename…',
       'Delete',
     ]);
@@ -186,7 +196,8 @@ describe('explorerMenuItems on a REST row', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
       ['Open', 'New folder', 'New request', 'Import cURL…'],
-      ['Update Definition…', 'Import webhooks…'],
+      ['Update Definition…', 'Import webhooks…', 'New Mock'],
+      ['Export as Postman Collection…', 'Export as OpenCollection…'],
       ['Rename…'],
       ['Delete'],
     ]);
@@ -260,7 +271,15 @@ describe('explorerMenuItems on a gRPC row', () => {
   it('offers a gRPC API its containers and its own lifecycle, and no cURL import', () => {
     const items = explorerMenuItems(node({ kind: 'grpc-api', id: 'grpc-api:g1', apiId: 'g1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'New folder',
+      'New request',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
+      'Rename…',
+      'Delete',
+    ]);
   });
 
   it('offers a folder inside a gRPC API the same entries as a REST folder, minus Import cURL…', () => {
@@ -288,7 +307,15 @@ describe('explorerMenuItems on a WebSocket row', () => {
   it('offers a WebSocket API its containers and its own lifecycle, and no cURL import', () => {
     const items = explorerMenuItems(node({ kind: 'ws-api', id: 'ws-api:w1', apiId: 'w1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'New folder',
+      'New request',
+      'Export as Postman Collection…',
+      'Export as OpenCollection…',
+      'Rename…',
+      'Delete',
+    ]);
   });
 
   it('offers a folder inside a WebSocket API the same entries as a gRPC folder, minus Import cURL…', () => {
@@ -367,5 +394,30 @@ describe('explorerMenuItems on a project’s webhook collection (openapi-webhook
     items.find((item) => item.label === 'Auth…')?.run();
 
     expect(useUiStore.getState().folderAuthId).toBe('f1');
+  });
+});
+
+describe('explorerMenuItems on a mock row (#59)', () => {
+  beforeEach(() => {
+    useMockRunsStore.setState({ states: {} });
+  });
+
+  it('offers a binding a mock of its own', () => {
+    expect(
+      explorerMenuItems(node({ kind: 'binding', interfaceId: 'i1', bindingName: 'OrdersSoap' })).map((i) => i.label),
+    ).toEqual(['New Mock of this binding']);
+  });
+
+  it('offers a stopped mock Start and its lifecycle', () => {
+    expect(
+      explorerMenuGroups(node({ kind: 'mock', id: 'mock:m1', mockId: 'm1' })).map((group) => group.map((i) => i.label)),
+    ).toEqual([['Open', 'Start', 'Duplicate'], ['Rename…'], ['Delete']]);
+  });
+
+  it('offers a running mock Stop', () => {
+    useMockRunsStore.setState({ states: { m1: { mockId: 'm1', running: true, warnings: [] } } });
+    expect(explorerMenuItems(node({ kind: 'mock', id: 'mock:m1', mockId: 'm1' })).map((i) => i.label)).toContain(
+      'Stop',
+    );
   });
 });

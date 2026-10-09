@@ -35,6 +35,14 @@ Fill in the values and choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+E
 response opens beside the request with its status, headers, timing and raw bytes on their own
 tabs, and the exchange is recorded in the HTTP Log and in History.
 
+A SOAP request does not follow redirects unless its **Follow redirects** property is on, because a
+redirected `POST` usually arrives as a bodyless `GET`. The one exception is a server that moves the
+request to TLS: a 301, 302, 307 or 308 from `http://host/path` to `https://host/path` (same host,
+path and query, default ports) is followed every time, and the request is resent there with its
+method, envelope and credentials. The response then carries an `https-upgrade` Problem naming both
+URLs: change the endpoint to `https://` to save the extra round trip. REST requests follow the same
+rule, and the HTTP Log's redirect list marks the hop "upgraded to HTTPS".
+
 Right-click the request pane and choose **Check WS-I compliance** to run the WS-I Basic Profile
 assertions against the exchange you just sent — see the report's summary, filter to failures, and
 export it as HTML. **Check WSDL WS-I compliance** on an interface row runs the same checks against

@@ -14,7 +14,7 @@ import { showToast } from '../../components/toast.js';
 import { getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type { WssEntryWire } from '../../../shared/wire-types.js';
+import type { WssEntryWire, WssPreviewResponse } from '../../../shared/wire-types.js';
 
 /** The envelope as it stands on screen: any debounced edit is committed first. */
 function currentEnvelope(requestId: string): string | undefined {
@@ -60,6 +60,27 @@ export async function applyOutgoingWssToEditor(requestId: string): Promise<void>
   }
   replaceEnvelope(requestId, result.value.envelopeXml);
   showToast('Applied outgoing WS-Security');
+}
+
+/** What {@link previewSecuredRequest} produced: the preview, or why there is none. */
+export type SecuredRequestPreview =
+  | { readonly ok: true; readonly preview: WssPreviewResponse; readonly sourceEnvelope: string }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * Secures the envelope on screen with the request's outgoing configuration, for the WSS
+ * inspector's preview. Nothing is written to the editor and nothing is sent; `sourceEnvelope` is
+ * what was previewed, so the caller can tell when the editor has moved on from it.
+ */
+export async function previewSecuredRequest(requestId: string): Promise<SecuredRequestPreview> {
+  const envelopeXml = currentEnvelope(requestId);
+  if (envelopeXml === undefined) {
+    return { ok: false, message: 'This request has no envelope to preview.' };
+  }
+  const result = await ipc().wss.previewOutgoing({ requestId, envelopeXml });
+  return result.ok
+    ? { ok: true, preview: result.value, sourceEnvelope: envelopeXml }
+    : { ok: false, message: result.error.message };
 }
 
 /** Strips the `wsse:Security` header the request's configuration writes. */

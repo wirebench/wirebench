@@ -21,6 +21,7 @@ import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
 import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
+import { subscribeToCertificateExpiry } from '../state/certificate-expiry.js';
 import { subscribeToCurrentValues } from '../state/current-values.js';
 import { subscribeToScriptValues } from '../state/script-values.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
@@ -54,6 +55,7 @@ import { OpenTeamWorkspaceDialog } from '../features/workspace/open-team-workspa
 import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
 import { SecretSourcesApproveDialog } from '../features/secret-sources/approve-dialog.js';
 import { SecretSourcesDialog } from '../features/secret-sources/secret-sources-dialog.js';
+import { CollectionExportReportDialog } from '../features/explorer/export-collection.js';
 import { SecretTokenDialog } from '../features/secrets/secret-token-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
 import { ConflictResolver } from '../features/sync/conflict-resolver.js';
@@ -74,6 +76,7 @@ import { Sidebar } from './sidebar.js';
 import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
+import { subscribeToMocks } from '../state/mock-runs.js';
 import { subscribeToSequenceProgress } from '../state/sequence-runs.js';
 
 /** The sidebar's size bounds, as a percentage of the row it shares with the editor/console column. */
@@ -286,6 +289,7 @@ export function AppShell() {
   }, []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
+  useEffect(() => subscribeToCertificateExpiry(), []);
   useEffect(() => subscribeToCurrentValues(), []);
   useEffect(() => subscribeToScriptValues(), []);
   useEffect(() => subscribeToPreferences(), []);
@@ -297,6 +301,7 @@ export function AppShell() {
   useEffect(() => subscribeToRestLive(), []);
   useEffect(() => subscribeToWsLive(), []);
   useEffect(() => subscribeToSequenceProgress(), []);
+  useEffect(() => subscribeToMocks(), []);
 
   const openPalette = useCallback((mode: PaletteMode = 'commands') => {
     setPaletteMode(mode);
@@ -495,6 +500,7 @@ export function AppShell() {
       <SecretSourcesApproveDialog />
       {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
       {sshEnabled && <TrustDialog />}
+      <CollectionExportReportDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import type {
   GrpcApiWire,
   InterfaceWire,
@@ -132,11 +133,16 @@ function interfaceAddress(iface: InterfaceWire): string | undefined {
 
 interface EndpointRowProps {
   readonly row: Row;
+  /**
+   * The row's 1-based position among every row of the grid (column and project headers
+   * included) and its roving-tabindex props.
+   */
+  readonly gridRow: GridRowProps & { readonly 'aria-rowindex': number };
   readonly onCommit: (key: string, url: string) => void;
 }
 
 /** One interface's override URL: a free-text field backed by the interface's declared addresses. */
-function EndpointRow({ row, onCommit }: EndpointRowProps) {
+function EndpointRow({ row, gridRow, onCommit }: EndpointRowProps) {
   const listId = useId();
   const [draft, setDraft] = useState(row.override ?? '');
 
@@ -150,6 +156,8 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
 
   return (
     <tr
+      role="row"
+      {...gridRow}
       data-testid="env-endpoint-row"
       data-endpoint-key={row.key}
       {...(row.source !== undefined ? { 'data-source': row.source } : {})}
@@ -158,7 +166,7 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
     >
       {/* Blank spacer cell — lines this row's Interface column up under the variables table's
           Variable column, both starting after the same-width leading column. */}
-      <td className="px-2 py-1" />
+      <td role="gridcell" className="px-2 py-1" />
       <th scope="row" className="px-2 py-1 text-left text-sm font-normal text-fg-default">
         {row.name}
         {row.entity === 'api' && (
@@ -167,7 +175,7 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
           </span>
         )}
       </th>
-      <td className="px-2 py-1">
+      <td role="gridcell" className="px-2 py-1">
         <input
           aria-label={label}
           data-testid="environment-endpoint"
@@ -199,7 +207,7 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
         </datalist>
       </td>
       {row.source !== undefined && (
-        <td className="px-2 py-1">
+        <td role="gridcell" className="px-2 py-1">
           <span
             data-testid="workspace-env-source"
             title={SOURCE_LABEL[row.source].title}
@@ -211,7 +219,7 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
       )}
       {/* Blank trailing spacer — matches the variables table's delete-action column so both
           tables' right edges line up. */}
-      <td className="px-2 py-1" />
+      <td role="gridcell" className="px-2 py-1" />
     </tr>
   );
 }
@@ -391,6 +399,9 @@ function EndpointsTableView({
   readonly rows: readonly Row[];
   readonly onCommit: (key: string, url: string) => void;
 }) {
+  // A grid, as History, Keystores and the variables table above are: the override rows are one
+  // tab stop, Up/Down/Home/End between them.
+  const { gridProps, rowProps } = useGridNavigation(rows.length);
   if (rows.length === 0) {
     return <p className="text-sm text-fg-subtle">Import a WSDL, or add an API, to override where it points here.</p>;
   }
@@ -399,12 +410,24 @@ function EndpointsTableView({
   // delete-action columns, so the two tables' Interface/Value and Source/Resolves columns —
   // and their outer edges — line up.
   const columns = hasSource ? 5 : 4;
+  const groups = groupByProject(rows);
+  // Every row counts toward `aria-rowindex` — the column headers and each project's header
+  // included — while only the override rows take the tab stop. Handed out in document order.
+  let rowIndex = 1;
+  let navigableIndex = 0;
+  const nextRowIndex = (): number => {
+    rowIndex += 1;
+    return rowIndex;
+  };
   return (
     <div className="overflow-hidden rounded-md border border-hairline">
       <table
+        role="grid"
         aria-label="Endpoint overrides"
+        aria-rowcount={1 + groups.length + rows.length}
         data-testid="env-endpoints-table"
         className="w-full table-fixed border-collapse text-sm"
+        {...gridProps}
       >
         <colgroup>
           <col className="w-11" />
@@ -414,7 +437,10 @@ function EndpointsTableView({
           <col className="w-9" />
         </colgroup>
         <thead>
-          <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase">
+          <tr
+            aria-rowindex={1}
+            className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase"
+          >
             <th className="px-2 py-1.5" />
             <th className="px-2 py-1.5 font-medium">Interface or API</th>
             <th className="px-2 py-1.5 font-medium">Override URL</th>
@@ -425,9 +451,9 @@ function EndpointsTableView({
         {/* Spec §2.2: one group per project, the project name as the group's header, rather than
             repeating it on every row. `rows` already arrives in the workspace's project order, so
             consecutive runs of the same project are exactly the groups. */}
-        {groupByProject(rows).map((group) => (
+        {groups.map((group) => (
           <tbody key={group.projectName}>
-            <tr className="bg-surface-raised">
+            <tr aria-rowindex={nextRowIndex()} className="bg-surface-raised">
               <th
                 scope="colgroup"
                 colSpan={columns}
@@ -437,9 +463,11 @@ function EndpointsTableView({
                 {group.projectName}
               </th>
             </tr>
-            {group.rows.map((row) => (
-              <EndpointRow key={`${row.entity}:${row.id}`} row={row} onCommit={onCommit} />
-            ))}
+            {group.rows.map((row) => {
+              const gridRow = { 'aria-rowindex': nextRowIndex(), ...rowProps(navigableIndex) };
+              navigableIndex += 1;
+              return <EndpointRow key={`${row.entity}:${row.id}`} row={row} gridRow={gridRow} onCommit={onCommit} />;
+            })}
           </tbody>
         ))}
       </table>

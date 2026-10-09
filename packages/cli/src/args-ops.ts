@@ -46,6 +46,8 @@ export const OP_OPTIONS = {
   tools: { type: 'string' },
   args: { type: 'string' },
   schema: { type: 'boolean' },
+  api: { type: 'string' },
+  out: { type: 'string' },
 } as const;
 
 export type OptionValues = Readonly<Record<string, string | boolean | readonly string[] | undefined>>;
@@ -85,6 +87,39 @@ export interface CallArgs {
 }
 
 const SECRET_SOURCE_FLAGS = ['no-secret-sources', 'trust-secret-sources', 'trust-secret-sources-hash'];
+
+export interface ExportArgs {
+  readonly command: 'export';
+  readonly format: 'postman' | 'opencollection';
+  /** `--project`, as typed; `.` when absent. */
+  readonly project: string;
+  /** `--api`: one API or interface by name, slug or id. Absent: the whole project. */
+  readonly api?: string;
+  /** `--out`: the folder the files go to. `.` when absent. */
+  readonly out: string;
+  readonly json: boolean;
+}
+
+export const EXPORT_USAGE =
+  'wirebench export <postman|opencollection> [--api <name|slug|id>] [--out <dir>] [--project <dir>] [--json]';
+
+/** @throws UsageError */
+export function parseExport(rest: readonly string[], values: OptionValues): ExportArgs {
+  refuseForeign(values, ['project', 'json', 'api', 'out'], 'wirebench export');
+  const [format, ...extra] = rest;
+  if ((format !== 'postman' && format !== 'opencollection') || extra.length > 0) {
+    throw new UsageError(`usage: ${EXPORT_USAGE}`);
+  }
+  const api = str(values, 'api');
+  return {
+    command: 'export',
+    format,
+    project: str(values, 'project') ?? '.',
+    ...(api !== undefined ? { api } : {}),
+    out: str(values, 'out') ?? '.',
+    json: values['json'] === true,
+  };
+}
 
 const CALL_FLAGS = ['project', 'json', 'args', 'env', 'schema', 'history-dir', ...SECRET_SOURCE_FLAGS];
 
@@ -174,6 +209,10 @@ wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <t
                        result exactly), --history-dir <dir> (default: the desktop's History folder).
                        Exit 0; 1 for a failed assertion or an invalid message; 2 for a refused call;
                        3 for a run error.
+${EXPORT_USAGE}
+                       Writes the project, or one API or interface, as a Postman Collection v2.1 with
+                       an environment file per environment, or as one OpenCollection YAML document, and
+                       reports what could not be represented.
 wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources] [--project <dir>]
                        Calls one contract operation with JSON arguments, as its MCP tool does, records it
                        in History, and prints the response.
@@ -183,6 +222,16 @@ wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--his
 
 /** `wirebench <verb> --help`. */
 export const VERB_HELP: Readonly<Record<string, string>> = {
+  export: `${EXPORT_USAGE}
+
+Writes the project (or the API or interface --api names) to --out (default: the current directory):
+  postman         <name>.postman_collection.json, and <env>.postman_environment.json per environment.
+  opencollection  <name>.opencollection.yml, environments included.
+SOAP requests are written as HTTP POSTs of their envelopes. No credential is ever written: auth keeps
+its shape, secrets become variables with no value. Prints the files, then a Warning: line for each
+thing lost and a Note: line for each thing changed to fit. The workspace's environments and properties
+are included when the project sits inside one. Exit 0; 2 for a usage error; 3 when --api names nothing
+or there is nothing to export.`,
   import: `${USAGE.import} [--project <dir>] [--json]
 
 Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: its definition is

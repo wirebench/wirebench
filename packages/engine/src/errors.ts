@@ -191,3 +191,11 @@ export class SequenceError extends WirebenchError {
 export function isWirebenchError(e: unknown): e is WirebenchError {
   return e instanceof WirebenchError;
 }
+
+/** Thrown when an export names a container the project does not have, or finds nothing to export. */
+export class ExportError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'ExportError';
+  }
+}

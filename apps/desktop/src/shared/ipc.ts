@@ -133,6 +133,7 @@ import {
   dialogsOpenFileResponseSchema,
   dialogsSaveFileRequestSchema,
   dialogsSaveFileResponseSchema,
+  preferencesPolicyResponseSchema,
   preferencesResetRequestSchema,
   preferencesResponseSchema,
   preferencesUpdateRequestSchema,
@@ -292,10 +293,15 @@ import {
   wsaRemoveHeadersRequestSchema,
   wsaEnvelopeResponseSchema,
   wssPreviewOutgoingRequestSchema,
+  wssPreviewResponseSchema,
   wssInsertEntryRequestSchema,
   wssRemoveOutgoingRequestSchema,
   wssEnvelopeResponseSchema,
+  wssPolicyStatusRequestSchema,
+  wssPolicyStatusResponseSchema,
   keystoresInspectRequestSchema,
+  certificatesCheckRequestSchema,
+  certificatesCheckResponseSchema,
   keystoresInspectResponseSchema,
   keystoresPickFileRequestSchema,
   keystoresPickFileResponseSchema,
@@ -324,6 +330,8 @@ import {
   workspaceRestoredResponseSchema,
   workspaceStashDraftsRequestSchema,
   workspaceCreateRequestSchema,
+  workspaceExportCollectionRequestSchema,
+  workspaceExportCollectionResponseSchema,
   workspaceExportProjectResponseSchema,
   workspaceIdRequestSchema,
   workspaceImportSuggestionRequestSchema,
@@ -394,6 +402,12 @@ import {
   hooksViewRequestWireSchema,
   hooksWorkspaceRequestWireSchema,
   sequenceCancelRequestSchema,
+  mockExchangeEventSchema,
+  mockIdRequestSchema,
+  mockResetResponseSchema,
+  mockStateEventSchema,
+  mockStatesResponseSchema,
+  mockStopResponseSchema,
   sequenceCancelResponseSchema,
   sequenceProgressEventSchema,
   sequenceWaitingEventSchema,
@@ -483,6 +497,11 @@ export const channels = {
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
     /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
     areas: defineChannel('app.areas', z.undefined(), z.object({ enabled: z.array(z.string()) })),
+    /**
+     * Opens another window at the workspace picker (the "New Window" command). Each window holds its
+     * own workspace; see the multi-window design.
+     */
+    newWindow: defineChannel('app.newWindow', z.undefined(), z.object({})),
   },
   auth: {
     /** Whether this build can do Kerberos/SPNEGO here, and why not when it cannot. */
@@ -910,6 +929,12 @@ export const channels = {
       workspaceProjectIdRequestSchema,
       workspaceExportProjectResponseSchema,
     ),
+    // A project, API or interface as a Postman Collection or an OpenCollection; main picks the folder.
+    exportCollection: defineChannel(
+      'workspace.exportCollection',
+      workspaceExportCollectionRequestSchema,
+      workspaceExportCollectionResponseSchema,
+    ),
     locateProject: defineChannel(
       'workspace.locateProject',
       workspaceProjectIdRequestSchema,
@@ -985,6 +1010,8 @@ export const channels = {
     get: defineChannel('preferences.get', z.undefined(), preferencesResponseSchema),
     update: defineChannel('preferences.update', preferencesUpdateRequestSchema, preferencesResponseSchema),
     reset: defineChannel('preferences.reset', preferencesResetRequestSchema, preferencesResponseSchema),
+    /** The managed-preferences policy; read once at startup, so the renderer asks once. */
+    policy: defineChannel('preferences.policy', z.undefined(), preferencesPolicyResponseSchema),
   },
   // The CA bundle preference has channels of its own because only main may set it: the path is
   // a file main reads on every send, so it comes from a native picker main ran, never from a
@@ -1117,6 +1144,16 @@ export const channels = {
     /** Stops a run: the step in flight is cancelled and the rest are skipped. */
     cancel: defineChannel('sequence.cancel', sequenceCancelRequestSchema, sequenceCancelResponseSchema),
   },
+  // A mock service (#59) served from this machine; edits go through `project.mutate`.
+  mock: {
+    /** Starts a mock, or restarts it when it runs; resolves with where it listens. */
+    start: defineChannel('mock.start', mockIdRequestSchema, mockStateEventSchema),
+    stop: defineChannel('mock.stop', mockIdRequestSchema, mockStopResponseSchema),
+    /** Puts every scenario of a running mock back to its start state. */
+    reset: defineChannel('mock.reset', mockIdRequestSchema, mockResetResponseSchema),
+    /** The state of every mock this window started that is still running, for a renderer that reloads. */
+    states: defineChannel('mock.states', z.object({}), mockStatesResponseSchema),
+  },
   // A request's scripts (#63): the editor's language features, answered by main's checker against
   // the request's own types, and a project's session values. Edits go through `project.mutate`.
   script: {
@@ -1181,6 +1218,9 @@ export const channels = {
       attachmentsAddDroppedResponseSchema,
     ),
   },
+  certificates: {
+    check: defineChannel('certificates.check', certificatesCheckRequestSchema, certificatesCheckResponseSchema),
+  },
   keystores: {
     inspect: defineChannel('keystores.inspect', keystoresInspectRequestSchema, keystoresInspectResponseSchema),
     pickFile: defineChannel('keystores.pickFile', keystoresPickFileRequestSchema, keystoresPickFileResponseSchema),
@@ -1190,9 +1230,10 @@ export const channels = {
     removeHeaders: defineChannel('wsa.removeHeaders', wsaRemoveHeadersRequestSchema, wsaEnvelopeResponseSchema),
   },
   wss: {
-    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssPreviewResponseSchema),
     insertEntry: defineChannel('wss.insertEntry', wssInsertEntryRequestSchema, wssEnvelopeResponseSchema),
     removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    policyStatus: defineChannel('wss.policyStatus', wssPolicyStatusRequestSchema, wssPolicyStatusResponseSchema),
   },
   ssh: {
     listHosts: defineChannel('ssh.listHosts', z.undefined(), sshListHostsResponseSchema),
@@ -1312,6 +1353,12 @@ export const events = {
     progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
     /** A step of a running sequence has sent and waits for its callback assertions. */
     waiting: defineEvent('sequence.waiting', sequenceWaitingEventSchema),
+  },
+  mock: {
+    /** A mock started, stopped, restarted after an edit, or failed to start. */
+    state: defineEvent('mock.state', mockStateEventSchema),
+    /** A running mock answered a request. */
+    exchange: defineEvent('mock.exchange', mockExchangeEventSchema),
   },
   script: {
     /** A project's session values changed; `script.listValues` has the new list. */

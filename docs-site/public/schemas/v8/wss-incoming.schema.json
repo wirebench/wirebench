@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/wss-incoming.schema.json",
+  "title": "Wirebench project file: Incoming WS-Security configuration",
+  "description": "Project format 8: `wss/incoming/*.yaml`.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "decryptKeystoreRef": { "type": "string" },
+    "decryptAlias": { "type": "string" },
+    "decryptKeyPasswordRef": { "type": "string" },
+    "signatureKeystoreRef": { "type": "string" },
+    "requireSignature": { "type": "boolean" },
+    "requireTimestamp": { "type": "boolean" },
+    "timestampSkewSeconds": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "verifyChain": { "type": "boolean" }
+  },
+  "required": ["id", "name"],
+  "additionalProperties": {}
+}

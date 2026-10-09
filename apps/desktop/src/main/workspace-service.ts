@@ -15,10 +15,13 @@
  * the whole point of these methods taking a `WebContents`.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { z } from 'zod';
+import { probeTlsChain } from '@wirebench/engine';
+import type { PemCertificateSummary } from '@wirebench/engine';
 import {
   assertPathSegment,
   createProject,
@@ -26,6 +29,8 @@ import {
   createWorkspaceEnvironment,
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
+  exportCollection,
+  nodeFs,
   shareSyncSettings,
   isTeamSecretsPath,
   loadLocalState,
@@ -57,6 +62,7 @@ import {
   workspaceDir,
   workspaceManifestFile,
   workspaceProjectDir,
+  writeFileAtomic,
   assertBranchName,
   assertRemoteUrl,
 } from '@wirebench/engine';
@@ -80,6 +86,7 @@ import type {
   WorkspaceProjectRef,
   WorkspaceShare,
 } from '@wirebench/engine';
+import type { CollectionExportFormat, CollectionExportResult } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
@@ -97,6 +104,7 @@ import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
 import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
+import { checkCertificates } from './certificate-expiry.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
@@ -165,6 +173,7 @@ import type {
   UnsavedRestoreNoticeWire,
   WorkspaceRestoredResponse,
   WsRequestPatchWire,
+  CertificatesCheckResponse,
 } from '../shared/wire-types.js';
 
 /**
@@ -242,8 +251,23 @@ export interface WorkspaceServiceDeps {
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** The session's issued-token cache, which every host's WS-Security preview peeks at; omitted in tests. */
   readonly issuedTokens?: IssuedTokenSource;
-  /** One history file per open project. */
-  readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'> & Partial<Pick<HistoryService, 'newestFor'>>;
+  /** One history file per open project, shared by every window's service (each holds its own). */
+  readonly history: Pick<HistoryService, 'open' | 'close'> & Partial<Pick<HistoryService, 'newestFor'>>;
+  /**
+   * `workspace-state.json`, shared by every window's service so their writes queue one after another.
+   * Omitted, the service makes its own.
+   */
+  readonly state?: WorkspaceState;
+  /**
+   * Whether this service empties `.joining/` when it starts. Only the first window's does: a later
+   * window's must not delete a clone another window's join is making. Default true.
+   */
+  readonly sweepJoining?: boolean;
+  /**
+   * Whether another window holds `workspaceId` open. Opening, renaming or deleting it from this one is
+   * refused (`workspace-open-elsewhere`), so one workspace's files have one writer. Omitted, never.
+   */
+  readonly heldElsewhere?: (workspaceId: string) => boolean;
   /**
    * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
    * and resolves once each has written its History entry.
@@ -639,16 +663,35 @@ export class WorkspaceService implements ProjectRouter {
   private workspaceOps: Promise<void> = Promise.resolve();
   /** Launch-time removal of `<workspaces>/.joining/` (clones a crash left half-made); join waits for it. */
   private readonly startup: Promise<void>;
+  /** Removes the accounts listener the constructor adds; see {@link dispose}. */
+  private stopAccountWatch: (() => void) | undefined;
+  /** What this service holds its history files as, so another window's service holding one too keeps it. */
+  private readonly historyOwner = `workspace-service-${randomUUID()}`;
 
   constructor(private readonly deps: WorkspaceServiceDeps) {
-    this.state = new WorkspaceState(deps.userDataDir);
+    this.state = deps.state ?? new WorkspaceState(deps.userDataDir);
     this.now = deps.now ?? ((): Date => new Date());
-    this.startup = this.clearJoining();
+    this.startup = deps.sweepJoining === false ? Promise.resolve() : this.clearJoining();
     // A sign-in (or any account change) may restart a server workspace's sync that a sign-out, a
-    // disabled account or removed access stopped (server-sync §3.4, R6). Lives as long as the service.
-    deps.server?.accounts.onChange((servers) => {
+    // disabled account or removed access stopped (server-sync §3.4, R6). Lives until `dispose`.
+    this.stopAccountWatch = deps.server?.accounts.onChange((servers) => {
       this.resumeServerSync(servers);
     });
+  }
+
+  /** Ends what outlives a workspace: the accounts listener. Called when this service's window closes. */
+  dispose(): void {
+    this.stopAccountWatch?.();
+    this.stopAccountWatch = undefined;
+  }
+
+  /** @throws WirebenchError `workspace-open-elsewhere` when another window holds `id`. */
+  private refuseHeldElsewhere(id: string): void {
+    if (this.deps.heldElsewhere?.(id) === true) {
+      throw new WirebenchError('workspace-open-elsewhere', 'That workspace is open in another window.', {
+        details: { workspaceId: id },
+      });
+    }
   }
 
   /** Empties `.joining/` once per service; a failure is kept for {@link lastError}, never thrown. */
@@ -788,6 +831,7 @@ export class WorkspaceService implements ProjectRouter {
     id: string,
     options: { readonly initialCommitMessage?: string; readonly teamSecrets?: boolean },
   ): Promise<WorkspaceWire> {
+    this.refuseHeldElsewhere(id);
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     const { share, tree } = await this.resolveTree(dir);
@@ -1075,7 +1119,7 @@ export class WorkspaceService implements ProjectRouter {
       }
       // History has to be open before anything can record a send against this project — and
       // before the project is announced (see `announced` above).
-      await this.deps.history.open(project.id);
+      await this.deps.history.open(project.id, this.historyOwner);
       announced = true;
       if (held !== undefined) {
         this.deps.hooks?.onProjectChanged?.(entry.projectId, held.project);
@@ -1148,7 +1192,7 @@ export class WorkspaceService implements ProjectRouter {
       // is kept so the caller (or the picker) can surface it.
       this.failure = errorMessage(error);
     }
-    // Every session, before `history.closeAll()` below: same reason as in `releaseEntry`, and one
+    // Every session, before the history files close below: same reason as in `releaseEntry`, and one
     // call rather than one per entry so sessions close in parallel.
     await this.deps.closeWsSessions?.().catch(() => undefined);
     // A snapshot: an in-flight `releaseEntry` splicing the live array must not make this skip one.
@@ -1161,7 +1205,9 @@ export class WorkspaceService implements ProjectRouter {
     this.grpcDrafts = {};
     this.wsDrafts = {};
     this.restored = undefined;
-    this.deps.history.closeAll();
+    for (const entry of open.entries) {
+      this.deps.history.close(entry.projectId, this.historyOwner);
+    }
     this.index.clear();
     this.current = undefined;
     // A pending reload (or a project-set mutation) still queued behind `workspaceOps` must not
@@ -1332,7 +1378,7 @@ export class WorkspaceService implements ProjectRouter {
     if (options.discardUnsaved) {
       await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
     }
-    this.deps.history.close(entry.projectId);
+    this.deps.history.close(entry.projectId, this.historyOwner);
     const index = open.entries.indexOf(entry);
     if (index !== -1) {
       open.entries.splice(index, 1);
@@ -1814,6 +1860,7 @@ export class WorkspaceService implements ProjectRouter {
 
   /** Renames a workspace — the open one, or any other on disk — and returns the fresh list. */
   async rename(id: string, name: string): Promise<WorkspaceSummaryWire[]> {
+    this.refuseHeldElsewhere(id);
     const open = this.current;
     if (open !== undefined && open.workspace.id === id) {
       await this.enqueueWorkspaceOp(async () => {
@@ -1849,6 +1896,7 @@ export class WorkspaceService implements ProjectRouter {
    * one, and returns the list without it. The renderer's confirmation happens before this call.
    */
   async delete(id: string): Promise<WorkspaceSummaryWire[]> {
+    this.refuseHeldElsewhere(id);
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     // Resolved *before* the close: a service with no trash must refuse outright rather than drop
     // the user at the picker and then throw with the folder still on disk.
@@ -2235,6 +2283,64 @@ export class WorkspaceService implements ProjectRouter {
     await saveProject(model, dir, this.fsOption());
     await copyProjectPayload(entry.dir, dir, model);
     return { dir };
+  }
+
+  /**
+   * Writes a project, or one of its APIs or interfaces, as a collection another tool reads
+   * (collection exporters spec §4), into a folder the user picks. The project is named by
+   * `projectId`, or found as the one holding `containerId`. The export is built before the dialog,
+   * so a target with nothing to export says so rather than asking where to put nothing. The
+   * workspace's environments and properties go with the project's.
+   *
+   * @returns `null` when the dialog was cancelled.
+   * @throws ExportError `export-target-not-found` or `export-nothing`; WirebenchError `unknown-project`.
+   */
+  async exportCollection(
+    request: {
+      readonly projectId?: string | undefined;
+      readonly containerId?: string | undefined;
+      readonly format: CollectionExportFormat;
+    },
+    sender: WebContents,
+  ): Promise<{
+    readonly dir: string;
+    readonly files: readonly string[];
+    readonly result: CollectionExportResult;
+  } | null> {
+    const open = this.requireOpen();
+    const holds = (entry: OpenProjectEntry): boolean => {
+      const model = entry.host?.model();
+      if (model === undefined || request.containerId === undefined) return false;
+      const id = request.containerId;
+      return [...model.interfaces, ...model.apis, ...model.grpcApis, ...model.wsApis].some((c) => c.id === id);
+    };
+    const entry = request.projectId !== undefined ? this.requireEntry(request.projectId) : open.entries.find(holds);
+    const model = entry?.host?.model();
+    if (model === undefined) {
+      throw new WirebenchError('unknown-project', 'The project to export is not open.', {
+        details: { ...(request.projectId !== undefined ? { projectId: request.projectId } : {}) },
+      });
+    }
+    const result = exportCollection(request.format, {
+      project: model,
+      target: request.containerId !== undefined ? { kind: 'container', id: request.containerId } : { kind: 'project' },
+      environments: [...open.workspace.environments, ...model.environments],
+      workspaceProperties: open.workspace.properties,
+      workspaceDisabledProperties: open.workspace.disabledProperties,
+    });
+    const picked = await this.dialogs().pickFolderToWrite(sender, this.requirePicks(), {
+      title:
+        request.format === 'postman' ? 'Export as Postman Collection to folder' : 'Export as OpenCollection to folder',
+    });
+    if (picked === undefined) {
+      return null;
+    }
+    const dir = await realpath(picked);
+    // Each name is a bare file name the exporter made from a slug, so joining it cannot leave `dir`.
+    for (const file of result.files) {
+      await writeFileAtomic(nodeFs, join(dir, file.name), file.text);
+    }
+    return { dir, files: result.files.map((file) => file.name), result };
   }
 
   /**
@@ -3003,6 +3109,10 @@ export class WorkspaceService implements ProjectRouter {
       for (const sequence of project.sequences) {
         add(sequence.id);
       }
+      // `mock.start` addresses a mock by id, so it must route like any other entity.
+      for (const mock of project.mocks) {
+        add(mock.id);
+      }
       for (const environment of project.environments) {
         add(environment.id);
       }
@@ -3329,9 +3439,55 @@ export class WorkspaceService implements ProjectRouter {
     return trustInvalid ? { rejectUnauthorized: false } : undefined;
   }
 
+  /**
+   * `certificates.check`: every certificate the open workspace relies on, judged against
+   * `warnDays` — each project's keystores and the CA bundle always, and the chains its TLS
+   * endpoints present when `probeEndpoints` is set. Each probe goes through the proxy and judges
+   * trust against the anchors a send from that project would use. See `certificate-expiry.ts`.
+   *
+   * @param options `probe` stands in for the network in tests
+   */
+  async checkCertificates(options: {
+    readonly probeEndpoints: boolean;
+    readonly warnDays: number;
+    readonly probe?: typeof probeTlsChain;
+  }): Promise<CertificatesCheckResponse> {
+    const hosts = this.hosts();
+    const sources = await Promise.all(hosts.map(async (host) => await host.certificateSources()));
+    // The bundle is a preference, the same for every host; the first that may read it answers.
+    let caBundle: PemCertificateSummary[] = [];
+    for (const host of hosts) {
+      caBundle = await host.caBundleCertificates();
+      if (caBundle.length > 0) break;
+    }
+    const probe = options.probe ?? probeTlsChain;
+    return await checkCertificates({
+      sources,
+      caBundle,
+      warnDays: options.warnDays,
+      probeEndpoints: options.probeEndpoints,
+      probe: async (projectId, target) => {
+        const host = this.hostFor(projectId);
+        const proxy = await host.proxyFor(target.url);
+        const ca = await host.trustAnchors();
+        return await probe(target, {
+          ...(proxy !== undefined
+            ? { proxy: { url: proxy.url, ...(proxy.auth !== undefined ? { auth: proxy.auth } : {}) } }
+            : {}),
+          ...(ca !== undefined ? { ca } : {}),
+        });
+      },
+    });
+  }
+
   /** @inheritdoc */
   hasOutgoingWss(...args: Parameters<ProjectRouter['hasOutgoingWss']>): ReturnType<ProjectRouter['hasOutgoingWss']> {
     return this.hostOfEntity(args[0]).hasOutgoingWss(...args);
+  }
+
+  /** @inheritdoc */
+  wssPolicyInputs(...args: Parameters<ProjectRouter['wssPolicyInputs']>): ReturnType<ProjectRouter['wssPolicyInputs']> {
+    return this.hostOfEntity(args[0]).wssPolicyInputs(...args);
   }
 
   /** @inheritdoc */

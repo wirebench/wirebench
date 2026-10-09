@@ -1,5 +1,6 @@
 /** REST as a protocol module (spec §3). */
 import { defineProtocol } from '../protocol/module.js';
+import { restMocking } from './mock.js';
 import { restRun } from './run.js';
 import { restScripting } from './scripting.js';
 import { restStorage } from './storage.js';
@@ -11,4 +12,5 @@ export const restProtocol = defineProtocol({
   storage: restStorage,
   run: restRun,
   scripting: restScripting,
+  mock: restMocking,
 });

@@ -110,6 +110,7 @@ function makeProject(options: ProjectOptions = {}): Project {
     grpcApis: [],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [ENV],
     wss: { outgoing: options.outgoing ?? [], incoming: [], keystores: options.keystores ?? [] },
   };

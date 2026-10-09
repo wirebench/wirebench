@@ -4,7 +4,14 @@
  * `ipcMain` imports so they can be unit-tested directly against real engine output.
  */
 
-import { capSseRows, endpointUrlFromContract, findBinding, qnameToString, SSE_SUMMARY_LIMITS } from '@wirebench/engine';
+import {
+  capSseRows,
+  endpointUrlFromContract,
+  findBinding,
+  qnameToString,
+  SSE_SUMMARY_LIMITS,
+  wsaActionKey,
+} from '@wirebench/engine';
 import {
   redactHeaderPairs,
   redactHeaders,
@@ -23,6 +30,7 @@ import type {
   GrpcCallResult,
   GrpcResponseMessage,
   HttpExchange,
+  QName,
   WsdlImportResult,
   SoapExchange,
   SoapFault,
@@ -34,6 +42,8 @@ import type {
   WsFrame,
   WsFrameContract,
   WsHandshake,
+  WssSignatureCheck,
+  WssTimelineStep,
 } from '@wirebench/engine';
 import type {
   RestEventStreamWire,
@@ -57,6 +67,8 @@ import type {
   WsFrameContractWire,
   WsFrameWire,
   WsHandshakeWire,
+  WssSignatureCheckWire,
+  WssTimelineStepWire,
 } from '../shared/wire-types.js';
 
 /** Base name of a URL or file path (its last `/`-separated, query/fragment-free segment). */
@@ -64,6 +76,17 @@ function basenameOf(location: string): string {
   const withoutQuery = location.split(/[?#]/)[0] ?? location;
   const segments = withoutQuery.split('/').filter((segment) => segment.length > 0);
   return segments.at(-1) ?? location;
+}
+
+/** The operation's WS-SecurityPolicy as a spreadable `{ wssPolicy }`, or nothing when it has none. */
+function wssPolicyOf(
+  result: WsdlImportResult,
+  bindingName: QName,
+  operationName: string,
+): { wssPolicy?: OperationSummaryWire['wssPolicy'] } {
+  const policy = result.wssPolicy[wsaActionKey(bindingName, operationName)];
+  // The engine's model and the wire schema are field for field the same plain data.
+  return policy === undefined ? {} : { wssPolicy: structuredClone(policy) as OperationSummaryWire['wssPolicy'] };
 }
 
 /** Converts a `WsdlImportResult` plus its assigned id into the `InterfaceSummary` sent over IPC. */
@@ -104,6 +127,7 @@ export function toInterfaceSummary(result: WsdlImportResult, id: string, definit
       part: mimePart.part,
       ...(mimePart.type !== undefined ? { type: mimePart.type } : {}),
     })),
+    ...wssPolicyOf(result, op.bindingName, op.operationName),
   }));
 
   const problems: ImportProblemWire[] = result.problems.map((problem) => ({
@@ -626,6 +650,40 @@ export function toResponseAttachmentWires(
 }
 
 /** Converts a `SoapExchange` plus its `sendId` into the `request.send` response payload. */
+/**
+ * The debugger's per-reference report as it crosses the bridge: digests, algorithm names and
+ * element names only — nothing here can carry key material or a secret.
+ */
+export function toSignatureCheckWire(check: WssSignatureCheck): WssSignatureCheckWire {
+  return {
+    canonicalization: check.canonicalization,
+    signatureMethod: check.signatureMethod,
+    references: check.references.map((reference) => ({
+      uri: reference.uri,
+      ...(reference.element !== undefined ? { element: reference.element } : {}),
+      ok: reference.ok,
+      transforms: [...reference.transforms],
+      inclusivePrefixes: [...reference.inclusivePrefixes],
+      digestAlgorithm: reference.digestAlgorithm,
+      expectedDigest: reference.expectedDigest,
+      ...(reference.computedDigest !== undefined ? { computedDigest: reference.computedDigest } : {}),
+      ...(reference.problem !== undefined ? { problem: reference.problem } : {}),
+    })),
+    signatureValueOk: check.signatureValueOk,
+  };
+}
+
+/** One `wsse:Security` timeline step as it crosses the bridge. */
+export function toTimelineStepWire(step: WssTimelineStep): WssTimelineStepWire {
+  return {
+    kind: step.kind,
+    summary: step.summary,
+    ...(step.covers !== undefined ? { covers: [...step.covers] } : {}),
+    ...(step.id !== undefined ? { id: step.id } : {}),
+    ...(step.actor !== undefined ? { actor: step.actor } : {}),
+  };
+}
+
 export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?: { show?: boolean }): ExchangeSummary {
   return {
     sendId,
@@ -681,8 +739,14 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
                       ...(action.expires !== undefined ? { expires: action.expires } : {}),
                       ...(action.references !== undefined ? { references: [...action.references] } : {}),
                       ...(action.coversBody !== undefined ? { coversBody: action.coversBody } : {}),
+                      ...(action.check !== undefined ? { check: toSignatureCheckWire(action.check) } : {}),
+                      ...(action.skewSeconds !== undefined ? { skewSeconds: action.skewSeconds } : {}),
+                      ...(action.toleranceSeconds !== undefined ? { toleranceSeconds: action.toleranceSeconds } : {}),
                     })),
                     errors: [...exchange.wss.incoming.errors],
+                    ...(exchange.wss.incoming.timeline !== undefined
+                      ? { timeline: exchange.wss.incoming.timeline.map(toTimelineStepWire) }
+                      : {}),
                   },
                 }
               : {}),

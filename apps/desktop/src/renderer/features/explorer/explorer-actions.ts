@@ -17,6 +17,8 @@ import {
   openInterfaceTab,
   updateDefinition,
 } from '../interface-editor/interface-actions.js';
+import { openMockTab } from '../mock/mock-actions.js';
+import { useMockRunsStore } from '../../state/mock-runs.js';
 import { openSequenceTab } from '../sequence/sequence-actions.js';
 import { useSequenceRunsStore } from '../../state/sequence-runs.js';
 import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
@@ -679,6 +681,77 @@ export const explorerActions = {
       return;
     }
     useUiStore.getState().requestDeleteNode({ kind: 'sequence', id: sequenceId, name: sequence.name, requestCount: 0 });
+  },
+
+  /**
+   * Generates a mock of an interface (in `binding`, or its first SOAP 1.1 binding) or a REST API from
+   * its cached definition, and opens its tab.
+   */
+  newMock(containerId: string | undefined, binding?: string): void {
+    if (containerId === undefined) {
+      return;
+    }
+    const state = useProjectStore.getState();
+    const projectId = state.projectOf[containerId];
+    if (projectId === undefined) {
+      return;
+    }
+    const container = state.interfaces[containerId]?.name ?? state.apis[containerId]?.name ?? 'Mock';
+    const names = (state.mockLists[projectId] ?? []).map((mock) => mock.name);
+    void state
+      .addMock(projectId, containerId, nextName(`${container} mock`, names), binding)
+      .then((mockId) => {
+        openMockTab(mockId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New mock failed');
+      });
+  },
+
+  openMock(mockId: string | undefined): void {
+    if (mockId !== undefined) {
+      openMockTab(mockId);
+    }
+  },
+
+  /** Starts a stopped mock, or stops a running one. */
+  toggleMock(mockId: string | undefined): void {
+    if (mockId === undefined) {
+      return;
+    }
+    const runs = useMockRunsStore.getState();
+    void (runs.states[mockId]?.running === true ? runs.stop(mockId) : runs.start(mockId));
+  },
+
+  duplicateMock(mockId: string | undefined): void {
+    if (mockId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .duplicateMock(mockId)
+      .then((copyId) => {
+        openMockTab(copyId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Duplicate mock failed');
+      });
+  },
+
+  /** Deletes a mock and its folder; a running one stops. */
+  removeMock(mockId: string | undefined): void {
+    if (mockId === undefined) {
+      return;
+    }
+    const mock = useProjectStore.getState().mocks[mockId];
+    if (mock === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeMock(mockId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore.getState().requestDeleteNode({ kind: 'mock', id: mockId, name: mock.name, requestCount: 0 });
   },
 
   deleteWsRequest(requestId: string | undefined): void {

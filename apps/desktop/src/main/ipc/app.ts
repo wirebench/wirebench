@@ -16,7 +16,8 @@ import { registerHandler } from './register.js';
  * `menuApi` is injectable so the menu can be asserted on with a fake `Menu`; production passes
  * Electron's own. `checkForUpdates` is injectable for the same reason, and is absent in a
  * development run — the channel still answers, with the same "could not check" the offline
- * case gets, so the renderer needs no second code path.
+ * case gets, so the renderer needs no second code path. `newWindow` opens another window; absent (a
+ * test), the channel answers without one.
  */
 export function registerAppChannels(
   menuApi: MenuApi = {
@@ -26,6 +27,7 @@ export function registerAppChannels(
   },
   checkForUpdates: () => Promise<UpdateStatusWire> = () =>
     Promise.resolve({ kind: 'error', message: 'Could not check for updates' }),
+  newWindow: () => void = () => undefined,
   enabledAreas: readonly AreaId[] = AREAS.map((area) => area.id),
 ): void {
   registerHandler(channels.app.version, () =>
@@ -39,6 +41,11 @@ export function registerAppChannels(
   registerHandler(channels.app.areas, () => Promise.resolve({ enabled: [...enabledAreas] }));
 
   registerHandler(channels.app.checkForUpdates, async () => ({ status: await checkForUpdates() }));
+
+  registerHandler(channels.app.newWindow, () => {
+    newWindow();
+    return Promise.resolve({});
+  });
 
   registerHandler(channels.app.registerMenu, (request, sender) => {
     const items = applyCommandMenu(

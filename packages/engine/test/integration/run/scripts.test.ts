@@ -94,6 +94,7 @@ function project(restRequests: readonly RestRequestDef[], soapRequests: readonly
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
     sequences: [],
+    mocks: [],
   } as unknown as Project;
 }
 

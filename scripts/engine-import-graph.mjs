@@ -45,11 +45,12 @@ export const GROUP_FOLDERS = Object.freeze({
 /**
  * The imports core makes of a protocol group (spec §7.2, rule 2). Rule 1 has no exceptions.
  *
- * Two kinds, told apart by `until`: the two files that are what they are (`protocols.ts`,
- * `index.ts`); and the project model, History, the loader and the writer, which hold protocol
- * types until the phases of #184 that split them. Format detection and the `.http` and
+ * Two kinds, told apart by `until`: the three files that are what they are (`protocols.ts`,
+ * `index.ts`, `project-files.ts`); and the project model, History, the loader and the writer, which
+ * hold protocol types until the phases of #184 that split them. Format detection and the `.http` and
  * OpenCollection importers, which turn one file or collection into several protocols' APIs, wait
- * for phase 7, which decides import's API. Each importer keeps its protocol imports in its `map.ts`.
+ * for phase 7, which decides import's API. Each importer keeps its protocol imports in its `map.ts`;
+ * the collection exporters, which read every protocol's APIs, keep theirs in `export/tree.ts`.
  *
  * The spec's table also names `project/save.ts`; it imports no protocol folder, so it has no entry
  * here, and an entry nothing uses fails the check.
@@ -59,6 +60,7 @@ export const GROUP_FOLDERS = Object.freeze({
 export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'protocols.ts', to: '*', until: 'stays: the composition file' },
   { from: 'index.ts', to: '*', until: 'stays: the public exports' },
+  { from: 'project-files.ts', to: '*', until: 'stays: the published schemas list every protocol file' },
   { from: 'project/schema.ts', to: 'wss/model.ts', until: 'phase 3' },
   { from: 'run/issued-token.ts', to: 'wss/model.ts', typeOnly: true, until: 'the SOAP send moves out of run (#184)' },
   { from: 'run/issued-token.ts', to: 'wss/trust/client.ts', until: 'the SOAP send moves out of run (#184)' },
@@ -96,6 +98,10 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import/opencollection/map.ts', to: 'rest/url.ts', until: 'phase 7' },
   { from: 'import/opencollection/map.ts', to: 'grpc/model.ts', until: 'phase 7' },
   { from: 'import/opencollection/map.ts', to: 'ws/model.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'rest/model.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'rest/url.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'grpc/model.ts', typeOnly: true, until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'ws/model.ts', typeOnly: true, until: 'phase 7' },
 ]);
 
 /**

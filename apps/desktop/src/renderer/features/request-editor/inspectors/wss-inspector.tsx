@@ -9,9 +9,18 @@
  * badge is exactly the mistake this pane exists to prevent.
  */
 
+import { useState } from 'react';
 import { FileLock2, Clock, ShieldCheck } from 'lucide-react';
 import { useEditorsStore } from '../../../state/editors.js';
-import type { ExchangeSummary, WssActionWire } from '../../../../shared/wire-types.js';
+import { useProjectStore } from '../../../state/project.js';
+import { previewSecuredRequest } from '../wss-actions.js';
+import type { SecuredRequestPreview } from '../wss-actions.js';
+import type {
+  ExchangeSummary,
+  WssActionWire,
+  WssSignatureCheckWire,
+  WssTimelineStepWire,
+} from '../../../../shared/wire-types.js';
 
 /** The icon and column label each action kind carries. */
 const KIND = {
@@ -29,6 +38,86 @@ function Chip({ ok, children }: { readonly ok: boolean; readonly children: strin
     >
       {children}
     </span>
+  );
+}
+
+/**
+ * Why a signature failed, reference by reference: what each covered, whether its digest matched,
+ * and both digests with the transforms that produced the computed one. Shown only for a failed
+ * signature — on a valid one every digest matched and the list would be noise.
+ */
+function ReferenceChecks({ check }: { readonly check: WssSignatureCheckWire }) {
+  return (
+    <div data-testid="wss-reference-checks" className="mt-1 flex flex-col gap-1">
+      <div className="text-fg-subtle">
+        SignedInfo: {check.signatureMethod}, {check.canonicalization}
+        {check.references.length > 0 &&
+          check.references.every((reference) => reference.ok) &&
+          !check.signatureValueOk && (
+            <span className="ml-1">
+              <Chip ok={false}>SignatureValue invalid</Chip>
+            </span>
+          )}
+      </div>
+      {check.references.map((reference) => (
+        <div key={reference.uri} data-testid="wss-reference-check" className="rounded-sm border border-hairline p-1">
+          <div className="flex items-center gap-1">
+            <span className="font-mono">
+              {reference.element ?? 'unresolved'} #{reference.uri}
+            </span>
+            <Chip ok={reference.ok}>{reference.ok ? 'matches' : 'differs'}</Chip>
+          </div>
+          <div>
+            {reference.transforms.length === 0 ? 'no transform' : reference.transforms.join(' + ')}
+            {reference.inclusivePrefixes.length > 0 ? ` (prefixes ${reference.inclusivePrefixes.join(' ')})` : ''},{' '}
+            {reference.digestAlgorithm}
+          </div>
+          {!reference.ok && (
+            <dl className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-2 font-mono break-all">
+              <dt className="text-fg-subtle">expected</dt>
+              <dd>{reference.expectedDigest}</dd>
+              <dt className="text-fg-subtle">computed</dt>
+              <dd>{reference.computedDigest ?? reference.problem ?? '—'}</dd>
+            </dl>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The clock skew a timestamp was judged with, signed the way people read it. */
+function skewText(skewSeconds: number, toleranceSeconds: number | undefined): string {
+  const measured =
+    skewSeconds < 0 ? `created ${String(-skewSeconds)} s ahead of this clock` : `created ${String(skewSeconds)} s ago`;
+  return toleranceSeconds === undefined ? measured : `${measured}; ${String(toleranceSeconds)} s skew tolerated`;
+}
+
+/** The `wsse:Security` header step by step; `order` says how to read it. */
+export function SecurityTimeline({
+  steps,
+  order,
+  testId,
+}: {
+  readonly steps: readonly WssTimelineStepWire[];
+  readonly order: string;
+  readonly testId: string;
+}) {
+  return (
+    <section aria-label="Security header" className="flex flex-col gap-0.5 px-0.5">
+      <h3 className="text-xs tracking-wider text-fg-subtle uppercase">
+        Security header <span className="normal-case">· {order}</span>
+      </h3>
+      <ol data-testid={testId} className="list-decimal pl-5 text-xs text-fg-muted">
+        {steps.map((step, index) => (
+          // Steps have no ids of their own to rely on: their position is their identity.
+          <li key={`${step.kind}-${String(index)}`} data-testid="wss-timeline-step">
+            {step.summary}
+            {step.actor !== undefined && <span className="text-fg-subtle"> (for {step.actor})</span>}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -69,8 +158,75 @@ function ActionRow({ action }: { readonly action: WssActionWire }) {
             {action.expires !== undefined ? ` → ${action.expires}` : ''}
           </div>
         )}
+        {action.skewSeconds !== undefined && (
+          <div data-testid="wss-clock-skew" className="mt-0.5">
+            Clock: {skewText(action.skewSeconds, action.toleranceSeconds)}
+          </div>
+        )}
+        {action.check !== undefined && !action.ok && <ReferenceChecks check={action.check} />}
       </td>
     </tr>
+  );
+}
+
+/**
+ * The request as a send would secure it, before Send (#57): its Security-header timeline and the
+ * envelope, read-only. Nothing is written to the editor and nothing is sent; the preview is a
+ * snapshot, dropped as soon as the envelope on screen changes.
+ */
+function OutgoingPreview({ requestId }: { readonly requestId: string }) {
+  const [preview, setPreview] = useState<SecuredRequestPreview | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const envelope = useProjectStore((state) => state.requests[requestId]?.envelopeXml);
+  const current = preview?.ok === true && preview.sourceEnvelope !== envelope ? undefined : preview;
+
+  return (
+    <section aria-label="Outgoing WS-Security" className="flex flex-col gap-1 border-t border-hairline px-0.5 pt-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs tracking-wider text-fg-subtle uppercase">Outgoing</h3>
+        <button
+          type="button"
+          data-testid="wss-preview-button"
+          className="rounded-sm border border-hairline px-1.5 py-0.5 text-xs text-fg-default disabled:opacity-60"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void previewSecuredRequest(requestId)
+              .then(setPreview)
+              .finally(() => {
+                setBusy(false);
+              });
+          }}
+        >
+          Preview secured request
+        </button>
+      </div>
+      {current?.ok === false && (
+        <p data-testid="wss-preview-error" role="alert" className="text-xs text-status-danger">
+          {current.message}
+        </p>
+      )}
+      {current?.ok === true && (
+        <>
+          {current.preview.timeline.length > 0 ? (
+            <SecurityTimeline
+              steps={current.preview.timeline}
+              order="applied in this order"
+              testId="wss-preview-timeline"
+            />
+          ) : (
+            <p className="text-xs text-fg-subtle">The configuration adds no Security header.</p>
+          )}
+          <pre
+            data-testid="wss-preview-envelope"
+            aria-label="Secured request envelope"
+            className="max-h-64 overflow-auto rounded-sm border border-hairline p-2 font-mono text-xs break-all whitespace-pre-wrap text-fg-default"
+          >
+            {current.preview.envelopeXml}
+          </pre>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -84,35 +240,45 @@ export interface WssInspectorProps {
 /** The body of the response pane's `WSS` inspector. */
 export function WssInspector({ exchange, requestId }: WssInspectorProps) {
   const actions = exchange?.wss?.incoming?.actions ?? [];
+  const timeline = exchange?.wss?.incoming?.timeline ?? [];
   const setView = useEditorsStore((state) => state.setResponseView);
 
-  if (actions.length === 0) {
-    return <p className="p-3 text-sm text-fg-subtle">No WS-Security processing for this response</p>;
+  if (actions.length === 0 && timeline.length === 0) {
+    return (
+      <div className="flex flex-col gap-1 p-2">
+        <p className="p-1 text-sm text-fg-subtle">No WS-Security processing for this response</p>
+        <OutgoingPreview requestId={requestId} />
+      </div>
+    );
   }
 
   const decrypted = actions.some((action) => action.kind === 'decrypt' && action.ok);
 
   return (
     <div className="flex flex-col gap-1 p-2">
-      <table
-        data-testid="wss-actions-table"
-        aria-label="WS-Security actions"
-        className="w-full border-collapse text-sm"
-      >
-        <thead>
-          <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
-            <th className="pb-1 font-medium">Step</th>
-            <th className="pb-1 font-medium">Result</th>
-            <th className="pb-1 font-medium">Detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {actions.map((action, index) => (
-            // Actions have no ids: their position in the report is their identity.
-            <ActionRow key={`${action.kind}-${String(index)}`} action={action} />
-          ))}
-        </tbody>
-      </table>
+      {actions.length > 0 && (
+        <table
+          data-testid="wss-actions-table"
+          aria-label="WS-Security actions"
+          className="w-full border-collapse text-sm"
+        >
+          <thead>
+            <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
+              <th className="pb-1 font-medium">Step</th>
+              <th className="pb-1 font-medium">Result</th>
+              <th className="pb-1 font-medium">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {actions.map((action, index) => (
+              // Actions have no ids: their position in the report is their identity.
+              <ActionRow key={`${action.kind}-${String(index)}`} action={action} />
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {timeline.length > 0 && <SecurityTimeline steps={timeline} order="in header order" testId="wss-timeline" />}
 
       {decrypted && (
         <p data-testid="wss-decrypted-note" className="px-0.5 text-xs text-fg-subtle">
@@ -138,6 +304,8 @@ export function WssInspector({ exchange, requestId }: WssInspectorProps) {
           </button>
         </p>
       )}
+
+      <OutgoingPreview requestId={requestId} />
     </div>
   );
 }

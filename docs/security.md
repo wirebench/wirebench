@@ -545,6 +545,37 @@ What this does not change: a script someone else wrote runs when you send its re
 request already sends what it says to where it says. The rules above make sure the script gains
 nothing a declarative request could not already do, beyond CPU and memory within its limits.
 
+## A mock listens on loopback and serves data
+
+A mock service (#59) is the engine's first listening socket. It takes three kinds of untrusted input:
+requests from whatever reaches the port, stub files from a teammate or a pulled branch, and dispatch
+scripts. The format decision is [ADR-0021](adr/0021-mock-stubs-are-files-under-mocks.md).
+
+- **Loopback unless you say otherwise.** The host is a start option that defaults to `127.0.0.1`; no
+  project file can choose it, so a shared mock cannot make a machine listen on every interface. On
+  loopback a request whose `Host` is not a loopback name is refused with 421, which defeats DNS
+  rebinding. Tests: `packages/engine/test/unit/mock/server.test.ts`.
+- **Bounded requests.** A body over 10 MiB is refused with 413, and the headers and the whole request
+  each have 30 s. XSD validation runs on its worker with a time budget, JSON Schema validation inside
+  the node cap, and XPath, JSONPath and regular expressions on the evaluation worker with budgets.
+- **No DTD.** A SOAP request containing `<!DOCTYPE` is answered with a client fault before any parser
+  sees it, so an entity-expansion or external-entity body is a fault, not a hang or a file read. Tests:
+  `packages/engine/test/unit/soap/mock.test.ts`.
+- **A stub is data.** A stub file is size-checked, parsed with the YAML core schema and validated with
+  zod and the loader's limits; its body is opened only beside it, under its own name. A body is sent byte
+  for byte: no property, secret or environment variable is expanded into it. A header holding CR, LF or
+  NUL, or one the server computes (`Content-Length`, `Transfer-Encoding`, `Connection`), is refused at
+  load. Tests: `packages/engine/test/unit/mock/file.test.ts`, `load-save.test.ts`.
+- **A dispatch script has no capabilities.** It runs under ADR-0016, as above, and sees the request and
+  the scenario states only — no secrets, properties, network, files or timers. Tests:
+  `packages/engine/test/unit/mock/script.test.ts`.
+- **What the log keeps.** A mock holds no project secrets, but a client may send credentials, so
+  `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` values and secret-looking URL
+  parameters are masked before an event leaves the engine, and a logged body is capped at 64 KiB.
+
+What this does not change: a mock binds a port only when it is started, and it sends nothing. Recording
+live traffic through a proxy (#60) will add its own section.
+
 ## The cookie jar
 
 Responses' cookies are kept in a jar per workspace (#44,

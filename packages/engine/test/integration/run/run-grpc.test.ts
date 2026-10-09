@@ -80,6 +80,7 @@ function makeProject(
     grpcApis: [api],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

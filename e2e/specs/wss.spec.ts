@@ -180,14 +180,28 @@ test.describe('wss', () => {
     await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
 
+    // --- preview the secured request before Send (#57) ---------------------------------------
+    const inspectors = page.getByRole('tablist', { name: 'Response inspectors' });
+    await inspectors.getByRole('tab', { name: /^WSS/ }).click();
+    const wssPanel = page.getByTestId('inspector-panel-response');
+    await wssPanel.getByTestId('wss-preview-button').click();
+    await expect(wssPanel.getByTestId('wss-preview-timeline')).toBeVisible({ timeout: 15_000 });
+    await expect(wssPanel.getByTestId('wss-timeline-step')).toHaveText([
+      /^Timestamp \(created/,
+      /^X\.509 certificate/,
+      /^Signed Body, Timestamp \(/,
+    ]);
+    await expect(wssPanel.getByTestId('wss-preview-envelope')).toContainText('ds:Signature');
+
     await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
 
-    // The echo route hands the envelope back verbatim, so this *is* what went out.
-    const responseEditor = page.getByTestId('response-editor');
-    await expect(responseEditor).toContainText('ds:Signature', { timeout: 15_000 });
-    await expect(responseEditor).toContainText('wsse:BinarySecurityToken');
+    // The echo route hands the envelope back verbatim, so this *is* what went out. The WSS
+    // inspector opened for the preview leaves the editor too short for Monaco to render the
+    // header, so read the model rather than the DOM.
+    await expect.poll(() => monacoModelText(page), { timeout: 15_000 }).toContain('ds:Signature');
+    await expect.poll(() => monacoModelText(page)).toContain('wsse:BinarySecurityToken');
     // Two references — one for the Body's generated wsu:Id, one for the Timestamp's.
     await expect.poll(() => monacoModelText(page)).toContain('<ds:Reference URI="#Id-');
     await expect.poll(() => monacoModelText(page)).toContain('<ds:Reference URI="#TS-');
@@ -351,6 +365,6 @@ test.describe('wss', () => {
     await page.getByTestId('request-send').click();
     await expect(responseInspectors.getByRole('tab', { name: 'WSS ✗' })).toBeVisible({ timeout: 30_000 });
     await expect(panel.getByText('failed', { exact: true })).toHaveCount(1);
-    await expect(panel).toContainText('references failed validation');
+    await expect(panel).toContainText('(Body) does not match');
   });
 });

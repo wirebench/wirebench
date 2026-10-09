@@ -215,6 +215,7 @@ function project(shape: Shape = {}): Project {
     grpcApis: [grpcApi],
     wsApis: [],
     sequences: [],
+    mocks: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

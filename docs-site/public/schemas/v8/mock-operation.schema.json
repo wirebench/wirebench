@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-operation.schema.json",
+  "title": "Wirebench project file: Mock operation",
+  "description": "Project format 8: `mocks/*/operations/*/operation.yaml`.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "order": { "default": 0, "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+    "operation": { "type": "string", "minLength": 1 },
+    "dispatch": { "default": "sequence", "type": "string", "enum": ["sequence", "random", "match", "script"] },
+    "default": { "type": "string", "minLength": 1 }
+  },
+  "required": ["id", "name", "operation"],
+  "additionalProperties": {}
+}

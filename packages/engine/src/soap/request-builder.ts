@@ -119,9 +119,16 @@ function findAbstractOperation(
   return operation;
 }
 
+/** Which message of an operation a sample is built from. */
+export type MessageDirection = 'input' | 'output';
+
 /** The seed namespaces a scope names up-front, in a stable order. */
-function seedNamespaces(input: RequestBuildInput, bindingOperation: BindingOperation | undefined): string[] {
-  const bodyNamespace = bindingOperation?.input?.body.namespace;
+function seedNamespaces(
+  input: RequestBuildInput,
+  bindingOperation: BindingOperation | undefined,
+  direction: MessageDirection,
+): string[] {
+  const bodyNamespace = bindingOperation?.[direction]?.body.namespace;
   return [
     input.definition.targetNamespace,
     ...(bodyNamespace !== undefined ? [bodyNamespace] : []),
@@ -203,6 +210,22 @@ function literalSampleRequest(
   genOptions?: Partial<GenerateOptions>,
   options?: RequestBuildOptions,
 ): GeneratedRequest {
+  return buildSampleMessage(input, op, 'input', genOptions, options);
+}
+
+/**
+ * The sample envelope of one message of a binding operation, with the contract's text as written:
+ * `input` is the request {@link buildLiteralSampleRequest} builds, `output` the response a mock
+ * service answers with (RPC style wraps it in `<operation>Response`). The transport half (action,
+ * `Content-Type`) is the operation's either way.
+ */
+export function buildSampleMessage(
+  input: RequestBuildInput,
+  op: OperationRef,
+  direction: MessageDirection,
+  genOptions?: Partial<GenerateOptions>,
+  options?: RequestBuildOptions,
+): GeneratedRequest {
   const problems: BuildProblem[] = [];
   const resolved = resolveOperation(input, op, problems);
   const indent = options?.indent ?? '   ';
@@ -216,7 +239,7 @@ function literalSampleRequest(
     };
   }
   const { binding, bindingOperation } = resolved;
-  const scope = new NamespaceScope(seedNamespaces(input, bindingOperation), genOptions?.prefixes ?? {});
+  const scope = new NamespaceScope(seedNamespaces(input, bindingOperation, direction), genOptions?.prefixes ?? {});
   const ctx: BodyBuildContext = {
     definition: input.definition,
     schemaSet: input.schemaSet,
@@ -226,28 +249,29 @@ function literalSampleRequest(
     problems,
   };
 
-  const headerXml = buildHeaders(ctx, bindingOperation.input?.headers ?? []);
+  const headerXml = buildHeaders(ctx, bindingOperation[direction]?.headers ?? []);
 
   let bodyXml = '';
   const abstract = findAbstractOperation(input.definition, binding, op.operationName, problems);
-  const inputRef = abstract?.input;
-  if (abstract !== undefined && inputRef === undefined) {
+  const messageRef = abstract?.[direction];
+  if (abstract !== undefined && messageRef === undefined) {
     problems.push({
       code: 'missing-message',
-      message: `Operation "${op.operationName}" declares no input message`,
+      message: `Operation "${op.operationName}" declares no ${direction} message`,
     });
   }
-  if (inputRef !== undefined) {
-    const message = findMessage(input.definition, inputRef.message);
+  if (messageRef !== undefined) {
+    const message = findMessage(input.definition, messageRef.message);
     if (message === undefined) {
       problems.push({
         code: 'missing-message',
-        message: `Operation "${op.operationName}" refers to unknown message ${qnameToString(inputRef.message)}`,
+        message: `Operation "${op.operationName}" refers to unknown message ${qnameToString(messageRef.message)}`,
       });
     } else {
       const style = bindingOperation.style ?? binding.style;
-      const body = bindingOperation.input?.body ?? { use: 'literal' as const };
-      bodyXml = buildBody(ctx, op.operationName, style, body, message, abstract?.parameterOrder);
+      const body = bindingOperation[direction]?.body ?? { use: 'literal' as const };
+      const wrapper = direction === 'output' ? `${op.operationName}Response` : op.operationName;
+      bodyXml = buildBody(ctx, wrapper, style, body, message, abstract?.parameterOrder);
     }
   }
 

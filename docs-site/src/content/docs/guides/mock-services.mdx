@@ -1,0 +1,142 @@
+---
+title: Mock services
+description: Serve a SOAP interface or a REST API from your machine, from its own contract, with canned responses checked into the project.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A mock service answers requests for an interface or an API before the real one exists, or while it
+is down. It is made from the contract you imported, checks each request against it, and answers with
+responses you write. Every response is a file in the project, so a mock is reviewed and shared like
+the requests beside it.
+
+## Make a mock
+
+<Steps>
+
+1. Right-click an interface or an imported REST API in the explorer and choose **New Mock**. For a WSDL
+   with more than one binding, right-click the binding instead and choose **New Mock of this binding**.
+2. The mock opens in its own tab, and appears under **Mocks** in the project. It has one operation for
+   each operation of the contract, each with a response named `Default`: a sample of the operation's
+   output for SOAP, and the lowest documented 2xx with its example (or a sample of its schema) for
+   REST.
+3. Choose **Start**. The tab shows the mock's URL, with **Copy**; point a request or your own client
+   at it.
+
+</Steps>
+
+The mock is made from the definition Wirebench cached when you imported it, so making one and running
+one never use the network. An interface or API imported without a cached definition can't be mocked
+until you import it again with definitions cached.
+
+## Settings
+
+| Setting | What it does |
+| --- | --- |
+| **Port** | The port to listen on. `0` picks a free one when the mock starts, and keeps it while the mock is edited |
+| **Path** | Where the mock is served. A SOAP mock also serves its WSDL at `<path>?wsdl`, with every address rewritten to the mock |
+| **Contract check** | **Refuse a request that breaks the contract** answers it with a SOAP fault or a 4xx; **Answer anyway and log the problems** dispatches it and lists the problems in the log; **Do not check requests** only routes it |
+
+A running mock picks up an edit at once: it restarts with the new settings, on the same port.
+
+## Pick a response
+
+Select an operation to see its responses and choose how it picks one (**Dispatch**):
+
+| Dispatch | Picks |
+| --- | --- |
+| **In order** | The next response each time, back to the first after the last |
+| **At random** | Any response |
+| **By match conditions** | The first response whose conditions all hold. A response with none matches anything, so put it last as a catch-all |
+| **By script** | The response a script names |
+
+When nothing is picked, the operation's **Default response** is sent.
+
+A **match condition** reads one value from the request: the body, with an XPath or JSONPath
+expression, or a query parameter, a header or a REST path parameter by name. It then checks that the
+value **equals** a string, **matches** a regular expression, **is present** or **is absent**.
+
+Each response sets its **Status**, a **Delay (ms)**, its **Headers** and its **Body** (XML, JSON,
+text or none). The body is sent exactly as written: it never reads a property, a secret or a value
+from the request.
+
+### Scenarios
+
+A scenario makes a mock remember. Give responses a **Scenario name**; a response marked **Only in
+state** is a candidate only while its scenario is in that state, and **Then move to** changes the state
+once it is sent. Every scenario starts in `Started`. For example, a `GET /cart` answers `empty` until
+a `POST /cart` response moves the `cart` scenario to `filled`.
+
+**Reset state** puts every scenario back to `Started`, and the turn of **In order** back to the first
+response. Stopping a mock does the same.
+
+### A dispatch script
+
+With **By script**, the operation's `dispatch.ts` chooses. It sees the request and the scenario states,
+and calls `respond` with the name of one of the responses:
+
+```ts
+if (request.query.express?.[0] === 'true') {
+  respond('Next day');
+} else if (scenarios.get('stock') === 'empty') {
+  respond('Out of stock');
+} else {
+  respond('Default');
+}
+```
+
+| Name | What it is |
+| --- | --- |
+| `request` | `operation`, `method`, `path`, `query` (each name's values), `headers` (name and value pairs), `pathParams` and `body` as text |
+| `responses` | The responses the script may pick, with their `id` and `name` |
+| `respond(name)` | Picks a response. Without a call, the default response is sent |
+| `scenarios` | `get(name)` and `set(name, state)` |
+| `log(...)` | Writes to the mock's log |
+
+The script runs in the same sandbox as [request scripts](/wirebench/docs/guides/scripts/), with a
+second to finish. It has no properties, secrets, network or files. Choose **Apply script** to save
+it.
+
+## The request log
+
+The tab lists every request the mock answered this session: the time, the method and path, the
+operation and response, the status and how long it took. Select a row to see the request and the
+response, with the problems the contract check found. Credentials a client sent (`Authorization`,
+`Cookie` and the like) are masked. **Clear** empties the list.
+
+## Who can reach a mock
+
+A mock listens on this machine only (`127.0.0.1`), and refuses a request whose `Host` names anything
+else, so a web page can't reach it by renaming itself. To serve a phone or another machine, turn on
+**Preferences → Mock services → Listen on all interfaces**.
+
+<Aside type="caution">
+With that setting on, anything that can reach your machine on the mock's port can call it. The mock
+tab warns while it is on.
+</Aside>
+
+A mock stops when you stop it, close its project or quit Wirebench. It is never started for you.
+
+## Where it is saved
+
+```
+mocks/
+  orders-mock/
+    mock.yaml
+    operations/
+      place-order/
+        operation.yaml
+        accepted.response.yaml
+        accepted.body.xml
+        dispatch.ts
+```
+
+Each response is a file with its body beside it, so two people adding responses edit different files,
+and a body diffs as XML or JSON. The [project format](/wirebench/docs/reference/project-format/) describes
+every field.
+
+## Related
+
+- [Scripts](/wirebench/docs/guides/scripts/)
+- [Preferences](/wirebench/docs/guides/preferences/)
+- [Project format](/wirebench/docs/reference/project-format/)

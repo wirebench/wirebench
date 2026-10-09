@@ -617,6 +617,9 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
   };
 }
 
+/** The holder of a file opened with no owner: it stays open until {@link HistoryService.closeAll}. */
+const APP_OWNER = 'app';
+
 /**
  * Owns one history file per open project, keyed by project id. Opening a second project does not
  * evict the first: every `list`/`get`/`clear` spans the open files unless a `projectId` narrows
@@ -628,6 +631,13 @@ export class HistoryService {
 
   /** The watch on each open file, keyed by project id. */
   private readonly watchers = new Map<string, { close(): void }>();
+
+  /**
+   * Who holds each open file, keyed by project id: one window's workspace, or {@link APP_OWNER}.
+   * The same linked project folder can be open in two windows' workspaces, so one closing must not
+   * take the file from the other (multi-window design).
+   */
+  private readonly owners = new Map<string, Set<string>>();
 
   /** Reloads run one after another, so two change events never race one handle. */
   private reloads: Promise<void> = Promise.resolve();
@@ -642,8 +652,18 @@ export class HistoryService {
     private readonly options: HistoryServiceOptions = {},
   ) {}
 
-  /** Opens (or reuses, if already open) the history file for `projectId`. */
-  async open(projectId: string): Promise<void> {
+  /**
+   * Opens (or reuses, if already open) the history file for `projectId`, held by `owner`. With no
+   * owner, a file already open is only reused; one not yet open is held by the app until
+   * {@link closeAll}.
+   */
+  async open(projectId: string, owner?: string): Promise<void> {
+    const holders = this.owners.get(projectId);
+    if (holders !== undefined) {
+      if (owner !== undefined) holders.add(owner);
+    } else {
+      this.owners.set(projectId, new Set([owner ?? APP_OWNER]));
+    }
     if (this.files.has(projectId)) {
       return;
     }
@@ -652,8 +672,9 @@ export class HistoryService {
     const file = await openHistory(path, {
       ...(cap !== undefined ? { cap } : {}),
     });
-    // Re-check: a concurrent `open` for the same project may have won the race while we awaited.
-    if (!this.files.has(projectId)) {
+    // Re-check: a concurrent `open` for the same project may have won the race while we awaited,
+    // or every holder closed it meanwhile.
+    if (!this.files.has(projectId) && this.owners.has(projectId)) {
       this.files.set(projectId, file);
       const watch = this.options.watch;
       if (watch !== undefined) {
@@ -674,8 +695,19 @@ export class HistoryService {
     }
   }
 
-  /** Detaches from one project's history. Safe to call when it is not open. */
-  close(projectId: string): void {
+  /**
+   * `owner` lets go of one project's history; the file is detached once no one holds it. With no
+   * owner, it is detached outright. Safe to call when it is not open.
+   */
+  close(projectId: string, owner?: string): void {
+    const holders = this.owners.get(projectId);
+    if (owner !== undefined && holders !== undefined) {
+      holders.delete(owner);
+      if (holders.size > 0) {
+        return;
+      }
+    }
+    this.owners.delete(projectId);
     this.watchers.get(projectId)?.close();
     this.watchers.delete(projectId);
     this.files.delete(projectId);
@@ -688,6 +720,7 @@ export class HistoryService {
     }
     this.watchers.clear();
     this.files.clear();
+    this.owners.clear();
   }
 
   /**
@@ -741,12 +774,16 @@ export class HistoryService {
   }
 
   /** The open files a query addresses: one project's, or all of them. */
-  private filesFor(projectId: string | undefined): readonly HistoryFile[] {
+  /** One project's file, the files of `projectId`'s list, or (`undefined`) every open file. */
+  private filesFor(projectId: string | readonly string[] | undefined): readonly HistoryFile[] {
     if (projectId === undefined) {
       return [...this.files.values()];
     }
-    const file = this.files.get(projectId);
-    return file !== undefined ? [file] : [];
+    const ids = typeof projectId === 'string' ? [projectId] : projectId;
+    return ids.flatMap((id) => {
+      const file = this.files.get(id);
+      return file !== undefined ? [file] : [];
+    });
   }
 
   /**
@@ -845,13 +882,17 @@ export class HistoryService {
   }
 
   /**
-   * Newest-first entries across every open history file (or just `projectId`'s). Entries sharing
+   * Newest-first entries across every open history file (or just `projectId`'s, or the files of
+   * `projectIds` — one window's projects). Entries sharing
    * a timestamp keep their insertion order — the sort is stable over each file's own newest-first
    * list. `total` is the number of matching entries before `limit` (and ignoring `before`), which
    * is what the renderer shows as the result count.
    */
-  list(query?: HistoryListQuery & { readonly projectId?: string }): { entries: HistoryEntryWire[]; total: number } {
-    const files = this.filesFor(query?.projectId);
+  list(query?: HistoryListQuery & { readonly projectId?: string; readonly projectIds?: readonly string[] }): {
+    entries: HistoryEntryWire[];
+    total: number;
+  } {
+    const files = this.filesFor(query?.projectId ?? query?.projectIds);
     const page: HistoryListQuery = {
       ...(query?.query !== undefined ? { query: query.query } : {}),
       ...(query?.before !== undefined ? { before: query.before } : {}),
@@ -891,8 +932,8 @@ export class HistoryService {
     return entry === undefined ? undefined : toHistoryEntryWire(entry);
   }
 
-  /** Empties one project's history, or every open project's. Returns the entries cleared. */
-  async clear(projectId?: string): Promise<number> {
+  /** Empties one project's history, a list of projects', or every open project's. Returns the entries cleared. */
+  async clear(projectId?: string | readonly string[]): Promise<number> {
     let cleared = 0;
     for (const file of this.filesFor(projectId)) {
       cleared += await file.clear();

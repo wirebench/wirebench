@@ -45,9 +45,10 @@ const sections: Section[] = [
   },
   {
     heading: 'Importers and switching',
-    text: 'Turn a WSDL, an OpenAPI document, a Postman collection, a curl command, a .proto file, a running gRPC server or a legacy SOAP project into requests you can run and edit. An OpenAPI or AsyncAPI document behind authentication is fetched with Basic, a bearer token or an API key. When an OpenAPI document changes, Update Definition re-reads it into the REST API you already have.',
+    text: 'Turn a WSDL, an OpenAPI document, a Postman collection, a curl command, a .proto file, a running gRPC server or a legacy SOAP project into requests you can run and edit. An OpenAPI or AsyncAPI document behind authentication is fetched with Basic, a bearer token or an API key. When an OpenAPI document changes, Update Definition re-reads it into the REST API you already have. And nothing is locked in: export a project or an API as a Postman Collection or an OpenCollection, with a report of anything that did not fit.',
     links: [
       { label: 'Read the guide', slug: DOCS_LINKS.importers },
+      { label: 'Exporting collections', slug: DOCS_LINKS.exporters },
       { label: 'Switching from Postman', slug: DOCS_LINKS.switchingPostman },
       { label: 'AsyncAPI contracts', slug: DOCS_LINKS.asyncapi },
     ],
@@ -61,10 +62,11 @@ const sections: Section[] = [
   },
   {
     heading: 'Authentication and secrets',
-    text: 'Request auth attaches credentials to the HTTP request; WS-Security signs or encrypts parts of a SOAP envelope; client certificates prove your identity at the TLS layer.',
+    text: 'Request auth attaches credentials to the HTTP request; WS-Security signs or encrypts parts of a SOAP envelope; client certificates prove your identity at the TLS layer. On managed machines, IT can lock the proxy, the CA bundle and update checks with a policy file.',
     links: [
       { label: 'Read the auth guide', slug: DOCS_LINKS.auth },
       { label: 'Read the secrets guide', slug: DOCS_LINKS.secrets },
+      { label: 'Managed preferences', slug: DOCS_LINKS.managedPreferences },
     ],
   },
   {
@@ -97,6 +99,11 @@ const sections: Section[] = [
       { label: 'Read the guide', slug: DOCS_LINKS.sequences },
       { label: 'Read the assertions guide', slug: DOCS_LINKS.assertions },
     ],
+  },
+  {
+    heading: 'Mock services',
+    text: 'A mock answers for a SOAP interface or a REST API from its own contract, before the real one exists or while it is down. It checks each request against the contract and answers with responses kept as files in the project, picked in order, at random, by match conditions or by a script, with scenarios that remember state.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.mockServices }],
   },
   {
     heading: 'Snapshot regression',
@@ -148,7 +155,7 @@ const slugify = (heading: string): string =>
 
 <Base
   title="Features — Wirebench"
-  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, snapshots, shared workspaces, Wirebench Server, webhooks, CLI and agents."
+  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, mock services, snapshots, shared workspaces, Wirebench Server, webhooks, CLI and agents."
 >
   <div class="features">
     <h1>Features</h1>

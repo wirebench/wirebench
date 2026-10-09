@@ -133,7 +133,7 @@ build here rather than going stale silently.
 | SC-K5 | **CLI and MCP** (Kerberos spec) — the CLI runner and MCP send with Kerberos; where the binding is unavailable, that request errors and the run continues | `packages/cli/test/integration/kerberos-run.test.ts` | Met |
 | SC-K6 | **Preemptive WebSocket and gRPC** (Kerberos spec) — a WebSocket upgrade and a gRPC call carry a preemptive Negotiate token | `packages/engine/test/unit/http/auth/kerberos-token.test.ts` ("withNegotiate"), `packages/engine/test/integration/run/ws-exchange.test.ts`, `packages/engine/test/integration/grpc/send.test.ts` | Met |
 | SC-K7 | **Project format 8** (Kerberos spec) — a v7 project loads unchanged and is rewritten with only the version line changed; plaintext `password` is refused on load and over IPC | `packages/engine/test/unit/project/kerberos-auth-format.test.ts`, `packages/engine/test/unit/project/format-migration.test.ts`, `apps/desktop/test/kerberos-wire.test.ts` | Met |
-| SC-K8 | **Vendored, hash-checked binding** (Kerberos spec) — every desktop build ships a vendored, hash-checked `kerberos.node` for each arch with a prebuild; where none loads, the UI shows the scheme disabled with the reason and nothing crashes | `scripts/vendor-kerberos.test.ts`, `scripts/check-kerberos-vendor.test.ts`, `apps/desktop/test/renderer/auth-fields-kerberos.test.tsx` | Met |
+| SC-K8 | **Vendored, hash-checked binding** (Kerberos spec) — every desktop build ships a vendored, hash-checked `kerberos.node` for its own arch where a prebuild exists (both darwin arches on macOS, for the universal merge); where none loads, the UI shows the scheme disabled with the reason and nothing crashes | `scripts/vendor-kerberos.test.ts`, `scripts/check-kerberos-vendor.test.ts`, `apps/desktop/test/renderer/auth-fields-kerberos.test.tsx` | Met |
 | SC-K9 | **Tokens masked** (Kerberos spec) — Negotiate tokens are masked in History, the HTTP log, HAR exports and CLI reports | `packages/engine/test/unit/redact/negotiate.test.ts`; desktop History, HAR export and exchange summary: `apps/desktop/test/kerberos-masking.test.ts` | Met |
 | SC-K10 | **Engine seam** (Kerberos spec) — `kerberosToken(spn, credentials)` is exported from the engine, applies the same availability, credential and mechanism rules as the HTTP path, and its token is accepted by a real acceptor | `packages/engine/test/integration/auth/kerberos-real.test.ts` ("makes a token a real acceptor accepts") | Met |
 | SC-KT1 | **Token wait bounded** (Kerberos deadline spec) — a SOAP or REST send whose KDC never answers fails with `timeout` and the Kerberos message within its own `timeoutMs` | `packages/engine/test/integration/auth/kerberos.test.ts` | Met |
@@ -195,3 +195,27 @@ WS-Trust client and its cache), and SC-WT6 with the fourth (the Kerberos credent
 | **SC-WT2** The certificate credential signs the RST | `rst.test.ts`, `ws-trust-send.test.ts` |
 | **SC-WT3** A holder-of-key or sender-vouches signature refers to the SAML token, and covers it through the STR-Transform without altering it | `signature-saml.test.ts`, `str-transform.test.ts`, `saml-preservation.test.ts`, `verify-str.test.ts` |
 | **SC-WT6** The Kerberos credential asks the token service with a ticket | `rst-kerberos.test.ts`, `ws-trust-send.test.ts`, `kerberos-real.test.ts` (the `kerberos-integration` CI job: a real KDC accepts the RST's AP-REQ) |
+
+## WS-Security debugger (docs/specs/2026-10-07-wss-debugger-design.md)
+
+| Criterion | Proved by |
+|---|---|
+| **SC-WD1** A tampered Body reports the failing reference, expected and computed digests, and the canonicalisation and digest algorithm | `check.test.ts`, `e2e/specs/wss.spec.ts` |
+| **SC-WD2** A broken SignatureValue is reported with every reference matching | `check.test.ts`, `wss-incoming.test.tsx` |
+| **SC-WD3** A missing signer token, an unmatched thumbprint or issuer and serial, and an undecryptable message each name what was asked for | `verify.test.ts`, `process.test.ts` |
+| **SC-WD4** A timestamp ahead, expired or stale reports the skew in seconds and the tolerance | `verify.test.ts`, `wss-incoming.test.tsx` |
+| **SC-WD5** The Security header timeline lists each step in header order with what it covers; the preview lists the configured entries in order | `timeline.test.ts`, `ipc-wss.test.ts`, `e2e/specs/wss.spec.ts` |
+| **SC-WD6** The WSS inspector previews the secured envelope and timeline without sending or editing | `wss-incoming.test.tsx`, `e2e/specs/wss.spec.ts` |
+
+## Mock services (docs/specs/2026-10-08-mock-services-design.md)
+
+Issue #59. The engine half shipped in #329; the desktop half adds the explorer, the tab and the e2e.
+
+| Criterion | Proved by |
+|---|---|
+| **SC-M1** A mock is files of its own under the project's mocks folder, one per response with its body beside it, and a file Wirebench cannot read survives every save | `packages/engine/test/unit/mock/{file,load-save}.test.ts`, `apps/desktop/test/project-watch.test.ts` |
+| **SC-M2** A mock is generated offline from a SOAP binding or a REST API's cached definition | `packages/engine/test/unit/mock/generate.test.ts`, `apps/desktop/test/mock-mutations.test.ts` |
+| **SC-M3** A request that does not conform to the contract is refused under `reject`, logged under `report`, and only routed under `off` | `packages/engine/test/unit/soap/mock.test.ts`, `packages/engine/test/unit/rest/{mock,request-check}.test.ts` |
+| **SC-M4** Sequence, random, match and script dispatch pick as specified, and scenarios move on | `packages/engine/test/unit/mock/{dispatch,script}.test.ts` |
+| **SC-M5** A mock listens on loopback unless the preference says otherwise, refuses a rebound `Host`, serves its WSDL, and masks credentials in its log | `packages/engine/test/unit/mock/server.test.ts`, `packages/engine/test/unit/soap/mock-wsdl.test.ts`, `apps/desktop/test/mock-runner.test.ts` |
+| **SC-M6** A mock is built, started, stopped and watched from the UI | `apps/desktop/test/renderer/mock-tab.test.tsx`, `apps/desktop/test/renderer/{tree-nodes,explorer-context-menu}.test.ts`, `e2e/specs/mocks.spec.ts` |

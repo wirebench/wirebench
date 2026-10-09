@@ -35,6 +35,12 @@ export interface HistoryChannelDeps {
    * it a re-send is refused as `history-resend-unsupported`.
    */
   readonly send?: SendThroughEngineDeps;
+  /**
+   * The caller's window's open projects: a list or clear that names no project covers these only, so
+   * one window's History never shows or empties another's. Absent (or answering `undefined`), every
+   * open file.
+   */
+  readonly projectIds?: () => readonly string[] | undefined;
 }
 
 /** Refuses a re-send when there is no engine send to put it through (a test that registers none). */
@@ -391,20 +397,25 @@ function isRedacted(entry: HistoryEntryWire): boolean {
 }
 
 export function registerHistoryChannels(history: HistoryService, deps: HistoryChannelDeps): void {
-  registerHandler(channels.history.list, (request) =>
-    Promise.resolve(
+  registerHandler(channels.history.list, (request) => {
+    const projectIds = request.projectId === undefined ? deps.projectIds?.() : undefined;
+    return Promise.resolve(
       history.list({
         ...(request.query !== undefined ? { query: request.query } : {}),
         limit: request.limit ?? 200,
         ...(request.before !== undefined ? { before: request.before } : {}),
-        ...(request.projectId !== undefined ? { projectId: request.projectId } : {}),
+        ...(request.projectId !== undefined
+          ? { projectId: request.projectId }
+          : projectIds !== undefined
+            ? { projectIds }
+            : {}),
       }),
-    ),
-  );
+    );
+  });
 
   registerHandler(channels.history.get, (request) => Promise.resolve({ entry: history.get(request.id) }));
 
-  registerHandler(channels.history.clear, async () => ({ cleared: await history.clear() }));
+  registerHandler(channels.history.clear, async () => ({ cleared: await history.clear(deps.projectIds?.()) }));
 
   registerHandler(channels.history.resend, (request) => {
     const entry = history.get(request.id);

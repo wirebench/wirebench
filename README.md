@@ -49,7 +49,7 @@ and keep everything as plain files in git.
 | **Collaboration**          | Shared workspaces over git or a synced folder, with in-app Sync and a conflict resolver; encrypted team secrets                                                                                               |
 | **Migration**              | Import of legacy single-file SOAP projects — interfaces, endpoints, saved requests, properties and environments — with a report of everything not carried over                                                |
 
-All of the above is in 3.1.0; the [changelog](CHANGELOG.md) says which release brought each.
+All of the above is in 4.0.0; the [changelog](CHANGELOG.md) says which release brought each.
 
 <table>
   <tr>
@@ -106,7 +106,7 @@ No service to hand? Try `http://www.dneonline.com/calculator.asmx?WSDL`.
 exit codes, and JUnit or JSON reports — as a GitHub Action, a GitLab template, a container image or plain `npx`:
 
 ```yaml
-- uses: wirebench/wirebench/action@v3.1.0
+- uses: wirebench/wirebench/action@v4.0.0
   with:
     project: ./api-tests
     env: staging
@@ -154,8 +154,8 @@ Open work is tracked as issues in [milestones](https://github.com/wirebench/wire
 
 | Milestone                                                                                | Still open                                                                                                                                                                                                                     |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [3.2 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build |
-| [4.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                      |
+| [4.0 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build |
+| [5.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                      |
 | [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6)              | GraphQL, test suites and data-driven runs, JKS keystores, WS-ReliableMessaging, a plugin API, localisation                                                                                                                     |
 
 Server editions shipped on `main`: Community, Team and Enterprise, decided by a signed offline license file

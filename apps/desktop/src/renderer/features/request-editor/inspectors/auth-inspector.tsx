@@ -15,6 +15,7 @@ import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../../components/aut
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
 import { OAuth2StatusPanel } from '../../rest-editor/oauth2-status.js';
+import { WssPolicyPanel } from './wss-policy-panel.js';
 import type { RequestAuthSourceWire } from '../../../../shared/wire-types.js';
 
 const INPUT_CLASS =
@@ -109,6 +110,7 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
         </>
       )}
 
+      <WssPolicyPanel requestId={requestId} />
       <WssSelectors requestId={requestId} />
     </div>
   );

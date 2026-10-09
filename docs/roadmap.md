@@ -25,6 +25,10 @@ took the project format to version 4. 3.1.0 (2026-10-04), the first release afte
 3.1 milestones together: the engine's protocol modules (ADR-0017), the MCP server and its contract tools,
 `--baseline` runs, request scripts, sequences, Wirebench Server with webhooks, team secrets and editions,
 the cookie jar, HTML preview and REST resend from History; it took the project format to version 6.
+4.0.0 (2026-10-08) carries the 4.0 milestone, enterprise trust: secrets from external managers,
+encrypted team secrets, Kerberos/SPNEGO, WS-Trust and SAML tokens, the WS-Security debugger,
+WS-Security from a WSDL's policy, managed preferences and certificate expiry warnings; it took the
+project format to version 8.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
@@ -63,7 +67,7 @@ is picked up.
 | — | REST client, minimum viable | Dev | L | **shipped in 2.0.0** | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. Done, with OpenAPI 3 import and OAuth2; item 8 is what it left out. |
 | — | Importers: OpenAPI 3.2, Swagger 1.x/2.0, Postman Collections | Dev | M | **shipped in 2.1.0** | Switching cost is the moat, and anyone with saved requests elsewhere judges a client by whether it can bring them along. One Import… dialog detects the format; what it cannot map is reported rather than dropped. |
 | 8 | REST follow-ups and contract validation | Dev | S–M each | new; HTML preview (#48) and cookie jar with current values (#44) shipped | Each follow-up is a gap a user hits within a day of real use, and none needs a format change. Responses validated against the OpenAPI schema match what SOAP already does against XSD. |
-| 9 | Contract diff and breaking-change report ✚ | Both | M | new | Two WSDLs or two OpenAPI documents compared per operation, each change classified breaking or compatible, exportable and runnable in CI. Builds on Update Definition's change report; both definition caches already exist. |
+| 9 | Contract diff and breaking-change report ✚ | Both | M | **shipped**: `wirebench diff-contract` (#56, [spec](specs/2026-10-08-wirebench-contract-diff-design.md)) | Two WSDLs or two OpenAPI documents compared per operation, each change classified breaking or compatible, exportable and runnable in CI. Builds on Update Definition's change report; both definition caches already exist. |
 | 10 | WS-Security debugger and policy-driven configuration ✚ | Ent | M | new | Explain a failed verify or decrypt — which reference, digest, canonicalisation, token or clock skew — and propose the configuration from the WSDL's security policy, as WS-Addressing is already enabled from policy. Engine-only work; can land at any time. |
 | 11 | Mock services: contract-validated, recorded, file-based | Both | L | phase 3 | The upstream test system being down is the most common blocker a team has. Mocks that validate requests against the contract, live as reviewable files in the project, and are recorded from live traffic are what other mocks lack. |
 | 12 | Sequences: chained requests, property transfer, declarative assertions | Both | M | **shipped** 2026-09-28 | The first slice of functional testing, without code, runnable from the UI and the CLI. Done to [the Sequences spec](specs/2026-09-28-sequences-design.md); a response value is data, never a template ([ADR-0015](adr/0015-response-values-are-data.md)). |
@@ -86,18 +90,19 @@ the issues are where the work is tracked, and each one carries its own "done whe
 it waits for. The milestones carry no dates, for the reason the legend gives. The version numbers are
 intentions, and they were renumbered on 2026-09-30: the major that renames the engine's public
 exports (#184, [ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)) took 3.0, so the milestone that
-held that number moved. The 3.0 and 3.1 milestones shipped together as 3.1.0 on 2026-10-04, the first release after 2.2.1; there is no 3.0.0 tag. 4.0 is a major because mock stubs are a new file kind, which is the kind of one-way
-door 2.0 was. No issue sits in an earlier milestone than one it is blocked by. An item that has shipped
+held that number moved. The 3.0 and 3.1 milestones shipped together as 3.1.0 on 2026-10-04, the first release after 2.2.1; there is no 3.0.0 tag. On 2026-10-08 the numbers moved again: Enterprise trust became 4.0 and Contracts, mocks and testing 5.0. Mock stubs do not force 5.0 to be a major: they are a new file kind
+with its own version, as sequences were in 3.0, and an older build leaves them alone
+([ADR-0021](adr/0021-mock-stubs-are-files-under-mocks.md)). No issue sits in an earlier milestone than one it is blocked by. An item that has shipped
 but sits under a later milestone is already in 3.1.0 — the WebSocket request kind (#98, item 17), for one,
-sits under 4.0; the milestone records where it was planned, not the release it arrived in.
+sits under 5.0; the milestone records where it was planned, not the release it arrived in.
 
 | Milestone | Roadmap items | Issues |
 | --- | --- | --- |
 | [2.2 — Install and learn](https://github.com/wirebench/wirebench/milestone/1) | 1, 2 (switching guide) | [#28](https://github.com/wirebench/wirebench/issues/28) signed releases, MSI, SBOM · [#54](https://github.com/wirebench/wirebench/issues/54) switching guide |
 | [3.0 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) (closed, shipped in 3.1.0) | 3, 4, 5 | [#30](https://github.com/wirebench/wirebench/issues/30) CLI runner (S7 left: gRPC unary, OAuth2 client credentials) · [#31](https://github.com/wirebench/wirebench/issues/31) CI recipes · [#32](https://github.com/wirebench/wirebench/issues/32) MCP server (**shipped** 2026-09-29) · [#33](https://github.com/wirebench/wirebench/issues/33) contract operations as MCP tools ✚ · [#34](https://github.com/wirebench/wirebench/issues/34) snapshot regression ✚ · [#35](https://github.com/wirebench/wirebench/issues/35) multi-environment send ✚ · [#36](https://github.com/wirebench/wirebench/issues/36) runner `--baseline` ✚ |
 | [3.1 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3) (closed, shipped in 3.1.0) | 8, 17 (gRPC follow-ups) | [#42](https://github.com/wirebench/wirebench/issues/42) REST resend and diff from History (**shipped** 2026-09-26) · [#43](https://github.com/wirebench/wirebench/issues/43) token auth kinds for SOAP owners (**shipped** 2026-09-22) · [#44](https://github.com/wirebench/wirebench/issues/44) cookie jar and initial/current values (**shipped** 2026-10-04) · [#45](https://github.com/wirebench/wirebench/issues/45) OpenAPI response validation · [#46](https://github.com/wirebench/wirebench/issues/46) JSON form view · [#47](https://github.com/wirebench/wirebench/issues/47) Update Definition for an API (**shipped** 2026-09-22) · [#48](https://github.com/wirebench/wirebench/issues/48) HTML response preview (**shipped** 2026-10-03) · [#53](https://github.com/wirebench/wirebench/issues/53) gRPC resend from History (**shipped** 2026-09-22) · [#97](https://github.com/wirebench/wirebench/issues/97) Server-Sent Events responses (**shipped** 2026-09-21) |
-| [3.2 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4) | 6, 7, 10, fleet management | [#37](https://github.com/wirebench/wirebench/issues/37) external secret managers · [#38](https://github.com/wirebench/wirebench/issues/38) encrypted team secrets · [#39](https://github.com/wirebench/wirebench/issues/39) secret scanning · [#40](https://github.com/wirebench/wirebench/issues/40) Kerberos/SPNEGO · [#41](https://github.com/wirebench/wirebench/issues/41) WS-Trust and SAML tokens · [#57](https://github.com/wirebench/wirebench/issues/57) WS-Security debugger ✚ · [#58](https://github.com/wirebench/wirebench/issues/58) policy-driven configuration ✚ · [#67](https://github.com/wirebench/wirebench/issues/67) managed preferences · [#68](https://github.com/wirebench/wirebench/issues/68) portable Windows build · [#70](https://github.com/wirebench/wirebench/issues/70) certificate expiry warnings |
-| [4.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | 9, 11, 12, 13, 17 (WebSocket), more importers and exporters | [#56](https://github.com/wirebench/wirebench/issues/56) contract diff ✚ · [#59](https://github.com/wirebench/wirebench/issues/59) mock services · [#60](https://github.com/wirebench/wirebench/issues/60) mock recording proxy · [#61](https://github.com/wirebench/wirebench/issues/61) headless `wirebench mock` · [#62](https://github.com/wirebench/wirebench/issues/62) Sequences (**shipped** 2026-09-28) · [#63](https://github.com/wirebench/wirebench/issues/63) typed scripting ✚ (**shipped** 2026-09-28) · [#64](https://github.com/wirebench/wirebench/issues/64) more importers · [#65](https://github.com/wirebench/wirebench/issues/65) exporters · [#66](https://github.com/wirebench/wirebench/issues/66) JSON Schema for project files · [#69](https://github.com/wirebench/wirebench/issues/69) published benchmark · [#71](https://github.com/wirebench/wirebench/issues/71) same-host redirect on a POST · [#72](https://github.com/wirebench/wirebench/issues/72) multi-window · [#84](https://github.com/wirebench/wirebench/issues/84) grid accessibility conventions · [#98](https://github.com/wirebench/wirebench/issues/98) WebSocket request kind · [#100](https://github.com/wirebench/wirebench/issues/100) AsyncAPI import ✚ (**shipped** 2026-09-22) |
+| [4.0 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4) (closed, shipped in 4.0.0) | 6, 7, 10, fleet management | [#37](https://github.com/wirebench/wirebench/issues/37) external secret managers · [#38](https://github.com/wirebench/wirebench/issues/38) encrypted team secrets · [#39](https://github.com/wirebench/wirebench/issues/39) secret scanning · [#40](https://github.com/wirebench/wirebench/issues/40) Kerberos/SPNEGO · [#41](https://github.com/wirebench/wirebench/issues/41) WS-Trust and SAML tokens · [#57](https://github.com/wirebench/wirebench/issues/57) WS-Security debugger ✚ · [#58](https://github.com/wirebench/wirebench/issues/58) policy-driven configuration ✚ · [#67](https://github.com/wirebench/wirebench/issues/67) managed preferences · [#68](https://github.com/wirebench/wirebench/issues/68) portable Windows build · [#70](https://github.com/wirebench/wirebench/issues/70) certificate expiry warnings |
+| [5.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | 9, 11, 12, 13, 17 (WebSocket), more importers and exporters | [#56](https://github.com/wirebench/wirebench/issues/56) contract diff ✚ (**shipped** 2026-10-08) · [#59](https://github.com/wirebench/wirebench/issues/59) mock services · [#60](https://github.com/wirebench/wirebench/issues/60) mock recording proxy · [#61](https://github.com/wirebench/wirebench/issues/61) headless `wirebench mock` · [#62](https://github.com/wirebench/wirebench/issues/62) Sequences (**shipped** 2026-09-28) · [#63](https://github.com/wirebench/wirebench/issues/63) typed scripting ✚ (**shipped** 2026-09-28) · [#64](https://github.com/wirebench/wirebench/issues/64) more importers · [#65](https://github.com/wirebench/wirebench/issues/65) exporters · [#66](https://github.com/wirebench/wirebench/issues/66) JSON Schema for project files · [#69](https://github.com/wirebench/wirebench/issues/69) published benchmark · [#71](https://github.com/wirebench/wirebench/issues/71) same-host redirect on a POST · [#72](https://github.com/wirebench/wirebench/issues/72) multi-window (**shipped** 2026-10-08) · [#84](https://github.com/wirebench/wirebench/issues/84) grid accessibility conventions · [#98](https://github.com/wirebench/wirebench/issues/98) WebSocket request kind · [#100](https://github.com/wirebench/wirebench/issues/100) AsyncAPI import ✚ (**shipped** 2026-09-22) |
 | [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6) | 14, 15, 16, 17 (GraphQL), ideas | [#73](https://github.com/wirebench/wirebench/issues/73) full functional testing · [#74](https://github.com/wirebench/wirebench/issues/74) Wirebench Server · [#75](https://github.com/wirebench/wirebench/issues/75) JKS keystores · [#76](https://github.com/wirebench/wirebench/issues/76) WS-ReliableMessaging · [#77](https://github.com/wirebench/wirebench/issues/77) GraphQL queries and mutations · [#99](https://github.com/wirebench/wirebench/issues/99) GraphQL subscriptions · [#78](https://github.com/wirebench/wirebench/issues/78) robustness scans ✚ · [#79](https://github.com/wirebench/wirebench/issues/79) MCP request kind · [#80](https://github.com/wirebench/wirebench/issues/80) HTTP/2 by default · [#81](https://github.com/wirebench/wirebench/issues/81) localisation · [#82](https://github.com/wirebench/wirebench/issues/82) plugin API · [#85](https://github.com/wirebench/wirebench/issues/85) panel handle hover coverage |
 
 Closed since the table was first written, and so no longer in it: [#29](https://github.com/wirebench/wirebench/issues/29) the user guide site, [#49](https://github.com/wirebench/wirebench/issues/49) HAR
@@ -106,7 +111,7 @@ Closed since the table was first written, and so no longer in it: [#29](https://
 globals loader's `version` check, which had been fixed before its issue was opened.
 
 What [Deliberately not](#deliberately-not) lists has no
-issue, on purpose. 3.1 ahead of 3.2 is a bet on daily use before the enterprise buyer; nothing in 3.2 waits
+issue, on purpose. 3.1 ahead of 4.0 is a bet on daily use before the enterprise buyer; nothing in 4.0 waits
 on 3.1, so the two can swap the day an enterprise evaluation arrives first.
 
 ## By theme
@@ -123,8 +128,8 @@ on 3.1, so the two can swap the day an enterprise evaluation arrives first.
 - **Supply chain.** Done: a CycloneDX SBOM on every release, and build and SBOM attestations on tags.
 - **Managed preferences.** A policy file at a system location that locks the proxy, CA bundle and update
   settings for managed machines.
-- **Portable build.** A Windows zip with a relative data directory, for locked-down machines where nothing
-  may be installed.
+- **Portable build.** Done: a Windows zip per architecture whose `data` folder beside `Wirebench.exe` holds
+  the profile, for locked-down machines where nothing may be installed.
 - **Localisation.** English only today.
 
 ### Documentation site
@@ -176,11 +181,8 @@ its projects and its environments — can be shared as a git repository or a syn
 URL or by pointing at an existing clone, and Sync pulls, merges, pushes and resolves conflicts in the app.
 Wirebench Server (item 15) plugs into the same socket. Still parked:
 
-- **Multi-window.** The workspaces design (`docs/specs/2026-09-11-wirebench-workspaces-design.md`
-  §1, assumption 7) deliberately keeps one window holding one open workspace at a time. Several
-  workspaces open at once, each in its own window, is a natural next step but changes how main's
-  singletons (the open `WorkspaceService`, dialog picks) are scoped, so it is left as a
-  follow-up rather than folded into workspaces v1.
+- **Multi-window** (**shipped**, #72). Several workspaces open at once, one per window; main's
+  workspace-scoped services are per window (`docs/specs/2026-10-08-multi-window-workspaces-design.md`).
 - **Shared, encrypted secret values.** Secret refs travel with a shared workspace; values stay per member
   for now (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` §1). Item 6 is the follow-up.
 
@@ -198,19 +200,18 @@ enabled checkbox, and the `disabled` list format bump
 
 - **Importers and exporters.** In, shipped in 2.1.0: OpenAPI 3.0/3.1/3.2, Swagger 1.x and 2.0, and
   Postman Collections v2.0/v2.1. Still wanted in: Postman environment files, HAR 1.2, `.http` request
-  files as the JetBrains and VS Code clients write them, OpenCollection YAML; others when asked. Out:
-  Postman Collection v2.1 and OpenCollection YAML, neither written yet. A published JSON Schema for
+  files as the JetBrains and VS Code clients write them, OpenCollection YAML; others when asked. Out
+  ([#65](https://github.com/wirebench/wirebench/issues/65)): Postman Collection v2.1 with an environment
+  file per environment, and OpenCollection YAML, each with a report of what did not fit. A published JSON Schema for
   Wirebench's own project files, so any editor validates them. Switching cost is the moat the cloud
   platforms rely on; every client that displaced one began as an importer.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
 - **HTTP/2.** Evaluate making it the default once enough servers negotiate it cleanly.
-- **Same-host `http://` → `https://` 301 on a POST.** Wirebench does not follow redirects on send by
-  default, because `fetch`/undici semantics downgrade a redirected POST to a GET, which would silently
-  turn a SOAP call into a page fetch and lose the envelope. That is the right default, but a same-host,
-  same-path upgrade is common enough (the `tempconvert` interop fixture is a live example) to deserve a
-  purpose-built case: either preserve the method and body across exactly that redirect shape, or detect
-  it and surface a Problem saying the request was declined. Which of the two, and how narrow "same-host,
-  upgrade-only" needs to be, is a design decision a bug-fix pass should not make in passing.
+- **Same-host `http://` → `https://` 301 on a POST** (shipped, #71). Wirebench still does not follow
+  redirects on a SOAP send by default, because a redirected POST becomes a GET and loses the envelope. The
+  exact upgrade shape (same host, path and query, default ports, 301/302/307/308) is followed anyway, with
+  the method, body and credentials kept, and a Problem says to change the endpoint. See
+  `docs/specs/2026-10-08-https-upgrade-redirect-design.md`.
 
 ### Contracts
 
@@ -386,7 +387,7 @@ record in History, and sending into an open call; each item here is a thin layer
   Log keep it as a capped, multi-message exchange. Reconnecting with `Last-Event-ID`, honouring `retry:`,
   and the CLI runner are deliberately out of scope. Token-streaming APIs answer this way, and so does the
   streamable-HTTP transport the MCP request kind needs, which is why this came first.
-- **WebSocket request kind** (milestone 4.0) — **shipped 2026-09-19**, as the fourth container on the shape
+- **WebSocket request kind** (milestone 5.0) — **shipped 2026-09-19**, as the fourth container on the shape
   [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive; see
   [the WebSocket spec](specs/2026-09-19-websocket-request-kind-design.md). `ws://` and `wss://` with headers,
   subprotocols, the shared auth kinds, proxy, client certificates and the CA bundle; a message timeline with
@@ -409,6 +410,10 @@ or query match, plus stateful scenarios; stubs stored as plain files in the proj
 them; start, stop, on-request and after-request scripts; serves the WSDL; a headless `wirebench mock` for
 CI; and a built-in recording proxy that turns live traffic into stubs, which is also what people used the
 deferred TCP monitor for.
+
+The engine half of #59 is in place: mocks generated from a WSDL or an OpenAPI document, contract validation,
+every dispatch style with scenarios, the WSDL served, and the file format of ADR-0021. Lifecycle scripts and
+response templating are left for later issues; the desktop tab follows.
 
 ### Teams and sign-in
 
@@ -488,19 +493,6 @@ wizard; code generation. The TCP monitor proxy is no longer a separate item: the
 - English only.
 - A 1.0.0 build cannot open a project or workspace saved by 1.1.0 (`formatVersion: 2`). Moot in
   practice, since 1.0.0 was never published, but the format bump is the first one the loaders refuse.
-
-### Known limitations carried from the layout and environments work
-
-- The Environments view's rows (`apps/desktop/src/renderer/features/environments/
-  environments-view.tsx`) use `role="row"` without `gridcell` children or `aria-rowindex`, and the
-  environment page's variables and endpoint-overrides tables
-  (`apps/desktop/src/renderer/features/environments/{variables-table,endpoints-table}.tsx`) use
-  native `<table>` markup instead of the `role="grid"` convention `history-view.tsx` and
-  `keystores-view.tsx` use. Three views, two conventions; worth reconciling before another grid
-  is added.
-- The panel handle's hover tint (the `group-hover:bg-handle-hover` class in
-  `apps/desktop/src/renderer/shell/panel-handle.tsx`) has no end-to-end coverage; it exists only
-  as a CSS pseudo-class, unasserted by any unit or e2e test.
 
 ## Audience fit
 

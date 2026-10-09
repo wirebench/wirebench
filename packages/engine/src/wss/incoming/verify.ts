@@ -31,6 +31,7 @@ import {
 import { childElement, findElement } from '../security-header.js';
 import { verifySignature } from '../outgoing/signature.js';
 import type { Keystore } from '../../keystore/model.js';
+import type { WssSignatureCheck } from './check.js';
 
 /** One `ds:Signature` as {@link verifyIncoming} judged it. */
 export interface IncomingSignatureResult {
@@ -48,6 +49,8 @@ export interface IncomingSignatureResult {
   readonly trusted: boolean;
   /** Why the signature did not verify, or why its certificate could not be resolved. */
   readonly error?: string;
+  /** Every reference's expected and computed digest; absent when the signature was never checked. */
+  readonly check?: WssSignatureCheck;
 }
 
 /** The `wsu:Timestamp` as {@link verifyIncoming} read it. */
@@ -60,6 +63,13 @@ export interface IncomingTimestampResult {
   readonly fresh: boolean;
   /** Why the timestamp was rejected; absent when fresh. */
   readonly error?: string;
+  /**
+   * This machine's clock minus `wsu:Created`, in whole seconds: positive when the message was
+   * created in the past, negative when `Created` is ahead. Absent when `Created` is unreadable.
+   */
+  readonly skewSeconds?: number;
+  /** The clock skew tolerated, in seconds. */
+  readonly toleranceSeconds: number;
 }
 
 /** The outcome of {@link verifyIncoming}. */
@@ -281,52 +291,106 @@ function sameDn(issuerName: string, attributes: readonly forge.pki.CertificateFi
   return rendered === issuerName || dnKey(parseRfc2253(rendered)) === dnKey(parseRfc2253(issuerName));
 }
 
+/** What resolving a `ds:KeyInfo` produced: the signer's certificate, or why there is none. */
+type KeyInfoResolution = { readonly certificate: forge.pki.Certificate } | { readonly reason: string };
+
+/** The reason a name-only form found no certificate, depending on whether a truststore was given. */
+function notInTruststore(named: string, hasTruststore: boolean, verb = 'has it'): KeyInfoResolution {
+  return {
+    reason: hasTruststore
+      ? `KeyInfo names the signer by ${named}, and no truststore certificate ${verb}.`
+      : `KeyInfo names the signer by ${named}, and no truststore is configured to look it up in.`,
+  };
+}
+
+/** The local name of the first element child of `element`, for a form this build does not know. */
+function firstChildName(element: Element): string {
+  for (let child = element.firstChild; child !== null; child = child.nextSibling) {
+    if (child.nodeType === 1) {
+      return (child as Element).localName ?? 'unknown';
+    }
+  }
+  return 'nothing';
+}
+
 /**
  * The certificate a `ds:KeyInfo` names. Every X.509 token profile form is understood: the ones
  * that *carry* the certificate (a `wsse:Reference` to a `BinarySecurityToken`, an `X509v3`
  * `KeyIdentifier`, an inline `ds:X509Certificate`) yield it directly; the ones that merely
  * *name* it (`IssuerSerial`, `SubjectKeyIdentifier`, `ThumbprintSHA1`) are looked up among
  * `trusted`, which is why an untrusted signer using one of them cannot be resolved at all.
+ *
+ * When none resolves, the reason names what the message asked for — the token id, thumbprint or
+ * issuer and serial — because "the signer could not be found" alone leaves a user nothing to
+ * compare against their truststore.
  */
 function certificateFromKeyInfo(
   ids: ReadonlyMap<string, Element[]>,
   keyInfo: Element | undefined,
   trusted: readonly TrustedCertificate[],
-): forge.pki.Certificate | undefined {
+  hasTruststore: boolean,
+): KeyInfoResolution {
   if (keyInfo === undefined) {
-    return undefined;
+    return { reason: 'The signature carries no ds:KeyInfo, so its signer cannot be found.' };
   }
   const reference = findElement(keyInfo, NS.WSSE, 'Reference');
   if (reference !== undefined) {
     const uri = reference.getAttribute('URI') ?? '';
-    const token = uri.startsWith('#') ? uniqueById(ids, uri.slice(1)) : undefined;
-    const value = textOf(token);
-    return certificateFromBase64(value) ?? certificateFromPkiPath(value);
+    if (!uri.startsWith('#')) {
+      return { reason: `KeyInfo refers to token "${uri}", which is not inside the message.` };
+    }
+    const id = uri.slice(1);
+    const count = ids.get(id)?.length ?? 0;
+    if (count === 0) {
+      return { reason: `KeyInfo refers to token #${id}, but no element in the message carries that id.` };
+    }
+    if (count > 1) {
+      return { reason: `KeyInfo refers to token #${id}, but more than one element in the message carries that id.` };
+    }
+    const value = textOf(uniqueById(ids, id));
+    const certificate = certificateFromBase64(value) ?? certificateFromPkiPath(value);
+    return certificate !== undefined ? { certificate } : { reason: `Token #${id} is not an X.509 certificate.` };
   }
   const identifier = findElement(keyInfo, NS.WSSE, 'KeyIdentifier');
   if (identifier !== undefined) {
     const valueType = identifier.getAttribute('ValueType') ?? '';
     const value = textOf(identifier);
     if (valueType === WSS_TOKEN_TYPES.THUMBPRINT_SHA1) {
-      return lookup(trusted, (pem) => thumbprintSha1Base64(pem) === value);
+      const certificate = lookup(trusted, (pem) => thumbprintSha1Base64(pem) === value);
+      return certificate !== undefined ? { certificate } : notInTruststore(`ThumbprintSHA1 ${value}`, hasTruststore);
     }
     if (valueType === WSS_TOKEN_TYPES.X509_SUBJECT_KEY_IDENTIFIER) {
-      return lookup(trusted, (pem) => subjectKeyIdentifierBase64(pem) === value);
+      const certificate = lookup(trusted, (pem) => subjectKeyIdentifierBase64(pem) === value);
+      return certificate !== undefined
+        ? { certificate }
+        : notInTruststore(`SubjectKeyIdentifier ${value}`, hasTruststore);
     }
-    return certificateFromBase64(value) ?? certificateFromPkiPath(value);
+    const certificate = certificateFromBase64(value) ?? certificateFromPkiPath(value);
+    return certificate !== undefined
+      ? { certificate }
+      : { reason: 'KeyInfo carries a KeyIdentifier that is not an X.509 certificate.' };
   }
   const issuerSerial = findElement(keyInfo, NS.DS, 'X509IssuerSerial');
   if (issuerSerial !== undefined) {
     const issuer = (childElement(issuerSerial, NS.DS, 'X509IssuerName')?.textContent ?? '').trim();
     const serial = (childElement(issuerSerial, NS.DS, 'X509SerialNumber')?.textContent ?? '').trim();
-    return trusted.find(
+    const certificate = trusted.find(
       (candidate) =>
         sameDn(issuer, candidate.cert.issuer.attributes) &&
         BigInt(`0x${candidate.cert.serialNumber}`).toString(10) === serial,
     )?.cert;
+    return certificate !== undefined
+      ? { certificate }
+      : notInTruststore(`issuer "${issuer}" and serial ${serial}`, hasTruststore, 'matches');
   }
   const inline = findElement(keyInfo, NS.DS, 'X509Certificate');
-  return inline === undefined ? undefined : certificateFromBase64(textOf(inline));
+  if (inline !== undefined) {
+    const certificate = certificateFromBase64(textOf(inline));
+    return certificate !== undefined
+      ? { certificate }
+      : { reason: 'The ds:X509Certificate in KeyInfo is not a readable certificate.' };
+  }
+  return { reason: `KeyInfo uses a form this build cannot resolve: ${firstChildName(keyInfo)}.` };
 }
 
 /** The first trusted certificate whose PEM satisfies `matches`; a form it cannot compute never matches. */
@@ -416,28 +480,46 @@ function readTimestamp(security: Element, options: VerifyIncomingOptions): Incom
   const expiresText = expiresElement?.textContent ?? undefined;
   const created = parseInstant(createdText);
   const expires = parseInstant(expiresText);
+  const toleranceSeconds = options.skewSeconds;
   const base = {
     created: createdText.trim(),
     ...(expiresText !== undefined ? { expires: expiresText.trim() } : {}),
+    toleranceSeconds,
   };
   if (created === undefined) {
     return { ...base, fresh: false, error: 'The timestamp has no readable wsu:Created.' };
   }
-  const skewMs = options.skewSeconds * 1000;
+  const skewMs = toleranceSeconds * 1000;
   const now = options.clock().getTime();
+  const skewSeconds = Math.round((now - created.getTime()) / 1000);
+  const measured = { ...base, skewSeconds };
+  const tolerated = `${String(toleranceSeconds)} s of clock skew is tolerated.`;
   if (now + skewMs < created.getTime()) {
-    return { ...base, fresh: false, error: 'The message was created in the future.' };
+    return {
+      ...measured,
+      fresh: false,
+      error: `Created ${String(-skewSeconds)} s ahead of this machine's clock; ${tolerated}`,
+    };
   }
   if (expires !== undefined) {
+    const expiredSeconds = Math.round((now - expires.getTime()) / 1000);
     return now - skewMs > expires.getTime()
-      ? { ...base, fresh: false, error: 'The message expired.' }
-      : { ...base, fresh: true };
+      ? {
+          ...measured,
+          fresh: false,
+          error: `Expired ${String(expiredSeconds)} s ago (Expires ${base.expires ?? ''}); ${tolerated}`,
+        }
+      : { ...measured, fresh: true };
   }
   // No `Expires`: the skew window is all there is to judge against, so a `Created` older than
   // it is stale rather than merely unbounded.
   return now - skewMs > created.getTime()
-    ? { ...base, fresh: false, error: 'The message is older than the tolerated clock skew.' }
-    : { ...base, fresh: true };
+    ? {
+        ...measured,
+        fresh: false,
+        error: `Created ${String(skewSeconds)} s ago and carries no Expires; ${tolerated}`,
+      }
+    : { ...measured, fresh: true };
 }
 
 /**
@@ -506,14 +588,16 @@ export function verifyIncoming(xml: string, options: VerifyIncomingOptions): Ver
         error: `duplicate-id: more than one element carries the referenced id "${duplicated[0] ?? ''}".`,
       };
     }
-    const certificate = certificateFromKeyInfo(ids, childElement(signature, NS.DS, 'KeyInfo'), trusted);
-    if (certificate === undefined) {
-      return {
-        ...empty,
-        ok: false,
-        error: 'The signing certificate could not be resolved from the message or the truststore.',
-      };
+    const resolution = certificateFromKeyInfo(
+      ids,
+      childElement(signature, NS.DS, 'KeyInfo'),
+      trusted,
+      options.truststore !== undefined,
+    );
+    if ('reason' in resolution) {
+      return { ...empty, ok: false, error: resolution.reason };
     }
+    const { certificate } = resolution;
     const certPem = forge.pki.certificateToPem(certificate);
     // Verified by the signature's position among `wsse:Security` header signatures — never by
     // isolating it from its own header siblings, which would change the bytes a signature whose
@@ -532,6 +616,7 @@ export function verifyIncoming(xml: string, options: VerifyIncomingOptions): Ver
       signerSubject: renderDn(certificate.subject.attributes),
       trusted: isTrusted(certificate, trusted, options.verifyChain, at),
       ...(result.error !== undefined ? { error: result.error } : {}),
+      ...(result.check !== undefined ? { check: result.check } : {}),
     };
   });
 

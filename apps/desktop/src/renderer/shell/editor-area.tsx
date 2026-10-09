@@ -55,6 +55,12 @@ const SequenceTab = lazy(async () => {
   return { default: module.SequenceTab };
 });
 
+// Split out: its body and script editors are Monaco.
+const MockTab = lazy(async () => {
+  const module = await import('../features/mock/mock-tab.js');
+  return { default: module.MockTab };
+});
+
 // Split out like the gRPC editor: its saved-message editor and frame viewer are Monaco.
 const WsEditor = lazy(async () => {
   const module = await import('../features/ws-editor/ws-editor.js');
@@ -165,6 +171,7 @@ export function EditorArea() {
   const wsApis = useProjectStore((state) => state.wsApis);
   const wsRequests = useProjectStore((state) => state.wsRequests);
   const sequences = useProjectStore((state) => state.sequences);
+  const mocks = useProjectStore((state) => state.mocks);
   const dirtyWsRequests = useDraftsStore((state) => state.wsRequests);
   const catchUrls = useWebhooksStore((state) => state.hooks);
   const catchUrlNames = Object.fromEntries(catchUrls.map((hook) => [hook.id, hook.name]));
@@ -269,6 +276,7 @@ export function EditorArea() {
     (tab.kind === 'ws-api' && tab.wsApiId !== undefined ? wsApis[tab.wsApiId]?.name : undefined) ??
     (tab.wsRequestId !== undefined ? wsRequests[tab.wsRequestId]?.name : undefined) ??
     (tab.kind === 'sequence' && tab.sequenceId !== undefined ? sequences[tab.sequenceId]?.name : undefined) ??
+    (tab.kind === 'mock' && tab.mockId !== undefined ? mocks[tab.mockId]?.name : undefined) ??
     (tab.kind === 'project' && tab.projectId !== undefined ? projects[tab.projectId]?.name : undefined) ??
     (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
     (tab.environmentId !== undefined
@@ -589,6 +597,10 @@ export function EditorArea() {
         ) : activeTab.kind === 'sequence' && activeTab.sequenceId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <SequenceTab sequenceId={activeTab.sequenceId} />
+          </Suspense>
+        ) : activeTab.kind === 'mock' && activeTab.mockId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <MockTab mockId={activeTab.mockId} />
           </Suspense>
         ) : activeTab.kind === 'ws-request' && activeTab.wsRequestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

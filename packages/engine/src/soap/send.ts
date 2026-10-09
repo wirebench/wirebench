@@ -11,6 +11,8 @@ import type { HttpExchange, HttpRequest } from '../http/types.js';
 import { expandSendInput } from './expand.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { sendWithAuth } from '../http/auth/apply.js';
+import { hopLabel } from '../http/auth/challenged-hop.js';
+import { upgradeIn } from '../http/https-upgrade.js';
 import { applySoapAuth } from './auth.js';
 import { headerValue, mergeHeaders } from '../http/headers.js';
 import { charsetOf } from '../http/charset.js';
@@ -184,6 +186,14 @@ export async function sendSoapRequest(
   // Basic (preemptive or challenged) and NTLM are transport concerns, shared with the REST send.
   const authenticated = await sendWithAuth(request, effectiveInput.auth, options);
   const http: HttpExchange = authenticated.http;
+  const upgrade = upgradeIn(http.redirects, http.request.url);
+  if (upgrade !== undefined) {
+    // Named by origin and path: a query may carry an API key, and Problems are shown as they are.
+    problems.push({
+      code: 'https-upgrade',
+      message: `${hopLabel(upgrade.from)} redirected to ${hopLabel(upgrade.to)}; the request was resent there with its method and body. Change the endpoint to https:// to skip the redirect.`,
+    });
+  }
   const totalDurationMs = authenticated.durationMs;
 
   const authSummary: AuthSummary | undefined = authenticated.auth;

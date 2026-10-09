@@ -46,6 +46,10 @@ starting. Choose **More info**, then **Run anyway**.
 Windows installers will be signed with Azure Artifact Signing once the project's signing account is
 set up. Until then the installers are unsigned.
 
+**No installing allowed?** Download `…-windows-x64-portable.zip` (or `…-windows-arm64-portable.zip`)
+instead and unpack it anywhere you can write to, such as your Documents folder or a USB stick. Run
+`Wirebench.exe` from the unpacked folder. See [Portable copy](#portable-copy) below.
+
 </TabItem>
 <TabItem label="Linux">
 
@@ -73,16 +77,34 @@ For Intune, Configuration Manager, Group Policy or a script, Windows releases co
 
 | Installer | Installs | Silent install | Updates |
 | --- | --- | --- | --- |
-| `…-windows-x64.msi`, `…-windows-arm64.msi` | For every user on the machine, in Program Files. Needs administrator rights | `msiexec /i Wirebench-3.1.0-windows-x64.msi /qn` | Not by itself: deploy the new version's MSI, which replaces the old one |
-| `…-windows-x64-setup.exe`, `…-windows-arm64-setup.exe` | For the current user by default | `Wirebench-3.1.0-windows-x64-setup.exe /S` | **Check for Updates…** in the app |
+| `…-windows-x64.msi`, `…-windows-arm64.msi` | For every user on the machine, in Program Files. Needs administrator rights | `msiexec /i Wirebench-4.0.0-windows-x64.msi /qn` | Not by itself: deploy the new version's MSI, which replaces the old one |
+| `…-windows-x64-setup.exe`, `…-windows-arm64-setup.exe` | For the current user by default | `Wirebench-4.0.0-windows-x64-setup.exe /S` | **Check for Updates…** in the app |
 
 The setup `.exe` takes these flags too:
 - `/allusers` installs for every user, and needs administrator rights;
 - `/currentuser` installs for the current user;
 - `/D=C:\Tools\Wirebench` sets the install folder. It must come last, and the path is not quoted.
 
-To remove the app silently, run `msiexec /x Wirebench-3.1.0-windows-x64.msi /qn` for the MSI, or
+To remove the app silently, run `msiexec /x Wirebench-4.0.0-windows-x64.msi /qn` for the MSI, or
 `"Uninstall Wirebench.exe" /S` from the install folder for the setup `.exe`.
+
+## Portable copy
+
+The portable zip runs without being installed: no administrator rights, no Start menu entry, and
+nothing written outside its own folder. Unpacked, it is a folder holding `Wirebench.exe` and a
+`data` folder. While `data` is there, Wirebench keeps everything in it (workspaces, preferences,
+history, saved secrets and caches) instead of in `%APPDATA%\Wirebench`.
+
+- **Keep the folder somewhere writable.** A read-only share or a write-protected stick cannot hold
+  a portable copy.
+- **Saved secrets stay with the Windows user.** They are encrypted with your Windows account's key,
+  so on another machine or as another user they need entering again. Everything else travels with
+  the folder.
+- **Updating is by hand.** **Check for Updates…** tells you when there is a new version and opens its
+  release page. Unpack the new zip, then move your old copy's `data` folder into it, replacing the one
+  the zip came with.
+- **To stop being portable**, delete or rename the `data` folder: that copy then uses
+  `%APPDATA%\Wirebench` like an installed one.
 
 On macOS, deploy the `.dmg`'s app bundle or the `.zip` with your management tool. On Linux, use the
 `.deb` or `.rpm` with your package tooling.
@@ -95,7 +117,7 @@ records of the commit and workflow that produced each file. Check a file with th
 [GitHub CLI](https://cli.github.com/):
 
 ```bash
-gh attestation verify Wirebench-3.1.0-windows-x64.msi --repo wirebench/wirebench
+gh attestation verify Wirebench-4.0.0-windows-x64.msi --repo wirebench/wirebench
 ```
 
 A file that anyone other than the release workflow built or changed fails the check.
@@ -119,7 +141,7 @@ Workspaces, projects, preferences and saved secrets are stored in Wirebench's da
 | System | Folder |
 | --- | --- |
 | macOS | `~/Library/Application Support/Wirebench` |
-| Windows | `%APPDATA%\Wirebench` |
+| Windows | `%APPDATA%\Wirebench`, or the `data` folder beside `Wirebench.exe` for the [portable copy](#portable-copy) |
 | Linux | `~/.config/Wirebench` |
 
 A snap install keeps it under `~/snap/wirebench/current/.config/Wirebench` instead.

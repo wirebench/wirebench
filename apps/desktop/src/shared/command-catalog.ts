@@ -189,11 +189,22 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Secret Sources…',
     category: 'Workspace',
   },
+  'workspace.checkCertificates': {
+    id: 'workspace.checkCertificates',
+    label: 'Check Certificate Expiry',
+    category: 'Workspace',
+  },
   'workspace.newProject': {
     id: 'workspace.newProject',
     label: 'New Project…',
     category: 'Workspace',
     shortcut: 'Mod+Shift+N',
+  },
+  'workspace.newWindow': {
+    id: 'workspace.newWindow',
+    label: 'New Window',
+    category: 'Workspace',
+    shortcut: 'Mod+Alt+N',
   },
   'workspace.linkProject': {
     id: 'workspace.linkProject',
@@ -208,6 +219,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   'workspace.exportProject': {
     id: 'workspace.exportProject',
     label: 'Export Project…',
+    category: 'Workspace',
+  },
+  'workspace.exportPostman': {
+    id: 'workspace.exportPostman',
+    label: 'Export Project as Postman Collection…',
+    category: 'Workspace',
+  },
+  'workspace.exportOpenCollection': {
+    id: 'workspace.exportOpenCollection',
+    label: 'Export Project as OpenCollection…',
     category: 'Workspace',
   },
   'workspace.removeProject': {
@@ -446,6 +467,17 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   'sequence.cancel': {
     id: 'sequence.cancel',
     label: 'Sequence: Cancel Run',
+    category: 'Request',
+  },
+  // A mock tab's server (#59): served from this machine until it is stopped or its project closes.
+  'mock.start': {
+    id: 'mock.start',
+    label: 'Mock: Start',
+    category: 'Request',
+  },
+  'mock.stop': {
+    id: 'mock.stop',
+    label: 'Mock: Stop',
     category: 'Request',
   },
   // A project's session values (#63): what single sends' scripts set, kept until the project closes.

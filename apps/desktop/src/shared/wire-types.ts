@@ -130,6 +130,39 @@ export type WsaSummaryWire = z.infer<typeof wsaSummaryWireSchema>;
 export const mimePartWireSchema = z.object({ part: z.string(), type: z.string().optional() });
 export type MimePartWire = z.infer<typeof mimePartWireSchema>;
 
+const wssPolicyPartWireSchema = z.object({ name: z.string(), namespace: z.string() });
+
+/**
+ * An operation's WS-SecurityPolicy, as the import read it; mirrors the engine's `WssPolicy`
+ * — main proposes a configuration from it and checks one against it (`wss.policyStatus`).
+ */
+export const wssPolicyWireSchema = z.object({
+  version: z.enum(['1.1', '1.2']),
+  soapVersion: z.enum(['1.1', '1.2']),
+  binding: z.enum(['transport', 'asymmetric', 'symmetric', 'none']),
+  requiresTls: z.boolean(),
+  includeTimestamp: z.boolean(),
+  encryptBeforeSigning: z.boolean(),
+  algorithmSuite: z.string().optional(),
+  tokens: z.array(
+    z.object({
+      kind: z.enum(['username', 'x509', 'issued', 'saml', 'kerberos', 'other']),
+      role: z.enum(['initiator', 'recipient', 'supporting', 'signed-supporting', 'endorsing', 'signed-endorsing']),
+      password: z.enum(['text', 'digest', 'none']).optional(),
+      reference: z
+        .enum(['BinarySecurityToken', 'IssuerSerial', 'SubjectKeyIdentifier', 'X509KeyIdentifier', 'Thumbprint'])
+        .optional(),
+      issuer: z.string().optional(),
+      name: z.string().optional(),
+    }),
+  ),
+  signedParts: z.array(wssPolicyPartWireSchema),
+  encryptedParts: z.array(wssPolicyPartWireSchema),
+  unsupported: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+export type WssPolicyWire = z.infer<typeof wssPolicyWireSchema>;
+
 const operationSummaryWireSchema = z.object({
   name: z.string(),
   binding: z.string(),
@@ -146,6 +179,8 @@ const operationSummaryWireSchema = z.object({
    * and `z.infer` still yields a required array, so every reader can index it unconditionally.
    */
   inputMimeParts: z.array(mimePartWireSchema).default([]),
+  /** The WS-SecurityPolicy the WSDL attaches to this operation; absent when it attaches none. */
+  wssPolicy: wssPolicyWireSchema.optional(),
 });
 
 const importProblemSchema = z.object({
@@ -620,7 +655,8 @@ const timingsWireSchema = z.object({
   downloadMs: z.number().optional(),
 });
 
-const redirectWireSchema = z.object({ url: z.string(), status: z.number() });
+/** One redirect hop; `upgrade` marks the same-host `http://` → `https://` hop, resent as written (#71). */
+const redirectWireSchema = z.object({ url: z.string(), status: z.number(), upgrade: z.literal(true).optional() });
 
 /** Wire projection of one certificate in the peer chain — see the engine's `PeerCert`. */
 export const peerCertWireSchema = z.object({
@@ -875,6 +911,39 @@ export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
  * engine's `WssAction` exactly — booleans, a human-readable detail and the signer's subject.
  * No key material, no secret reference, nothing that could carry one.
  */
+/** One `ds:Reference` as the WS-Security debugger reports it; mirrors the engine's `WssReferenceCheck`. */
+export const wssReferenceCheckWireSchema = z.object({
+  uri: z.string(),
+  element: z.string().optional(),
+  ok: z.boolean(),
+  transforms: z.array(z.string()),
+  inclusivePrefixes: z.array(z.string()),
+  digestAlgorithm: z.string(),
+  expectedDigest: z.string(),
+  computedDigest: z.string().optional(),
+  problem: z.string().optional(),
+});
+export type WssReferenceCheckWire = z.infer<typeof wssReferenceCheckWireSchema>;
+
+/** One `ds:Signature` as the debugger reports it; mirrors the engine's `WssSignatureCheck`. */
+export const wssSignatureCheckWireSchema = z.object({
+  canonicalization: z.string(),
+  signatureMethod: z.string(),
+  references: z.array(wssReferenceCheckWireSchema),
+  signatureValueOk: z.boolean(),
+});
+export type WssSignatureCheckWire = z.infer<typeof wssSignatureCheckWireSchema>;
+
+/** One child of a `wsse:Security` header, in header order; mirrors the engine's `WssTimelineStep`. */
+export const wssTimelineStepWireSchema = z.object({
+  kind: z.enum(['timestamp', 'username-token', 'token', 'signature', 'encryption', 'other']),
+  summary: z.string(),
+  covers: z.array(z.string()).optional(),
+  id: z.string().optional(),
+  actor: z.string().optional(),
+});
+export type WssTimelineStepWire = z.infer<typeof wssTimelineStepWireSchema>;
+
 export const wssActionWireSchema = z.object({
   kind: z.enum(['decrypt', 'signature', 'timestamp']),
   ok: z.boolean(),
@@ -886,6 +955,12 @@ export const wssActionWireSchema = z.object({
   /** Names of the parts a signature covered (`Body`, `Timestamp`, …); signature actions only. */
   references: z.array(z.string()).optional(),
   coversBody: z.boolean().optional(),
+  /** Every reference's expected and computed digest; signature actions only. */
+  check: wssSignatureCheckWireSchema.optional(),
+  /** This machine's clock minus `wsu:Created`, in seconds; timestamp actions only. */
+  skewSeconds: z.number().optional(),
+  /** The clock skew tolerated, in seconds; timestamp actions only. */
+  toleranceSeconds: z.number().optional(),
 });
 export type WssActionWire = z.infer<typeof wssActionWireSchema>;
 
@@ -898,6 +973,8 @@ export const wssExchangeWireSchema = z.object({
     .object({
       actions: z.array(wssActionWireSchema),
       errors: z.array(z.string()),
+      /** The response's `wsse:Security` header, in header order, as it arrived. */
+      timeline: z.array(wssTimelineStepWireSchema).optional(),
     })
     .optional(),
 });
@@ -2970,6 +3047,180 @@ export type SequenceWaitingEvent = z.infer<typeof sequenceWaitingEventSchema>;
 export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
 export type LogExportHarResponse = z.infer<typeof logExportHarResponseSchema>;
 
+// --- Mock services (#59) ------------------------------------------------------------------------
+
+const mockCheckWire = {
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+};
+
+/** One match condition of a response: a body expression, or a named query, header or path value. */
+export const mockMatchWireSchema = z.union([
+  z.object({
+    from: z.literal('body'),
+    language: z.enum(['xpath', 'jsonpath']),
+    expression: z.string(),
+    namespaces: z.record(z.string(), z.string()).optional(),
+    ...mockCheckWire,
+  }),
+  z.object({ from: z.enum(['query', 'header', 'path']), name: z.string(), ...mockCheckWire }),
+]);
+export type MockMatchWire = z.infer<typeof mockMatchWireSchema>;
+
+export const mockScenarioWireSchema = z.object({
+  name: z.string(),
+  state: z.string().optional(),
+  next: z.string().optional(),
+});
+export type MockScenarioWire = z.infer<typeof mockScenarioWireSchema>;
+
+export const mockHeaderWireSchema = z.object({ name: z.string(), value: z.string() });
+export type MockHeaderWire = z.infer<typeof mockHeaderWireSchema>;
+
+export const mockBodyLanguageSchema = z.enum(['xml', 'json', 'text', 'none']);
+export type MockBodyLanguageWire = z.infer<typeof mockBodyLanguageSchema>;
+
+/** One canned response: `<slug>.response.yaml` and its body file. */
+export const mockResponseWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  status: z.number(),
+  headers: z.array(mockHeaderWireSchema),
+  delayMs: z.number(),
+  body: mockBodyLanguageSchema,
+  bodyText: z.string(),
+  match: z.array(mockMatchWireSchema),
+  scenario: mockScenarioWireSchema.optional(),
+});
+export type MockResponseWire = z.infer<typeof mockResponseWireSchema>;
+
+export const mockDispatchSchema = z.enum(['sequence', 'random', 'match', 'script']);
+export type MockDispatchWire = z.infer<typeof mockDispatchSchema>;
+
+/** One operation of a mock: `operations/<slug>/operation.yaml`, its responses and `dispatch.ts`. */
+export const mockOperationWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  /** The contract's key: a SOAP operation name, or REST `<method> <path>`. */
+  operation: z.string(),
+  dispatch: mockDispatchSchema,
+  defaultResponseId: z.string().optional(),
+  script: z.string().optional(),
+  responses: z.array(mockResponseWireSchema),
+});
+export type MockOperationWire = z.infer<typeof mockOperationWireSchema>;
+
+export const mockValidationSchema = z.enum(['reject', 'report', 'off']);
+export type MockValidationWire = z.infer<typeof mockValidationSchema>;
+
+/** A mock as the renderer sees it: `mocks/<slug>/` and everything under it. */
+export const mockWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  source: z.object({ containerId: z.string(), binding: z.string().optional() }),
+  port: z.number(),
+  path: z.string(),
+  validation: mockValidationSchema,
+  operations: z.array(mockOperationWireSchema),
+});
+export type MockWire = z.infer<typeof mockWireSchema>;
+
+/** What `update-mock` may change. */
+export const mockPatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  port: z.number().int().min(0).max(65_535).optional(),
+  path: z.string().optional(),
+  validation: mockValidationSchema.optional(),
+});
+export type MockPatch = z.infer<typeof mockPatchSchema>;
+
+/** What `update-mock-operation` may change; `null` clears the default or the script. */
+export const mockOperationPatchSchema = z.object({
+  dispatch: mockDispatchSchema.optional(),
+  defaultResponseId: z.string().nullable().optional(),
+  script: z.string().nullable().optional(),
+});
+export type MockOperationPatch = z.infer<typeof mockOperationPatchSchema>;
+
+/** What `update-mock-response` may change; `scenario: null` takes the response out of its scenario. */
+export const mockResponsePatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  status: z.number().int().optional(),
+  headers: z.array(mockHeaderWireSchema).optional(),
+  delayMs: z.number().int().optional(),
+  body: mockBodyLanguageSchema.optional(),
+  bodyText: z.string().optional(),
+  match: z.array(mockMatchWireSchema).optional(),
+  scenario: mockScenarioWireSchema.nullable().optional(),
+});
+export type MockResponsePatch = z.infer<typeof mockResponsePatchSchema>;
+
+// --- Running a mock (#59) ---
+
+export const mockIdRequestSchema = z.object({ mockId: z.string() });
+export type MockIdRequest = z.infer<typeof mockIdRequestSchema>;
+
+/** A mock's running state; `url` is set while it runs, `error` when it failed to start. */
+export const mockStateEventSchema = z.object({
+  mockId: z.string(),
+  running: z.boolean(),
+  url: z.string().optional(),
+  /** True when the mock listens on every interface (the preference) rather than loopback. */
+  exposed: z.boolean().optional(),
+  warnings: z.array(z.object({ code: z.string(), message: z.string() })),
+  error: z.string().optional(),
+});
+export type MockStateEvent = z.infer<typeof mockStateEventSchema>;
+
+export const mockStopResponseSchema = z.object({ stopped: z.boolean() });
+export const mockResetResponseSchema = z.object({ reset: z.boolean() });
+export const mockStatesResponseSchema = z.object({ states: z.array(mockStateEventSchema) });
+
+const mockEventMessageWireSchema = z.object({
+  headers: z.array(z.tuple([z.string(), z.string()])),
+  body: z.string(),
+  truncated: z.boolean(),
+});
+
+/** One request a running mock answered, with sensitive headers and query values masked. */
+export const mockExchangeEventSchema = z.object({
+  mockId: z.string(),
+  seq: z.number(),
+  at: z.string(),
+  method: z.string(),
+  url: z.string(),
+  operation: z.string().optional(),
+  responseId: z.string().optional(),
+  responseName: z.string().optional(),
+  status: z.number(),
+  durationMs: z.number(),
+  problems: z.array(
+    z.object({
+      code: z.string(),
+      message: z.string(),
+      in: z.string().optional(),
+      name: z.string().optional(),
+      path: z.string().optional(),
+      line: z.number().optional(),
+      column: z.number().optional(),
+    }),
+  ),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+  log: z.array(z.string()).optional(),
+  request: mockEventMessageWireSchema,
+  response: mockEventMessageWireSchema,
+});
+export type MockExchangeEventWire = z.infer<typeof mockExchangeEventSchema>;
+
 /** The whole open project, as mirrored by the renderer. Always a complete replacement. */
 export const projectWireSchema = z.object({
   id: z.string(),
@@ -3000,6 +3251,8 @@ export const projectWireSchema = z.object({
   wsRequests: z.array(wsRequestWireSchema),
   /** The project's sequences (`sequences/`), in `order`. */
   sequences: z.array(sequenceWireSchema),
+  /** The project's mocks (`mocks/`), in `order`. */
+  mocks: z.array(mockWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -3203,6 +3456,49 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-sequence'), sequenceId: z.string(), patch: sequencePatchSchema }),
   z.object({ kind: z.literal('remove-sequence'), sequenceId: z.string() }),
   z.object({ kind: z.literal('duplicate-sequence'), sequenceId: z.string() }),
+  z.object({
+    kind: z.literal('add-mock'),
+    containerId: z.string(),
+    name: z.string().min(1),
+    /** SOAP: the binding the mock speaks, in Clark notation; the first SOAP 1.1 binding when absent. */
+    binding: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-mock'), mockId: z.string(), patch: mockPatchSchema }),
+  z.object({
+    kind: z.literal('update-mock-operation'),
+    mockId: z.string(),
+    operationId: z.string(),
+    patch: mockOperationPatchSchema,
+  }),
+  z.object({
+    kind: z.literal('add-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    /** Copy this response rather than start from an empty 200. */
+    copyOf: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('update-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    responseId: z.string(),
+    patch: mockResponsePatchSchema,
+  }),
+  z.object({
+    kind: z.literal('remove-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    responseId: z.string(),
+  }),
+  z.object({
+    kind: z.literal('move-mock-response'),
+    mockId: z.string(),
+    operationId: z.string(),
+    responseId: z.string(),
+    to: z.number().int().min(0),
+  }),
+  z.object({ kind: z.literal('remove-mock'), mockId: z.string() }),
+  z.object({ kind: z.literal('duplicate-mock'), mockId: z.string() }),
   z.object({
     kind: z.literal('add-ws-request'),
     apiId: z.string(),
@@ -5100,8 +5396,37 @@ export const wssPreviewOutgoingRequestSchema = z.object({
   envelopeXml: z.string().optional(),
 });
 export const wssEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
+/**
+ * `wss.previewOutgoing`: the secured envelope plus its `wsse:Security` timeline (#57), read from
+ * the redacted envelope, so the preview shows exactly what the timeline describes.
+ */
+export const wssPreviewResponseSchema = z.object({
+  envelopeXml: z.string(),
+  timeline: z.array(wssTimelineStepWireSchema),
+});
 export type WssPreviewOutgoingRequest = z.infer<typeof wssPreviewOutgoingRequestSchema>;
 export type WssEnvelopeResponse = z.infer<typeof wssEnvelopeResponseSchema>;
+export type WssPreviewResponse = z.infer<typeof wssPreviewResponseSchema>;
+
+/**
+ * `wss.policyStatus`: the WS-SecurityPolicy of a request's operation as the Auth inspector shows it
+ * (#58) — its summary lines, whether the request as configured now satisfies it (each requirement
+ * met or not, and why), and the entries "Apply policy" would store. `status` is absent when the
+ * operation carries no policy. Main runs the engine's check; the renderer only renders it.
+ */
+export const wssPolicyStatusRequestSchema = z.object({ requestId: z.string() });
+export const wssPolicyStatusResponseSchema = z.object({
+  status: z
+    .object({
+      lines: z.array(z.object({ label: z.string(), value: z.string() })),
+      satisfied: z.boolean(),
+      results: z.array(z.object({ requirement: z.string(), met: z.boolean(), reason: z.string().optional() })),
+      proposal: z.array(wssEntryWireSchema),
+      notes: z.array(z.string()),
+    })
+    .optional(),
+});
+export type WssPolicyStatusResponse = z.infer<typeof wssPolicyStatusResponseSchema>;
 
 /** `wss.insertEntry`: applies one ad-hoc entry, with no configuration involved. */
 export const wssInsertEntryRequestSchema = z.object({
@@ -5142,6 +5467,65 @@ export type WssRemoveOutgoingRequest = z.infer<typeof wssRemoveOutgoingRequestSc
 /** `keystores.pickFile`: an Open dialog filtered to keystore files; records a read pick. */
 export const keystoresPickFileRequestSchema = z.object({});
 export const keystoresPickFileResponseSchema = z.object({ path: z.string().optional() });
+
+/**
+ * `certificates.check`: how long the certificates the open workspace relies on have left —
+ * every keystore alias (leaf and the chain it carries), the CA bundle, and, when
+ * `probeEndpoints` is set, the chain each TLS endpoint presents. Probing reaches the network (one
+ * verified TLS handshake per `host:port`, no request), so it is asked for; the local reads are not.
+ * Certificates only — no key, no PEM.
+ */
+export const certificatesCheckRequestSchema = z.object({ probeEndpoints: z.boolean() });
+export type CertificatesCheckRequest = z.infer<typeof certificatesCheckRequestSchema>;
+/** Where a checked certificate came from. */
+export const certificateSourceSchema = z.enum(['endpoint', 'keystore', 'ca-bundle']);
+export type CertificateSourceWire = z.infer<typeof certificateSourceSchema>;
+export const certificateFindingSchema = z.object({
+  source: certificateSourceSchema,
+  /** The project that names it; absent for the CA bundle, which is the user's, not a project's. */
+  projectId: z.string().optional(),
+  /** `host:port`, `<keystore> › <alias>`, or `CA bundle`. */
+  where: z.string(),
+  subject: z.string(),
+  /** ISO 8601. */
+  validTo: z.string(),
+  status: z.enum(['ok', 'expiring', 'expired']),
+  /** Whole days left, rounded up; `0` or less once expired. */
+  daysLeft: z.number(),
+});
+export type CertificateFindingWire = z.infer<typeof certificateFindingSchema>;
+/** Something that could not be checked: an endpoint that did not answer, a keystore that did not load. */
+export const certificateSkippedSchema = z.object({
+  source: certificateSourceSchema,
+  projectId: z.string().optional(),
+  where: z.string(),
+  message: z.string(),
+});
+export type CertificateSkippedWire = z.infer<typeof certificateSkippedSchema>;
+/**
+ * An endpoint whose chain does not verify as a send would verify it: expired, untrusted, or not
+ * issued for the host. The probe verifies, so nothing of such a chain is read; `code` says why.
+ */
+export const certificateUntrustedSchema = z.object({
+  projectId: z.string().optional(),
+  /** `host:port`. */
+  where: z.string(),
+  /** OpenSSL's reason, e.g. `CERT_HAS_EXPIRED`, or Node's `ERR_TLS_CERT_ALTNAME_INVALID`. */
+  code: z.string(),
+  message: z.string(),
+});
+export type CertificateUntrustedWire = z.infer<typeof certificateUntrustedSchema>;
+export const certificatesCheckResponseSchema = z.object({
+  /** The warning window the statuses were judged against (`ssl.expiryWarningDays`). */
+  warnDays: z.number(),
+  certificates: z.array(certificateFindingSchema),
+  skipped: z.array(certificateSkippedSchema),
+  /** Probed endpoints whose chain did not verify; always empty when endpoints were not probed. */
+  untrusted: z.array(certificateUntrustedSchema),
+  /** Whether endpoints were probed; `false` means only keystores and the CA bundle were read. */
+  probedEndpoints: z.boolean(),
+});
+export type CertificatesCheckResponse = z.infer<typeof certificatesCheckResponseSchema>;
 
 export const attachmentsPickFilesRequestSchema = z.object({});
 export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.string()) });
@@ -5355,6 +5739,8 @@ export const preferencesWireSchema = z.object({
     /** True when main picked `caBundlePath` through a native dialog; see `SslPreferences`. */
     caBundlePickedByMain: z.boolean().optional(),
     clientKeystoreRef: z.string().optional(),
+    /** Days before a certificate's expiry that `certificates.check` starts warning. */
+    expiryWarningDays: z.number(),
     trustAll: z.literal(false),
   }),
   git: z.object({
@@ -5403,6 +5789,7 @@ export const preferencesWireSchema = z.object({
   updates: z.object({ checkOnLaunch: z.boolean() }),
   accounts: z.object({ showInStatusBar: z.boolean() }),
   secrets: z.object({ sourceCacheSeconds: z.number() }),
+  mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
   terminal: z.object({ confirmMultilinePaste: z.boolean(), copyOnSelect: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),
 });
@@ -5422,6 +5809,7 @@ export const preferencesSectionSchema = z.enum([
   'updates',
   'accounts',
   'secrets',
+  'mocks',
   'terminal',
   'tokens',
   'shortcuts',
@@ -5452,6 +5840,7 @@ export const preferencesPatchWireSchema = z.object({
   updates: z.record(z.string(), z.unknown()).optional(),
   accounts: z.record(z.string(), z.unknown()).optional(),
   secrets: z.record(z.string(), z.unknown()).optional(),
+  mocks: z.record(z.string(), z.unknown()).optional(),
   terminal: z.record(z.string(), z.unknown()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
@@ -5460,6 +5849,19 @@ export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
 /** Response for every `preferences.*` channel, and the payload of `preferences.changed`. */
 export const preferencesResponseSchema = z.object({ preferences: preferencesWireSchema });
 export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
+
+/**
+ * Response for `preferences.policy`: the managed-preferences policy main loaded at startup.
+ * `locked` and `ignored` are dotted keys (`proxy.mode`); `error` says why a policy file that
+ * exists could not be applied, in which case nothing is locked.
+ */
+export const preferencesPolicyResponseSchema = z.object({
+  path: z.string(),
+  locked: z.array(z.string()),
+  ignored: z.array(z.string()),
+  error: z.string().optional(),
+});
+export type PreferencesPolicyResponse = z.infer<typeof preferencesPolicyResponseSchema>;
 
 /** Request payload for `preferences.update`. */
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
@@ -5846,6 +6248,7 @@ export const updateStatusSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('declined'), version: z.string() }),
   z.object({ kind: z.literal('downloaded'), version: z.string() }),
   z.object({ kind: z.literal('installing'), version: z.string() }),
+  z.object({ kind: z.literal('release-page'), version: z.string() }),
   z.object({ kind: z.literal('error'), message: z.string() }),
 ]);
 export type UpdateStatusWire = z.infer<typeof updateStatusSchema>;
@@ -6140,6 +6543,28 @@ export const workspaceProjectIdRequestSchema = z.object({ projectId: z.string() 
 /** Response for `workspace.exportProject`: the folder written, or `null` when cancelled. */
 export const workspaceExportProjectResponseSchema = z.object({ dir: z.string().nullable() });
 export type WorkspaceExportProjectResponse = z.infer<typeof workspaceExportProjectResponseSchema>;
+
+/**
+ * Request for `workspace.exportCollection` (collection exporters spec §4): the project by id, or
+ * the one holding `containerId`; with `containerId`, only that API or interface is exported.
+ */
+export const workspaceExportCollectionRequestSchema = z.object({
+  projectId: z.string().optional(),
+  containerId: z.string().optional(),
+  format: z.enum(['postman', 'opencollection']),
+});
+export type WorkspaceExportCollectionRequest = z.infer<typeof workspaceExportCollectionRequestSchema>;
+
+/** Response for `workspace.exportCollection`: the folder and file names written, and the report. */
+export const workspaceExportCollectionResponseSchema = z.object({
+  cancelled: z.boolean(),
+  dir: z.string().optional(),
+  files: z.array(z.string()),
+  requests: z.number().int().nonnegative(),
+  warnings: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+export type WorkspaceExportCollectionResponse = z.infer<typeof workspaceExportCollectionResponseSchema>;
 
 /** Request for `workspace.setActiveEnvironment`; `null` deactivates. */
 export const workspaceSetActiveEnvironmentRequestSchema = z.object({ environmentId: z.string().nullable() });

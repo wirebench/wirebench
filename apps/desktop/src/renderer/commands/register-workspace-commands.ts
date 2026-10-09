@@ -1,10 +1,14 @@
 import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
 import { hasSignedInServer } from './register-account-commands.js';
+import { exportCollection } from '../features/explorer/export-collection.js';
 import { projectRowActions } from '../features/explorer/project-actions.js';
 import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
+import { runCertificateCheckCommand } from '../state/certificate-expiry.js';
+import { useProjectStore } from '../state/project.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { useUiStore } from '../state/ui.js';
+import { ipc } from '../state/ipc-client.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 
 /** The project the explorer has selected, if any — what the four project commands act on. */
@@ -71,6 +75,17 @@ export function registerWorkspaceCommands(): void {
 
   // The map from a `${secret:name}` to an external secret manager belongs to the workspace, not to a
   // project, so an open workspace is all it needs. No shortcut; the palette finds it by name.
+  // Reaches every TLS endpoint the open projects name (one handshake each), so it runs only when
+  // asked; keystores and the CA bundle are re-checked on their own. Results land in Problems.
+  registerCommand({
+    ...catalogEntry('workspace.checkCertificates'),
+    when: () => Object.keys(useProjectStore.getState().projects).length > 0,
+    whenScope: 'project',
+    run: () => {
+      void runCertificateCheckCommand();
+    },
+  });
+
   registerCommand({
     ...catalogEntry('workspace.secretSources'),
     when: workspaceIsOpen,
@@ -83,6 +98,15 @@ export function registerWorkspaceCommands(): void {
   // Moved here from `register-project-commands.ts` with the rest of the workspace vocabulary;
   // `project.new` / `project.open` / `project.close` are gone, because a project belongs to a
   // workspace and creating one asks for a name only.
+  // Another window, at the picker, for another workspace. Always available: a window at the
+  // picker may open one too.
+  registerCommand({
+    ...catalogEntry('workspace.newWindow'),
+    run: () => {
+      void ipc().app.newWindow(undefined);
+    },
+  });
+
   registerCommand({
     ...catalogEntry('workspace.newProject'),
     when: workspaceIsOpen,
@@ -123,6 +147,23 @@ export function registerWorkspaceCommands(): void {
       }
     },
   });
+
+  for (const [id, format] of [
+    ['workspace.exportPostman', 'postman'],
+    ['workspace.exportOpenCollection', 'opencollection'],
+  ] as const) {
+    registerCommand({
+      ...catalogEntry(id),
+      when: () => selectedProjectId() !== undefined,
+      whenScope: 'selection.project',
+      run: () => {
+        const projectId = selectedProjectId();
+        if (projectId !== undefined) {
+          void exportCollection({ projectId }, format);
+        }
+      },
+    });
+  }
 
   registerCommand({
     ...catalogEntry('workspace.removeProject'),

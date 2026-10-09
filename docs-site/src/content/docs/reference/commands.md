@@ -85,10 +85,14 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Switch Workspace… | — | — |
 | Manage Workspaces… | — | — |
 | Secret Sources… | — | — |
+| Check Certificate Expiry | — | — |
 | New Project… | <kbd>⌘⇧N</kbd> | <kbd>Ctrl+Shift+N</kbd> |
+| New Window | <kbd>⌘⌥N</kbd> | <kbd>Ctrl+Alt+N</kbd> |
 | Link Project Folder… | — | — |
 | Import Project Folder… | — | — |
 | Export Project… | — | — |
+| Export Project as Postman Collection… | — | — |
+| Export Project as OpenCollection… | — | — |
 | Remove Project from Workspace… | — | — |
 | Share Workspace… | — | — |
 | Join Shared Workspace… | — | — |
@@ -142,6 +146,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | WebSocket: Copy as Command | — | — |
 | Sequence: Run | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Sequence: Cancel Run | — | — |
+| Mock: Start | — | — |
+| Mock: Stop | — | — |
 | Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Cancel Request | <kbd>⎋</kbd> | <kbd>Esc</kbd> |
 | Request: Send to Environments… | — | — |
