@@ -68,6 +68,19 @@ export function whenWorkspaceSwitches(onSwitch: () => void): (workspaceId: strin
   };
 }
 
+/**
+ * One window's workspace-switch hook (multi-window: each window holds its own workspace). A switch in that
+ * window ends that window's sessions only; another window keeps its sessions and its pending refusals.
+ */
+export function sshSessionsEndOnSwitch(
+  ssh: Pick<SshService, 'disposeFor'>,
+  sender: WebContents,
+): (workspaceId: string | null | undefined) => void {
+  return whenWorkspaceSwitches(() => {
+    ssh.disposeFor(sender);
+  });
+}
+
 interface Live {
   readonly session: SshSession;
   readonly sender: WebContents;
@@ -89,6 +102,8 @@ export class SshService {
   private trustQueue: Promise<void> = Promise.resolve();
   /** Bumped by {@link disposeAll}; a connect that straddles it closes what it opened. */
   private epoch = 0;
+  /** Bumped per window by {@link disposeFor}, so a connect straddling that window's switch closes too. */
+  private readonly generations = new Map<number, number>();
 
   constructor(private readonly deps: SshServiceDeps) {}
 
@@ -99,6 +114,7 @@ export class SshService {
    */
   async connect(sender: WebContents, request: SshConnectRequest): Promise<{ sessionId: string }> {
     const epoch = this.epoch;
+    const generation = this.generations.get(sender.id) ?? 0;
     const chain = await this.chainFor(request.hostId);
     const hops = await this.credentialsFor(chain);
     const known = await this.readKnownHosts();
@@ -148,7 +164,7 @@ export class SshService {
       }
       throw asWirebenchError(error);
     }
-    if (epoch !== this.epoch || sender.isDestroyed()) {
+    if (epoch !== this.epoch || generation !== (this.generations.get(sender.id) ?? 0) || sender.isDestroyed()) {
       session.close();
       throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     }
@@ -251,8 +267,12 @@ export class SshService {
     }
   }
 
-  /** Closes the sessions one window owns (the window went away). */
+  /**
+   * Closes the sessions one window owns (the window went away, reloaded, or switched workspace), and a
+   * connect it has in flight; other windows' sessions and refusals are left alone.
+   */
   disposeFor(sender: WebContents): void {
+    this.generations.set(sender.id, (this.generations.get(sender.id) ?? 0) + 1);
     this.refused.delete(sender.id);
     for (const [sessionId, live] of [...this.live]) {
       if (live.sender.id !== sender.id) continue;
@@ -272,6 +292,8 @@ export class SshService {
     sender.once('destroyed', () => {
       this.watched.delete(sender.id);
       this.disposeFor(sender);
+      // `webContents` ids are never reused; a connect still in flight is caught by `isDestroyed()`.
+      this.generations.delete(sender.id);
     });
   }
 

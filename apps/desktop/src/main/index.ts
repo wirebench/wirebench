@@ -48,7 +48,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { enabledAreasFromEnv, hostsOnWorkspaceChange, registerEnabledAreaChannels } from './areas.js';
 import { HostsService } from './hosts-service.js';
-import { SshService, whenWorkspaceSwitches } from './ssh-service.js';
+import { SshService, sshSessionsEndOnSwitch } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
@@ -519,10 +519,6 @@ const sshService = new SshService({
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
   emit: emitEvent,
 });
-/** Only a switch to another workspace (or a close) ends the sessions; a rename or reload does not. */
-const sshSessionsEndOnSwitch = whenWorkspaceSwitches(() => {
-  sshService.disposeAll();
-});
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
 const workspaceState = new WorkspaceState(app.getPath('userData'));
@@ -538,6 +534,9 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     emitEvent(target, event, payload);
   };
   const picks = new DialogPicks(appPicks);
+  // Only a switch of this window's workspace (or a close) ends this window's SSH sessions; a rename or
+  // reload does not, and another window's sessions are its own workspace's.
+  const endSshOnSwitch = sshSessionsEndOnSwitch(sshService, target);
   const teamSecrets = new TeamSecretsService({
     store: secretStore,
     onChanged: (workspaceId, status) => {
@@ -693,7 +692,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
           broadcast(events.ssh.hostsChanged, {});
         });
         // A session belongs to the workspace it was opened in; its credentials were that workspace's.
-        sshSessionsEndOnSwitch(snapshot?.id);
+        endSshOnSwitch(snapshot?.id);
       },
       onDeleted: (workspaceId) => {
         void cookies.deleteWorkspace(workspaceId).catch(() => undefined);

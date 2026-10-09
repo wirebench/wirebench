@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
 import type { HostsFile, KnownHostEntry, OpenSessionOptions, SshSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
-import { SshService, whenWorkspaceSwitches } from '../src/main/ssh-service.js';
+import { SshService, sshSessionsEndOnSwitch, whenWorkspaceSwitches } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
 
 const FILE = parseHostsFile(
@@ -369,6 +369,58 @@ describe('SshService', () => {
     seen('w2');
     seen(null);
     expect(onSwitch).toHaveBeenCalledTimes(3);
+  });
+
+  it("multi-window: one window's workspace switch ends its own sessions only", async () => {
+    const a = fakeSession('sa');
+    const b = fakeSession('sb');
+    const { service, open } = make({ known: [KEY] });
+    open.mockResolvedValueOnce(b.session).mockResolvedValueOnce(a.session); // B connects first
+    const winA = sender(1);
+    const winB = sender(2);
+    const switchA = sshSessionsEndOnSwitch(service, as(winA));
+    const switchB = sshSessionsEndOnSwitch(service, as(winB));
+    switchA('w1');
+    switchB('w2');
+    const { sessionId: sb } = await service.connect(as(winB), CONNECT);
+    await service.connect(as(winA), CONNECT);
+    switchA('w1'); // a rename or reload of the same workspace
+    expect(a.close).not.toHaveBeenCalled();
+    switchA('w3');
+    expect(a.close).toHaveBeenCalledTimes(1);
+    expect(b.close).not.toHaveBeenCalled();
+    service.write(as(winB), { sessionId: sb, data: 'aGk=' });
+    expect(b.write).toHaveBeenCalledWith(Buffer.from('hi'));
+  });
+
+  it("multi-window: disposeFor keeps another window's refusal trustable", async () => {
+    const { service, knownHostsFile } = make();
+    const winA = sender(1);
+    const winB = sender(2);
+    await expect(service.connect(as(winA), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    await expect(service.connect(as(winB), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    service.disposeFor(as(winA));
+    await expect(service.trust(as(winA), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+    await service.trust(as(winB), { ...KEY, replace: false });
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([KEY]);
+  });
+
+  it('disposeFor while that window is connecting closes the session and fails the connect; others go on', async () => {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { service, fake, open } = make({ known: [KEY], gate });
+    const winA = sender(1);
+    const pending = service.connect(as(winA), CONNECT);
+    await vi.waitFor(() => expect(open).toHaveBeenCalled());
+    service.disposeFor(as(sender(2))); // another window's switch does not touch this connect
+    service.disposeFor(as(winA));
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'ssh-session-closed' });
+    expect(fake.close).toHaveBeenCalledTimes(1);
   });
 
   it('a jump host comes first in the hops, each with its own credentials', async () => {
