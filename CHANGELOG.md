@@ -37,6 +37,15 @@ All notable changes to this project are documented here. The format follows
   problems found in it. A mock listens on this machine only unless **Preferences → Mock services** says
   otherwise (#59).
 
+### Changed
+
+- **A same-host `http://` → `https://` redirect is followed with the request intact.** When a server answers
+  `http://host/path` with a 301, 302, 307 or 308 to `https://host/path` (same host, path and query, default
+  ports), a send follows it even with Follow Redirects off, and resends the same method, body and
+  credentials there, rather than returning the redirect page (SOAP) or turning a `POST` into a bodyless
+  `GET`. A SOAP response carries an `https-upgrade` Problem saying to change the endpoint; the redirect list
+  marks the hop. NTLM and Kerberos handshakes continue on the `https://` URL (#71).
+
 ## [4.0.0] - 2026-10-08
 
 ### Added

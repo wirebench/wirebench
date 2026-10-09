@@ -245,7 +245,9 @@ export interface SoapExchange {
    */
   readonly durationMs: number;
   readonly problems: readonly {
-    readonly code: 'not-soap' | 'xml-parse-error' | 'decode-error' | 'mime-parse' | 'inline-file-missing';
+    /** `https-upgrade` is a note, not a failure: the same-host `http://` → `https://` redirect was followed (#71). */
+    readonly code:
+      'not-soap' | 'xml-parse-error' | 'decode-error' | 'mime-parse' | 'inline-file-missing' | 'https-upgrade';
     readonly message: string;
   }[];
   /** What authentication did, when the send was given {@link SoapSendInput.auth}. */

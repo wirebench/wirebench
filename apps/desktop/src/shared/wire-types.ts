@@ -655,7 +655,8 @@ const timingsWireSchema = z.object({
   downloadMs: z.number().optional(),
 });
 
-const redirectWireSchema = z.object({ url: z.string(), status: z.number() });
+/** One redirect hop; `upgrade` marks the same-host `http://` → `https://` hop, resent as written (#71). */
+const redirectWireSchema = z.object({ url: z.string(), status: z.number(), upgrade: z.literal(true).optional() });
 
 /** Wire projection of one certificate in the peer chain — see the engine's `PeerCert`. */
 export const peerCertWireSchema = z.object({

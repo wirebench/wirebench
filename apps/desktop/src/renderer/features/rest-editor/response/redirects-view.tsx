@@ -5,6 +5,9 @@
  * browsers and curl follow), which means the request that finally arrived is not the one that was
  * written. A user debugging "my body vanished" needs to see exactly that.
  *
+ * The same-host `http://` → `https://` hop (#71) is the exception, and is marked: it is resent with its
+ * method and body, so it never changes the method.
+ *
  * Takes the `http` projection both protocols share rather than a REST summary, so the console's HTTP
  * Log can show hops for a SOAP exchange too; the arrival note needs the summary's `method` and
  * `methodChanged`, which only a REST caller has, and is omitted without them.
@@ -46,6 +49,9 @@ export function RedirectsView({ http, method, methodChanged = false }: Redirects
             <span className="min-w-0 flex-1 truncate font-mono text-fg-default" title={hop.url}>
               {hop.url}
             </span>
+            {hop.upgrade === true && (
+              <span className="shrink-0 text-fg-muted">upgraded to HTTPS, method and body kept</span>
+            )}
           </li>
         ))}
       </ol>

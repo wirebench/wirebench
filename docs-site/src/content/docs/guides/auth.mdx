@@ -111,6 +111,8 @@ How the token is sent depends on where it goes:
   origin: a challenge from a redirect target on another origin gets no token, and the send fails
   with `kerberos-cross-origin`, naming that target. NTLM follows the same rule, failing with
   `ntlm-cross-origin`.
+  A same-host `http://` → `https://` upgrade is not another origin for this rule: the handshake
+  continues on the `https://` URL.
 - **Definition fetches** (OpenAPI, AsyncAPI, WSDL) send one preemptive token, to the definition's
   own origin only, never to a redirect target on another origin.
 - **WebSocket upgrades and gRPC calls** send one preemptive token.

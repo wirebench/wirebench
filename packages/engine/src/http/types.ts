@@ -164,7 +164,12 @@ export interface HttpExchange {
   readonly rawRequest: Uint8Array;
   /** Reconstructed status line + headers + body, as received on the wire. */
   readonly rawResponse: Uint8Array;
-  readonly redirects: readonly { readonly url: string; readonly status: number }[];
+  /**
+   * The redirect hops followed, in order: each hop's URL and the status it answered with. `upgrade`
+   * marks the same-host `http://` → `https://` redirect, which is followed even without
+   * `followRedirects` and keeps the method and body (see `https-upgrade.ts`).
+   */
+  readonly redirects: readonly { readonly url: string; readonly status: number; readonly upgrade?: true }[];
   /**
    * The TLS connection this exchange travelled over: protocol, cipher, whether the
    * peer chain verified, and the chain itself. Absent for plain HTTP.
