@@ -3,3 +3,4 @@ export * from './model.js';
 export * from './resolve.js';
 export * from './known-hosts.js';
 export * from './session.js';
+export * from './openssh-config/index.js';
