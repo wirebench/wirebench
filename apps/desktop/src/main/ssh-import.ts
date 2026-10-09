@@ -82,8 +82,9 @@ export function isEncryptedKey(text: string): boolean {
   if (!text.startsWith('-----BEGIN OPENSSH PRIVATE KEY-----')) return false;
   const body = text.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   const bytes = Buffer.from(body, 'base64');
-  const magic = 'openssh-key-v1\0';
-  if (bytes.subarray(0, magic.length).toString('latin1') !== magic || bytes.length < magic.length + 4) return false;
+  // The format starts with `openssh-key-v1` and a zero byte, then the cipher name as a length-prefixed string.
+  const magic = Buffer.concat([Buffer.from('openssh-key-v1', 'latin1'), Buffer.from([0])]);
+  if (bytes.length < magic.length + 4 || !bytes.subarray(0, magic.length).equals(magic)) return false;
   const length = bytes.readUInt32BE(magic.length);
   const cipher = bytes.subarray(magic.length + 4, magic.length + 4 + length).toString('latin1');
   return cipher !== 'none';
