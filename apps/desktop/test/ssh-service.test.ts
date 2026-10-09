@@ -6,6 +6,7 @@ import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
 import type { HostsFile, KnownHostEntry, OpenSessionOptions, SshSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
 import { SshService, sshSessionsEndOnSwitch, whenWorkspaceSwitches } from '../src/main/ssh-service.js';
+import type { SshServiceDeps } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
 
 const FILE = parseHostsFile(
@@ -74,6 +75,9 @@ function make(
     /** Holds the open until it resolves. */
     gate?: Promise<void>;
     now?: () => number;
+    /** Per-window overrides (multi-window tests). */
+    hostsFor?: SshServiceDeps['hosts'];
+    secretsFor?: SshServiceDeps['secretsFor'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -98,8 +102,10 @@ function make(
     Promise.resolve({ file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] }),
   );
   const service = new SshService({
-    hosts: { current: () => opts.file ?? FILE, list },
-    secretsFor: () => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined),
+    hosts: opts.hostsFor ?? (() => ({ current: () => opts.file ?? FILE, list })),
+    secretsFor:
+      opts.secretsFor ??
+      (() => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined)),
     knownHostsFile,
     agentSocket: () => opts.agent,
     emit,
@@ -421,6 +427,32 @@ describe('SshService', () => {
     release();
     await expect(pending).rejects.toMatchObject({ code: 'ssh-session-closed' });
     expect(fake.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("multi-window: a connect reads the connecting window's hosts and secrets", async () => {
+    const fileB = parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.2, ssh: { user: bee, auth: { password: '\${secret:a_pw}' } } }\n`,
+    );
+    const winA = sender(1);
+    const winB = sender(2);
+    const list = (): Promise<SshListHostsResponse> =>
+      Promise.resolve({ file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] });
+    const hostsFor = vi.fn((s: { id: number }) => ({ current: () => (s.id === 2 ? fileB : FILE), list }));
+    const secretsFor = vi.fn(
+      (s: { id: number }) => (ref: string) =>
+        Promise.resolve(ref === 'secret:a_pw' ? (s.id === 2 ? 'pw-b' : 'pw-a') : undefined),
+    );
+    const { service, open } = make({ known: [KEY], hostsFor, secretsFor });
+    await service.connect(as(winB), CONNECT);
+    expect(hostsFor).toHaveBeenCalledWith(winB);
+    expect(secretsFor).toHaveBeenCalledWith(winB);
+    expect(open.mock.calls[0]![0].hops.map((h) => [h.address, h.user, h.auth])).toEqual([
+      ['10.0.0.2', 'bee', { kind: 'password', password: 'pw-b' }],
+    ]);
+    await service.connect(as(winA), CONNECT);
+    expect(open.mock.calls[1]![0].hops.map((h) => [h.address, h.auth])).toEqual([
+      ['10.0.0.1', { kind: 'password', password: 'pw-a' }],
+    ]);
   });
 
   it('a jump host comes first in the hops, each with its own credentials', async () => {

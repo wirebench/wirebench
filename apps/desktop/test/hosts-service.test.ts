@@ -2,10 +2,40 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { HostsService } from '../src/main/hosts-service.js';
+import { WorkspaceError } from '@wirebench/engine';
+import { describe, expect, it, vi } from 'vitest';
+import { HostsService, windowHosts } from '../src/main/hosts-service.js';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'wb-hosts-'));
+
+describe('windowHosts (multi-window)', () => {
+  const HOST = 'version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1 }\n';
+
+  it("each window reads its own workspace's hosts.yaml and notifies only itself", async () => {
+    const dirA = dir();
+    const dirB = dir();
+    writeFileSync(join(dirA, 'hosts.yaml'), HOST);
+    const notifyA = vi.fn();
+    const notifyB = vi.fn();
+    const a = windowHosts(() => dirA, notifyA);
+    const b = windowHosts(() => dirB, notifyB);
+    expect((await a.list()).file.hosts.map((h) => h.id)).toEqual(['a']);
+    expect((await b.list()).file.hosts).toEqual([]);
+    await b.save({ version: 1, groups: [], hosts: [{ id: 'b', name: 'b', address: 'x', tags: [], ssh: {} }] });
+    expect(notifyB).toHaveBeenCalledTimes(1);
+    expect(notifyA).not.toHaveBeenCalled();
+    // A's cache is still A's file, not the one B just wrote.
+    expect(a.current()?.hosts.map((h) => h.id)).toEqual(['a']);
+    expect(readFileSync(join(dirA, 'hosts.yaml'), 'utf8')).toBe(HOST);
+  });
+
+  it('a window with no workspace open is refused as workspace-not-open', async () => {
+    const hosts = windowHosts(() => {
+      throw new WorkspaceError('workspace-not-found', 'No workspace is open');
+    }, vi.fn());
+    await expect(hosts.list()).rejects.toMatchObject({ code: 'workspace-not-open' });
+  });
+});
 
 describe('HostsService', () => {
   it('a missing hosts.yaml is the empty file with no problems', async () => {

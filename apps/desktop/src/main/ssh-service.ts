@@ -26,9 +26,13 @@ import { asWirebenchError } from './hosts-service.js';
 import type { HostsService } from './hosts-service.js';
 
 export interface SshServiceDeps {
-  readonly hosts: Pick<HostsService, 'current' | 'list'>;
-  /** The secret getter for the open workspace; read at connect time, so a workspace switch is honoured. */
-  readonly secretsFor: () => GetSecret;
+  /**
+   * The `hosts.yaml` of the connecting window's workspace (multi-window: each window holds its own).
+   * @throws WirebenchError when that window is gone
+   */
+  readonly hosts: (sender: WebContents) => Pick<HostsService, 'current' | 'list'>;
+  /** The secret getter for the connecting window's workspace; read at connect time, so a switch is honoured. */
+  readonly secretsFor: (sender: WebContents) => GetSecret;
   /** `userData/ssh-known-hosts.json`: per machine, never in the workspace tree. */
   readonly knownHostsFile: string;
   /** `SSH_AUTH_SOCK` (or `'pageant'` on Windows); undefined when no agent runs. */
@@ -115,8 +119,8 @@ export class SshService {
   async connect(sender: WebContents, request: SshConnectRequest): Promise<{ sessionId: string }> {
     const epoch = this.epoch;
     const generation = this.generations.get(sender.id) ?? 0;
-    const chain = await this.chainFor(request.hostId);
-    const hops = await this.credentialsFor(chain);
+    const chain = await this.chainFor(sender, request.hostId);
+    const hops = await this.credentialsFor(sender, chain);
     const known = await this.readKnownHosts();
     // The last key refused as changed (hops connect in order and a refusal ends the connect).
     let changed: { entry: KnownHostEntry; previous: string } | undefined;
@@ -331,8 +335,9 @@ export class SshService {
   }
 
   /** The hops to the host, outermost first, each complete; nothing here touches the network. */
-  private async chainFor(hostId: string): Promise<readonly ResolvedHost[]> {
-    const listing = await this.deps.hosts.list(); // cached; reads hosts.yaml once per workspace
+  private async chainFor(sender: WebContents, hostId: string): Promise<readonly ResolvedHost[]> {
+    const hosts = this.deps.hosts(sender);
+    const listing = await hosts.list(); // cached; reads hosts.yaml once per workspace
     const problem = listing.problems[0];
     if (problem) {
       // The file did not parse: its own refusal (ssh-hosts-invalid, ssh-duplicate-id, …) is the answer.
@@ -340,7 +345,7 @@ export class SshService {
         details: { ...(problem.path ? { path: problem.path } : {}) },
       });
     }
-    const file: HostsFile | undefined = this.deps.hosts.current();
+    const file: HostsFile | undefined = hosts.current();
     if (!file) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
     let chain: readonly ResolvedHost[];
     try {
@@ -361,8 +366,8 @@ export class SshService {
   }
 
   /** In order, so the first missing secret is the one named; an agent without a socket fails here too. */
-  private async credentialsFor(chain: readonly ResolvedHost[]): Promise<HopCredentials[]> {
-    const getSecret = this.deps.secretsFor();
+  private async credentialsFor(sender: WebContents, chain: readonly ResolvedHost[]): Promise<HopCredentials[]> {
+    const getSecret = this.deps.secretsFor(sender);
     const value = async (token: string): Promise<string> => {
       const name = secretNameOf(token);
       const ref = secretPseudoRef(name);

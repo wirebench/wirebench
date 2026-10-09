@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { WirebenchError, nodeFs, writeFileAtomic } from '@wirebench/engine';
+import { WirebenchError, WorkspaceError, nodeFs, writeFileAtomic } from '@wirebench/engine';
 import {
   EMPTY_HOSTS_FILE,
   SshModelError,
@@ -102,6 +102,24 @@ export class HostsService {
     this.cache = { dir, file, problems };
     return this.cache;
   }
+}
+
+/**
+ * One window's hosts file (multi-window: each window holds its own workspace, so each has its own cache).
+ * `treeDir` is that window's workspace's tree root; its `workspace-not-found` means none is open.
+ */
+export function windowHosts(treeDir: () => string, onChanged: () => void): HostsService {
+  return new HostsService({
+    treeDir: () => {
+      try {
+        return treeDir();
+      } catch (error) {
+        if (error instanceof WorkspaceError && error.code === 'workspace-not-found') return undefined; // none open
+        throw error;
+      }
+    },
+    onChanged,
+  });
 }
 
 function authToWire(auth: SshAuth | undefined): SshAuthWire | undefined {
