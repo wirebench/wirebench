@@ -90,6 +90,21 @@ export interface MockContract {
   fail(code: string, message: string): MockReply;
   /** Headers a stub's reply gets when it does not set them itself (its `Content-Type`). */
   defaults(response: MockResponse): readonly HeaderPair[];
+  /**
+   * What the contract does not allow of each stub (#325): its status, its headers or its body, by the
+   * checks a received response gets; one list per stub, in order, empty when it conforms or names an
+   * operation the contract lacks. Absent when the protocol cannot check stubs. Never rejects.
+   */
+  checkStubs?(stubs: readonly MockStubInput[]): Promise<readonly (readonly MockProblem[])[]>;
+}
+
+/** One stub as its reply would go out. */
+export interface MockStubInput {
+  /** The contract operation's key. */
+  readonly operation: string;
+  readonly response: MockResponse;
+  /** The reply's headers: the stub's own, then the protocol's defaults. */
+  readonly headers: readonly HeaderPair[];
 }
 
 /** One generated response, before it has an id. */

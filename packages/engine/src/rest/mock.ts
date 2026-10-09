@@ -15,6 +15,7 @@ import type {
   MockReply,
   MockRequest,
   MockRoute,
+  MockStubInput,
   ProtocolMocking,
 } from '../mock/contract.js';
 import { mockPathPrefix } from '../mock/model.js';
@@ -23,10 +24,14 @@ import { apiDefinitionDir } from '../project/paths.js';
 import type { Project } from '../project/model.js';
 import type { HeaderPair } from '../script/model.js';
 import type { RestApi } from './model.js';
+import type { RestContractInput, RestContractResult } from './contract-check.js';
+import { createRestContractChecker } from './contract-check-worker-host.js';
+import type { RestContractChecker } from './contract-check-worker-host.js';
 import { createCachedApiFetch, readApiDefinitionCache } from './openapi/cache.js';
 import { matchOperation } from './openapi/match.js';
 import type { OpenApiDocument, OpenApiOperation, OpenApiParameter, OpenApiResponse } from './openapi/model.js';
 import { parseOpenApiDocument, parseSchema } from './openapi/parse.js';
+import { declaredMediaType, declaredResponse } from './openapi/responses.js';
 import { checkRestRequest, isJsonMediaType } from './request-check.js';
 
 /** Problems a refusal lists, at most. */
@@ -197,6 +202,59 @@ function header(request: MockRequest, name: string): string | undefined {
   return request.headers.find(([candidate]) => candidate.toLowerCase() === wanted)?.[1];
 }
 
+type RestCheck = (input: RestContractInput) => Promise<RestContractResult>;
+
+function stubProblem(message: string, extra: Partial<MockProblem> = {}): MockProblem {
+  return { code: 'mock-stub-invalid', message, ...extra };
+}
+
+/**
+ * What the contract does not allow of one stub (#325): a status it documents no response for, a
+ * `Content-Type` it declares no body of, a body where it declares none, and — for a JSON body — what
+ * the response contract check finds against the media type's schema.
+ */
+async function checkStub(
+  operation: OpenApiOperation,
+  input: MockStubInput,
+  checkRest: RestCheck,
+): Promise<readonly MockProblem[]> {
+  const { response, headers } = input;
+  const responses = operation.responses ?? {};
+  const declared = declaredResponse(responses, response.status);
+  if (declared === undefined) {
+    return [stubProblem(`The contract declares no ${String(response.status)} response`, { in: 'status' })];
+  }
+  if (response.body === 'none') return [];
+  const content = declared.response.content ?? {};
+  const types = Object.keys(content);
+  if (types.length === 0) {
+    return response.bodyText.trim() === ''
+      ? []
+      : [stubProblem(`The contract declares no body for a ${declared.responseKey} response`, { in: 'body' })];
+  }
+  const contentType = headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
+  if (declaredMediaType(content, contentType) === undefined) {
+    return [
+      stubProblem(
+        `The contract declares no ${contentType ?? 'untyped'} body for a ${declared.responseKey} response; it declares ${types.join(', ')}`,
+        { in: 'header', name: 'Content-Type' },
+      ),
+    ];
+  }
+  if (response.body !== 'json') return [];
+  const checked = await checkRest({
+    status: response.status,
+    contentType,
+    bodyText: response.bodyText,
+    language: 'json',
+    streamed: false,
+    operation: { method: operation.method, path: operation.path },
+    responses,
+  });
+  if (checked.status !== 'violation') return [];
+  return checked.problems.map((problem) => stubProblem(problem.message, { in: 'body', path: problem.path }));
+}
+
 function bodyKindOf(contentType: string | undefined): 'xml' | 'json' | 'other' {
   const type = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
   if (isJsonMediaType(type)) return 'json';
@@ -298,6 +356,22 @@ function createContract(document: OpenApiDocument, resolved: unknown, mockPath: 
         case 'none':
           return [];
       }
+    },
+
+    async checkStubs(stubs: readonly MockStubInput[]): Promise<readonly (readonly MockProblem[])[]> {
+      // A contract's `pattern` is untrusted: bodies are checked off this thread, by one worker for the batch.
+      let checker: RestContractChecker | undefined;
+      const check: RestCheck = (input) => (checker ??= createRestContractChecker()).check(input);
+      const results: (readonly MockProblem[])[] = [];
+      try {
+        for (const stub of stubs) {
+          const operation = operations.find((candidate) => restOperationKey(candidate) === stub.operation);
+          results.push(operation === undefined ? [] : await checkStub(operation, stub, check));
+        }
+      } finally {
+        await checker?.dispose();
+      }
+      return results;
     },
   };
 }
