@@ -13,8 +13,8 @@ import {
 import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
 import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
 import type { DiffContractArgs } from './args-diff-contract.js';
-import { MOCK_HELP, parseMockServe } from './args-mock.js';
-import type { MockArgs } from './args-mock.js';
+import { MOCK_CHECK_HELP, MOCK_HELP, parseMockCheck, parseMockServe } from './args-mock.js';
+import type { MockArgs, MockCheckArgs } from './args-mock.js';
 import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
 import type { MockRecordArgs } from './args-mock-record.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
@@ -23,14 +23,14 @@ import { UsageError } from './usage-error.js';
 export { UsageError };
 export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
 export type { DiffContractArgs } from './args-diff-contract.js';
-export type { MockArgs } from './args-mock.js';
+export type { MockArgs, MockCheckArgs } from './args-mock.js';
 export type { MockRecordArgs } from './args-mock-record.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
   ...VERB_HELP,
   'diff-contract': DIFF_CONTRACT_HELP,
-  mock: `${MOCK_HELP}\n\n${MOCK_RECORD_HELP}`,
+  mock: `${MOCK_HELP}\n\n${MOCK_CHECK_HELP}\n\n${MOCK_RECORD_HELP}`,
 };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
@@ -84,6 +84,9 @@ ${DIFF_CONTRACT_USAGE}
 wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
                        Serves the project's mocks until stopped (see wirebench mock --help).
 
+wirebench mock check <path> [mock…] [--json]
+                       Checks the mocks' stubs against the contract. Exit 1 when one does not conform.
+
 ${MOCK_RECORD_HELP}
 
 wirebench --version | --help
@@ -136,6 +139,7 @@ export type ParsedArgs =
   | ExportArgs
   | DiffContractArgs
   | MockArgs
+  | MockCheckArgs
   | MockRecordArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
@@ -260,7 +264,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'mock') {
     refuseDiffOnly(values, 'wirebench mock');
-    // `mock record …` records (#60); any other `mock <path> …` serves (#61).
+    // `mock record …` records (#60), `mock check …` checks stubs (#325); any other `mock <path> …` serves (#61).
+    if (rest[0] === 'check') return parseMockCheck(rest, values);
     return rest[0] === 'record' ? parseMock(rest, values) : parseMockServe(rest, values);
   }
   refuseMockRecordOnly(values, `wirebench ${word}`);
