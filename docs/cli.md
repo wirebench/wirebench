@@ -885,6 +885,41 @@ else; there is no flag to bind another address.
 - A request body is capped at 16 MiB. The server accepts at most 128 connections at once, and drops a
   connection that has not finished its headers after about 10 seconds.
 
+## `wirebench mock record`
+
+```text
+wirebench mock record <path> <mock> --target <url> [--from <interface|api>] [--port <n>] [--host <addr>]
+                      [--replace] [--no-dedupe] [--insecure]
+```
+
+Records a real system's answers as stubs of a mock (#60). Point a client at the address the command
+prints instead of the real system, and use it as usual. Each request goes on to `<url>`, and the client
+gets the real response. Each response to a request that reaches one of the contract's operations is kept.
+Ctrl-C stops the recording, adds what was kept to the mock and saves the project. Each stub is a
+`Recorded <status>` response file under `mocks/<mock>/operations/…`.
+
+- `<mock>` is a mock's name or slug. If there is no such mock, `--from <interface|api>` creates one from
+  that contract, with no stubs. Recording adds each operation it reaches.
+- The mock's `path` maps onto the target's path. With a mock at `/orders` and `--target
+  https://real.example/api`, the request `/orders/7?x=1` goes to `https://real.example/api/7?x=1`. A
+  request outside the mock's path gets 404 and is not forwarded. Redirects are passed back, not followed.
+- An operation keeps its dispatch style, so a `sequence` operation replays its recordings in the order they
+  were made. `--replace` drops an operation's other responses (a generated `Default`, say) the first time
+  a recording reaches it. A recording equal to a response the operation already has is skipped unless
+  `--no-dedupe` is given.
+- A binary response, or one over 5 MiB, is passed through and not kept. A `?wsdl` request and a request
+  no operation matches are passed through and not kept either.
+- stderr gets one line per request: `<method> <url> <status> <operation|-> recorded|<reason>`.
+- The listener follows the mock's rules: loopback by default, the `Host` check, and the 10 MiB request
+  cap. The upstream proxy comes from `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`. `--insecure` skips TLS
+  verification of the target.
+- What is kept is masked before it is saved: `Set-Cookie` and the other credential headers, secret keys
+  in JSON and form bodies, `wsse:Password` and security tokens in XML, and every `WIREBENCH_SECRET_*` value.
+  Requests are never saved.
+- Exit codes: 0 when the recording ran, whether or not anything was kept (with nothing kept, the project
+  is not written). 2 for a usage error, an unknown mock or `--from`, or a target that is not an http or
+  https URL. 3 when the recorder cannot start (`mock-port-in-use`, `mock-definition-missing`, …).
+
 ## Contract diff
 
 `wirebench diff-contract <old> <new>` compares two versions of a WSDL, or two versions of an OpenAPI
