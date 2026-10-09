@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
   `<mock>/openapi/` with the references rewritten, as a SOAP mock serves its WSDL and imports. A client
   that discovers the contract from the service can now do so against a mock (#324).
 
+### Fixed
+
+- **Generated REST response stubs keep read-only properties.** A REST mock generated from a response
+  schema without an example now includes `readOnly` properties such as `id` and leaves out `writeOnly`
+  ones. The JSON and XML sample generators take a `direction` option (`request`, the default, or
+  `response`); request samples are unchanged (#327).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added
