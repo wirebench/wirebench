@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A mock response can echo values from the request — a body value by XPath or JSONPath, a query
+  parameter, a header or a REST path parameter — into its body and header values with `{{name}}`. Each
+  value is escaped for the body's language, may only land inside a string in a JSON body, and never
+  reads a property, a secret or the environment. A mock that uses it is saved as mock `version: 2`, which
+  5.0.0 leaves alone (#323, ADR-0022).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added
