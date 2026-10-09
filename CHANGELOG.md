@@ -14,6 +14,13 @@ All notable changes to this project are documented here. The format follows
   failing the first request the mock answers. The script API reference documents the dispatch API
   beside the request-script one (#352).
 
+### Fixed
+
+- **Generated REST response stubs keep read-only properties.** A REST mock generated from a response
+  schema without an example now includes `readOnly` properties such as `id` and leaves out `writeOnly`
+  ones. The JSON and XML sample generators take a `direction` option (`request`, the default, or
+  `response`); request samples are unchanged (#327).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added

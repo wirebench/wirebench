@@ -42,7 +42,12 @@ paths:
           description: created
           content:
             application/json:
-              schema: { type: object, properties: { id: { type: integer }, state: { type: string, enum: [open] } } }
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, readOnly: true }
+                  state: { type: string, enum: [open] }
+                  note: { type: string, writeOnly: true }
   /orders/{id}:
     get:
       parameters:
@@ -192,10 +197,8 @@ describe('REST mock services', () => {
     expect(byKey['get /orders']?.name).toBe('listOrders');
     expect(JSON.parse(byKey['get /orders']?.response.bodyText ?? '')).toEqual([{ id: 1 }]);
     expect(byKey['post /orders']?.response.status).toBe(201);
-    expect(Object.keys(JSON.parse(byKey['post /orders']?.response.bodyText ?? '{}') as object)).toEqual([
-      'id',
-      'state',
-    ]);
+    // A response stub keeps the read-only `id` a server returns and leaves out the write-only `note`.
+    expect(JSON.parse(byKey['post /orders']?.response.bodyText ?? '{}')).toEqual({ id: 0, state: 'open' });
     expect(byKey['delete /orders/{id}']?.response).toMatchObject({ status: 204, body: 'none' });
   });
 
