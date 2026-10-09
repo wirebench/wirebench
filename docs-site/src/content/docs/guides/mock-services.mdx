@@ -97,6 +97,28 @@ The script runs in the same sandbox as [request scripts](/wirebench/docs/guides/
 second to finish. It has no properties, secrets, network or files. Choose **Apply script** to save
 it.
 
+## Stubs against the contract
+
+A mock checks the requests it receives, and the tab also checks the responses it would send. Under
+**Stubs against the contract** it lists each response whose status, headers or body the contract does
+not allow, so a stub that drifted from the contract shows up before a client test passes against the
+mock and fails against the real service. The check runs when the tab opens and after every edit, and
+the same findings appear in the **Problems** view. Select a finding to show its operation.
+
+Each response gets the checks a received response gets:
+
+- **SOAP**: the envelope structure, the `Content-Type` against the binding's SOAP version, and the body
+  against the operation's output message. A fault gets the structure checks only. A reply is sent with
+  200, a fault with 500 (400 or 500 in SOAP 1.2), and a one-way operation's empty acknowledgement with
+  200 or 202.
+- **REST**: the status must be one the operation documents (exactly, by range such as `4XX`, or as
+  `default`), the `Content-Type` one it declares for that status, and a JSON body must match the media
+  type's schema.
+
+A response of an operation the contract no longer has is not checked; starting the mock warns of it.
+In a pipeline, `wirebench mock check` runs the same check and fails when a stub does not conform (see
+[Run in CI](/wirebench/docs/guides/run-in-ci/)).
+
 ## The request log
 
 The tab lists every request the mock answered this session: the time, the method and path, the

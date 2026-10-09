@@ -355,6 +355,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       stop: fail('mock.stop'),
       reset: fail('mock.reset'),
       states: fail('mock.states'),
+      check: fail('mock.check'),
     },
     wsi: {
       checkWsdl: fail('wsi.checkWsdl'),

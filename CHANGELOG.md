@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Mock stubs checked against the contract.** The mock tab lists each stub whose status, headers or
+  body the WSDL or OpenAPI document does not allow, by the checks a received response gets, and puts
+  the same findings in the Problems view; `wirebench mock check` runs the check in a pipeline and exits
+  1 when a stub does not conform (#325).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added

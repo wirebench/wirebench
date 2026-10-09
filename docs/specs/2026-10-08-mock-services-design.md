@@ -44,8 +44,8 @@ plain files in the project, so they can be reviewed, diffed and merged like ever
 - Response templating and lifecycle scripts (decision 3).
 - Recording (#60), the CLI command (#61), TLS and HTTPS, WS-Security on mock responses, and serving the
   OpenAPI document.
-- Validating the stubs' own responses against the contract. Each of these can be added later without
-  changing the version-1 file shape.
+- Validating the stubs' own responses against the contract (since added by #325: the mock tab and
+  `wirebench mock check`). Each of these can be added later without changing the version-1 file shape.
 
 ## Storage
 

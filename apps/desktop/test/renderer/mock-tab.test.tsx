@@ -1,6 +1,7 @@
 /**
  * The mock tab (#59): each committed edit is one mock change, Start and Stop go through `mock.*`, the
- * running URL shows, and a request the mock answered appears in the log with its problems.
+ * running URL shows, a request the mock answered appears in the log with its problems, and the stubs the
+ * contract does not allow are listed (#325).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -8,9 +9,10 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { MockTab } from '../../src/renderer/features/mock/mock-tab.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
-import type { MockExchangeEventWire, MockWire, ProjectWire } from '../../src/shared/wire-types.js';
+import type { MockCheckResponse, MockExchangeEventWire, MockWire, ProjectWire } from '../../src/shared/wire-types.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -89,6 +91,7 @@ const updateMockOperation = vi.fn();
 const updateMockResponse = vi.fn();
 const start = vi.fn();
 const stop = vi.fn();
+const check = vi.fn();
 
 function mount(): void {
   useProjectStore.getState().applySnapshot('p1', project());
@@ -109,8 +112,16 @@ beforeEach(() => {
     value: { mockId: 'm1', running: true, url: 'http://127.0.0.1:8089/orders', exposed: false, warnings: [] },
   });
   stop.mockReset().mockResolvedValue({ ok: true, value: { stopped: true } });
+  check.mockReset().mockResolvedValue({ ok: true, value: { checked: 2, findings: [] } });
+  useProblemsStore.setState({ items: [] });
   installWirebenchApi({
-    mock: { start, stop, reset: vi.fn(), states: vi.fn().mockResolvedValue({ ok: true, value: { states: [] } }) },
+    mock: {
+      start,
+      stop,
+      check,
+      reset: vi.fn(),
+      states: vi.fn().mockResolvedValue({ ok: true, value: { states: [] } }),
+    },
   });
 });
 
@@ -185,6 +196,50 @@ describe('MockTab', () => {
     expect(screen.getByTestId('mock-log-detail').textContent).toContain('is below the minimum 1');
     fireEvent.click(screen.getByTestId('mock-log-clear'));
     expect(screen.queryByTestId('mock-log-row')).toBeNull();
+  });
+
+  it('checks the stubs against the contract and lists the ones that do not conform', async () => {
+    const broken: MockCheckResponse = {
+      checked: 2,
+      findings: [
+        {
+          operationId: 'o1',
+          operationName: 'createOrder',
+          operation: 'post /orders',
+          responseId: 'r2',
+          responseName: 'Full',
+          status: 503,
+          problems: [{ code: 'mock-stub-invalid', message: 'The contract declares no 503 response', in: 'status' }],
+        },
+      ],
+    };
+    mount();
+    expect(await screen.findByText('All 2 stubs conform to the contract.')).toBeTruthy();
+    expect(check).toHaveBeenCalledWith({ mockId: 'm1' });
+
+    check.mockResolvedValue({ ok: true, value: broken });
+    fireEvent.click(screen.getByTestId('mock-stub-check-run'));
+    expect(await screen.findByText('1 of 2 stubs do not conform to the contract.')).toBeTruthy();
+    const finding = screen.getByTestId('mock-stub-finding');
+    expect(finding.textContent).toContain('createOrder › Full');
+    expect(finding.textContent).toContain('The contract declares no 503 response');
+    expect(useProblemsStore.getState().items).toEqual([
+      {
+        groupId: 'mock-stubs:m1',
+        source: 'mock',
+        severity: 'error',
+        problem: {
+          code: 'mock-stub-invalid',
+          message: 'Orders mock › createOrder › Full: The contract declares no 503 response',
+          location: 'status',
+        },
+      },
+    ]);
+
+    check.mockResolvedValue({ ok: false, error: { code: 'mock-definition-missing', message: 'Not cached' } });
+    fireEvent.click(screen.getByTestId('mock-stub-check-run'));
+    expect(await screen.findByText('Not cached')).toBeTruthy();
+    expect(useProblemsStore.getState().items).toEqual([]);
   });
 
   it('says so when the mock is gone', () => {

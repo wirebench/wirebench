@@ -1,11 +1,13 @@
 /**
- * Registers the `mock.*` IPC channels (#59): start, stop and reset a mock served from this machine.
+ * Registers the `mock.*` IPC channels (#59): start, stop and reset a mock served from this machine, and
+ * check its stubs against the contract (#325).
  * Editing a mock goes through `project.mutate` like every other entity. A started mock's events go to
  * the window that started it.
  */
 
 import type { WebContents } from 'electron';
-import type { MockExchangeEvent, Project } from '@wirebench/engine';
+import { checkMockStubs } from '@wirebench/engine';
+import type { CheckMockStubsInput, MockExchangeEvent, MockStubCheck, Project } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { MockRunner, MockSink } from '../mock-runner.js';
 import { emitEvent } from './events.js';
@@ -18,6 +20,8 @@ export interface MockChannelDeps {
   readonly host: () => string;
   /** Whether `mockId` belongs to a project open in the calling window. */
   readonly owns: (mockId: string) => boolean;
+  /** The engine's `checkMockStubs`; a test passes a fake. */
+  readonly checkStubs?: (input: CheckMockStubsInput) => Promise<MockStubCheck>;
 }
 
 function sinkFor(sender: WebContents): MockSink {
@@ -63,6 +67,17 @@ export function registerMockChannels(runner: MockRunner, deps: MockChannelDeps):
   );
   registerHandler(channels.mock.stop, async (request) => ({ stopped: await runner.stopMock(request.mockId) }));
   registerHandler(channels.mock.reset, (request) => Promise.resolve({ reset: runner.reset(request.mockId) }));
+  registerHandler(channels.mock.check, async (request) => {
+    const { project, dir } = deps.locate(request.mockId);
+    const result = await (deps.checkStubs ?? checkMockStubs)({ project, root: dir, mockId: request.mockId });
+    return {
+      checked: result.checked,
+      findings: result.findings.map((finding) => ({
+        ...finding,
+        problems: finding.problems.map((problem) => ({ ...problem })),
+      })),
+    };
+  });
   registerHandler(channels.mock.states, () =>
     Promise.resolve({
       states: runner

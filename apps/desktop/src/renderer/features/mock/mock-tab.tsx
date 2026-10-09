@@ -1,6 +1,7 @@
 /**
  * The mock tab (#59): a mock's settings and its Start/Stop, its operations, the selected operation's
- * dispatch and responses, the selected response, and the requests it answered.
+ * dispatch and responses, the selected response, the stubs the contract does not allow (#325), and the
+ * requests it answered.
  *
  * Like a sequence tab, every committed edit is applied at once through `project.mutate` and main
  * validates it against the rules a mock file is held to; a refused edit is reported and the field snaps
@@ -31,6 +32,7 @@ import type {
 import { SelectField } from '../sequence/step-fields.js';
 import { MockLog } from './mock-log.js';
 import { MockResponseEditor } from './mock-response-editor.js';
+import { MockStubCheck } from './mock-stub-check.js';
 
 export interface MockTabProps {
   readonly mockId: string;
@@ -464,6 +466,13 @@ export function MockTab({ mockId }: MockTabProps) {
             )}
           </div>
         )}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Stubs against the contract"
+        hint="Each response's status, headers and body, checked as a received response is."
+      >
+        <MockStubCheck mock={mock} onSelect={setOperationId} />
       </SettingsGroup>
 
       <SettingsGroup title="Requests" hint="What this mock answered this session; credentials are masked.">
