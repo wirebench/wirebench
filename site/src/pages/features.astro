@@ -96,6 +96,11 @@ const sections: Section[] = [
     ],
   },
   {
+    heading: 'Mock services',
+    text: 'A mock answers for a SOAP interface or a REST API from its own contract, before the real one exists or while it is down. It checks each request against the contract and answers with responses kept as files in the project, picked in order, at random, by match conditions or by a script, with scenarios that remember state.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.mockServices }],
+  },
+  {
     heading: 'Snapshot regression',
     text: 'Keep a known-good response beside a SOAP or REST request. Every send compares the new response with it by meaning, not byte for byte, and lists what changed.',
     links: [{ label: 'Read the guide', slug: DOCS_LINKS.snapshotRegression }],
@@ -145,7 +150,7 @@ const slugify = (heading: string): string =>
 
 <Base
   title="Features — Wirebench"
-  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, snapshots, shared workspaces, Wirebench Server, webhooks, CLI and agents."
+  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, mock services, snapshots, shared workspaces, Wirebench Server, webhooks, CLI and agents."
 >
   <div class="features">
     <h1>Features</h1>

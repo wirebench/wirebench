@@ -387,6 +387,12 @@ import {
   hooksViewRequestWireSchema,
   hooksWorkspaceRequestWireSchema,
   sequenceCancelRequestSchema,
+  mockExchangeEventSchema,
+  mockIdRequestSchema,
+  mockResetResponseSchema,
+  mockStateEventSchema,
+  mockStatesResponseSchema,
+  mockStopResponseSchema,
   sequenceCancelResponseSchema,
   sequenceProgressEventSchema,
   sequenceWaitingEventSchema,
@@ -1121,6 +1127,16 @@ export const channels = {
     /** Stops a run: the step in flight is cancelled and the rest are skipped. */
     cancel: defineChannel('sequence.cancel', sequenceCancelRequestSchema, sequenceCancelResponseSchema),
   },
+  // A mock service (#59) served from this machine; edits go through `project.mutate`.
+  mock: {
+    /** Starts a mock, or restarts it when it runs; resolves with where it listens. */
+    start: defineChannel('mock.start', mockIdRequestSchema, mockStateEventSchema),
+    stop: defineChannel('mock.stop', mockIdRequestSchema, mockStopResponseSchema),
+    /** Puts every scenario of a running mock back to its start state. */
+    reset: defineChannel('mock.reset', mockIdRequestSchema, mockResetResponseSchema),
+    /** The state of every mock this window started that is still running, for a renderer that reloads. */
+    states: defineChannel('mock.states', z.object({}), mockStatesResponseSchema),
+  },
   // A request's scripts (#63): the editor's language features, answered by main's checker against
   // the request's own types, and a project's session values. Edits go through `project.mutate`.
   script: {
@@ -1300,6 +1316,12 @@ export const events = {
     progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
     /** A step of a running sequence has sent and waits for its callback assertions. */
     waiting: defineEvent('sequence.waiting', sequenceWaitingEventSchema),
+  },
+  mock: {
+    /** A mock started, stopped, restarted after an edit, or failed to start. */
+    state: defineEvent('mock.state', mockStateEventSchema),
+    /** A running mock answered a request. */
+    exchange: defineEvent('mock.exchange', mockExchangeEventSchema),
   },
   script: {
     /** A project's session values changed; `script.listValues` has the new list. */

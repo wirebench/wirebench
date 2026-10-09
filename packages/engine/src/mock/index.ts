@@ -24,6 +24,7 @@ export {
   responseFilePath,
   responseFileSchema,
   responseSlugOf,
+  validateMock,
 } from './file.js';
 export type { MockOperationSettings, MockResponseSettings, MockSettings } from './file.js';
 export { readMocks } from './load.js';

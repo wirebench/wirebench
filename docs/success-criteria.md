@@ -206,3 +206,16 @@ WS-Trust client and its cache), and SC-WT6 with the fourth (the Kerberos credent
 | **SC-WD4** A timestamp ahead, expired or stale reports the skew in seconds and the tolerance | `verify.test.ts`, `wss-incoming.test.tsx` |
 | **SC-WD5** The Security header timeline lists each step in header order with what it covers; the preview lists the configured entries in order | `timeline.test.ts`, `ipc-wss.test.ts`, `e2e/specs/wss.spec.ts` |
 | **SC-WD6** The WSS inspector previews the secured envelope and timeline without sending or editing | `wss-incoming.test.tsx`, `e2e/specs/wss.spec.ts` |
+
+## Mock services (docs/specs/2026-10-08-mock-services-design.md)
+
+Issue #59. The engine half shipped in #329; the desktop half adds the explorer, the tab and the e2e.
+
+| Criterion | Proved by |
+|---|---|
+| **SC-M1** A mock is files of its own under the project's mocks folder, one per response with its body beside it, and a file Wirebench cannot read survives every save | `packages/engine/test/unit/mock/{file,load-save}.test.ts`, `apps/desktop/test/project-watch.test.ts` |
+| **SC-M2** A mock is generated offline from a SOAP binding or a REST API's cached definition | `packages/engine/test/unit/mock/generate.test.ts`, `apps/desktop/test/mock-mutations.test.ts` |
+| **SC-M3** A request that does not conform to the contract is refused under `reject`, logged under `report`, and only routed under `off` | `packages/engine/test/unit/soap/mock.test.ts`, `packages/engine/test/unit/rest/{mock,request-check}.test.ts` |
+| **SC-M4** Sequence, random, match and script dispatch pick as specified, and scenarios move on | `packages/engine/test/unit/mock/{dispatch,script}.test.ts` |
+| **SC-M5** A mock listens on loopback unless the preference says otherwise, refuses a rebound `Host`, serves its WSDL, and masks credentials in its log | `packages/engine/test/unit/mock/server.test.ts`, `packages/engine/test/unit/soap/mock-wsdl.test.ts`, `apps/desktop/test/mock-runner.test.ts` |
+| **SC-M6** A mock is built, started, stopped and watched from the UI | `apps/desktop/test/renderer/mock-tab.test.tsx`, `apps/desktop/test/renderer/{tree-nodes,explorer-context-menu}.test.ts`, `e2e/specs/mocks.spec.ts` |

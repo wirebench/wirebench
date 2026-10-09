@@ -38,6 +38,7 @@ import {
   definitionRootOf,
   enabledProperties,
   exportDefinition,
+  generateMock,
   fetchDocumentFromCache,
   generateDocs,
   generateId,
@@ -251,6 +252,7 @@ import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
 import { moveDir } from './rename-dir.js';
 import type { SecretSourcesSnapshot } from './secret-sources-service.js';
+import { refusedMockSlugs } from './project-mock-mutations.js';
 import { refusedSequenceSlugs } from './project-sequence-mutations.js';
 
 /**
@@ -1428,6 +1430,9 @@ export class ProjectHost {
     const result = await applyChange(open.project, change, {
       ...(workspaceProperties !== undefined ? { workspaceProperties } : {}),
       reservedSequenceSlugs: refusedSequenceSlugs(open.problems),
+      reservedMockSlugs: refusedMockSlugs(open.problems),
+      generateMock: (containerId, name, binding) =>
+        generateMock(open.project, open.dir, containerId, { name, ...(binding !== undefined ? { binding } : {}) }),
       addAttachmentFile: (input) => this.readAttachmentSource(open.dir, input),
       allowsKeystorePath: (path) => allowsReadPath([open.dir], this.picks, resolvePath(open.dir, path)),
       generate: (interfaceId, bindingName, operationName) => {

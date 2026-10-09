@@ -31,6 +31,12 @@ export function activeSequenceId(): string | undefined {
   return tabs.find((tab) => tab.id === activeId && tab.kind === 'sequence')?.sequenceId;
 }
 
+/** The mock behind the active editor tab, or `undefined` when none is a mock tab. */
+export function activeMockId(): string | undefined {
+  const { tabs, activeId } = useEditorsStore.getState();
+  return tabs.find((tab) => tab.id === activeId && tab.kind === 'mock')?.mockId;
+}
+
 /** The UI store's current actions. A function, not a binding: the store is replaced on every set. */
 export function ui(): ReturnType<typeof useUiStore.getState> {
   return useUiStore.getState();

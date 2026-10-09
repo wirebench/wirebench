@@ -29,7 +29,13 @@ All notable changes to this project are documented here. The format follows
   validates each request against the contract (answering a SOAP fault or a 4xx when it does not
   conform), picks a response by sequence, random, XPath/JSONPath/query match or a sandboxed script, keeps
   scenario state, and serves its WSDL. It listens on loopback unless told otherwise and runs without the
-  desktop, for the CLI to build on. The desktop tab follows (#59).
+  desktop, for the CLI to build on (#59).
+- **Mock services in the app.** **New Mock** on an interface, a binding or an imported REST API makes a
+  mock from the cached definition, listed under **Mocks** in the project. Its tab edits the port, the
+  path, the validation mode and every operation's dispatch, responses, match conditions, scenarios and
+  script; starts and stops the mock and copies its URL; and logs each request it answers, with the
+  problems found in it. A mock listens on this machine only unless **Preferences → Mock services** says
+  otherwise (#59).
 
 ## [4.0.0] - 2026-10-08
 

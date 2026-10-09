@@ -1090,6 +1090,8 @@ describe('isManagedDir', () => {
     ['environments', true],
     ['wss', true],
     ['sequences', true],
+    ['mocks', true],
+    ['mocks/orders/operations/place', true],
     ['webhooks', true],
     ['webhooks/requests/Folder', true],
     ['attachments', false],
@@ -1108,6 +1110,24 @@ describe('isManagedPath for sequences', () => {
     ['sequences/notes.yaml', false],
     ['sequences/nested/checkout.sequence.yaml', false],
     ['sequences/README.md', false],
+  ])('%s -> %s', (path, expected) => {
+    expect(isManagedPath(path)).toBe(expected);
+  });
+});
+
+describe('isManagedPath for mocks', () => {
+  it.each([
+    ['mocks/orders/mock.yaml', true],
+    ['mocks/orders/operations/place/operation.yaml', true],
+    ['mocks/orders/operations/place/accepted.response.yaml', true],
+    ['mocks/orders/operations/place/accepted.body.xml', true],
+    ['mocks/orders/operations/place/accepted.body.json', true],
+    ['mocks/orders/operations/place/dispatch.ts', true],
+    ['mocks/orders/notes.yaml', false],
+    ['mocks/orders/operations/place/README.md', false],
+    ['mocks/orders/operations/place/accepted.body.exe', false],
+    ['mocks/orders/operations/place/deep/operation.yaml', false],
+    ['mocks/README.md', false],
   ])('%s -> %s', (path, expected) => {
     expect(isManagedPath(path)).toBe(expected);
   });

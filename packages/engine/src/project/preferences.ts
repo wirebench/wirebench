@@ -213,6 +213,15 @@ function clampSourceCacheSeconds(value: number): number {
   return Math.min(3600, Math.max(0, Math.round(value)));
 }
 
+/** Mock services (#59). */
+export interface MockPreferences {
+  /**
+   * Bind a started mock to every interface (`0.0.0.0`) rather than loopback. Off by default: a mock
+   * answers whatever reaches its port, and a project file can never turn this on.
+   */
+  readonly listenOnAllInterfaces: boolean;
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -227,6 +236,7 @@ export interface Preferences {
   readonly updates: UpdatePreferences;
   readonly accounts: AccountPreferences;
   readonly secrets: SecretsPreferences;
+  readonly mocks: MockPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -287,6 +297,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   updates: Object.freeze({ checkOnLaunch: false }),
   accounts: Object.freeze({ showInStatusBar: true }),
   secrets: Object.freeze({ sourceCacheSeconds: 300 }),
+  mocks: Object.freeze({ listenOnAllInterfaces: false }),
   shortcuts: Object.freeze({}),
 });
 
@@ -381,6 +392,7 @@ export const preferencesSchema = z.object({
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
   secrets: z.object({ sourceCacheSeconds: z.number().finite().optional() }).optional(),
+  mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -442,6 +454,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     updates: parseSection(shape.updates, root['updates']),
     accounts: parseSection(shape.accounts, root['accounts']),
     secrets: parseSection(shape.secrets, root['secrets']),
+    mocks: parseSection(shape.mocks, root['mocks']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -463,6 +476,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     secrets: {
       sourceCacheSeconds: clampSourceCacheSeconds(value.secrets?.sourceCacheSeconds ?? base.secrets.sourceCacheSeconds),
     },
+    mocks: mergeSection(base.mocks, value.mocks),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

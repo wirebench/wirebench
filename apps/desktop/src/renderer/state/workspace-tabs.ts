@@ -42,6 +42,8 @@ function tabIdFor(tab: PersistedTab): string {
       return `ws-api:${tab.id}`;
     case 'sequence':
       return `sequence:${tab.id}`;
+    case 'mock':
+      return `mock:${tab.id}`;
   }
 }
 
@@ -79,6 +81,9 @@ function persist(tab: EditorTab): PersistedTab | undefined {
   }
   if (tab.kind === 'sequence' && tab.sequenceId !== undefined) {
     return { kind: 'sequence', id: tab.sequenceId };
+  }
+  if (tab.kind === 'mock' && tab.mockId !== undefined) {
+    return { kind: 'mock', id: tab.mockId };
   }
   return undefined;
 }
@@ -122,6 +127,8 @@ function titleFor(tab: PersistedTab): string | undefined {
       return projects.wsApis[tab.id]?.name;
     case 'sequence':
       return projects.sequences[tab.id]?.name;
+    case 'mock':
+      return projects.mocks[tab.id]?.name;
   }
 }
 
@@ -177,6 +184,7 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
       ...(tab.kind === 'ws-request' ? { wsRequestId: tab.id } : {}),
       ...(tab.kind === 'ws-api' ? { wsApiId: tab.id } : {}),
       ...(tab.kind === 'sequence' ? { sequenceId: tab.id } : {}),
+      ...(tab.kind === 'mock' ? { mockId: tab.id } : {}),
     });
     if (tab.id === entry.activeId) {
       activeTabId = id;

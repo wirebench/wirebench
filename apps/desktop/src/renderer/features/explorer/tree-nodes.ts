@@ -43,6 +43,9 @@ export type ExplorerNodeKind =
   /** The group of a project's sequences; a container, not an entity. */
   | 'sequences'
   | 'sequence'
+  /** The group of a project's mock services (#59); a container, not an entity. */
+  | 'mocks'
+  | 'mock'
   /** A project's session values (#63): what single sends' scripts set; a container, not an entity. */
   | 'values'
   | 'value';
@@ -136,6 +139,8 @@ export interface ExplorerNode {
   readonly unseenMore?: boolean;
   /** Set on `sequence` nodes: the sequence the row stands for. */
   readonly sequenceId?: string;
+  /** Set on `mock` nodes: the mock the row stands for. */
+  readonly mockId?: string;
   /**
    * Set on a `webhook-request` node imported as a callback: its parent operation, rendered muted
    * after the label — the linked API's request for that operation when one is found, else the
@@ -147,6 +152,12 @@ export interface ExplorerNode {
    * (#63): their ids, for **Switch on scripts…**.
    */
   readonly scriptsOff?: readonly string[];
+}
+
+/** What the explorer shows of one mock. */
+export interface ExplorerMock {
+  readonly id: string;
+  readonly name: string;
 }
 
 /** What the explorer shows of one sequence. */
@@ -240,6 +251,8 @@ function operationsNode(
       id: `binding:${interfaceId}:${binding}`,
       kind: 'binding' as const,
       label: bindingLocal,
+      interfaceId,
+      bindingName: binding,
       children: opsForBinding.map((op) => operationNode(interfaceId, op, requests, conflicted)),
     };
   });
@@ -701,6 +714,7 @@ export function buildExplorerTree(
   webhooks?: ExplorerWebhooks,
   webhookCollections: Readonly<Record<string, WebhookCollectionWire>> = {},
   values: Readonly<Record<string, readonly ScriptValueWire[]>> = {},
+  mocks: Readonly<Record<string, readonly ExplorerMock[]>> = {},
 ): ExplorerNode[] {
   // Every request whose scripts are switched off, whichever protocol it is.
   const scriptsOff = new Set(
@@ -739,6 +753,7 @@ export function buildExplorerTree(
           .map((node) => (scriptsOff.size === 0 ? node : withScriptsOff(node, scriptsOff)))
           .concat(webhookCollectionGroup(project.id, webhookCollections[project.id], rest[project.id]))
           .concat(sequencesGroup(project.id, sequences[project.id] ?? []))
+          .concat(mocksGroup(project.id, mocks[project.id] ?? []))
           .concat(valuesGroup(project.id, values[project.id] ?? []));
 
     return {
@@ -813,6 +828,28 @@ function sequencesGroup(projectId: string, sequences: readonly ExplorerSequence[
         label: sequence.name,
         projectId,
         sequenceId: sequence.id,
+      })),
+    },
+  ];
+}
+
+/** A project's Mocks group, after its sequences. None when the project has no mock. */
+function mocksGroup(projectId: string, mocks: readonly ExplorerMock[]): ExplorerNode[] {
+  if (mocks.length === 0) {
+    return [];
+  }
+  return [
+    {
+      id: `mocks:${projectId}`,
+      kind: 'mocks',
+      label: 'Mocks',
+      projectId,
+      children: mocks.map((mock) => ({
+        id: `mock:${mock.id}`,
+        kind: 'mock' as const,
+        label: mock.name,
+        projectId,
+        mockId: mock.id,
       })),
     },
   ];

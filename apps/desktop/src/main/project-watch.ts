@@ -153,12 +153,12 @@ export interface ProjectWatcherOptions {
 const MAX_WATCH_DEPTH = 3 + MAX_FOLDER_DEPTH;
 
 /** The top-level folders under which {@link isManagedPath} reports files at all. */
-const MANAGED_TOP_DIRS = new Set(['interfaces', 'apis', 'environments', 'wss', 'sequences', 'webhooks']);
+const MANAGED_TOP_DIRS = new Set(['interfaces', 'apis', 'environments', 'wss', 'sequences', 'webhooks', 'mocks']);
 
 /**
  * True when the per-directory watch should cover `dir` (relative, `/`-separated): a folder that can
  * hold a file {@link isManagedPath} would report — so under `interfaces/`, `apis/`, `environments/`,
- * `wss/`, `sequences/` or `webhooks/`, and never inside an interface's or API's definition cache — and not a dot-folder (a
+ * `wss/`, `sequences/`, `webhooks/` or `mocks/`, and never inside an interface's or API's definition cache — and not a dot-folder (a
  * sync client's own state). Everything else (`.git`, `attachments/`, `node_modules/`, a big cache)
  * would otherwise mean thousands of watches, each against the OS's per-user watch limit, and a
  * steady stream of directories appearing and vanishing for nothing.
@@ -238,6 +238,20 @@ export function isManagedPath(path: string): boolean {
   if (path.startsWith('sequences/')) {
     // One file per sequence, directly in the folder.
     return path.split('/').length === 2 && path.endsWith('.sequence.yaml');
+  }
+  if (path.startsWith('mocks/')) {
+    // `mocks/<mock>/mock.yaml`, and an operation folder's own file, responses, bodies and script.
+    const parts = path.split('/');
+    const name = parts[4] ?? '';
+    return (
+      (parts.length === 3 && parts[2] === 'mock.yaml') ||
+      (parts.length === 5 &&
+        parts[2] === 'operations' &&
+        (name === 'operation.yaml' ||
+          name === 'dispatch.ts' ||
+          name.endsWith('.response.yaml') ||
+          /\.body\.(xml|json|txt)$/.test(name)))
+    );
   }
   return (path.startsWith('environments/') || path.startsWith('wss/')) && path.endsWith('.yaml');
 }

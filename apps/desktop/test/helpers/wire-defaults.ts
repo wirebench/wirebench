@@ -34,7 +34,7 @@ export const PROJECT_SETTINGS: ProjectSettingsWire = { ...DEFAULT_PROJECT_SETTIN
  */
 export const NO_REST: Pick<
   ProjectWire,
-  'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests' | 'wsApis' | 'wsRequests' | 'sequences'
+  'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests' | 'wsApis' | 'wsRequests' | 'sequences' | 'mocks'
 > = {
   apis: [],
   folders: [],
@@ -44,6 +44,7 @@ export const NO_REST: Pick<
   wsApis: [],
   wsRequests: [],
   sequences: [],
+  mocks: [],
 };
 
 /** One gRPC API on the wire. */
