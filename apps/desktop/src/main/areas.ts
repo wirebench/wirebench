@@ -37,3 +37,16 @@ export function hostsOnWorkspaceChange(
   hosts.invalidate();
   if (enabled.includes('ssh')) notify();
 }
+
+/**
+ * `hosts.yaml` changed on disk (an outside edit, or this app's own save): the cache is dropped, and the
+ * renderer is told to re-read only when the ssh area is on, as on a workspace change.
+ */
+export function hostsOnFileChange(
+  enabled: readonly AreaId[],
+  hosts: { invalidate: () => void },
+  notify: () => void,
+): void {
+  hosts.invalidate();
+  if (enabled.includes('ssh')) notify();
+}

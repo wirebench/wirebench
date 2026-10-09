@@ -15,7 +15,6 @@ import {
   type GetSecret,
 } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
-import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
 import { saveOverride } from './native-dialogs.js';
@@ -38,7 +37,7 @@ import { routeWorkspaces, scoped, WindowScopes } from './window-scope.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
-import { projectSecretGetter, workspaceSecretGetter } from './secret-resolver.js';
+import { projectSecretGetter } from './secret-resolver.js';
 import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
 import { TeamSecretsService } from './team-secrets-service.js';
@@ -46,7 +45,13 @@ import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
-import { enabledAreasFromEnv, hostsOnWorkspaceChange, registerEnabledAreaChannels } from './areas.js';
+import {
+  enabledAreasFromEnv,
+  hostsOnFileChange,
+  hostsOnWorkspaceChange,
+  registerEnabledAreaChannels,
+} from './areas.js';
+import { sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { SshService, sshSessionsEndOnSwitch } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
@@ -221,29 +226,6 @@ const secretsFor = (projectId: string | undefined): GetSecret => {
     return await scope.secretSources.wrap(teamSecretGetter(plain, scope.teamSecrets, projectId))(ref);
   };
 };
-
-/**
- * The getter for the SSH area, composed as {@link secretsFor} is but reading one window's workspace's
- * scoped entries (`wirebench-secret:workspace:<id>:<name>`) instead of a project's, through that window's
- * team secrets and secret sources. Bound to the workspace the window has open at call time.
- */
-const sshSecretsFor = (scope: WindowScope): GetSecret =>
-  scope.secretSources.wrap(
-    teamSecretGetter(
-      workspaceSecretGetter(secretStore, scope.workspace.openWorkspaceId(), recordSecretValue),
-      scope.teamSecrets,
-      undefined,
-    ),
-  );
-
-/** The window that sent an SSH call; refused rather than guessed when it has already closed. */
-function sshScopeOf(sender: WebContents): WindowScope {
-  const scope = scopes.get(sender.id);
-  if (scope === undefined) {
-    throw new WirebenchError('no-window', 'There is no window to do this in.');
-  }
-  return scope;
-}
 
 /** The calling window's workspace secrets for the SSH area (`ssh.secretNames`, `ssh.setSecret`). */
 const sshSecrets = new SshSecretsService({
@@ -517,8 +499,8 @@ const hostsService = scoped(scopes, (scope) => scope.hosts);
  * that window's workspace.
  */
 const sshService = new SshService({
-  hosts: (sender) => sshScopeOf(sender).hosts,
-  secretsFor: (sender) => sshSecretsFor(sshScopeOf(sender)),
+  hosts: (sender) => sshScopeOf(scopes, sender).hosts,
+  secretsFor: (sender) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
   emit: emitEvent,
@@ -733,8 +715,9 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         send(events.engine.progress, progress);
       },
       onHostsFileChanged: () => {
-        hosts.invalidate();
-        send(events.ssh.hostsChanged, {});
+        hostsOnFileChange(enabledAreas, hosts, () => {
+          send(events.ssh.hostsChanged, {});
+        });
       },
       onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
         send(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });

@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { enabledAreasFromEnv, hostsOnWorkspaceChange, parseAreaSwitches } from '../src/main/areas.js';
+import {
+  enabledAreasFromEnv,
+  hostsOnFileChange,
+  hostsOnWorkspaceChange,
+  parseAreaSwitches,
+} from '../src/main/areas.js';
 
 describe('WIREBENCH_AREAS', () => {
   it('parses id=off and id=on pairs, ignoring blanks and case', () => {
@@ -36,5 +41,21 @@ describe('hostsOnWorkspaceChange', () => {
     hostsOnWorkspaceChange(['explorer'], hosts, notify);
     expect(hosts.invalidate).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('hostsOnFileChange', () => {
+  it('drops the cache always, and tells the renderer only when the ssh area is on', () => {
+    const on = { invalidate: vi.fn() };
+    const notifyOn = vi.fn();
+    hostsOnFileChange(['explorer', 'ssh'], on, notifyOn);
+    expect(on.invalidate).toHaveBeenCalledTimes(1);
+    expect(notifyOn).toHaveBeenCalledTimes(1);
+
+    const off = { invalidate: vi.fn() };
+    const notifyOff = vi.fn();
+    hostsOnFileChange(['explorer'], off, notifyOff);
+    expect(off.invalidate).toHaveBeenCalledTimes(1);
+    expect(notifyOff).not.toHaveBeenCalled();
   });
 });
