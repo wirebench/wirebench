@@ -1,6 +1,6 @@
 # SSH area: import hosts from an OpenSSH config file — design
 
-**Issue:** #364 · **Date:** 2026-10-09 · **Status:** draft (for owner review)
+**Issue:** #364 · **Date:** 2026-10-09 · **Status:** approved 2026-10-09
 
 Builds on: the SSH area design (`docs/specs/2026-10-08-ssh-area-design.md`, the `hosts.yaml` model D2 and
 amendments A1–A7), [ADR-0004](../adr/0004-secrets-outside-project-files.md) (secrets outside project files),
@@ -30,9 +30,9 @@ workspace's `hosts.yaml` in one new group.
 - I import the same file again a month later after adding two hosts. The ten already there are listed as
   "already in hosts.yaml, skipped"; only the two new ones are added.
 
-## Decisions (proposed; the owner rules on the open ones in review)
+## Decisions (owner rulings, 2026-10-09)
 
-| #   | Question                                   | Proposal                                                                                                                                                                                                       |
+| #   | Question                                   | Ruling                                                                                                                                                                                                         |
 | --- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | I1  | Which source formats?                      | OpenSSH client config (`ssh_config(5)`) only. It is the format every SSH client on every platform reads or can write; no client-specific export format is parsed.                                              |
 | I2  | Where does the parser live?                | `packages/ssh/src/openssh-config/`: pure, no Electron, no engine, file access injected. The desktop main process is the only consumer in this slice.                                                            |
@@ -156,7 +156,7 @@ entry is edited (I4). A second import of the same file therefore adds only what 
 is "not mapped" and its hosts fall back to the group's auth) is one **key row** in the dialog, listing the hosts
 that use it. The row offers exactly one of:
 
-- **Use the SSH agent** → `auth: { agent: true }`. This is the row's **default** (open question 1), so nothing
+- **Use the SSH agent** → `auth: { agent: true }`. This is the row's **default** (I8), so nothing
   is read unless the user changes it.
 - **Store as workspace secret** `<name>`: the name is proposed as `ssh_key_<basename>` with every character
   outside `[A-Za-z0-9_]` turned into `_` (so it satisfies `SECRET_NAME_PATTERN`), and is editable. A name that
@@ -369,9 +369,8 @@ Two pull requests, each green on `pnpm check`:
 2. Desktop: the import service and the two channels, the dialog, the command and Hosts view entries, unit
    tests, the e2e and the docs.
 
-## Open questions for the owner
+## Owner rulings on the review questions (2026-10-09)
 
-1. Default key row choice: **agent** (proposed; nothing is read unless the user changes it) or **store** (fewer
-   clicks, still behind the Import click)?
-2. One new group per import (proposed), or also a "merge into an existing group" option for re-imports?
-3. Should imported hosts carry a tag (`ssh-config`) so they stay findable after being moved between groups?
+- **I8.** A key row defaults to **Use the SSH agent**; storing a key is always the user's change.
+- **I9.** One new group per import; there is no "merge into an existing group" option.
+- **I10.** Imported hosts get no tag.
