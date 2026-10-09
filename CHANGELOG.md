@@ -14,6 +14,13 @@ All notable changes to this project are documented here. The format follows
   reads a property, a secret or the environment. A mock that uses it is saved as mock `version: 2`, which
   5.0.0 leaves alone (#323, ADR-0022).
 
+### Fixed
+
+- **Generated REST response stubs keep read-only properties.** A REST mock generated from a response
+  schema without an example now includes `readOnly` properties such as `id` and leaves out `writeOnly`
+  ones. The JSON and XML sample generators take a `direction` option (`request`, the default, or
+  `response`); request samples are unchanged (#327).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added

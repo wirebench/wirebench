@@ -14,6 +14,9 @@
  * - **A composition is not a puzzle to solve.** `allOf` is merged (its whole point), and `oneOf` and
  *   `anyOf` take their first branch — picking "the right one" needs an intent the document does not
  *   carry, and a body from the first branch is one the user can see and change.
+ * - **A sample knows which way it travels.** A request leaves out `readOnly` properties (the server
+ *   sends them, the client never does) and a response leaves out `writeOnly` ones (the client sends
+ *   them, the server never returns them), which is what OpenAPI says the two keywords mean.
  * - **Depth is capped**, and a `$ref` the resolver left in place is a cut. A self-referencing schema
  *   is normal in a description, so it has to end in a finite document rather than a stack overflow.
  */
@@ -37,7 +40,15 @@ export const MAX_SAMPLE_NODES = 2_000;
 
 /* Every value a sample holds costs one node, so this is an exact upper bound on its size. */
 
+/** Which way a sample travels, and so which of `readOnly` and `writeOnly` it leaves out. */
+export type SampleDirection = 'request' | 'response';
+
 export interface SampleOptions {
+  /**
+   * Which body the sample is for. A `request` (the default) leaves out `readOnly` properties; a
+   * `response` keeps them and leaves out `writeOnly` ones instead.
+   */
+  readonly direction?: SampleDirection;
   /** Emit properties the schema does not require. Mirrors the WSDL generator's preference. */
   readonly includeOptional?: boolean;
   /**
@@ -129,6 +140,14 @@ function statedValue(schema: JsonSchema): JsonValue | undefined {
     return schema.enum[0];
   }
   return undefined;
+}
+
+/**
+ * Whether a property belongs in a body travelling `direction`: a request never carries a `readOnly`
+ * one, a response never a `writeOnly` one — even when the schema requires it.
+ */
+function travels(property: JsonSchema, options: SampleOptions): boolean {
+  return options.direction === 'response' ? property.writeOnly !== true : property.readOnly !== true;
 }
 
 /** A copy of a schema without the keywords the caller has already accounted for. */
@@ -243,9 +262,7 @@ function generateObject(schema: JsonSchema, options: SampleOptions, depth: numbe
     if (property === undefined) {
       continue;
     }
-    // A read-only property is one the server sends back, never one the client sends, so a generated
-    // request body leaves it out even when the schema requires it in a response.
-    if (property.readOnly === true) {
+    if (!travels(property, options)) {
       continue;
     }
     if (!required.has(name) && options.includeOptional !== true) {
@@ -345,7 +362,7 @@ function renderElement(
     const attributes: string[] = [];
     const children: string[] = [];
     for (const [property, propertySchema] of Object.entries(schema.properties ?? {})) {
-      if (propertySchema.readOnly === true) {
+      if (!travels(propertySchema, options)) {
         continue;
       }
       if (!required.has(property) && options.includeOptional !== true) {
