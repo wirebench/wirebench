@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { glob, readFile, realpath, stat } from 'node:fs/promises';
-import { join } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import {
   EMPTY_HOSTS_FILE,
   applySshConfigImport,
   displayPath,
   loadSshConfig,
+  pathsFor,
   planSshConfigImport,
   type SshConfigImportPlan,
   type SshConfigIo,
@@ -113,7 +113,8 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
 
   async preview(sender: S, request: SshImportPreviewRequest): Promise<SshImportPreviewResponse> {
     const home = this.deps.home();
-    const path = request.source === 'user-config' ? join(home, '.ssh', 'config') : await this.deps.pick(sender);
+    const path =
+      request.source === 'user-config' ? pathsFor(home).join(home, '.ssh', 'config') : await this.deps.pick(sender);
     if (path === undefined) return { cancelled: true };
     const shown = displayPath(path, home);
 
