@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
   the same findings in the Problems view; `wirebench mock check` runs the check in a pipeline and exits
   1 when a stub does not conform (#325).
 
+### Fixed
+
+- **Generated REST response stubs keep read-only properties.** A REST mock generated from a response
+  schema without an example now includes `readOnly` properties such as `id` and leaves out `writeOnly`
+  ones. The JSON and XML sample generators take a `direction` option (`request`, the default, or
+  `response`); request samples are unchanged (#327).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added

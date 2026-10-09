@@ -421,7 +421,9 @@ function generateResponse(resolved: unknown, operation: OpenApiOperation): Gener
     json && type.toLowerCase() !== 'application/json' ? [{ name: 'Content-Type', value: type }] : undefined;
   let value = exampleOf(media);
   if (value === undefined && media.schema !== undefined && json) {
-    value = isNode(media.schema) ? sampleFromSchema(parseSchema(media.schema), { includeOptional: true }) : undefined;
+    value = isNode(media.schema)
+      ? sampleFromSchema(parseSchema(media.schema), { includeOptional: true, direction: 'response' })
+      : undefined;
   }
   if (value === undefined) {
     return { status, body: 'none', bodyText: '', ...(headers !== undefined ? { headers } : {}) };
