@@ -97,6 +97,12 @@ The script runs in the same sandbox as [request scripts](/wirebench/docs/guides/
 second to finish. It has no properties, secrets, network or files. Choose **Apply script** to save
 it.
 
+The editor checks the script as you type, with completion and hover for the names above. A misspelt
+name, a `request` field that does not exist, or a `respond` with a name that is not one of the
+operation's responses shows as an error under the editor. The
+[script API reference](/wirebench/docs/reference/script-api/#mock-dispatch-scripts) lists the
+declarations it is checked against.
+
 ## The request log
 
 The tab lists every request the mock answered this session: the time, the method and path, the

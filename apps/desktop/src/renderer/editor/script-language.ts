@@ -5,8 +5,9 @@
  * The renderer keeps no TypeScript service — that would bring `ts.worker` back and break the
  * renderer's budget. Monaco only tokenises (`monaco-core.ts` registers the grammars); the providers
  * here are registered once per language and consult a registry keyed by model URI, as the JSON
- * completion does: a script editor registers which request and which script its model holds, and
- * every other TypeScript or JavaScript model is left alone.
+ * completion does: a script editor registers which request and which script its model holds (or
+ * which mock operation's `dispatch.ts`, #352), and every other TypeScript or JavaScript model is
+ * left alone.
  */
 import type * as Monaco from 'monaco-editor';
 import { ipc } from '../state/ipc-client.js';
@@ -14,11 +15,10 @@ import type { ScriptDiagnosticWire } from '../../shared/wire-types.js';
 
 export type ScriptPhase = 'pre' | 'post';
 
-/** Which script a model holds. */
-export interface ScriptModelTarget {
-  readonly requestId: string;
-  readonly phase: ScriptPhase;
-}
+/** Which script a model holds: one of a request's two, or a mock operation's dispatch script. */
+export type ScriptModelTarget =
+  | { readonly requestId: string; readonly phase: ScriptPhase }
+  | { readonly mockId: string; readonly operationId: string };
 
 /** The owner Monaco files a script's markers under. */
 export const SCRIPT_MARKER_OWNER = 'wirebench-script';
@@ -28,6 +28,11 @@ const targets = new Map<string, ScriptModelTarget>();
 /** The model path a script editor opens: one model per request and script, named as its file would be. */
 export function scriptModelPath(requestId: string, phase: ScriptPhase, api: 'wirebench' | 'postman'): string {
   return `wirebench-script/${encodeURIComponent(requestId)}/${phase}.${api === 'postman' ? 'js' : 'ts'}`;
+}
+
+/** The model path a dispatch script editor opens: one model per mock operation. */
+export function dispatchScriptModelPath(mockId: string, operationId: string): string {
+  return `wirebench-script/${encodeURIComponent(mockId)}/${encodeURIComponent(operationId)}/dispatch.ts`;
 }
 
 /** Points the providers at `target` for the model at `modelUri`. */
@@ -40,7 +45,7 @@ export function clearScriptModelTarget(modelUri: string): void {
   const target = targets.get(modelUri);
   targets.delete(modelUri);
   if (target !== undefined) {
-    void ipc().script.closeModel({ requestId: target.requestId, phase: target.phase });
+    void ipc().script.closeModel(target);
   }
 }
 

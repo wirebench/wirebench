@@ -1,6 +1,8 @@
 /**
  * Main's side of request scripts (#63): the one sandbox and checker the app runs them with, the
- * types each request's scripts are checked against, and the session values single sends share.
+ * types each request's scripts are checked against, and the session values single sends share. The
+ * editor of a mock operation's `dispatch.ts` is answered by the same checker, against the dispatch
+ * API and the operation's response names (#352).
  *
  * - The sandbox and the checker are the engine's: worker threads, started on first use and ended
  *   on quit. Nothing of a script runs in main itself.
@@ -17,6 +19,7 @@ import {
   activeScripts,
   createScriptChecker,
   createScriptSandbox,
+  dispatchDeclarations,
   grpcMessageTypes,
   grpcScriptTypes,
   restOperationFor,
@@ -76,6 +79,11 @@ export interface SessionValueListing {
   readonly value?: string;
   readonly secret: boolean;
 }
+
+/** Which script an editor holds: one of a request's two, or a mock operation's `dispatch.ts`. */
+export type ScriptTarget =
+  | { readonly requestId: string; readonly phase: ScriptPhase }
+  | { readonly mockId: string; readonly operationId: string };
 
 /** A request, wherever it is, with what its script types are built from. */
 interface Located {
@@ -240,7 +248,7 @@ export class ScriptHost {
   // --- The editor --------------------------------------------------------------------------------
 
   /** The model an editor's script is checked as: its text, and its request's declarations. */
-  private async modelFor(requestId: string, phase: ScriptPhase, source: string): Promise<ScriptModel> {
+  private async requestModel(requestId: string, phase: ScriptPhase, source: string): Promise<ScriptModel> {
     const located = this.locate(requestId);
     if (located === undefined) {
       return { source, declarations: '', api: 'wirebench' };
@@ -257,51 +265,69 @@ export class ScriptHost {
     };
   }
 
-  private static modelId(requestId: string, phase: ScriptPhase): string {
-    return `${requestId}:${phase}`;
+  /** A dispatch script's model: the dispatch API, with `respond` taking the operation's response names. */
+  private dispatchModel(mockId: string, operationId: string, source: string): ScriptModel {
+    const operation = this.deps
+      .modelOf(mockId)
+      ?.mocks.find((mock) => mock.id === mockId)
+      ?.operations.find((candidate) => candidate.id === operationId);
+    return {
+      source,
+      declarations: operation === undefined ? '' : dispatchDeclarations(operation.responses.map((r) => r.name)),
+      api: 'wirebench',
+    };
   }
 
-  async diagnostics(requestId: string, phase: ScriptPhase, source: string): Promise<readonly ScriptDiagnostic[]> {
-    const model = await this.modelFor(requestId, phase, source);
-    return this.checkerOf().diagnostics(ScriptHost.modelId(requestId, phase), model);
+  private modelFor(target: ScriptTarget, source: string): Promise<ScriptModel> {
+    return 'mockId' in target
+      ? Promise.resolve(this.dispatchModel(target.mockId, target.operationId, source))
+      : this.requestModel(target.requestId, target.phase, source);
+  }
+
+  private static modelId(target: ScriptTarget): string {
+    return 'mockId' in target
+      ? `${target.mockId}:${target.operationId}:dispatch`
+      : `${target.requestId}:${target.phase}`;
+  }
+
+  async diagnostics(target: ScriptTarget, source: string): Promise<readonly ScriptDiagnostic[]> {
+    const model = await this.modelFor(target, source);
+    return this.checkerOf().diagnostics(ScriptHost.modelId(target), model);
   }
 
   async completions(
-    requestId: string,
-    phase: ScriptPhase,
+    target: ScriptTarget,
     source: string,
     line: number,
     column: number,
   ): Promise<readonly ScriptCompletion[]> {
-    const model = await this.modelFor(requestId, phase, source);
-    return this.checkerOf().completions(ScriptHost.modelId(requestId, phase), model, line, column);
+    const model = await this.modelFor(target, source);
+    return this.checkerOf().completions(ScriptHost.modelId(target), model, line, column);
   }
 
   async quickInfo(
-    requestId: string,
-    phase: ScriptPhase,
+    target: ScriptTarget,
     source: string,
     line: number,
     column: number,
   ): Promise<ScriptQuickInfo | undefined> {
-    const model = await this.modelFor(requestId, phase, source);
-    return this.checkerOf().quickInfo(ScriptHost.modelId(requestId, phase), model, line, column);
+    const model = await this.modelFor(target, source);
+    return this.checkerOf().quickInfo(ScriptHost.modelId(target), model, line, column);
   }
 
   async signatureHelp(
-    requestId: string,
-    phase: ScriptPhase,
+    target: ScriptTarget,
     source: string,
     line: number,
     column: number,
   ): Promise<ScriptSignatureHelp | undefined> {
-    const model = await this.modelFor(requestId, phase, source);
-    return this.checkerOf().signatureHelp(ScriptHost.modelId(requestId, phase), model, line, column);
+    const model = await this.modelFor(target, source);
+    return this.checkerOf().signatureHelp(ScriptHost.modelId(target), model, line, column);
   }
 
   /** Drops the language service of an editor that closed. */
-  async closeModel(requestId: string, phase: ScriptPhase): Promise<void> {
-    if (this.checker !== undefined) await this.checker.remove(ScriptHost.modelId(requestId, phase));
+  async closeModel(target: ScriptTarget): Promise<void> {
+    if (this.checker !== undefined) await this.checker.remove(ScriptHost.modelId(target));
   }
 
   // --- Session values ----------------------------------------------------------------------------

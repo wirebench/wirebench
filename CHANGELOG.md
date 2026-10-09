@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Type-checked dispatch scripts.** A mock operation's `dispatch.ts` gets completion, hover and type
+  errors in the mock tab as a request script does: a misspelt name, a wrong `request` field, or a
+  `respond` with a name that is not one of the operation's responses shows under the editor instead of
+  failing the first request the mock answers. The script API reference documents the dispatch API
+  beside the request-script one (#352).
+
 ## [5.0.0] - 2026-10-09
 
 ### Added
