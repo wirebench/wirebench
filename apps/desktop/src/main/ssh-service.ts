@@ -31,7 +31,10 @@ export interface SshServiceDeps {
    * @throws WirebenchError when that window is gone
    */
   readonly hosts: (sender: WebContents) => Pick<HostsService, 'current' | 'list'>;
-  /** The secret getter for the connecting window's workspace; read at connect time, so a switch is honoured. */
+  /**
+   * The secret getter for the connecting window's workspace, taken when a connect begins and bound to the
+   * workspace open then, so a switch mid-connect never hands one workspace's secrets to another's host.
+   */
   readonly secretsFor: (sender: WebContents) => GetSecret;
   /** `userData/ssh-known-hosts.json`: per machine, never in the workspace tree. */
   readonly knownHostsFile: string;
@@ -106,8 +109,11 @@ export class SshService {
   private trustQueue: Promise<void> = Promise.resolve();
   /** Bumped by {@link disposeAll}; a connect that straddles it closes what it opened. */
   private epoch = 0;
-  /** Bumped per window by {@link disposeFor}, so a connect straddling that window's switch closes too. */
-  private readonly generations = new Map<number, number>();
+  /**
+   * Windows with a connect in flight, by sender id: how many, and a generation {@link disposeFor} bumps so
+   * a connect straddling that window's switch stops. An entry lives only while a connect is in flight.
+   */
+  private readonly inFlight = new Map<number, { count: number; generation: number }>();
 
   constructor(private readonly deps: SshServiceDeps) {}
 
@@ -117,11 +123,39 @@ export class SshService {
    *   `ssh-host-key-changed` | `ssh-connect-failed`
    */
   async connect(sender: WebContents, request: SshConnectRequest): Promise<{ sessionId: string }> {
+    let flight = this.inFlight.get(sender.id);
+    if (!flight) {
+      flight = { count: 0, generation: 0 };
+      this.inFlight.set(sender.id, flight);
+    }
+    flight.count += 1;
+    try {
+      return await this.connectNow(sender, request, flight);
+    } finally {
+      flight.count -= 1;
+      if (flight.count === 0 && this.inFlight.get(sender.id) === flight) this.inFlight.delete(sender.id);
+    }
+  }
+
+  private async connectNow(
+    sender: WebContents,
+    request: SshConnectRequest,
+    flight: { readonly generation: number },
+  ): Promise<{ sessionId: string }> {
     const epoch = this.epoch;
-    const generation = this.generations.get(sender.id) ?? 0;
+    const generation = flight.generation;
+    // A quit, or this window's workspace switching (or the window going), since the connect began.
+    const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
+    const closed = (): WirebenchError =>
+      new WirebenchError('ssh-session-closed', 'The session closed before it opened');
+    // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
+    const getSecret = this.deps.secretsFor(sender);
     const chain = await this.chainFor(sender, request.hostId);
-    const hops = await this.credentialsFor(sender, chain);
+    if (stale()) throw closed();
+    const hops = await this.credentialsFor(chain, getSecret);
     const known = await this.readKnownHosts();
+    // A switch while the secrets were read: they must not go to the hosts of the workspace left.
+    if (stale()) throw closed();
     // The last key refused as changed (hops connect in order and a refusal ends the connect).
     let changed: { entry: KnownHostEntry; previous: string } | undefined;
     const verifyHostKey = (_hop: unknown, key: KnownHostEntry): Promise<'accept' | 'reject'> => {
@@ -147,12 +181,15 @@ export class SshService {
           changed !== undefined &&
           changed.entry.host === refusedKey.host &&
           changed.entry.fingerprint === refusedKey.fingerprint;
-        this.recordRefusal(sender, {
-          ...refusedKey,
-          kind: wasChanged ? 'changed' : 'new',
-          ...(wasChanged && changed ? { previous: changed.previous } : {}),
-          at: this.now(),
-        });
+        // A refusal from before this window's switch belongs to the workspace it left: not kept.
+        if (!stale()) {
+          this.recordRefusal(sender, {
+            ...refusedKey,
+            kind: wasChanged ? 'changed' : 'new',
+            ...(wasChanged && changed ? { previous: changed.previous } : {}),
+            at: this.now(),
+          });
+        }
       }
       if (
         changed &&
@@ -168,9 +205,9 @@ export class SshService {
       }
       throw asWirebenchError(error);
     }
-    if (epoch !== this.epoch || generation !== (this.generations.get(sender.id) ?? 0) || sender.isDestroyed()) {
+    if (stale()) {
       session.close();
-      throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
+      throw closed();
     }
     const sessionId = session.id;
     const offData = session.onData((data) => {
@@ -276,7 +313,8 @@ export class SshService {
    * connect it has in flight; other windows' sessions and refusals are left alone.
    */
   disposeFor(sender: WebContents): void {
-    this.generations.set(sender.id, (this.generations.get(sender.id) ?? 0) + 1);
+    const flight = this.inFlight.get(sender.id);
+    if (flight) flight.generation += 1;
     this.refused.delete(sender.id);
     for (const [sessionId, live] of [...this.live]) {
       if (live.sender.id !== sender.id) continue;
@@ -296,8 +334,6 @@ export class SshService {
     sender.once('destroyed', () => {
       this.watched.delete(sender.id);
       this.disposeFor(sender);
-      // `webContents` ids are never reused; a connect still in flight is caught by `isDestroyed()`.
-      this.generations.delete(sender.id);
     });
   }
 
@@ -366,8 +402,7 @@ export class SshService {
   }
 
   /** In order, so the first missing secret is the one named; an agent without a socket fails here too. */
-  private async credentialsFor(sender: WebContents, chain: readonly ResolvedHost[]): Promise<HopCredentials[]> {
-    const getSecret = this.deps.secretsFor(sender);
+  private async credentialsFor(chain: readonly ResolvedHost[], getSecret: GetSecret): Promise<HopCredentials[]> {
     const value = async (token: string): Promise<string> => {
       const name = secretNameOf(token);
       const ref = secretPseudoRef(name);

@@ -524,9 +524,114 @@ describe('SshService', () => {
   });
 
   it('a connect that finishes after the window is gone closes what it opened', async () => {
-    const { service, fake } = make({ known: [KEY] });
-    await expect(service.connect(as(sender(1, true)), CONNECT)).rejects.toMatchObject({ code: 'ssh-session-closed' });
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { service, fake, open } = make({ known: [KEY], gate });
+    let destroyed = false;
+    const s = { ...sender(1), isDestroyed: () => destroyed };
+    const pending = service.connect(as(s), CONNECT);
+    await vi.waitFor(() => expect(open).toHaveBeenCalled());
+    destroyed = true;
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'ssh-session-closed' });
     expect(fake.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a window already gone never opens a connection', async () => {
+    const { service, open } = make({ known: [KEY] });
+    await expect(service.connect(as(sender(1, true)), CONNECT)).rejects.toMatchObject({ code: 'ssh-session-closed' });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("review: a switch while the hosts are read never sends anyone's secrets anywhere", async () => {
+    let release = (): void => undefined;
+    const listGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const list = vi.fn(async (): Promise<SshListHostsResponse> => {
+      await listGate;
+      return { file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] };
+    });
+    const getSecret = vi.fn((ref: string) => Promise.resolve(ref === 'secret:a_pw' ? 'pw' : undefined));
+    const secretsFor = vi.fn(() => getSecret);
+    const { service, open } = make({ known: [KEY], hostsFor: () => ({ current: () => FILE, list }), secretsFor });
+    const s = sender(1);
+    const pending = service.connect(as(s), CONNECT);
+    await vi.waitFor(() => expect(list).toHaveBeenCalled());
+    service.disposeFor(as(s)); // this window's workspace switches
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'ssh-session-closed' });
+    expect(getSecret).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('review: a switch while the secrets are read stops the connect before open', async () => {
+    let release = (): void => undefined;
+    const secretGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const getSecret = vi.fn(async () => {
+      await secretGate;
+      return 'pw';
+    });
+    const { service, open } = make({ known: [KEY], secretsFor: () => getSecret });
+    const s = sender(1);
+    const pending = service.connect(as(s), CONNECT);
+    await vi.waitFor(() => expect(getSecret).toHaveBeenCalled());
+    service.disposeFor(as(s));
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'ssh-session-closed' });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('review: the secret getter is taken when the connect begins', async () => {
+    const order: string[] = [];
+    const list = vi.fn((): Promise<SshListHostsResponse> => {
+      order.push('hosts');
+      return Promise.resolve({ file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] });
+    });
+    const secretsFor = vi.fn(() => {
+      order.push('secrets');
+      return (ref: string) => Promise.resolve(ref === 'secret:a_pw' ? 'pw' : undefined);
+    });
+    const { service } = make({ known: [KEY], hostsFor: () => ({ current: () => FILE, list }), secretsFor });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(order).toEqual(['secrets', 'hosts']);
+  });
+
+  it('review: a refusal from a connect that straddled a switch is not kept', async () => {
+    let release = (): void => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The host key is unknown, so open() refuses it; the switch lands while open() runs.
+    const { service, open } = make();
+    const s = sender(1);
+    open.mockImplementationOnce(async (options: OpenSessionOptions) => {
+      await openGate;
+      await options.verifyHostKey({ address: '10.0.0.1', port: 22 }, KEY);
+      throw new SshConnectError('ssh-host-key-new', 'untrusted', { ...KEY });
+    });
+    const pending = service.connect(as(s), CONNECT);
+    await vi.waitFor(() => expect(open).toHaveBeenCalled());
+    service.disposeFor(as(s));
+    release();
+    await expect(pending).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    await expect(service.trust(as(s), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+  });
+
+  it('review: no per-window bookkeeping outlives a connect, area used or not', async () => {
+    const { service } = make({ known: [KEY] });
+    const inFlight = (service as unknown as { inFlight: Map<number, unknown> }).inFlight;
+    service.disposeFor(as(sender(7))); // a window that never connected switches workspace
+    expect(inFlight.size).toBe(0);
+    await service.connect(as(sender(1)), CONNECT);
+    await expect(service.connect(as(sender(2, true)), CONNECT)).rejects.toMatchObject({ code: 'ssh-session-closed' });
+    expect(inFlight.size).toBe(0);
   });
 
   it('an incomplete host is refused before any connection', async () => {
