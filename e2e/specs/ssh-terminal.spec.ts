@@ -69,6 +69,11 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   // The fixture's shell echoes every byte it is sent, so what the terminal shows is the typed line.
   const terminal = page.getByTestId('ssh-terminal');
   await expect(terminal.locator('.xterm')).toBeVisible({ timeout: 30_000 });
+  // The terminal is drawn before its session opens, and keys typed before then go nowhere: wait for the
+  // tab's status dot to say the session is open.
+  await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await terminal.click();
   await page.keyboard.type('echo hi');
   await page.keyboard.press('Enter');

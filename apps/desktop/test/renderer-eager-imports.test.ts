@@ -13,10 +13,13 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+/** A path relative to `from`, with `/` separators on every platform so reports compare equal. */
+const posixRelative = (from: string, to: string): string => relative(from, to).split(sep).join('/');
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -92,13 +95,13 @@ function eagerViolations(entry: string, srcDir: string): Violation[] {
     seen.add(file);
     for (const specifier of valueImports(file, readFileSync(file, 'utf-8'))) {
       if (FORBIDDEN_PACKAGES.includes(specifier)) {
-        violations.push({ from: relative(srcDir, file), to: specifier });
+        violations.push({ from: posixRelative(srcDir, file), to: specifier });
         continue;
       }
       const target = resolveLocal(file, specifier, sharedDir);
       if (target === undefined) continue;
       if (forbidden.has(target)) {
-        violations.push({ from: relative(srcDir, file), to: relative(srcDir, target) });
+        violations.push({ from: posixRelative(srcDir, file), to: posixRelative(srcDir, target) });
         continue;
       }
       queue.push(target);
