@@ -555,6 +555,11 @@ scripts. The format decision is [ADR-0021](adr/0021-mock-stubs-are-files-under-m
   project file can choose it, so a shared mock cannot make a machine listen on every interface. On
   loopback a request whose `Host` is not a loopback name is refused with 421, which defeats DNS
   rebinding. Tests: `packages/engine/test/unit/mock/server.test.ts`.
+- **`wirebench mock` (#61) takes the host from its operator.** `--host`, else `WIREBENCH_MOCK_HOST`, else
+  `127.0.0.1`; any other address prints a warning, since the 421 check applies on loopback only. The CLI
+  container image sets `WIREBENCH_MOCK_HOST=0.0.0.0` because loopback inside a container is unreachable;
+  the container's network and the ports published with `-p` are the boundary there. Tests:
+  `packages/cli/test/unit/mock-command.test.ts`.
 - **Bounded requests.** A body over 10 MiB is refused with 413, and the headers and the whole request
   each have 30 s. XSD validation runs on its worker with a time budget, JSON Schema validation inside
   the node cap, and XPath, JSONPath and regular expressions on the evaluation worker with budgets.

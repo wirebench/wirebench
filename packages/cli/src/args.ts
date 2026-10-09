@@ -13,6 +13,8 @@ import {
 import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
 import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
 import type { DiffContractArgs } from './args-diff-contract.js';
+import { MOCK_HELP, parseMockServe } from './args-mock.js';
+import type { MockArgs } from './args-mock.js';
 import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
 import type { MockRecordArgs } from './args-mock-record.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
@@ -21,13 +23,14 @@ import { UsageError } from './usage-error.js';
 export { UsageError };
 export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
 export type { DiffContractArgs } from './args-diff-contract.js';
+export type { MockArgs } from './args-mock.js';
 export type { MockRecordArgs } from './args-mock-record.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
   ...VERB_HELP,
   'diff-contract': DIFF_CONTRACT_HELP,
-  mock: MOCK_RECORD_HELP,
+  mock: `${MOCK_HELP}\n\n${MOCK_RECORD_HELP}`,
 };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
@@ -77,6 +80,9 @@ ${DIFF_CONTRACT_USAGE}
                        Compares two versions of a WSDL or an OpenAPI document (files, URLs or
                        project:<name>) and classifies each change breaking or compatible. Exit 1
                        when the --fail-on gate fails (default: any breaking change).
+
+wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
+                       Serves the project's mocks until stopped (see wirebench mock --help).
 
 ${MOCK_RECORD_HELP}
 
@@ -129,6 +135,7 @@ export type ParsedArgs =
   | CallArgs
   | ExportArgs
   | DiffContractArgs
+  | MockArgs
   | MockRecordArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
@@ -252,8 +259,9 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
 
   if (word === 'mock') {
-    refuseDiffOnly(values, 'wirebench mock record');
-    return parseMock(rest, values);
+    refuseDiffOnly(values, 'wirebench mock');
+    // `mock record …` records (#60); any other `mock <path> …` serves (#61).
+    return rest[0] === 'record' ? parseMock(rest, values) : parseMockServe(rest, values);
   }
   refuseMockRecordOnly(values, `wirebench ${word}`);
 

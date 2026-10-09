@@ -415,7 +415,8 @@ The engine half of #59 is in place: mocks generated from a WSDL or an OpenAPI do
 every dispatch style with scenarios, the WSDL served, and the file format of ADR-0021. Lifecycle scripts and
 response templating are left for later issues. The desktop's mock tab is in place too. So is the recording
 proxy: `wirebench mock record` passes traffic through to a real system and saves what reaches a contract
-operation as masked stubs (#60). A *Record* button in the mock tab is a follow-up.
+operation as masked stubs (#60). A *Record* button in the mock tab is a follow-up. `wirebench mock` (#61)
+serves those mocks from the CLI and the container image.
 
 ### Teams and sign-in
 

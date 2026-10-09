@@ -93,6 +93,12 @@ wirebench export <postman|opencollection> [--api <name|slug|id>] [--out <dir>] [
 wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
                        Serves those verbs as MCP tools to a coding agent, over stdio or on 127.0.0.1.
 
+wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
+                       Serves the project's mocks until stopped: see "wirebench mock" below.
+
+wirebench mock record <path> <mock> --target <url>
+                       Records a mock's stubs from live traffic: see "wirebench mock record" below.
+
 wirebench --version | --help
 ```
 
@@ -988,6 +994,40 @@ Exit 0 when the gate passes and 1 when it fails. Exit 2 for a usage error, an un
 cannot be fetched or parsed. What a definition could not resolve, and what its schema could not
 express, is printed to stderr as a warning and does not change the exit code.
 
+## `wirebench mock`
+
+```text
+wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
+```
+
+Serves a project's [mock services](https://wirebench.github.io/wirebench/docs/reference/project-format/) without the app, until SIGINT or
+SIGTERM. Design: [`specs/2026-10-08-headless-mock-design.md`](specs/2026-10-08-headless-mock-design.md).
+
+- `<path>` is the project folder. `[mock…]` picks mocks by name, folder slug (`mocks/<slug>/`) or id;
+  with none, every mock in the project starts, each on its own `port` from `mock.yaml`. A mock whose
+  port is `0` gets a free one, which its listening line names.
+- `--port <n>` overrides the port of the one selected mock (with several selected it is exit 2).
+- `--host <addr>` is the address to listen on: `WIREBENCH_MOCK_HOST` when the flag is absent, else
+  `127.0.0.1`. The project cannot choose it. Off loopback, a warning goes to stderr: the mock then answers
+  any client that can reach the port, and the loopback-only `Host` check (421) no longer applies.
+- stdout carries a `listening <name> <url>` line per mock once all have started, then one line per request:
+  time, mock, method, path, status, operation, response and duration, with each validation problem
+  indented below it. Bodies are not printed. `-q` keeps only the listening lines.
+- `--json` writes the same as one JSON object per line: `{"type":"listening","mockId","mock","url","host","port"}`
+  and `{"type":"exchange","mockId","mock",…}`, the second carrying the engine's whole exchange event with
+  its headers masked and its bodies cut to 64 KiB.
+- Warnings (a mock file that did not load, a stub operation the contract no longer has) go to stderr and
+  do not stop the mocks.
+
+| Exit | When |
+| --- | --- |
+| 0 | Stopped by SIGINT or SIGTERM. |
+| 2 | Bad flags, an unknown or ambiguous mock, a project with no mocks, a path that is not a project. |
+| 3 | A mock did not start: port in use, definition not cached, a gRPC or WebSocket container. The mocks already started are stopped first. |
+
+A mock replays only what its stubs say, and its definition comes from the project's cache, so it never
+touches the network and behaves the same on a runner as on a laptop.
+
 ## Run in CI
 
 Four ways to run a project in a pipeline, from the same package. Every secret is the caller's: map
@@ -1060,3 +1100,30 @@ GitHub Action installs under the hood.
 
 Each recipe above exits non-zero on a broken service (1) or a broken pipeline (2, 3), and the
 JUnit report names the request and the assertion that failed.
+
+### Mocks in a pipeline
+
+Start the mocks in the background, wait for the listening line, run the tests against them, then stop
+them. On a runner with Node 24:
+
+```bash
+npx --yes @wirebench/cli@5.0.0 mock ./project orders --port 8089 > mock.log &
+MOCK=$!
+until grep -q '^listening ' mock.log; do sleep 0.2; done
+npx --yes @wirebench/cli@5.0.0 run ./api-tests --env mocked
+kill -TERM "$MOCK"; wait "$MOCK"
+```
+
+In a container the image already listens on every interface (`WIREBENCH_MOCK_HOST=0.0.0.0`), so only
+the port has to be published. The process handles SIGTERM itself, so `docker stop` ends it at once
+with exit 0:
+
+```bash
+docker run -d --name orders-mock -p 8089:8089 -v "$PWD:/work" \
+  ghcr.io/wirebench/wirebench-cli:5.0.0 mock ./project orders --port 8089
+```
+
+A CI system's service containers start before the repository is checked out, so they cannot see the
+project; start the mock from the job itself, as above, or bake the project into an image built
+`FROM ghcr.io/wirebench/wirebench-cli` with it copied under `/work`.
+

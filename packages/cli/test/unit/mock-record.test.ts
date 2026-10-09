@@ -71,7 +71,8 @@ describe('wirebench mock record arguments', () => {
   });
 
   it.each([
-    [['mock', 'serve', 'p', 'm', '--target', 'http://x'], 'unknown subcommand'],
+    // Anything but `record` after `mock` is a project path to serve (#61), which takes no --target.
+    [['mock', 'serve', 'p', 'm', '--target', 'http://x'], '--target does not apply to wirebench mock'],
     [['mock', 'record', 'p', '--target', 'http://x'], '<path> and <mock> are required'],
     [['mock', 'record', 'p', 'm'], '--target is required'],
     [['mock', 'record', 'p', 'm', '--target', 'http://x', '--port', '70000'], '--port must be'],

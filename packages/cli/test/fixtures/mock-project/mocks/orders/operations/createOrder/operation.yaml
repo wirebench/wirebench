@@ -1,0 +1,6 @@
+default: id0003
+dispatch: sequence
+id: id0004
+name: createOrder
+operation: post /orders
+order: 1

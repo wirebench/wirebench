@@ -1,0 +1,8 @@
+documents:
+  - bytes: 726
+    file: openapi.yaml
+    location: file:///private/tmp/claude-501/-Users-mnaami-Data-apps-wirebench--claude-worktrees-agitated-lamport-495863/8a272543-7eb9-4327-a47f-ea4b0db9860a/scratchpad/gen/openapi.yaml
+    sha256: 99d5a4844e8351329e406a5062367efb84480d5e9774ca9100ab12489266e1a6
+fetchedAt: 2026-10-08T20:47:30.681Z
+formatVersion: 1
+rootLocation: file:///private/tmp/claude-501/-Users-mnaami-Data-apps-wirebench--claude-worktrees-agitated-lamport-495863/8a272543-7eb9-4327-a47f-ea4b0db9860a/scratchpad/gen/openapi.yaml

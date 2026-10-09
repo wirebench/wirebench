@@ -24,6 +24,9 @@ LABEL org.opencontainers.image.source="https://github.com/wirebench/wirebench" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 COPY --from=build /out /app
+# `wirebench mock` listens on loopback by default, which nothing outside the container can reach; here the
+# container's own network is the boundary, and only a port published with -p is reachable (#61).
+ENV WIREBENCH_MOCK_HOST=0.0.0.0
 USER node
 WORKDIR /work
 ENTRYPOINT ["node", "/app/dist/bin.js"]

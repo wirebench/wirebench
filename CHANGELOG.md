@@ -41,6 +41,10 @@ All notable changes to this project are documented here. The format follows
   contract operation is kept as a stub of the mock, saved when the recording stops. Credentials are
   masked in what is kept, requests are never saved, and the upstream comes only from the command line
   (#60).
+- **`wirebench mock`.** Serves a project's mocks from the command line until SIGINT or SIGTERM, for a
+  pipeline or a container: pick mocks by name, slug or id, override the port of one, and read the request
+  log as text or JSON lines. It listens on loopback unless `--host` or `WIREBENCH_MOCK_HOST` says
+  otherwise; the CLI image sets the latter to `0.0.0.0` (#61).
 
 ### Changed
 

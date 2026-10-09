@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info: { title: Orders, version: '1' }
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 50 } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              example: [{ id: 1 }]
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [qty], properties: { qty: { type: integer, minimum: 1 } } }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              example: { id: 2 }
