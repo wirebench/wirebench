@@ -15,6 +15,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
+import { ClampedValueField } from './clamped-value-field.js';
 import { IconButton } from './icon-button.js';
 import { useGridNavigation } from '../lib/grid-navigation.js';
 import type { KeyValueWire } from '../../shared/wire-types.js';
@@ -492,14 +493,24 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
           </td>
         ) : (
           <td key={column} className={`px-2 py-1 align-top ${divider(columns, column)}`}>
-            <textarea
-              rows={1}
-              aria-label={`${HEADING[column]} of ${row.name}`}
-              data-testid={testid(column)}
-              className={KV_TEXTAREA_CLASS}
-              readOnly={column === 'name' && lockName}
-              {...fields[column]}
-            />
+            {column === 'value' ? (
+              // A long value (a token, a cookie) folds to two lines and opens in full on focus.
+              <ClampedValueField
+                aria-label={`${HEADING[column]} of ${row.name}`}
+                data-testid={testid(column)}
+                className={KV_TEXTAREA_CLASS}
+                {...fields[column]}
+              />
+            ) : (
+              <textarea
+                rows={1}
+                aria-label={`${HEADING[column]} of ${row.name}`}
+                data-testid={testid(column)}
+                className={KV_TEXTAREA_CLASS}
+                readOnly={column === 'name' && lockName}
+                {...fields[column]}
+              />
+            )}
           </td>
         ),
       )}
