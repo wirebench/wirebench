@@ -43,7 +43,7 @@ import { inheritedSigningOf } from '../webhook-items/signing.js';
 import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
-import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
+import { SendMenu } from '../multi-env/send-menu.js';
 import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
 import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
 import { REQUEST_KINDS } from '../assertions/assertion-table.js';
@@ -341,7 +341,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         }}
         sendShortcut={shortcutFor('rest.send', platform)}
         sendDisabledReason={sendDisabledReason}
-        menu={<SendToEnvironmentsButton requestId={requestId} kind="rest" />}
+        menu={<SendMenu requestId={requestId} kind="rest" />}
       />
       {isWebhookItem && (
         <>

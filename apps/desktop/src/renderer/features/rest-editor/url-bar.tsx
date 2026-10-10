@@ -1,5 +1,6 @@
 /**
- * The REST editor's top strip: the method, the URL, Send, and the overflow menu.
+ * The REST editor's top strip: Send (split, with its ▾ menu), the method and the URL. Send leads
+ * the strip, as it does in every editor.
  *
  * Two things here are not ordinary form fields. The **method** is a select of the nine methods a
  * REST client sends plus a *Custom…* entry, because a REST client must be able to send a method this
@@ -9,7 +10,7 @@
  */
 import { useState } from 'react';
 import { Send, Square } from 'lucide-react';
-import { Button } from '../../components/button.js';
+import { Button, SPLIT_HEAD_CLASS } from '../../components/button.js';
 import { PropertyHighlightInput } from './property-highlight-input.js';
 
 /** The methods the select offers by name; anything else is typed through *Custom…*. */
@@ -43,11 +44,11 @@ export interface UrlBarProps {
   readonly sendShortcut?: string | undefined;
   /** Disables *Send* when set, e.g. a webhook item with no target — the reason is the button's title. */
   readonly sendDisabledReason?: string | undefined;
-  /** The overflow menu; passed in so this strip needs nothing from the stores. */
+  /** The ▾ joined to Send's right; passed in so this strip needs nothing from the stores. */
   readonly menu?: React.ReactNode;
 }
 
-/** The method, URL and Send strip. */
+/** The Send, method and URL strip. */
 export function UrlBar({
   method,
   url,
@@ -69,6 +70,37 @@ export function UrlBar({
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
+      {sending ? (
+        <Button
+          variant="secondary"
+          data-testid="rest-send"
+          onClick={onCancel}
+          title={live ? 'Stop the stream (Esc)' : 'Cancel (Esc)'}
+        >
+          <Square size={12} aria-hidden="true" />
+          {live ? 'Stop' : 'Cancel'}
+        </Button>
+      ) : (
+        <div className="flex shrink-0 items-center">
+          <Button
+            variant="primary"
+            data-testid="rest-send"
+            className={menu === undefined ? '' : SPLIT_HEAD_CLASS}
+            onClick={onSend}
+            disabled={sendDisabledReason !== undefined}
+            {...(sendDisabledReason !== undefined
+              ? { title: sendDisabledReason }
+              : sendShortcut !== undefined
+                ? { title: `Send (${sendShortcut})` }
+                : {})}
+          >
+            <Send size={12} aria-hidden="true" />
+            Send
+          </Button>
+          {menu}
+        </div>
+      )}
+
       {custom ? (
         <input
           aria-label="Request method"
@@ -136,34 +168,6 @@ export function UrlBar({
           }}
         />
       </div>
-
-      {sending ? (
-        <Button
-          variant="secondary"
-          data-testid="rest-send"
-          onClick={onCancel}
-          title={live ? 'Stop the stream (Esc)' : 'Cancel (Esc)'}
-        >
-          <Square size={12} aria-hidden="true" />
-          {live ? 'Stop' : 'Cancel'}
-        </Button>
-      ) : (
-        <Button
-          variant="primary"
-          data-testid="rest-send"
-          onClick={onSend}
-          disabled={sendDisabledReason !== undefined}
-          {...(sendDisabledReason !== undefined
-            ? { title: sendDisabledReason }
-            : sendShortcut !== undefined
-              ? { title: `Send (${sendShortcut})` }
-              : {})}
-        >
-          <Send size={12} aria-hidden="true" />
-          Send
-        </Button>
-      )}
-      {menu}
     </div>
   );
 }

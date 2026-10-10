@@ -1,5 +1,5 @@
 /**
- * The REST/webhook editor's URL bar: the method, the URL and Send. A webhook item has no API,
+ * The REST/webhook editor's URL bar: Send, the method and the URL. A webhook item has no API,
  * so it shows a labelled prefix instead of a base URL, and Send can be disabled with a reason —
  * the two things `rest-editor.tsx` adds for that case.
  */
@@ -68,5 +68,16 @@ describe('UrlBar', () => {
     render(<UrlBar {...props({ onSend })} />);
     fireEvent.click(screen.getByTestId<HTMLButtonElement>('rest-send'));
     expect(onSend).toHaveBeenCalled();
+  });
+
+  it('leads with Send, joined to the menu passed in, ahead of the method and the URL', () => {
+    render(<UrlBar {...props({ menu: <button type="button">▾</button> })} />);
+    const send = screen.getByTestId('rest-send');
+    const method = screen.getByTestId('rest-method');
+    const url = screen.getByTestId('rest-url');
+    expect(send.compareDocumentPosition(method) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(method.compareDocumentPosition(url) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(send.nextElementSibling?.textContent).toBe('▾');
+    expect(send.className).toContain('rounded-r-none');
   });
 });

@@ -58,7 +58,7 @@ export function wsStateLabel(status: WsExchangeState['status'] | undefined, clos
   }
 }
 
-/** The URL, state and Connect / Cancel / Disconnect strip. */
+/** The Connect / Cancel / Disconnect, URL and state strip. Connect leads, as Send does elsewhere. */
 export function WsConnectBar({
   url,
   urlSource,
@@ -133,7 +133,7 @@ export function WsConnectBar({
                 setOptionsOpen(false);
               }
             }}
-            className="absolute top-full right-0 z-20 mt-1 flex w-64 flex-col gap-2 rounded-md border border-hairline-strong bg-surface-overlay p-2 text-xs shadow-lg"
+            className="absolute top-full left-0 z-20 mt-1 flex w-64 flex-col gap-2 rounded-md border border-hairline-strong bg-surface-overlay p-2 text-xs shadow-lg"
           >
             <label className="flex flex-col gap-0.5 text-fg-muted">
               Code
@@ -189,6 +189,7 @@ export function WsConnectBar({
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
+      {action}
       <span
         data-testid="ws-url"
         title={urlSource === undefined ? undefined : `From the ${urlSource}`}
@@ -216,7 +217,6 @@ export function WsConnectBar({
           {label}
         </span>
       )}
-      {action}
     </div>
   );
 }
