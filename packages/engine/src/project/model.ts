@@ -241,6 +241,9 @@ export function defaultContentId(attachmentId: string): string {
 export interface HeaderEntry {
   readonly name: string;
   readonly value: string;
+  /** `false` keeps the row in the request without sending it; absent means on. */
+  readonly enabled?: boolean;
+  readonly description?: string;
 }
 
 /** The per-request knobs of the request editor's Details panel. */

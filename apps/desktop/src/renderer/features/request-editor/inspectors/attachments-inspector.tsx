@@ -129,7 +129,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
 
   return (
     <div
-      className={`flex flex-col gap-2 p-2 ${dragging ? 'bg-accent-muted ring-1 ring-accent ring-inset' : ''}`}
+      className={`flex flex-col gap-2 p-3 ${dragging ? 'bg-accent-muted ring-1 ring-accent ring-inset' : ''}`}
       data-testid="attachments-dropzone"
       onDragOver={(event) => {
         event.preventDefault();

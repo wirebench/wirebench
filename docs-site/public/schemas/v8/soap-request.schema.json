@@ -18,7 +18,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "properties": { "name": { "type": "string" }, "value": { "type": "string" } },
+        "properties": {
+          "name": { "type": "string" },
+          "value": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "description": { "type": "string" }
+        },
         "required": ["name", "value"],
         "additionalProperties": {}
       }

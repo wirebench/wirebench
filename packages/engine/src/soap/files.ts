@@ -109,7 +109,14 @@ export const requestFileSchema = z.looseObject({
   endpointUrl: z.string().optional(),
   soapVersion: z.enum(['1.1', '1.2']),
   soapAction: z.string().optional(),
-  headers: z.array(z.looseObject({ name: z.string(), value: z.string() })),
+  headers: z.array(
+    z.looseObject({
+      name: z.string(),
+      value: z.string(),
+      enabled: z.boolean().optional(),
+      description: z.string().optional(),
+    }),
+  ),
   attachments: z.array(attachmentSchema),
   auth: soapOwnerAuthSchema.optional(),
   wsa: wsaSchema.optional(),

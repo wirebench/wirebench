@@ -1079,8 +1079,14 @@ export type EngineProgressEvent = z.infer<typeof engineProgressEventSchema>;
 // the renderer holds a read-only mirror of the shapes below.
 // ---------------------------------------------------------------------------
 
-/** One HTTP header of a saved request, in author-defined order (duplicates allowed). */
-export const headerEntrySchema = z.object({ name: z.string(), value: z.string() });
+/** One HTTP header of a saved request, in author-defined order (duplicates allowed). A SOAP
+ * request's row may be switched off (`enabled: false`, kept but not sent) and carry a description. */
+export const headerEntrySchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  enabled: z.boolean().optional(),
+  description: z.string().optional(),
+});
 export type HeaderEntryWire = z.infer<typeof headerEntrySchema>;
 
 /**

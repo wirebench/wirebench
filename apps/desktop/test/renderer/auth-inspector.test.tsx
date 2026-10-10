@@ -42,29 +42,30 @@ describe('AuthInspector', () => {
     vi.restoreAllMocks();
   });
 
-  it('inherits by default and names where the effective credentials come from', async () => {
+  it('inherits by default, like the REST Auth tab, and names where the credentials come from', async () => {
     render(<AuthInspector requestId="req-1" />);
 
-    expect(screen.getByTestId('auth-inherit')).toHaveProperty('checked', true);
-    expect(screen.queryByLabelText('Authentication type')).toBeNull();
+    expect(screen.getByLabelText('Request authentication type')).toHaveProperty('value', 'inherit');
+    expect(screen.queryByLabelText('Request username')).toBeNull();
     await waitFor(() => {
       expect(screen.getByTestId('auth-effective').textContent).toBe("Using endpoint 'Primary' credentials (override)");
     });
   });
 
-  it('unchecking inherit gives the request its own Basic, preemptive credentials', async () => {
+  it('choosing a scheme over Inherit gives the request its own credentials', async () => {
     render(<AuthInspector requestId="req-1" />);
 
-    await userEvent.click(screen.getByTestId('auth-inherit'));
+    await userEvent.selectOptions(screen.getByLabelText('Request authentication type'), 'basic');
 
-    expect(updateRequestAuth).toHaveBeenCalledWith('req-1', { type: 'basic', preemptive: true });
+    expect(updateRequestAuth).toHaveBeenCalledWith('req-1', expect.objectContaining({ type: 'basic' }));
   });
 
-  it('checking inherit clears the request credentials', async () => {
+  it('choosing Inherit clears the request credentials', async () => {
     install({ type: 'basic', username: 'ada' }, { source: 'request', type: 'basic', username: 'ada' });
     render(<AuthInspector requestId="req-1" />);
+    expect(screen.getByTestId('auth-effective').textContent).toBe('Set on this request');
 
-    await userEvent.click(screen.getByTestId('auth-inherit'));
+    await userEvent.selectOptions(screen.getByLabelText('Request authentication type'), 'inherit');
 
     expect(updateRequestAuth).toHaveBeenCalledWith('req-1', null);
   });
@@ -168,7 +169,7 @@ describe('AuthInspector', () => {
     expect(sent).toEqual({ type: 'basic', username: 'ada' });
   });
 
-  it('offers the six SOAP schemes and never Inherit', () => {
+  it('offers Inherit and the six SOAP schemes', () => {
     install({ type: 'basic' }, { source: 'request', type: 'basic' });
     render(<AuthInspector requestId="req-1" />);
 
@@ -176,10 +177,8 @@ describe('AuthInspector', () => {
     const values = within(select)
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value);
-    // The first option is "Not configured", which clears the request back to its defaults.
     expect(values).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']);
-    expect(within(select).getByRole('option', { name: 'Not configured' })).toBeDefined();
-    expect(within(select).queryByRole('option', { name: 'Inherit' })).toBeNull();
+    expect(within(select).getByRole('option', { name: 'Inherit' })).toBeDefined();
   });
 
   it('opens a Bearer request as Bearer, and an edit keeps its token ref', async () => {

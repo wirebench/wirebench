@@ -82,7 +82,12 @@ async function loadRequests(
       ...optional('endpointUrl', parsed.endpointUrl),
       soapVersion: parsed.soapVersion,
       ...optional('soapAction', parsed.soapAction),
-      headers: parsed.headers,
+      headers: parsed.headers.map((header) => ({
+        name: header.name,
+        value: header.value,
+        ...(header.enabled === false ? { enabled: false } : {}),
+        ...optional('description', header.description),
+      })),
       attachments: parsed.attachments.map((a) => exact<Attachment>(a)),
       ...optional('auth', soapOwnerAuth(parsed.auth)),
       ...(parsed.wsa !== undefined ? { wsa: normalizeWsa(parsed.wsa) } : {}),
@@ -116,7 +121,15 @@ function requestDocument(request: SoapRequestDef): Record<string, unknown> {
     endpointUrl: request.endpointUrl,
     soapVersion: request.soapVersion,
     soapAction: request.soapAction,
-    headers: request.headers.map((h) => ({ name: h.name, value: h.value })),
+    // `enabled` is written only when a row is off, so a file whose headers are all on reads as before.
+    headers: request.headers.map((h) =>
+      compact({
+        name: h.name,
+        value: h.value,
+        enabled: h.enabled === false ? false : undefined,
+        description: h.description,
+      }),
+    ),
     attachments: request.attachments.map((a) => compact({ ...a })),
     auth: request.auth === undefined ? undefined : authDocument(request.auth),
     wsa: request.wsa === undefined ? undefined : compact({ ...request.wsa }),

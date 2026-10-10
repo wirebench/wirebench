@@ -86,7 +86,7 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
   };
 
   return (
-    <div data-testid="request-properties">
+    <div data-testid="request-properties" className="overflow-auto p-3">
       <SettingsGroup title="General">
         <TextSetting
           label="Request name"

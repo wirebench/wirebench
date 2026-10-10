@@ -60,9 +60,8 @@ test.describe('auth', () => {
     // The WSS section of the Details panel has a "Password" label of its own, so every auth
     // field is looked up inside the request inspector panel rather than page-wide.
     const panel = page.getByTestId('inspector-panel-request');
-    const inherit = page.getByTestId('auth-inherit');
-    await expect(inherit).toBeChecked();
-    await inherit.uncheck();
+    // A request starts on Inherit, the first entry of the type dropdown.
+    await expect(panel.getByLabel('Authentication type')).toHaveValue('inherit');
 
     await panel.getByLabel('Authentication type').selectOption('basic');
     await panel.getByLabel('Username').fill('user');
@@ -163,7 +162,6 @@ test.describe('auth', () => {
 
     await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     const panel = page.getByTestId('inspector-panel-request');
-    await page.getByTestId('auth-inherit').uncheck();
 
     await panel.getByLabel('Authentication type').selectOption('ntlm');
     await panel.getByLabel('Username').fill('user');

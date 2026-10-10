@@ -66,7 +66,6 @@ test.describe('shared workspaces: secrets', () => {
     await pageA.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
     await pageA.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     const panelA = pageA.getByTestId('inspector-panel-request');
-    await pageA.getByTestId('auth-inherit').uncheck();
     await panelA.getByLabel('Authentication type').selectOption('basic');
     await panelA.getByLabel('Username').fill('user');
     await panelA.getByRole('button', { name: 'Set…' }).click();
