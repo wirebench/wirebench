@@ -13,6 +13,19 @@ All notable changes to this project are documented here. The format follows
   value is escaped for the body's language, may only land inside a string in a JSON body, and never
   reads a property, a secret or the environment. A mock that uses it is saved as mock `version: 2`, which
   5.0.0 leaves alone (#323, ADR-0022).
+- **Mock stubs checked against the contract.** The mock tab lists each stub whose status, headers or
+  body the WSDL or OpenAPI document does not allow, by the checks a received response gets, and puts
+  the same findings in the Problems view; `wirebench mock check` runs the check in a pipeline and exits
+  1 when a stub does not conform (#325).
+- **Type-checked dispatch scripts.** A mock operation's `dispatch.ts` gets completion, hover and type
+  errors in the mock tab as a request script does: a misspelt name, a wrong `request` field, or a
+  `respond` with a name that is not one of the operation's responses shows under the editor instead of
+  failing the first request the mock answers. The script API reference documents the dispatch API
+  beside the request-script one (#352).
+- **A REST mock serves its OpenAPI document.** `GET <mock>/openapi.json` (or `.yaml`) returns the API's
+  cached document with its server URL pointing at the mock, and each file it references is served under
+  `<mock>/openapi/` with the references rewritten, as a SOAP mock serves its WSDL and imports. A client
+  that discovers the contract from the service can now do so against a mock (#324).
 
 ### Fixed
 

@@ -7,10 +7,12 @@ import type { ImportProblemWire, ValidationProblemWire } from '../../shared/wire
  * validating a message against its schema set (`validate.message`), checking a REST response
  * against its OpenAPI contract (`contract`, whose `location` is a JSON Pointer), a certificate
  * the workspace relies on nearing or past its expiry (`certificate`, whose `location` names the
- * endpoint or keystore; see `certificate-expiry.ts`), or reading `hosts.yaml` (`hosts`, whose
- * `location` is the path of the offending key).
+ * endpoint or keystore; see `certificate-expiry.ts`), reading `hosts.yaml` (`hosts`, whose
+ * `location` is the path of the offending key), or a mock stub the contract does not allow (`mock`,
+ * whose `location` says whether the status, a header or the body is at fault).
  */
-export type ProblemSource = 'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts';
+export type ProblemSource =
+  'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts' | 'mock';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';

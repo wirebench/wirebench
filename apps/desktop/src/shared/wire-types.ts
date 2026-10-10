@@ -3181,6 +3181,35 @@ export const mockStateEventSchema = z.object({
 });
 export type MockStateEvent = z.infer<typeof mockStateEventSchema>;
 
+/** One problem a mock found with a request, or with a stub (#325). */
+const mockProblemWireSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  in: z.string().optional(),
+  name: z.string().optional(),
+  path: z.string().optional(),
+  line: z.number().optional(),
+  column: z.number().optional(),
+});
+export type MockProblemWire = z.infer<typeof mockProblemWireSchema>;
+
+/** Each stub of a mock the contract does not allow (#325), and how many were checked. */
+export const mockCheckResponseSchema = z.object({
+  checked: z.number(),
+  findings: z.array(
+    z.object({
+      operationId: z.string(),
+      operationName: z.string(),
+      operation: z.string(),
+      responseId: z.string(),
+      responseName: z.string(),
+      status: z.number(),
+      problems: z.array(mockProblemWireSchema),
+    }),
+  ),
+});
+export type MockCheckResponse = z.infer<typeof mockCheckResponseSchema>;
+
 export const mockStopResponseSchema = z.object({ stopped: z.boolean() });
 export const mockResetResponseSchema = z.object({ reset: z.boolean() });
 export const mockStatesResponseSchema = z.object({ states: z.array(mockStateEventSchema) });
@@ -3203,17 +3232,7 @@ export const mockExchangeEventSchema = z.object({
   responseName: z.string().optional(),
   status: z.number(),
   durationMs: z.number(),
-  problems: z.array(
-    z.object({
-      code: z.string(),
-      message: z.string(),
-      in: z.string().optional(),
-      name: z.string().optional(),
-      path: z.string().optional(),
-      line: z.number().optional(),
-      column: z.number().optional(),
-    }),
-  ),
+  problems: z.array(mockProblemWireSchema),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   log: z.array(z.string()).optional(),
   request: mockEventMessageWireSchema,
@@ -7026,20 +7045,32 @@ export const hooksCaptureResponseWireSchema = z.object({ capture: captureViewWir
 
 const scriptPhaseWireSchema = z.enum(['pre', 'post']);
 
-/** A script as the editor holds it: its request, which of its two scripts, and its text. */
-export const scriptSourceRequestSchema = z.object({
-  requestId: z.string(),
-  phase: scriptPhaseWireSchema,
-  /** Bounded as a script file is: text over the limit refuses to send anyway. */
-  source: z.string().max(256 * 1024),
-});
+/** Which script an editor holds: one of a request's two, or a mock operation's `dispatch.ts` (#352). */
+const requestScriptTargetShape = { requestId: z.string(), phase: scriptPhaseWireSchema };
+const dispatchScriptTargetShape = { mockId: z.string(), operationId: z.string() };
+
+/** Bounded as a script file is: text over the limit refuses to send anyway. */
+const scriptSourceShape = { source: z.string().max(256 * 1024) };
+/** A position in a script: 1-based line and column, as the diagnostics report them. */
+const scriptPositionShape = { line: z.number().int().min(1), column: z.number().int().min(1) };
+
+export const scriptTargetWireSchema = z.union([
+  z.object(requestScriptTargetShape),
+  z.object(dispatchScriptTargetShape),
+]);
+export type ScriptTargetWire = z.infer<typeof scriptTargetWireSchema>;
+
+/** A script as the editor holds it: which script, and its text. */
+export const scriptSourceRequestSchema = z.union([
+  z.object({ ...requestScriptTargetShape, ...scriptSourceShape }),
+  z.object({ ...dispatchScriptTargetShape, ...scriptSourceShape }),
+]);
 export type ScriptSourceRequest = z.infer<typeof scriptSourceRequestSchema>;
 
-/** A position in a script: 1-based line and column, as the diagnostics report them. */
-export const scriptPositionRequestSchema = scriptSourceRequestSchema.extend({
-  line: z.number().int().min(1),
-  column: z.number().int().min(1),
-});
+export const scriptPositionRequestSchema = z.union([
+  z.object({ ...requestScriptTargetShape, ...scriptSourceShape, ...scriptPositionShape }),
+  z.object({ ...dispatchScriptTargetShape, ...scriptSourceShape, ...scriptPositionShape }),
+]);
 export type ScriptPositionRequest = z.infer<typeof scriptPositionRequestSchema>;
 
 export const scriptDiagnosticWireSchema = z.object({
@@ -7076,7 +7107,7 @@ export const scriptSignatureHelpResponseSchema = z.object({
 });
 
 /** Request/response for `script.closeModel`: an editor closed, so its language service can go. */
-export const scriptCloseModelRequestSchema = z.object({ requestId: z.string(), phase: scriptPhaseWireSchema });
+export const scriptCloseModelRequestSchema = scriptTargetWireSchema;
 export const scriptCloseModelResponseSchema = z.object({});
 
 /** A project whose session values are asked for or cleared. */

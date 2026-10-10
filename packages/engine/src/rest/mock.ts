@@ -6,6 +6,7 @@
 
 import { WirebenchError } from '../errors.js';
 import { resolveRefs } from '../json/schema/refs.js';
+import type { ResolvedDocument } from '../json/schema/refs.js';
 import { sampleFromSchema } from '../json/schema/sample.js';
 import type {
   GeneratedMock,
@@ -15,6 +16,7 @@ import type {
   MockReply,
   MockRequest,
   MockRoute,
+  MockStubInput,
   ProtocolMocking,
 } from '../mock/contract.js';
 import { mockPathPrefix } from '../mock/model.js';
@@ -23,10 +25,15 @@ import { apiDefinitionDir } from '../project/paths.js';
 import type { Project } from '../project/model.js';
 import type { HeaderPair } from '../script/model.js';
 import type { RestApi } from './model.js';
+import type { RestContractInput, RestContractResult } from './contract-check.js';
+import { createRestContractChecker } from './contract-check-worker-host.js';
+import type { RestContractChecker } from './contract-check-worker-host.js';
 import { createCachedApiFetch, readApiDefinitionCache } from './openapi/cache.js';
+import { askedDocument, openApiReply } from './mock-openapi.js';
 import { matchOperation } from './openapi/match.js';
 import type { OpenApiDocument, OpenApiOperation, OpenApiParameter, OpenApiResponse } from './openapi/model.js';
 import { parseOpenApiDocument, parseSchema } from './openapi/parse.js';
+import { declaredMediaType, declaredResponse } from './openapi/responses.js';
 import { checkRestRequest, isJsonMediaType } from './request-check.js';
 
 /** Problems a refusal lists, at most. */
@@ -60,13 +67,18 @@ function child(node: Node | undefined, key: string): Node | undefined {
  * The API's cached document, parsed and also as the resolved tree. The parsed model keeps only the
  * sample generator's subset of a request schema and no response examples; validating a request needs
  * every keyword (`minimum`, `pattern`, …) and generating a stub wants the examples, so both read the
- * resolved nodes, as response validation already does.
+ * resolved nodes, as response validation already does. The cached documents themselves are what the
+ * mock serves at `openapi.json`.
  */
 async function loadContract(
   project: Project,
   root: string,
   containerId: string,
-): Promise<{ readonly document: OpenApiDocument; readonly resolved: unknown }> {
+): Promise<{
+  readonly document: OpenApiDocument;
+  readonly resolved: unknown;
+  readonly documents: readonly ResolvedDocument[];
+}> {
   const api = project.apis.find((candidate) => candidate.id === containerId);
   if (api === undefined) {
     throw new WirebenchError('mock-container-missing', `The project has no API with id ${containerId}`, {
@@ -79,7 +91,11 @@ async function loadContract(
     const offline = createCachedApiFetch(cached.manifest, dir, () => Promise.reject(definitionMissing(api)));
     const fetched = await offline(cached.manifest.rootLocation);
     const resolved = await resolveRefs(fetched.text, fetched.location, { fetchDocument: offline }, fetched.bytes);
-    return { document: parseOpenApiDocument(resolved.document), resolved: resolved.document };
+    return {
+      document: parseOpenApiDocument(resolved.document),
+      resolved: resolved.document,
+      documents: cached.documents,
+    };
   } catch {
     throw definitionMissing(api);
   }
@@ -197,6 +213,59 @@ function header(request: MockRequest, name: string): string | undefined {
   return request.headers.find(([candidate]) => candidate.toLowerCase() === wanted)?.[1];
 }
 
+type RestCheck = (input: RestContractInput) => Promise<RestContractResult>;
+
+function stubProblem(message: string, extra: Partial<MockProblem> = {}): MockProblem {
+  return { code: 'mock-stub-invalid', message, ...extra };
+}
+
+/**
+ * What the contract does not allow of one stub (#325): a status it documents no response for, a
+ * `Content-Type` it declares no body of, a body where it declares none, and — for a JSON body — what
+ * the response contract check finds against the media type's schema.
+ */
+async function checkStub(
+  operation: OpenApiOperation,
+  input: MockStubInput,
+  checkRest: RestCheck,
+): Promise<readonly MockProblem[]> {
+  const { response, headers } = input;
+  const responses = operation.responses ?? {};
+  const declared = declaredResponse(responses, response.status);
+  if (declared === undefined) {
+    return [stubProblem(`The contract declares no ${String(response.status)} response`, { in: 'status' })];
+  }
+  if (response.body === 'none') return [];
+  const content = declared.response.content ?? {};
+  const types = Object.keys(content);
+  if (types.length === 0) {
+    return response.bodyText.trim() === ''
+      ? []
+      : [stubProblem(`The contract declares no body for a ${declared.responseKey} response`, { in: 'body' })];
+  }
+  const contentType = headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
+  if (declaredMediaType(content, contentType) === undefined) {
+    return [
+      stubProblem(
+        `The contract declares no ${contentType ?? 'untyped'} body for a ${declared.responseKey} response; it declares ${types.join(', ')}`,
+        { in: 'header', name: 'Content-Type' },
+      ),
+    ];
+  }
+  if (response.body !== 'json') return [];
+  const checked = await checkRest({
+    status: response.status,
+    contentType,
+    bodyText: response.bodyText,
+    language: 'json',
+    streamed: false,
+    operation: { method: operation.method, path: operation.path },
+    responses,
+  });
+  if (checked.status !== 'violation') return [];
+  return checked.problems.map((problem) => stubProblem(problem.message, { in: 'body', path: problem.path }));
+}
+
 function bodyKindOf(contentType: string | undefined): 'xml' | 'json' | 'other' {
   const type = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
   if (isJsonMediaType(type)) return 'json';
@@ -204,7 +273,12 @@ function bodyKindOf(contentType: string | undefined): 'xml' | 'json' | 'other' {
   return 'other';
 }
 
-function createContract(document: OpenApiDocument, resolved: unknown, mockPath: string): MockContract {
+function createContract(
+  document: OpenApiDocument,
+  resolved: unknown,
+  documents: readonly ResolvedDocument[],
+  mockPath: string,
+): MockContract {
   const operations = document.operations.map((operation) => withFullSchemas(resolved, operation));
   const prefix = mockPathPrefix(mockPath);
   const relative = (path: string): string => {
@@ -276,7 +350,14 @@ function createContract(document: OpenApiDocument, resolved: unknown, mockPath: 
       name: `${operation.method.toUpperCase()} ${operation.path}`,
     })),
 
-    definition: () => undefined,
+    definition(request: MockRequest, mockUrl: string): MockReply | undefined {
+      if (request.method !== 'GET') return undefined;
+      const path = relative(request.path);
+      const asked = askedDocument(path);
+      // An operation the API itself has at that path is routed, not shadowed by the document.
+      if (asked === undefined || matchOperation(operations, 'GET', path, []) !== undefined) return undefined;
+      return openApiReply(documents, asked.index, asked.format, mockUrl);
+    },
 
     route(request: MockRequest, mode: MockValidation): Promise<MockRoute> {
       return Promise.resolve(route(request, mode));
@@ -298,6 +379,22 @@ function createContract(document: OpenApiDocument, resolved: unknown, mockPath: 
         case 'none':
           return [];
       }
+    },
+
+    async checkStubs(stubs: readonly MockStubInput[]): Promise<readonly (readonly MockProblem[])[]> {
+      // A contract's `pattern` is untrusted: bodies are checked off this thread, by one worker for the batch.
+      let checker: RestContractChecker | undefined;
+      const check: RestCheck = (input) => (checker ??= createRestContractChecker()).check(input);
+      const results: (readonly MockProblem[])[] = [];
+      try {
+        for (const stub of stubs) {
+          const operation = operations.find((candidate) => restOperationKey(candidate) === stub.operation);
+          results.push(operation === undefined ? [] : await checkStub(operation, stub, check));
+        }
+      } finally {
+        await checker?.dispose();
+      }
+      return results;
     },
   };
 }
@@ -374,8 +471,8 @@ function generateResponse(resolved: unknown, operation: OpenApiOperation): Gener
 /** REST's mock facet. */
 export const restMocking: ProtocolMocking = {
   async open({ project, root, mock }) {
-    const { document, resolved } = await loadContract(project, root, mock.source.containerId);
-    return createContract(document, resolved, mock.path);
+    const { document, resolved, documents } = await loadContract(project, root, mock.source.containerId);
+    return createContract(document, resolved, documents, mock.path);
   },
 
   async generate({ project, root, containerId }): Promise<GeneratedMock> {

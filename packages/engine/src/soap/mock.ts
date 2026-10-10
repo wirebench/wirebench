@@ -13,6 +13,7 @@ import type {
   MockReply,
   MockRequest,
   MockRoute,
+  MockStubInput,
   ProtocolMocking,
 } from '../mock/contract.js';
 import type { MockResponse, MockValidation } from '../mock/model.js';
@@ -20,8 +21,8 @@ import type { FsLike } from '../project/fs.js';
 import type { Interface, Project } from '../project/model.js';
 import { definitionCacheDir } from '../project/paths.js';
 import type { HeaderPair } from '../script/model.js';
-import { bindingContextFor, validateMessage } from '../validate/index.js';
-import type { ValidationBinding } from '../validate/types.js';
+import { bindingContextFor, checkSoapStructure, validateMessage } from '../validate/index.js';
+import type { ValidationBinding, ValidationProblem } from '../validate/types.js';
 import { readDefinitionCache } from '../wsdl/cache.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { Binding, BindingOperation, WsdlDefinition } from '../wsdl/model.js';
@@ -255,6 +256,91 @@ function problem(code: string, message: string, extra: Partial<MockProblem> = {}
   return { code, message, ...extra };
 }
 
+function stubProblem(message: string, extra: Partial<MockProblem> = {}): MockProblem {
+  return { code: 'mock-stub-invalid', message, ...extra };
+}
+
+/**
+ * What the contract does not allow of one stub (#325). The body gets the checks a received response
+ * gets — the SOAP structure, the version against `Content-Type`, and the output message's schema; a
+ * fault gets the structure checks only, since its detail is not the output message. The status must
+ * be 200 for a reply, 500 for a SOAP 1.1 fault (400 or 500 for 1.2), and 200 or 202 for a one-way
+ * operation's empty acknowledgement.
+ */
+async function checkStub(contract: Contract, input: MockStubInput): Promise<readonly MockProblem[]> {
+  const { definition, binding } = contract;
+  const { response, headers } = input;
+  const name = input.operation;
+  if (!binding.operations.some((operation) => operation.name === name)) return [];
+  const abstract = findPortType(definition, binding.type)?.operations.find((candidate) => candidate.name === name);
+  const oneWay = abstract !== undefined && abstract.output === undefined;
+  const version = binding.soapVersion;
+  const status = response.status;
+  const text = response.body === 'none' ? '' : response.bodyText;
+  if (text.trim() === '') {
+    if (!oneWay) return [stubProblem(`${name} returns a message; this response has no body`, { in: 'body' })];
+    return status === 200 || status === 202
+      ? []
+      : [stubProblem(`A one-way operation is acknowledged with 202 or 200, not ${String(status)}`, { in: 'status' })];
+  }
+  if (response.body !== 'xml') {
+    return [stubProblem(`A SOAP response body is XML, not ${response.body}`, { in: 'body' })];
+  }
+  const problems: MockProblem[] = [];
+  const element = bodyElementOf(text).element;
+  const fault = element === clark(SOAP11_ENV, 'Fault') || element === clark(SOAP12_ENV, 'Fault');
+  if (fault) {
+    const allowed = version === '1.1' ? [500] : [400, 500];
+    if (!allowed.includes(status)) {
+      problems.push(
+        stubProblem(`A SOAP ${version} fault is sent with ${allowed.join(' or ')}, not ${String(status)}`, {
+          in: 'status',
+        }),
+      );
+    }
+  } else if (oneWay) {
+    problems.push(stubProblem(`${name} is one-way: the contract declares no response message`, { in: 'body' }));
+  } else if (status !== 200) {
+    problems.push(
+      stubProblem(`A SOAP reply that is not a fault is sent with 200, not ${String(status)}`, { in: 'status' }),
+    );
+  }
+  const contentType = headers.find(([header]) => header.toLowerCase() === 'content-type')?.[1];
+  const validation = bindingContextFor(definition, { bindingName: binding.name, operationName: name }, 'response');
+  let found: readonly ValidationProblem[];
+  if (fault || oneWay || validation === undefined) {
+    found = checkSoapStructure(text, {
+      expectedVersion: version,
+      ...(contentType !== undefined ? { contentType } : {}),
+    });
+  } else {
+    found = (
+      await validateMessage({
+        xml: text,
+        direction: 'response',
+        schemaSet: contract.schemaSet,
+        bundle: contract.bundle,
+        binding: validation,
+        http: contentType !== undefined ? { contentType } : {},
+      })
+    ).problems;
+  }
+  for (const item of found) {
+    // A received response with the wrong Content-Type is only a warning; a stub the mock sends with it is wrong.
+    const header = item.code === 'content-type-mismatch';
+    if (item.severity !== 'error' && !header) continue;
+    problems.push(
+      stubProblem(item.message, {
+        ...(header ? { in: 'header', name: 'Content-Type' } : { in: 'body' }),
+        ...(item.path !== undefined ? { path: item.path } : {}),
+        ...(item.line !== undefined ? { line: item.line } : {}),
+        ...(item.column !== undefined ? { column: item.column } : {}),
+      }),
+    );
+  }
+  return problems;
+}
+
 function createContract(contract: Contract): MockContract {
   const version = contract.binding.soapVersion;
   const operations = operationInfo(contract);
@@ -401,6 +487,12 @@ function createContract(contract: Contract): MockContract {
         case 'none':
           return [];
       }
+    },
+
+    async checkStubs(stubs: readonly MockStubInput[]): Promise<readonly (readonly MockProblem[])[]> {
+      const results: (readonly MockProblem[])[] = [];
+      for (const stub of stubs) results.push(await checkStub(contract, stub));
+      return results;
     },
   };
 }

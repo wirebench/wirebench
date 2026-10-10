@@ -39,8 +39,11 @@ export type {
   MockRequest,
   MockRequestView,
   MockRoute,
+  MockStubInput,
   ProtocolMocking,
 } from './contract.js';
+export { checkMockStubs } from './stub-check.js';
+export type { CheckMockStubsInput, MockStubCheck, MockStubFinding } from './stub-check.js';
 export { MockState, candidates, dispatch } from './dispatch.js';
 export type { DispatchDeps, DispatchResult, DispatchScriptRunner, ScriptDecision } from './dispatch.js';
 export { checkTemplate } from './template.js';

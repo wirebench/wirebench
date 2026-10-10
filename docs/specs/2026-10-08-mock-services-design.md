@@ -37,6 +37,8 @@ plain files in the project, so they can be reviewed, diffed and merged like ever
 - Request validation, with three modes: `reject` (the default), `report` and `off`.
 - Dispatch styles: `sequence`, `random`, `match` and `script`, plus scenarios.
 - `GET <path>?wsdl` serves the WSDL and its imports, with the addresses rewritten to the mock.
+- `GET <path>/openapi.json` (or `.yaml`) serves the OpenAPI document and its referenced files, with the
+  server URL rewritten to the mock (#324).
 - The engine's `startMock()` runs on plain Node and needs neither Electron nor the desktop.
 
 **Not in scope:**
@@ -44,8 +46,8 @@ plain files in the project, so they can be reviewed, diffed and merged like ever
 - Response templating and lifecycle scripts (decision 3).
 - Recording (#60), the CLI command (#61), TLS and HTTPS, WS-Security on mock responses, and serving the
   OpenAPI document.
-- Validating the stubs' own responses against the contract. Each of these can be added later without
-  changing the version-1 file shape.
+- Validating the stubs' own responses against the contract (since added by #325: the mock tab and
+  `wirebench mock check`). Each of these can be added later without changing the version-1 file shape.
 
 ## Storage
 
@@ -442,6 +444,25 @@ declare function log(...values: unknown[]): void;
 Only bundle documents can be served, by index, so a request cannot name a path or a URL. A reference that
 resolves to nothing in the bundle is left as it is. Serving needs `GET`; any other method on
 `?wsdl` is treated as an ordinary request.
+
+## Serving the OpenAPI document
+
+Added by #324. `GET <path>/openapi.json` returns the API's cached root document as JSON
+(`Content-Type: application/json`), and `GET <path>/openapi.yaml` returns it as YAML
+(`application/yaml`), whichever format it was cached in:
+- An OpenAPI 3 document's top-level `servers` becomes the mock's URL alone, and so does every path-level or
+  operation-level `servers` it has. A Swagger 2.0 document gets the mock's `host`, `basePath` and `schemes`.
+- Every `$ref` whose document part resolves to a cached document is rewritten to `<mock url>/openapi/<n>.json`
+  (or `.yaml`, following the request), its fragment kept. Here `n` is the document's index in the cache's
+  manifest, root first. `GET <path>/openapi/<n>.json` (or `.yaml`) serves that document, rewritten the same way.
+
+Only cached documents can be served, by index, so a request cannot name a path or a URL. A reference that
+resolves to nothing in the cache is left as the document wrote it. No document's own location is ever
+written into a reply, since a location may carry a credential in its query or user info; the document is
+otherwise the cached text as fetched, and a mock holds no secret that could be put into it. Serving needs
+`GET`. If the API itself documents a `GET` at one of these paths, that request is routed to the operation
+instead, so a mock never shadows the contract it implements. A recording proxy relays these requests and
+does not record them, as it does `?wsdl`.
 
 ## Security
 

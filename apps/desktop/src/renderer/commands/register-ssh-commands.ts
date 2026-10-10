@@ -40,6 +40,13 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     },
   });
   registerCommand({
+    ...catalogEntry('ssh.importConfig'),
+    run: () => {
+      revealHosts();
+      useHostsStore.getState().setImportOpen(true);
+    },
+  });
+  registerCommand({
     ...catalogEntry('ssh.connect'),
     run: (_context, arg) => {
       // From the palette there is no host to name yet, so it asks which one.

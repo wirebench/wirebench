@@ -159,6 +159,7 @@ describe('the script API reference of a registry with a fifth protocol', () => {
   it('lists its sections, ordered by title', () => {
     expect(apiReference(registry).map((section) => section.title)).toEqual([
       'Every script',
+      'Every request script',
       'Echo: pre-request',
       'Echo: post-response',
       'REST: shared by both phases',
@@ -168,6 +169,7 @@ describe('the script API reference of a registry with a fifth protocol', () => {
       'SOAP: post-response',
       'gRPC: pre-request',
       'gRPC: post-response',
+      'Mock dispatch scripts',
     ]);
   });
 });

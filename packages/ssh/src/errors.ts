@@ -10,7 +10,9 @@ export type SshErrorCode =
   | 'ssh-host-key-changed'
   | 'ssh-auth-failed'
   | 'ssh-connect-failed'
-  | 'ssh-session-unknown';
+  | 'ssh-session-unknown'
+  | 'ssh-config-empty'
+  | 'ssh-import-stale';
 
 /** Mirrors the engine's WirebenchError shape (code, message, details) without importing it. */
 export class SshModelError extends Error {

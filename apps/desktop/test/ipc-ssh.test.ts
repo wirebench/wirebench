@@ -30,6 +30,7 @@ function invokeAs(sender: object, channel: string, payload?: unknown): Promise<u
 const NO_SECRETS = { names: vi.fn(), set: vi.fn() };
 const NO_SSH = { connect: vi.fn(), write: vi.fn(), resize: vi.fn(), close: vi.fn(), trust: vi.fn() };
 const NO_HOSTS = { list: vi.fn(), save: vi.fn() };
+const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
 const EMPTY = { file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] };
 
 beforeEach(() => {
@@ -39,7 +40,12 @@ beforeEach(() => {
 describe('ssh channels', () => {
   it('a refused save answers its own code, not internal-error, and never echoes the bad name', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wb-ipc-ssh-'));
-    registerSshChannels({ hosts: new HostsService({ treeDir: () => dir }), secrets: NO_SECRETS, ssh: NO_SSH });
+    registerSshChannels({
+      hosts: new HostsService({ treeDir: () => dir }),
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+    });
     const host = {
       id: 'a',
       name: 'A',
@@ -56,21 +62,31 @@ describe('ssh channels', () => {
     expect(JSON.stringify(answer)).not.toContain('hunter');
   });
   it('a stray key in the request is an invalid request', async () => {
-    registerSshChannels({ hosts: { list: vi.fn(), save: vi.fn() }, secrets: NO_SECRETS, ssh: NO_SSH });
+    registerSshChannels({
+      hosts: { list: vi.fn(), save: vi.fn() },
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+    });
     const answer = (await invoke('ssh.saveHosts', { file: { ...EMPTY.file, extra: 1 } })) as { ok: boolean };
     expect(answer.ok).toBe(false);
   });
   it('ssh.listHosts answers the service; ssh.saveHosts passes the file through', async () => {
     const list = vi.fn().mockResolvedValue(EMPTY);
     const save = vi.fn().mockResolvedValue(EMPTY);
-    registerSshChannels({ hosts: { list, save }, secrets: NO_SECRETS, ssh: NO_SSH });
+    registerSshChannels({ hosts: { list, save }, secrets: NO_SECRETS, ssh: NO_SSH, importer: NO_IMPORT });
     expect(await invoke('ssh.listHosts', undefined)).toEqual({ ok: true, value: EMPTY });
     await invoke('ssh.saveHosts', { file: EMPTY.file });
     expect(save).toHaveBeenCalledWith(EMPTY.file);
   });
   it('ssh.secretNames answers names and where they live, never a value', async () => {
     const names = vi.fn().mockResolvedValue([{ name: 'DEPLOY_KEY', local: true, external: false }]);
-    registerSshChannels({ hosts: { list: vi.fn(), save: vi.fn() }, secrets: { names, set: vi.fn() }, ssh: NO_SSH });
+    registerSshChannels({
+      hosts: { list: vi.fn(), save: vi.fn() },
+      secrets: { names, set: vi.fn() },
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+    });
     expect(await invoke('ssh.secretNames', undefined)).toEqual({
       ok: true,
       value: { names: [{ name: 'DEPLOY_KEY', local: true, external: false }] },
@@ -78,7 +94,12 @@ describe('ssh channels', () => {
   });
   it('ssh.setSecret stores through the service and no response carries the value', async () => {
     const set = vi.fn().mockResolvedValue(undefined);
-    registerSshChannels({ hosts: { list: vi.fn(), save: vi.fn() }, secrets: { names: vi.fn(), set }, ssh: NO_SSH });
+    registerSshChannels({
+      hosts: { list: vi.fn(), save: vi.fn() },
+      secrets: { names: vi.fn(), set },
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+    });
     const answer = await invoke('ssh.setSecret', { name: 'DEPLOY_KEY', value: 'hunter2-value' });
     expect(set).toHaveBeenCalledWith('DEPLOY_KEY', 'hunter2-value');
     expect(answer).toEqual({ ok: true, value: {} });
@@ -91,14 +112,24 @@ describe('ssh channels', () => {
       workspaceId: () => 'ws',
       mappedNames: () => [],
     });
-    registerSshChannels({ hosts: { list: vi.fn(), save: vi.fn() }, secrets: service, ssh: NO_SSH });
+    registerSshChannels({
+      hosts: { list: vi.fn(), save: vi.fn() },
+      secrets: service,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+    });
     const answer = await invoke('ssh.setSecret', { name: 'my password!', value: 'hunter2-value' });
     expect(JSON.stringify(answer)).toContain('ssh-literal-secret');
     expect(JSON.stringify(answer)).not.toContain('hunter2');
     expect(JSON.stringify(answer)).not.toContain('my password');
   });
   it('a stray key in ssh.setSecret is an invalid request', async () => {
-    registerSshChannels({ hosts: { list: vi.fn(), save: vi.fn() }, secrets: NO_SECRETS, ssh: NO_SSH });
+    registerSshChannels({
+      hosts: { list: vi.fn(), save: vi.fn() },
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+    });
     const answer = (await invoke('ssh.setSecret', { name: 'A', value: 'v', extra: 1 })) as { ok: boolean };
     expect(answer.ok).toBe(false);
   });
@@ -113,7 +144,7 @@ describe('ssh channels', () => {
         close: vi.fn(),
         trust: vi.fn().mockResolvedValue(undefined),
       };
-      registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh });
+      registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT });
       return ssh;
     }
     it('ssh.connect', async () => {
@@ -155,5 +186,29 @@ describe('ssh channels', () => {
       expect(answer.ok).toBe(false);
       expect(answer.error).toMatchObject({ code: 'ssh-host-key-new', details });
     });
+  });
+});
+
+describe('ssh import channels', () => {
+  it('pass the calling window as the owner of a preview and an apply', async () => {
+    const preview = vi.fn().mockResolvedValue({ cancelled: true });
+    const apply = vi.fn().mockResolvedValue({ ...EMPTY, groupId: 'ssh-config', stored: [] });
+    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh: NO_SSH, importer: { preview, apply } });
+    const window = { id: 7 };
+    expect(await invokeAs(window, 'ssh.importPreview', { source: 'user-config' })).toEqual({
+      ok: true,
+      value: { cancelled: true },
+    });
+    expect(preview).toHaveBeenCalledWith(window, { source: 'user-config' });
+    const request = { previewId: 'p', groupName: 'SSH config', importDuplicates: [], keys: [] };
+    await invokeAs(window, 'ssh.importApply', request);
+    expect(apply).toHaveBeenCalledWith(window, request);
+  });
+
+  it('refuse a preview request that carries a path', async () => {
+    const preview = vi.fn();
+    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh: NO_SSH, importer: { preview, apply: vi.fn() } });
+    expect(await invoke('ssh.importPreview', { source: 'pick', path: '/etc/passwd' })).toMatchObject({ ok: false });
+    expect(preview).not.toHaveBeenCalled();
   });
 });

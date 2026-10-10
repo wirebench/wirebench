@@ -70,17 +70,20 @@ export interface MockCommandOptions {
   readonly stop?: AbortSignal;
 }
 
-export async function mockCommand(args: MockArgs, io: CliIo, options: MockCommandOptions = {}): Promise<ExitCode> {
-  let project: Project;
+/**
+ * The project at `path`, its load problems written to stderr as warnings; or the exit code when it is
+ * a workspace or does not load (the error already written).
+ */
+export async function loadMockProject(path: string, io: CliIo): Promise<Project | ExitCode> {
   try {
-    if (!(await exists(join(args.path, 'wirebench.yaml'))) && (await exists(join(args.path, 'workspace.yaml')))) {
-      return await refuseWorkspace(args.path, io);
+    if (!(await exists(join(path, 'wirebench.yaml'))) && (await exists(join(path, 'workspace.yaml')))) {
+      return await refuseWorkspace(path, io);
     }
-    const loaded = await loadProject(args.path);
-    project = loaded.project;
+    const loaded = await loadProject(path);
     for (const problem of loaded.problems) {
       io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
     }
+    return loaded.project;
   } catch (error) {
     if (isWirebenchError(error)) {
       io.stderr.write(`${error.code}: ${error.message}\n`);
@@ -88,6 +91,11 @@ export async function mockCommand(args: MockArgs, io: CliIo, options: MockComman
     }
     throw error;
   }
+}
+
+export async function mockCommand(args: MockArgs, io: CliIo, options: MockCommandOptions = {}): Promise<ExitCode> {
+  const project = await loadMockProject(args.path, io);
+  if (typeof project === 'number') return project;
 
   const mocks = selectMocks(project, args.mocks);
   if (args.port !== undefined && mocks.length !== 1) {

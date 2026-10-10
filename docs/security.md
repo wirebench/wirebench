@@ -578,6 +578,11 @@ scripts. The format decision is [ADR-0021](adr/0021-mock-stubs-are-files-under-m
   `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-Api-Key` values and secret-looking URL
   parameters are masked before an event leaves the engine, and a logged body is capped at 64 KiB.
 
+- **The served contract carries no location.** A REST mock serves its cached OpenAPI document (#324)
+  with its servers rewritten and its references into the cache pointed at the mock. No document's
+  fetch location — which may hold a credential in its query or user info — is written into the reply,
+  and only cached documents are served, by index. Tests: `packages/engine/test/unit/rest/mock-openapi.test.ts`.
+
 What this does not change: a mock binds a port only when it is started, and it sends nothing.
 
 ### Recording live traffic

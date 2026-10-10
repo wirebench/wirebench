@@ -5,6 +5,10 @@ import {
   sshConnectResponseSchema,
   sshDataEventSchema,
   sshExitEventSchema,
+  sshImportApplyRequestSchema,
+  sshImportApplyResponseSchema,
+  sshImportPreviewRequestSchema,
+  sshImportPreviewResponseSchema,
   sshListHostsResponseSchema,
   sshResizeRequestSchema,
   sshSaveHostsRequestSchema,
@@ -402,6 +406,7 @@ import {
   hooksViewRequestWireSchema,
   hooksWorkspaceRequestWireSchema,
   sequenceCancelRequestSchema,
+  mockCheckResponseSchema,
   mockExchangeEventSchema,
   mockIdRequestSchema,
   mockResetResponseSchema,
@@ -1153,6 +1158,8 @@ export const channels = {
     reset: defineChannel('mock.reset', mockIdRequestSchema, mockResetResponseSchema),
     /** The state of every mock this window started that is still running, for a renderer that reloads. */
     states: defineChannel('mock.states', z.object({}), mockStatesResponseSchema),
+    /** Checks every stub of a mock against its contract (#325); it need not be running. */
+    check: defineChannel('mock.check', mockIdRequestSchema, mockCheckResponseSchema),
   },
   // A request's scripts (#63): the editor's language features, answered by main's checker against
   // the request's own types, and a project's session values. Edits go through `project.mutate`.
@@ -1245,6 +1252,8 @@ export const channels = {
     resize: defineChannel('ssh.resize', sshResizeRequestSchema, z.object({})),
     close: defineChannel('ssh.close', sshCloseRequestSchema, z.object({})),
     trustHostKey: defineChannel('ssh.trustHostKey', sshTrustRequestSchema, z.object({})),
+    importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
+    importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),
