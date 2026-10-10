@@ -1,5 +1,5 @@
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Tabs } from '../../../components/tabs.js';
 import { useEditorsStore, type InspectorId, type InspectorPane } from '../../../state/editors.js';
 
 /**
@@ -25,91 +25,63 @@ export function InspectorIconButton({
   );
 }
 
-/** One entry in a pane's inspector strip. */
+/** One tab in a SOAP pane's tab strip. */
 export interface InspectorItem {
   readonly id: InspectorId;
   readonly label: string;
 }
 
-export interface InspectorStripProps {
-  /** Keys the persisted selection and collapsed state, together with `pane`. */
+export interface PaneTabsProps {
+  /** Keys the persisted selection, together with `pane`. */
   readonly requestId: string;
   readonly pane: InspectorPane;
   readonly label: string;
   readonly items: readonly InspectorItem[];
-  /** Renders the selected inspector's body. Only called while the panel is expanded. */
+  /** Rendered at the right end of the strip, whichever tab is showing (the response status). */
+  readonly trailing?: ReactNode;
+  /** Renders the selected tab's content, which fills the rest of the pane. */
   readonly render: (inspector: InspectorId) => ReactNode;
 }
 
 /**
- * The inspector strip that sits under a pane's editor: a tab per inspector along the bottom
- * edge, with the selected inspector's panel opening *above* it. Both the
- * selection and whether the panel is open live in the editors store, keyed per request and
- * per pane, so switching tabs and coming back finds the strip as it was left.
+ * A SOAP pane's tab strip, along the top edge as the REST editor has it: the envelope is one tab
+ * (Body) beside the inspectors, and the selected tab fills the pane underneath. The selection
+ * lives in the editors store, keyed per request and per pane, so switching editor tabs and coming
+ * back finds the pane as it was left.
  */
-export function InspectorStrip({ requestId, pane, label, items, render }: InspectorStripProps) {
+export function PaneTabs({ requestId, pane, label, items, trailing, render }: PaneTabsProps) {
   const active = useEditorsStore((state) => state.inspectorFor(requestId, pane));
-  const collapsed = useEditorsStore((state) => state.inspectorCollapsedFor(requestId, pane));
   const setInspector = useEditorsStore((state) => state.setInspector);
-  const setCollapsed = useEditorsStore((state) => state.setInspectorCollapsed);
 
-  const selected = items.some((item) => item.id === active) ? active : (items[0]?.id ?? 'headers');
-  const tabId = (inspector: InspectorId): string => `inspector-tab-${pane}-${requestId}-${inspector}`;
-  const panelId = `inspector-panel-${pane}-${requestId}`;
+  const selected = items.some((item) => item.id === active) ? active : (items[0]?.id ?? 'body');
 
   return (
-    <div className="flex shrink-0 flex-col border-t border-hairline">
-      {!collapsed && (
-        <div
-          role="tabpanel"
-          id={panelId}
-          aria-labelledby={tabId(selected)}
-          data-testid={`inspector-panel-${pane}`}
-          className="max-h-64 min-h-24 overflow-auto border-b border-hairline"
-        >
-          {render(selected)}
+    <>
+      <div className="flex shrink-0 items-center gap-2 border-b border-hairline">
+        {/* Ten tabs do not fit a split pane; the strip scrolls rather than wrapping. */}
+        <div className="min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="w-max">
+            <Tabs
+              label={label}
+              items={items}
+              active={selected}
+              onSelect={(id) => {
+                setInspector(requestId, pane, id);
+              }}
+            />
+          </div>
         </div>
-      )}
-      <div className="flex items-center justify-between">
-        <div role="tablist" aria-label={label} className="flex h-row items-center gap-1 px-2">
-          {items.map((item) => {
-            const isActive = item.id === selected && !collapsed;
-            return (
-              <button
-                key={item.id}
-                id={tabId(item.id)}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                {...(isActive ? { 'aria-controls': panelId } : {})}
-                onClick={() => {
-                  if (item.id === selected && !collapsed) {
-                    setCollapsed(requestId, pane, true);
-                    return;
-                  }
-                  setInspector(requestId, pane, item.id);
-                }}
-                className={`rounded-sm px-2 text-xs ${
-                  isActive ? 'bg-surface-active text-fg-default' : 'text-fg-subtle'
-                } hover:bg-surface-hover`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-        <div className="px-1">
-          <InspectorIconButton
-            label={collapsed ? `Show ${label}` : `Hide ${label}`}
-            onClick={() => {
-              setCollapsed(requestId, pane, !collapsed);
-            }}
-          >
-            {collapsed ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
-          </InspectorIconButton>
-        </div>
+        {trailing !== undefined && <div className="min-w-0 flex-1">{trailing}</div>}
       </div>
-    </div>
+      <div
+        role="tabpanel"
+        aria-label={items.find((item) => item.id === selected)?.label}
+        data-testid={`inspector-panel-${pane}`}
+        className={`flex min-h-0 flex-1 flex-col ${selected === 'body' ? 'overflow-hidden' : 'overflow-auto'}`}
+      >
+        {render(selected)}
+      </div>
+    </>
   );
 }
 

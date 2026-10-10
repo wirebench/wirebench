@@ -22,6 +22,7 @@ import { hydrateUi, useUiStore } from '../state/ui.js';
 import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToCertificateExpiry } from '../state/certificate-expiry.js';
+import { syncTabSetsWithSidebar } from '../state/tab-set-sync.js';
 import { subscribeToCurrentValues } from '../state/current-values.js';
 import { subscribeToScriptValues } from '../state/script-values.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
@@ -290,6 +291,8 @@ export function AppShell() {
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToCertificateExpiry(), []);
+  // Each activity-bar area shows its own set of editor tabs.
+  useEffect(() => syncTabSetsWithSidebar(), []);
   useEffect(() => subscribeToCurrentValues(), []);
   useEffect(() => subscribeToScriptValues(), []);
   useEffect(() => subscribeToPreferences(), []);

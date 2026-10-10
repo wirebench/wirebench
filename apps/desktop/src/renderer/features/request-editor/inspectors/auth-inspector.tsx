@@ -69,45 +69,37 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
     return <p className="p-3 text-sm text-fg-subtle">This request no longer exists.</p>;
   }
 
-  const inherit = auth === undefined;
-
   return (
-    <div className="flex flex-col gap-2 p-3 text-sm">
-      <label className="flex items-center gap-2 text-fg-default">
-        <input
-          type="checkbox"
-          data-testid="auth-inherit"
-          checked={inherit}
-          onChange={(event) => {
-            updateRequestAuth(requestId, event.target.checked ? null : { type: 'basic', preemptive: true });
-          }}
-        />
-        Use endpoint/interface default
-      </label>
+    <div data-testid="soap-auth" className="flex flex-col gap-3 overflow-auto p-3">
+      {/* The same shape as the REST Auth tab: where the credentials come from, then the form, with
+          Inherit as a type — here it means the endpoint's or the interface's credentials. */}
+      <p data-testid="auth-effective" className="text-sm text-fg-muted">
+        {auth !== undefined
+          ? 'Set on this request'
+          : effective !== undefined
+            ? sourceLabel(effective)
+            : 'Resolving credentials…'}
+      </p>
 
-      {inherit ? (
-        <p className="text-xs text-fg-subtle" data-testid="auth-effective">
-          {effective !== undefined ? sourceLabel(effective) : 'Resolving credentials…'}
+      <AuthFields
+        scope="Request"
+        inheritable
+        types={SOAP_AUTH_TYPES}
+        auth={auth}
+        oauth2Status={
+          auth?.type === 'oauth2' ? <OAuth2StatusPanel ownerId={requestId} grant={auth.grant} /> : undefined
+        }
+        onChange={(next) => {
+          updateRequestAuth(
+            requestId,
+            next === null || next === undefined || next.type === 'inherit' ? null : asSoapAuth(next),
+          );
+        }}
+      />
+      {(auth?.type === 'basic' || auth?.type === 'ntlm') && (
+        <p className="text-xs text-fg-faint">
+          Property expansions such as <code>{'${#Env#user}'}</code> work in the username.
         </p>
-      ) : (
-        <>
-          <AuthFields
-            scope="Request"
-            types={SOAP_AUTH_TYPES}
-            auth={auth}
-            oauth2Status={
-              auth.type === 'oauth2' ? <OAuth2StatusPanel ownerId={requestId} grant={auth.grant} /> : undefined
-            }
-            onChange={(next) => {
-              updateRequestAuth(requestId, asSoapAuth(next));
-            }}
-          />
-          {(auth.type === 'basic' || auth.type === 'ntlm') && (
-            <p className="text-xs text-fg-faint">
-              Property expansions such as <code>{'${#Env#user}'}</code> work in the username.
-            </p>
-          )}
-        </>
       )}
 
       <WssPolicyPanel requestId={requestId} />
@@ -136,9 +128,9 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
   const updateRequest = useProjectStore((state) => state.updateRequest);
 
   return (
-    <div className="mt-1 flex flex-col gap-2 border-t border-hairline pt-2">
+    <div className="flex flex-col gap-2 border-t border-hairline pt-3">
       <label className="flex items-center gap-2">
-        <span className="w-24 shrink-0 text-xs text-fg-subtle">Outgoing WSS</span>
+        <span className="w-28 shrink-0 text-xs text-fg-subtle">Outgoing WSS</span>
         <select
           aria-label="Outgoing WSS"
           data-testid="request-wss-outgoing"
@@ -162,7 +154,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
         </select>
       </label>
       <label className="flex items-center gap-2">
-        <span className="w-24 shrink-0 text-xs text-fg-subtle">Incoming WSS</span>
+        <span className="w-28 shrink-0 text-xs text-fg-subtle">Incoming WSS</span>
         <select
           aria-label="Incoming WSS"
           data-testid="request-wss-incoming"

@@ -49,11 +49,13 @@ test.describe('Inspectors (Headers, timings)', () => {
     await page.getByTestId('request-endpoint').fill(`${server.url}/headers`);
 
     // Request pane → Headers inspector → add X-Trace: abc.
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Headers' }).click();
-    await page.getByLabel('New header name').fill('X-Trace');
-    await page.getByLabel('New header value').fill('abc');
-    await page.getByRole('button', { name: 'Add header' }).click();
-    await expect(page.getByLabel('Name of header 1')).toHaveValue('X-Trace');
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Headers' }).click();
+    // Typing into the table's add row appends the header; its value is then committed on Enter.
+    await page.getByTestId('soap-header-new-name').fill('X-Trace');
+    await expect(page.getByTestId('soap-header-name')).toHaveValue('X-Trace');
+    await page.getByTestId('soap-header-value').fill('abc');
+    await page.getByTestId('soap-header-value').press('Enter');
+    await expect(page.getByTestId('soap-header-value')).toHaveValue('abc');
 
     await page.locator('[data-testid="request-send"]').click();
     await expect(page.locator('[data-testid="response-status"]')).toContainText('200', { timeout: 10_000 });
@@ -62,13 +64,13 @@ test.describe('Inspectors (Headers, timings)', () => {
     await expect(page.getByTestId('response-editor')).toContainText('"x-trace":"abc"', { timeout: 10_000 });
 
     // Response pane → Headers inspector lists what came back.
-    await page.getByRole('tablist', { name: 'Response inspectors' }).getByRole('tab', { name: 'Headers' }).click();
+    await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: 'Headers' }).click();
     const responseHeaders = page.getByRole('table', { name: 'Response headers' });
     await expect(responseHeaders).toBeVisible({ timeout: 10_000 });
     await expect(responseHeaders).toContainText('content-type');
 
     // SSL Info says, honestly, that this exchange was plain HTTP.
-    await page.getByRole('tablist', { name: 'Response inspectors' }).getByRole('tab', { name: 'SSL Info' }).click();
+    await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: 'SSL Info' }).click();
     await expect(page.getByText(/No TLS — plain HTTP/)).toBeVisible({ timeout: 10_000 });
 
     // The HTTP log's detail breaks the exchange down into a timings bar with a total.

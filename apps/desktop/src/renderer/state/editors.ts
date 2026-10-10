@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { tabSetOf, tabsInSet, type TabSet } from './tab-sets.js';
 import type { EditorLayout } from '../features/request-editor/layout.js';
 import type { EnvSendResult } from '../../shared/wire-types.js';
 
@@ -28,14 +29,25 @@ export type RestBodyViewType = 'text' | 'form';
 
 const DEFAULT_REST_BODY_VIEW: RestBodyViewType = 'text';
 
-/** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
+/** Which tab a SOAP pane's top strip shows — `'body'` is the envelope with its view switcher.
+ * Editor state, never saved to disk. */
 export type InspectorId =
-  'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties' | 'scripts' | 'assertions';
+  | 'body'
+  | 'headers'
+  | 'attachments'
+  | 'auth'
+  | 'wsa'
+  | 'wss'
+  | 'ssl'
+  | 'details'
+  | 'properties'
+  | 'scripts'
+  | 'assertions';
 
 /** Which pane's strip an inspector selection belongs to — the two are independent. */
 export type InspectorPane = 'request' | 'response';
 
-const DEFAULT_INSPECTOR: InspectorId = 'headers';
+const DEFAULT_INSPECTOR: InspectorId = 'body';
 
 /** Inspector state is per request AND per pane, so the two strips key off distinct entries. */
 function inspectorKey(requestId: string, pane: InspectorPane): string {
@@ -65,6 +77,11 @@ export interface EditorTab {
     | 'cookies'
     | 'ssh-terminal';
   readonly title: string;
+  /**
+   * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):
+   * History's Compare is a `diff` like a snapshot comparison, but it belongs with History.
+   */
+  readonly set?: TabSet;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
   /** Set when `kind` is `'interface'`: the imported interface this viewer tab shows. */
@@ -126,10 +143,22 @@ export interface EditorTab {
   };
 }
 
-/** The editors store: open tabs plus which one is active. */
+/**
+ * The editors store: open tabs plus which one is active.
+ *
+ * Tabs are kept in one list but shown in sets, one per activity-bar area (`tab-sets.ts`): only
+ * {@link EditorsStore.displayedSet}'s tabs are on the strip, each set remembers its own active tab,
+ * and `activeId` is always the displayed set's.
+ */
 export interface EditorsStore {
   readonly tabs: EditorTab[];
   readonly activeId: string | undefined;
+  /** The set on the strip. Opening or activating a tab of another set brings that set here. */
+  readonly displayedSet: TabSet;
+  /** Each set's active tab, kept while another set is displayed. */
+  readonly activeBySet: Readonly<Partial<Record<TabSet, string>>>;
+  /** Shows `set`'s tabs, back on the tab that was active there (or none, for its empty state). */
+  readonly showSet: (target: TabSet) => void;
   /** Form view type per request draft id. Editor state, not project data — never saved to disk. */
   readonly formViewTypes: Readonly<Record<string, FormViewType>>;
   /** Selected request tab per request draft id. Editor state, not project data. */
@@ -146,8 +175,6 @@ export interface EditorsStore {
   readonly restBodyViews: Readonly<Record<string, RestBodyViewType>>;
   /** Selected inspector per `${requestId}:${pane}`. Editor state, not project data. */
   readonly inspectorTabs: Readonly<Record<string, InspectorId>>;
-  /** Whether a pane's inspector panel is collapsed, per `${requestId}:${pane}`. */
-  readonly inspectorCollapsed: Readonly<Record<string, boolean>>;
   /** The attachment row selected in a request's Attachments inspector. Editor state, not project data. */
   readonly selectedAttachments: Readonly<Record<string, string>>;
   readonly open: (tab: EditorTab) => void;
@@ -156,11 +183,14 @@ export interface EditorsStore {
   readonly openOrReplace: (tab: EditorTab) => void;
   readonly close: (id: string) => void;
   /**
-   * Moves an open tab to `toIndex` in the strip (clamped to the ends), leaving which tab is
-   * active untouched. Unknown ids are ignored. What drag-and-drop and Move Tab Left/Right do.
+   * Moves an open tab to `toIndex` among its own set's tabs — the strip the user sees — clamped to
+   * the ends, leaving which tab is active untouched. Unknown ids are ignored. What drag-and-drop
+   * and Move Tab Left/Right do.
    */
   readonly move: (id: string, toIndex: number) => void;
   readonly activate: (id: string) => void;
+  /** Puts `tabs` in the store and makes `id` active, bringing its set onto the strip. Internal. */
+  readonly activateIn: (tabs: EditorTab[], id: string) => void;
   /**
    * Leaves every tab unselected, which is what shows the empty Start tab. The editor area's
    * Start tab selects with this: Start is not an entry in `tabs`, so `activate` — which
@@ -173,12 +203,13 @@ export interface EditorsStore {
 
   /** The selected request tab for `requestId`, defaulting to `'xml'` when never set. */
   readonly requestViewFor: (requestId: string) => RequestViewType;
-  /** Selects a request tab (XML · Form · Outline · Raw). */
+  /** Selects a request tab (XML · Form · Outline · Raw), and brings the pane to its Body tab. */
   readonly setRequestView: (requestId: string, viewType: RequestViewType) => void;
 
   /** The selected response tab for `requestId`, defaulting to `'xml'` when never set. */
   readonly responseViewFor: (requestId: string) => ResponseViewType;
-  /** Records the user's own tab choice — pins it, so a later fault no longer overrides it. */
+  /** Records the user's own tab choice — pins it, so a later fault no longer overrides it — and
+   * brings the pane to its Body tab. */
   readonly setResponseView: (requestId: string, viewType: ResponseViewType) => void;
   /** Switches to the Fault tab when a fault just arrived, unless the user already pinned a
    * different tab for this request (see `setResponseView`). */
@@ -190,14 +221,9 @@ export interface EditorsStore {
   readonly restBodyViewFor: (requestId: string) => RestBodyViewType;
   readonly setRestBodyView: (requestId: string, view: RestBodyViewType) => void;
 
-  /** The selected inspector for one pane of one request, defaulting to `'headers'`. */
+  /** The selected tab for one pane of one request, defaulting to `'body'`. */
   readonly inspectorFor: (requestId: string, pane: InspectorPane) => InspectorId;
-  /** Selects an inspector — which also expands the panel, since picking a tab means "show me it". */
   readonly setInspector: (requestId: string, pane: InspectorPane, inspector: InspectorId) => void;
-  /** Whether one pane's inspector panel is collapsed. Panels start collapsed, so the editor keeps
-   * the full pane until the user asks for an inspector. */
-  readonly inspectorCollapsedFor: (requestId: string, pane: InspectorPane) => boolean;
-  readonly setInspectorCollapsed: (requestId: string, pane: InspectorPane, collapsed: boolean) => void;
 
   /** The selected attachment row for `requestId`, or `undefined` when none is selected. */
   readonly selectedAttachmentFor: (requestId: string) => string | undefined;
@@ -214,6 +240,8 @@ export interface EditorsStore {
 const EMPTY_EDITORS = {
   tabs: [] as EditorTab[],
   activeId: undefined,
+  displayedSet: 'explorer' as TabSet,
+  activeBySet: {},
   formViewTypes: {},
   requestViewTypes: {},
   responseViewTypes: {},
@@ -221,7 +249,6 @@ const EMPTY_EDITORS = {
   editorLayouts: {},
   restBodyViews: {},
   inspectorTabs: {},
-  inspectorCollapsed: {},
   selectedAttachments: {},
 } as const;
 
@@ -233,69 +260,110 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     set({ ...EMPTY_EDITORS, tabs: [] });
   },
 
+  showSet: (target) => {
+    const { tabs, activeBySet, displayedSet, activeId } = get();
+    const remembered = activeBySet[target];
+    const next = remembered !== undefined && tabs.some((t) => t.id === remembered) ? remembered : undefined;
+    if (target === displayedSet && next === activeId) {
+      return;
+    }
+    set({ displayedSet: target, activeId: next });
+  },
+
   open: (tab) => {
     const { tabs } = get();
     const existing = tabs.find((t) => t.id === tab.id);
-    if (existing === undefined) {
-      set({ tabs: [...tabs, tab], activeId: tab.id });
-      return;
-    }
-    set({ activeId: existing.id });
+    get().activateIn(existing === undefined ? [...tabs, tab] : tabs, tab.id);
   },
 
   openOrReplace: (tab) => {
     const { tabs } = get();
     const index = tabs.findIndex((t) => t.id === tab.id);
     if (index === -1) {
-      set({ tabs: [...tabs, tab], activeId: tab.id });
+      get().activateIn([...tabs, tab], tab.id);
       return;
     }
     const nextTabs = [...tabs];
     nextTabs[index] = tab;
-    set({ tabs: nextTabs, activeId: tab.id });
+    get().activateIn(nextTabs, tab.id);
+  },
+
+  activateIn: (tabs, id) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab === undefined) {
+      return;
+    }
+    const tabSet = tabSetOf(tab);
+    set({
+      tabs,
+      activeId: id,
+      displayedSet: tabSet,
+      activeBySet: { ...get().activeBySet, [tabSet]: id },
+    });
   },
 
   close: (id) => {
-    const { tabs, activeId } = get();
-    const index = tabs.findIndex((t) => t.id === id);
-    if (index === -1) {
+    const { tabs, activeId, activeBySet, displayedSet } = get();
+    const tab = tabs.find((t) => t.id === id);
+    if (tab === undefined) {
       return;
     }
+    const tabSet = tabSetOf(tab);
+    const siblings = tabsInSet(tabs, tabSet);
+    const index = siblings.findIndex((t) => t.id === id);
     const nextTabs = tabs.filter((t) => t.id !== id);
-    let nextActive = activeId;
-    if (activeId === id) {
-      const fallback = nextTabs[Math.min(index, nextTabs.length - 1)];
-      nextActive = fallback?.id;
+    const nextActiveBySet = { ...activeBySet };
+    if (activeBySet[tabSet] === id) {
+      // The neighbour in the same set takes over, never a tab from another area's set.
+      const rest = siblings.filter((t) => t.id !== id);
+      const fallback = rest[Math.min(index, rest.length - 1)];
+      if (fallback === undefined) {
+        delete nextActiveBySet[tabSet];
+      } else {
+        nextActiveBySet[tabSet] = fallback.id;
+      }
     }
-    set({ tabs: nextTabs, activeId: nextActive });
+    set({
+      tabs: nextTabs,
+      activeBySet: nextActiveBySet,
+      activeId: tabSet === displayedSet ? nextActiveBySet[tabSet] : activeId,
+    });
   },
 
   move: (id, toIndex) => {
     const { tabs } = get();
-    const from = tabs.findIndex((t) => t.id === id);
-    if (from === -1) {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab === undefined) {
       return;
     }
-    const to = Math.max(0, Math.min(toIndex, tabs.length - 1));
+    const siblings = tabsInSet(tabs, tabSetOf(tab));
+    const from = siblings.indexOf(tab);
+    const to = Math.max(0, Math.min(toIndex, siblings.length - 1));
     if (to === from) {
       return;
     }
-    const nextTabs = [...tabs];
-    const [tab] = nextTabs.splice(from, 1);
-    if (tab !== undefined) {
-      nextTabs.splice(to, 0, tab);
-    }
-    set({ tabs: nextTabs });
+    // Reorder within the set, then lay the set back into the slots its tabs held in the full list,
+    // so other sets' tabs keep their places.
+    const reordered = [...siblings];
+    reordered.splice(from, 1);
+    reordered.splice(to, 0, tab);
+    let next = 0;
+    const tabSet = tabSetOf(tab);
+    set({ tabs: tabs.map((t) => (tabSetOf(t) === tabSet ? (reordered[next++] ?? t) : t)) });
   },
 
   activate: (id) => {
-    if (get().tabs.some((t) => t.id === id)) {
-      set({ activeId: id });
+    const { tabs } = get();
+    if (tabs.some((t) => t.id === id)) {
+      get().activateIn(tabs, id);
     }
   },
 
   showStart: () => {
-    set({ activeId: undefined });
+    const { activeBySet, displayedSet } = get();
+    const nextActiveBySet = { ...activeBySet };
+    delete nextActiveBySet[displayedSet];
+    set({ activeId: undefined, activeBySet: nextActiveBySet });
   },
 
   formViewTypeFor: (requestId) => get().formViewTypes[requestId] ?? DEFAULT_FORM_VIEW_TYPE,
@@ -307,7 +375,10 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   requestViewFor: (requestId) => get().requestViewTypes[requestId] ?? DEFAULT_REQUEST_VIEW_TYPE,
 
   setRequestView: (requestId, viewType) => {
-    set({ requestViewTypes: { ...get().requestViewTypes, [requestId]: viewType } });
+    set({
+      requestViewTypes: { ...get().requestViewTypes, [requestId]: viewType },
+      inspectorTabs: { ...get().inspectorTabs, [inspectorKey(requestId, 'request')]: 'body' },
+    });
   },
 
   responseViewFor: (requestId) => get().responseViewTypes[requestId] ?? DEFAULT_RESPONSE_VIEW_TYPE,
@@ -316,6 +387,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     set({
       responseViewTypes: { ...get().responseViewTypes, [requestId]: viewType },
       responseViewPinned: { ...get().responseViewPinned, [requestId]: true },
+      inspectorTabs: { ...get().inspectorTabs, [inspectorKey(requestId, 'response')]: 'body' },
     });
   },
 
@@ -332,17 +404,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   inspectorFor: (requestId, pane) => get().inspectorTabs[inspectorKey(requestId, pane)] ?? DEFAULT_INSPECTOR,
 
   setInspector: (requestId, pane, inspector) => {
-    const key = inspectorKey(requestId, pane);
-    set({
-      inspectorTabs: { ...get().inspectorTabs, [key]: inspector },
-      inspectorCollapsed: { ...get().inspectorCollapsed, [key]: false },
-    });
-  },
-
-  inspectorCollapsedFor: (requestId, pane) => get().inspectorCollapsed[inspectorKey(requestId, pane)] ?? true,
-
-  setInspectorCollapsed: (requestId, pane, collapsed) => {
-    set({ inspectorCollapsed: { ...get().inspectorCollapsed, [inspectorKey(requestId, pane)]: collapsed } });
+    set({ inspectorTabs: { ...get().inspectorTabs, [inspectorKey(requestId, pane)]: inspector } });
   },
 
   selectedAttachmentFor: (requestId) => get().selectedAttachments[requestId],

@@ -170,7 +170,6 @@ describe('SearchView', () => {
 
     fireEvent.click(screen.getByTestId('search-result'));
 
-    expect(useEditorsStore.getState().inspectorCollapsedFor('req-1', 'request')).toBe(false);
     expect(useEditorsStore.getState().inspectorFor('req-1', 'request')).toBe('headers');
   });
 

@@ -249,6 +249,10 @@ export function preflightRequest(
     check(request.soapAction, 'soapAction');
   }
   for (const header of request.headers) {
+    // A header switched off is not sent, so a reference in it cannot block the send.
+    if (header.enabled === false) {
+      continue;
+    }
     // The header's *name* can be an expansion too; both refs are attributed to the name the
     // user typed, since that is what the UI has to point at.
     check(header.name, 'header', header.name);

@@ -13,7 +13,7 @@ import type { ExchangeState } from '../../state/exchanges.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import type { ResponseViewType } from '../../state/editors.js';
-import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { PaneTabs, type InspectorItem } from './inspectors/inspector-strip.js';
 import { WssInspector, wssTabLabel } from './inspectors/wss-inspector.js';
 import { ResponseAttachmentsInspector } from './inspectors/response-attachments-inspector.js';
 import { ResponseHeadersInspector } from './inspectors/response-headers-inspector.js';
@@ -42,14 +42,14 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
 }
 
 /**
- * The response pane's inspector strip.
+ * The response pane's tabs: Body (the envelope and its views) first, as the REST response has it.
  *
  * The Attachments tab carries its count (`Attachments (2)`), and the WSS tab a ✓/✗ badge,
  * because their emptiness (or outcome) is a property of the *response* rather than of the app:
  * without the badge you would have to open the tab to learn a send brought parts back, or that
  * a signature did not hold.
  */
-function responseInspectors(
+function responseTabs(
   attachmentCount: number,
   wssLabel: string,
   script: ExchangeState['exchange'] | undefined,
@@ -57,6 +57,7 @@ function responseInspectors(
   const scriptBadge = scriptResultsBadge(script?.script);
   const verdict = assertionResultsBadge(script?.assertions);
   return [
+    { id: 'body', label: 'Body' },
     { id: 'headers', label: 'Headers' },
     { id: 'attachments', label: attachmentCount > 0 ? `Attachments (${String(attachmentCount)})` : 'Attachments' },
     { id: 'wss', label: wssLabel },
@@ -207,18 +208,15 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     ...(fault !== undefined ? [{ id: 'fault', label: 'Fault' }] : []),
   ];
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline">
+  const bodyTab = (
+    <>
+      <div className="flex shrink-0 items-center border-b border-hairline">
         <ViewTabs
           label="Response views"
           items={views}
           active={view}
           onSelect={(id) => setView(requestId, id as ResponseViewType)}
         />
-        <div className="min-w-0 flex-1">
-          <ResponseStatus exchange={exchange} error={state?.error} />
-        </div>
       </div>
 
       <div data-testid="response-editor" className="min-h-0 flex-1">
@@ -266,14 +264,21 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
           )}
         </Suspense>
       </div>
+    </>
+  );
 
-      <InspectorStrip
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PaneTabs
         requestId={requestId}
         pane="response"
-        label="Response inspectors"
-        items={responseInspectors(response?.attachments.length ?? 0, wssTabLabel(exchange), exchange)}
+        label="Response tabs"
+        items={responseTabs(response?.attachments.length ?? 0, wssTabLabel(exchange), exchange)}
+        trailing={<ResponseStatus exchange={exchange} error={state?.error} />}
         render={(inspector) =>
-          inspector === 'headers' ? (
+          inspector === 'body' ? (
+            bodyTab
+          ) : inspector === 'headers' ? (
             <ResponseHeadersInspector exchange={exchange} />
           ) : inspector === 'ssl' ? (
             <SslInspector http={exchange?.http} />

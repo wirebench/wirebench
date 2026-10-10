@@ -107,14 +107,14 @@ test.describe('keystores', () => {
 
     // --- select it for Request 1 and send over mutual TLS ------------------------------------
     await page.getByTestId('request-endpoint').fill(`${secure.url}/soap`);
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Properties' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Properties' }).click();
     await page.getByTestId('request-ssl-keystore').selectOption({ label: 'corp' });
 
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
 
     // The SSL inspector proves the identity was actually presented, not merely configured.
-    await page.getByRole('tablist', { name: 'Response inspectors' }).getByRole('tab', { name: 'SSL Info' }).click();
+    await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: 'SSL Info' }).click();
     await expect(page.getByTestId('ssl-client-certificate')).toContainText('CN=wirebench-client', {
       timeout: 15_000,
     });

@@ -8,9 +8,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { KvTable } from '../../src/renderer/components/kv-table.js';
 import type { KeyValueWire } from '../../src/shared/wire-types.js';
 
@@ -105,19 +105,69 @@ describe('KvTable', () => {
     expect(onChange).toHaveBeenCalledWith([row('a', '1'), row('b', '')]);
   });
 
-  it('makes one row of a name typed key by key: focus moves into the row the first key made', async () => {
-    function Stateful() {
+  it('keeps typing in the row the first keystroke created, rather than a row per character', async () => {
+    let latest: readonly KeyValueWire[] = [];
+    function Host({ column }: { readonly column: 'name' | 'value' }) {
       const [rows, setRows] = useState<readonly KeyValueWire[]>([]);
-      return <KvTable label="Headers" rows={rows} onChange={setRows} testidPrefix="rest-header" />;
+      latest = rows;
+      return <KvTable label="Headers" rows={rows} onChange={setRows} testidPrefix="rest-header" key={column} />;
     }
-    render(<Stateful />);
 
-    await userEvent.type(screen.getByTestId('rest-header-new-name'), 'Accept');
+    render(<Host column="name" />);
+    await userEvent.click(screen.getByTestId('rest-header-new-name'));
+    await userEvent.keyboard('X-Trace');
+    expect(screen.getByTestId<HTMLInputElement>('rest-header-name').value).toBe('X-Trace');
+    await userEvent.tab();
+    expect(latest).toEqual([row('X-Trace', '')]);
+    cleanup();
 
-    const names = screen.getAllByTestId('rest-header-name');
-    expect(names).toHaveLength(1);
-    expect(names[0]).toHaveProperty('value', 'Accept');
-    expect(document.activeElement).toBe(names[0]);
+    render(<Host column="value" />);
+    await userEvent.click(screen.getByTestId('rest-header-new-value'));
+    await userEvent.keyboard('abc{Enter}');
+    expect(latest).toEqual([row('', 'abc')]);
+  });
+
+  it('lists the computed rows first, then the editable ones, with the add row last', () => {
+    mount({ computed: [row('Content-Type', 'text/xml', { description: 'from the binding' })] });
+    const order = screen
+      .getAllByRole('row')
+      .map((tr) => tr.getAttribute('data-testid'))
+      .filter((id) => id !== null);
+    // A typed row lands right above the add row it was typed into.
+    expect(order).toEqual(['rest-query-computed-row', 'rest-query-row', 'rest-query-add-row']);
+  });
+
+  it('wraps a long value in its cell, and Enter there saves without starting a new line', async () => {
+    const { onChange } = mount();
+    const value = screen.getByTestId<HTMLTextAreaElement>('rest-query-value');
+    expect(value.tagName).toBe('TEXTAREA');
+
+    await userEvent.clear(value);
+    await userEvent.type(value, 'long{Enter}');
+
+    expect(value.value).toBe('long');
+    expect(onChange).toHaveBeenLastCalledWith([row('a', 'long')]);
+  });
+
+  it('resizes a column from the keyboard, giving the width to the column on its right, and resets on double click', async () => {
+    mount({ columns: ['enabled', 'name', 'value', 'description'], testidPrefix: 'resize-probe' });
+    const width = (index: number): string =>
+      (screen.getByTestId('resize-probe-table').querySelectorAll('col')[index] as HTMLElement).style.width;
+    const [nameBefore, valueBefore] = [width(1), width(2)];
+
+    const handle = screen.getByRole('separator', { name: 'Resize Name column' });
+    // Name and Value start at 3:4, so the edge between them sits at 43% of the pair.
+    expect(handle.getAttribute('aria-valuenow')).toBe('43');
+    handle.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(Number(handle.getAttribute('aria-valuenow'))).toBeGreaterThan(43);
+    expect(parseFloat(width(1))).toBeGreaterThan(parseFloat(nameBefore));
+    expect(parseFloat(width(2))).toBeLessThan(parseFloat(valueBefore));
+    // The last text column has no handle of its own: its right edge is the table's.
+    expect(screen.queryByRole('separator', { name: 'Resize Description column' })).toBeNull();
+
+    fireEvent.doubleClick(handle);
+    expect([width(1), width(2)]).toEqual([nameBefore, valueBefore]);
   });
 
   it('appends from the value column as well, so a valueless name is not forced first', () => {

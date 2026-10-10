@@ -92,5 +92,7 @@ export function revealSearchMatch(match: SearchMatchWire): void {
     useEditorsStore.getState().setInspector(match.requestId, 'request', 'headers');
     return;
   }
+  // The envelope only has an editor while the request pane shows its Body tab.
+  useEditorsStore.getState().setInspector(match.requestId, 'request', 'body');
   revealWhenMounted(match.start, match.end);
 }

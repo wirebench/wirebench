@@ -50,7 +50,7 @@ test.describe('wsa', () => {
     await openFirstRequest(page);
 
     // --- the inspector shows addressing on, with the operation's action ----------------------
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'WS-A' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'WS-A' }).click();
     await expect(page.getByTestId('wsa-inherit')).toBeChecked();
     await expect(page.getByTestId('wsa-enabled')).toBeChecked();
     await expect(page.getByTestId('wsa-effective')).toContainText('urn:wb:wsa:Echo', { timeout: 15_000 });

@@ -240,7 +240,12 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
     ...(request.endpointId !== undefined ? { endpointId: request.endpointId } : {}),
     ...(request.endpointUrl !== undefined ? { endpointUrl: request.endpointUrl } : {}),
-    headers: request.headers.map((header) => ({ name: header.name, value: header.value })),
+    headers: request.headers.map((header) => ({
+      name: header.name,
+      value: header.value,
+      ...(header.enabled === false ? { enabled: false } : {}),
+      ...(header.description !== undefined ? { description: header.description } : {}),
+    })),
     order: request.order,
     ...(request.auth !== undefined ? { auth: toAuthConfigWire(request.auth) } : {}),
     ...(request.description !== undefined ? { description: request.description } : {}),

@@ -42,7 +42,7 @@ test.describe('request properties and preferences', () => {
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
 
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Properties' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Properties' }).click();
     const timeout = page.getByTestId('request-timeout');
     await expect(timeout).toBeVisible({ timeout: 20_000 });
     await timeout.fill('100');

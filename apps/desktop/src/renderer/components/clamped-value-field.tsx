@@ -35,8 +35,8 @@ export interface ClampedValueFieldProps {
 export function ClampedValueField({ value, onChange, onBlur, onKeyDown, className, ...rest }: ClampedValueFieldProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [focused, setFocused] = useState(false);
-  // The table's input class fixes one row's height; here the height is the text's, set below.
-  const box = className.replace(/(^|\s)h-row(?=\s|$)/g, ' ');
+  // The table's class may fix one row's height or size to the content; here the height is set below.
+  const box = className.replace(/(^|\s)(h-row|field-sizing-content)(?=\s|$)/g, ' ');
 
   // Height follows the text: all of it while focused, at most two lines otherwise. Measured from
   // `scrollHeight`, which is 0 where nothing is laid out (tests), so the CSS height stands there.
