@@ -127,6 +127,45 @@ describe('KvTable', () => {
     expect(latest).toEqual([row('', 'abc')]);
   });
 
+  it('puts the add row right under the editable rows, above the computed ones', () => {
+    mount({ computed: [row('Content-Type', 'text/xml', { description: 'from the binding' })] });
+    const order = screen
+      .getAllByRole('row')
+      .map((tr) => tr.getAttribute('data-testid'))
+      .filter((id) => id !== null);
+    expect(order).toEqual(['rest-query-row', 'rest-query-add-row', 'rest-query-computed-row']);
+  });
+
+  it('wraps a long value in its cell, and Enter there saves without starting a new line', async () => {
+    const { onChange } = mount();
+    const value = screen.getByTestId<HTMLTextAreaElement>('rest-query-value');
+    expect(value.tagName).toBe('TEXTAREA');
+
+    await userEvent.clear(value);
+    await userEvent.type(value, 'long{Enter}');
+
+    expect(value.value).toBe('long');
+    expect(onChange).toHaveBeenLastCalledWith([row('a', 'long')]);
+  });
+
+  it('resizes a column from the keyboard, giving the width to the column on its right, and resets on double click', async () => {
+    mount({ columns: ['enabled', 'name', 'value', 'description'], testidPrefix: 'resize-probe' });
+    const width = (index: number): string =>
+      (screen.getByTestId('resize-probe-table').querySelectorAll('col')[index] as HTMLElement).style.width;
+    const [nameBefore, valueBefore] = [width(1), width(2)];
+
+    const handle = screen.getByRole('separator', { name: 'Resize Name column' });
+    handle.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(parseFloat(width(1))).toBeGreaterThan(parseFloat(nameBefore));
+    expect(parseFloat(width(2))).toBeLessThan(parseFloat(valueBefore));
+    // The last text column has no handle of its own: its right edge is the table's.
+    expect(screen.queryByRole('separator', { name: 'Resize Description column' })).toBeNull();
+
+    fireEvent.doubleClick(handle);
+    expect([width(1), width(2)]).toEqual([nameBefore, valueBefore]);
+  });
+
   it('appends from the value column as well, so a valueless name is not forced first', () => {
     const { onChange } = mount({ rows: [] });
 
