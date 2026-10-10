@@ -156,8 +156,11 @@ describe('KvTable', () => {
     const [nameBefore, valueBefore] = [width(1), width(2)];
 
     const handle = screen.getByRole('separator', { name: 'Resize Name column' });
+    // Name and Value start at 3:4, so the edge between them sits at 43% of the pair.
+    expect(handle.getAttribute('aria-valuenow')).toBe('43');
     handle.focus();
     await userEvent.keyboard('{ArrowRight}');
+    expect(Number(handle.getAttribute('aria-valuenow'))).toBeGreaterThan(43);
     expect(parseFloat(width(1))).toBeGreaterThan(parseFloat(nameBefore));
     expect(parseFloat(width(2))).toBeLessThan(parseFloat(valueBefore));
     // The last text column has no handle of its own: its right edge is the table's.

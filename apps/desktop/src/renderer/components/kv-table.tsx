@@ -306,6 +306,7 @@ export function KvTable({
                   {column !== 'enabled' && textColumns.indexOf(column) < textColumns.length - 1 && (
                     <ColumnResizer
                       label={`Resize ${HEADING[column]} column`}
+                      share={share(widths, textColumns.indexOf(column))}
                       testid={testid(`resize-${column}`)}
                       onResize={(deltaPx) => {
                         resize(textColumns.indexOf(column), deltaPx);
@@ -513,8 +514,17 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
   );
 }
 
+/** How much of the two columns either side of edge `index` the left one takes, as a whole percent. */
+function share(widths: readonly number[], index: number): number {
+  const left = widths[index] ?? 0;
+  const right = widths[index + 1] ?? 0;
+  return left + right > 0 ? Math.round((left / (left + right)) * 100) : 50;
+}
+
 interface ColumnResizerProps {
   readonly label: string;
+  /** The edge's position for assistive technology: the left column's share of the pair, 0–100. */
+  readonly share: number;
   readonly testid: string;
   readonly onResize: (deltaPx: number) => void;
   readonly onReset: () => void;
@@ -526,13 +536,17 @@ interface ColumnResizerProps {
  * a double click puts every column back. The pointer is captured, so a drag that leaves the
  * handle keeps resizing until it is released.
  */
-function ColumnResizer({ label, testid, onResize, onReset }: ColumnResizerProps) {
+function ColumnResizer({ label, share, testid, onResize, onReset }: ColumnResizerProps) {
   const lastX = useRef<number | undefined>(undefined);
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
+      // A focusable separator is a widget: it must say where it is (WAI-ARIA `separator`).
+      aria-valuenow={share}
+      aria-valuemin={0}
+      aria-valuemax={100}
       data-testid={testid}
       tabIndex={0}
       title="Drag to resize, double-click to reset"
