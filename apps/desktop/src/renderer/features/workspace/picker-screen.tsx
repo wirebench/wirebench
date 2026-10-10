@@ -53,7 +53,7 @@ function folderName(dir: string): string {
 
 /**
  * What the app shows when no workspace is open: the workspaces on disk (name, project count,
- * last opened), a name field to create another, *Import project folder…*, the folders of a
+ * last opened), a name field to create another, *Add project folder…*, the folders of a
  * pre-workspace recent list as one-click imports, and — when the workspace reopened at launch
  * would not open — why.
  */
@@ -130,7 +130,7 @@ export function WorkspacePicker() {
             }}
           >
             <FolderInput size={14} aria-hidden="true" />
-            Import project folder…
+            Add project folder…
           </Button>
           <Button
             data-testid="workspace-join"

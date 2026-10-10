@@ -18,7 +18,6 @@ import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
 import { isMockRunning, useMockRunsStore } from '../state/mock-runs.js';
 import { useSequenceRunsStore } from '../state/sequence-runs.js';
-import { useUiStore } from '../state/ui.js';
 import {
   connectOrSendWs,
   copyWsCommand,
@@ -380,14 +379,8 @@ export function registerRequestCommands(): void {
       void getOAuth2Token(activeRestRequestId());
     },
   });
-  registerCommand({
-    ...catalogEntry('rest.importOpenApi'),
-    run: () => {
-      useUiStore.getState().setImportOpenApiDialogOpen(true);
-    },
-  });
-  // The gRPC counterparts: the same `request.curl` channel answers with a grpcurl-style command
-  // for a gRPC request, and the Import dialog opens on its `.proto` format.
+  // The gRPC counterpart: the same `request.curl` channel answers with a grpcurl-style command
+  // for a gRPC request.
   registerCommand({
     ...catalogEntry('grpc.copyAsCommand'),
     when: () => activeGrpcRequestId() !== undefined,
@@ -408,48 +401,6 @@ export function registerRequestCommands(): void {
       if (requestId !== undefined) {
         void copyWsCommand(requestId, ui().slideOver.codeShell);
       }
-    },
-  });
-  registerCommand({
-    ...catalogEntry('grpc.importProto'),
-    run: () => {
-      useUiStore.getState().openImportDialog('proto');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('rest.importPostman'),
-    run: () => {
-      useUiStore.getState().setImportPostmanDialogOpen(true);
-    },
-  });
-  registerCommand({
-    ...catalogEntry('rest.importPostmanEnvironment'),
-    run: () => {
-      useUiStore.getState().openImportDialog('postman-environment');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('rest.importPostmanGlobals'),
-    run: () => {
-      useUiStore.getState().openImportDialog('postman-globals');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('rest.importHar'),
-    run: () => {
-      useUiStore.getState().openImportDialog('har');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('rest.importHttpFile'),
-    run: () => {
-      useUiStore.getState().openImportDialog('http-file');
-    },
-  });
-  registerCommand({
-    ...catalogEntry('workspace.importHttpEnv'),
-    run: () => {
-      useUiStore.getState().openImportDialog('http-env');
     },
   });
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both

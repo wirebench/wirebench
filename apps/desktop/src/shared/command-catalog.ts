@@ -152,16 +152,6 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Definition',
     shortcut: 'Mod+I',
   },
-  'definition.importLegacyProject': {
-    id: 'definition.importLegacyProject',
-    label: 'Import Legacy SOAP Project…',
-    category: 'Definition',
-  },
-  'definition.importOpenCollection': {
-    id: 'definition.importOpenCollection',
-    label: 'Import OpenCollection…',
-    category: 'Definition',
-  },
   'item.save': {
     id: 'item.save',
     label: 'Save',
@@ -218,7 +208,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'workspace.importProjectFolder': {
     id: 'workspace.importProjectFolder',
-    label: 'Import Project Folder…',
+    label: 'Add Project Folder to Workspace…',
     category: 'Workspace',
   },
   'workspace.exportProject': {
@@ -342,42 +332,6 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'REST: Get OAuth2 Token',
     category: 'Request',
   },
-  'rest.importOpenApi': {
-    id: 'rest.importOpenApi',
-    label: 'REST: Import OpenAPI…',
-    category: 'Definition',
-    shortcut: 'Mod+Shift+I',
-  },
-  'rest.importPostman': {
-    id: 'rest.importPostman',
-    label: 'REST: Import Postman Collection…',
-    category: 'Definition',
-  },
-  'rest.importPostmanEnvironment': {
-    id: 'rest.importPostmanEnvironment',
-    label: 'REST: Import Postman Environment…',
-    category: 'Definition',
-  },
-  'rest.importPostmanGlobals': {
-    id: 'rest.importPostmanGlobals',
-    label: 'REST: Import Postman Globals…',
-    category: 'Definition',
-  },
-  'rest.importHar': {
-    id: 'rest.importHar',
-    label: 'REST: Import HAR…',
-    category: 'Definition',
-  },
-  'rest.importHttpFile': {
-    id: 'rest.importHttpFile',
-    label: 'REST: Import .http File…',
-    category: 'Definition',
-  },
-  'workspace.importHttpEnv': {
-    id: 'workspace.importHttpEnv',
-    label: 'Import HTTP Client Environments…',
-    category: 'Definition',
-  },
   'rest.newApi': {
     id: 'rest.newApi',
     label: 'REST: New API',
@@ -408,11 +362,6 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     id: 'grpc.copyAsCommand',
     label: 'gRPC: Copy as Command',
     category: 'Request',
-  },
-  'grpc.importProto': {
-    id: 'grpc.importProto',
-    label: 'gRPC: Import .proto…',
-    category: 'Definition',
   },
   'grpc.newApi': {
     id: 'grpc.newApi',

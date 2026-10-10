@@ -47,12 +47,10 @@ smaller one.
 
 </Steps>
 
-<Aside type="tip" title="Dedicated commands">
-**Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>), **Import Postman Collection…**,
-**Import Postman Environment…**, **Import Postman Globals…**, **Import HAR…**, **Import .http
-File…**, **Import HTTP Client Environments…** and **Import OpenCollection…** open the same dialog
-pinned to that format. **Import Legacy SOAP Project…**, from the command
-palette, pins it to the legacy format.
+<Aside type="tip" title="One command for every format">
+**Import…** (<kbd>⌘I</kbd> / <kbd>Ctrl+I</kbd>) is the one import command, in the **File** menu and
+the command palette. It detects the format from what you give it; pick the format yourself in the
+dialog when detection cannot tell.
 </Aside>
 
 ## WSDL
@@ -82,7 +80,7 @@ Wirebench reads OpenAPI 3.0, 3.1 and 3.2, and Swagger 1.x, 2.0 and 3.x, in YAML 
 
 <Steps>
 
-1. Open **Import…** (or press <kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>) and give the document by
+1. Open **Import…** (or press <kbd>⌘I</kbd> / <kbd>Ctrl+I</kbd>) and give the document by
    URL, file or paste.
 
 2. For a document behind authentication, fill in **Authentication** under the URL: **Basic**, a
@@ -129,7 +127,7 @@ Wirebench imports Postman Collection format v2.0 and v2.1 JSON — the app label
 
 <Steps>
 
-1. Open **Import…** and pick **Postman Collection**, or run **Import Postman Collection…**.
+1. Open **Import…**; it detects the format, or pick **Postman Collection** yourself.
 
 2. Provide the collection on the **File** or **Paste** tab.
 
@@ -155,8 +153,8 @@ merges into the workspace's Globals. Auto-detect recognizes both, from the conte
 
 <Steps>
 
-1. Open **Import…** and pick **Postman environment** or **Postman globals**, or run **Import Postman
-   Environment…** or **Import Postman Globals…**.
+1. Open **Import…**; it detects the format, or pick **Postman environment** or **Postman globals**
+   yourself.
 
 2. Provide the export on the **File** or **Paste** tab. There is no project to pick.
 
@@ -192,7 +190,7 @@ a capture from its content or a `.har` file name.
 
 <Steps>
 
-1. Open **Import…** and pick **HAR (recorded traffic)**, or run **Import HAR…**.
+1. Open **Import…**; it detects the format, or pick **HAR (recorded traffic)** yourself.
 
 2. Provide the capture on the **File** or **Paste** tab. There is no URL tab.
 
@@ -271,7 +269,7 @@ text that only looks like another format.
 
 <Steps>
 
-1. Open **Import…** and pick **.http file**, or run **Import .http File…**.
+1. Open **Import…**; it detects the format, or pick **.http file** yourself.
 
 2. Provide the file on the **File** tab, by picking or dropping it, or paste its text on the
    **Paste** tab. There is no URL tab.
@@ -320,7 +318,7 @@ only when the collection has items of that kind. Auto-detect recognizes a docume
 
 <Steps>
 
-1. Open **Import…** and pick **OpenCollection**, or run **Import OpenCollection…**.
+1. Open **Import…**; it detects the format, or pick **OpenCollection** yourself.
 
 2. On the **File** tab, pick or drop a single-document collection. For a collection saved as a
    folder, pick its `opencollection.yml`: when it holds no items itself, the files beside it are

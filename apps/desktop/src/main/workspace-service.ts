@@ -2213,7 +2213,7 @@ export class WorkspaceService implements ProjectRouter {
    * inside one open workspace. `secretRef`s are deliberately left alone: they name the user's
    * keychain entries, not the project's.
    *
-   * With no workspace open (the picker's *Import project folder…*), a workspace named after the
+   * With no workspace open (the picker's *Add project folder…*), a workspace named after the
    * folder is created first — but only once the folder is known to hold a project, so a wrong
    * pick never leaves an empty workspace behind.
    *
@@ -2221,7 +2221,7 @@ export class WorkspaceService implements ProjectRouter {
    */
   async importProjectFolder(sender: WebContents): Promise<WorkspaceWire | null> {
     return await this.enqueueWorkspaceOp(async () => {
-      const picked = await this.dialogs().pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
+      const picked = await this.dialogs().pickFolder(sender, { title: 'Add project folder' }, this.requirePicks());
       if (picked === undefined) {
         return null;
       }
