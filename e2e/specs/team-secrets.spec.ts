@@ -27,7 +27,7 @@ function vaultBlobs(dir: string): string {
 async function authPanel(page: Page) {
   await expandExplorer(page, 'Request 1');
   await openFirstRequest(page);
-  await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+  await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
   return page.getByTestId('inspector-panel-request');
 }
 

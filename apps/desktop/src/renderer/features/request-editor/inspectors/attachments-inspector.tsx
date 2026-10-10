@@ -191,7 +191,6 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
             className="underline hover:text-fg-default"
             onClick={() => {
               useEditorsStore.getState().setInspector(requestId, 'request', 'properties');
-              useEditorsStore.getState().setInspectorCollapsed(requestId, 'request', false);
             }}
           >
             Request properties

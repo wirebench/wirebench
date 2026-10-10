@@ -28,7 +28,7 @@ import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
 import { AuthInspector } from './inspectors/auth-inspector.js';
 import { DetailsInspector } from './inspectors/details-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
-import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { PaneTabs, type InspectorItem } from './inspectors/inspector-strip.js';
 import { PropertiesInspector } from './inspectors/properties-inspector.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
 import { WsaInspector } from './inspectors/wsa-inspector.js';
@@ -44,11 +44,13 @@ import { SOAP_REQUEST_KINDS } from '../assertions/assertion-table.js';
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
 
-/** The request pane's inspector strip. */
-const REQUEST_INSPECTORS: readonly InspectorItem[] = [
+/** The request pane's tabs, in order. Body — the envelope — sits after Headers, where the REST
+ * editor keeps its body, and is the tab a request opens on. */
+const REQUEST_TABS: readonly InspectorItem[] = [
   { id: 'details', label: 'Details' },
   { id: 'properties', label: 'Properties' },
   { id: 'headers', label: 'Headers' },
+  { id: 'body', label: 'Body' },
   { id: 'attachments', label: 'Attachments' },
   { id: 'auth', label: 'Auth' },
   { id: 'wsa', label: 'WS-A' },
@@ -320,8 +322,8 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     pendingSelectionRef.current = range;
   }, []);
 
-  return (
-    <div data-testid="request-pane-surface" className="flex h-full min-h-0 flex-col border-r border-hairline">
+  const body = (
+    <>
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
         <ViewTabs
           label="Request views"
@@ -329,10 +331,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           active={view}
           onSelect={(id) => setView(requestId, id as RequestViewType)}
         />
-        <div className="flex items-center gap-1">
-          <span className="px-2 text-xs text-fg-faint">Request</span>
-          <OverflowMenu currentText={local} onLoaded={commitNow} />
-        </div>
+        <OverflowMenu currentText={local} onLoaded={commitNow} />
       </div>
       {conflicted && (
         <div
@@ -385,13 +384,20 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           )}
         </Suspense>
       </div>
-      <InspectorStrip
+    </>
+  );
+
+  return (
+    <div data-testid="request-pane-surface" className="flex h-full min-h-0 flex-col border-r border-hairline">
+      <PaneTabs
         requestId={requestId}
         pane="request"
-        label="Request inspectors"
-        items={REQUEST_INSPECTORS}
+        label="Request tabs"
+        items={REQUEST_TABS}
         render={(inspector) =>
-          inspector === 'details' ? (
+          inspector === 'body' ? (
+            body
+          ) : inspector === 'details' ? (
             <DetailsInspector requestId={requestId} />
           ) : inspector === 'properties' ? (
             <PropertiesInspector requestId={requestId} />
@@ -420,7 +426,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
 function SoapAssertionsInspector({ requestId }: { readonly requestId: string }) {
   const assertions = useProjectStore((state) => state.requests[requestId]?.assertions);
   return (
-    <div className="h-80 min-h-0">
+    <div className="h-full min-h-0">
       <AssertionsTab key={requestId} requestId={requestId} assertions={assertions} kinds={SOAP_REQUEST_KINDS} />
     </div>
   );
@@ -430,7 +436,7 @@ function SoapAssertionsInspector({ requestId }: { readonly requestId: string }) 
 function SoapScriptsInspector({ requestId }: { readonly requestId: string }) {
   const scripts = useProjectStore((state) => state.requests[requestId]?.scripts);
   return (
-    <div className="h-80 min-h-0">
+    <div className="h-full min-h-0">
       <ScriptsTab requestId={requestId} scripts={scripts} />
     </div>
   );

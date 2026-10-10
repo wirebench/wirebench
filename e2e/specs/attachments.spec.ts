@@ -72,9 +72,8 @@ test.describe('attachments', () => {
     // The /mime route echoes every part it receives, so what comes back proves what went out.
     await page.getByTestId('request-endpoint').fill(`${server.url}/mime`);
 
-    // --- reference an attachment from the envelope, before the strip takes the pane's room --
-    // Monaco does not re-measure once the inspector panel has squeezed it to nothing, so the
-    // envelope is written first and the attachment is then given the Content-ID it names.
+    // --- reference an attachment from the envelope, on the request pane's Body tab ---------
+    // The envelope is written first and the attachment is then given the Content-ID it names.
     await setMonacoText(
       page,
       'Request envelope XML',
@@ -89,7 +88,7 @@ test.describe('attachments', () => {
     );
 
     // --- add the file through the (pinned) picker, copying it into the project -------------
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Attachments' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Attachments' }).click();
     await expect(page.getByTestId('attachments-copy')).toBeChecked();
     await page.getByTestId('attachments-add').click();
 
@@ -117,7 +116,7 @@ test.describe('attachments', () => {
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
 
-    const responseInspectors = page.getByRole('tablist', { name: 'Response inspectors' });
+    const responseInspectors = page.getByRole('tablist', { name: 'Response tabs' });
     await responseInspectors.getByRole('tab', { name: /^Attachments/ }).click();
     const responseRows = page.locator('[data-testid="response-attachment-row"]');
     await expect(responseRows).toHaveCount(1, { timeout: 10_000 });
@@ -139,10 +138,7 @@ test.describe('attachments', () => {
     await expectReopenedWorkspace(reopened);
 
     await openFirstRequest(reopened);
-    await reopened
-      .getByRole('tablist', { name: 'Request inspectors' })
-      .getByRole('tab', { name: 'Attachments' })
-      .click();
+    await reopened.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Attachments' }).click();
     const reloadedRows = reopened.locator('[data-testid="attachment-row"]');
     await expect(reloadedRows).toHaveCount(1, { timeout: 10_000 });
     await expect(reloadedRows.first()).toContainText('pixel.png');

@@ -56,7 +56,7 @@ test.describe('auth', () => {
     // The /auth/basic route demands `user:pass` and challenges anything else with a 401.
     await page.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
 
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     // The WSS section of the Details panel has a "Password" label of its own, so every auth
     // field is looked up inside the request inspector panel rather than page-wide.
     const panel = page.getByTestId('inspector-panel-request');
@@ -161,7 +161,7 @@ test.describe('auth', () => {
     // `/auth/ntlm` runs the real NTLMv2 handshake against user/pass in WORKGROUP.
     await page.getByTestId('request-endpoint').fill(`${server.url}/auth/ntlm`);
 
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     const panel = page.getByTestId('inspector-panel-request');
     await page.getByTestId('auth-inherit').uncheck();
 

@@ -104,7 +104,7 @@ test.describe('ws-trust issued token', () => {
     await expect(entry.getByText('••••••••')).toBeVisible();
 
     // --- select it on Request 1 and send twice ----------------------------------------------
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
     for (let sent = 0; sent < 2; sent += 1) {
@@ -125,7 +125,7 @@ test.describe('ws-trust issued token', () => {
     // --- Clear drops it, and the next send asks the token service again ---------------------
     await page.getByTestId('issued-token-clear').click();
     await expect(page.getByTestId('issued-token-state')).toContainText('No token cached');
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
     await expect(stsRows).toHaveCount(2);
