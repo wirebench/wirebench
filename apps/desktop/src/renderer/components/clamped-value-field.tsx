@@ -87,7 +87,7 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
       {!focused && (
         <div
           aria-hidden="true"
-          className={`${box} pointer-events-none absolute inset-0 line-clamp-2 border-transparent bg-transparent py-[3px] leading-[18px] break-all whitespace-pre-wrap`}
+          className={`${box} pointer-events-none absolute inset-x-0 top-0 line-clamp-2 border-transparent bg-transparent py-[3px] leading-[18px] break-all whitespace-pre-wrap`}
         >
           {value}
         </div>
