@@ -9,6 +9,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { KvTable } from '../../src/renderer/components/kv-table.js';
 import type { KeyValueWire } from '../../src/shared/wire-types.js';
 
@@ -101,6 +103,28 @@ describe('KvTable', () => {
     fireEvent.change(screen.getByTestId('rest-query-new-name'), { target: { value: 'b' } });
 
     expect(onChange).toHaveBeenCalledWith([row('a', '1'), row('b', '')]);
+  });
+
+  it('keeps typing in the row the first keystroke created, rather than a row per character', async () => {
+    let latest: readonly KeyValueWire[] = [];
+    function Host({ column }: { readonly column: 'name' | 'value' }) {
+      const [rows, setRows] = useState<readonly KeyValueWire[]>([]);
+      latest = rows;
+      return <KvTable label="Headers" rows={rows} onChange={setRows} testidPrefix="rest-header" key={column} />;
+    }
+
+    render(<Host column="name" />);
+    await userEvent.click(screen.getByTestId('rest-header-new-name'));
+    await userEvent.keyboard('X-Trace');
+    expect(screen.getByTestId<HTMLInputElement>('rest-header-name').value).toBe('X-Trace');
+    await userEvent.tab();
+    expect(latest).toEqual([row('X-Trace', '')]);
+    cleanup();
+
+    render(<Host column="value" />);
+    await userEvent.click(screen.getByTestId('rest-header-new-value'));
+    await userEvent.keyboard('abc{Enter}');
+    expect(latest).toEqual([row('', 'abc')]);
   });
 
   it('appends from the value column as well, so a valueless name is not forced first', () => {

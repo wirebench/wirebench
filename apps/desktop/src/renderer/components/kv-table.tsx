@@ -13,7 +13,7 @@
  * away commits it; Escape puts the row back to what it was. There is always one empty row at the
  * bottom, and typing into it appends a row rather than needing an "Add" button.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { IconButton } from './icon-button.js';
 import { useGridNavigation } from '../lib/grid-navigation.js';
@@ -131,6 +131,9 @@ export function KvTable({
   placeholders,
 }: KvTableProps) {
   const [error, setError] = useState<string | undefined>(undefined);
+  const tableRef = useRef<HTMLTableElement>(null);
+  // The row and column a keystroke in the add row just created, waiting for the caller to render it.
+  const pendingFocus = useRef<{ readonly index: number; readonly column: KvColumn } | undefined>(undefined);
   // One row per editable row, plus the computed rows and the always-present add row.
   const { gridProps, rowProps } = useGridNavigation(rows.length + computed.length + 1);
 
@@ -157,8 +160,27 @@ export function KvTable({
       return;
     }
     setError(undefined);
+    pendingFocus.current = { index: rows.length, column: column(changes) };
     onChange([...rows, row]);
   };
+
+  // Typing goes on in the row the first keystroke created: without moving focus there, the caret
+  // stays in the (again empty) add row and every further character would append a row of its own.
+  // The caller may render the new row a moment later (an IPC round trip), so this waits for it.
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current;
+    if (pending === undefined || rows.length <= pending.index) {
+      return;
+    }
+    pendingFocus.current = undefined;
+    const input = tableRef.current?.querySelectorAll<HTMLInputElement>(
+      `[data-testid="${testidPrefix}-${pending.column}"]`,
+    )[pending.index];
+    if (input !== undefined) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }, [rows.length, testidPrefix]);
 
   const testid = (part: string): string => `${testidPrefix}-${part}`;
 
@@ -166,6 +188,7 @@ export function KvTable({
     <div className="flex flex-col gap-2">
       <div className="overflow-hidden rounded-md border border-hairline">
         <table
+          ref={tableRef}
           role="grid"
           aria-label={label}
           data-testid={testid('table')}
@@ -288,6 +311,11 @@ export function KvTable({
       )}
     </div>
   );
+}
+
+/** The column an add-row keystroke typed into. */
+function column(changes: Partial<KeyValueWire>): KvColumn {
+  return changes.name !== undefined ? 'name' : changes.value !== undefined ? 'value' : 'description';
 }
 
 /** Whether `rows[index]`'s name is also carried by another row. */
