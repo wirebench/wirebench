@@ -132,8 +132,7 @@ test.describe('workspaces', () => {
     await expect(devRow).toBeVisible();
 
     // "Add environment" already opened the workspace environment's page: one row per interface
-    // of every open project.
-    await page.getByRole('button', { name: 'Explorer', exact: true }).click();
+    // of every open project. It is the Environments area's tab, so it shows while that area does.
     await expect(page.getByTestId('environment-page')).toBeVisible({ timeout: 20_000 });
     const override = page.getByLabel(/^Endpoint override for Calculator Project .* Calculator$/);
     await expect(override).toBeVisible({ timeout: 20_000 });
@@ -151,6 +150,8 @@ test.describe('workspaces', () => {
     // --- the Calculator tab's send now goes to the second server, and only there ---------
     const importedBefore = posts(imported);
     const addressingBefore = posts(addressing);
+    // The request tabs are Explorer's: Start, Calculator, WsAddressingService.
+    await page.getByRole('button', { name: 'Explorer', exact: true }).click();
     await editorTabs(page).nth(1).click();
     await expect(page.getByTestId('endpoint-env-badge')).toBeVisible({ timeout: 20_000 });
     await send(page);
@@ -163,9 +164,12 @@ test.describe('workspaces', () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     page = launched.window;
     await expectReopenedWorkspace(page);
-    // Start, the two requests, and the environment page the `dev` row opened — every tab kind
-    // that names a durable entity comes back.
-    await expect(editorTabs(page)).toHaveCount(4, { timeout: 20_000 });
+    // Start and the two requests in Explorer, and the environment page the `dev` row opened in
+    // Environments — every tab kind that names a durable entity comes back, each to its own area.
+    await expect(editorTabs(page)).toHaveCount(3, { timeout: 20_000 });
+    await page.getByTestId('activity-environments').click();
+    await expect(editorTabs(page)).toHaveCount(1);
+    await page.getByRole('button', { name: 'Explorer', exact: true }).click();
 
     // --- a second workspace, then back to the first with its tabs intact ----------------
     await page.getByTestId('workspace-switcher').click();
@@ -178,7 +182,7 @@ test.describe('workspaces', () => {
     await page.getByTestId('workspace-switcher').click();
     await page.getByTestId('workspace-switcher-item').filter({ hasText: 'Workspace 1' }).click();
     await expect(page.getByTestId('workspace-switcher')).toHaveText(/Workspace 1/, { timeout: 20_000 });
-    await expect(editorTabs(page)).toHaveCount(4, { timeout: 20_000 });
+    await expect(editorTabs(page)).toHaveCount(3, { timeout: 20_000 });
     await expectProjectCount(page, 2);
   });
 
