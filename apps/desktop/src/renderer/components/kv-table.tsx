@@ -33,6 +33,13 @@ export const KV_INPUT_CLASS =
 const KV_TEXTAREA_CLASS =
   'block field-sizing-content min-h-row w-full min-w-0 resize-none rounded-md border border-transparent bg-transparent px-2 py-[3px] font-mono text-sm leading-[18px] [overflow-wrap:anywhere] whitespace-pre-wrap text-fg-default hover:border-hairline-strong focus:border-transparent focus:outline-none focus:ring-1 focus:ring-accent';
 
+/**
+ * The checkbox, the `auto` tag and the delete button sit centred on a row's first line, so a value
+ * that wraps onto a second line leaves them level with the name rather than floating mid-row; and
+ * centred in their column, so every row's checkbox is in one line down the table.
+ */
+const FIRST_LINE = 'flex h-row items-center justify-center';
+
 /** The narrowest a resized column may get, in pixels. */
 const MIN_COLUMN_PX = 56;
 /** The fixed columns: the On checkbox and the delete button. */
@@ -292,7 +299,7 @@ export function KvTable({
               {columns.map((column) => (
                 <th
                   key={column}
-                  className="relative px-2 py-1.5 font-medium"
+                  className={`relative px-2 py-1.5 font-medium ${column === 'enabled' ? 'text-center' : ''}`}
                   {...(column === 'enabled' ? { title: 'Enabled' } : {})}
                 >
                   {HEADING[column]}
@@ -319,6 +326,36 @@ export function KvTable({
                 </td>
               </tr>
             )}
+            {computed.map((row, index) => (
+              <tr
+                key={`computed-${String(index)}`}
+                role="row"
+                data-testid={testid('computed-row')}
+                className="border-b border-hairline text-fg-subtle"
+                {...rowProps(index)}
+              >
+                {columns.map((column) =>
+                  column === 'enabled' ? (
+                    <td key={column} className="px-2 py-1 align-top">
+                      <span className={FIRST_LINE}>
+                        <input type="checkbox" aria-label={`${row.name} is computed`} checked disabled />
+                      </span>
+                    </td>
+                  ) : (
+                    // The text sits where an editable cell's text does (field padding plus its 1px
+                    // border), and wraps like it.
+                    <td key={column} className="px-2 py-1 align-top font-mono text-sm">
+                      <span className="block px-[9px] py-[4px] leading-[18px] [overflow-wrap:anywhere] whitespace-pre-wrap">
+                        {column === 'name' ? row.name : column === 'value' ? row.value : (row.description ?? '')}
+                      </span>
+                    </td>
+                  ),
+                )}
+                <td className="px-2 py-1 align-top text-xs" title="Computed for this request">
+                  <span className={FIRST_LINE}>auto</span>
+                </td>
+              </tr>
+            ))}
             {rows.map((row, index) => (
               <KvRow
                 // Rows are ordered and may repeat a name, so the index is the only stable key.
@@ -326,7 +363,7 @@ export function KvTable({
                 row={row}
                 columns={columns}
                 testid={testid}
-                rowProps={rowProps(index)}
+                rowProps={rowProps(computed.length + index)}
                 lockName={lockNames}
                 onPatch={(changes) => {
                   patch(index, changes);
@@ -340,13 +377,15 @@ export function KvTable({
               role="row"
               data-testid={testid('add-row')}
               className="hover:bg-surface-hover"
-              {...rowProps(rows.length)}
+              {...rowProps(computed.length + rows.length)}
             >
               {columns.map((column) => (
-                <td key={column} className="px-2 py-1">
+                <td key={column} className="px-2 py-1 align-top">
                   {column === 'enabled' ? (
                     // Nothing to toggle yet: the row does not exist until something is typed.
-                    <input type="checkbox" aria-label="New row enabled" checked disabled />
+                    <span className={FIRST_LINE}>
+                      <input type="checkbox" aria-label="New row enabled" checked disabled />
+                    </span>
                   ) : (
                     <input
                       aria-label={`New ${HEADING[column].toLowerCase()}`}
@@ -372,34 +411,6 @@ export function KvTable({
               ))}
               <td className="px-2 py-1" />
             </tr>
-            {computed.map((row, index) => (
-              <tr
-                key={`computed-${String(index)}`}
-                role="row"
-                data-testid={testid('computed-row')}
-                className="border-b border-hairline text-fg-subtle"
-                {...rowProps(rows.length + 1 + index)}
-              >
-                {columns.map((column) =>
-                  column === 'enabled' ? (
-                    <td key={column} className="px-2 py-1 text-center">
-                      <input type="checkbox" aria-label={`${row.name} is computed`} checked disabled />
-                    </td>
-                  ) : (
-                    // The text sits where an editable cell's text does (field padding plus its 1px
-                    // border), and wraps like it.
-                    <td key={column} className="px-2 py-1 align-top font-mono text-sm">
-                      <span className="block px-[9px] py-[4px] leading-[18px] [overflow-wrap:anywhere] whitespace-pre-wrap">
-                        {column === 'name' ? row.name : column === 'value' ? row.value : (row.description ?? '')}
-                      </span>
-                    </td>
-                  ),
-                )}
-                <td className="px-2 py-1 text-right text-xs" title="Computed for this request">
-                  auto
-                </td>
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>
@@ -455,16 +466,18 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
     >
       {columns.map((column) =>
         column === 'enabled' ? (
-          <td key={column} className="px-2 py-1 text-center">
-            <input
-              type="checkbox"
-              aria-label={`Enable ${row.name}`}
-              data-testid={testid('enabled')}
-              checked={row.enabled}
-              onChange={(event) => {
-                onPatch({ enabled: event.target.checked });
-              }}
-            />
+          <td key={column} className="px-2 py-1 align-top">
+            <span className={FIRST_LINE}>
+              <input
+                type="checkbox"
+                aria-label={`Enable ${row.name}`}
+                data-testid={testid('enabled')}
+                checked={row.enabled}
+                onChange={(event) => {
+                  onPatch({ enabled: event.target.checked });
+                }}
+              />
+            </span>
           </td>
         ) : (
           <td key={column} className="px-2 py-1 align-top">
@@ -479,10 +492,12 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
           </td>
         ),
       )}
-      <td className="px-2 py-1 text-center">
-        <IconButton label={`Remove ${row.name}`} data-testid={testid('delete')} onClick={onRemove}>
-          <Trash2 size={13} aria-hidden="true" />
-        </IconButton>
+      <td className="px-2 py-1 align-top">
+        <span className={FIRST_LINE}>
+          <IconButton label={`Remove ${row.name}`} data-testid={testid('delete')} onClick={onRemove}>
+            <Trash2 size={13} aria-hidden="true" />
+          </IconButton>
+        </span>
       </td>
     </tr>
   );

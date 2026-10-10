@@ -127,13 +127,14 @@ describe('KvTable', () => {
     expect(latest).toEqual([row('', 'abc')]);
   });
 
-  it('puts the add row right under the editable rows, above the computed ones', () => {
+  it('lists the computed rows first, then the editable ones, with the add row last', () => {
     mount({ computed: [row('Content-Type', 'text/xml', { description: 'from the binding' })] });
     const order = screen
       .getAllByRole('row')
       .map((tr) => tr.getAttribute('data-testid'))
       .filter((id) => id !== null);
-    expect(order).toEqual(['rest-query-row', 'rest-query-add-row', 'rest-query-computed-row']);
+    // A typed row lands right above the add row it was typed into.
+    expect(order).toEqual(['rest-query-computed-row', 'rest-query-row', 'rest-query-add-row']);
   });
 
   it('wraps a long value in its cell, and Enter there saves without starting a new line', async () => {
