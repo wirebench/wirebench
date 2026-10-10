@@ -11,7 +11,10 @@ import type { ProtocolRegistry } from '../../protocol/registry.js';
 import { defaultRegistry } from '../../protocols.js';
 import { requireScripting } from '../lookup.js';
 import type { ScriptPhase } from '../model.js';
+import { dispatchReference } from './dispatch.js';
+import { SCRIPT_UTILITIES } from './utilities.js';
 
+/** What every request script has besides {@link SCRIPT_UTILITIES}. */
 const COMMON = `
 /** A case-insensitive list of headers (or gRPC metadata), in order. Names may repeat. */
 interface WbPairs {
@@ -56,25 +59,6 @@ declare const vars: {
 declare const props: { get(name: string): string | undefined };
 /** The secrets this request's \`scripts.secrets\` lists, and no others. */
 declare const secrets: { get(name: WbSecretName): string };
-declare const crypto: {
-  hash(algorithm: 'md5' | 'sha1' | 'sha256' | 'sha512', data: string, encoding?: 'hex' | 'base64'): string;
-  hmac(algorithm: 'sha1' | 'sha256' | 'sha512', key: string, data: string, encoding?: 'hex' | 'base64'): string;
-  randomUUID(): string;
-};
-declare const encoding: {
-  base64(text: string): string;
-  fromBase64(text: string): string;
-  base64url(text: string): string;
-  urlEncode(text: string): string;
-};
-declare function log(...values: unknown[]): void;
-declare const console: {
-  log(...values: unknown[]): void;
-  info(...values: unknown[]): void;
-  warn(...values: unknown[]): void;
-  error(...values: unknown[]): void;
-  debug(...values: unknown[]): void;
-};
 /** Records a test; a failed \`expect\` inside it fails the test, and the script goes on. */
 declare function test(name: string, check: () => void): void;
 declare function expect<T>(actual: T): WbExpectation<T>;
@@ -91,7 +75,7 @@ export function apiDeclarations(
   phase: ScriptPhase,
   registry?: ProtocolRegistry,
 ): string {
-  return [COMMON, requireScripting(scripting, registry).declarations(phase)].join('\n');
+  return [SCRIPT_UTILITIES, COMMON, requireScripting(scripting, registry).declarations(phase)].join('\n');
 }
 
 /**
@@ -130,8 +114,8 @@ function byFirstTitle(a: readonly ApiReferenceSection[], b: readonly ApiReferenc
 
 /**
  * The API's declarations as the docs site's reference shows them (`pnpm docs:script-api`): what
- * every script has, then the sections of each protocol in `registry` that has a scripting facet.
- * Protocols are ordered by title, not by registration, so the page does not depend on the order a
+ * every script has, what every request script has, the sections of each protocol in `registry` that
+ * has a scripting facet, and last a mock's dispatch API (`./dispatch.ts`). Protocols are ordered by title, not by registration, so the page does not depend on the order a
  * host composed its modules in. The status literal types are described rather than listed.
  */
 export function apiReference(registry: ProtocolRegistry = defaultRegistry()): readonly ApiReferenceSection[] {
@@ -139,7 +123,12 @@ export function apiReference(registry: ProtocolRegistry = defaultRegistry()): re
     .map((module) => module.scripting?.reference() ?? [])
     .filter((sections) => sections.length > 0)
     .sort(byFirstTitle);
-  return [{ title: 'Every script', declarations: COMMON }, ...perProtocol.flat()].map((section) => ({
+  return [
+    { title: 'Every script', declarations: SCRIPT_UTILITIES },
+    { title: 'Every request script', declarations: COMMON },
+    ...perProtocol.flat(),
+    dispatchReference(),
+  ].map((section) => ({
     title: section.title,
     declarations: section.declarations.trim(),
   }));

@@ -16,6 +16,7 @@ describe('docs-site reference/script-api.md', () => {
   it('has a section for every built-in protocol with a scripting facet, in the order of the page', () => {
     expect(apiReference(createBuiltinRegistry()).map((section) => section.title)).toEqual([
       'Every script',
+      'Every request script',
       'REST: shared by both phases',
       'REST: pre-request',
       'REST: post-response',
@@ -23,6 +24,7 @@ describe('docs-site reference/script-api.md', () => {
       'SOAP: post-response',
       'gRPC: pre-request',
       'gRPC: post-response',
+      'Mock dispatch scripts',
     ]);
   });
 

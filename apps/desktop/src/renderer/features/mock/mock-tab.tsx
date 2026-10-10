@@ -6,7 +6,9 @@
  * validates it against the rules a mock file is held to; a refused edit is reported and the field snaps
  * back. A running mock restarts with each edit.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { OnMount } from '@monaco-editor/react';
+import type * as Monaco from 'monaco-editor';
 import { showToast } from '../../components/toast.js';
 import {
   EnumSetting,
@@ -16,6 +18,13 @@ import {
   TextSetting,
 } from '../../components/settings-grid.js';
 import { CodeEditor } from '../../editor/code-editor.js';
+import {
+  clearScriptModelTarget,
+  dispatchScriptModelPath,
+  refreshScriptDiagnostics,
+  registerScriptLanguageOnce,
+  setScriptModelTarget,
+} from '../../editor/script-language.js';
 import { useMockRunsStore } from '../../state/mock-runs.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useProjectStore } from '../../state/project.js';
@@ -48,6 +57,9 @@ const DISPATCH_OPTIONS: readonly { value: MockDispatchWire; label: string }[] = 
   { value: 'match', label: 'By match conditions' },
   { value: 'script', label: 'By script' },
 ];
+
+/** How long typing pauses before the checker is asked again. */
+const CHECK_DEBOUNCE_MS = 400;
 
 /** The starter a script gets when an operation switches to script dispatch with none. */
 const SCRIPT_STARTER = `// \`request\`: method, path, query, headers, pathParams and body.
@@ -177,15 +189,66 @@ function RunBar({ mock }: { readonly mock: MockWire }) {
   );
 }
 
+/**
+ * The operation's `dispatch.ts`. Main's checker answers its completion, hover and diagnostics against
+ * the dispatch API, with `respond` taking the operation's response names (#352); it checks the text
+ * being typed, and again when the responses change.
+ */
 function ScriptEditor({
+  mockId,
   operation,
   onCommit,
 }: {
+  readonly mockId: string;
   readonly operation: MockOperationWire;
   readonly onCommit: (script: string) => void;
 }) {
   const [draft, setDraft] = useState(operation.script ?? SCRIPT_STARTER);
+  const [errors, setErrors] = useState<number | undefined>(undefined);
   const dirty = draft !== (operation.script ?? '');
+  const monacoRef = useRef<typeof Monaco | undefined>(undefined);
+  const modelRef = useRef<Monaco.editor.ITextModel | undefined>(undefined);
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const check = useCallback(() => {
+    const monacoNS = monacoRef.current;
+    const model = modelRef.current;
+    if (monacoNS === undefined || model === undefined) {
+      return;
+    }
+    void refreshScriptDiagnostics(monacoNS, model).then((diagnostics) => {
+      setErrors(diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length);
+    });
+  }, []);
+
+  const responseNames = operation.responses.map((response) => response.name).join('\n');
+  useEffect(check, [check, responseNames]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(checkTimer.current);
+      const model = modelRef.current;
+      if (model !== undefined) {
+        clearScriptModelTarget(model.uri.toString());
+      }
+    },
+    [],
+  );
+
+  const onMount = useCallback<OnMount>(
+    (editor, monacoNS) => {
+      const model = editor.getModel() ?? undefined;
+      monacoRef.current = monacoNS as typeof Monaco;
+      modelRef.current = model;
+      registerScriptLanguageOnce(monacoNS as typeof Monaco);
+      if (model !== undefined) {
+        setScriptModelTarget(model.uri.toString(), { mockId, operationId: operation.id });
+        check();
+      }
+    },
+    [mockId, operation.id, check],
+  );
+
   return (
     <div data-testid="mock-script" className="flex flex-col gap-1">
       <p className="text-xs text-fg-subtle">
@@ -200,9 +263,20 @@ function ScriptEditor({
           value={draft}
           language="typescript"
           ariaLabel="Dispatch script"
-          onChange={setDraft}
+          path={dispatchScriptModelPath(mockId, operation.id)}
+          onMount={onMount}
+          onChange={(next) => {
+            setDraft(next);
+            clearTimeout(checkTimer.current);
+            checkTimer.current = setTimeout(check, CHECK_DEBOUNCE_MS);
+          }}
         />
       </div>
+      {errors !== undefined && errors > 0 && (
+        <p role="status" data-testid="mock-script-errors" className="text-xs text-status-danger">
+          {errors === 1 ? '1 error' : `${String(errors)} errors`} in the script.
+        </p>
+      )}
       <div>
         <button
           type="button"
@@ -267,7 +341,11 @@ function OperationPane({
       </div>
 
       {operation.dispatch === 'script' && (
-        <ScriptEditor operation={operation} onCommit={(script) => handlers.operation(operation.id, { script })} />
+        <ScriptEditor
+          mockId={mock.id}
+          operation={operation}
+          onCommit={(script) => handlers.operation(operation.id, { script })}
+        />
       )}
 
       <div className="flex flex-col gap-1">
