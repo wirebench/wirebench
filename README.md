@@ -87,8 +87,8 @@ From nothing to a real SOAP response in five minutes:
    Wirebench keeps it in app data; there is no folder to manage.
 2. **Add a project.** Choose **New project**. _Export project…_ and _Link existing project folder…_ are how a
    project meets git when you want it to.
-3. **Import a contract.** **Import WSDL…** (`Mod+I`) or **Import OpenAPI…** (`Mod+Shift+I`) takes a URL or a
-   file, and **Import…** detects every other format. No contract? **New API** takes a base URL and
+3. **Import a contract.** **Import…** (`Mod+I`) takes a URL, a file or a paste and detects the
+   format — WSDL, OpenAPI, Postman, HAR, `.proto` and the rest. No contract? **New API** takes a base URL and
    **New Request** a method and a path.
 4. **Open a request.** The explorer fills with the operations, each with a request generated from the schema.
 5. **Send.** Fill in the values — in the raw editor or the **Form** tab — and press **Send**. The response opens

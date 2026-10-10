@@ -59,16 +59,6 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
 | Import… | <kbd>⌘I</kbd> | <kbd>Ctrl+I</kbd> |
-| Import Legacy SOAP Project… | — | — |
-| Import OpenCollection… | — | — |
-| REST: Import OpenAPI… | <kbd>⌘⇧I</kbd> | <kbd>Ctrl+Shift+I</kbd> |
-| REST: Import Postman Collection… | — | — |
-| REST: Import Postman Environment… | — | — |
-| REST: Import Postman Globals… | — | — |
-| REST: Import HAR… | — | — |
-| REST: Import .http File… | — | — |
-| Import HTTP Client Environments… | — | — |
-| gRPC: Import .proto… | — | — |
 
 ## Project
 
@@ -90,7 +80,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | New Project… | <kbd>⌘⇧N</kbd> | <kbd>Ctrl+Shift+N</kbd> |
 | New Window | <kbd>⌘⌥N</kbd> | <kbd>Ctrl+Alt+N</kbd> |
 | Link Project Folder… | — | — |
-| Import Project Folder… | — | — |
+| Add Project Folder to Workspace… | — | — |
 | Export Project… | — | — |
 | Export Project as Postman Collection… | — | — |
 | Export Project as OpenCollection… | — | — |

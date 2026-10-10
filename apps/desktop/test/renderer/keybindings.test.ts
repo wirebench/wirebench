@@ -120,22 +120,13 @@ describe('chordRecordingError', () => {
   });
 });
 
-/**
- * `Mod+Shift+I` for _Import OpenAPI…_, the one shortcut this round adds. It is registered now so the
- * chord is reserved and the keymap editor lists it from the moment REST exists, even though the
- * import itself arrives later.
- */
+/** The REST editor's shortcuts. */
 describe('the REST shortcuts', () => {
-  it('parses Mod+Shift+I the way the design writes it', () => {
-    expect(parseKeybinding('Mod+Shift+I')).toEqual({ key: 'i', mod: true, shift: true, alt: false });
-  });
-
-  it('is the registered default for rest.importOpenApi, and for nothing else', () => {
+  it('leaves Mod+Shift+I unbound: one Import… (Mod+I) detects the format, so no format has a chord of its own', () => {
     registerShellCommands(() => undefined);
 
-    expect(getCommand('rest.importOpenApi')?.shortcut).toBe('Mod+Shift+I');
-    const sharing = COMMAND_IDS.filter((id) => getCommand(id)?.shortcut === 'Mod+Shift+I');
-    expect(sharing).toEqual(['rest.importOpenApi']);
+    expect(COMMAND_IDS.filter((id) => getCommand(id)?.shortcut === 'Mod+Shift+I')).toEqual([]);
+    expect(getCommand('definition.import')?.shortcut).toBe('Mod+I');
   });
 
   it('gives rest.send the same chord as request.send, which it can never be live with', () => {
