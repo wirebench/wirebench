@@ -30,6 +30,12 @@ describe('ssh commands', () => {
     expect(useUiStore.getState().sidebar.visible).toBe(true);
     expect(useHostsStore.getState().dialog).toEqual({ mode: 'edit-host', id: 'a' });
   });
+  it('ssh.importConfig shows the Hosts view and opens the import dialog', async () => {
+    useHostsStore.setState({ importOpen: false });
+    await runCommand('ssh.importConfig', {} as never);
+    expect(useUiStore.getState().sidebar.view).toBe('ssh');
+    expect(useHostsStore.getState().importOpen).toBe(true);
+  });
   it('ssh.connect with a host id opens its terminal tab', async () => {
     useEditorsStore.getState().reset();
     useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });

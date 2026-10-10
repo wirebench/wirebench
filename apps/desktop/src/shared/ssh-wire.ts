@@ -142,3 +142,85 @@ export type SshWriteRequest = z.infer<typeof sshWriteRequestSchema>;
 export type SshResizeRequest = z.infer<typeof sshResizeRequestSchema>;
 export type SshCloseRequest = z.infer<typeof sshCloseRequestSchema>;
 export type SshTrustRequest = z.infer<typeof sshTrustRequestSchema>;
+
+/**
+ * Importing hosts from an OpenSSH client config. The renderer never sends a path: `user-config` is
+ * `~/.ssh/config` resolved in main, `pick` runs the native picker. Key rows travel by an opaque `ref`;
+ * their paths stay in main, and a key's contents never cross.
+ */
+export const sshImportPreviewRequestSchema = z.strictObject({ source: z.enum(['user-config', 'pick']) });
+
+export const sshPlannedAuthWireSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('agent') }),
+  z.strictObject({ kind: z.literal('key'), ref: z.string() }),
+]);
+export const sshPlannedSettingsWireSchema = z.strictObject({
+  user: z.string().optional(),
+  port: z.number().optional(),
+  jump: z.string().optional(),
+  auth: sshPlannedAuthWireSchema.optional(),
+  keepAlive: z.number().optional(),
+  connectTimeout: z.number().optional(),
+});
+export const sshPlannedHostWireSchema = z.strictObject({
+  alias: z.string(),
+  id: z.string(),
+  idChangedFrom: z.string().optional(),
+  status: z.enum(['new', 'duplicate', 'created-for-jump', 'skipped']),
+  duplicateOf: z.string().optional(),
+  reason: z.string().optional(),
+  address: z.string(),
+  ssh: sshPlannedSettingsWireSchema,
+});
+/** No `path`: a key row is named by `ref` and shown by `display` (`~/.ssh/id_ed25519`). */
+export const sshPlannedKeyWireSchema = z.strictObject({
+  ref: z.string(),
+  display: z.string(),
+  hosts: z.array(z.string()),
+  proposedSecret: z.string(),
+});
+export const sshImportReportWireSchema = z.strictObject({
+  problems: z.array(z.strictObject({ file: z.string(), line: z.number().optional(), why: z.string() })),
+  skipped: z.array(z.strictObject({ file: z.string(), line: z.number(), keyword: z.string(), why: z.string() })),
+  ignored: z.array(z.strictObject({ keyword: z.string(), count: z.number() })),
+  notes: z.array(z.string()),
+});
+export const sshImportPreviewSchema = z.strictObject({
+  previewId: z.string(),
+  /** The file read, as shown to the user. */
+  source: z.string(),
+  group: z.strictObject({ id: z.string(), name: z.string(), ssh: sshPlannedSettingsWireSchema }),
+  hosts: z.array(sshPlannedHostWireSchema),
+  keys: z.array(sshPlannedKeyWireSchema),
+  report: sshImportReportWireSchema,
+});
+export const sshImportPreviewResponseSchema = z.union([
+  z.strictObject({ cancelled: z.literal(true) }),
+  sshImportPreviewSchema,
+]);
+
+export const sshKeyChoiceWireSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('agent') }),
+  z.strictObject({ kind: z.literal('existing'), secret: z.string() }),
+  z.strictObject({ kind: z.literal('store'), secret: z.string() }),
+]);
+export const sshImportApplyRequestSchema = z.strictObject({
+  previewId: z.string(),
+  groupName: z.string().trim().min(1),
+  importDuplicates: z.array(z.string()),
+  keys: z.array(z.strictObject({ ref: z.string(), choice: sshKeyChoiceWireSchema })),
+});
+export const sshImportApplyResponseSchema = sshListHostsResponseSchema.extend({
+  groupId: z.string(),
+  /** Secret names the import stored a key under (never their values). */
+  stored: z.array(z.string()),
+});
+
+export type SshImportPreviewRequest = z.infer<typeof sshImportPreviewRequestSchema>;
+export type SshImportPreview = z.infer<typeof sshImportPreviewSchema>;
+export type SshImportPreviewResponse = z.infer<typeof sshImportPreviewResponseSchema>;
+export type SshPlannedHostWire = z.infer<typeof sshPlannedHostWireSchema>;
+export type SshPlannedKeyWire = z.infer<typeof sshPlannedKeyWireSchema>;
+export type SshKeyChoiceWire = z.infer<typeof sshKeyChoiceWireSchema>;
+export type SshImportApplyRequest = z.infer<typeof sshImportApplyRequestSchema>;
+export type SshImportApplyResponse = z.infer<typeof sshImportApplyResponseSchema>;

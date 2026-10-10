@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
   `respond` with a name that is not one of the operation's responses shows under the editor instead of
   failing the first request the mock answers. The script API reference documents the dispatch API
   beside the request-script one (#352).
+- **A REST mock serves its OpenAPI document.** `GET <mock>/openapi.json` (or `.yaml`) returns the API's
+  cached document with its server URL pointing at the mock, and each file it references is served under
+  `<mock>/openapi/` with the references rewritten, as a SOAP mock serves its WSDL and imports. A client
+  that discovers the contract from the service can now do so against a mock (#324).
 
 ### Fixed
 

@@ -6,6 +6,7 @@
 
 import { WirebenchError } from '../errors.js';
 import { resolveRefs } from '../json/schema/refs.js';
+import type { ResolvedDocument } from '../json/schema/refs.js';
 import { sampleFromSchema } from '../json/schema/sample.js';
 import type {
   GeneratedMock,
@@ -24,6 +25,7 @@ import type { Project } from '../project/model.js';
 import type { HeaderPair } from '../script/model.js';
 import type { RestApi } from './model.js';
 import { createCachedApiFetch, readApiDefinitionCache } from './openapi/cache.js';
+import { askedDocument, openApiReply } from './mock-openapi.js';
 import { matchOperation } from './openapi/match.js';
 import type { OpenApiDocument, OpenApiOperation, OpenApiParameter, OpenApiResponse } from './openapi/model.js';
 import { parseOpenApiDocument, parseSchema } from './openapi/parse.js';
@@ -60,13 +62,18 @@ function child(node: Node | undefined, key: string): Node | undefined {
  * The API's cached document, parsed and also as the resolved tree. The parsed model keeps only the
  * sample generator's subset of a request schema and no response examples; validating a request needs
  * every keyword (`minimum`, `pattern`, …) and generating a stub wants the examples, so both read the
- * resolved nodes, as response validation already does.
+ * resolved nodes, as response validation already does. The cached documents themselves are what the
+ * mock serves at `openapi.json`.
  */
 async function loadContract(
   project: Project,
   root: string,
   containerId: string,
-): Promise<{ readonly document: OpenApiDocument; readonly resolved: unknown }> {
+): Promise<{
+  readonly document: OpenApiDocument;
+  readonly resolved: unknown;
+  readonly documents: readonly ResolvedDocument[];
+}> {
   const api = project.apis.find((candidate) => candidate.id === containerId);
   if (api === undefined) {
     throw new WirebenchError('mock-container-missing', `The project has no API with id ${containerId}`, {
@@ -79,7 +86,11 @@ async function loadContract(
     const offline = createCachedApiFetch(cached.manifest, dir, () => Promise.reject(definitionMissing(api)));
     const fetched = await offline(cached.manifest.rootLocation);
     const resolved = await resolveRefs(fetched.text, fetched.location, { fetchDocument: offline }, fetched.bytes);
-    return { document: parseOpenApiDocument(resolved.document), resolved: resolved.document };
+    return {
+      document: parseOpenApiDocument(resolved.document),
+      resolved: resolved.document,
+      documents: cached.documents,
+    };
   } catch {
     throw definitionMissing(api);
   }
@@ -204,7 +215,12 @@ function bodyKindOf(contentType: string | undefined): 'xml' | 'json' | 'other' {
   return 'other';
 }
 
-function createContract(document: OpenApiDocument, resolved: unknown, mockPath: string): MockContract {
+function createContract(
+  document: OpenApiDocument,
+  resolved: unknown,
+  documents: readonly ResolvedDocument[],
+  mockPath: string,
+): MockContract {
   const operations = document.operations.map((operation) => withFullSchemas(resolved, operation));
   const prefix = mockPathPrefix(mockPath);
   const relative = (path: string): string => {
@@ -276,7 +292,14 @@ function createContract(document: OpenApiDocument, resolved: unknown, mockPath: 
       name: `${operation.method.toUpperCase()} ${operation.path}`,
     })),
 
-    definition: () => undefined,
+    definition(request: MockRequest, mockUrl: string): MockReply | undefined {
+      if (request.method !== 'GET') return undefined;
+      const path = relative(request.path);
+      const asked = askedDocument(path);
+      // An operation the API itself has at that path is routed, not shadowed by the document.
+      if (asked === undefined || matchOperation(operations, 'GET', path, []) !== undefined) return undefined;
+      return openApiReply(documents, asked.index, asked.format, mockUrl);
+    },
 
     route(request: MockRequest, mode: MockValidation): Promise<MockRoute> {
       return Promise.resolve(route(request, mode));
@@ -374,8 +397,8 @@ function generateResponse(resolved: unknown, operation: OpenApiOperation): Gener
 /** REST's mock facet. */
 export const restMocking: ProtocolMocking = {
   async open({ project, root, mock }) {
-    const { document, resolved } = await loadContract(project, root, mock.source.containerId);
-    return createContract(document, resolved, mock.path);
+    const { document, resolved, documents } = await loadContract(project, root, mock.source.containerId);
+    return createContract(document, resolved, documents, mock.path);
   },
 
   async generate({ project, root, containerId }): Promise<GeneratedMock> {

@@ -913,8 +913,8 @@ Ctrl-C stops the recording, adds what was kept to the mock and saves the project
   were made. `--replace` drops an operation's other responses (a generated `Default`, say) the first time
   a recording reaches it. A recording equal to a response the operation already has is skipped unless
   `--no-dedupe` is given.
-- A binary response, or one over 5 MiB, is passed through and not kept. A `?wsdl` request and a request
-  no operation matches are passed through and not kept either.
+- A binary response, or one over 5 MiB, is passed through and not kept. A `?wsdl` or `/openapi.json` request
+  and a request no operation matches are passed through and not kept either.
 - stderr gets one line per request: `<method> <url> <status> <operation|-> recorded|<reason>`.
 - The listener follows the mock's rules: loopback by default, the `Host` check, and the 10 MiB request
   cap. The upstream proxy comes from `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`. `--insecure` skips TLS
@@ -1026,7 +1026,10 @@ SIGTERM. Design: [`specs/2026-10-08-headless-mock-design.md`](specs/2026-10-08-h
 | 3 | A mock did not start: port in use, definition not cached, a gRPC or WebSocket container. The mocks already started are stopped first. |
 
 A mock replays only what its stubs say, and its definition comes from the project's cache, so it never
-touches the network and behaves the same on a runner as on a laptop.
+touches the network and behaves the same on a runner as on a laptop. A client can read that definition
+from the mock itself: a SOAP mock serves its WSDL at `<url>?wsdl`, and a REST mock serves its OpenAPI
+document at `<url>/openapi.json` or `<url>/openapi.yaml`, with the server URL pointing at the mock and
+each referenced file served under `<url>/openapi/`.
 
 ## Run in CI
 
