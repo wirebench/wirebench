@@ -23,7 +23,7 @@ describe('ClampedValueField', () => {
     const { container } = render(field());
     const area = screen.getByRole('textbox', { name: 'Value' });
     expect(area.tagName).toBe('TEXTAREA');
-    expect(area.className).toContain('text-transparent');
+    expect(area.style.color).toBe('transparent');
     expect(area.className).not.toMatch(/(^|\s)h-row(\s|$)/);
     expect(area.getAttribute('title')).toBe(LONG);
     const copy = container.querySelector('[aria-hidden="true"]');
@@ -37,7 +37,7 @@ describe('ClampedValueField', () => {
     const area = screen.getByRole('textbox', { name: 'Value' });
 
     fireEvent.focus(area);
-    expect(area.className).not.toContain('text-transparent');
+    expect(area.style.color).toBe('');
     expect(area.hasAttribute('title')).toBe(false);
     expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
 

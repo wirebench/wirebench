@@ -3,7 +3,8 @@
  *
  * At rest it shows at most two lines, ending in an ellipsis, and a short value sits on one line
  * like a plain input. Focus (a click, or Tab into it) grows it to show the whole value, wrapped, so
- * it can be read and edited without scrolling sideways; leaving it folds it back to two lines.
+ * it can be read and edited without scrolling sideways — up to eight lines, scrolling past that —
+ * and leaving it folds it back to two lines.
  *
  * It is a `<textarea>` throughout, so its label, its value and anything that fills it in see one
  * element whether it is folded or not. Folded, the textarea's own text is transparent and a
@@ -16,6 +17,8 @@ import { useLayoutEffect, useRef, useState } from 'react';
 /** One line of text, and the vertical padding plus border around it: 26px, the `h-row` height. */
 const LINE = 18;
 const CHROME = 8;
+/** Focused, the field grows to this many lines and scrolls past them, so it never swallows the pane. */
+const OPEN_LINES = 8;
 
 export interface ClampedValueFieldProps {
   readonly value: string;
@@ -46,8 +49,9 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
       area.style.height = '';
       return;
     }
-    const height = focused ? full : Math.min(full, LINE * 2 + CHROME);
+    const height = Math.min(full, LINE * (focused ? OPEN_LINES : 2) + CHROME);
     area.style.height = `${String(height + 2)}px`;
+    area.style.overflowY = focused && full > height ? 'auto' : 'hidden';
   }, [value, focused]);
 
   return (
@@ -57,9 +61,10 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
         rows={1}
         spellCheck={false}
         value={value}
-        className={`${box} block resize-none overflow-hidden py-[3px] leading-[18px] break-all whitespace-pre-wrap ${
-          focused ? '' : 'text-transparent'
-        }`}
+        className={`${box} block resize-none overflow-hidden py-[3px] leading-[18px] break-all whitespace-pre-wrap`}
+        // Inline, so it wins over the text colour the caller's class sets: folded, only the clamped
+        // copy below is visible.
+        style={focused ? undefined : { color: 'transparent' }}
         // Folded, the whole value is one hover away.
         {...(focused || value === '' ? {} : { title: value })}
         onChange={onChange}
