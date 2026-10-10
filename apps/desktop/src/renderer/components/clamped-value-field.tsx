@@ -17,6 +17,13 @@ import { useLayoutEffect, useRef, useState } from 'react';
 /** One line of text, and the vertical padding plus border around it: 26px, the `h-row` height. */
 const LINE = 18;
 const CHROME = 8;
+/** Two lines and an ellipsis, in the only form `line-clamp` works. */
+const CLAMP_TWO_LINES: React.CSSProperties = {
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 2,
+  overflow: 'hidden',
+};
 /** Focused, the field grows to this many lines and scrolls past them, so it never swallows the pane. */
 const OPEN_LINES = 8;
 
@@ -88,6 +95,9 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
         <div
           aria-hidden="true"
           className={`${box} pointer-events-none absolute inset-x-0 top-0 line-clamp-2 border-transparent bg-transparent py-[3px] leading-[18px] break-all whitespace-pre-wrap`}
+          // Inline, like the colour above: a caller's `block` or `overflow` class would otherwise undo
+          // the clamp, which needs exactly this display and overflow.
+          style={CLAMP_TWO_LINES}
         >
           {value}
         </div>

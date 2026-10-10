@@ -28,6 +28,8 @@ describe('ClampedValueField', () => {
     expect(area.getAttribute('title')).toBe(LONG);
     const copy = container.querySelector('[aria-hidden="true"]');
     expect(copy?.className).toContain('line-clamp-2');
+    // Inline, so a caller's `block` cannot undo the clamp.
+    expect((copy as HTMLElement | null)?.style.display).toBe('-webkit-box');
     expect(copy?.textContent).toBe(LONG);
   });
 
