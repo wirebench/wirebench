@@ -1008,9 +1008,9 @@ export {
   webhookFolderFileSchema,
   webhooksFileSchema,
   wssIncomingFileSchema,
-  wssEntrySchema,
   wssOutgoingFileSchema,
 } from './project/schema.js';
+export { wssEntrySchema } from './wss/schema.js';
 export type {
   ApiDefinitionCacheDocument,
   ApiDefinitionCacheManifest,
@@ -1085,12 +1085,7 @@ export {
 export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
 export { nodeFs, writeFileAtomic } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
-export {
-  appendHistory,
-  generateHistoryId,
-  normalizeHistoryEntry,
-  openHistory,
-} from './project/history.js';
+export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
 export type {
   AppendHistoryOptions,
   HistoryEntry,

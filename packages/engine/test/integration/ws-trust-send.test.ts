@@ -242,14 +242,20 @@ describe('runRequests with an issued SAML token', () => {
     const working = () => Promise.resolve(undefined);
     await runRequests(
       requestsOf(project, 1),
-      contextFor(project, { protocols: { soap: { issuedTokens } }, tls: { anchors: [sts.caPem], identityFor: working } }),
+      contextFor(project, {
+        protocols: { soap: { issuedTokens } },
+        tls: { anchors: [sts.caPem], identityFor: working },
+      }),
     );
     // Only the STS keystore is broken; the request's own TLS still asks for its (absent) identity.
     const broken = (ref: string | undefined) =>
       ref === 'ks-sts' ? Promise.reject(new Error('keystore unreadable')) : Promise.resolve(undefined);
     const result = await runRequests(
       requestsOf(project, 1),
-      contextFor(project, { protocols: { soap: { issuedTokens } }, tls: { anchors: [sts.caPem], identityFor: broken } }),
+      contextFor(project, {
+        protocols: { soap: { issuedTokens } },
+        tls: { anchors: [sts.caPem], identityFor: broken },
+      }),
     );
     expect(JSON.stringify(result)).not.toContain('keystore unreadable');
     expect(service.bodies).toHaveLength(2);

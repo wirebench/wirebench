@@ -236,7 +236,9 @@ describe('the STS log row', () => {
     const { host, trustDeps } = await hostWith(false, fakeExchange, () => {
       throw new Error('broadcast failed');
     });
-    await expect(soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps)).resolves.toMatchObject({ assertionXml: ASSERTION });
+    await expect(soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps)).resolves.toMatchObject({
+      assertionXml: ASSERTION,
+    });
   });
 
   it('lends no issued-token source without the service', async () => {

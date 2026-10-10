@@ -6,7 +6,8 @@
  */
 
 import { ProjectError } from '../errors.js';
-import { wssEntrySchema, wssIncomingFileSchema, wssOutgoingFileSchema } from '../project/schema.js';
+import { wssIncomingFileSchema, wssOutgoingFileSchema } from '../project/schema.js';
+import { wssEntrySchema } from './schema.js';
 import type { WssRef } from '../project/model.js';
 import { DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS } from './model.js';
 import type { WssEntry, WssIncomingConfig, WssOutgoingConfig } from './model.js';

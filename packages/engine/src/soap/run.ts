@@ -644,7 +644,9 @@ async function soapContextFor(
     soapHost?.issuedTokens ??
     (await scope.memo('soap:run:issued-tokens', () =>
       Promise.resolve(
-        createIssuedTokenSource(base.host.onSecretValue !== undefined ? { onSecretValue: base.host.onSecretValue } : {}),
+        createIssuedTokenSource(
+          base.host.onSecretValue !== undefined ? { onSecretValue: base.host.onSecretValue } : {},
+        ),
       ),
     ));
   // A host's own answer wins (the app's definition in memory, cached on disk or not); the cached

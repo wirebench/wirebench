@@ -61,7 +61,6 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'protocols.ts', to: '*', until: 'stays: the composition file' },
   { from: 'index.ts', to: '*', until: 'stays: the public exports' },
   { from: 'project-files.ts', to: '*', until: 'stays: the published schemas list every protocol file' },
-  { from: 'project/schema.ts', to: 'wss/model.ts', until: 'phase 3' },
   { from: 'project/model.ts', to: 'rest/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'project/model.ts', to: 'grpc/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'project/model.ts', to: 'ws/model.ts', typeOnly: true, until: 'phase 3' },

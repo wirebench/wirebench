@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Breaking
+
+- **`@wirebench/engine`: `SendHost.issuedTokens` is `SendHost.protocols.soap.issuedTokens`.** A host
+  lends each protocol what only it reads under its kind; `soapHostOf` and `withSoapHost` read and
+  set SOAP's entry. History's WebSocket frames, event-stream rows and contract results are typed with
+  History's own `HistoryWsFrame`, `HistorySseRow` and `HistoryContract`, with the same fields as
+  before. The engine README's "Migrating to 6.0" lists each change (#184).
+
 ## [5.0.0] - 2026-10-10
 
 ### Added

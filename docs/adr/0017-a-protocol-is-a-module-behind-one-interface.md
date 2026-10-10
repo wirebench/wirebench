@@ -62,9 +62,7 @@ an editor does not flag a wrong import, and `pnpm check` (and CI) does.
 | `protocols.ts` | every module: it is the composition file | stays; becomes the `engine` package in phase 5 |
 | `index.ts` | the public exports | stays |
 | `project/model.ts` | the REST, gRPC, WebSocket and webhook container types, type-only; the WS-Addressing model | phase 3 |
-| `project/history.ts` | exchange record types, type-only; the caps on a WebSocket transcript, an event stream and a contract check | phase 2 |
 | `project/load.ts`, `project/serialize.ts` | REST's request reader and writer for `webhooks/`; the webhook model | phase 3 |
-| `project/schema.ts` | the defaults of the WS-Security model | phase 3 |
 | `project/request-location.ts`, `secrets/scan/walk.ts`, `secrets/scan/apply.ts` | request types, type-only | phase 3 |
 | `import-detect.ts` | format detectors | phase 7 |
 

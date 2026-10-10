@@ -12,13 +12,11 @@ Phase 1 (the protocol registry, PR #185) and phase 2 (one send path, PR #191) ar
   - ADR-0005 (the renderer never touches the file system) and the renderer's CSP rule that no
     eagerly loaded renderer module value-imports zod schemas or the engine
     (`apps/desktop/test/renderer-eager-imports.test.ts`).
-- Decisions proposed here (owner's call pending):
-  - **The engine's four container lists stay until phase 5.** `Project.interfaces`, `apis`,
-    `grpcApis` and `wsApis` are the published engine's `Project` shape. Replacing them breaks the
-    engine's exports, which would make the release 6.0 instead of 5.1, the milestone this epic is
-    in. Phase 5, where the `engine` package composes the protocols, is the one place allowed to name
-    every protocol's container type, so the typed lists move there (§9). Everything else in this
-    phase is internal and breaks nothing.
+- Decisions recorded here (owner, 2026-10-10):
+  - **The engine's four container lists are replaced in this phase.** `Project.interfaces`, `apis`,
+    `grpcApis` and `wsApis` become one container map with a typed accessor per protocol (§9). They
+    are the published engine's `Project` shape, so the engine's exports break and the release that
+    carries this phase is a major: the epic, #77 and #79 moved to the 6.0 milestone.
   - **No IPC channel, event or wire field is renamed.** The channel registry and the wire schemas
     are composed from per-kind files, but every name the renderer and the tests use stays.
   - **One spec, a pull request per slice** (§11). Phase 3 touches about 200 desktop files; one
@@ -53,6 +51,7 @@ desktop. Measured on `c04957e`:
 ### 1.1 In scope
 
 - The engine edges phases 1 and 2 left behind (§2).
+- One container map in place of the four lists, and SOAP's model out of core (§9).
 - Webhooks and WS-Security configurations loaded and saved by their modules, not by core (§3).
 - Per-kind wire types and IPC channels, composed into the existing registry (§4).
 - A per-kind main half: mutations, IPC handlers, the project host's methods, the send path's
@@ -65,14 +64,11 @@ desktop. Measured on `c04957e`:
 
 ### 1.2 Not in scope
 
-- **The four container lists**, deferred to phase 5 (§9).
 - **Any user-facing switch.** Settings, a CLI flag and team policy are phase 4. Until then a kind
   is off only when a developer builds a registry without it, or through the existing
   `WIREBENCH_AREAS`-style environment variable this phase adds for kinds (§7.3).
 - **New behaviour in any editor.** Every screen looks and acts as it does today.
 - **The import pickers.** `import-detect.ts` and the import dialog stay closed until phase 7.
-- **SOAP's model in core.** `Interface`, `SoapRequestDef` and their factories stay in
-  `project/model.ts` with the lists; they move with them in phase 5.
 
 ## 2. Engine leftovers
 
@@ -89,19 +85,20 @@ with a phase that has merged. This phase removes them.
 | `project/request-location.ts` | `RestFolder` (type-only) | A storage hook, `requestLocation(container, requestId)`, asked of each enabled module. |
 | `secrets/scan/walk.ts`, `apply.ts` | the request types (type-only) | A secrets facet on the module: `scanTargets(container)` and `applyMoves(container, moves)`. `SecretLocation` becomes `{ kind, part, … }`, with the part names unchanged. |
 
-`RunContext.defaultWsaActionFor`, which the phase 1 spec meant phase 2 to remove, moves onto SOAP's
-side of the host slot below.
+`RunContext.defaultWsaActionFor` and `loadedDefinitionFor`, the SOAP members of the run context, stay:
+they name no protocol folder, only the composition file's `SelectedRequest`.
 
 Left as named exceptions, with their reasons unchanged: `protocols.ts`, `index.ts`,
-`project-files.ts`, `project/model.ts` (the lists, until phase 5), `import-detect.ts` and the
-importers and exporters (phase 7).
+`project-files.ts`, `import-detect.ts` and the importers and exporters (phase 7). `project/model.ts`
+leaves the table with §9.
 
 ### 2.1 A protocol's host slot
 
-`SendHost` gains `protocol?: Readonly<Record<string, unknown>>`, keyed by kind. A module reads its
-own entry and narrows it with a guard its folder exports (`soapHostOf(host)`), so `run/host.ts` names
-no protocol. The desktop and the CLI fill `protocol.soap` with the issued-token source and the
-WS-Addressing default they lend today.
+`SendHost.issuedTokens` becomes `SendHost.protocols`, a record keyed by kind that core passes through
+and never reads. SOAP reads its own entry with `soapHostOf(host)` (`soap/host.ts`), and its run facet
+shares one issued-token source per run through `scope.memo` when the host lends none, where the run
+loop used to create it. The desktop and the CLI put the source they lend today in
+`protocols.soap.issuedTokens`.
 
 ## 3. Project-level files
 
@@ -122,8 +119,9 @@ interface ProtocolProjectFiles {
 - The loader calls `load` after the containers, in registry order. The writer merges `files` and
   `managed` with the containers'. A disabled module's files are left on disk as a disabled
   container's are, and `WEBHOOKS_FEATURE` goes away: the registry lists only enabled modules.
-- `Project.webhooks` and `Project.wss` keep their names and types, which ride the `project/model.ts`
-  exception until phase 5.
+- The data moves with the files: the webhook collection and the outgoing and incoming
+  configurations live in `Project.protocols` (§9), read with `webhooksOf(project)` and
+  `wssConfigsOf(project)`. `Project.wss` keeps only the keystores and becomes `Project.keystores`.
 - The webhook file schemas move from `project/schema.ts` into `webhooks/schema.ts`, and
   `project-files.ts` lists them from there. The published JSON Schemas are unchanged.
 
@@ -323,7 +321,7 @@ interface TabContribution {
 
 The project store keeps its per-kind maps (`restRequests`, `grpcApis`, …) because the wire keeps its
 fields. The four draft maps and the four exchange maps stay too. Putting them behind one map per
-kind is renderer churn with no behaviour, and is left until the wire changes in phase 5.
+kind is renderer churn with no behaviour, and is left for a later change to the wire.
 
 ## 7. Placeholders
 
@@ -366,42 +364,66 @@ for byte.
 - `feature-disabled` reaches the renderer unchanged when a channel of a kind that is off is called
   anyway.
 
-## 9. The container lists, in phase 5
+## 9. One container map
 
-Recorded here so phase 5 does not rediscover it. Core's `Project` gets one
-`containers: Readonly<Record<string, readonly ContainerBase[]>>`; `extraContainers` folds into it.
-The `engine` package, which composes the protocols, exports a typed `Project` whose four fields are
-read-only views over the map, so npm users keep `project.apis`. Whether that is a breaking release
-is decided with phase 5's other export changes.
+```ts
+interface Project {
+  …
+  /** Every container, keyed by kind, in load order. A kind with none may be absent. */
+  readonly containers: Readonly<Record<string, readonly ContainerBase[]>>;
+  /** What a protocol keeps for the whole project, keyed by kind (REST: the webhook collection). */
+  readonly protocols?: Readonly<Record<string, unknown>>;
+  readonly keystores: readonly WssRef[];
+}
+```
+
+- `interfaces`, `apis`, `grpcApis`, `wsApis` and `extraContainers` are removed, and so are `webhooks`
+  and `wss`. Each protocol's folder exports a typed reader and writer: `soapInterfacesOf` /
+  `withSoapInterfaces`, `restApisOf` / `withRestApis`, `grpcApisOf` / `withGrpcApis`, `wsApisOf` /
+  `withWsApis`, `webhooksOf` / `withWebhooks`, `wssConfigsOf` / `withWssConfigs`. The storage facet's
+  `containers` and `withContainers` read the map, so a module never needs its own field.
+- SOAP's model (`Interface`, `OperationDef`, `SoapRequestDef`, `Endpoint`, `Attachment`,
+  `RequestProperties` and their factories) moves from `project/model.ts` to `soap/model.ts`, and
+  `AnyRequestDef` to `protocols.ts`. `project/model.ts` then names no protocol.
+- `takenContainerSlugs` and `nextApiOrder` read the map, so they count every kind, built in or not.
+- Every name keeps its export from `@wirebench/engine`; only the `Project` fields change. The engine
+  README's migration table lists each removed field and its reader.
+- The desktop's `ProjectWire` keeps its per-kind fields (§4.2): the change stops at main.
 
 ## 10. Documentation
 
 - ADR-0023: a desktop kind is a module behind one interface, split shared, main and renderer as
   ADR-0021's areas are.
-- ADR-0017's exception table and `CORE_EXCEPTIONS` lose the rows §2 and §3 remove.
+- ADR-0017's exception table and `CORE_EXCEPTIONS` lose the rows §2, §3 and §9 remove.
+- `packages/engine/README.md`: the removed `Project` fields and `SendHost.issuedTokens`, with what
+  replaces each.
 - `docs/architecture/overview.md`: the desktop's per-kind folders.
-- `CHANGELOG.md`: the placeholder row and `WIREBENCH_KINDS` under 5.1.0's Added; nothing else is
-  user-visible.
+- `CHANGELOG.md`: the placeholder row and `WIREBENCH_KINDS` under Added, and the engine's changed
+  `Project` and `SendHost` under Changed (breaking) for 6.0.0.
 
 ## 11. Slices
 
 Each slice is its own pull request against `main`, keeps `pnpm check` and e2e green, and changes no
 behaviour except where it says so.
 
-1. **Engine leftovers** (§2): history, issued tokens, send helpers, the host slot, the WS-Security
-   schemas, request location, the secrets facet.
-2. **Project-level files** (§3): webhooks into REST, WS-Security configurations into SOAP.
-3. **Shared** (§4): `shared/kinds/`, wire types and channels per kind, composed; the channel-name
+1. **Engine leftovers** (§2): history records, issued tokens and the host slot, the WS-Security
+   entry schemas.
+2. **One container map** (§9): SOAP's model out of core, the map and the typed readers, request
+   location and the secrets facet (§2).
+3. **Project-level files** (§3): webhooks into REST, WS-Security configurations into SOAP,
+   `Project.keystores`.
+4. **Shared** (§4): `shared/kinds/`, wire types and channels per kind, composed; the channel-name
    test; `FORBIDDEN_FILES`.
-4. **Main, mutations and host** (§5.1–5.3): `main/kinds/`, mutations, `createHost`, the router.
-5. **Main, IPC and send** (§5.4–5.5): channel registration, the send path, History, Log, Search.
-6. **Renderer** (§6): `renderer/kinds/`, `TAB_KINDS`, the editor area, workspace tabs, explorer,
+5. **Main, mutations and host** (§5.1–5.3): `main/kinds/`, mutations, `createHost`, the router.
+6. **Main, IPC and send** (§5.4–5.5): channel registration, the send path, History, Log, Search.
+7. **Renderer** (§6): `renderer/kinds/`, `TAB_KINDS`, the editor area, workspace tabs, explorer,
    History, Search, commands.
-7. **Placeholders** (§7) and the docs (§10); the `wire-types.ts` re-exports removed.
+8. **Placeholders** (§7) and the docs (§10); the `wire-types.ts` re-exports removed.
 
 ## 12. Testing
 
-- The existing suites are the guard for slices 1 to 6: they change only their imports.
+- The existing suites are the guard for slices 1 to 7: they change only their imports, and in
+  slices 2 and 3 how a test builds a `Project`.
 - Engine: `pnpm check:engine-layers` with the removed exceptions; the test-only fifth protocol
   gains a webhook-like project facet and a secrets facet, so a module that is not built in goes
   through both.
@@ -413,7 +435,8 @@ behaviour except where it says so.
 
 ## 13. Risks
 
-1. **Size.** About 200 files move. Each slice is mechanical where it can be (moves keep names), and
+1. **Size.** About 200 desktop files move, and slice 2 rewrites how about 1,400 places read the
+   lists; it is done with a codemod over the TypeScript AST, not by hand. Each slice is mechanical where it can be (moves keep names), and
    the re-exports keep imports compiling until the last slice.
 2. **The composed channel type gets too big for the compiler.** Spreading fragments keeps the same
    members; if the serialisation limit bites, the fragments become named interfaces, as the
