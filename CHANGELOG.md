@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A REST mock serves its OpenAPI document.** `GET <mock>/openapi.json` (or `.yaml`) returns the API's
+  cached document with its server URL pointing at the mock, and each file it references is served under
+  `<mock>/openapi/` with the references rewritten, as a SOAP mock serves its WSDL and imports. A client
+  that discovers the contract from the service can now do so against a mock (#324).
+
 ### Fixed
 
 - **Generated REST response stubs keep read-only properties.** A REST mock generated from a response
