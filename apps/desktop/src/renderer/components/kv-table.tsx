@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
+import { ClampedValueField } from './clamped-value-field.js';
 import { IconButton } from './icon-button.js';
 import { useGridNavigation } from '../lib/grid-navigation.js';
 import type { KeyValueWire } from '../../shared/wire-types.js';
@@ -30,7 +31,7 @@ export const KV_INPUT_CLASS =
  * A field whose edits are local until they are committed: Enter or blur saves, Escape reverts, and
  * a value that arrives from outside (a snapshot, an undo) replaces the draft.
  *
- * The returned handlers go straight onto an `<input>`; `commit` is called only when the value
+ * The returned handlers go straight onto an `<input>` (or a {@link ClampedValueField}); `commit` is called only when the value
  * actually changed, so a focus pass over an untouched row writes nothing.
  */
 export function useCommittedDraft(
@@ -38,9 +39,9 @@ export function useCommittedDraft(
   commit: (next: string) => void,
 ): {
   readonly value: string;
-  readonly onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  readonly onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   readonly onBlur: () => void;
-  readonly onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  readonly onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
 } {
   const [draft, setDraft] = useState(value);
   useEffect(() => {
@@ -328,7 +329,7 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
     >
       {columns.map((column) =>
         column === 'enabled' ? (
-          <td key={column} className="px-2 py-1 text-center">
+          <td key={column} className="px-2 py-1 text-center align-top">
             <input
               type="checkbox"
               aria-label={`Enable ${row.name}`}
@@ -340,18 +341,28 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
             />
           </td>
         ) : (
-          <td key={column} className="px-2 py-1">
-            <input
-              aria-label={`${HEADING[column]} of ${row.name}`}
-              data-testid={testid(column)}
-              className={KV_INPUT_CLASS}
-              readOnly={column === 'name' && lockName}
-              {...fields[column]}
-            />
+          <td key={column} className="px-2 py-1 align-top">
+            {column === 'value' ? (
+              // Long values (a token, a cookie) fold to two lines and open in full on focus.
+              <ClampedValueField
+                aria-label={`${HEADING[column]} of ${row.name}`}
+                data-testid={testid(column)}
+                className={KV_INPUT_CLASS}
+                {...fields[column]}
+              />
+            ) : (
+              <input
+                aria-label={`${HEADING[column]} of ${row.name}`}
+                data-testid={testid(column)}
+                className={KV_INPUT_CLASS}
+                readOnly={column === 'name' && lockName}
+                {...fields[column]}
+              />
+            )}
           </td>
         ),
       )}
-      <td className="px-2 py-1 text-center">
+      <td className="px-2 py-1 text-center align-top">
         <IconButton label={`Remove ${row.name}`} data-testid={testid('delete')} onClick={onRemove}>
           <Trash2 size={13} aria-hidden="true" />
         </IconButton>
