@@ -31,14 +31,13 @@ import type { ProtocolRun, RunScope, ScriptedSend } from '../protocol/module.js'
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';
 import { exchangeController } from '../run/exchange.js';
+import { createIssuedTokenSource } from '../wss/trust/issued-token.js';
 import { requiredSecret } from '../run/oauth2-token.js';
 import type { SentRequest } from '../run/run.js';
 import {
   authFor,
   dropRefusedToken,
-  dropRejectedIssuedToken,
   insideProject,
-  issuedTokenSourceOf,
   keystoreFor,
   keystoreNeeds,
   originOf,
@@ -76,6 +75,7 @@ import { createWssContext } from '../wss/model.js';
 import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
+import { dropRejectedIssuedToken, issuedTokenSourceOf, soapHostOf, withSoapHost } from './host.js';
 
 /** The editor's unsent envelope, endpoint and headers. A send uses them in place of the saved ones. */
 export interface SoapOverride {
@@ -638,6 +638,17 @@ async function soapContextFor(
   base: RunContext,
 ): Promise<{ context: RunContext; loaded: Awaited<ReturnType<typeof definitionFor>> }> {
   const loaded = await definitionFor(selected, scope);
+  // Issued SAML tokens are shared across a run: one STS call per run unless the host lends a source.
+  const soapHost = soapHostOf(base.host);
+  const issuedTokens =
+    soapHost?.issuedTokens ??
+    (await scope.memo('soap:run:issued-tokens', () =>
+      Promise.resolve(
+        createIssuedTokenSource(
+          base.host.onSecretValue !== undefined ? { onSecretValue: base.host.onSecretValue } : {},
+        ),
+      ),
+    ));
   // A host's own answer wins (the app's definition in memory, cached on disk or not); the cached
   // definition answers when the host has none.
   const lent = base.defaultWsaActionFor;
@@ -648,6 +659,7 @@ async function soapContextFor(
           loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '';
   const context: RunContext = {
     ...base,
+    host: withSoapHost(base.host, { ...soapHost, issuedTokens }),
     ...(lent !== undefined || cached !== undefined
       ? {
           defaultWsaActionFor: (s: SoapSelected): string => {

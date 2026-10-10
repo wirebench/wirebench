@@ -18,12 +18,6 @@ import { ulid } from 'ulidx';
 import { ProjectError } from '../errors.js';
 import { isNotFound, nodeFs, readFileIfExists, writeFileAtomic } from './fs.js';
 import type { FsLike } from './fs.js';
-import type { WsExchange, WsFrame } from '../ws/model.js';
-import { capFrames } from '../ws/transcript.js';
-import type { SseRow } from '../rest/sse.js';
-import { capSseRows, SSE_HISTORY_LIMITS } from '../rest/sse-transcript.js';
-import { MAX_CONTRACT_MESSAGE_LENGTH, MAX_CONTRACT_PROBLEMS } from '../rest/contract-check.js';
-import type { RestContractResult } from '../rest/contract-check.js';
 
 /** One HTTP header, in author order. */
 export interface HistoryHeader {
@@ -65,9 +59,72 @@ export interface HistoryGrpc {
 }
 
 /**
+ * One WebSocket frame as History keeps it. The same shape as the WebSocket module's `WsFrame`,
+ * restated here so History names no protocol (ADR-0017); a test keeps the two equal.
+ */
+export interface HistoryWsFrame {
+  readonly index: number;
+  readonly direction: 'sent' | 'received';
+  readonly opcode: 'text' | 'binary' | 'ping' | 'pong' | 'close';
+  /** Milliseconds since the session started. */
+  readonly at: number;
+  /** Payload bytes. */
+  readonly size: number;
+  readonly text?: string;
+  readonly base64?: string;
+  readonly close?: { readonly code: number; readonly reason: string };
+  readonly payloadTruncated?: boolean;
+  /** Set when the session's request is linked to a contract channel. */
+  readonly contract?: {
+    readonly status: 'ok' | 'violation' | 'unmatched' | 'skipped' | 'not-checked';
+    readonly message?: string;
+    readonly problems?: readonly { readonly path: string; readonly keyword: string; readonly message: string }[];
+    readonly reason?: string;
+  };
+}
+
+/**
+ * One server-sent event stream row as History keeps it: the REST module's `SseRow`, restated for the
+ * same reason as {@link HistoryWsFrame}.
+ */
+export type HistorySseRow =
+  | {
+      readonly kind: 'event';
+      readonly index: number;
+      readonly at: number;
+      readonly size: number;
+      readonly event: string;
+      readonly data: string;
+      readonly id?: string;
+      readonly lastEventId: string;
+      readonly payloadTruncated?: true;
+    }
+  | {
+      readonly kind: 'comment';
+      readonly index: number;
+      readonly at: number;
+      readonly size: number;
+      readonly text: string;
+    }
+  | { readonly kind: 'retry'; readonly index: number; readonly at: number; readonly size: number; readonly ms: number };
+
+/**
+ * How a REST response compared with its OpenAPI contract, as History keeps it: the REST module's
+ * `RestContractResult`, restated for the same reason as {@link HistoryWsFrame}.
+ */
+export interface HistoryContract {
+  readonly status: 'ok' | 'violation' | 'unmatched' | 'no-schema' | 'no-contract' | 'skipped' | 'not-checked';
+  readonly operation?: { readonly method: string; readonly path: string };
+  readonly responseKey?: string;
+  readonly mediaType?: string;
+  readonly problems: readonly { readonly path: string; readonly keyword: string; readonly message: string }[];
+  readonly notes: readonly string[];
+}
+
+/**
  * The WebSocket side of a history entry: one session's handshake outcome, how it closed, the
- * frame counts, and a capped transcript ({@link capFrames}) so a chatty session doesn't blow up
- * the history file.
+ * frame counts, and a capped transcript (the WebSocket module's `historyWsOf` caps it) so a chatty
+ * session doesn't blow up the history file.
  */
 export interface HistoryWs {
   readonly url: string;
@@ -78,9 +135,14 @@ export interface HistoryWs {
   readonly closeCode: number;
   readonly closeReason: string;
   readonly closedBy: 'client' | 'server' | 'error';
-  readonly counts: WsExchange['counts'];
-  readonly frames: readonly WsFrame[];
-  /** Set only when {@link capFrames} actually trimmed something (frames, or just a payload). */
+  readonly counts: {
+    readonly sent: number;
+    readonly received: number;
+    readonly bytesSent: number;
+    readonly bytesReceived: number;
+  };
+  readonly frames: readonly HistoryWsFrame[];
+  /** Set only when the cap actually trimmed something (frames, or just a payload). */
   readonly truncated?: boolean;
   /** How many frames were dropped by the head/tail cap; absent when only a payload was stripped. */
   readonly omittedFrames?: number;
@@ -89,37 +151,12 @@ export interface HistoryWs {
 }
 
 /**
- * The shape {@link historySseOf} needs from a REST send's event-stream summary: the desktop's
- * `RestEventStreamWire` matches it field for field, but this module stays free of the wire schema
- * (the engine has no business depending on the desktop's zod types) and takes anything with the
- * same shape instead.
- */
-export interface RestEventStreamLike {
-  readonly rows: readonly SseRow[];
-  readonly counts: {
-    readonly events: number;
-    readonly comments: number;
-    readonly retries: number;
-    readonly bytes: number;
-  };
-  readonly lastEventId: string;
-  readonly endedBy: 'server' | 'client' | 'error';
-  readonly error?: string;
-  /** Rows already evicted from the in-memory store before this summary was built. */
-  readonly droppedRows: number;
-  /** Whether the summary's own cap (`SSE_SUMMARY_LIMITS`) cut anything further. */
-  readonly truncated: boolean;
-  /** Rows the summary's own cap omitted, on top of `droppedRows`. */
-  readonly omittedRows: number;
-}
-
-/**
  * The REST event-stream side of a history entry: the rows, the outcome, and a capped transcript
- * ({@link historySseOf}'s own re-cap via {@link SSE_HISTORY_LIMITS}) so a long-running stream
- * doesn't blow up the history file, the same way {@link HistoryWs} caps a WebSocket session's frames.
+ * (the REST module's `historySseOf` re-caps it) so a long-running stream doesn't blow up the
+ * history file, the same way {@link HistoryWs} caps a WebSocket session's frames.
  */
 export interface HistorySse {
-  readonly rows: readonly SseRow[];
+  readonly rows: readonly HistorySseRow[];
   readonly counts: {
     readonly events: number;
     readonly comments: number;
@@ -189,35 +226,9 @@ export interface HistoryEntry {
   /** The event-stream record of a REST send whose response was `text/event-stream`; absent otherwise. */
   readonly sse?: HistorySse;
   /** How a REST response compared with its OpenAPI contract; absent when it was not checked. */
-  readonly contract?: RestContractResult;
+  readonly contract?: HistoryContract;
   readonly sizeBytes: number;
   readonly tags?: readonly string[];
-}
-
-function clipped(text: string): string {
-  return text.length > MAX_CONTRACT_MESSAGE_LENGTH ? text.slice(0, MAX_CONTRACT_MESSAGE_LENGTH) : text;
-}
-
-/**
- * A contract result as a history entry keeps it: only the fields the result declares, under the
- * check's own caps (problems, notes, message length), so a line cannot grow past what the live
- * result could show — whatever produced the value.
- */
-export function historyContractOf(result: RestContractResult): RestContractResult {
-  return {
-    status: result.status,
-    ...(result.operation !== undefined
-      ? { operation: { method: result.operation.method, path: result.operation.path } }
-      : {}),
-    ...(result.responseKey !== undefined ? { responseKey: result.responseKey } : {}),
-    ...(result.mediaType !== undefined ? { mediaType: result.mediaType } : {}),
-    problems: result.problems.slice(0, MAX_CONTRACT_PROBLEMS).map((problem) => ({
-      path: clipped(problem.path),
-      keyword: problem.keyword,
-      message: clipped(problem.message),
-    })),
-    notes: result.notes.slice(0, MAX_CONTRACT_PROBLEMS).map(clipped),
-  };
 }
 
 /** How long a writer waits for the file's lock, and when a lock counts as a crashed writer's. */
@@ -606,45 +617,4 @@ export async function openHistory(file: string, options: HistoryOptions = {}): P
 /** Generates a new history entry id (ulid: lexicographically time-ordered, unique). */
 export function generateHistoryId(): string {
   return ulid();
-}
-
-/** Builds a {@link HistoryWs} from a completed session, applying {@link capFrames}. */
-export function historyWsOf(exchange: WsExchange): HistoryWs {
-  const { frames, truncated, omittedFrames } = capFrames(exchange.frames);
-  return {
-    url: exchange.url,
-    ...(exchange.handshake.status !== undefined ? { status: exchange.handshake.status } : {}),
-    ...(exchange.handshake.protocol !== undefined ? { protocol: exchange.handshake.protocol } : {}),
-    closeCode: exchange.closed.code,
-    closeReason: exchange.closed.reason,
-    closedBy: exchange.closed.by,
-    counts: exchange.counts,
-    frames,
-    ...(truncated ? { truncated: true, ...(omittedFrames > 0 ? { omittedFrames } : {}) } : {}),
-    ...(exchange.handshake.error !== undefined ? { error: exchange.handshake.error } : {}),
-  };
-}
-
-/**
- * Builds a {@link HistorySse} from a REST send's event-stream summary, re-capping its rows down to
- * {@link SSE_HISTORY_LIMITS} (tighter than the summary's own `SSE_SUMMARY_LIMITS`, the same way
- * {@link historyWsOf} re-caps a WebSocket session's frames). `omittedRows` totals every row missing
- * from the result compared to the live stream: rows the in-memory store had already dropped
- * (`droppedRows`), rows the summary's own cap left out (`omittedRows`), and rows this re-cap cut.
- */
-export function historySseOf(stream: RestEventStreamLike): HistorySse {
-  const capped = capSseRows(stream.rows, SSE_HISTORY_LIMITS);
-  const totalOmitted = stream.droppedRows + stream.omittedRows + capped.omittedRows;
-  // `stream.truncated`/`capped.truncated` only say whether a *cap* had to cut something; a live
-  // stream can also have rows the in-memory store already evicted (`droppedRows`) with neither cap
-  // ever needing to trim anything further, which is still an incomplete transcript.
-  const truncated = totalOmitted > 0 || stream.truncated || capped.truncated;
-  return {
-    rows: capped.rows,
-    counts: stream.counts,
-    lastEventId: stream.lastEventId,
-    endedBy: stream.endedBy,
-    ...(stream.error !== undefined ? { error: stream.error } : {}),
-    ...(truncated ? { truncated: true, ...(totalOmitted > 0 ? { omittedRows: totalOmitted } : {}) } : {}),
-  };
 }

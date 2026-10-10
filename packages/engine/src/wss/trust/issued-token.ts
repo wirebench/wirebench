@@ -4,9 +4,9 @@
  * failure is never cached; two sends that need the same token share one STS call.
  */
 import { createHash } from 'node:crypto';
-import { requestIssuedToken } from '../wss/trust/client.js';
-import type { IssuedTokenTarget, TrustDeps } from '../wss/trust/client.js';
-import type { IssuedKeyType, IssuedToken, SamlVersion, WssIssuedTokenEntry } from '../wss/model.js';
+import { requestIssuedToken } from './client.js';
+import type { IssuedTokenTarget, TrustDeps } from './client.js';
+import type { IssuedKeyType, IssuedToken, SamlVersion, WssIssuedTokenEntry } from '../model.js';
 
 /** A token this close to expiry counts as expired, as OAuth2's `needsRefresh` does. */
 export const ISSUED_TOKEN_REFRESH_MARGIN_MS = 60_000;

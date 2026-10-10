@@ -2,6 +2,19 @@
 
 `@wirebench/engine` is an internal dependency of [`@wirebench/cli`](https://github.com/wirebench/wirebench/tree/main/packages/cli) and is published so the CLI can depend on a versioned package rather than a workspace link. It has no stability promise of its own: a major release may rename or remove exports, as 3.1 did, and the exports tagged `@internal` may change in any release. See the [Wirebench repository](https://github.com/wirebench/wirebench) for usage, documentation, and issue tracking.
 
+## Migrating to 6.0
+
+6.0 finishes taking the protocols out of the engine's core ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md), #184 phase 3). Nothing was kept as a deprecated alias.
+
+### Changed
+
+| 5.x                                                            | 6.0                                                                                                                                                           |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SendHost.issuedTokens`                                        | `SendHost.protocols.soap.issuedTokens`. Read it with `soapHostOf(host)`, set it with `withSoapHost(host, { issuedTokens })`.                                  |
+| `HistoryWs.frames`, `HistorySse.rows`, `HistoryEntry.contract` | Typed with History's own `HistoryWsFrame`, `HistorySseRow` and `HistoryContract`, which have the same fields as `WsFrame`, `SseRow` and `RestContractResult`. |
+
+`historyWsOf`, `historySseOf`, `historyContractOf`, `RestEventStreamLike`, `createIssuedTokenSource` and `wssEntrySchema` keep their names and signatures; they moved within the package.
+
 ## Migrating to 3.1
 
 3.1 puts every protocol behind one interface ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). The main entry's exports changed; nothing was kept as a deprecated alias. The subpaths (`./xml`, `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) did not change.

@@ -6,7 +6,7 @@
  */
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { createIssuedTokenSource, createWssContext } from '@wirebench/engine';
+import { createIssuedTokenSource, createWssContext, soapHostOf } from '@wirebench/engine';
 import type { HttpExchange, IssuedToken, IssuedTokenTarget, WssIssuedTokenEntry } from '@wirebench/engine';
 import type { LogEntryWire } from '../src/shared/wire-types.js';
 
@@ -106,7 +106,7 @@ const textOf = (base64: string): string => Buffer.from(base64, 'base64').toStrin
 describe('the STS log row', () => {
   it('writes one row marked sts, caused by the send, with the signature value masked', async () => {
     const { host, rows, trustDeps } = await hostWith();
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     expect(rows).toHaveLength(1);
     const row = rows[0]!;
     if (row.kind !== 'exchange' || !('auxiliary' in row.exchange)) throw new Error('not an STS row');
@@ -124,7 +124,7 @@ describe('the STS log row', () => {
 
   it('keeps the signature value with show-secrets on', async () => {
     const { host, rows, trustDeps } = await hostWith(true);
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     const row = rows[0]!;
     if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
     expect(textOf(row.exchange.http.bodyBase64)).toContain(SIGNATURE_VALUE);
@@ -132,14 +132,14 @@ describe('the STS log row', () => {
 
   it("still tells the engine's own listener of the exchange", async () => {
     const { host, asked, trustDeps } = await hostWith();
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     expect(asked).toEqual([fakeExchange]);
   });
 
   it('makes no row for a cached token', async () => {
     const { host, rows, request, trustDeps } = await hostWith();
-    await host.issuedTokens!.get(entry, target, trustDeps);
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     expect(request).toHaveBeenCalledTimes(1);
     expect(rows).toHaveLength(1);
   });
@@ -154,7 +154,7 @@ describe('the STS log row', () => {
       ...fakeExchange,
       rawRequest: bytes(`POST /issue HTTP/1.1\r\nhost: sts.test\r\ncontent-type: application/soap+xml\r\n\r\n${rst}`),
     });
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     const row = rows[0]!;
     if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
     const raw = textOf(row.exchange.http.rawRequestBase64);
@@ -178,7 +178,7 @@ describe('the STS log row', () => {
       rawRequest: bytes(`POST /issue HTTP/1.1\r\nhost: sts.test\r\ncontent-type: application/soap+xml\r\n\r\n${rst}`),
     });
     const kerberosToken = () => Promise.resolve(new Uint8Array([1, 2, 3]));
-    await host.issuedTokens!.get(entry, target, { ...trustDeps, kerberosToken });
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, { ...trustDeps, kerberosToken });
     // The send's wrapper lends the engine's Kerberos seam through untouched.
     expect((request.mock.calls[0]?.[2] as { kerberosToken?: unknown }).kerberosToken).toBe(kerberosToken);
     const row = rows[0]!;
@@ -196,7 +196,7 @@ describe('the STS log row', () => {
       rawBody: new Uint8Array(gzipped),
       rawResponse: new Uint8Array(Buffer.concat([Buffer.from(head, 'latin1'), gzipped])),
     });
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     const row = rows[0]!;
     if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
     const raw = textOf(row.exchange.http.rawResponseBase64);
@@ -212,7 +212,7 @@ describe('the STS log row', () => {
       rawBody: new Uint8Array(gzipped),
       rawResponse: new Uint8Array(gzipped),
     });
-    await host.issuedTokens!.get(entry, target, trustDeps);
+    await soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps);
     const row = rows[0]!;
     if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
     expect(row.exchange.http.rawResponseBase64).toBe(row.exchange.http.bodyBase64);
@@ -236,7 +236,9 @@ describe('the STS log row', () => {
     const { host, trustDeps } = await hostWith(false, fakeExchange, () => {
       throw new Error('broadcast failed');
     });
-    await expect(host.issuedTokens!.get(entry, target, trustDeps)).resolves.toMatchObject({ assertionXml: ASSERTION });
+    await expect(soapHostOf(host)!.issuedTokens!.get(entry, target, trustDeps)).resolves.toMatchObject({
+      assertionXml: ASSERTION,
+    });
   });
 
   it('lends no issued-token source without the service', async () => {
@@ -244,6 +246,6 @@ describe('the STS log row', () => {
       { project: {} as DesktopSendDeps['project'], service: {} as DesktopSendDeps['service'] },
       send,
     );
-    expect(host.issuedTokens).toBeUndefined();
+    expect(soapHostOf(host)?.issuedTokens).toBeUndefined();
   });
 });

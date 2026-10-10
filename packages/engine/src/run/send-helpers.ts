@@ -15,8 +15,6 @@ import type { AuthConfig, Project } from '../project/model.js';
 import { secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { urlOrigin } from '../project/sequence-guards.js';
-import type { SoapFault } from '../soap/fault.js';
-import type { IssuedToken } from '../wss/model.js';
 import type { SecretPlaceholders } from '../script/send.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
@@ -27,8 +25,6 @@ import { loadKeystore, toTlsClientIdentity } from '../keystore/index.js';
 import type { Keystore } from '../keystore/index.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
-import { createIssuedTokenSource } from './issued-token.js';
-import type { IssuedTokenSource } from './issued-token.js';
 import { createRunTokenSource, requiredSecret } from './oauth2-token.js';
 import type { RunTokenSource } from './oauth2-token.js';
 
@@ -193,35 +189,6 @@ export function tokenSourceOf(context: RunContext): RunTokenSource {
       ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
     })
   );
-}
-
-/** The run's shared issued-token source, or a fresh one for a send outside a run. */
-export function issuedTokenSourceOf(context: RunContext): IssuedTokenSource {
-  return (
-    context.host.issuedTokens ??
-    createIssuedTokenSource(
-      context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {},
-    )
-  );
-}
-
-/** WS-Security fault codes that mean a token was refused (spec section 3.5). */
-const TOKEN_REFUSED = /(?:^|:)(?:InvalidSecurityToken|FailedAuthentication|SecurityTokenUnavailable|MessageExpired)$/;
-
-/** Drops the issued tokens a refused send carried, so the next send fetches anew. Never re-sends. */
-export function dropRejectedIssuedToken(
-  context: RunContext,
-  used: readonly IssuedToken[],
-  fault: SoapFault | undefined,
-): void {
-  // Without a source the host lends (or the run shares), a token lived in a throwaway source that
-  // nothing will ask again: there is nothing to drop.
-  const source = context.host.issuedTokens;
-  if (source === undefined || fault === undefined || used.length === 0) return;
-  // Matched lexically: SoapFault keeps only a code's lexical QName, so `wsse:` is whatever prefix the
-  // service bound, and the local name is what is compared.
-  if (![fault.code, ...fault.subcodes].some((code) => TOKEN_REFUSED.test(code))) return;
-  for (const token of used) source.reject(token);
 }
 
 /**

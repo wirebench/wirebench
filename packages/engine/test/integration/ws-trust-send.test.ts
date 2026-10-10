@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { configureKerberos } from '../../src/http/auth/kerberos-native.js';
 import type { RunContext } from '../../src/run/context.js';
 import { loadKeystore } from '../../src/keystore/index.js';
-import { createIssuedTokenSource } from '../../src/run/issued-token.js';
+import { createIssuedTokenSource } from '../../src/wss/trust/issued-token.js';
 import { runRequests } from '../../src/run/run.js';
 import { selectRequests } from '../../src/run/select.js';
 import { soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from '../../src/soap/run.js';
@@ -186,8 +186,8 @@ describe('runRequests with an issued SAML token', () => {
     sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
     const project = projectFor(entryFor(sts.url));
     const issuedTokens = createIssuedTokenSource();
-    await runRequests(requestsOf(project, 1), contextFor(project, { issuedTokens }));
-    await runRequests(requestsOf(project, 1), contextFor(project, { issuedTokens }));
+    await runRequests(requestsOf(project, 1), contextFor(project, { protocols: { soap: { issuedTokens } } }));
+    await runRequests(requestsOf(project, 1), contextFor(project, { protocols: { soap: { issuedTokens } } }));
     expect(sts.requests).toHaveLength(1);
   });
 
@@ -242,14 +242,20 @@ describe('runRequests with an issued SAML token', () => {
     const working = () => Promise.resolve(undefined);
     await runRequests(
       requestsOf(project, 1),
-      contextFor(project, { issuedTokens, tls: { anchors: [sts.caPem], identityFor: working } }),
+      contextFor(project, {
+        protocols: { soap: { issuedTokens } },
+        tls: { anchors: [sts.caPem], identityFor: working },
+      }),
     );
     // Only the STS keystore is broken; the request's own TLS still asks for its (absent) identity.
     const broken = (ref: string | undefined) =>
       ref === 'ks-sts' ? Promise.reject(new Error('keystore unreadable')) : Promise.resolve(undefined);
     const result = await runRequests(
       requestsOf(project, 1),
-      contextFor(project, { issuedTokens, tls: { anchors: [sts.caPem], identityFor: broken } }),
+      contextFor(project, {
+        protocols: { soap: { issuedTokens } },
+        tls: { anchors: [sts.caPem], identityFor: broken },
+      }),
     );
     expect(JSON.stringify(result)).not.toContain('keystore unreadable');
     expect(service.bodies).toHaveLength(2);
@@ -331,7 +337,7 @@ describe('soapIssuedTokenTarget', () => {
     expect(target.tls?.ca).toEqual([sts.caPem]);
     await issuedTokens.get(entry, target, { ctx });
     expect(issuedTokens.peek(entry, soapIssuedTokenKeyTarget(selected, context))).toBeDefined();
-    await runRequests(requestsOf(project, 1), contextFor(project, { issuedTokens }));
+    await runRequests(requestsOf(project, 1), contextFor(project, { protocols: { soap: { issuedTokens } } }));
     expect(sts.requests).toHaveLength(1);
     expect(service.bodies[0]).toContain('ID="_fixture-2.0"');
   });

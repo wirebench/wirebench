@@ -1,7 +1,8 @@
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { openHistory, historyWsOf } from '../../../src/project/history.js';
+import { openHistory } from '../../../src/project/history.js';
+import { historyWsOf } from '../../../src/ws/history-entry.js';
 import type { HistoryEntry } from '../../../src/project/history.js';
 import type { WsExchange, WsFrame } from '../../../src/ws/model.js';
 import { tempProjectDir } from './fixture.js';

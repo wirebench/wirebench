@@ -4,6 +4,7 @@
  */
 import type { CapLimits } from '../http/transcript-cap.js';
 import { capByEnds, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '../http/transcript-cap.js';
+import type { HistorySse } from '../project/history.js';
 import type { SseRow } from './sse.js';
 
 export const SSE_MEMORY_ROWS = 10_000;
@@ -117,5 +118,54 @@ export function createSseRowStore(
     get droppedRows(): number {
       return droppedRows;
     },
+  };
+}
+
+/**
+ * The shape {@link historySseOf} needs from a REST send's event-stream summary: the desktop's
+ * `RestEventStreamWire` matches it field for field, but the engine stays free of the wire schema
+ * (the engine has no business depending on the desktop's zod types) and takes anything with the
+ * same shape instead.
+ */
+export interface RestEventStreamLike {
+  readonly rows: readonly SseRow[];
+  readonly counts: {
+    readonly events: number;
+    readonly comments: number;
+    readonly retries: number;
+    readonly bytes: number;
+  };
+  readonly lastEventId: string;
+  readonly endedBy: 'server' | 'client' | 'error';
+  readonly error?: string;
+  /** Rows already evicted from the in-memory store before this summary was built. */
+  readonly droppedRows: number;
+  /** Whether the summary's own cap (`SSE_SUMMARY_LIMITS`) cut anything further. */
+  readonly truncated: boolean;
+  /** Rows the summary's own cap omitted, on top of `droppedRows`. */
+  readonly omittedRows: number;
+}
+
+/**
+ * Builds a {@link HistorySse} from a REST send's event-stream summary, re-capping its rows down to
+ * {@link SSE_HISTORY_LIMITS} (tighter than the summary's own `SSE_SUMMARY_LIMITS`, the same way
+ * `historyWsOf` re-caps a WebSocket session's frames). `omittedRows` totals every row missing
+ * from the result compared to the live stream: rows the in-memory store had already dropped
+ * (`droppedRows`), rows the summary's own cap left out (`omittedRows`), and rows this re-cap cut.
+ */
+export function historySseOf(stream: RestEventStreamLike): HistorySse {
+  const capped = capSseRows(stream.rows, SSE_HISTORY_LIMITS);
+  const totalOmitted = stream.droppedRows + stream.omittedRows + capped.omittedRows;
+  // `stream.truncated`/`capped.truncated` only say whether a *cap* had to cut something; a live
+  // stream can also have rows the in-memory store already evicted (`droppedRows`) with neither cap
+  // ever needing to trim anything further, which is still an incomplete transcript.
+  const truncated = totalOmitted > 0 || stream.truncated || capped.truncated;
+  return {
+    rows: capped.rows,
+    counts: stream.counts,
+    lastEventId: stream.lastEventId,
+    endedBy: stream.endedBy,
+    ...(stream.error !== undefined ? { error: stream.error } : {}),
+    ...(truncated ? { truncated: true, ...(totalOmitted > 0 ? { omittedRows: totalOmitted } : {}) } : {}),
   };
 }

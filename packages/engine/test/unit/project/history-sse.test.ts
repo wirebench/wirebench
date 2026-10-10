@@ -1,8 +1,10 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { openHistory, historySseOf } from '../../../src/project/history.js';
-import type { HistoryEntry, RestEventStreamLike } from '../../../src/project/history.js';
+import { openHistory } from '../../../src/project/history.js';
+import { historySseOf } from '../../../src/rest/sse-transcript.js';
+import type { HistoryEntry } from '../../../src/project/history.js';
+import type { RestEventStreamLike } from '../../../src/rest/sse-transcript.js';
 import type { SseRow } from '../../../src/rest/sse.js';
 import { tempProjectDir } from './fixture.js';
 

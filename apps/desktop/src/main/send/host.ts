@@ -114,7 +114,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       ? { keystoreFor: async (keystoreId: string) => await project.keystoreFor?.(projectId, keystoreId) }
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
-    ...(issued !== undefined ? { issuedTokens: issued } : {}),
+    ...(issued !== undefined ? { protocols: { soap: { issuedTokens: issued } } } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
     ...(cookies !== undefined ? { cookies } : {}),
     contractFor: restContractFor(deps),
