@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
@@ -10,6 +10,7 @@ import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { sessionStatus } from '../features/ssh/session-status.js';
 import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useDraftsStore } from '../state/drafts.js';
+import { tabsInSet, type TabSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useWebhooksStore } from '../state/webhooks.js';
@@ -150,8 +151,21 @@ const MENU_ITEM_CLASS =
  * The tabbed editor area. A placeholder tab is always present; opening a request from the
  * explorer adds a real tab from `state/editors.ts`; its body is the lazily-loaded request editor.
  */
+/** What an area's empty editor says, before anything of that area is open. */
+const EMPTY_HINT: Readonly<Record<TabSet, string>> = {
+  explorer: 'Select a request in the Explorer, or import a definition to get started.',
+  environments: 'Select an environment to edit its variables.',
+  history: 'Select a history entry to see what was sent and received.',
+  ssh: 'No open sessions. Double-click a host to connect.',
+};
+
 export function EditorArea() {
-  const tabs = useEditorsStore((state) => state.tabs);
+  const allTabs = useEditorsStore((state) => state.tabs);
+  // Only the set of the area in view is on the strip (`tab-sets.ts`); the rest wait their turn.
+  const displayedSet = useEditorsStore((state) => state.displayedSet);
+  const tabs = useMemo(() => tabsInSet(allTabs, displayedSet), [allTabs, displayedSet]);
+  // Explorer's set opens on the Start page; another area's set with nothing open shows its own hint.
+  const hasStart = displayedSet === 'explorer';
   const dirtyRequests = useDraftsStore((state) => state.requests);
   const dirtyRestRequests = useDraftsStore((state) => state.restRequests);
   const dirtyGrpcRequests = useDraftsStore((state) => state.grpcRequests);
@@ -177,7 +191,8 @@ export function EditorArea() {
   const catchUrlNames = Object.fromEntries(catchUrls.map((hook) => [hook.id, hook.name]));
   const hostSessions = useHostsStore((state) => state.sessions);
   const resolvedHosts = useHostsStore((state) => state.resolved);
-  const terminalTabs = tabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.hostId !== undefined);
+  // Every terminal, whichever set is shown: they stay mounted so leaving Hosts never ends a session.
+  const terminalTabs = allTabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.hostId !== undefined);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -258,7 +273,7 @@ export function EditorArea() {
   // APG tabs: one tab stop for the whole list, Left/Right/Home/End move within it, and focus
   // carries the selection with it (automatic activation) — the panels are already mounted
   // lazily, so following focus costs nothing a click would not.
-  const order = [START_ID, ...tabs.map((tab) => tab.id)];
+  const order = [...(hasStart ? [START_ID] : []), ...tabs.map((tab) => tab.id)];
   const select = (id: string): void => {
     if (id === START_ID) {
       showStart();
@@ -347,22 +362,24 @@ export function EditorArea() {
             }
           }}
         >
-          <button
-            type="button"
-            role="tab"
-            id={tabId(START_ID)}
-            aria-controls={panelId(START_ID)}
-            aria-selected={showingStart}
-            tabIndex={showingStart ? 0 : -1}
-            onClick={() => {
-              showStart();
-            }}
-            className={`inline-flex shrink-0 items-center border-r border-hairline px-3 text-sm ${
-              showingStart ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
-            }`}
-          >
-            Start
-          </button>
+          {hasStart && (
+            <button
+              type="button"
+              role="tab"
+              id={tabId(START_ID)}
+              aria-controls={panelId(START_ID)}
+              aria-selected={showingStart}
+              tabIndex={showingStart ? 0 : -1}
+              onClick={() => {
+                showStart();
+              }}
+              className={`inline-flex shrink-0 items-center border-r border-hairline px-3 text-sm ${
+                showingStart ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+              }`}
+            >
+              Start
+            </button>
+          )}
           {tabs.map((tab) => {
             const label = labelFor(tab);
             const dirty = isDirty(tab);
@@ -506,14 +523,16 @@ export function EditorArea() {
                 sideOffset={4}
                 className="z-50 max-h-96 min-w-56 max-w-sm overflow-y-auto rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
               >
-                <DropdownMenu.Item
-                  className={MENU_ITEM_CLASS}
-                  onSelect={() => {
-                    select(START_ID);
-                  }}
-                >
-                  Start
-                </DropdownMenu.Item>
+                {hasStart && (
+                  <DropdownMenu.Item
+                    className={MENU_ITEM_CLASS}
+                    onSelect={() => {
+                      select(START_ID);
+                    }}
+                  >
+                    Start
+                  </DropdownMenu.Item>
+                )}
                 {tabs.map((tab) => (
                   <DropdownMenu.Item
                     key={tab.id}
@@ -552,7 +571,7 @@ export function EditorArea() {
             data-testid="editor-empty"
             className="flex h-full items-center justify-center px-6 text-sm text-fg-subtle"
           >
-            Select a request in the Explorer, or import a definition to get started.
+            {EMPTY_HINT[displayedSet]}
           </div>
         ) : activeTab.kind === 'interface' && activeTab.interfaceId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

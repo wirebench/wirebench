@@ -157,8 +157,9 @@ test.describe('environments', () => {
     await openEnvironment(page, 'Environment 1');
     await toggleVariable(page, 'intA');
 
-    // Opening the environment page switched the editor area to its tab; the request tab is
-    // still open (just not selected), so reselect it before sending again.
+    // Opening the environment page brought the Environments area into view; the request's tab is
+    // Explorer's, so go back there before sending again.
+    await page.getByTestId('activity-bar').getByRole('button', { name: 'Explorer', exact: true }).click();
     await page.getByRole('tab', { name: 'Request 1' }).click();
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('status-bar')).toContainText('200', { timeout: 20_000 });
@@ -168,6 +169,8 @@ test.describe('environments', () => {
     await openEnvironmentsView(page);
     await openEnvironment(page, 'Environment 1');
     await toggleVariable(page, 'intA');
+
+    await page.getByTestId('activity-bar').getByRole('button', { name: 'Explorer', exact: true }).click();
 
     await page.getByRole('tab', { name: 'Request 1' }).click();
     await page.getByTestId('request-send').click();

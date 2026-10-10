@@ -129,7 +129,7 @@ export function compareDiff(left: CompareSide, right: CompareSide): NonNullable<
 export function openCompareTab(left: CompareSide, right: CompareSide): void {
   useEditorsStore
     .getState()
-    .openOrReplace({ id: 'diff', kind: 'diff', title: 'Compare', diff: compareDiff(left, right) });
+    .openOrReplace({ id: 'diff', kind: 'diff', set: 'history', title: 'Compare', diff: compareDiff(left, right) });
 }
 
 /** Opens a diff tab over the two most recent history entries, newest on the right. */

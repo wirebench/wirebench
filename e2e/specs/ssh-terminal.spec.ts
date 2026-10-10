@@ -79,6 +79,16 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   await page.keyboard.press('Enter');
   await expect(terminal).toContainText('echo hi', { timeout: 30_000 });
 
+  // The terminal's tab belongs to Hosts: Explorer's strip does not show it, and coming back finds
+  // the same session still open.
+  const connected = page.getByTestId('editor-area').getByLabel('connected', { exact: true });
+  await page.getByTestId('activity-bar').getByRole('button', { name: 'Explorer', exact: true }).click();
+  await expect(connected).toHaveCount(0);
+  await expect(page.getByTestId('editor-empty')).toBeVisible();
+  await page.getByTestId('activity-hosts').click();
+  await expect(connected).toBeVisible();
+  await terminal.click();
+
   // The echo returns the cursor to column 0 without a line feed, so `exit 0` overwrites the first line.
   await page.keyboard.type('exit 0');
   await page.keyboard.press('Enter');
