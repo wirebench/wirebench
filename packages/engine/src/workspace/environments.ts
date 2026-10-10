@@ -15,7 +15,8 @@
  * carries one.
  */
 
-import type { Endpoint, Environment, Interface, Project, PropertyMap, SoapRequestDef } from '../project/model.js';
+import type { Environment, Project, PropertyMap } from '../project/model.js';
+import type { Endpoint, Interface, SoapRequestDef } from '../soap/model.js';
 import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';

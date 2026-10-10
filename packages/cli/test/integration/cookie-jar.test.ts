@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createApi, createProject, createRestRequest, saveProject } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, saveProject, withRestApis } from '@wirebench/engine';
 import { runCli } from './helpers.js';
 
 let dir: string;
@@ -28,9 +28,11 @@ beforeAll(async () => {
   close = () => new Promise((resolve) => server.close(() => resolve()));
   dir = await mkdtemp(join(tmpdir(), 'wb-cli-jar-'));
   await saveProject(
-    {
-      ...createProject('Jar', { id: 'p-jar' }),
-      apis: [
+    withRestApis(
+      {
+        ...createProject('Jar', { id: 'p-jar' }),
+      },
+      [
         {
           ...createApi('Api', { id: 'api-1', slug: 'api', baseUrl: base }),
           requests: [
@@ -40,7 +42,7 @@ beforeAll(async () => {
           ],
         },
       ],
-    },
+    ),
     dir,
   );
 });

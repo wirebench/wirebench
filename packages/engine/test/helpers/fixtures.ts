@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, withSoapInterfaces } from '../../src/soap/model.js';
 import type { Project } from '../../src/project/model.js';
 import { toKeystoreRef } from '../../src/project/keystores.js';
 import { soapRun } from '../../src/soap/run.js';
@@ -57,14 +58,26 @@ export function readFixtureWsdl(name: string): string {
  */
 export function projectWithWss(entries: readonly WssEntry[]): { project: Project; selected: SoapSelected } {
   const keystore = (id: string) => toKeystoreRef({ id, name: id, path: `${id}.pem`, type: 'pem' });
-  const project: Project = {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-wss',
-    name: 'WSS',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: {},
-    disabledProperties: [],
-    interfaces: [
+  const project: Project = withSoapInterfaces(
+    {
+      formatVersion: FORMAT_VERSION,
+      id: 'proj-wss',
+      name: 'WSS',
+      settings: DEFAULT_PROJECT_SETTINGS,
+      properties: {},
+      disabledProperties: [],
+      containers: {},
+
+      sequences: [],
+      mocks: [],
+      environments: [],
+      wss: {
+        outgoing: [toWssOutgoingRef({ id: 'w1', name: 'w1', mustUnderstand: false, entries: [...entries] })],
+        incoming: [],
+        keystores: ['ks-proof', 'ks-tls', 'ks-issuer'].map(keystore),
+      },
+    },
+    [
       {
         kind: 'soap',
         id: 'iface-1',
@@ -102,18 +115,7 @@ export function projectWithWss(entries: readonly WssEntry[]): { project: Project
         ],
       },
     ],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: {
-      outgoing: [toWssOutgoingRef({ id: 'w1', name: 'w1', mustUnderstand: false, entries: [...entries] })],
-      incoming: [],
-      keystores: ['ks-proof', 'ks-tls', 'ks-issuer'].map(keystore),
-    },
-  };
+  );
   const selected = soapRun.groups(project).flatMap((group) => group.candidates.map((candidate) => candidate.item))[0];
   if (selected === undefined) {
     throw new Error('projectWithWss: no request selected');

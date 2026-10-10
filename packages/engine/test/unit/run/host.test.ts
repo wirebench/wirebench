@@ -17,7 +17,7 @@ function contextWith(auth: AuthConfig, extra: Partial<RunContext['host']> = {}, 
     auth,
     requests: [createRestRequest('Get', { url: '/x' })],
   });
-  const project = { ...createProject('P'), apis: [api] };
+  const project = { ...createProject('P'), containers: { rest: [api] } };
   return {
     project,
     projectDir: '/nowhere',
@@ -85,7 +85,7 @@ describe('${#System#…} values', () => {
       ],
     });
     const context: RunContext = {
-      project: { ...createProject('P'), apis: [api] },
+      project: { ...createProject('P'), containers: { rest: [api] } },
       projectDir: '/nowhere',
       overrides: {},
       host: testHost({}, { getSecret: () => Promise.resolve(undefined), onSecretValue: (v) => reported.push(v) }),

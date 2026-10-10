@@ -12,10 +12,12 @@ import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
 import type { GrpcRequestDef } from '../../../src/grpc/model.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { OAuth2Auth, Project } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
@@ -69,10 +71,8 @@ function baseProject(): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
+    containers: {},
+
     sequences: [],
     mocks: [],
     environments: [],
@@ -85,10 +85,12 @@ function restProject(paths: readonly string[]): Project {
     ...createRestRequest(`r${String(order)}`, { id: `rest-${String(order)}`, order, url: `${rest.url}${path}` }),
     assertions: [{ type: 'status', equals: 200 }] satisfies Assertion[],
   }));
-  return {
-    ...baseProject(),
-    apis: [{ ...createApi('Api', { id: 'api-rest', slug: 'api', order: 0, baseUrl: '', auth: AUTH }), requests }],
-  };
+  return withRestApis(
+    {
+      ...baseProject(),
+    },
+    [{ ...createApi('Api', { id: 'api-rest', slug: 'api', order: 0, baseUrl: '', auth: AUTH }), requests }],
+  );
 }
 
 /** SOAP requests posted to the REST test server's routes: its `/status/401` refuses any credential. */
@@ -125,7 +127,7 @@ function soapProject(paths: readonly string[]): Project {
     wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
     operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests }],
   };
-  return { ...baseProject(), interfaces: [iface] };
+  return { ...baseProject(), containers: { ...baseProject().containers, soap: [iface] } };
 }
 
 function grpcProject(calls: readonly { method: string; message: object }[]): Project {
@@ -141,16 +143,19 @@ function grpcProject(calls: readonly { method: string; message: object }[]): Pro
   }));
   return {
     ...baseProject(),
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'api-greeter',
-        slug: 'greeter',
-        target: grpc.target,
-        tls: false,
-        auth: AUTH,
-        requests,
-      }),
-    ],
+    containers: {
+      ...baseProject().containers,
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'api-greeter',
+          slug: 'greeter',
+          target: grpc.target,
+          tls: false,
+          auth: AUTH,
+          requests,
+        }),
+      ],
+    },
   };
 }
 

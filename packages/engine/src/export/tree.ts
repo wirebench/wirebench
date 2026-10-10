@@ -12,7 +12,8 @@ import { blankIfLiteral, blankUrlCredentials } from '../import/credential-values
 import { referencesOnly } from '../import/values.js';
 import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../grpc/model.js';
 import type { KeyValueEntry } from '../http/entries.js';
-import type { AuthConfig, Interface, Project, PropertyMap, SoapOwnerAuth, SoapRequestDef } from '../project/model.js';
+import type { AuthConfig, Project, PropertyMap, SoapOwnerAuth } from '../project/model.js';
+import type { Interface, SoapRequestDef } from '../soap/model.js';
 import type {
   MultipartFormPart,
   RestApi,
@@ -21,12 +22,15 @@ import type {
   RestRequestDef,
   RestResponseExample,
 } from '../rest/model.js';
-import { exampleBodyExtension } from '../rest/model.js';
+import { exampleBodyExtension, restApisOf } from '../rest/model.js';
 import { joinBase, splitQueryKeepingReferences } from '../rest/url.js';
 import type { RequestScripts } from '../script/model.js';
 import type { WsApi, WsFolder, WsRequestDef } from '../ws/model.js';
 import type { CollectionExportEnvironment, CollectionExportInput } from './model.js';
 import { colonPath, ExportContext, isSecretOnly } from './shared.js';
+import { soapInterfacesOf } from '../soap/model.js';
+import { grpcApisOf } from '../grpc/model.js';
+import { wsApisOf } from '../ws/model.js';
 
 export interface XVariable {
   readonly name: string;
@@ -207,7 +211,9 @@ class TreeBuilder {
     if (project.webhooks !== undefined) left.push('the webhook collection');
     if (project.sequences.length > 0) left.push(`${project.sequences.length} sequence(s)`);
     for (const c of project.unsupported ?? []) left.push(c.name ?? c.slug);
-    for (const list of Object.values(project.extraContainers ?? {})) for (const c of list) left.push(c.name);
+    for (const [kind, list] of Object.entries(project.containers)) {
+      if (!EXPORTED_KINDS.has(kind)) for (const c of list) left.push(c.name);
+    }
     if (left.length > 0) this.ctx.report.warn(`Not exported: ${left.join(', ')}.`);
   }
 
@@ -715,7 +721,15 @@ class TreeBuilder {
   }
 }
 
+/** The kinds the export writes; any other kind's containers are reported as left out. */
+const EXPORTED_KINDS: ReadonlySet<string> = new Set(['soap', 'rest', 'grpc', 'websocket']);
+
 /** Every container of the project, in the order the explorer shows them. */
 function containersOf(project: Project): Container[] {
-  return byOrder<Container>([...project.interfaces, ...project.apis, ...project.grpcApis, ...project.wsApis]);
+  return byOrder<Container>([
+    ...soapInterfacesOf(project),
+    ...restApisOf(project),
+    ...grpcApisOf(project),
+    ...wsApisOf(project),
+  ]);
 }

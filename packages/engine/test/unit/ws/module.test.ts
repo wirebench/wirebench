@@ -7,19 +7,21 @@ import { wsProtocol } from '../../../src/ws/module.js';
 
 const project: Project = {
   ...createProject('WebSocket module', { id: 'proj-ws' }),
-  wsApis: [
-    createWsApi('Feed', {
-      id: 'api-feed',
-      requests: [createWsRequest('Ticker', { id: 'ws-ticker' })],
-      folders: [
-        createWsFolder('Admin', {
-          id: 'ws-admin',
-          order: 1,
-          requests: [createWsRequest('Audit', { id: 'ws-audit' })],
-        }),
-      ],
-    }),
-  ],
+  containers: {
+    websocket: [
+      createWsApi('Feed', {
+        id: 'api-feed',
+        requests: [createWsRequest('Ticker', { id: 'ws-ticker' })],
+        folders: [
+          createWsFolder('Admin', {
+            id: 'ws-admin',
+            order: 1,
+            requests: [createWsRequest('Audit', { id: 'ws-audit' })],
+          }),
+        ],
+      }),
+    ],
+  },
 };
 
 describe('wsProtocol', () => {

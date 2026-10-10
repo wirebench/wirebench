@@ -3,7 +3,8 @@ import { exportCollection } from '../../../src/export/index.js';
 import { mapOpenCollection } from '../../../src/import/opencollection/map.js';
 import { parseOpenCollection } from '../../../src/import/opencollection/parse.js';
 import type { AuthConfig } from '../../../src/project/model.js';
-import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface, createRequest } from '../../../src/soap/model.js';
 import type { RestBody, RestRequestSettings } from '../../../src/rest/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { apiFromPostmanCollection } from '../../../src/rest/postman/map.js';
@@ -20,7 +21,7 @@ function oneRequest(input: { auth?: AuthConfig; body?: RestBody; settings?: Rest
     ...(input.settings !== undefined ? { settings: input.settings } : {}),
   });
   const api = createApi('A', { newId, baseUrl: 'https://h.example.com/v1', requests: [request] });
-  return { ...createProject('P', { newId }), apis: [api] };
+  return { ...createProject('P', { newId }), containers: { rest: [api] } };
 }
 
 const both = (project: ReturnType<typeof oneRequest>) => {
@@ -156,7 +157,7 @@ describe('SOAP 1.2', () => {
       definitionUrl: 'x',
       operations: [{ name: 'Op', bindingName: '{u}B', slug: 'op', order: 0, requests: [request] }],
     });
-    const project = { ...createProject('P', { newId }), interfaces: [iface] };
+    const project = { ...createProject('P', { newId }), containers: { soap: [iface] } };
     const oc = exportCollection('opencollection', { project, target: { kind: 'container', id: iface.id } });
     const back = mapOpenCollection(parseOpenCollection(oc.files[0]!.text), { newId }).rest!;
     const soap = back.folders[0]!.requests[0]!;
@@ -176,7 +177,7 @@ describe('review fixes', () => {
       ],
     };
     const api = createApi('A', { newId, baseUrl: 'https://h', requests: [request] });
-    const project = { ...createProject('P', { newId }), apis: [api] };
+    const project = { ...createProject('P', { newId }), containers: { rest: [api] } };
     const oc = exportCollection('opencollection', { project, target: { kind: 'project' } });
     const back = mapOpenCollection(parseOpenCollection(oc.files[0]!.text), { newId }).rest!.folders[0]!.requests[0]!;
     expect(back.assertions).toEqual([{ type: 'match', language: 'jsonpath', expression: '$.id', equals: '${userId}' }]);
@@ -190,7 +191,7 @@ describe('review fixes', () => {
       query: [{ name: 'a', value: '1', enabled: false }],
     });
     const api = createApi('A', { newId, baseUrl: 'https://h', requests: [request] });
-    const project = { ...createProject('P', { newId }), apis: [api] };
+    const project = { ...createProject('P', { newId }), containers: { rest: [api] } };
     const oc = exportCollection('opencollection', { project, target: { kind: 'project' } });
     const back = mapOpenCollection(parseOpenCollection(oc.files[0]!.text), { newId }).rest!.folders[0]!.requests[0]!;
     expect(back.query).toEqual([

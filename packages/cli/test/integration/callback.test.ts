@@ -141,13 +141,15 @@ beforeAll(async () => {
   await saveProject(
     {
       ...createProject('Shop', { id: 'P1' }),
-      apis: [
-        createApi('Shop', {
-          id: 'A1',
-          baseUrl: origin,
-          requests: [order('R1', 'Pay', '{"outcome":"pay"}'), order('R2', 'Refuse', '{"outcome":"refuse"}')],
-        }),
-      ],
+      containers: {
+        rest: [
+          createApi('Shop', {
+            id: 'A1',
+            baseUrl: origin,
+            requests: [order('R1', 'Pay', '{"outcome":"pay"}'), order('R2', 'Refuse', '{"outcome":"refuse"}')],
+          }),
+        ],
+      },
     },
     dir,
   );

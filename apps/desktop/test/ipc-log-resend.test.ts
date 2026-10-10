@@ -110,15 +110,17 @@ function model(options: { accept?: string; grpcKind?: GrpcMethodKind } = {}): Pr
   });
   return {
     ...createProject('P', { id: 'p1' }),
-    apis: [createApi('Api', { id: 'api-1', baseUrl: 'http://h', requests: [rest] })],
-    grpcApis: [
-      createGrpcApi('G', {
-        id: 'g-1',
-        target: 'h:1',
-        tls: false,
-        folders: [createGrpcFolder('G', { id: 'f-1', requests: [call] })],
-      }),
-    ],
+    containers: {
+      rest: [createApi('Api', { id: 'api-1', baseUrl: 'http://h', requests: [rest] })],
+      grpc: [
+        createGrpcApi('G', {
+          id: 'g-1',
+          target: 'h:1',
+          tls: false,
+          folders: [createGrpcFolder('G', { id: 'f-1', requests: [call] })],
+        }),
+      ],
+    },
   };
 }
 

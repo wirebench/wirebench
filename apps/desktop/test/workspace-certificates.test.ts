@@ -18,7 +18,7 @@ import {
   type TestCertificate,
   type TestSoapServer,
 } from '@wirebench/engine/test-helpers';
-import { probeTlsChain } from '@wirebench/engine';
+import { probeTlsChain, restApisOf } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
@@ -76,7 +76,7 @@ async function workspaceWithEndpointAndKeystore(): Promise<{ service: WorkspaceS
     environmentId: createdEnvironmentId as string,
     patch: { properties: { petsUrl: `https://localhost:${new URL(server.url).port}/pets` } },
   });
-  expect((host.model()?.apis[0] as RestApi).baseUrl).toBe('${petsUrl}');
+  expect((restApisOf(host.model()!)[0] as RestApi).baseUrl).toBe('${petsUrl}');
 
   const dir = host.runContextFor('')?.projectDir as string;
   const client = generateClientCert(generateTestCa());

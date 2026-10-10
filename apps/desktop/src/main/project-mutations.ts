@@ -13,10 +13,13 @@ import {
   createRequest,
   defaultContentId,
   generateId,
+  grpcApisOf,
   normalizeWsa,
   ProjectError,
   slugify,
+  soapInterfacesOf,
   uniqueSlug,
+  wsApisOf,
 } from '@wirebench/engine';
 import type {
   Attachment,
@@ -197,11 +200,17 @@ function notFound(what: string, id: string): never {
 }
 
 function requireInterface(project: Project, interfaceId: string): Interface {
-  return project.interfaces.find((iface) => iface.id === interfaceId) ?? notFound('interface', interfaceId);
+  return soapInterfacesOf(project).find((iface) => iface.id === interfaceId) ?? notFound('interface', interfaceId);
 }
 
 function replaceInterface(project: Project, next: Interface): Project {
-  return { ...project, interfaces: project.interfaces.map((iface) => (iface.id === next.id ? next : iface)) };
+  return {
+    ...project,
+    containers: {
+      ...project.containers,
+      soap: soapInterfacesOf(project).map((iface) => (iface.id === next.id ? next : iface)),
+    },
+  };
 }
 
 function replaceOperation(iface: Interface, next: OperationDef): Interface {
@@ -709,9 +718,12 @@ export async function applyChange(
       return {
         project: {
           ...project,
-          interfaces: project.interfaces
-            .filter((iface) => iface.id !== change.interfaceId)
-            .map((iface, index) => ({ ...iface, order: index })),
+          containers: {
+            ...project.containers,
+            soap: soapInterfacesOf(project)
+              .filter((iface) => iface.id !== change.interfaceId)
+              .map((iface, index) => ({ ...iface, order: index })),
+          },
         },
       };
     }
@@ -826,9 +838,9 @@ export async function applyChange(
     // folder or its API, from which the model knows which kind of tree it sits in.
     case 'add-folder':
       return (
-        project.grpcApis.some((api) => api.id === change.apiId)
+        grpcApisOf(project).some((api) => api.id === change.apiId)
           ? addGrpcFolder
-          : project.wsApis.some((api) => api.id === change.apiId)
+          : wsApisOf(project).some((api) => api.id === change.apiId)
             ? addWsFolder
             : addFolder
       )(project, {

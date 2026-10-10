@@ -14,7 +14,9 @@ import {
   loadProject,
   mergePreferences,
   nodeFs,
+  restApisOf,
   soapEffectiveAuth,
+  soapInterfacesOf,
   soapItemFor,
 } from '@wirebench/engine';
 import type { FsLike, SoapOverride } from '@wirebench/engine';
@@ -308,7 +310,7 @@ paths:
     expect(project.interfaces.map((iface) => iface.slug)).toEqual(['Calculator-2']);
     const reopened = await loadProject(dir);
     expect(reopened.problems.map((problem) => problem.code)).not.toContain('api-slug-conflict');
-    expect(reopened.project.apis.map((api) => api.slug)).toEqual(['Calculator']);
+    expect(restApisOf(reopened.project).map((api) => api.slug)).toEqual(['Calculator']);
     expect(existsSync(join(dir, 'apis', 'Calculator', 'api.yaml'))).toBe(true);
   });
 
@@ -1515,7 +1517,7 @@ describe('ProjectHost attachments', () => {
     await service.close();
 
     const { project, problems } = await loadProject(dir);
-    const request = project.interfaces
+    const request = soapInterfacesOf(project)
       .flatMap((iface) => iface.operations)
       .flatMap((operation) => operation.requests)
       .find((candidate) => candidate.id === requestId)!;

@@ -1,7 +1,9 @@
 /** SOAP's run facet on its own: what it offers a run, why a request cannot run, its needs, one send. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -86,13 +88,14 @@ const project: Project = {
   settings: DEFAULT_PROJECT_SETTINGS,
   properties: {},
   disabledProperties: [],
-  interfaces: [
-    iface('Billing', 2, [request('Later', 1), request('Get', 0), request('Ghost', 2, { orphaned: true })]),
-    iface('Accounts', 0, [request('List', 0)]),
-  ],
-  apis: [createApi('Api', { id: 'api-1', order: 1, requests: [createRestRequest('Ping', { id: 'req-ping' })] })],
-  grpcApis: [],
-  wsApis: [],
+  containers: {
+    soap: [
+      iface('Billing', 2, [request('Later', 1), request('Get', 0), request('Ghost', 2, { orphaned: true })]),
+      iface('Accounts', 0, [request('List', 0)]),
+    ],
+    rest: [createApi('Api', { id: 'api-1', order: 1, requests: [createRestRequest('Ping', { id: 'req-ping' })] })],
+  },
+
   sequences: [],
   mocks: [],
   environments: [],
@@ -180,7 +183,10 @@ describe('soapRun.open', () => {
 describe('soapRun.open with a cached definition', () => {
   const cached: Project = {
     ...project,
-    interfaces: project.interfaces.map((i) => ({ ...i, cacheDefinition: true })),
+    containers: {
+      ...project.containers,
+      soap: soapInterfacesOf(project).map((i) => ({ ...i, cacheDefinition: true })),
+    },
   };
   const contextOf = (extra: Partial<RunContext> = {}): RunContext => ({
     project: cached,
@@ -264,13 +270,16 @@ describe('soapRun.resolve', () => {
   it('reports a reference nothing resolves, and does not throw it', async () => {
     const withRef: Project = {
       ...project,
-      interfaces: project.interfaces.map((i) => ({
-        ...i,
-        operations: i.operations.map((operation) => ({
-          ...operation,
-          requests: operation.requests.map((r) => ({ ...r, envelopeXml: '<Envelope>${nope}</Envelope>' })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((i) => ({
+          ...i,
+          operations: i.operations.map((operation) => ({
+            ...operation,
+            requests: operation.requests.map((r) => ({ ...r, envelopeXml: '<Envelope>${nope}</Envelope>' })),
+          })),
         })),
-      })),
+      },
     };
     expect(await resolveIn(withRef, 'Billing/First/Get')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });

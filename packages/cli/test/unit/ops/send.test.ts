@@ -8,6 +8,8 @@ import {
   loadProject,
   REDACTED_MARKER,
   REDACTED_XML_MARKER,
+  soapInterfacesOf,
+  wsApisOf,
 } from '@wirebench/engine';
 import { startTestWsServer } from '@wirebench/engine/test-helpers';
 import type { TestWsServer } from '@wirebench/engine/test-helpers';
@@ -221,16 +223,19 @@ describe('op send', () => {
     await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        operations: iface.operations.map((operation) => ({
-          ...operation,
-          requests: operation.requests.map((request) => ({
-            ...request,
-            assertions: [{ type: 'status', equals: 200 }],
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          operations: iface.operations.map((operation) => ({
+            ...operation,
+            requests: operation.requests.map((request) => ({
+              ...request,
+              assertions: [{ type: 'status', equals: 200 }],
+            })),
           })),
         })),
-      })),
+      },
     }));
     const body =
       '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
@@ -242,7 +247,7 @@ describe('op send', () => {
     expect(result.assertions[0]).toMatchObject({ type: 'status', outcome: 'failed' });
     expect(calculator.received[0]?.body).toBe(body);
     const { project } = await loadProject(fixture.dir);
-    expect(project.interfaces[0]?.operations[0]?.requests[0]?.envelopeXml).not.toBe(body);
+    expect(soapInterfacesOf(project)[0]?.operations[0]?.requests[0]?.envelopeXml).not.toBe(body);
   });
 
   it("shows a failed match on a secret key's value as the marker, not the value", async () => {
@@ -309,19 +314,22 @@ describe('op send', () => {
     await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        operations: iface.operations.map((operation) => ({
-          ...operation,
-          requests: operation.requests.map((request) => ({
-            ...request,
-            assertions: [
-              { type: 'match', language: 'xpath', expression: '//*:Header', equals: 'x' },
-              { type: 'match', language: 'xpath', expression: '//*:Security', equals: 'x' },
-            ],
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          operations: iface.operations.map((operation) => ({
+            ...operation,
+            requests: operation.requests.map((request) => ({
+              ...request,
+              assertions: [
+                { type: 'match', language: 'xpath', expression: '//*:Header', equals: 'x' },
+                { type: 'match', language: 'xpath', expression: '//*:Security', equals: 'x' },
+              ],
+            })),
           })),
         })),
-      })),
+      },
     }));
 
     const result = await runOp(sendOp, { item: SOAP_ITEM, environment: 'local' }, fixture.base({ origin: 'cli' }));
@@ -351,10 +359,13 @@ describe('op send', () => {
     const fixture = await soapProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        auth: { type: 'basic', username: 'calc', passwordRef: 'calcPass', preemptive: true },
-      })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          auth: { type: 'basic', username: 'calc', passwordRef: 'calcPass', preemptive: true },
+        })),
+      },
     }));
     const calculator = await server(() => ({
       status: 500,
@@ -555,8 +566,11 @@ describe('op send', () => {
     const fixture = await soapProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      wsApis: [createWsApi('Chat', { id: 'ws-chat' })],
-      grpcApis: [createGrpcApi('Greeter', { id: 'grpc-greeter' })],
+      containers: {
+        ...project.containers,
+        websocket: [createWsApi('Chat', { id: 'ws-chat' })],
+        grpc: [createGrpcApi('Greeter', { id: 'grpc-greeter' })],
+      },
     }));
 
     await expect(runOp(sendOp, { item: 'CalculatorService/Add/Nope' }, fixture.base())).rejects.toMatchObject({
@@ -795,24 +809,27 @@ describe('op send on a WebSocket request', () => {
     const fixture = await emptyProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      wsApis: [
-        createWsApi('Chat', {
-          id: 'ws-chat',
-          slug: 'chat',
-          url,
-          requests: [
-            createWsRequest('Echo', {
-              id: 'ws-echo',
-              url: '/echo',
-              headers: [{ name: 'X-Key', value: '${secret:wsKey}', enabled: true }],
-              messages: [
-                createWsSavedMessage('Hello', { id: 'm1', content: 'hello' }),
-                createWsSavedMessage('Key', { id: 'm2', content: 'key ${secret:wsKey}' }),
-              ],
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        ...project.containers,
+        websocket: [
+          createWsApi('Chat', {
+            id: 'ws-chat',
+            slug: 'chat',
+            url,
+            requests: [
+              createWsRequest('Echo', {
+                id: 'ws-echo',
+                url: '/echo',
+                headers: [{ name: 'X-Key', value: '${secret:wsKey}', enabled: true }],
+                messages: [
+                  createWsSavedMessage('Hello', { id: 'm1', content: 'hello' }),
+                  createWsSavedMessage('Key', { id: 'm2', content: 'key ${secret:wsKey}' }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      },
     }));
     return fixture;
   }
@@ -875,10 +892,13 @@ describe('op send on a WebSocket request', () => {
     const fixture = await wsProject(deaf.url);
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      wsApis: project.wsApis.map((api) => ({
-        ...api,
-        requests: api.requests.map((request) => ({ ...request, settings: { handshakeTimeoutMs: 300 } })),
-      })),
+      containers: {
+        ...project.containers,
+        websocket: wsApisOf(project).map((api) => ({
+          ...api,
+          requests: api.requests.map((request) => ({ ...request, settings: { handshakeTimeoutMs: 300 } })),
+        })),
+      },
     }));
 
     await expect(

@@ -2,7 +2,7 @@
  * The saved request `send` takes: its item path as `operations` lists it (or as `wirebench run`
  * selects it, on disk or displayed), else its name when only one request has it.
  */
-import { selectRequests } from '@wirebench/engine';
+import { grpcApisOf, selectRequests } from '@wirebench/engine';
 import type { Project, SelectedRequest } from '@wirebench/engine';
 import { OpsError } from './errors.js';
 
@@ -76,7 +76,7 @@ export function resolveItem(project: Project, ref: string): SendableItem {
   }
   // Nothing in a gRPC API is sendable, an API with no requests included; name the API's kind rather
   // than "not found".
-  const grpcApi = project.grpcApis.find((api) => ref === api.name || ref.startsWith(`${api.name}/`));
+  const grpcApi = grpcApisOf(project).find((api) => ref === api.name || ref.startsWith(`${api.name}/`));
   if (grpcApi !== undefined) {
     throw new OpsError('unsupported-kind', `"${ref}" is in the gRPC API "${grpcApi.name}"; ${TAKES}`, { item: ref });
   }

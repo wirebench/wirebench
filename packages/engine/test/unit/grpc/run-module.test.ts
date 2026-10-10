@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
 import { grpcProtocol } from '../../../src/grpc/module.js';
 import { grpcRun } from '../../../src/grpc/run.js';
 import { createProject } from '../../../src/project/model.js';
 import type { RunScope } from '../../../src/protocol/module.js';
 import type { Project } from '../../../src/project/model.js';
+import type { GrpcRequestDef } from '../../../src/grpc/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -80,7 +81,7 @@ function api(name: string, slug: string, order: number) {
 
 const project: Project = {
   ...createProject('gRPC module', { id: 'proj-grpc' }),
-  grpcApis: [api('Greeter', 'greeter', 1), api('Uncached', 'uncached', 0)],
+  containers: { grpc: [api('Greeter', 'greeter', 1), api('Uncached', 'uncached', 0)] },
 };
 
 let dir: string;
@@ -187,13 +188,16 @@ describe('grpcRun.open', () => {
   });
 
   // The app's precedence: unresolved references, then no method, then the schema.
-  const uncachedWith = (patch: Partial<Project['grpcApis'][number]['requests'][number]>) => {
+  const uncachedWith = (patch: Partial<GrpcRequestDef>) => {
     const p: Project = {
       ...project,
-      grpcApis: project.grpcApis.map((a) => ({
-        ...a,
-        requests: a.requests.map((request) => (request.name === 'Hello' ? { ...request, ...patch } : request)),
-      })),
+      containers: {
+        ...project.containers,
+        grpc: grpcApisOf(project).map((a) => ({
+          ...a,
+          requests: a.requests.map((request) => (request.name === 'Hello' ? { ...request, ...patch } : request)),
+        })),
+      },
     };
     const item = grpcRun
       .groups(p)
@@ -241,10 +245,13 @@ describe('grpcRun.resolve', () => {
   it('reports a reference nothing resolves, and does not throw it', async () => {
     const withRef: Project = {
       ...project,
-      grpcApis: project.grpcApis.map((api) => ({
-        ...api,
-        requests: api.requests.map((request) => ({ ...request, message: '{"name":"${nope}"}' })),
-      })),
+      containers: {
+        ...project.containers,
+        grpc: grpcApisOf(project).map((api) => ({
+          ...api,
+          requests: api.requests.map((request) => ({ ...request, message: '{"name":"${nope}"}' })),
+        })),
+      },
     };
     expect(await resolveIn(withRef, 'Greeter/Hello')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });

@@ -48,7 +48,7 @@ function seeded(endpointUrl: string, auth?: SoapOwnerAuth): Project {
     cacheDefinition: false,
     operations: [{ name: 'Call', bindingName: '{urn:x}B', slug: 'call', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { soap: [iface] } };
 }
 
 /** Sends `req-1` of `model` through the engine, with `ref-1` holding the password. */

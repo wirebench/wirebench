@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { tempProjectDir } from './fixture.js';
+import { restApisOf } from '../../../src/rest/model.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const V1_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v1', 'project');
 const V2_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v2', 'project');
@@ -43,7 +45,7 @@ describe('loading a version-1 project folder', () => {
     expect(problems).toEqual([]);
     expect(project.formatVersion).toBe(8);
     expect(project.disabledProperties).toEqual([]);
-    expect(project.apis).toEqual([]);
+    expect(restApisOf(project)).toEqual([]);
     expect(project.environments.length).toBeGreaterThan(0);
     for (const environment of project.environments) {
       expect(environment.disabledProperties).toEqual([]);
@@ -80,9 +82,9 @@ describe('loading a version-2 project folder', () => {
 
     expect(problems).toEqual([]);
     expect(project.formatVersion).toBe(8);
-    expect(project.apis).toEqual([]);
+    expect(restApisOf(project)).toEqual([]);
     expect(project.disabledProperties).toEqual(['tier']);
-    expect(project.interfaces.length).toBeGreaterThan(0);
+    expect(soapInterfacesOf(project).length).toBeGreaterThan(0);
   });
 
   it('is rewritten at the current version with nothing else changed: the diff is the formatVersion line', async () => {
@@ -150,12 +152,12 @@ describe('loading a version-4 project folder', () => {
     const { project, problems } = await loadProject(V4_DIR);
     expect(problems).toEqual([]);
     expect(project.formatVersion).toBe(8);
-    expect(project.interfaces.length).toBeGreaterThan(0);
+    expect(soapInterfacesOf(project).length).toBeGreaterThan(0);
   });
 
   it("loads the v4 fixture's Basic (interface) and NTLM (endpoint) auth unchanged", async () => {
     const { project } = await loadProject(V4_DIR);
-    const countryInfo = project.interfaces.find((iface) => iface.slug === 'CountryInfo');
+    const countryInfo = soapInterfacesOf(project).find((iface) => iface.slug === 'CountryInfo');
     expect(countryInfo?.auth).toMatchInlineSnapshot(`
       {
         "passwordRef": "secret://country/iface-basic",
@@ -198,8 +200,8 @@ describe('loading a version-5 project folder', () => {
     expect(problems).toEqual([]);
     expect(project.formatVersion).toBe(8);
     const requests = [
-      ...project.interfaces.flatMap((iface) => iface.operations.flatMap((op) => op.requests)),
-      ...project.apis.flatMap((api) => api.requests),
+      ...soapInterfacesOf(project).flatMap((iface) => iface.operations.flatMap((op) => op.requests)),
+      ...restApisOf(project).flatMap((api) => api.requests),
     ];
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.scripts === undefined)).toBe(true);

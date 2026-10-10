@@ -8,7 +8,16 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createApi, createProject, createRestRequest, createWsApi, createWsRequest, entry } from '@wirebench/engine';
+import {
+  createApi,
+  createProject,
+  createRestRequest,
+  createWsApi,
+  createWsRequest,
+  entry,
+  restApisOf,
+  wsApisOf,
+} from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
@@ -46,12 +55,14 @@ function fakeCrypto(): CryptoBackend {
 function seeded(authorization = `Bearer ${FAKE_JWT}`): Project {
   return {
     ...createProject('Billing', { id: 'p1' }),
-    apis: [
-      createApi('Billing API', {
-        id: 'api-1',
-        requests: [createRestRequest('Invoices', { id: 'r1', headers: [entry('Authorization', authorization)] })],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Billing API', {
+          id: 'api-1',
+          requests: [createRestRequest('Invoices', { id: 'r1', headers: [entry('Authorization', authorization)] })],
+        }),
+      ],
+    },
   };
 }
 
@@ -99,28 +110,30 @@ describe('SecretScanSession.scan: WS URL and query, URL passwords, form fields',
   it('hands every new location and rule over the strict schema with no value, and moves one', async () => {
     const project: Project = {
       ...createProject('Chat', { id: 'p1' }),
-      apis: [
-        createApi('Auth API', {
-          requests: [
-            createRestRequest('Token', {
-              id: 'r1',
-              url: 'https://svc:fake-url-pass@h.example/token',
-              body: { kind: 'form', fields: [entry('client_secret', 'fake-form-secret')] },
-            }),
-          ],
-        }),
-      ],
-      wsApis: [
-        createWsApi('Chat API', {
-          requests: [
-            createWsRequest('Room', {
-              id: 'w1',
-              url: 'wss://h.example/socket?token=fake-ws-token',
-              query: [entry('access_token', 'fake-ws-query')],
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        rest: [
+          createApi('Auth API', {
+            requests: [
+              createRestRequest('Token', {
+                id: 'r1',
+                url: 'https://svc:fake-url-pass@h.example/token',
+                body: { kind: 'form', fields: [entry('client_secret', 'fake-form-secret')] },
+              }),
+            ],
+          }),
+        ],
+        websocket: [
+          createWsApi('Chat API', {
+            requests: [
+              createWsRequest('Room', {
+                id: 'w1',
+                url: 'wss://h.example/socket?token=fake-ws-token',
+                query: [entry('access_token', 'fake-ws-query')],
+              }),
+            ],
+          }),
+        ],
+      },
     };
     const host = memoryHost(project);
     const { registry, store } = sessions(host);
@@ -141,7 +154,7 @@ describe('SecretScanSession.scan: WS URL and query, URL passwords, form fields',
     const ws = review.findings.find((f) => f.location.kind === 'ws-url')!;
     const result = await session.move([{ id: ws.id, name: 'chat_token' }]);
     expect(result.moved).toEqual([ws.id]);
-    expect(host.current().wsApis[0]!.requests[0]!.url).toBe('wss://h.example/socket?token=${secret:chat_token}');
+    expect(wsApisOf(host.current())[0]!.requests[0]!.url).toBe('wss://h.example/socket?token=${secret:chat_token}');
     expect(await store.list()).toHaveLength(1);
   });
 });
@@ -176,7 +189,7 @@ describe('SecretScanSession.move', () => {
     expect(ref).toBeDefined();
     expect(await store.get(ref!)).toBe(FAKE_JWT);
     expect(host.updates).toBe(1);
-    expect(host.current().apis[0]!.requests[0]!.headers[0]!.value).toBe('Bearer ${secret:billing_token}');
+    expect(restApisOf(host.current())[0]!.requests[0]!.headers[0]!.value).toBe('Bearer ${secret:billing_token}');
     expect(session.scan()).toEqual([]);
   });
 
@@ -243,7 +256,7 @@ describe('SecretScanSession.move', () => {
     expect(result).toEqual({ moved: [], stale: [finding!.id], nameTaken: [] });
     expect(await store.findByLabel('wirebench-secret:p1:billing_token')).toBeUndefined();
     expect(await store.list()).toEqual([]);
-    expect(host.current().apis[0]!.requests[0]!.headers[0]!.value).toBe('Bearer edited-by-the-user');
+    expect(restApisOf(host.current())[0]!.requests[0]!.headers[0]!.value).toBe('Bearer edited-by-the-user');
   });
 
   it('does not replace an existing value for a finding that went stale before the write', async () => {
@@ -277,15 +290,17 @@ describe('SecretScanSession.move', () => {
   it('keeps an entry one of two findings sharing its name still uses', async () => {
     const project: Project = {
       ...createProject('Billing', { id: 'p1' }),
-      apis: [
-        createApi('Billing API', {
-          id: 'api-1',
-          requests: [
-            createRestRequest('A', { id: 'r1', headers: [entry('Authorization', `Bearer ${FAKE_JWT}`)] }),
-            createRestRequest('B', { id: 'r2', headers: [entry('Authorization', `Bearer ${FAKE_JWT}`)] }),
-          ],
-        }),
-      ],
+      containers: {
+        rest: [
+          createApi('Billing API', {
+            id: 'api-1',
+            requests: [
+              createRestRequest('A', { id: 'r1', headers: [entry('Authorization', `Bearer ${FAKE_JWT}`)] }),
+              createRestRequest('B', { id: 'r2', headers: [entry('Authorization', `Bearer ${FAKE_JWT}`)] }),
+            ],
+          }),
+        ],
+      },
     };
     const host = memoryHost(project);
     const { registry, store } = sessions(host);
@@ -307,7 +322,10 @@ describe('SecretScanSession.move', () => {
     const changed = vi.fn();
     const host = new ProjectHost(new EngineService(), { onChanged: changed });
     await host.create({ dir: join(dir, 'Billing'), name: 'Billing' });
-    host.applyModelUpdate((project) => ({ ...project, apis: seeded().apis }));
+    host.applyModelUpdate((project) => ({
+      ...project,
+      containers: { ...project.containers, rest: restApisOf(seeded()) },
+    }));
     const projectId = host.model()!.id;
     const { registry } = sessions(host);
     const session = registry.session(projectId);
@@ -316,7 +334,7 @@ describe('SecretScanSession.move', () => {
 
     await session.move([{ id: finding!.id, name: 'billing_token' }]);
 
-    expect(host.model()!.apis[0]!.requests[0]!.headers[0]!.value).toBe('Bearer ${secret:billing_token}');
+    expect(restApisOf(host.model()!)[0]!.requests[0]!.headers[0]!.value).toBe('Bearer ${secret:billing_token}');
     expect(host.snapshot()?.dirty).toBe(true);
     expect(changed).toHaveBeenCalledTimes(1);
     await host.close();

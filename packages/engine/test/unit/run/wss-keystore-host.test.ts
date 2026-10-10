@@ -8,8 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Keystore } from '../../../src/keystore/index.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, withSoapInterfaces } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { SoapRequestDef } from '../../../src/soap/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import type { SendHost } from '../../../src/run/host.js';
 import { resolveSoap, soapItemFor } from '../../../src/soap/run.js';
@@ -45,14 +47,34 @@ function projectWith(keystorePath: string): Project {
     endpointUrl: 'http://127.0.0.1:1/soap',
     wssOutgoingRef: 'wss-out',
   };
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-1',
-    name: 'Test project',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: {},
-    disabledProperties: [],
-    interfaces: [
+  return withSoapInterfaces(
+    {
+      formatVersion: FORMAT_VERSION,
+      id: 'proj-1',
+      name: 'Test project',
+      settings: DEFAULT_PROJECT_SETTINGS,
+      properties: {},
+      disabledProperties: [],
+      containers: {},
+
+      sequences: [],
+      mocks: [],
+      environments: [],
+      wss: {
+        keystores: [
+          { id: 'ks-1', name: 'signer', document: { id: 'ks-1', name: 'signer', path: keystorePath, type: 'pem' } },
+        ],
+        outgoing: [
+          {
+            id: 'wss-out',
+            name: 'Out',
+            document: { id: 'wss-out', name: 'Out', entries: [{ kind: 'timestamp', timeToLiveSeconds: 300 }] },
+          },
+        ],
+        incoming: [],
+      },
+    },
+    [
       {
         kind: 'soap',
         id: 'iface-1',
@@ -66,26 +88,7 @@ function projectWith(keystorePath: string): Project {
         operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
       },
     ],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: {
-      keystores: [
-        { id: 'ks-1', name: 'signer', document: { id: 'ks-1', name: 'signer', path: keystorePath, type: 'pem' } },
-      ],
-      outgoing: [
-        {
-          id: 'wss-out',
-          name: 'Out',
-          document: { id: 'wss-out', name: 'Out', entries: [{ kind: 'timestamp', timeToLiveSeconds: 300 }] },
-        },
-      ],
-      incoming: [],
-    },
-  };
+  );
 }
 
 async function keystoreLoaderOf(project: Project, projectDir: string, extra: Partial<SendHost> = {}) {

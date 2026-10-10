@@ -36,6 +36,7 @@ import { startTestRestServer } from '../../helpers/test-rest-server.js';
 import type { TestRestServer } from '../../helpers/test-rest-server.js';
 import { startTestSoapServer } from '../../helpers/test-soap-server.js';
 import type { TestSoapServer } from '../../helpers/test-soap-server.js';
+import { withRestApis } from '../../../src/rest/model.js';
 
 let rest: TestRestServer;
 let soap: TestSoapServer;
@@ -107,10 +108,12 @@ describe('one request, either host', () => {
       headers: [{ name: 'X-Trace', value: 'abc', enabled: true }],
       body: { kind: 'raw', language: 'json', text: '{"k":"v"}' },
     });
-    const p: Project = {
-      ...createProject('Parity rest', { id: 'p-rest' }),
-      apis: [{ ...createApi('Api', { id: 'api-1', slug: 'api', baseUrl: rest.url }), requests: [request] }],
-    };
+    const p: Project = withRestApis(
+      {
+        ...createProject('Parity rest', { id: 'p-rest' }),
+      },
+      [{ ...createApi('Api', { id: 'api-1', slug: 'api', baseUrl: rest.url }), requests: [request] }],
+    );
     const item = selectRequests(p, ['Api/Echo']).selected[0]!;
     const seen: unknown[] = [];
     for (const [, make] of HOSTS) {
@@ -142,7 +145,7 @@ describe('one request, either host', () => {
     const p: Project = {
       ...createProject('Parity soap', { id: 'p-soap' }),
       properties: { who: 'ada' },
-      interfaces: [iface],
+      containers: { soap: [iface] },
     };
     const item = soapItemFor(p, 'r1')!;
     const seen: unknown[] = [];
@@ -173,7 +176,7 @@ describe('one request, either host', () => {
       tls: false,
       requests: [request],
     });
-    const p: Project = { ...createProject('Parity grpc', { id: 'p-grpc' }), grpcApis: [api] };
+    const p: Project = { ...createProject('Parity grpc', { id: 'p-grpc' }), containers: { grpc: [api] } };
     const item: GrpcSelected = { kind: 'grpc', path: 'Greeter/SayHello', group: 'Greeter', api, chain: [], request };
     const seen: unknown[] = [];
     for (const [, make] of HOSTS) {

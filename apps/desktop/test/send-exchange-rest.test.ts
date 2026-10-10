@@ -17,6 +17,7 @@ import {
   createWebhookCollection,
   createWebhookFolder,
   entry,
+  restApisOf,
   verifyWebhook,
 } from '@wirebench/engine';
 import type { Project, RequestScripts, RestRequestDef, WebhookSigning } from '@wirebench/engine';
@@ -107,7 +108,7 @@ function seeded(requests?: readonly RestRequestDef[]): Project {
     auth: { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' },
     requests: [...(requests ?? [createRestRequest('Echo', { id: 'req-1', url: '/echo', query: [entry('x', '1')] })])],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 async function openHistory(): Promise<HistoryService> {
@@ -324,7 +325,13 @@ describe('sendThroughEngine for a REST request', () => {
       const failures: FailedExchangeWire[] = [];
       // Nothing listens on port 1: the send fails on the wire, after the proxy lookup.
       const model = seeded();
-      const refused: Project = { ...model, apis: model.apis.map((api) => ({ ...api, baseUrl: 'http://127.0.0.1:1' })) };
+      const refused: Project = {
+        ...model,
+        containers: {
+          ...model.containers,
+          rest: restApisOf(model).map((api) => ({ ...api, baseUrl: 'http://127.0.0.1:1' })),
+        },
+      };
       const deps = sendDepsFor(refused, {
         getSecret: secrets,
         history: await openHistory(),
@@ -643,20 +650,22 @@ describe('sendThroughEngine for a webhook item', () => {
     const callback = `${server.url}/echo?t=abc123&sub=42`;
     const model: Project = {
       ...createProject('P', { id: 'p1' }),
-      apis: [
-        createApi('Petstore', {
-          id: 'api-1',
-          baseUrl: 'https://api.test',
-          requests: [
-            createRestRequest('Subscribe', {
-              id: 'parent',
-              method: 'POST',
-              url: '/subscriptions',
-              contract: { method: 'post', path: '/subscriptions' },
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        rest: [
+          createApi('Petstore', {
+            id: 'api-1',
+            baseUrl: 'https://api.test',
+            requests: [
+              createRestRequest('Subscribe', {
+                id: 'parent',
+                method: 'POST',
+                url: '/subscriptions',
+                contract: { method: 'post', path: '/subscriptions' },
+              }),
+            ],
+          }),
+        ],
+      },
       webhooks: createWebhookCollection({
         folders: [
           createWebhookFolder('Petstore', {

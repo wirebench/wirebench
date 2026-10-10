@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { tempProjectDir } from './fixture.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const V3_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
 const SMOKE = join('interfaces', 'CountryInfo', 'operations', 'ListOfCountryNamesByCode', 'Smoke test.request.yaml');
@@ -24,7 +25,7 @@ describe('SOAP request headers on file', () => {
 
     const { project, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    const smoke = project.interfaces
+    const smoke = soapInterfacesOf(project)
       .flatMap((i) => i.operations.flatMap((o) => o.requests))
       .find((r) => r.name === 'Smoke test');
     expect(smoke?.headers).toEqual([

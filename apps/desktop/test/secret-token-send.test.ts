@@ -202,20 +202,22 @@ describe('projectSecretGetter', () => {
 function restProject(header: string): Project {
   return {
     ...createProject('Billing', { id: 'p1' }),
-    apis: [
-      createApi('Billing API', {
-        id: 'api-1',
-        baseUrl: server.url,
-        requests: [
-          createRestRequest('Invoices', {
-            id: 'r1',
-            method: 'GET',
-            url: '/echo',
-            headers: [entry('X-Billing', header)],
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Billing API', {
+          id: 'api-1',
+          baseUrl: server.url,
+          requests: [
+            createRestRequest('Invoices', {
+              id: 'r1',
+              method: 'GET',
+              url: '/echo',
+              headers: [entry('X-Billing', header)],
+            }),
+          ],
+        }),
+      ],
+    },
   };
 }
 
@@ -269,7 +271,7 @@ describe('a desktop SOAP send', () => {
       cacheDefinition: false,
       operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
     });
-    const project: Project = { ...createProject('Billing', { id: 'p1' }), interfaces: [iface] };
+    const project: Project = { ...createProject('Billing', { id: 'p1' }), containers: { soap: [iface] } };
 
     const summary = await sendThroughEngine(sendDepsFor(project, { secretsFor: getterFor }), 'soap-1', 'req-1', {
       draft: { kind: 'soap' },
@@ -298,20 +300,22 @@ describe('gRPC and WebSocket resolution', () => {
     await store.set('fake-grpc-token-0001', { label: secretStoreLabel('p1', 'grpc_token') });
     const project: Project = {
       ...createProject('Demo', { id: 'p1' }),
-      grpcApis: [
-        createGrpcApi('Greeter', {
-          id: 'g-1',
-          target: 'localhost:1',
-          requests: [
-            createGrpcRequest('SayHello', {
-              id: 'q-1',
-              service: 's',
-              method: 'm',
-              metadata: [entry('x-token', '${secret:grpc_token}')],
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        grpc: [
+          createGrpcApi('Greeter', {
+            id: 'g-1',
+            target: 'localhost:1',
+            requests: [
+              createGrpcRequest('SayHello', {
+                id: 'q-1',
+                service: 's',
+                method: 'm',
+                metadata: [entry('x-token', '${secret:grpc_token}')],
+              }),
+            ],
+          }),
+        ],
+      },
     };
 
     const resolved = (await resolvedThroughEngine(project, grpcItemFor(project, 'q-1'))) as {
@@ -327,13 +331,15 @@ describe('gRPC and WebSocket resolution', () => {
     await store.set('fake-ws-token-000001', { label: secretStoreLabel('p1', 'ws_token') });
     const project = (header: string): Project => ({
       ...createProject('Demo', { id: 'p1' }),
-      wsApis: [
-        createWsApi('Chat', {
-          id: 'w-1',
-          url: 'ws://localhost:1',
-          requests: [createWsRequest('Echo', { id: 'q-1', url: '/echo', headers: [entry('x-token', header)] })],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Chat', {
+            id: 'w-1',
+            url: 'ws://localhost:1',
+            requests: [createWsRequest('Echo', { id: 'q-1', url: '/echo', headers: [entry('x-token', header)] })],
+          }),
+        ],
+      },
     });
     const resolve = (header: string) => resolvedThroughEngine(project(header), wsItemFor(project(header), 'q-1'));
 

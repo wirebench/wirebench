@@ -4,7 +4,13 @@
  * expanded again (ADR-0015) — and the signing headers History keeps for a signed send.
  */
 
-import { evaluateRuntimeTemplate, signatureHeaderNames, webhookPath, webhookRequests } from '@wirebench/engine';
+import {
+  evaluateRuntimeTemplate,
+  restApisOf,
+  signatureHeaderNames,
+  webhookPath,
+  webhookRequests,
+} from '@wirebench/engine';
 import type { Project, RestRequestDef, RestSendInput, RuntimeExchange, SignatureScheme } from '@wirebench/engine';
 import type { HistoryEntryWire } from '../shared/wire-types.js';
 
@@ -72,7 +78,7 @@ export function callbackUrlFor(
   }
   const chain = project.webhooks === undefined ? [] : (webhookPath(project.webhooks, request.id)?.chain ?? []);
   const apiId = [...chain].reverse().find((folder) => folder.source !== undefined)?.source?.apiId;
-  const api = apiId === undefined ? undefined : project.apis.find((candidate) => candidate.id === apiId);
+  const api = apiId === undefined ? undefined : restApisOf(project).find((candidate) => candidate.id === apiId);
   if (api === undefined) {
     return fallback('no linked API');
   }

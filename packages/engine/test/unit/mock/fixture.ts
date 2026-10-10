@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import type { MockDef } from '../../../src/mock/model.js';
-import { createInterface, createProject } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface } from '../../../src/soap/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { apiDefinitionDir, definitionCacheDir } from '../../../src/project/paths.js';
 import { saveProject } from '../../../src/project/save.js';
@@ -54,11 +55,11 @@ export async function mockProject(options: {
   let project: Project = createProject('Mocks', { id: 'P1' });
   if (options.wsdl !== undefined) {
     const iface = createInterface('Service', { id: 'I1', slug: 'service', definitionUrl: options.wsdl });
-    project = { ...project, interfaces: [iface] };
+    project = { ...project, containers: { ...project.containers, soap: [iface] } };
   }
   if (options.openapi !== undefined) {
     const api = createApi('Api', { id: 'A1', slug: 'api', order: 1 });
-    project = { ...project, apis: [api] };
+    project = { ...project, containers: { ...project.containers, rest: [api] } };
   }
   project = { ...project, mocks: options.mocks ?? [] };
   await saveProject(project, dir);

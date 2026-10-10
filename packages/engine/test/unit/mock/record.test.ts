@@ -49,7 +49,11 @@ const fakeMocking: ProtocolMocking = {
 const registry = createProtocolRegistry([{ ...restProtocol, mock: fakeMocking }]);
 
 const mock: MockDef = createMock('M', { containerId: 'A1' }, { id: 'M1', path: '/m' });
-const project: Project = { ...createProject('P', { id: 'P1' }), apis: [createApi('Api', { id: 'A1' })], mocks: [mock] };
+const project: Project = {
+  ...createProject('P', { id: 'P1' }),
+  containers: { rest: [createApi('Api', { id: 'A1' })] },
+  mocks: [mock],
+};
 
 interface Seen {
   method: string;

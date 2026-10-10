@@ -42,7 +42,7 @@ function seeded(baseUrl = server.url): Project {
     auth: { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' },
     requests: [createRestRequest('Echo', { id: 'req-1', url: '/echo', query: [entry('x', '1')] })],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api], environments: [QA] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] }, environments: [QA] };
 }
 
 function audited(model: Project, extra: Parameters<typeof sendDepsFor>[1] = {}) {

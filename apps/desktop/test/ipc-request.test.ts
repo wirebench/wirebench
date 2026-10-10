@@ -176,7 +176,7 @@ function seeded(extra: Partial<SoapRequestDef> = {}): Project {
     cacheDefinition: false,
     operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
   });
-  return { ...createProject('P', { id: 'p1' }), properties: { stage: 'dev' }, interfaces: [iface] };
+  return { ...createProject('P', { id: 'p1' }), properties: { stage: 'dev' }, containers: { soap: [iface] } };
 }
 
 /** The project surface a send through the engine reads, over `model`. */

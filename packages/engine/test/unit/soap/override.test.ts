@@ -7,8 +7,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { SoapRequestDef } from '../../../src/soap/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { openExchange } from '../../../src/run/open.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -54,14 +56,22 @@ function projectWith(request: Partial<SoapRequestDef> = {}): Project {
     endpointUrl: `${server.url}/fault`,
     ...request,
   };
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-1',
-    name: 'Override',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: { who: 'ada' },
-    disabledProperties: [],
-    interfaces: [
+  return withSoapInterfaces(
+    {
+      formatVersion: FORMAT_VERSION,
+      id: 'proj-1',
+      name: 'Override',
+      settings: DEFAULT_PROJECT_SETTINGS,
+      properties: { who: 'ada' },
+      disabledProperties: [],
+      containers: {},
+
+      sequences: [],
+      mocks: [],
+      environments: [],
+      wss: { outgoing: [], incoming: [], keystores: [] },
+    },
+    [
       {
         kind: 'soap',
         id: 'iface-1',
@@ -75,18 +85,11 @@ function projectWith(request: Partial<SoapRequestDef> = {}): Project {
         operations: [{ name: 'Echo', bindingName: '{urn:wb}B', slug: 'echo', order: 0, requests: [saved] }],
       },
     ],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: { outgoing: [], incoming: [], keystores: [] },
-  };
+  );
 }
 
 function soapItem(project: Project): SoapSelected {
-  const iface = project.interfaces[0]!;
+  const iface = soapInterfacesOf(project)[0]!;
   const operation = iface.operations[0]!;
   const request = operation.requests[0]!;
   return { kind: 'soap', path: 'Svc/Echo/Echo', group: 'Svc/Echo', iface, operation, request };
@@ -174,11 +177,11 @@ describe('SoapSelected.override', () => {
   it("puts the host's default wsa:Action on the wire for an interface whose definition is not cached", async () => {
     const base = projectWith({ soapAction: '', envelopeXml: ENVELOPE_WITH('a') });
     const iface = {
-      ...base.interfaces[0]!,
+      ...soapInterfacesOf(base)[0]!,
       cacheDefinition: false,
       wsa: normalizeWsa({ enabled: true, version: '2005/08' }),
     };
-    const project: Project = { ...base, interfaces: [iface] };
+    const project: Project = { ...base, containers: { ...base.containers, soap: [iface] } };
     const item: SoapSelected = { ...soapItem(project), override: { endpoint: `${server.url}/soap` } };
     const context: RunContext = {
       project,

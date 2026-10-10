@@ -72,6 +72,7 @@ export type {
   ProtocolModule,
   ProtocolRun,
   ProtocolScripting,
+  ProtocolSecrets,
   ProtocolStorage,
   RequestSnapshotBase,
   ResponseSnapshotBase,
@@ -86,7 +87,12 @@ export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/regis
 export { BUILTIN_PROTOCOLS, createBuiltinRegistry } from './protocols.js';
 export { PROJECT_FILE_KINDS, PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from './project-files.js';
 export type { ProjectFileKind, ProjectJsonSchema } from './project-files.js';
-export { extraContainersOf, unsupportedOf } from './project/model.js';
+export { allContainers, containersOf, unsupportedOf, withContainersOf } from './project/model.js';
+export { takenContainerSlugs } from './project/container-slugs.js';
+export { soapInterfacesOf, withSoapInterfaces } from './soap/model.js';
+export { restApisOf, withRestApis } from './rest/model.js';
+export { grpcApisOf, withGrpcApis } from './grpc/model.js';
+export { wsApisOf, withWsApis } from './ws/model.js';
 export type { UnsupportedContainer } from './project/model.js';
 
 // What three core files re-exported until 3.0, from the module that declares it.
@@ -108,7 +114,7 @@ export type { WsSelected } from './ws/run.js';
 // One WebSocket session as History records it, for every host that writes History.
 export { buildWsHistoryEntry, historyWsOf, redactWsExchange } from './ws/history-entry.js';
 export type { WsHistoryInput, WsHistoryMasks } from './ws/history-entry.js';
-export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
+export type { AnyRequestDef, RequestSnapshot, ResponseSnapshot } from './protocols.js';
 export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
 export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
 export {
@@ -477,48 +483,45 @@ export type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
 export {
   DEFAULT_OAUTH2_AUTH,
   DEFAULT_PROJECT_SETTINGS,
-  DEFAULT_REQUEST_PROPERTIES,
   FORMAT_VERSION,
-  createInterface,
   createProject,
-  createRequest,
-  defaultContentId,
   generateId,
   nextApiOrder,
-  takenContainerSlugs,
 } from './project/model.js';
+export { DEFAULT_REQUEST_PROPERTIES, createInterface, createRequest, defaultContentId } from './soap/model.js';
 export type {
-  AnyRequestDef,
   ApiKeyAuth,
-  Attachment,
   AttachmentSource,
-  AttachmentType,
   AuthConfig,
   AuthType,
   BearerAuth,
-  CreateInterfaceInput,
   CreateOptions,
-  CreateRequestInput,
   DefinitionAuth,
-  Endpoint,
   EndpointAuth,
   Environment,
   HeaderEntry,
   IdGenerator,
   InheritAuth,
-  Interface,
   KerberosAuth,
   OAuth2Auth,
-  OperationDef,
   Project,
   ProjectSettings,
   PropertyMap,
-  RequestProperties,
   SoapOwnerAuth,
-  SoapRequestDef,
-  WsaConfig,
   WssRef,
 } from './project/model.js';
+export type {
+  Attachment,
+  AttachmentType,
+  CreateInterfaceInput,
+  CreateRequestInput,
+  Endpoint,
+  Interface,
+  OperationDef,
+  RequestProperties,
+  SoapRequestDef,
+  WsaConfig,
+} from './soap/model.js';
 export {
   COMMON_METHODS,
   NO_BODY,

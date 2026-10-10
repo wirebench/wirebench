@@ -156,42 +156,45 @@ describe('ProjectHost.issuedTokenTarget', () => {
     return {
       ...base,
       properties: { ...base.properties, sts: 'https://sts.test/issue' },
-      interfaces: [
-        {
-          kind: 'soap',
-          id: 'i1',
-          name: 'I',
-          slug: 'i',
-          order: 0,
-          definitionUrl: 'http://x',
-          cacheDefinition: true,
-          targetNamespace: '',
-          endpoints: [],
-          wsa: { enabled: false, version: '2005/08' },
-          operations: [
-            {
-              name: 'Op',
-              bindingName: 'B',
-              slug: 'op',
-              order: 0,
-              requests: refs.map((ref, index) => ({
-                id: `r${String(index + 1)}`,
-                name: `Request ${String(index + 1)}`,
-                slug: `request-${String(index + 1)}`,
-                order: index,
-                envelopeXml: ENVELOPE,
-                endpointUrl: `https://svc.test/${String(index + 1)}`,
-                soapVersion: '1.1',
-                headers: [],
-                attachments: [],
-                ...(ref !== undefined ? { wssOutgoingRef: ref } : {}),
-                properties: { encoding: 'UTF-8' },
-                assertions: [],
-              })),
-            },
-          ],
-        },
-      ],
+      containers: {
+        ...base.containers,
+        soap: [
+          {
+            kind: 'soap',
+            id: 'i1',
+            name: 'I',
+            slug: 'i',
+            order: 0,
+            definitionUrl: 'http://x',
+            cacheDefinition: true,
+            targetNamespace: '',
+            endpoints: [],
+            wsa: { enabled: false, version: '2005/08' },
+            operations: [
+              {
+                name: 'Op',
+                bindingName: 'B',
+                slug: 'op',
+                order: 0,
+                requests: refs.map((ref, index) => ({
+                  id: `r${String(index + 1)}`,
+                  name: `Request ${String(index + 1)}`,
+                  slug: `request-${String(index + 1)}`,
+                  order: index,
+                  envelopeXml: ENVELOPE,
+                  endpointUrl: `https://svc.test/${String(index + 1)}`,
+                  soapVersion: '1.1',
+                  headers: [],
+                  attachments: [],
+                  ...(ref !== undefined ? { wssOutgoingRef: ref } : {}),
+                  properties: { encoding: 'UTF-8' },
+                  assertions: [],
+                })),
+              },
+            ],
+          },
+        ],
+      },
     } as unknown as Project;
   }
 

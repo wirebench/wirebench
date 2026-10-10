@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { requestFileLocation } from '../../../src/project/request-location.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
 import { readGoldenFile } from '../../../src/snapshot/golden-file.js';
 
 // Pass-through wrappers, so a test can step in between the module's `lstat` and its `open`.
@@ -27,10 +27,12 @@ let slug: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'wb-golden-'));
   const request = createRestRequest('Get one', { id: 'r1', url: 'https://example.test/one' });
-  project = {
-    ...createProject('Demo', { id: 'P1' }),
-    apis: [{ ...createApi('Api', { id: 'a1', slug: 'api', order: 0, baseUrl: '' }), requests: [request] }],
-  };
+  project = withRestApis(
+    {
+      ...createProject('Demo', { id: 'P1' }),
+    },
+    [{ ...createApi('Api', { id: 'a1', slug: 'api', order: 0, baseUrl: '' }), requests: [request] }],
+  );
   const location = requestFileLocation(project, 'r1')!;
   folder = join(dir, ...location.dir.split('/'));
   slug = location.slug;

@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createInterface, createProject, createRequest, DEFAULT_WSA_CONFIG, resolveScopes } from '@wirebench/engine';
+import {
+  createInterface,
+  createProject,
+  createRequest,
+  DEFAULT_WSA_CONFIG,
+  resolveScopes,
+  soapInterfacesOf,
+} from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import { applyChange } from '../src/main/project-mutations.js';
 import type { MutationDeps } from '../src/main/project-mutations.js';
@@ -36,7 +43,7 @@ function build(): Project {
       },
     ],
   });
-  return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 describe('update-interface-wsa / update-request-wsa', () => {
@@ -46,7 +53,7 @@ describe('update-interface-wsa / update-request-wsa', () => {
       { kind: 'update-interface-wsa', interfaceId: 'iface-1', wsa: { enabled: true, action: 'urn:iface' } },
       deps,
     );
-    expect(project.interfaces[0]?.wsa).toEqual({ ...DEFAULT_WSA_CONFIG, enabled: true, action: 'urn:iface' });
+    expect(soapInterfacesOf(project)[0]?.wsa).toEqual({ ...DEFAULT_WSA_CONFIG, enabled: true, action: 'urn:iface' });
   });
 
   it('sets and clears a request’s own overrides', async () => {
@@ -68,7 +75,7 @@ describe('update-interface-wsa / update-request-wsa', () => {
       { kind: 'update-interface-wsa', interfaceId: 'iface-1', wsa: { enabled: true } },
       deps,
     );
-    const iface = project.interfaces[0];
+    const iface = soapInterfacesOf(project)[0];
     expect(iface).toBeDefined();
     expect(toInterfaceWire(iface as Interface, undefined).wsaConfig?.enabled).toBe(true);
     const location = findRequest(project, 'req-1');

@@ -86,7 +86,7 @@ function project(requests: readonly RestRequestDef[]): Project {
     auth: { type: 'bearer', tokenRef: 'sec_token' },
     requests: [...requests],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 interface Harness {
@@ -308,7 +308,11 @@ describe('a SOAP send with scripts', () => {
             },
           ],
         });
-        const model: Project = { ...createProject('Demo', { id: 'p1' }), properties: { v: '1' }, interfaces: [iface] };
+        const model: Project = {
+          ...createProject('Demo', { id: 'p1' }),
+          properties: { v: '1' },
+          containers: { soap: [iface] },
+        };
         await harness(model);
         const deps = sendDepsFor(model, {
           // The project's token, and the password its Basic auth names.
@@ -420,7 +424,7 @@ describe('a SOAP resend from History', () => {
           },
         ],
       });
-      const model: Project = { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
+      const model: Project = { ...createProject('Demo', { id: 'p1' }), containers: { soap: [iface] } };
       await harness(model);
       const entry = {
         id: 'h-1',

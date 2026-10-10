@@ -48,7 +48,7 @@ function seeded(keyName: string, url: string): Project {
     auth: { type: 'api-key', name: keyName, in: 'query', valueRef: 'sec_key' },
     requests: [createRestRequest('Echo', { id: 'req-1', url, query: [entry('x', '1')] })],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 /** Sends `req-1` of `model` through main's REST path with show-secrets on, into a real History. */

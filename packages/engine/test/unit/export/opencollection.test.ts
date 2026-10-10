@@ -6,6 +6,7 @@ import { parseOpenCollection } from '../../../src/import/opencollection/parse.js
 import type { RestFolder, RestRequestDef } from '../../../src/rest/model.js';
 import { joinBase } from '../../../src/rest/url.js';
 import { newId, sampleProject } from './fixture.js';
+import { restApisOf } from '../../../src/rest/model.js';
 
 const project = sampleProject();
 
@@ -42,7 +43,7 @@ describe('OpenCollection export: round trip through the OpenCollection importer'
 
   it('keeps a REST request whole: URL, rows, body, assertions, scripts and examples', () => {
     const [getUser, createUser] = mapped.rest!.folders[1]!.folders[0]!.requests;
-    const original = project.apis[0]!.folders[0]!.requests[0]!;
+    const original = restApisOf(project)[0]!.folders[0]!.requests[0]!;
     expect(joinBase(mapped.rest!.baseUrl, getUser!.url)).toBe('https://pets.example.com/users/{id}');
     expect(getUser!.pathParams).toEqual(original.pathParams);
     expect(getUser!.query).toEqual(original.query);
@@ -92,7 +93,10 @@ describe('OpenCollection export: round trip through the OpenCollection importer'
   });
 
   it('puts a single API at the root with its auth on the collection', () => {
-    const one = exportCollection('opencollection', { project, target: { kind: 'container', id: project.apis[0]!.id } });
+    const one = exportCollection('opencollection', {
+      project,
+      target: { kind: 'container', id: restApisOf(project)[0]!.id },
+    });
     const back = mapOpenCollection(parseOpenCollection(one.files[0]!.text), { newId });
     expect(back.rest?.name).toBe('Pets');
     expect(back.rest?.auth?.type).toBe('bearer');

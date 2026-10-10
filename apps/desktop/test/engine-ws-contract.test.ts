@@ -61,13 +61,15 @@ type ContractEvent = Extract<WsLiveEvent, { kind: 'contract' }>;
 function chatProject(): Project {
   return {
     ...createProject('Chat', { id: 'p1' }),
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'w-1',
-        url: server.url,
-        requests: [createWsRequest('Chat', { id: 'r1', url: '/chat' })],
-      }),
-    ],
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'w-1',
+          url: server.url,
+          requests: [createWsRequest('Chat', { id: 'r1', url: '/chat' })],
+        }),
+      ],
+    },
   };
 }
 

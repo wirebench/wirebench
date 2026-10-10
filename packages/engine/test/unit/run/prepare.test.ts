@@ -8,16 +8,10 @@ import type { SendHost } from '../../../src/run/host.js';
 import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { selectRequests } from '../../../src/run/select.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type {
-  AuthConfig,
-  Environment,
-  Interface,
-  Project,
-  SoapOwnerAuth,
-  SoapRequestDef,
-  WssRef,
-} from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { AuthConfig, Environment, Project, SoapOwnerAuth, WssRef } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
 import type { GrpcRequestDef } from '../../../src/grpc/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
@@ -105,10 +99,8 @@ function makeProject(options: ProjectOptions = {}): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: { baseUrl: 'https://base.example.test' },
     disabledProperties: [],
-    interfaces: [iface],
-    apis: [api],
-    grpcApis: [],
-    wsApis: [],
+    containers: { soap: [iface], rest: [api] },
+
     sequences: [],
     mocks: [],
     environments: [ENV],
@@ -686,7 +678,7 @@ describe('prepareFor — gRPC', () => {
     return {
       ...base,
       environments: [{ ...ENV, endpoints: { ...ENV.endpoints, greeter: 'grpc.env.test:443' } }],
-      grpcApis: [api],
+      containers: { ...base.containers, grpc: [api] },
     };
   }
   const grpcOf = (project: Project) => selectRequests(project, []).selected.find((s) => s.kind === 'grpc')!;

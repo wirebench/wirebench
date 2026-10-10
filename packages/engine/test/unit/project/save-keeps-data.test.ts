@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadProject } from '../../../src/project/load.js';
-import { createInterface, createProject } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface } from '../../../src/soap/model.js';
 import { saveProject } from '../../../src/project/save.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, restApisOf, withRestApis } from '../../../src/rest/model.js';
 
 let dir: string;
 beforeEach(async () => {
@@ -29,12 +30,12 @@ describe('saveProject keeps an API skipped for an interface slug conflict', () =
       requests: [createRestRequest('Get', { url: '/a' })],
     });
     const iface = createInterface('X', { slug: 'X', definitionUrl: 'http://x.test/wsdl' });
-    await saveProject({ ...createProject('P'), apis: [api], interfaces: [iface] }, dir);
+    await saveProject({ ...createProject('P'), containers: { rest: [api], soap: [iface] } }, dir);
     const before = await filesOf(join(dir, 'apis', 'X'));
 
     const loaded = await loadProject(dir);
     expect(loaded.problems.map((problem) => problem.code)).toEqual(['api-slug-conflict']);
-    expect(loaded.project.apis).toEqual([]);
+    expect(restApisOf(loaded.project)).toEqual([]);
 
     const saved = await saveProject(loaded.project, dir);
     expect(saved.removed.filter((path) => path.startsWith('apis/'))).toEqual([]);
@@ -49,30 +50,33 @@ describe('saveProject on a case-only rename', () => {
       baseUrl: 'http://x.test',
       requests: [createRestRequest('Get', { url: '/a' })],
     });
-    const project = { ...createProject('P'), apis: [api] };
+    const project = { ...createProject('P'), containers: { rest: [api] } };
     await saveProject(project, dir);
 
-    await saveProject({ ...project, apis: [{ ...api, name: 'graph', slug: 'graph' }] }, dir);
+    await saveProject(
+      { ...project, containers: { ...project.containers, rest: [{ ...api, name: 'graph', slug: 'graph' }] } },
+      dir,
+    );
 
     expect(await readdir(join(dir, 'apis'))).toEqual(['graph']);
     const reloaded = await loadProject(dir);
     expect(reloaded.problems).toEqual([]);
-    expect(reloaded.project.apis.map((loaded) => [loaded.slug, loaded.requests.length])).toEqual([['graph', 1]]);
+    expect(restApisOf(reloaded.project).map((loaded) => [loaded.slug, loaded.requests.length])).toEqual([['graph', 1]]);
   });
 
   it('keeps a request renamed from Get to get', async () => {
     const request = createRestRequest('Get', { url: '/a' });
     const api = createApi('Shop', { slug: 'Shop', baseUrl: 'http://x.test', requests: [request] });
-    const project = { ...createProject('P'), apis: [api] };
+    const project = { ...createProject('P'), containers: { rest: [api] } };
     await saveProject(project, dir);
     const named = (await filesOf(join(dir, 'apis', 'Shop'))).filter((file) => /get/i.test(file));
     expect(named).toHaveLength(1);
 
-    await saveProject({ ...project, apis: [{ ...api, requests: [{ ...request, name: 'get', slug: 'get' }] }] }, dir);
+    await saveProject(withRestApis(project, [{ ...api, requests: [{ ...request, name: 'get', slug: 'get' }] }]), dir);
 
     const renamed = (await filesOf(join(dir, 'apis', 'Shop'))).filter((file) => /get/i.test(file));
     expect(renamed).toEqual([named[0]!.replace('Get', 'get')]);
     const reloaded = await loadProject(dir);
-    expect(reloaded.project.apis[0]!.requests.map((loaded) => loaded.name)).toEqual(['get']);
+    expect(restApisOf(reloaded.project)[0]!.requests.map((loaded) => loaded.name)).toEqual(['get']);
   });
 });

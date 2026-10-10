@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
-import { createApi, createFolder, createRestRequest, entry } from '../../../src/rest/model.js';
+import { createApi, createFolder, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
 import { restProtocol } from '../../../src/rest/module.js';
 import { restRun } from '../../../src/rest/run.js';
 import type { RunContext } from '../../../src/run/context.js';
@@ -36,35 +36,37 @@ vi.mock('../../../src/rest/send.js', async (importOriginal) => ({
 
 const project: Project = {
   ...createProject('REST module', { id: 'proj-rest' }),
-  apis: [
-    createApi('Billing', {
-      id: 'api-billing',
-      slug: 'billing',
-      order: 1,
-      baseUrl: 'https://api.example.test',
-      auth: { type: 'bearer', tokenRef: 'ref-token', tokenEnv: 'BILLING_TOKEN' },
-      requests: [
-        createRestRequest('Zed', { id: 'req-zed', slug: 'zed', order: 1, url: '/zed' }),
-        { ...createRestRequest('Gone', { id: 'req-gone', order: 2 }), orphaned: true },
-      ],
-      folders: [
-        createFolder('Invoices', {
-          id: 'folder-invoices',
-          slug: 'invoices',
-          order: 0,
-          requests: [
-            createRestRequest('List', {
-              id: 'req-list',
-              slug: 'list',
-              url: '/invoices',
-              headers: [entry('X-Tenant', '${secret:tenant}')],
-            }),
-          ],
-        }),
-      ],
-    }),
-    createApi('Empty', { id: 'api-empty', slug: 'empty', order: 0 }),
-  ],
+  containers: {
+    rest: [
+      createApi('Billing', {
+        id: 'api-billing',
+        slug: 'billing',
+        order: 1,
+        baseUrl: 'https://api.example.test',
+        auth: { type: 'bearer', tokenRef: 'ref-token', tokenEnv: 'BILLING_TOKEN' },
+        requests: [
+          createRestRequest('Zed', { id: 'req-zed', slug: 'zed', order: 1, url: '/zed' }),
+          { ...createRestRequest('Gone', { id: 'req-gone', order: 2 }), orphaned: true },
+        ],
+        folders: [
+          createFolder('Invoices', {
+            id: 'folder-invoices',
+            slug: 'invoices',
+            order: 0,
+            requests: [
+              createRestRequest('List', {
+                id: 'req-list',
+                slug: 'list',
+                url: '/invoices',
+                headers: [entry('X-Tenant', '${secret:tenant}')],
+              }),
+            ],
+          }),
+        ],
+      }),
+      createApi('Empty', { id: 'api-empty', slug: 'empty', order: 0 }),
+    ],
+  },
   webhooks: createWebhookCollection({
     target: 'https://receiver.example.test/hooks',
     signing: {
@@ -102,7 +104,9 @@ describe('restRun.groups', () => {
       [0, 'Empty', undefined],
       [0, 'Webhooks', true],
     ]);
-    expect(restRun.groups({ ...project, apis: [] }).map((group) => group.name)).toEqual(['Webhooks']);
+    expect(
+      restRun.groups({ ...project, containers: { ...project.containers, rest: [] } }).map((group) => group.name),
+    ).toEqual(['Webhooks']);
     expect(restRun.groups(createProject('None', { id: 'p0' }))).toEqual([]);
   });
 
@@ -229,10 +233,13 @@ describe('restRun.resolve', () => {
   it('reports a reference nothing resolves, and does not throw it', async () => {
     const withRef: Project = {
       ...project,
-      apis: project.apis.map((api) => ({
-        ...api,
-        requests: api.requests.map((request) => ({ ...request, url: '/zed/${nope}' })),
-      })),
+      containers: {
+        ...project.containers,
+        rest: restApisOf(project).map((api) => ({
+          ...api,
+          requests: api.requests.map((request) => ({ ...request, url: '/zed/${nope}' })),
+        })),
+      },
     };
     expect(await resolveIn(withRef, 'Billing/Zed')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });

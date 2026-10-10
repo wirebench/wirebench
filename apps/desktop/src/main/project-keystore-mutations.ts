@@ -10,7 +10,14 @@
  */
 
 import { basename } from 'node:path';
-import { generateId, keystoreTypeForPath, ProjectError, toKeystoreDef, toKeystoreRef } from '@wirebench/engine';
+import {
+  generateId,
+  keystoreTypeForPath,
+  ProjectError,
+  soapInterfacesOf,
+  toKeystoreDef,
+  toKeystoreRef,
+} from '@wirebench/engine';
 import type { KeystoreDef, Project, WssRef } from '@wirebench/engine';
 import type { KeystorePatchWire } from '../shared/wire-types.js';
 
@@ -98,7 +105,7 @@ export function updateKeystore(project: Project, keystoreId: string, patch: Keys
  */
 export function removeKeystore(project: Project, keystoreId: string): Project {
   requireKeystore(project, keystoreId);
-  const interfaces = project.interfaces.map((iface) => ({
+  const interfaces = soapInterfacesOf(project).map((iface) => ({
     ...iface,
     operations: iface.operations.map((operation) => ({
       ...operation,
@@ -113,7 +120,7 @@ export function removeKeystore(project: Project, keystoreId: string): Project {
     })),
   }));
   return withKeystores(
-    { ...project, interfaces },
+    { ...project, containers: { ...project.containers, soap: interfaces } },
     project.wss.keystores.filter((candidate) => candidate.id !== keystoreId),
   );
 }

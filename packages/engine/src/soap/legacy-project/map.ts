@@ -6,16 +6,10 @@
  * is ready to be added to a project, plus the report of everything that did not come across.
  */
 
-import type {
-  EndpointAuth,
-  Endpoint,
-  Environment,
-  IdGenerator,
-  Interface,
-  OperationDef,
-  SoapRequestDef,
-} from '../../project/model.js';
-import { createInterface, createRequest, generateId } from '../../project/model.js';
+import type { EndpointAuth, Environment, IdGenerator } from '../../project/model.js';
+import type { Endpoint, Interface, OperationDef, SoapRequestDef } from '../model.js';
+import { generateId } from '../../project/model.js';
+import { createInterface, createRequest } from '../model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
 import type { SoapOperationSummary } from '../types.js';
 import { DEFAULT_WSA_CONFIG } from '../../wsa/model.js';

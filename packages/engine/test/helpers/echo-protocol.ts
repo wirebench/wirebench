@@ -1,7 +1,7 @@
 /**
  * A fifth protocol, for tests only: `echo` answers a request with the request's own text. It is
  * registered beside the built-in protocols to prove that no core file has to know a protocol
- * (protocol modules spec §10). Its containers live in `project.extraContainers.echo`.
+ * (protocol modules spec §10). Its containers live in `project.containers.echo`.
  *
  * This file holds all three facets. `send` reaches no network.
  */
@@ -10,7 +10,7 @@ import { z } from 'zod';
 import type { Assertion, AssertionSubject } from '../../src/assert/model.js';
 import { readFileIfExists, readdirIfExists } from '../../src/project/fs.js';
 import { readYaml } from '../../src/project/load-helpers.js';
-import { extraContainersOf } from '../../src/project/model.js';
+import { containersOf, withContainersOf } from '../../src/project/model.js';
 import type { Project } from '../../src/project/model.js';
 import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR } from '../../src/project/paths.js';
 import { expand } from '../../src/project/properties.js';
@@ -62,12 +62,12 @@ export interface EchoSelected {
 
 /** The project's echo APIs. */
 export function echoApisOf(project: Project): readonly EchoApi[] {
-  return extraContainersOf(project, 'echo') as readonly EchoApi[];
+  return containersOf(project, 'echo') as readonly EchoApi[];
 }
 
 /** `project` with `apis` as its echo APIs. */
 export function withEchoApis(project: Project, apis: readonly EchoApi[]): Project {
-  return { ...project, extraContainers: { ...project.extraContainers, echo: apis } };
+  return withContainersOf(project, 'echo', apis);
 }
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -273,7 +273,7 @@ function scriptsToFile(scripts: RequestScripts): Record<string, unknown> {
 /**
  * How the echo protocol is stored: `apis/<slug>/api.yaml` with `kind: echo`, and one
  * `requests/<slug>.request.yaml` per request holding its text and, inline, its scripts. Its
- * containers have no list of their own on `Project`, so they are kept in `extraContainers.echo`.
+ * containers are kept in `containers.echo`, as any kind's are.
  * Assertions are not stored: the run tests build those requests in memory.
  */
 export const echoStorage: ProtocolStorage<EchoApi> = {
@@ -336,11 +336,8 @@ export const echoStorage: ProtocolStorage<EchoApi> = {
     return managed;
   },
 
-  containers: (project) => extraContainersOf(project, 'echo') as readonly EchoApi[],
-  withContainers: (project, containers) => ({
-    ...project,
-    extraContainers: { ...project.extraContainers, echo: containers },
-  }),
+  containers: (project) => echoApisOf(project),
+  withContainers: (project, containers) => withContainersOf(project, 'echo', containers),
 };
 
 /** The echo protocol, to register beside the built-in ones. */

@@ -87,7 +87,7 @@ async function send(yaml: string): Promise<Wire> {
     ...createProject('AsyncAPI #287', { id: 'p-287' }),
     // A property under the very name a slot uses: a slot must never read it.
     properties: { token: PROPERTY_VALUE },
-    wsApis: [imported],
+    containers: { websocket: [imported] },
   };
   const item: WsSelected = { kind: 'websocket', path: 'Chat/c', group: 'Chat', api: imported, chain: [], request };
   const sendHost = testHost({ 'secret:tok': SECRET_VALUE, tok: SECRET_VALUE });

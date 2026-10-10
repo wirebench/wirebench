@@ -15,8 +15,8 @@
  * holds a secret — credentials are `secretRef`s resolved from the OS keychain at send time.
  */
 
-import type { AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
-import { generateId } from '../project/model.js';
+import type { AuthConfig, CreateOptions, DefinitionAuth, IdGenerator, Project } from '../project/model.js';
+import { containersOf, generateId, withContainersOf } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { JsonSchemaProblem } from '../json/schema-validate.js';
 import type { Assertion } from '../assert/model.js';
@@ -312,3 +312,13 @@ export function createWsSavedMessage(
 }
 
 export type { IdGenerator };
+
+/** The project's WebSocket APIs, in the order the project holds them. */
+export function wsApisOf(project: Project): readonly WsApi[] {
+  return containersOf(project, 'websocket') as readonly WsApi[];
+}
+
+/** `project` with its WebSocket APIs replaced; every other kind's containers are kept. */
+export function withWsApis(project: Project, apis: readonly WsApi[]): Project {
+  return withContainersOf(project, 'websocket', apis);
+}

@@ -16,14 +16,16 @@ import { runSequences } from '../../src/commands/sequence.js';
 
 const project: Project = {
   ...createProject('Registry', { id: 'proj-registry' }),
-  grpcApis: [
-    createGrpcApi('Greeter', {
-      id: 'api-greeter',
-      slug: 'greeter',
-      order: 0,
-      requests: [createGrpcRequest('Hello', { id: 'g-hello' })],
-    }),
-  ],
+  containers: {
+    grpc: [
+      createGrpcApi('Greeter', {
+        id: 'api-greeter',
+        slug: 'greeter',
+        order: 0,
+        requests: [createGrpcRequest('Hello', { id: 'g-hello' })],
+      }),
+    ],
+  },
 };
 
 const sequence: SequenceDef = {

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RestApi, Workspace, WorkspaceEnvironment } from '@wirebench/engine';
+import { restApisOf } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -58,9 +59,9 @@ async function addEnvironment(
 /** A REST API with one request whose path expands `${#Env#tenant}`, and two environments. */
 async function restProject(): Promise<{ requestId: string; dev: string; test: string }> {
   await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
-  const api = host.model()?.apis[0] as RestApi;
+  const api = restApisOf(host.model()!)[0] as RestApi;
   await host.mutate({ kind: 'add-rest-request', apiId: api.id });
-  const request = (host.model()?.apis[0] as RestApi).requests[0];
+  const request = (restApisOf(host.model()!)[0] as RestApi).requests[0];
   const requestId = request?.id as string;
   await host.mutate({ kind: 'update-rest-request', requestId, patch: { url: '/pets/${tenant}' } });
   const dev = await addEnvironment('dev', {
@@ -162,9 +163,9 @@ function insideWorkspace(slug: string): { workspace: () => Workspace } {
 describe('ProjectHost under a named workspace environment', () => {
   it('resolves a REST send against the named workspace environment, leaving the active one alone', async () => {
     await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
-    const api = host.model()?.apis[0] as RestApi;
+    const api = restApisOf(host.model()!)[0] as RestApi;
     await host.mutate({ kind: 'add-rest-request', apiId: api.id });
-    const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
+    const requestId = (restApisOf(host.model()!)[0] as RestApi).requests[0]?.id as string;
     await host.mutate({ kind: 'update-rest-request', requestId, patch: { url: '/pets/${tenant}' } });
     const ws = insideWorkspace(api.slug);
 
@@ -189,9 +190,9 @@ describe('ProjectHost under a named workspace environment', () => {
 
   it('refuses an id that is not a workspace environment, a project one included', async () => {
     await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
-    const api = host.model()?.apis[0] as RestApi;
+    const api = restApisOf(host.model()!)[0] as RestApi;
     await host.mutate({ kind: 'add-rest-request', apiId: api.id });
-    const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
+    const requestId = (restApisOf(host.model()!)[0] as RestApi).requests[0]?.id as string;
     const projectEnv = await addEnvironment('dev', { endpoints: { [api.slug]: 'https://dev.example' } });
     insideWorkspace(api.slug);
     expect(await restSend(requestId, 'no-such-env')).toBeUndefined();
@@ -229,9 +230,9 @@ describe('ProjectHost for the send host', () => {
 
   it('answers the workspace and its environment inside a workspace, leaving the active one alone', async () => {
     await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
-    const api = host.model()?.apis[0] as RestApi;
+    const api = restApisOf(host.model()!)[0] as RestApi;
     await host.mutate({ kind: 'add-rest-request', apiId: api.id });
-    const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
+    const requestId = (restApisOf(host.model()!)[0] as RestApi).requests[0]?.id as string;
     const ws = insideWorkspace(api.slug);
 
     const active = host.runContextFor(requestId);

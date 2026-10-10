@@ -70,7 +70,7 @@ function build(slug = 'Request-1'): Project {
       },
     ],
   });
-  return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 async function savedStore(project = build()): Promise<SnapshotStore> {

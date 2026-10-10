@@ -44,6 +44,7 @@ import type { WsApi, WsExchange, WsFolder, WsFrame, WsHandshake, WsRequestDef, W
 import { assertCloseCode, HANDSHAKE_TIMEOUT_ERROR, openWsSession } from './session.js';
 import type { WsSessionHandle, WsSessionOptions } from './session.js';
 import { resolveWsUrl } from './url.js';
+import { wsApisOf } from './model.js';
 
 /** One saved WebSocket request selected for a run. */
 export interface WsSelected {
@@ -68,7 +69,7 @@ export function wsEffectiveAuth(selected: WsSelected): AuthConfig {
  */
 export function wsItemFor(project: Project, requestId: string): WsSelected | undefined {
   const candidates: { item: WsSelected; diskPath: string }[] = [];
-  for (const api of project.wsApis) {
+  for (const api of wsApisOf(project)) {
     walkTree<WsFolder, WsRequestDef, WsSelected>(
       api,
       [],
@@ -569,7 +570,7 @@ async function sendWsItem(
 /** WebSocket's run facet. */
 export const wsRun: ProtocolRun<WsSelected> = {
   groups(project) {
-    return project.wsApis.map((api) => {
+    return wsApisOf(project).map((api) => {
       const candidates: RunGroup<WsSelected>['candidates'][number][] = [];
       walkTree<WsFolder, WsRequestDef, WsSelected>(
         api,
@@ -587,7 +588,7 @@ export const wsRun: ProtocolRun<WsSelected> = {
   },
 
   whyNotRunnable(project, requestId) {
-    for (const api of project.wsApis) {
+    for (const api of wsApisOf(project)) {
       const request = findInTree(api, requestId);
       if (request !== undefined) {
         return request.orphaned === true ? ORPHANED_STEP_REASON : undefined;

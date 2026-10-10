@@ -13,9 +13,11 @@ describe('nextApiOrder', () => {
   it('is one past the highest order of any kind, not the count', () => {
     const project = {
       ...createProject('Mixed', { id: 'p1' }),
-      apis: [createApi('Shop', { id: 'a1', order: 1 })],
-      grpcApis: [createGrpcApi('Pets', { id: 'g1', order: 2 })],
-      wsApis: [createWsApi('Chat', { id: 'w1', order: 5 })],
+      containers: {
+        rest: [createApi('Shop', { id: 'a1', order: 1 })],
+        grpc: [createGrpcApi('Pets', { id: 'g1', order: 2 })],
+        websocket: [createWsApi('Chat', { id: 'w1', order: 5 })],
+      },
     };
     expect(nextApiOrder(project)).toBe(6);
   });

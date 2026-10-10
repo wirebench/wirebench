@@ -12,15 +12,8 @@ import { apiFileSchema } from '../../../src/rest/files.js';
 import { interfaceFileSchema, requestFileSchema } from '../../../src/soap/files.js';
 import { wsApiFileSchema } from '../../../src/ws/files.js';
 import { migrate } from '../../../src/project/migrate.js';
-import {
-  DEFAULT_PROJECT_SETTINGS,
-  DEFAULT_REQUEST_PROPERTIES,
-  FORMAT_VERSION,
-  createInterface,
-  createProject,
-  createRequest,
-  generateId,
-} from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION, createProject, generateId } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, createInterface, createRequest } from '../../../src/soap/model.js';
 import { stringifyYaml, parseYaml } from '../../../src/project/yaml.js';
 
 const validManifest = {

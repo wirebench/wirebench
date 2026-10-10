@@ -13,8 +13,10 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { OAuth2Auth, Project } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
@@ -210,10 +212,8 @@ function project(shape: Shape = {}): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [iface],
-    apis: [api],
-    grpcApis: [grpcApi],
-    wsApis: [],
+    containers: { soap: [iface], rest: [api], grpc: [grpcApi] },
+
     sequences: [],
     mocks: [],
     environments: [],

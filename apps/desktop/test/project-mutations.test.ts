@@ -6,6 +6,7 @@ import {
   createRequest,
   createRestRequest,
   isWirebenchError,
+  soapInterfacesOf,
 } from '@wirebench/engine';
 import type { Interface, Project, RestResponseExample } from '@wirebench/engine';
 import { addRequest, applyChange, contentTypeForPath, projectNameFromDir } from '../src/main/project-mutations.js';
@@ -40,7 +41,7 @@ function build(): Project {
       },
     ],
   });
-  return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 async function expectNotFound(run: Promise<unknown>): Promise<void> {
@@ -51,7 +52,7 @@ describe('applyChange', () => {
   it('renames the project without touching anything else', async () => {
     const { project } = await applyChange(build(), { kind: 'rename-project', name: 'Renamed' }, deps);
     expect(project.name).toBe('Renamed');
-    expect(project.interfaces).toHaveLength(1);
+    expect(soapInterfacesOf(project)).toHaveLength(1);
   });
 
   it('add-request generates an envelope and names it Request N', async () => {
@@ -125,7 +126,7 @@ describe('applyChange', () => {
   it('remove-request drops it and renumbers the survivors', async () => {
     const two = await applyChange(build(), { kind: 'clone-request', requestId: 'req-1' }, deps);
     const result = await applyChange(two.project, { kind: 'remove-request', requestId: 'req-1' }, deps);
-    const operation = result.project.interfaces[0]!.operations[0]!;
+    const operation = soapInterfacesOf(result.project)[0]!.operations[0]!;
     expect(operation.requests.map((r) => r.name)).toEqual(['Request 1 (copy)']);
     expect(operation.requests[0]?.order).toBe(0);
   });
@@ -158,15 +159,15 @@ describe('applyChange', () => {
       { kind: 'add-endpoint', interfaceId: 'iface-1', name: 'Local', url: 'http://localhost/soap' },
       deps,
     );
-    expect(added.project.interfaces[0]?.endpoints).toHaveLength(3);
-    expect(added.project.interfaces[0]?.defaultEndpointId).toBe('ep-1');
+    expect(soapInterfacesOf(added.project)[0]?.endpoints).toHaveLength(3);
+    expect(soapInterfacesOf(added.project)[0]?.defaultEndpointId).toBe('ep-1');
 
     const renamedEndpoint = await applyChange(
       added.project,
       { kind: 'update-endpoint', interfaceId: 'iface-1', endpointId: 'ep-2', patch: { url: 'http://b2.test/soap' } },
       deps,
     );
-    expect(renamedEndpoint.project.interfaces[0]?.endpoints[1]).toMatchObject({
+    expect(soapInterfacesOf(renamedEndpoint.project)[0]?.endpoints[1]).toMatchObject({
       name: 'Staging',
       url: 'http://b2.test/soap',
     });
@@ -176,7 +177,7 @@ describe('applyChange', () => {
       { kind: 'set-default-endpoint', interfaceId: 'iface-1', endpointId: 'ep-2' },
       deps,
     );
-    expect(switched.project.interfaces[0]?.defaultEndpointId).toBe('ep-2');
+    expect(soapInterfacesOf(switched.project)[0]?.defaultEndpointId).toBe('ep-2');
 
     // Removing the default promotes the first survivor rather than leaving a dangling id.
     const removed = await applyChange(
@@ -184,7 +185,7 @@ describe('applyChange', () => {
       { kind: 'remove-endpoint', interfaceId: 'iface-1', endpointId: 'ep-2' },
       deps,
     );
-    expect(removed.project.interfaces[0]?.defaultEndpointId).toBe('ep-1');
+    expect(soapInterfacesOf(removed.project)[0]?.defaultEndpointId).toBe('ep-1');
   });
 
   it('project properties can be set and removed', async () => {
@@ -217,7 +218,7 @@ describe('applyChange', () => {
 
   it('remove-interface drops the interface and renumbers the rest', async () => {
     const result = await applyChange(build(), { kind: 'remove-interface', interfaceId: 'iface-1' }, deps);
-    expect(result.project.interfaces).toEqual([]);
+    expect(soapInterfacesOf(result.project)).toEqual([]);
   });
 
   it('rejects unknown ids rather than silently doing nothing', async () => {
@@ -518,12 +519,14 @@ describe('response examples on a REST request', () => {
 
   const projectWithExamples: Project = {
     ...createProject('Pets', { id: 'p1' }),
-    apis: [
-      createApi('Pets', {
-        id: 'api-1',
-        requests: [{ ...createRestRequest('Get pet', { id: 'r1' }), examples: [example('e1'), example('e2')] }],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Pets', {
+          id: 'api-1',
+          requests: [{ ...createRestRequest('Get pet', { id: 'r1' }), examples: [example('e1'), example('e2')] }],
+        }),
+      ],
+    },
   };
 
   it('remove-rest-example deletes one example and leaves the others', async () => {

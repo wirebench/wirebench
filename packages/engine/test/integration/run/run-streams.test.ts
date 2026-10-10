@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Assertion } from '../../../src/assert/model.js';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
+import { createGrpcApi, createGrpcRequest, withGrpcApis } from '../../../src/grpc/model.js';
 import type { GrpcMethodKind } from '../../../src/grpc/model.js';
 import { grpcRun } from '../../../src/grpc/run.js';
 import { createApi, createProject, createRestRequest } from '../../../src/index.js';
@@ -20,7 +20,7 @@ import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import type { RequestResult } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import { createWsApi, createWsRequest, createWsSavedMessage, withWsApis } from '../../../src/ws/model.js';
 import type { WsSavedMessage } from '../../../src/ws/model.js';
 import { startTestRestServer } from '../../helpers/index.js';
 import type { TestRestServer } from '../../helpers/index.js';
@@ -30,6 +30,7 @@ import { startTestGrpcServer } from '../../helpers/test-grpc-server.js';
 import type { TestGrpcServer } from '../../helpers/test-grpc-server.js';
 import { startTestWsServer } from '../../helpers/test-ws-server.js';
 import type { TestWsServer } from '../../helpers/test-ws-server.js';
+import { withRestApis } from '../../../src/rest/model.js';
 
 const SERVICE = 'wirebench.greet.Greeter';
 
@@ -85,31 +86,34 @@ interface Streams {
 
 function makeProject(streams: Streams): Project {
   const base = createProject('Streams', { id: 'p-streams' });
-  return {
-    ...base,
-    grpcApis:
-      streams.grpc === undefined
-        ? []
-        : [
-            createGrpcApi('Greeter', {
-              id: 'api-greeter',
-              slug: 'greeter',
-              target: grpc.target,
-              tls: false,
-              requests: streams.grpc.map((call, order) => ({
-                ...createGrpcRequest(call.name, {
-                  id: `g-${call.name}`,
-                  order,
-                  service: SERVICE,
-                  method: call.method,
-                  methodKind: call.kind,
-                  message: JSON.stringify(call.message),
-                }),
-                assertions: call.assertions ?? [],
-              })),
-            }),
-          ],
-    wsApis:
+  return withRestApis(
+    withWsApis(
+      withGrpcApis(
+        {
+          ...base,
+        },
+        streams.grpc === undefined
+          ? []
+          : [
+              createGrpcApi('Greeter', {
+                id: 'api-greeter',
+                slug: 'greeter',
+                target: grpc.target,
+                tls: false,
+                requests: streams.grpc.map((call, order) => ({
+                  ...createGrpcRequest(call.name, {
+                    id: `g-${call.name}`,
+                    order,
+                    service: SERVICE,
+                    method: call.method,
+                    methodKind: call.kind,
+                    message: JSON.stringify(call.message),
+                  }),
+                  assertions: call.assertions ?? [],
+                })),
+              }),
+            ],
+      ),
       streams.ws === undefined
         ? []
         : [
@@ -127,21 +131,21 @@ function makeProject(streams: Streams): Project {
               ],
             }),
           ],
-    apis:
-      streams.sse === undefined
-        ? []
-        : [
-            {
-              ...createApi('Events', { id: 'api-events', slug: 'events', baseUrl: rest.url }),
-              requests: [
-                {
-                  ...createRestRequest('Ticks', { id: 'r-ticks', url: streams.sse.path }),
-                  assertions: streams.sse.assertions ?? [],
-                },
-              ],
-            },
-          ],
-  };
+    ),
+    streams.sse === undefined
+      ? []
+      : [
+          {
+            ...createApi('Events', { id: 'api-events', slug: 'events', baseUrl: rest.url }),
+            requests: [
+              {
+                ...createRestRequest('Ticks', { id: 'r-ticks', url: streams.sse.path }),
+                assertions: streams.sse.assertions ?? [],
+              },
+            ],
+          },
+        ],
+  );
 }
 
 function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {

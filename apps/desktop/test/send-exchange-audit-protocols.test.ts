@@ -119,7 +119,7 @@ function soapModel(endpointUrl: string): Project {
     cacheDefinition: false,
     operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'p1' }), interfaces: [iface], environments: [QA, PROD] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { soap: [iface] }, environments: [QA, PROD] };
 }
 
 function grpcModel(target: string): Project {
@@ -132,14 +132,16 @@ function grpcModel(target: string): Project {
   });
   return {
     ...createProject('Demo', { id: 'p1' }),
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'g-1',
-        target,
-        tls: false,
-        folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [call] })],
-      }),
-    ],
+    containers: {
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'g-1',
+          target,
+          tls: false,
+          folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [call] })],
+        }),
+      ],
+    },
     environments: [QA, PROD],
   };
 }
@@ -147,13 +149,15 @@ function grpcModel(target: string): Project {
 function wsModel(path: string): Project {
   return {
     ...createProject('Demo', { id: 'p1' }),
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'w-1',
-        url: ws.url,
-        requests: [createWsRequest('Echo', { id: 'ws-1', url: path })],
-      }),
-    ],
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'w-1',
+          url: ws.url,
+          requests: [createWsRequest('Echo', { id: 'ws-1', url: path })],
+        }),
+      ],
+    },
     environments: [QA, PROD],
   };
 }
@@ -165,7 +169,7 @@ function restModel(baseUrl: string): Project {
     auth: { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' },
     requests: [createRestRequest('Echo', { id: 'req-1', url: '/echo', query: [entry('x', '1')] })],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api], environments: [QA, PROD] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] }, environments: [QA, PROD] };
 }
 
 function audited(model: Project, environmentId?: string, extraProject: Record<string, unknown> = {}) {

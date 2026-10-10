@@ -20,59 +20,64 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { z } from 'zod';
-import { probeTlsChain } from '@wirebench/engine';
-import type { PemCertificateSummary } from '@wirebench/engine';
 import {
+  assertBranchName,
   assertPathSegment,
+  assertRemoteUrl,
   createProject,
   createWorkspace,
   createWorkspaceEnvironment,
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
   exportCollection,
-  nodeFs,
-  shareSyncSettings,
+  grpcApisOf,
   isTeamSecretsPath,
   loadLocalState,
   loadProject,
   loadWorkspace,
+  nodeFs,
   parseLocalSecretSources,
   parseSecretSources,
+  probeTlsChain,
   ProjectError,
   reidentifyProject,
+  restApisOf,
   saveLocalState,
   saveProject,
   saveShare,
   saveWorkspace,
   secretNamesInValue,
+  secretRefsInValue,
   secretSourcesHash,
   serializeSecretSources,
-  secretRefsInValue,
+  shareSyncSettings,
   slugify,
+  soapInterfacesOf,
+  TEAM_SECRETS_DIR,
   uniqueSlug,
   WirebenchError,
-  WorkspaceError,
-  TEAM_SECRETS_DIR,
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_JOINING_DIR,
   WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
   WORKSPACE_SHARE_FILE,
-  WORKSPACES_DIR,
   workspaceDir,
+  WorkspaceError,
   workspaceManifestFile,
   workspaceProjectDir,
+  WORKSPACES_DIR,
   writeFileAtomic,
-  assertBranchName,
-  assertRemoteUrl,
+  wsApisOf,
 } from '@wirebench/engine';
 import type {
-  WorkspaceLocalState,
+  CollectionExportFormat,
+  CollectionExportResult,
   FsLike,
   GitCli,
   GitShareSettings,
   IssuedTokenSource,
   LocalSecretSource,
+  PemCertificateSummary,
   Project,
   SaveResult,
   SecretSourceIssue,
@@ -83,10 +88,10 @@ import type {
   TlsOptions,
   Workspace,
   WorkspaceEnvironment,
+  WorkspaceLocalState,
   WorkspaceProjectRef,
   WorkspaceShare,
 } from '@wirebench/engine';
-import type { CollectionExportFormat, CollectionExportResult } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
@@ -153,27 +158,25 @@ import type {
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
+  CertificatesCheckResponse,
   EngineProgressEvent,
+  GrpcRequestPatchWire,
+  HydrationStatus,
   ProjectWire,
+  RequestPatchWire,
+  RestRequestPatchWire,
   SecretSourcesSetRequest,
   SecretSourcesState,
   SyncSettingsPatchWire,
+  UnsavedRestoreNoticeWire,
   WorkspaceChange,
   WorkspaceEnvironmentWire,
   WorkspaceProjectWire,
+  WorkspaceRestoredResponse,
   WorkspaceShareWire,
   WorkspaceSummaryWire,
   WorkspaceWire,
-} from '../shared/wire-types.js';
-import type {
-  GrpcRequestPatchWire,
-  HydrationStatus,
-  RequestPatchWire,
-  RestRequestPatchWire,
-  UnsavedRestoreNoticeWire,
-  WorkspaceRestoredResponse,
   WsRequestPatchWire,
-  CertificatesCheckResponse,
 } from '../shared/wire-types.js';
 
 /**
@@ -2312,7 +2315,9 @@ export class WorkspaceService implements ProjectRouter {
       const model = entry.host?.model();
       if (model === undefined || request.containerId === undefined) return false;
       const id = request.containerId;
-      return [...model.interfaces, ...model.apis, ...model.grpcApis, ...model.wsApis].some((c) => c.id === id);
+      return [...soapInterfacesOf(model), ...restApisOf(model), ...grpcApisOf(model), ...wsApisOf(model)].some(
+        (c) => c.id === id,
+      );
     };
     const entry = request.projectId !== undefined ? this.requireEntry(request.projectId) : open.entries.find(holds);
     const model = entry?.host?.model();

@@ -22,6 +22,7 @@ import {
   writeGolden,
 } from './ops/helpers.js';
 import type { TestServer } from './ops/helpers.js';
+import { soapInterfacesOf } from '@wirebench/engine';
 
 function sink(): { stream: PassThrough; text: () => string } {
   const stream = new PassThrough();
@@ -78,16 +79,19 @@ describe('the op verbs', () => {
     await addEnvironment(fixture.dir, 'local', { CalculatorService: server.url });
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        operations: iface.operations.map((operation) => ({
-          ...operation,
-          requests: operation.requests.map((request) => ({
-            ...request,
-            assertions: [{ type: 'status', equals: 200 }],
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          operations: iface.operations.map((operation) => ({
+            ...operation,
+            requests: operation.requests.map((request) => ({
+              ...request,
+              assertions: [{ type: 'status', equals: 200 }],
+            })),
           })),
         })),
-      })),
+      },
     }));
     const where = ['--project', fixture.dir, '--history-dir', fixture.historyDir];
 
@@ -300,16 +304,19 @@ describe('the op verbs, exit codes, warnings and help', () => {
     await addEnvironment(fixture.dir, 'local', { CalculatorService: server.url });
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        operations: iface.operations.map((operation) => ({
-          ...operation,
-          requests: operation.requests.map((request) => ({
-            ...request,
-            assertions: [{ type: 'match', language: 'xpath', expression: '((', equals: '1' }],
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          operations: iface.operations.map((operation) => ({
+            ...operation,
+            requests: operation.requests.map((request) => ({
+              ...request,
+              assertions: [{ type: 'match', language: 'xpath', expression: '((', equals: '1' }],
+            })),
           })),
         })),
-      })),
+      },
     }));
     const where = ['--project', fixture.dir, '--history-dir', fixture.historyDir];
     const errored = await cli(['send', SOAP_ITEM, '-e', 'local', ...where]);

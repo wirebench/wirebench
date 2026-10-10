@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { secretNeedsOf } from '../../../src/run/secret-needs.js';
 import { selectRequests } from '../../../src/run/select.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { EndpointAuth, Interface, Project, SoapRequestDef, WssRef } from '../../../src/project/model.js';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { EndpointAuth, Project, WssRef } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest, withGrpcApis } from '../../../src/grpc/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
@@ -50,10 +52,8 @@ function project(parts: { interfaces?: Interface[]; apis?: RestApi[]; wss?: Part
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: parts.interfaces ?? [],
-    apis: parts.apis ?? [],
-    grpcApis: [],
-    wsApis: [],
+    containers: { soap: parts.interfaces ?? [], rest: parts.apis ?? [] },
+
     sequences: [],
     mocks: [],
     environments: [],
@@ -276,7 +276,7 @@ describe('secretNeedsOf — gRPC', () => {
       target: 'localhost:1',
       requests: [createGrpcRequest('Hello', { id: 'g-1', message: '{"k": "${secret:grpc_key}"}' })],
     });
-    expect(needsOf({ ...project({}), grpcApis: [api] })).toEqual([
+    expect(needsOf(withGrpcApis(project({}), [api]))).toEqual([
       { ref: 'secret:grpc_key', envName: 'GRPC_KEY', purpose: 'secret "grpc_key"', usedBy: ['Greeter/Hello'] },
     ]);
   });
@@ -295,8 +295,8 @@ describe('secretNeedsOf — gRPC', () => {
       ],
       requests: [createGrpcRequest('Top', { id: 'g-2', order: 1 })],
     });
-    const p = {
-      ...project({
+    const p = withGrpcApis(
+      project({
         wss: {
           keystores: [
             {
@@ -307,8 +307,8 @@ describe('secretNeedsOf — gRPC', () => {
           ],
         },
       }),
-      grpcApis: [api],
-    };
+      [api],
+    );
     expect(needsOf(p)).toEqual([
       expect.objectContaining({ ref: 'sec_folder', envName: 'FOLDER_PW', usedBy: ['Greeter/Admin/Inherits'] }),
       expect.objectContaining({ ref: 'sec_ks', usedBy: ['Greeter/Admin/Inherits'] }),

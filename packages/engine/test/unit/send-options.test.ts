@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
-import type { RequestProperties } from '../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../src/soap/model.js';
+import type { RequestProperties } from '../../src/soap/model.js';
 import { DEFAULT_PREFERENCES, mergePreferences } from '../../src/project/preferences.js';
 import { toRestSendInput } from '../../src/rest/send-input.js';
 import { toSoapSendInput } from '../../src/soap/send-input.js';

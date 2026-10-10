@@ -76,9 +76,8 @@ function project(): Project {
   return {
     ...createProject('P', { newId }),
     properties: { api_token: 'prop-secret', host: 'api.example.com', authRef: '${token}' },
-    apis: [createApi('A', { newId, requests: [request, upload] })],
-    grpcApis: [grpc],
-    wsApis: [ws],
+    containers: { rest: [createApi('A', { newId, requests: [request, upload] })], grpc: [grpc], websocket: [ws] },
+
     environments: [
       {
         id: 'e',

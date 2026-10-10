@@ -13,6 +13,8 @@ import {
   parseOpenApi,
   renderContractDiffHtml,
   renderContractDiffMarkdown,
+  restApisOf,
+  soapInterfacesOf,
   summarize,
   summarizeSoapOperations,
   summarizeWsa,
@@ -40,8 +42,8 @@ async function fromProject(name: string, projectDir: string, warn: (message: str
   const { project } = await openProject({ projectDir, warn });
   const matches = (container: { readonly name: string; readonly slug: string }): boolean =>
     container.name === name || container.slug === name;
-  const iface = project.interfaces.find(matches);
-  const api = project.apis.find(matches);
+  const iface = soapInterfacesOf(project).find(matches);
+  const api = restApisOf(project).find(matches);
   if (iface !== undefined && api !== undefined) {
     throw new OpsError('item-ambiguous', `Both an interface and an API are named "${name}"; use the slug`, { name });
   }

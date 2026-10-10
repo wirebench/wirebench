@@ -4,7 +4,7 @@
  * detach a subtree or cross to another API.
  */
 import { describe, expect, it } from 'vitest';
-import { ProjectError, createApi, createFolder, createProject, createRestRequest } from '@wirebench/engine';
+import { createApi, createFolder, createProject, createRestRequest, ProjectError, restApisOf } from '@wirebench/engine';
 import type { Project, RestApi } from '@wirebench/engine';
 import {
   addApi,
@@ -50,24 +50,24 @@ function seeded(): Project {
       }),
     ],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
-const api = (project: Project): RestApi => project.apis[0]!;
+const api = (project: Project): RestApi => restApisOf(project)[0]!;
 
 describe('add-api', () => {
   it('adds an API ordered after every interface and API already there', () => {
     const { project, createdId } = addApi(seeded(), { name: 'Orders', baseUrl: 'https://orders.test' });
 
-    expect(project.apis).toHaveLength(2);
-    const added = project.apis.find((entry) => entry.id === createdId)!;
+    expect(restApisOf(project)).toHaveLength(2);
+    const added = restApisOf(project).find((entry) => entry.id === createdId)!;
     expect(added).toMatchObject({ name: 'Orders', slug: 'Orders', order: 1, baseUrl: 'https://orders.test' });
     expect(added.auth).toBeUndefined();
   });
 
   it('never gives an API a slug an interface or another API already uses', () => {
     const first = addApi(seeded(), { name: 'Petstore', baseUrl: 'x' });
-    expect(first.project.apis.at(-1)!.slug).toBe('Petstore-2');
+    expect(restApisOf(first.project).at(-1)!.slug).toBe('Petstore-2');
   });
 });
 
@@ -165,15 +165,18 @@ describe('requests', () => {
     const base = seeded();
     const linked: Project = {
       ...base,
-      apis: base.apis.map((api) => ({
-        ...api,
-        folders: api.folders.map((folder) => ({
-          ...folder,
-          requests: folder.requests.map((request) =>
-            request.id === 'req-list' ? { ...request, contract: { method: 'get', path: '/pets' } } : request,
-          ),
+      containers: {
+        ...base.containers,
+        rest: restApisOf(base).map((api) => ({
+          ...api,
+          folders: api.folders.map((folder) => ({
+            ...folder,
+            requests: folder.requests.map((request) =>
+              request.id === 'req-list' ? { ...request, contract: { method: 'get', path: '/pets' } } : request,
+            ),
+          })),
         })),
-      })),
+      },
     };
     const forged = restRequestPatchSchema.parse({ url: '/pets?x=1', contract: { method: 'delete', path: '/x' } });
     const { project } = updateRestRequest(linked, 'req-list', forged);
@@ -278,8 +281,8 @@ describe('remove-api', () => {
     const { project } = removeApi(two.project, 'api-1');
 
     // Every kind of API shares one order, so renumbering REST alone could take another kind's.
-    expect(project.apis.map((entry) => entry.name)).toEqual(['Orders']);
-    expect(project.apis[0]!.order).toBe(two.project.apis[1]!.order);
+    expect(restApisOf(project).map((entry) => entry.name)).toEqual(['Orders']);
+    expect(restApisOf(project)[0]!.order).toBe(restApisOf(two.project)[1]!.order);
   });
 });
 

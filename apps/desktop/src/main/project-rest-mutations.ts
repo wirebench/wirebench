@@ -15,10 +15,15 @@ import {
   createApi,
   createFolder,
   createRestRequest,
+  grpcApisOf,
+  nextApiOrder,
+  ProjectError,
+  restApisOf,
   signatureSchemeSchema,
   takenContainerSlugs,
   toSignatureScheme,
   uniqueSlug,
+  wsApisOf,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
@@ -34,7 +39,6 @@ import type {
   WebhookFolder,
   WebhookSigning,
 } from '@wirebench/engine';
-import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type {
   ApiPatchWire,
   AuthConfigWire,
@@ -123,11 +127,14 @@ export function notFound(what: string, id: string): never {
 
 /** The API with this id, or a clear error naming it. */
 function requireApi(project: Project, apiId: string): RestApi {
-  return project.apis.find((api) => api.id === apiId) ?? notFound('API', apiId);
+  return restApisOf(project).find((api) => api.id === apiId) ?? notFound('API', apiId);
 }
 
 function replaceApi(project: Project, next: RestApi): Project {
-  return { ...project, apis: project.apis.map((api) => (api.id === next.id ? next : api)) };
+  return {
+    ...project,
+    containers: { ...project.containers, rest: restApisOf(project).map((api) => (api.id === next.id ? next : api)) },
+  };
 }
 
 /** Re-numbers a list so `order` is its index, which is what the explorer renders by. */
@@ -245,7 +252,7 @@ function extractRequestFrom<O extends RestTreeOwner>(
 
 /** The API that holds the request, folder or API with this id. */
 export function restApiOwning(project: Project, nodeId: string): RestApi | undefined {
-  return project.apis.find((api) => api.id === nodeId || containerHolds(api, nodeId));
+  return restApisOf(project).find((api) => api.id === nodeId || containerHolds(api, nodeId));
 }
 
 function containerHolds(container: Container, nodeId: string): boolean {
@@ -260,7 +267,7 @@ export function findRestRequest(project: Project, requestId: string): RestReques
   const find = (container: Container): RestRequestDef | undefined =>
     container.requests.find((request) => request.id === requestId) ??
     container.folders.reduce<RestRequestDef | undefined>((found, folder) => found ?? find(folder), undefined);
-  return project.apis.reduce<RestRequestDef | undefined>((found, api) => found ?? find(api), undefined);
+  return restApisOf(project).reduce<RestRequestDef | undefined>((found, api) => found ?? find(api), undefined);
 }
 
 /** The folder with this id, wherever it is. */
@@ -277,7 +284,7 @@ export function findRestFolder(project: Project, folderId: string): RestFolder |
     }
     return undefined;
   };
-  return project.apis.reduce<RestFolder | undefined>((found, api) => found ?? find(api.folders), undefined);
+  return restApisOf(project).reduce<RestFolder | undefined>((found, api) => found ?? find(api.folders), undefined);
 }
 
 /**
@@ -285,7 +292,7 @@ export function findRestFolder(project: Project, folderId: string): RestFolder |
  * API's. Handed to the engine's `resolveAuthChain`, which decides what `inherit` resolves to.
  */
 export function authChainFor(project: Project, requestId: string): readonly (AuthConfig | undefined)[] | undefined {
-  for (const api of project.apis) {
+  for (const api of restApisOf(project)) {
     const chain = chainWithin(api, requestId, []);
     if (chain !== undefined) {
       return [...chain, api.auth];
@@ -421,9 +428,12 @@ export function takenApiSlugs(project: Project, exceptApiId?: string): Set<strin
       ? project
       : {
           ...project,
-          apis: project.apis.filter((api) => api.id !== exceptApiId),
-          grpcApis: project.grpcApis.filter((api) => api.id !== exceptApiId),
-          wsApis: project.wsApis.filter((api) => api.id !== exceptApiId),
+          containers: {
+            ...project.containers,
+            rest: restApisOf(project).filter((api) => api.id !== exceptApiId),
+            grpc: grpcApisOf(project).filter((api) => api.id !== exceptApiId),
+            websocket: wsApisOf(project).filter((api) => api.id !== exceptApiId),
+          },
         };
   return new Set([...takenContainerSlugs(others, 'apis'), ...takenContainerSlugs(others, 'interfaces')]);
 }
@@ -438,7 +448,10 @@ export function addApi(
     baseUrl: input.baseUrl,
     order: nextApiOrder(project),
   });
-  return { project: { ...project, apis: [...project.apis, api] }, createdId: api.id };
+  return {
+    project: { ...project, containers: { ...project.containers, rest: [...restApisOf(project), api] } },
+    createdId: api.id,
+  };
 }
 
 /** Applies a patch to an API. A `null` clears an optional field; an absent one leaves it alone. */
@@ -495,7 +508,7 @@ export function removeApi(project: Project, apiId: string): RestMutationResult {
   return {
     project: {
       ...project,
-      apis: project.apis.filter((api) => api.id !== apiId),
+      containers: { ...project.containers, rest: restApisOf(project).filter((api) => api.id !== apiId) },
       ...(project.webhooks !== undefined ? { webhooks: unlinkWebhookSource(project.webhooks, apiId) } : {}),
     },
   };
@@ -835,7 +848,7 @@ export function moveNode(
   if (parentId !== undefined) {
     const nodeInWebhooks = isWebhookOwner(owner);
     const parentInWebhooks = project.webhooks !== undefined && containerHolds(project.webhooks, parentId);
-    const parentInApi = project.apis.some((api) => api.id === parentId || containerHolds(api, parentId));
+    const parentInApi = restApisOf(project).some((api) => api.id === parentId || containerHolds(api, parentId));
     if ((nodeInWebhooks && parentInApi) || (!nodeInWebhooks && parentInWebhooks)) {
       throw new ProjectError('project-move-across-apis', 'A webhook moves only within Webhooks', {
         details: { nodeId: input.nodeId, parentId },

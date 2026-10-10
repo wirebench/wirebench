@@ -27,29 +27,31 @@ function project(): Project {
   return {
     ...createProject('Demo', { id: 'p1' }),
     properties: { who: 'Ada', tenant: 'acme' },
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'g-1',
-        target: '${host}',
-        tls: false,
-        metadata: [entry('x-tenant', '${tenant}')],
-        auth: { type: 'bearer', tokenRef: 'sec_tok' },
-        folders: [
-          createGrpcFolder('Greeter', {
-            id: 'f-1',
-            requests: [
-              createGrpcRequest('SayHello', {
-                id: 'q-1',
-                service: 'wirebench.greet.Greeter',
-                method: 'SayHello',
-                message: '{"name": "${who}"}',
-                metadata: [entry('x-trace', 'abc')],
-              }),
-            ],
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'g-1',
+          target: '${host}',
+          tls: false,
+          metadata: [entry('x-tenant', '${tenant}')],
+          auth: { type: 'bearer', tokenRef: 'sec_tok' },
+          folders: [
+            createGrpcFolder('Greeter', {
+              id: 'f-1',
+              requests: [
+                createGrpcRequest('SayHello', {
+                  id: 'q-1',
+                  service: 'wirebench.greet.Greeter',
+                  method: 'SayHello',
+                  message: '{"name": "${who}"}',
+                  metadata: [entry('x-trace', 'abc')],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    },
   };
 }
 

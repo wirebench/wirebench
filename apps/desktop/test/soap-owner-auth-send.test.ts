@@ -73,7 +73,7 @@ function projectWith(auth: SoapOwnerAuth | undefined, endpoint: string): Project
     cacheDefinition: false,
     operations: [{ name: 'O', bindingName: '{urn:t}B', slug: 'o', order: 0, requests: [request] }],
   });
-  return { ...createProject('P', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('P', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 /** The send's dependencies over `projectWith(auth, endpoint)`, as `request.send` builds them. */

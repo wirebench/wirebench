@@ -6,13 +6,17 @@
 
 import {
   DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
+  grpcApisOf,
   keystoreEntrySchema,
+  qnameToString,
+  restApisOf,
+  soapInterfacesOf,
   toKeystoreDef,
   toWssIncomingConfig,
   toWssOutgoingConfig,
-  wssIncomingFileSchema,
-  qnameToString,
+  wsApisOf,
   wssEntrySchema,
+  wssIncomingFileSchema,
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
 import { hasUnmirroredFields, KNOWN_WSS_ENTRY_KINDS, opaqueEntryFingerprint } from './wss-opaque.js';
@@ -277,7 +281,7 @@ export function toUpdatePlanWire(plan: UpdatePlan): UpdatePlanWire {
 
 /** Every request of a project, in interface then operation then request order. */
 export function toRequestWires(project: Project): RequestWire[] {
-  return project.interfaces.flatMap((iface) =>
+  return soapInterfacesOf(project).flatMap((iface) =>
     iface.operations.flatMap((operation) =>
       operation.requests.map((request) => toRequestWire(iface, operation, request)),
     ),
@@ -795,9 +799,9 @@ function toWsTreeWires(apis: readonly WsApi[]): {
 
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
-  const restTree = toRestTreeWires(project.apis);
-  const grpcTree = toGrpcTreeWires(project.grpcApis);
-  const wsTree = toWsTreeWires(project.wsApis);
+  const restTree = toRestTreeWires(restApisOf(project));
+  const grpcTree = toGrpcTreeWires(grpcApisOf(project));
+  const wsTree = toWsTreeWires(wsApisOf(project));
   const webhookTree =
     project.webhooks !== undefined ? toWebhookTreeWires(project.webhooks, webhookCollectionId(project.id)) : undefined;
   const webhooksWire = toWebhookCollectionWire(project);
@@ -807,15 +811,15 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     dir: context.dir,
     dirty: context.dirty,
     ...(context.lastSavedAt !== undefined ? { lastSavedAt: context.lastSavedAt } : {}),
-    interfaces: project.interfaces.map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
+    interfaces: soapInterfacesOf(project).map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
-    apis: project.apis.map(toApiWire),
+    apis: restApisOf(project).map(toApiWire),
     folders: [...restTree.folders, ...grpcTree.folders, ...wsTree.folders, ...(webhookTree?.folders ?? [])],
     restRequests: [...restTree.requests, ...(webhookTree?.requests ?? [])],
     ...(webhooksWire !== undefined ? { webhooks: webhooksWire } : {}),
-    grpcApis: project.grpcApis.map(toGrpcApiWire),
+    grpcApis: grpcApisOf(project).map(toGrpcApiWire),
     grpcRequests: grpcTree.requests,
-    wsApis: project.wsApis.map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
+    wsApis: wsApisOf(project).map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
     wsRequests: wsTree.requests,
     sequences: project.sequences.map(toSequenceWire),
     mocks: project.mocks.map(toMockWire),
@@ -871,7 +875,7 @@ export interface RequestLocation {
 
 /** Locates a request (and its owning interface/operation) by id, or `undefined` when unknown. */
 export function findRequest(project: Project, requestId: string): RequestLocation | undefined {
-  for (const iface of project.interfaces) {
+  for (const iface of soapInterfacesOf(project)) {
     for (const operation of iface.operations) {
       const request = operation.requests.find((candidate) => candidate.id === requestId);
       if (request !== undefined) {

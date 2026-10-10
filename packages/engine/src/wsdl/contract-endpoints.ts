@@ -8,7 +8,7 @@
  * interface summary (`endpointUrl`), so the menu commits what this helper made.
  */
 
-import type { Endpoint } from '../project/model.js';
+import type { Endpoint } from '../soap/model.js';
 import { escapeExpansions } from '../project/escape-expansions.js';
 import type { WsdlDefinition } from './model.js';
 

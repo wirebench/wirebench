@@ -23,6 +23,7 @@ import { generateSigningCert, generateTestCa } from '../helpers/test-certs.js';
 import { testHost } from '../helpers/send-host.js';
 import { startTestSts } from '../helpers/test-sts-server.js';
 import type { TestSts } from '../helpers/test-sts-server.js';
+import { soapInterfacesOf } from '../../src/soap/model.js';
 
 /** The fixture's lifetime has passed; push it far enough ahead that the cache keeps the token. */
 const fixture = (name: string): string =>
@@ -129,18 +130,21 @@ function projectFor(entry: WssIssuedTokenEntry): Project {
   const { project } = projectWithWss([entry]);
   return {
     ...project,
-    interfaces: project.interfaces.map((iface) =>
-      iface.kind === 'soap'
-        ? {
-            ...iface,
-            endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, url: service.url })),
-            operations: iface.operations.map((operation) => ({
-              ...operation,
-              requests: operation.requests.map((request) => ({ ...request, envelopeXml: ENVELOPE })),
-            })),
-          }
-        : iface,
-    ),
+    containers: {
+      ...project.containers,
+      soap: soapInterfacesOf(project).map((iface) =>
+        iface.kind === 'soap'
+          ? {
+              ...iface,
+              endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, url: service.url })),
+              operations: iface.operations.map((operation) => ({
+                ...operation,
+                requests: operation.requests.map((request) => ({ ...request, envelopeXml: ENVELOPE })),
+              })),
+            }
+          : iface,
+      ),
+    },
   };
 }
 

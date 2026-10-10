@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createProject, toWssOutgoingConfig } from '@wirebench/engine';
+import { createProject, soapInterfacesOf, toWssOutgoingConfig } from '@wirebench/engine';
 import { wssEntryWireSchema, type WssEntryWire } from '../src/shared/wire-types.js';
 import { EngineService } from '../src/main/engine-service.js';
 import {
@@ -39,44 +39,47 @@ function newService(secrets?: { get(ref: string): Promise<string | undefined> })
 function projectWithRequest(base: Project, wssOutgoingRef?: string, wssIncomingRef?: string): Project {
   return {
     ...base,
-    interfaces: [
-      {
-        kind: 'soap' as const,
-        id: 'i1',
-        name: 'I',
-        slug: 'i',
-        order: 0,
-        definitionUrl: 'http://x',
-        cacheDefinition: true,
-        targetNamespace: '',
-        endpoints: [],
-        wsa: { enabled: false, version: '2005/08' as const },
-        operations: [
-          {
-            name: 'Op',
-            bindingName: 'B',
-            slug: 'op',
-            order: 0,
-            requests: [
-              {
-                id: 'r1',
-                name: 'Request 1',
-                slug: 'request-1',
-                order: 0,
-                envelopeXml: '<x/>',
-                soapVersion: '1.1' as const,
-                headers: [],
-                attachments: [],
-                ...(wssOutgoingRef !== undefined ? { wssOutgoingRef } : {}),
-                ...(wssIncomingRef !== undefined ? { wssIncomingRef } : {}),
-                properties: { encoding: 'UTF-8' },
-                assertions: [],
-              },
-            ],
-          },
-        ],
-      },
-    ],
+    containers: {
+      ...base.containers,
+      soap: [
+        {
+          kind: 'soap' as const,
+          id: 'i1',
+          name: 'I',
+          slug: 'i',
+          order: 0,
+          definitionUrl: 'http://x',
+          cacheDefinition: true,
+          targetNamespace: '',
+          endpoints: [],
+          wsa: { enabled: false, version: '2005/08' as const },
+          operations: [
+            {
+              name: 'Op',
+              bindingName: 'B',
+              slug: 'op',
+              order: 0,
+              requests: [
+                {
+                  id: 'r1',
+                  name: 'Request 1',
+                  slug: 'request-1',
+                  order: 0,
+                  envelopeXml: '<x/>',
+                  soapVersion: '1.1' as const,
+                  headers: [],
+                  attachments: [],
+                  ...(wssOutgoingRef !== undefined ? { wssOutgoingRef } : {}),
+                  ...(wssIncomingRef !== undefined ? { wssIncomingRef } : {}),
+                  properties: { encoding: 'UTF-8' },
+                  assertions: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   } as unknown as Project;
 }
 
@@ -125,7 +128,7 @@ describe('outgoing WS-Security mutations', () => {
     const { project, configId } = addWssOutgoing(base, {});
     const removed = removeWssOutgoing(projectWithRequest(project, configId), configId);
     expect(removed.wss.outgoing).toHaveLength(0);
-    expect(removed.interfaces[0]?.operations[0]?.requests[0]?.wssOutgoingRef).toBeUndefined();
+    expect(soapInterfacesOf(removed)[0]?.operations[0]?.requests[0]?.wssOutgoingRef).toBeUndefined();
   });
 });
 
@@ -854,7 +857,7 @@ describe('incoming WS-Security mutations', () => {
     const { project, configId } = addWssIncoming(base, {});
     const removed = removeWssIncoming(projectWithRequest(project, undefined, configId), configId);
     expect(removed.wss.incoming).toHaveLength(0);
-    expect(removed.interfaces[0]?.operations[0]?.requests[0]?.wssIncomingRef).toBeUndefined();
+    expect(soapInterfacesOf(removed)[0]?.operations[0]?.requests[0]?.wssIncomingRef).toBeUndefined();
   });
 });
 

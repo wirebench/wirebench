@@ -6,6 +6,8 @@
 import {
   loadOpenApiDocument,
   operationJsonSchema,
+  restApisOf,
+  soapInterfacesOf,
   summarizeSoapOperations,
   validateJsonSchema,
 } from '@wirebench/engine';
@@ -122,7 +124,7 @@ export async function contractOperations(
 ): Promise<ContractEntry[]> {
   const entries: ContractEntry[] = [];
   const nameOf = nameAssigner();
-  for (const iface of [...project.interfaces].sort(byOrder)) {
+  for (const iface of [...soapInterfacesOf(project)].sort(byOrder)) {
     let wsdl: LoadedWsdl | undefined;
     if (include(iface)) {
       try {
@@ -144,7 +146,7 @@ export async function contractOperations(
       });
     }
   }
-  for (const api of [...project.apis].sort(byOrder)) {
+  for (const api of [...restApisOf(project)].sort(byOrder)) {
     let document: Awaited<ReturnType<typeof loadOpenApiDocument>>;
     try {
       document = await loadOpenApiDocument(projectDir, api.slug);
@@ -387,7 +389,9 @@ export async function deriveContractTools(project: Project, options: DeriveOptio
   const wanted = options.containers;
   for (const name of wanted ?? []) {
     if (
-      ![...project.interfaces, ...project.apis].some((container) => container.name === name || container.slug === name)
+      ![...soapInterfacesOf(project), ...restApisOf(project)].some(
+        (container) => container.name === name || container.slug === name,
+      )
     ) {
       throw new OpsError(
         'container-not-found',

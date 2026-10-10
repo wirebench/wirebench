@@ -1,12 +1,14 @@
 /** A one-request REST project whose request uses Kerberos, saved with the engine. */
 import { fileURLToPath } from 'node:url';
-import { createApi, createProject, createRestRequest, saveProject } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, saveProject, withRestApis } from '@wirebench/engine';
 
 export async function writeKerberosProject(dir: string, baseUrl: string): Promise<void> {
   await saveProject(
-    {
-      ...createProject('Krb', { id: 'p-krb' }),
-      apis: [
+    withRestApis(
+      {
+        ...createProject('Krb', { id: 'p-krb' }),
+      },
+      [
         {
           ...createApi('Svc', { id: 'api-svc', slug: 'svc', baseUrl }),
           requests: [
@@ -19,7 +21,7 @@ export async function writeKerberosProject(dir: string, baseUrl: string): Promis
           ],
         },
       ],
-    },
+    ),
     dir,
   );
 }

@@ -102,7 +102,7 @@ function resolution(baseUrl: string, path: string): Project {
   });
   return {
     ...createProject('Demo', { id: 'p1' }),
-    apis: [createApi('Api', { id: 'api-1', baseUrl, requests: [request] })],
+    containers: { rest: [createApi('Api', { id: 'api-1', baseUrl, requests: [request] })] },
   };
 }
 

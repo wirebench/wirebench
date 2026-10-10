@@ -8,6 +8,8 @@ import {
   parseSecretSources,
   resolveScopes,
   secretSourcesHash,
+  soapInterfacesOf,
+  withSoapInterfaces,
 } from '@wirebench/engine';
 import type { Environment, Interface, Project } from '@wirebench/engine';
 import { preflightRequest, secretSourceContext, secretSourceRefCode } from '../src/main/expansion-preflight.js';
@@ -51,7 +53,7 @@ function build(): Project {
   });
   return {
     ...createProject('Demo', { id: 'proj-1' }),
-    interfaces: [iface],
+    containers: { soap: [iface] },
     environments: [environment],
     properties: { stage: 'soap' },
   };
@@ -86,16 +88,18 @@ describe('preflightRequest', () => {
 
   it('does not report a ${secret:name} token as unresolved: it resolves at send', () => {
     const project = build();
-    const operation = project.interfaces[0]!.operations[0]!;
+    const operation = soapInterfacesOf(project)[0]!.operations[0]!;
     const request = {
       ...operation.requests[0]!,
       envelopeXml: '<Add><pw>${secret:soap_pw}</pw><who>${#Env#missing}</who></Add>',
       headers: [{ name: 'X-Key', value: 'Key ${secret:api_key}' }],
     };
-    const withTokens: Project = {
-      ...project,
-      interfaces: [{ ...project.interfaces[0]!, operations: [{ ...operation, requests: [request] }] }],
-    };
+    const withTokens: Project = withSoapInterfaces(
+      {
+        ...project,
+      },
+      [{ ...soapInterfacesOf(project)[0]!, operations: [{ ...operation, requests: [request] }] }],
+    );
 
     const result = preflightRequest(withTokens, 'req-1', resolveScopes(withTokens, undefined, {}, {}));
 
@@ -108,16 +112,18 @@ describe('preflightRequest', () => {
       bad: { kind: 'vault', path: '-x', field: 'f' },
     }).sources;
     const project = build();
-    const operation = project.interfaces[0]!.operations[0]!;
+    const operation = soapInterfacesOf(project)[0]!.operations[0]!;
     const request = {
       ...operation.requests[0]!,
       envelopeXml: '<Add>${secret:ok} ${secret:bad} ${secret:plain}</Add>',
       headers: [],
     };
-    const withTokens: Project = {
-      ...project,
-      interfaces: [{ ...project.interfaces[0]!, operations: [{ ...operation, requests: [request] }] }],
-    };
+    const withTokens: Project = withSoapInterfaces(
+      {
+        ...project,
+      },
+      [{ ...soapInterfacesOf(project)[0]!, operations: [{ ...operation, requests: [request] }] }],
+    );
     const scopes = resolveScopes(withTokens, undefined, {}, {});
     const run = (approvedHash: string | undefined) =>
       preflightRequest(withTokens, 'req-1', scopes, undefined, '', undefined, {
@@ -168,10 +174,10 @@ describe('preflightRequest', () => {
       id: 'iface-1',
       slug: 'Calculator',
       definitionUrl: 'http://example.test/service.wsdl',
-      operations: project.interfaces[0]!.operations,
+      operations: soapInterfacesOf(project)[0]!.operations,
     });
     const result = preflightRequest(
-      { ...project, interfaces: [iface] },
+      { ...project, containers: { ...project.containers, soap: [iface] } },
       'req-1',
       resolveScopes(project, undefined, {}, {}),
     );
@@ -232,7 +238,7 @@ describe('preflightRequest — auth source', () => {
       ],
     });
     const withInterfaceAuth: Interface = parts.iface !== undefined ? { ...iface, auth: parts.iface } : iface;
-    return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [withInterfaceAuth] };
+    return { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [withInterfaceAuth] } };
   }
 
   const preflight = (project: Project) => preflightRequest(project, 'req-1', resolveScopes(project, undefined, {}, {}));
@@ -316,7 +322,7 @@ describe('preflightRequest — auth source', () => {
         },
       ],
     });
-    const project = { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+    const project = { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } };
 
     const result = preflightRequest(project, 'req-1', resolveScopes(project, undefined, {}, {}));
 

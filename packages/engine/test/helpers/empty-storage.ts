@@ -1,9 +1,9 @@
-import { extraContainersOf } from '../../src/project/model.js';
+import { containersOf, withContainersOf } from '../../src/project/model.js';
 import type { ContainerDir, ProtocolStorage } from '../../src/protocol/module.js';
 
 /**
  * A storage facet for a test module that is not about storage: it loads nothing, writes nothing,
- * manages nothing, and keeps its containers in `extraContainers[kind]`.
+ * manages nothing, and keeps its containers in `containers[kind]`.
  */
 export function emptyStorage(kind: string, dir: ContainerDir = 'apis'): ProtocolStorage {
   return {
@@ -11,10 +11,7 @@ export function emptyStorage(kind: string, dir: ContainerDir = 'apis'): Protocol
     load: () => Promise.resolve(undefined),
     files: () => new Map<string, string>(),
     managed: () => Promise.resolve([]),
-    containers: (project) => extraContainersOf(project, kind),
-    withContainers: (project, containers) => ({
-      ...project,
-      extraContainers: { ...project.extraContainers, [kind]: containers },
-    }),
+    containers: (project) => containersOf(project, kind),
+    withContainers: (project, containers) => withContainersOf(project, kind, containers),
   };
 }

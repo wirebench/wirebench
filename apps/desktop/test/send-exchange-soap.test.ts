@@ -16,6 +16,7 @@ import {
   createRequest,
   DEFAULT_PREFERENCES,
   normalizeWsa,
+  soapInterfacesOf,
   WirebenchError,
 } from '@wirebench/engine';
 import type { HeaderEntry, Project, PropertyScopes, SoapRequestDef, WsdlImportResult } from '@wirebench/engine';
@@ -89,7 +90,7 @@ function seeded(endpointUrl: string, extra: Partial<SoapRequestDef> = {}): Proje
     cacheDefinition: false,
     operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'p1' }), properties: { who: 'ada' }, interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'p1' }), properties: { who: 'ada' }, containers: { soap: [iface] } };
 }
 
 const META = { requestName: 'Add', interfaceName: 'Calculator', operationName: 'Add' };
@@ -415,15 +416,15 @@ describe('sendThroughEngine for a SOAP request', () => {
     });
     // No SOAPAction: the default action is the only one WS-Addressing can add.
     const request = Object.fromEntries(
-      Object.entries(base.interfaces[0]!.operations[0]!.requests[0]!).filter(([key]) => key !== 'soapAction'),
+      Object.entries(soapInterfacesOf(base)[0]!.operations[0]!.requests[0]!).filter(([key]) => key !== 'soapAction'),
     ) as unknown as SoapRequestDef;
     const iface = {
-      ...base.interfaces[0]!,
+      ...soapInterfacesOf(base)[0]!,
       cacheDefinition: false,
       wsa: normalizeWsa({ enabled: true, version: '2005/08' }),
-      operations: [{ ...base.interfaces[0]!.operations[0]!, requests: [request] }],
+      operations: [{ ...soapInterfacesOf(base)[0]!.operations[0]!, requests: [request] }],
     };
-    const model: Project = { ...base, interfaces: [iface] };
+    const model: Project = { ...base, containers: { ...base.containers, soap: [iface] } };
     const defaultWsaActionFor = vi.fn((requestId: string) => (requestId === 'req-1' ? 'urn:calc:AddDefault' : ''));
     await sendThroughEngine(depsFor(model, { project: { defaultWsaActionFor } }), 's1', 'req-1', {
       draft: { kind: 'soap' },
@@ -672,7 +673,10 @@ describe('sendThroughEngine (SOAP) → the definition the app holds', () => {
   /** `req-1` under an interface that caches its definition on disk. */
   const cachedModel = (): Project => {
     const model = seeded(`${server.url}/calc`);
-    return { ...model, interfaces: model.interfaces.map((i) => ({ ...i, cacheDefinition: true })) };
+    return {
+      ...model,
+      containers: { ...model.containers, soap: soapInterfacesOf(model).map((i) => ({ ...i, cacheDefinition: true })) },
+    };
   };
   /** What the app holds for the interface once imported; no binding, so nothing is validated. */
   const held = {

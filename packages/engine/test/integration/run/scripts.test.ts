@@ -9,8 +9,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { SoapRequestDef } from '../../../src/soap/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
@@ -72,25 +74,31 @@ function project(restRequests: readonly RestRequestDef[], soapRequests: readonly
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: { region: 'eu', leaky: '${secret:api_key}' },
     disabledProperties: [],
-    interfaces: [
-      {
-        kind: 'soap',
-        id: 'iface-wsa',
-        name: 'Wsa',
-        slug: 'Wsa',
-        order: 0,
-        definitionUrl: soap.wsdlUrl,
-        cacheDefinition: false,
-        endpoints: [],
-        wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
-        operations: [
-          { name: 'Echo', bindingName: '{urn:wb:wsa}WsaPolicyBinding', slug: 'echo', order: 0, requests: soapRequests },
-        ],
-      },
-    ],
-    apis: [{ ...createApi('Api', { id: 'api-1', slug: 'api', order: 1, baseUrl: '' }), requests: [...restRequests] }],
-    grpcApis: [],
-    wsApis: [],
+    containers: {
+      soap: [
+        {
+          kind: 'soap',
+          id: 'iface-wsa',
+          name: 'Wsa',
+          slug: 'Wsa',
+          order: 0,
+          definitionUrl: soap.wsdlUrl,
+          cacheDefinition: false,
+          endpoints: [],
+          wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
+          operations: [
+            {
+              name: 'Echo',
+              bindingName: '{urn:wb:wsa}WsaPolicyBinding',
+              slug: 'echo',
+              order: 0,
+              requests: soapRequests,
+            },
+          ],
+        },
+      ],
+      rest: [{ ...createApi('Api', { id: 'api-1', slug: 'api', order: 1, baseUrl: '' }), requests: [...restRequests] }],
+    },
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
     sequences: [],

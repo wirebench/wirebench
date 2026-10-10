@@ -9,13 +9,13 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Assertion } from '../../../src/assert/model.js';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
+import { createGrpcApi, createGrpcRequest, withGrpcApis } from '../../../src/grpc/model.js';
 import type { GrpcApi, GrpcRequestDef } from '../../../src/grpc/model.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { AuthConfig, Project } from '../../../src/project/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
@@ -67,24 +67,26 @@ function makeProject(auth: AuthConfig): Project {
     ...createRestRequest('echo', { id: 'rest-echo', order: 0, url: `${rest.url}/echo` }),
     assertions: [{ type: 'status', equals: 200 }] satisfies Assertion[],
   };
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-oauth-shared',
-    name: 'Shared OAuth2 project',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: {},
-    disabledProperties: [],
-    interfaces: [],
-    apis: [
-      { ...createApi('Api', { id: 'api-rest', slug: 'api', order: 1, baseUrl: '', auth }), requests: [restRequest] },
-    ],
-    grpcApis: [grpcApi],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: { outgoing: [], incoming: [], keystores: [] },
-  };
+  return withGrpcApis(
+    withRestApis(
+      {
+        formatVersion: FORMAT_VERSION,
+        id: 'proj-oauth-shared',
+        name: 'Shared OAuth2 project',
+        settings: DEFAULT_PROJECT_SETTINGS,
+        properties: {},
+        disabledProperties: [],
+        containers: {},
+
+        sequences: [],
+        mocks: [],
+        environments: [],
+        wss: { outgoing: [], incoming: [], keystores: [] },
+      },
+      [{ ...createApi('Api', { id: 'api-rest', slug: 'api', order: 1, baseUrl: '', auth }), requests: [restRequest] }],
+    ),
+    [grpcApi],
+  );
 }
 
 function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {

@@ -48,11 +48,12 @@ import {
 } from '../project/serialize-helpers.js';
 import type { RequestWriter } from '../project/serialize-helpers.js';
 import { compact, stringifyYaml } from '../project/yaml.js';
+import { locateInTree } from '../project/request-tree.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 import { toSignatureScheme } from '../http/webhook-signature.js';
 import { apiFileSchema, restRequestFileSchema } from './files.js';
-import { exampleBodyExtension, RAW_LANGUAGE_EXTENSIONS } from './model.js';
+import { exampleBodyExtension, RAW_LANGUAGE_EXTENSIONS, restApisOf, withRestApis } from './model.js';
 import type { RestApi, RestBody, RestRequestDef, RestRequestSettings, RestResponseExample } from './model.js';
 
 /** A parsed `signing` key as the model holds it. */
@@ -448,6 +449,7 @@ export const restStorage: ProtocolStorage<RestApi> = {
   },
   managed: (fs, root, slug) => apiManagedFiles(fs, root, slug),
 
-  containers: (project) => project.apis,
-  withContainers: (project, apis) => ({ ...project, apis }),
+  containers: (project) => restApisOf(project),
+  withContainers: (project, apis) => withRestApis(project, apis),
+  requestLocation: (api, requestId) => locateInTree(api, `${APIS_DIR}/${api.slug}/${REQUESTS_DIR}`, requestId),
 };

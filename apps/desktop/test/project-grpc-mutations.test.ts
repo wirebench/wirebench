@@ -10,7 +10,10 @@ import {
   createGrpcRequest,
   createProject,
   createWsApi,
+  grpcApisOf,
   ProjectError,
+  restApisOf,
+  wsApisOf,
 } from '@wirebench/engine';
 import type { GrpcApi, GrpcRequestDef, Project } from '@wirebench/engine';
 import {
@@ -58,21 +61,21 @@ function seeded(): Project {
       }),
     ],
   });
-  return { ...createProject('Demo', { id: 'p1' }), grpcApis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { grpc: [api] } };
 }
 
-const api = (project: Project): GrpcApi => project.grpcApis[0]!;
+const api = (project: Project): GrpcApi => grpcApisOf(project)[0]!;
 
 describe('add-grpc-api', () => {
   it('adds an API ordered after everything already there, TLS from the target', () => {
     const { project, createdId } = addGrpcApi(seeded(), { name: 'Orders', target: 'orders.test:443' });
-    const added = project.grpcApis.find((candidate) => candidate.id === createdId)!;
+    const added = grpcApisOf(project).find((candidate) => candidate.id === createdId)!;
     expect(added).toMatchObject({ kind: 'grpc', name: 'Orders', target: 'orders.test:443', tls: true, order: 1 });
   });
 
   it('never gives an API a slug a REST API or interface already uses', () => {
     const { project } = addGrpcApi(seeded(), { name: 'Greeter API', target: 'x:1' });
-    expect(project.grpcApis.map((candidate) => candidate.slug)).toEqual(['Greeter API', 'Greeter API-2']);
+    expect(grpcApisOf(project).map((candidate) => candidate.slug)).toEqual(['Greeter API', 'Greeter API-2']);
   });
 });
 
@@ -226,21 +229,24 @@ describe('applyChange dispatch', () => {
     );
     expect(findGrpcRequest(added.project, added.createdId!)?.method).toBe('Ping');
     const removed = await applyChange(added.project, { kind: 'remove-grpc-api', apiId: 'g-1' }, deps);
-    expect(removed.project.grpcApis).toEqual([]);
-    expect(removeGrpcApi(seeded(), 'g-1').project.grpcApis).toEqual([]);
+    expect(grpcApisOf(removed.project)).toEqual([]);
+    expect(grpcApisOf(removeGrpcApi(seeded(), 'g-1').project)).toEqual([]);
     expect(() => removeGrpcApi(seeded(), 'nope')).toThrow(ProjectError);
   });
 });
 
 /** The seeded project with its root request given `assertions`: there is no mutation that sets them. */
 function updateGrpcRequestAssertions(project: Project, assertions: NonNullable<GrpcRequestDef['assertions']>): Project {
-  const [first, ...rest] = project.grpcApis;
+  const [first, ...rest] = grpcApisOf(project);
   return {
     ...project,
-    grpcApis: [
-      { ...first!, requests: first!.requests.map((r) => (r.id === 'q-root' ? { ...r, assertions } : r)) },
-      ...rest,
-    ],
+    containers: {
+      ...project.containers,
+      grpc: [
+        { ...first!, requests: first!.requests.map((r) => (r.id === 'q-root' ? { ...r, assertions } : r)) },
+        ...rest,
+      ],
+    },
   };
 }
 
@@ -248,26 +254,26 @@ describe('the order a new API takes', () => {
   it('counts the WebSocket APIs, so a gRPC or REST API never shares an order with one', () => {
     const project: Project = {
       ...createProject('Mixed', { id: 'p1' }),
-      wsApis: [createWsApi('Chat', { id: 'w1', order: 0 })],
+      containers: { websocket: [createWsApi('Chat', { id: 'w1', order: 0 })] },
     };
     const withGrpc = addGrpcApi(project, { name: 'Pets', target: 'localhost:50051' }).project;
     const withRest = addApi(withGrpc, { name: 'Shop', baseUrl: '' }).project;
 
-    const orders = [...withRest.wsApis, ...withRest.grpcApis, ...withRest.apis].map((api) => api.order);
+    const orders = [...wsApisOf(withRest), ...grpcApisOf(withRest), ...restApisOf(withRest)].map((api) => api.order);
     expect(orders).toEqual([0, 1, 2]);
   });
 
   it('never repeats an order still held after an API was deleted', () => {
     const project: Project = {
       ...createProject('Mixed', { id: 'p1' }),
-      wsApis: [createWsApi('Chat', { id: 'w1', order: 0 })],
+      containers: { websocket: [createWsApi('Chat', { id: 'w1', order: 0 })] },
     };
     const first = addGrpcApi(project, { name: 'Pets', target: 'localhost:50051' });
     const second = addGrpcApi(first.project, { name: 'Shop', target: 'localhost:50052' });
     const removed = removeGrpcApi(second.project, first.createdId!).project;
     const added = addApi(removed, { name: 'Store', baseUrl: '' }).project;
 
-    const orders = [...added.wsApis, ...added.grpcApis, ...added.apis].map((api) => api.order);
+    const orders = [...wsApisOf(added), ...grpcApisOf(added), ...restApisOf(added)].map((api) => api.order);
     expect(orders).toEqual([0, 2, 3]);
     expect(new Set(orders).size).toBe(orders.length);
   });

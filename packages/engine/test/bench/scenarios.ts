@@ -17,7 +17,7 @@ import type { WsdlImportResult } from '../../src/soap/types.js';
 import { sendSoapRequest } from '../../src/soap/send.js';
 import { buildMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { prepareMtomRequest } from '../../src/soap/mime/mtom.js';
-import type { Attachment } from '../../src/project/model.js';
+import type { Attachment } from '../../src/soap/model.js';
 import { evaluate } from '../../src/xpath/evaluate.js';
 import { importOpenApi, parseOpenApi } from '../../src/rest/openapi/import.js';
 import type { JsonSchema } from '../../src/rest/openapi/model.js';

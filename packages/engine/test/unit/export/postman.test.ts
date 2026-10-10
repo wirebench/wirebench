@@ -7,9 +7,10 @@ import { parsePostmanCollectionText } from '../../../src/rest/postman/parse.js';
 import { parsePostmanVariablesText } from '../../../src/rest/postman/variables.js';
 import { joinBase } from '../../../src/rest/url.js';
 import { newId, sampleProject } from './fixture.js';
+import { restApisOf } from '../../../src/rest/model.js';
 
 const project = sampleProject();
-const restId = project.apis[0]!.id;
+const restId = restApisOf(project)[0]!.id;
 
 function exportApi() {
   return exportCollection('postman', { project, target: { kind: 'container', id: restId }, newId });
@@ -51,7 +52,7 @@ describe('Postman export: round trip through the Postman importer', () => {
       'staging.postman_environment.json',
     ]);
     const imported = apiFromPostmanCollection(parsePostmanCollectionText(result.files[0]!.text), { newId });
-    const original = project.apis[0]!;
+    const original = restApisOf(project)[0]!;
     expect(imported.api.name).toBe('Pets');
     expect(imported.api.auth?.type).toBe('bearer');
     expect(flatten(imported.api.baseUrl, imported.api)).toEqual(flatten(original.baseUrl, original));
@@ -141,7 +142,7 @@ describe('Postman export: errors', () => {
   });
 
   it('refuses a target with nothing it can write', () => {
-    const grpcOnly = { ...project, interfaces: [], apis: [], wsApis: [] };
+    const grpcOnly = { ...project, containers: { ...project.containers, soap: [], rest: [], websocket: [] } };
     expect(() => exportCollection('postman', { project: grpcOnly, target: { kind: 'project' } })).toThrow(
       /Nothing in it can be written/,
     );

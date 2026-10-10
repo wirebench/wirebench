@@ -51,7 +51,7 @@ function build(): Project {
       },
     ],
   });
-  return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 describe('assertions survive a desktop mutation round trip', () => {

@@ -62,21 +62,23 @@ describe('resolveItem beside WebSocket and gRPC requests', () => {
   const login = createRestRequest('Login', { id: 'r-login' });
   const mixed: Project = {
     ...createProject('Mixed', { id: 'p2' }),
-    apis: [createApi('Api', { id: 'api-1', order: 0, requests: [login] })],
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'ws-1',
-        order: 1,
-        requests: [createWsRequest('Login', { id: 'w-login' }), createWsRequest('Feed', { id: 'w-feed' })],
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'g-1',
-        order: 2,
-        requests: [createGrpcRequest('Login', { id: 'g-login' }), createGrpcRequest('Hello', { id: 'g-hello' })],
-      }),
-    ],
+    containers: {
+      rest: [createApi('Api', { id: 'api-1', order: 0, requests: [login] })],
+      websocket: [
+        createWsApi('Chat', {
+          id: 'ws-1',
+          order: 1,
+          requests: [createWsRequest('Login', { id: 'w-login' }), createWsRequest('Feed', { id: 'w-feed' })],
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'g-1',
+          order: 2,
+          requests: [createGrpcRequest('Login', { id: 'g-login' }), createGrpcRequest('Hello', { id: 'g-hello' })],
+        }),
+      ],
+    },
   };
 
   function refusalIn(p: Project, ref: string): { readonly code: string; readonly message: string } {

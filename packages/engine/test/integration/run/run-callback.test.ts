@@ -55,14 +55,16 @@ afterAll(async () => {
 function project(assertions: readonly Assertion[]): Project {
   return {
     ...createProject('Shop', { id: 'P1' }),
-    apis: [
-      createApi('Shop', {
-        id: 'A1',
-        slug: 'shop',
-        baseUrl: rest.url,
-        requests: [{ ...createRestRequest('Pay', { id: 'R1', method: 'POST', url: '/echo' }), assertions }],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Shop', {
+          id: 'A1',
+          slug: 'shop',
+          baseUrl: rest.url,
+          requests: [{ ...createRestRequest('Pay', { id: 'R1', method: 'POST', url: '/echo' }), assertions }],
+        }),
+      ],
+    },
   };
 }
 

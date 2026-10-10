@@ -12,7 +12,7 @@
  * ("Expand MTOM Attachments") or left in place with the part listed alongside.
  */
 
-import type { Attachment } from '../../project/model.js';
+import type { Attachment } from '../model.js';
 import { scanXml } from '../../xsd/xml-scan.js';
 import { findCidReferences, forEachScannedElement, spliceRanges } from './cid-scan.js';
 import { mediaTypeOf, mimeParameter, type ParsedMultipart } from './multipart.js';

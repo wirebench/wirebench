@@ -12,6 +12,8 @@ import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RequestScripts } from '../../../src/script/model.js';
 import { SCRIPT_LIMITS } from '../../../src/script/sandbox/model.js';
 import { tempProjectDir } from './fixture.js';
+import { restApisOf, withRestApis } from '../../../src/rest/model.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const V5_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v5', 'project');
 const REQUESTS = 'apis/Shop/requests';
@@ -36,13 +38,13 @@ const SCRIPTS: RequestScripts = {
 };
 
 function restRequest(project: Project): RestRequestDef {
-  const request = project.apis[0]?.requests[0];
+  const request = restApisOf(project)[0]?.requests[0];
   if (request === undefined) throw new Error('fixture has no REST request');
   return request;
 }
 
 function withRestScripts(project: Project, scripts: RequestScripts | undefined, slug?: string): Project {
-  const api = project.apis[0]!;
+  const api = restApisOf(project)[0]!;
   const request = restRequest(project);
   const next: RestRequestDef = { ...request, ...(slug !== undefined ? { slug } : {}) };
   const changed: RestRequestDef = { ...next };
@@ -51,7 +53,7 @@ function withRestScripts(project: Project, scripts: RequestScripts | undefined, 
   } else {
     (changed as { scripts?: RequestScripts }).scripts = scripts;
   }
-  return { ...project, apis: [{ ...api, requests: [changed] }] };
+  return withRestApis(project, [{ ...api, requests: [changed] }]);
 }
 
 describe('request scripts on disk', () => {
@@ -92,7 +94,7 @@ describe('request scripts on disk', () => {
     expect(yaml).toContain(
       ['scripts:', '  api: postman', '  enabled: false', '  post: Create cart.post.js'].join('\n'),
     );
-    expect((await loadProject(dir)).project.apis[0]?.requests[0]?.scripts).toEqual(postman);
+    expect(restApisOf((await loadProject(dir)).project)[0]?.requests[0]?.scripts).toEqual(postman);
   });
 
   it('move the scripts with a renamed request, and remove them with the scripts', async () => {
@@ -112,21 +114,24 @@ describe('request scripts on disk', () => {
 
   it('keep scripts on a SOAP request beside its envelope', async () => {
     const { project } = await loadProject(dir);
-    const iface = project.interfaces[0]!;
+    const iface = soapInterfacesOf(project)[0]!;
     const operation = iface.operations[0]!;
     const [first, ...rest] = operation.requests;
     const changed: Project = {
       ...project,
-      interfaces: [
-        { ...iface, operations: [{ ...operation, requests: [{ ...first!, scripts: SCRIPTS }, ...rest] }] },
-        ...project.interfaces.slice(1),
-      ],
+      containers: {
+        ...project.containers,
+        soap: [
+          { ...iface, operations: [{ ...operation, requests: [{ ...first!, scripts: SCRIPTS }, ...rest] }] },
+          ...soapInterfacesOf(project).slice(1),
+        ],
+      },
     };
     await saveProject(changed, dir);
     expect(await readFile(join(dir, SOAP_DIR, `${first!.slug}.pre.ts`), 'utf8')).toBe(SCRIPTS.pre!.text);
     const reloaded = await loadProject(dir);
     expect(reloaded.problems).toEqual([]);
-    expect(reloaded.project.interfaces[0]?.operations[0]?.requests[0]?.scripts).toEqual(SCRIPTS);
+    expect(soapInterfacesOf(reloaded.project)[0]?.operations[0]?.requests[0]?.scripts).toEqual(SCRIPTS);
   });
 
   it('report a missing script file, and load the request with that script marked', async () => {

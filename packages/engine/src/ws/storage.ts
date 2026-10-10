@@ -29,7 +29,7 @@ import type { RequestWriter } from '../project/serialize-helpers.js';
 import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import { wsApiFileSchema, wsRequestFileSchema } from './files.js';
-import { wsMessageFileName } from './model.js';
+import { withWsApis, wsApisOf, wsMessageFileName } from './model.js';
 import type { WsApi, WsRequestDef, WsRequestSettings, WsSavedMessage } from './model.js';
 
 /**
@@ -213,6 +213,6 @@ export const wsStorage: ProtocolStorage<WsApi> = {
   },
   managed: (fs, root, slug) => apiManagedFiles(fs, root, slug),
 
-  containers: (project) => project.wsApis,
-  withContainers: (project, wsApis) => ({ ...project, wsApis }),
+  containers: (project) => wsApisOf(project),
+  withContainers: (project, wsApis) => withWsApis(project, wsApis),
 };

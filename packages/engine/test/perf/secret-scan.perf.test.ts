@@ -22,7 +22,7 @@ describe.skipIf(SKIP_PERF)('secret scan', () => {
         body: { kind: 'raw', language: 'json', text: body },
       }),
     );
-    const project = { ...createProject('P'), apis: [createApi('A', { requests })] };
+    const project = { ...createProject('P'), containers: { rest: [createApi('A', { requests })] } };
     expect(scanProjectForSecrets(project)).toHaveLength(40);
     // Median of several runs against budget × gate factor, like the other engine budgets.
     const samples: number[] = [];

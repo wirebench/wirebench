@@ -13,20 +13,10 @@
  */
 
 import { ulid } from 'ulidx';
-import type { Assertion } from '../assert/model.js';
-import { slugify } from './paths.js';
-import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
-import type { WsaConfig } from '../wsa/model.js';
-import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
-import type { RestApi, RestRequestDef } from '../rest/model.js';
-import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { MockDef } from '../mock/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
-import type { ContainerBase, ContainerDir } from '../protocol/module.js';
-import type { RequestScripts } from '../script/model.js';
-
-export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
+import type { ContainerBase } from '../protocol/module.js';
 
 /**
  * The on-disk format version written to (and required by) `wirebench.yaml`.
@@ -177,32 +167,6 @@ export const DEFAULT_OAUTH2_AUTH: OAuth2Auth = Object.freeze({
   pkce: true,
 });
 
-/** One addressable endpoint (URL + optional credentials) of an interface. */
-export interface Endpoint {
-  readonly id: string;
-  readonly name: string;
-  readonly url: string;
-  readonly auth?: SoapOwnerAuth;
-  /** `override` replaces request credentials, `complement` only fills in blanks. */
-  readonly authMode: 'override' | 'complement';
-  /**
-   * Send to this endpoint even when its certificate does not verify (`rejectUnauthorized:
-   * false`). Per endpoint only — there is no global equivalent — and the UI badges every
-   * endpoint that has it in red, permanently, so a debugging shortcut cannot quietly become
-   * the way the project always runs.
-   */
-  readonly trustInvalid?: boolean;
-}
-
-/**
- * How an attachment participates in the outgoing message, under the names classic SOAP
- * workbenches use:
- * `XOP` for an MTOM/XOP-optimised binary, `SWAREF` for a `ref:swaRef`-referenced part,
- * `MIME` for a WSDL `mime:content` part, `CONTENT` for an unreferenced body attachment,
- * and `UNKNOWN` when nothing in the definition says.
- */
-export type AttachmentType = 'XOP' | 'MIME' | 'SWAREF' | 'CONTENT' | 'UNKNOWN';
-
 /**
  * Where an attachment's bytes live: either content-addressed inside the project
  * (`attachments/<sha256>`, written by `project/attachments-cache.ts`) or a file
@@ -211,32 +175,6 @@ export type AttachmentType = 'XOP' | 'MIME' | 'SWAREF' | 'CONTENT' | 'UNKNOWN';
 export type AttachmentSource =
   { readonly kind: 'cache'; readonly sha256: string } | { readonly kind: 'path'; readonly path: string };
 
-/** One attachment part of a request. Bytes are never held here; see {@link AttachmentSource}. */
-export interface Attachment {
-  readonly id: string;
-  /** Display/file name; may contain `${#...}` property expansions. */
-  readonly name: string;
-  readonly contentType: string;
-  /** Size in bytes, as known when the attachment was added (informational for `path` sources). */
-  readonly size: number;
-  /** WSDL `mime:part` name this attachment fills, when the binding names one. */
-  readonly part?: string;
-  readonly type: AttachmentType;
-  /** MIME Content-ID, stored without the angle brackets. Defaults to {@link defaultContentId}. */
-  readonly contentId: string;
-  /** True when the bytes were copied into the project's attachment cache. */
-  readonly cached: boolean;
-  readonly source: AttachmentSource;
-}
-
-/**
- * The Content-ID a freshly added attachment gets: its own id in the `wirebench`
- * domain, which is globally unique because ids are ULIDs.
- */
-export function defaultContentId(attachmentId: string): string {
-  return `${attachmentId}@wirebench`;
-}
-
 /** One HTTP header of a request, kept in author-defined order (duplicates allowed). */
 export interface HeaderEntry {
   readonly name: string;
@@ -244,124 +182,6 @@ export interface HeaderEntry {
   /** `false` keeps the row in the request without sending it; absent means on. */
   readonly enabled?: boolean;
   readonly description?: string;
-}
-
-/** The per-request knobs of the request editor's Details panel. */
-export interface RequestProperties {
-  readonly encoding: string;
-  readonly timeoutMs?: number;
-  readonly bindAddress?: string;
-  readonly followRedirects: boolean;
-  readonly skipSoapAction: boolean;
-  readonly enableMtom: boolean;
-  readonly forceMtom: boolean;
-  readonly inlineResponseAttachments: boolean;
-  readonly expandMtomAttachments: boolean;
-  readonly disableMultiparts: boolean;
-  readonly encodeAttachments: boolean;
-  readonly enableInlineFiles: boolean;
-  readonly removeEmptyContent: boolean;
-  readonly entitizeProperties: boolean;
-  readonly prettyPrint: boolean;
-  readonly stripWhitespaces: boolean;
-  readonly dumpFile?: string;
-  readonly maxSizeBytes?: number;
-  readonly wssPasswordType?: 'text' | 'digest';
-  readonly wssTimeToLive?: number;
-  /** Id of a `wss/keystores.yaml` entry: the client identity this request's TLS handshake presents. */
-  readonly sslKeystoreRef?: string;
-}
-
-/** The request property values applied to a freshly created request. */
-export const DEFAULT_REQUEST_PROPERTIES: RequestProperties = Object.freeze({
-  encoding: 'UTF-8',
-  followRedirects: false,
-  skipSoapAction: false,
-  enableMtom: false,
-  forceMtom: false,
-  inlineResponseAttachments: false,
-  expandMtomAttachments: false,
-  disableMultiparts: false,
-  encodeAttachments: false,
-  enableInlineFiles: false,
-  removeEmptyContent: false,
-  entitizeProperties: false,
-  prettyPrint: false,
-  stripWhitespaces: false,
-});
-
-/** A saved SOAP request: everything but the envelope lives in `<slug>.request.yaml`, the envelope in `<slug>.xml`. */
-export interface SoapRequestDef {
-  readonly kind: 'soap';
-  readonly id: string;
-  readonly name: string;
-  /** File-system name (without the `.request.yaml` / `.xml` suffix). */
-  readonly slug: string;
-  readonly order: number;
-  readonly description?: string;
-  /** Id of the interface endpoint to send to. */
-  readonly endpointId?: string;
-  /** A one-off URL that overrides {@link endpointId}. */
-  readonly endpointUrl?: string;
-  readonly soapVersion: '1.1' | '1.2';
-  readonly soapAction?: string;
-  readonly headers: readonly HeaderEntry[];
-  readonly attachments: readonly Attachment[];
-  readonly auth?: SoapOwnerAuth;
-  readonly wsa?: WsaConfig;
-  /** Name of a `wss/outgoing/<name>.yaml` configuration. */
-  readonly wssOutgoingRef?: string;
-  /** Name of a `wss/incoming/<name>.yaml` configuration. */
-  readonly wssIncomingRef?: string;
-  readonly properties: RequestProperties;
-  /** Declarative checks a runner evaluates against this request's response. Empty when none. */
-  readonly assertions: readonly Assertion[];
-  /**
-   * True when the operation this request belongs to is no longer in the interface's definition
-   * (see `wsdl/update-definition.ts`). Nothing is ever deleted on an update, so the request
-   * survives with this flag and the UI badges it; clearing it is what a later definition that
-   * brings the operation back does.
-   */
-  readonly orphaned?: boolean;
-  /** Pre-request and post-response scripts, in files beside the request (#63). */
-  readonly scripts?: RequestScripts;
-  /** Stored verbatim in the sibling `.xml` file, byte for byte. */
-  readonly envelopeXml: string;
-}
-
-/**
- * A saved request of either protocol, which is what a lookup by request id can return: the id
- * space is one (ULIDs), so `kind` is how a caller finds out what it has.
- */
-export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef;
-
-/** A binding operation of an interface, holding its saved requests. */
-export interface OperationDef {
-  readonly name: string;
-  /** The owning binding as `{namespace}localName`. */
-  readonly bindingName: string;
-  readonly slug: string;
-  readonly order: number;
-  readonly requests: readonly SoapRequestDef[];
-}
-
-/** An imported WSDL interface: its definition, endpoints and operations. */
-export interface Interface {
-  readonly kind: 'soap';
-  readonly id: string;
-  readonly name: string;
-  readonly slug: string;
-  readonly order: number;
-  readonly definitionUrl: string;
-  /** Cache the resolved definition under `interfaces/<slug>/definition/`. */
-  readonly cacheDefinition: boolean;
-  readonly targetNamespace?: string;
-  readonly endpoints: readonly Endpoint[];
-  readonly defaultEndpointId?: string;
-  readonly wsa: WsaConfig;
-  /** Interface-level default credentials, overridable per endpoint and per request. */
-  readonly auth?: SoapOwnerAuth;
-  readonly operations: readonly OperationDef[];
 }
 
 /** A named set of per-interface endpoint overrides and property values. */
@@ -442,32 +262,14 @@ export interface Project {
   readonly properties: PropertyMap;
   /** Names of {@link properties} entries switched off; see {@link Environment.disabledProperties}. */
   readonly disabledProperties: readonly string[];
-  readonly interfaces: readonly Interface[];
   /**
-   * The project's REST APIs. `order` is shared with {@link interfaces}, so the two kinds
-   * interleave in the explorer in whatever order the user arranged them.
+   * Every container the project holds, keyed by its kind (`soap`, `rest`, `grpc`, `websocket`, or a
+   * kind a host registered), each list in load order. A kind with none may be absent. `order` is shared
+   * across every kind, so containers interleave in the explorer in whatever order the user arranged
+   * them. Read a built-in protocol's with its folder's reader (`restApisOf`, `soapInterfacesOf`, …),
+   * and any kind's with {@link containersOf}.
    */
-  readonly apis: readonly RestApi[];
-  /**
-   * The project's gRPC APIs. On disk they share `apis/` with the REST ones, each `api.yaml` saying
-   * which it is with `kind`; in memory they are their own list so every surface that handles one
-   * protocol has to say what it does with the third (ADR-0007). `order` is shared with both lists.
-   */
-  readonly grpcApis: readonly GrpcApi[];
-  /**
-   * The project's WebSocket APIs. On disk they share `apis/` with the REST and gRPC ones, each
-   * `api.yaml` saying which it is with `kind`; in memory they are their own list, the fourth
-   * sibling container beside {@link interfaces}, {@link apis} and {@link grpcApis} (ADR-0007).
-   * `order` is shared with all three.
-   */
-  readonly wsApis: readonly WsApi[];
-  /**
-   * Containers of a kind that has no list of its own above, keyed by kind. Absent means none.
-   * Read with {@link extraContainersOf}.
-   *
-   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
-   */
-  readonly extraContainers?: Readonly<Record<string, readonly ContainerBase[]>>;
+  readonly containers: Readonly<Record<string, readonly ContainerBase[]>>;
   /**
    * Containers this build could not load and left untouched on disk. Absent means none.
    *
@@ -509,38 +311,25 @@ export function unsupportedOf(project: Project): readonly UnsupportedContainer[]
 }
 
 /**
- * The project's containers of `kind` kept in {@link Project.extraContainers}.
- *
- * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ * The project's containers of `kind`; empty when it has none. A protocol's own reader narrows the type
+ * (`restApisOf`, `soapInterfacesOf`, …).
  */
-export function extraContainersOf(project: Project, kind: string): readonly ContainerBase[] {
-  return project.extraContainers?.[kind] ?? [];
+export function containersOf(project: Project, kind: string): readonly ContainerBase[] {
+  return project.containers[kind] ?? [];
 }
 
 /**
- * Every slug in use under one of the two container directories: the containers the project holds
- * there, and the placeholders (spec §6). A save keeps exactly these directories, whatever its
- * registry can write. Hand it to `uniqueSlug` when naming a new container, so a save never has to
- * refuse it with `container-slug-conflict`.
- *
- * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ * `project` with its containers of `kind` replaced; every other kind's are kept. A kind left with none
+ * is dropped from the map, as a load leaves it, so two projects holding the same containers are equal.
  */
-export function takenContainerSlugs(project: Project, dir: ContainerDir): ReadonlySet<string> {
-  const containers: readonly ContainerBase[] =
-    dir === 'interfaces'
-      ? project.interfaces
-      : [
-          ...project.apis,
-          ...project.grpcApis,
-          ...project.wsApis,
-          ...Object.values(project.extraContainers ?? {}).flat(),
-        ];
-  return new Set([
-    ...containers.map((container) => container.slug),
-    ...unsupportedOf(project)
-      .filter((placeholder) => placeholder.dir === dir)
-      .map((placeholder) => placeholder.slug),
-  ]);
+export function withContainersOf(project: Project, kind: string, containers: readonly ContainerBase[]): Project {
+  const next = { ...project.containers, [kind]: containers };
+  return { ...project, containers: Object.fromEntries(Object.entries(next).filter(([, list]) => list.length > 0)) };
+}
+
+/** Every container the project holds, of every kind. */
+export function allContainers(project: Project): readonly ContainerBase[] {
+  return Object.values(project.containers).flat();
 }
 
 /**
@@ -553,7 +342,7 @@ export function takenContainerSlugs(project: Project, dir: ContainerDir): Readon
  */
 export function nextApiOrder(project: Project): number {
   let highest = -1;
-  for (const container of [...project.interfaces, ...project.apis, ...project.grpcApis, ...project.wsApis]) {
+  for (const container of allContainers(project)) {
     if (container.order > highest) highest = container.order;
   }
   return highest + 1;
@@ -572,7 +361,8 @@ export interface CreateOptions {
   readonly order?: number;
 }
 
-function idOf(options: CreateOptions | undefined): string {
+/** A new entity's id: the one `options` gives, else a fresh one from its generator. */
+export function idOf(options: CreateOptions | undefined): string {
   return options?.id ?? (options?.newId ?? generateId)();
 }
 
@@ -585,77 +375,10 @@ export function createProject(name: string, options?: CreateOptions): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
+    containers: {},
     sequences: [],
     mocks: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
-  };
-}
-
-/** Input to {@link createInterface} beyond the name. */
-export interface CreateInterfaceInput extends CreateOptions {
-  readonly definitionUrl: string;
-  readonly slug?: string;
-  readonly targetNamespace?: string;
-  readonly cacheDefinition?: boolean;
-  readonly endpoints?: readonly Endpoint[];
-  readonly defaultEndpointId?: string;
-  readonly operations?: readonly OperationDef[];
-}
-
-/** Creates an interface with v1 defaults (WS-A off, definition cached, no auth). */
-export function createInterface(name: string, input: CreateInterfaceInput): Interface {
-  const endpoints = input.endpoints ?? [];
-  return {
-    kind: 'soap',
-    id: idOf(input),
-    name,
-    slug: input.slug ?? slugify(name),
-    order: input.order ?? 0,
-    definitionUrl: input.definitionUrl,
-    cacheDefinition: input.cacheDefinition ?? true,
-    ...(input.targetNamespace !== undefined ? { targetNamespace: input.targetNamespace } : {}),
-    endpoints,
-    ...(input.defaultEndpointId !== undefined
-      ? { defaultEndpointId: input.defaultEndpointId }
-      : endpoints[0] !== undefined
-        ? { defaultEndpointId: endpoints[0].id }
-        : {}),
-    wsa: DEFAULT_WSA_CONFIG,
-    operations: input.operations ?? [],
-  };
-}
-
-/** Input to {@link createRequest} beyond the name. */
-export interface CreateRequestInput extends CreateOptions {
-  readonly envelopeXml: string;
-  readonly soapVersion: '1.1' | '1.2';
-  readonly slug?: string;
-  readonly soapAction?: string;
-  readonly endpointId?: string;
-  readonly headers?: readonly HeaderEntry[];
-  readonly properties?: Partial<RequestProperties>;
-}
-
-/** Creates a request with the default request properties applied. */
-export function createRequest(name: string, input: CreateRequestInput): SoapRequestDef {
-  return {
-    kind: 'soap',
-    id: idOf(input),
-    name,
-    slug: input.slug ?? slugify(name),
-    order: input.order ?? 0,
-    ...(input.endpointId !== undefined ? { endpointId: input.endpointId } : {}),
-    soapVersion: input.soapVersion,
-    ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
-    headers: input.headers ?? [],
-    attachments: [],
-    properties: { ...DEFAULT_REQUEST_PROPERTIES, ...input.properties },
-    assertions: [],
-    envelopeXml: input.envelopeXml,
   };
 }

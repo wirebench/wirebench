@@ -85,7 +85,7 @@ function soapModel(
     cacheDefinition: false,
     operations: [{ name: 'Add', bindingName: '{urn:t}B', slug: 'add', order: 0, requests: [request] }],
   });
-  return { ...createProject('Calc', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('Calc', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 /** The engine send's dependencies over `model` (a project with nothing in it by default). */
@@ -569,7 +569,7 @@ function grpcModel(): Project {
     tls: false,
     folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [call] })],
   });
-  return { ...createProject('Demo', { id: 'proj-1' }), grpcApis: [api] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { grpc: [api] } };
 }
 
 /** Registers the channels with a gRPC sender stub and a project that knows request `r-1`. */
@@ -948,7 +948,7 @@ describe('restResendDraft', () => {
 function savedModel(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }): Project {
   const { request } = savedRest(input, auth);
   const api = createApi('Petstore', { id: 'api-1', baseUrl: ORIGIN, requests: [{ ...request, auth }] });
-  return { ...createProject('Demo', { id: 'proj-1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { rest: [api] } };
 }
 
 /** Registers the channels with a REST sender stub and a project that knows request `r-1`. */

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { clarkToQName, environmentFor, openProject, readWsdl } from '../../../src/ops/project.js';
+import { soapInterfacesOf } from '@wirebench/engine';
 
 const FIXTURE = join(import.meta.dirname, '..', '..', 'fixtures', 'runner-project');
 const dirs: string[] = [];
@@ -56,7 +57,7 @@ describe('environmentFor', () => {
 describe('definitions', () => {
   it('reports an interface with no cached definition', async () => {
     const opened = await openProject(context(FIXTURE));
-    const echo = opened.project.interfaces[0];
+    const echo = soapInterfacesOf(opened.project)[0];
     if (echo === undefined) throw new Error('fixture has no interface');
     await expect(readWsdl(FIXTURE, echo)).rejects.toMatchObject({ code: 'definition-cache-missing' });
   });

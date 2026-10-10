@@ -35,6 +35,7 @@ import type { OpenApiDocument, OpenApiOperation, OpenApiParameter, OpenApiRespon
 import { parseOpenApiDocument, parseSchema } from './openapi/parse.js';
 import { declaredMediaType, declaredResponse } from './openapi/responses.js';
 import { checkRestRequest, isJsonMediaType } from './request-check.js';
+import { restApisOf } from './model.js';
 
 /** Problems a refusal lists, at most. */
 const MAX_LISTED = 20;
@@ -79,7 +80,7 @@ async function loadContract(
   readonly resolved: unknown;
   readonly documents: readonly ResolvedDocument[];
 }> {
-  const api = project.apis.find((candidate) => candidate.id === containerId);
+  const api = restApisOf(project).find((candidate) => candidate.id === containerId);
   if (api === undefined) {
     throw new WirebenchError('mock-container-missing', `The project has no API with id ${containerId}`, {
       details: { containerId },

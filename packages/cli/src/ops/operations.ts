@@ -1,5 +1,13 @@
 // packages/cli/src/ops/operations.ts
-import { loadOpenApiDocument, redactUrl, selectRequests, summarizeSoapOperations } from '@wirebench/engine';
+import {
+  loadOpenApiDocument,
+  redactUrl,
+  restApisOf,
+  selectRequests,
+  soapInterfacesOf,
+  summarizeSoapOperations,
+  wsApisOf,
+} from '@wirebench/engine';
 import type { Interface, SoapOperationSummary } from '@wirebench/engine';
 import { z } from 'zod';
 import { byOrder, toolNamesByRef } from './contract-tools.js';
@@ -98,17 +106,17 @@ export const operationsOp = defineOp({
     const wanted = value.container;
     const matches = (container: { readonly name: string; readonly slug: string }): boolean =>
       wanted === undefined || container.name === wanted || container.slug === wanted;
-    const interfaces = [...project.interfaces].filter(matches).sort(byOrder);
-    const apis = [...project.apis].filter(matches).sort(byOrder);
+    const interfaces = [...soapInterfacesOf(project)].filter(matches).sort(byOrder);
+    const apis = [...restApisOf(project)].filter(matches).sort(byOrder);
     // gRPC APIs are left out: send refuses their requests, and generate and validate take none.
-    const wsApis = [...project.wsApis].filter(matches).sort(byOrder);
+    const wsApis = [...wsApisOf(project)].filter(matches).sort(byOrder);
     if (wanted !== undefined && interfaces.length + apis.length + wsApis.length === 0) {
       throw new OpsError('container-not-found', `No interface or API is named "${wanted}"`, { container: wanted });
     }
     const selected = selectRequests(project, []).selected;
     const notes: string[] = [];
     const shared = new Set(
-      [...project.interfaces, ...project.apis, ...project.wsApis]
+      [...soapInterfacesOf(project), ...restApisOf(project), ...wsApisOf(project)]
         .map((container) => container.name)
         .filter((name, index, names) => names.indexOf(name) !== index),
     );

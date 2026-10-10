@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface, createRequest } from '../../../src/soap/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { requestFileLocation } from '../../../src/project/request-location.js';
 import { projectFiles } from '../../../src/project/serialize.js';
@@ -20,7 +21,7 @@ describe('requestFileLocation', () => {
       definitionUrl: 'https://example.test/wsdl',
       operations: [{ name: 'Ping', bindingName: '{ns}Ping', slug: 'ping', order: 0, requests: [request] }],
     });
-    const project = projectWith({ interfaces: [iface] });
+    const project = projectWith({ containers: { soap: [iface] } });
 
     const location = requestFileLocation(project, 'r1');
     expect(location).toEqual({ dir: 'interfaces/Country Info/operations/ping', slug: 'Ping' });
@@ -31,7 +32,7 @@ describe('requestFileLocation', () => {
   it('locates a REST request at the root of an API', () => {
     const request = createRestRequest('Get pet', { id: 'r1', url: '/pets/1' });
     const api = createApi('Pets', { id: 'a1', requests: [request] });
-    const project = projectWith({ apis: [api] });
+    const project = projectWith({ containers: { rest: [api] } });
 
     const location = requestFileLocation(project, 'r1');
     expect(location).toEqual({ dir: 'apis/Pets/requests', slug: 'Get pet' });
@@ -44,7 +45,7 @@ describe('requestFileLocation', () => {
     const inner = createFolder('Orders v2', { id: 'f2', requests: [request] });
     const outer = createFolder('Internal', { id: 'f1', folders: [inner] });
     const api = createApi('Pets', { id: 'a1', folders: [outer] });
-    const project = projectWith({ apis: [api] });
+    const project = projectWith({ containers: { rest: [api] } });
 
     const location = requestFileLocation(project, 'r1');
     expect(location).toEqual({ dir: 'apis/Pets/requests/Internal/Orders v2', slug: 'List orders' });
@@ -65,7 +66,7 @@ describe('requestFileLocation', () => {
   it('returns undefined for a gRPC request', () => {
     const request = createGrpcRequest('Unary call', { id: 'r1' });
     const api = createGrpcApi('Greeter', { id: 'a1', requests: [request] });
-    const project = projectWith({ grpcApis: [api] });
+    const project = projectWith({ containers: { grpc: [api] } });
 
     expect(requestFileLocation(project, 'r1')).toBeUndefined();
   });
@@ -73,7 +74,7 @@ describe('requestFileLocation', () => {
   it('returns undefined for a WebSocket request', () => {
     const request = createWsRequest('Connect', { id: 'r1' });
     const api = createWsApi('Chat', { id: 'a1', requests: [request] });
-    const project = projectWith({ wsApis: [api] });
+    const project = projectWith({ containers: { websocket: [api] } });
 
     expect(requestFileLocation(project, 'r1')).toBeUndefined();
   });

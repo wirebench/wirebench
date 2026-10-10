@@ -18,7 +18,8 @@ import type {
 } from '../mock/contract.js';
 import type { MockResponse, MockValidation } from '../mock/model.js';
 import type { FsLike } from '../project/fs.js';
-import type { Interface, Project } from '../project/model.js';
+import type { Project } from '../project/model.js';
+import type { Interface } from './model.js';
 import { definitionCacheDir } from '../project/paths.js';
 import type { HeaderPair } from '../script/model.js';
 import { bindingContextFor, checkSoapStructure, validateMessage } from '../validate/index.js';
@@ -33,6 +34,7 @@ import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import { definitionReply } from './mock-wsdl.js';
 import { buildSampleMessage } from './request-builder.js';
+import { soapInterfacesOf } from './model.js';
 
 const SOAP11_ENV = 'http://schemas.xmlsoap.org/soap/envelope/';
 const SOAP12_ENV = 'http://www.w3.org/2003/05/soap-envelope';
@@ -75,7 +77,7 @@ async function loadContract(
   containerId: string,
   bindingName: string | undefined,
 ): Promise<Contract> {
-  const iface = project.interfaces.find((candidate) => candidate.id === containerId);
+  const iface = soapInterfacesOf(project).find((candidate) => candidate.id === containerId);
   if (iface === undefined) {
     throw new WirebenchError('mock-container-missing', `The project has no interface with id ${containerId}`, {
       details: { containerId },

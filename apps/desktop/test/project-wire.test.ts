@@ -11,6 +11,8 @@ import {
   createWsApi,
   createWsRequest,
   entry,
+  soapInterfacesOf,
+  withSoapInterfaces,
 } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import { restRequestWireSchema } from '../src/shared/wire-types.js';
@@ -41,7 +43,7 @@ function buildProject(): Project {
     endpoints: [{ id: 'ep-1', name: 'Calculator Soap', url: 'http://example.test/soap', authMode: 'complement' }],
     operations: [{ name: 'Add', bindingName: BINDING, slug: 'Add', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } };
 }
 
 const summary: InterfaceSummary = {
@@ -129,7 +131,7 @@ describe('project-wire', () => {
 
   it('renders an un-hydrated interface from the model alone', () => {
     const project = buildProject();
-    const iface = project.interfaces[0]!;
+    const iface = soapInterfacesOf(project)[0]!;
     const wire = toInterfaceWire(iface, undefined);
 
     expect(wire.hydration).toBe('pending');
@@ -159,19 +161,22 @@ describe('project-wire', () => {
   it('projects a WebSocket API and its requests, flattened like a gRPC API', () => {
     const wsProject: Project = {
       ...buildProject(),
-      wsApis: [
-        createWsApi('Chat', {
-          id: 'ws-1',
-          url: 'wss://chat.test',
-          requests: [
-            createWsRequest('Lobby', {
-              id: 'ws-req-1',
-              url: '/lobby',
-              messages: [{ id: 'm-1', name: 'Hi', slug: 'Hi', format: 'text', content: 'hi' }],
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        ...buildProject().containers,
+        websocket: [
+          createWsApi('Chat', {
+            id: 'ws-1',
+            url: 'wss://chat.test',
+            requests: [
+              createWsRequest('Lobby', {
+                id: 'ws-req-1',
+                url: '/lobby',
+                messages: [{ id: 'm-1', name: 'Hi', slug: 'Hi', format: 'text', content: 'hi' }],
+              }),
+            ],
+          }),
+        ],
+      },
     };
     const wire = toProjectWire(wsProject, {
       dir: '/tmp/demo',
@@ -188,15 +193,17 @@ describe('project-wire', () => {
   it("shows a WebSocket request's assertions, and none as an empty list", () => {
     const wsProject: Project = {
       ...createProject('Demo', { id: 'p1' }),
-      wsApis: [
-        createWsApi('Chat', {
-          id: 'ws-1',
-          requests: [
-            { ...createWsRequest('With', { id: 'ws-a', url: '/a' }), assertions: [{ type: 'status', equals: 200 }] },
-            createWsRequest('Without', { id: 'ws-b', url: '/b' }),
-          ],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Chat', {
+            id: 'ws-1',
+            requests: [
+              { ...createWsRequest('With', { id: 'ws-a', url: '/a' }), assertions: [{ type: 'status', equals: 200 }] },
+              createWsRequest('Without', { id: 'ws-b', url: '/b' }),
+            ],
+          }),
+        ],
+      },
     };
     const wire = toProjectWire(wsProject, { dir: '/tmp/demo', dirty: false, problems: [], runtime: new Map() });
     expect(wire.wsRequests.find((request) => request.id === 'ws-a')?.assertions).toEqual([
@@ -263,15 +270,17 @@ describe('REST response examples on the wire', () => {
     ];
     const project: Project = {
       ...createProject('Demo', { id: 'p1' }),
-      apis: [
-        createApi('Pets', {
-          id: 'api-1',
-          requests: [
-            { ...createRestRequest('Get pet', { id: 'r1' }), examples },
-            createRestRequest('List pets', { id: 'r2' }),
-          ],
-        }),
-      ],
+      containers: {
+        rest: [
+          createApi('Pets', {
+            id: 'api-1',
+            requests: [
+              { ...createRestRequest('Get pet', { id: 'r1' }), examples },
+              createRestRequest('List pets', { id: 'r2' }),
+            ],
+          }),
+        ],
+      },
     };
     const wire = toProjectWire(project, { dir: '/tmp/demo', dirty: false, problems: [], runtime: new Map() });
     const withExamples = wire.restRequests.find((request) => request.id === 'r1')!;
@@ -285,15 +294,17 @@ describe('REST response examples on the wire', () => {
 describe('toRequestWires attachments', () => {
   it('projects both attachment source kinds field for field', () => {
     const project = buildProject();
-    const request = project.interfaces[0]!.operations[0]!.requests[0]!;
-    const withAttachments: Project = {
-      ...project,
-      interfaces: [
+    const request = soapInterfacesOf(project)[0]!.operations[0]!.requests[0]!;
+    const withAttachments: Project = withSoapInterfaces(
+      {
+        ...project,
+      },
+      [
         {
-          ...project.interfaces[0]!,
+          ...soapInterfacesOf(project)[0]!,
           operations: [
             {
-              ...project.interfaces[0]!.operations[0]!,
+              ...soapInterfacesOf(project)[0]!.operations[0]!,
               requests: [
                 {
                   ...request,
@@ -326,7 +337,7 @@ describe('toRequestWires attachments', () => {
           ],
         },
       ],
-    };
+    );
 
     const [wire] = toRequestWires(withAttachments);
 

@@ -46,7 +46,10 @@ function model(auth: SoapOwnerAuth | undefined): Project {
     cacheDefinition: false,
     operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'p1' }), interfaces: [auth === undefined ? iface : { ...iface, auth }] };
+  return {
+    ...createProject('Demo', { id: 'p1' }),
+    containers: { soap: [auth === undefined ? iface : { ...iface, auth }] },
+  };
 }
 
 const OAUTH2 = {

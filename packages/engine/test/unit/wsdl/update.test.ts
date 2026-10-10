@@ -6,8 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { importWsdl } from '../../../src/soap/import.js';
 import type { WsdlImportResult } from '../../../src/soap/types.js';
-import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
-import type { OperationDef, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface, createRequest, soapInterfacesOf } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { OperationDef, SoapRequestDef } from '../../../src/soap/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { generateSoapRequest } from '../../../src/soap/generate.js';
 import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
@@ -66,7 +68,7 @@ function projectFromV1(envelopes: Readonly<Record<string, string>> = {}): Projec
       order: index,
     })),
   });
-  return { ...base, interfaces: [iface] };
+  return { ...base, containers: { ...base.containers, soap: [iface] } };
 }
 
 const DEFAULT_OPTIONS = {
@@ -126,7 +128,7 @@ describe('applyUpdate', () => {
       ...DEFAULT_OPTIONS,
       newId: counterIds(),
     });
-    const iface = result.project.interfaces[0];
+    const iface = soapInterfacesOf(result.project)[0];
     const subtract = iface?.operations.find((op) => op.name === 'Subtract');
     expect(subtract?.requests).toHaveLength(1);
     expect(subtract?.requests[0]?.name).toBe('Request 1');
@@ -140,7 +142,7 @@ describe('applyUpdate', () => {
       createNewRequests: false,
       newId: counterIds(),
     });
-    expect(result.project.interfaces[0]?.operations.map((op) => op.name)).toEqual(['Echo', 'Add', 'Legacy']);
+    expect(soapInterfacesOf(result.project)[0]?.operations.map((op) => op.name)).toEqual(['Echo', 'Add', 'Legacy']);
     expect(result.requestsCreated).toEqual([]);
   });
 
@@ -155,7 +157,7 @@ describe('applyUpdate', () => {
       ...DEFAULT_OPTIONS,
       newId: counterIds(),
     });
-    const echo = result.project.interfaces[0]?.operations.find((op) => op.name === 'Echo');
+    const echo = soapInterfacesOf(result.project)[0]?.operations.find((op) => op.name === 'Echo');
     expect(echo?.requests[0]?.envelopeXml).toContain('hello');
     expect(result.requestsRecreated).toEqual(['req-Echo']);
   });
@@ -171,7 +173,7 @@ describe('applyUpdate', () => {
       keepExisting: false,
       newId: counterIds(),
     });
-    const echo = result.project.interfaces[0]?.operations.find((op) => op.name === 'Echo');
+    const echo = soapInterfacesOf(result.project)[0]?.operations.find((op) => op.name === 'Echo');
     expect(echo?.requests[0]?.envelopeXml).not.toContain('hello');
   });
 
@@ -186,7 +188,7 @@ describe('applyUpdate', () => {
       newId: counterIds(),
     });
     const echoOf = (result: typeof without): string =>
-      result.project.interfaces[0]?.operations.find((op) => op.name === 'Echo')?.requests[0]?.envelopeXml ?? '';
+      soapInterfacesOf(result.project)[0]?.operations.find((op) => op.name === 'Echo')?.requests[0]?.envelopeXml ?? '';
     expect(echoOf(without)).not.toContain('note');
     expect(echoOf(withOptional)).toContain('note');
   });
@@ -198,9 +200,9 @@ describe('applyUpdate', () => {
       recreateRequests: false,
       newId: counterIds(),
     });
-    const echo = result.project.interfaces[0]?.operations.find((op) => op.name === 'Echo');
+    const echo = soapInterfacesOf(result.project)[0]?.operations.find((op) => op.name === 'Echo');
     expect(echo?.requests[0]?.envelopeXml).toBe(
-      before.interfaces[0]?.operations.find((op) => op.name === 'Echo')?.requests[0]?.envelopeXml,
+      soapInterfacesOf(before)[0]?.operations.find((op) => op.name === 'Echo')?.requests[0]?.envelopeXml,
     );
     expect(result.requestsRecreated).toEqual([]);
     expect(result.backups).toEqual([]);
@@ -211,7 +213,7 @@ describe('applyUpdate', () => {
       ...DEFAULT_OPTIONS,
       newId: counterIds(),
     });
-    const legacy = result.project.interfaces[0]?.operations.find((op) => op.name === 'Legacy');
+    const legacy = soapInterfacesOf(result.project)[0]?.operations.find((op) => op.name === 'Legacy');
     expect(legacy?.requests).toHaveLength(1);
     expect(legacy?.requests[0]?.orphaned).toBe(true);
     expect(result.requestsOrphaned).toEqual(['req-Legacy']);
@@ -226,7 +228,7 @@ describe('applyUpdate', () => {
       ...DEFAULT_OPTIONS,
       newId: counterIds(),
     });
-    const legacy = restored.project.interfaces[0]?.operations.find((op) => op.name === 'Legacy');
+    const legacy = soapInterfacesOf(restored.project)[0]?.operations.find((op) => op.name === 'Legacy');
     expect(legacy?.requests[0]?.orphaned).toBeUndefined();
     expect(restored.requestsOrphaned).toEqual(['id-1']);
   });
@@ -236,7 +238,7 @@ describe('applyUpdate', () => {
       ...DEFAULT_OPTIONS,
       newId: counterIds(),
     });
-    const iface = result.project.interfaces[0];
+    const iface = soapInterfacesOf(result.project)[0];
     expect(iface?.endpoints.map((endpoint) => endpoint.url)).toEqual([
       'http://example.invalid/versioned',
       'http://example.invalid/versioned-alt',
@@ -315,7 +317,7 @@ describe('saveProject backups', () => {
     expect(yaml).toContain('orphaned: true');
     const { loadProject } = await import('../../../src/project/load.js');
     const loaded = await loadProject(dir);
-    const legacy = loaded.project.interfaces[0]?.operations.find((op) => op.name === 'Legacy');
+    const legacy = soapInterfacesOf(loaded.project)[0]?.operations.find((op) => op.name === 'Legacy');
     expect(legacy?.requests[0]?.orphaned).toBe(true);
     await writeFile(join(dir, 'README.txt'), 'foreign file');
   });

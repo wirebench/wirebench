@@ -62,7 +62,7 @@ function seeded(): Project {
       }),
     ],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 describe('a ${#System#…} value a desktop send expands', () => {

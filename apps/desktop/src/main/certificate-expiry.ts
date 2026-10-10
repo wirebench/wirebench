@@ -35,6 +35,7 @@ import type {
   CertificateUntrustedWire,
   CertificateSourceWire,
 } from '../shared/wire-types.js';
+import { grpcApisOf, restApisOf, soapInterfacesOf, wsApisOf } from '@wirebench/engine';
 
 /** A URL scheme at the start of a target: when present it, not a `tls` flag, decides TLS. */
 const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
@@ -67,21 +68,21 @@ function wsRequests(folders: readonly WsFolder[], requests: readonly WsRequestDe
 export function endpointCandidates(project: Project, extra: readonly string[] = []): string[] {
   const urls: string[] = [];
   const ownScheme = (url: string): string[] => (SCHEME.test(url) ? [url] : []);
-  for (const iface of project.interfaces) {
+  for (const iface of soapInterfacesOf(project)) {
     urls.push(...iface.endpoints.map((endpoint) => endpoint.url));
   }
   for (const environment of project.environments) {
     urls.push(...Object.values(environment.endpoints));
   }
-  for (const api of project.apis) {
+  for (const api of restApisOf(project)) {
     urls.push(api.baseUrl, ...api.servers.map((server) => server.url));
     urls.push(...restRequests(api.folders, api.requests).flatMap((request) => ownScheme(request.url)));
   }
-  for (const api of project.grpcApis) {
+  for (const api of grpcApisOf(project)) {
     const url = grpcTargetUrl(api);
     if (url !== undefined) urls.push(url);
   }
-  for (const api of project.wsApis) {
+  for (const api of wsApisOf(project)) {
     urls.push(api.url, ...wsRequests(api.folders, api.requests).flatMap((request) => ownScheme(request.url)));
   }
   urls.push(...extra);

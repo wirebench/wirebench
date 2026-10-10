@@ -146,16 +146,18 @@ afterAll(async () => {
 function wsProject(header: string): Project {
   return {
     ...createProject('Chat', { id: 'p1' }),
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'w-1',
-        url: wsServer.url,
-        requests: [
-          createWsRequest('Echo', { id: 'ws-1', url: '/echo', headers: [entry('x-token', header)] }),
-          createWsRequest('Close', { id: 'ws-2', url: '/close-echo' }),
-        ],
-      }),
-    ],
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'w-1',
+          url: wsServer.url,
+          requests: [
+            createWsRequest('Echo', { id: 'ws-1', url: '/echo', headers: [entry('x-token', header)] }),
+            createWsRequest('Close', { id: 'ws-2', url: '/close-echo' }),
+          ],
+        }),
+      ],
+    },
   };
 }
 
@@ -484,29 +486,31 @@ describe('a gRPC call with tokens', () => {
   function grpcProject(): Project {
     return {
       ...createProject('Demo', { id: 'p1' }),
-      grpcApis: [
-        createGrpcApi('Greeter', {
-          id: 'g-1',
-          target: grpcServer.target,
-          tls: false,
-          requests: [
-            createGrpcRequest('SayHello', {
-              id: 'q-1',
-              service: 'wirebench.greet.Greeter',
-              method: 'SayHello',
-              message: '{"name": "${secret:grpc_name}"}',
-              // The test server sends `x-echo` back as initial metadata.
-              metadata: [entry('x-token', '${secret:grpc_token}'), entry('x-echo', 'hi ${secret:grpc_name}')],
-            }),
-            createGrpcRequest('Fail', {
-              id: 'q-2',
-              service: 'wirebench.greet.Greeter',
-              method: 'Fail',
-              message: '{"code": 5, "message": "no such ${secret:grpc_name}"}',
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        grpc: [
+          createGrpcApi('Greeter', {
+            id: 'g-1',
+            target: grpcServer.target,
+            tls: false,
+            requests: [
+              createGrpcRequest('SayHello', {
+                id: 'q-1',
+                service: 'wirebench.greet.Greeter',
+                method: 'SayHello',
+                message: '{"name": "${secret:grpc_name}"}',
+                // The test server sends `x-echo` back as initial metadata.
+                metadata: [entry('x-token', '${secret:grpc_token}'), entry('x-echo', 'hi ${secret:grpc_name}')],
+              }),
+              createGrpcRequest('Fail', {
+                id: 'q-2',
+                service: 'wirebench.greet.Greeter',
+                method: 'Fail',
+                message: '{"code": 5, "message": "no such ${secret:grpc_name}"}',
+              }),
+            ],
+          }),
+        ],
+      },
     };
   }
 
@@ -739,7 +743,7 @@ describe('an event stream that echoes a token value', () => {
     });
     const model: Project = {
       ...createProject('Demo', { id: 'p1' }),
-      apis: [createApi('Api', { id: 'api-1', baseUrl: url, requests: [request] })],
+      containers: { rest: [createApi('Api', { id: 'api-1', baseUrl: url, requests: [request] })] },
     };
     const written: HistoryEntry[] = [];
     registerRequestChannels(new EngineService(), {
@@ -866,7 +870,7 @@ describe('a History resend with a token', () => {
         },
       ],
     });
-    const model: Project = { ...createProject('P', { id: 'p1' }), interfaces: [iface] };
+    const model: Project = { ...createProject('P', { id: 'p1' }), containers: { soap: [iface] } };
     const history = { get: (id: string) => (id === 'h-1' ? entry : undefined), recordSend };
     const project = {
       scopesFor: () => SCOPES,

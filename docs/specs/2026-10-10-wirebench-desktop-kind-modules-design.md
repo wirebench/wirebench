@@ -83,7 +83,7 @@ with a phase that has merged. This phase removes them.
 | `project/schema.ts` | WS-Security defaults | The typed WS-Security entry schemas move to `wss/schema.ts`. Core keeps the loose stored-entry schema the loader uses. |
 | `project/load.ts`, `serialize.ts` | REST's request reader and writer, the webhook model | §3. |
 | `project/request-location.ts` | `RestFolder` (type-only) | A storage hook, `requestLocation(container, requestId)`, asked of each enabled module. |
-| `secrets/scan/walk.ts`, `apply.ts` | the request types (type-only) | A secrets facet on the module: `scanTargets(container)` and `applyMoves(container, moves)`. `SecretLocation` becomes `{ kind, part, … }`, with the part names unchanged. |
+| `secrets/scan/walk.ts`, `apply.ts` | the request types (type-only) | A secrets facet on the module: `scanTargets(project)` and `applyMoves(project, rewriter)`, per project so REST covers the webhook collection in its place. `SecretLocation` keeps its kinds, which the desktop's wire mirrors. |
 
 `RunContext.defaultWsaActionFor` and `loadedDefinitionFor`, the SOAP members of the run context, stay:
 they name no protocol folder, only the composition file's `SelectedRequest`.
@@ -408,8 +408,10 @@ behaviour except where it says so.
 
 1. **Engine leftovers** (§2): history records, issued tokens and the host slot, the WS-Security
    entry schemas.
-2. **One container map** (§9): SOAP's model out of core, the map and the typed readers, request
-   location and the secrets facet (§2).
+2. **One container map** (§9), in two pull requests:
+   1. the map, the typed readers and writers, and request location (§2);
+   2. SOAP's model out of core, the secrets facet (§2), and `workspace/reidentify.ts` reading SOAP's
+      containers through a module rather than its own exception.
 3. **Project-level files** (§3): webhooks into REST, WS-Security configurations into SOAP,
    `Project.keystores`.
 4. **Shared** (§4): `shared/kinds/`, wire types and channels per kind, composed; the channel-name

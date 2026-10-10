@@ -16,8 +16,8 @@
 
 import type { Assertion } from '../assert/model.js';
 import type { RequestScripts } from '../script/model.js';
-import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
-import { generateId } from '../project/model.js';
+import type { AuthConfig, CreateOptions, IdGenerator, Project } from '../project/model.js';
+import { containersOf, generateId, withContainersOf } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { KeyValueEntry } from '../http/entries.js';
 import { defaultTlsFor } from './shape.js';
@@ -265,4 +265,14 @@ export function grpcApiFolders(api: GrpcApi): GrpcFolder[] {
   const walk = (folders: readonly GrpcFolder[]): GrpcFolder[] =>
     folders.flatMap((folder) => [folder, ...walk(folder.folders)]);
   return walk(api.folders);
+}
+
+/** The project's gRPC APIs, in the order the project holds them. */
+export function grpcApisOf(project: Project): readonly GrpcApi[] {
+  return containersOf(project, 'grpc') as readonly GrpcApi[];
+}
+
+/** `project` with its gRPC APIs replaced; every other kind's containers are kept. */
+export function withGrpcApis(project: Project, apis: readonly GrpcApi[]): Project {
+  return withContainersOf(project, 'grpc', apis);
 }

@@ -123,13 +123,15 @@ function model(
     });
   return {
     ...createProject('Demo', { id: 'p1' }),
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'w-1',
-        url: server.url,
-        requests: [request('ws-1', 'Echo'), request('ws-2', 'Echo 2')],
-      }),
-    ],
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'w-1',
+          url: server.url,
+          requests: [request('ws-1', 'Echo'), request('ws-2', 'Echo 2')],
+        }),
+      ],
+    },
   };
 }
 

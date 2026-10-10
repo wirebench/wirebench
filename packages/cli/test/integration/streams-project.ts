@@ -41,48 +41,50 @@ export async function writeStreamsProject(
 ): Promise<void> {
   const project = {
     ...createProject('Streams', { id: 'p-streams' }),
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'api-chat',
-        slug: 'chat',
-        order: 0,
-        url: options.wsUrl,
-        requests: [
-          createWsRequest('Echo', {
-            id: 'ws-echo',
-            url: '/echo',
-            assertions: options.wsAssertions ?? [],
-            messages: [
-              createWsSavedMessage('One', { id: 'm1', content: 'one' }),
-              createWsSavedMessage('Two', { id: 'm2', content: 'two' }),
-            ],
-          }),
-        ],
-      }),
-    ],
-    grpcApis:
-      options.grpcTarget === undefined
-        ? []
-        : [
-            createGrpcApi('Greeter', {
-              id: 'api-greeter',
-              slug: 'greeter',
-              order: 1,
-              target: options.grpcTarget,
-              tls: false,
-              requests: (options.calls ?? []).map((call, order) => ({
-                ...createGrpcRequest(call.name, {
-                  id: `g-${call.name}`,
-                  order,
-                  service: 'wirebench.greet.Greeter',
-                  method: call.method,
-                  methodKind: call.kind,
-                  message: JSON.stringify(call.message),
-                }),
-                assertions: call.assertions ?? [],
-              })),
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'api-chat',
+          slug: 'chat',
+          order: 0,
+          url: options.wsUrl,
+          requests: [
+            createWsRequest('Echo', {
+              id: 'ws-echo',
+              url: '/echo',
+              assertions: options.wsAssertions ?? [],
+              messages: [
+                createWsSavedMessage('One', { id: 'm1', content: 'one' }),
+                createWsSavedMessage('Two', { id: 'm2', content: 'two' }),
+              ],
             }),
           ],
+        }),
+      ],
+      grpc:
+        options.grpcTarget === undefined
+          ? []
+          : [
+              createGrpcApi('Greeter', {
+                id: 'api-greeter',
+                slug: 'greeter',
+                order: 1,
+                target: options.grpcTarget,
+                tls: false,
+                requests: (options.calls ?? []).map((call, order) => ({
+                  ...createGrpcRequest(call.name, {
+                    id: `g-${call.name}`,
+                    order,
+                    service: 'wirebench.greet.Greeter',
+                    method: call.method,
+                    methodKind: call.kind,
+                    message: JSON.stringify(call.message),
+                  }),
+                  assertions: call.assertions ?? [],
+                })),
+              }),
+            ],
+    },
   };
   await saveProject(project, dir);
   if (options.grpcTarget !== undefined) {

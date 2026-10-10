@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
   set SOAP's entry. History's WebSocket frames, event-stream rows and contract results are typed with
   History's own `HistoryWsFrame`, `HistorySseRow` and `HistoryContract`, with the same fields as
   before. The engine README's "Migrating to 6.0" lists each change (#184).
+- **`@wirebench/engine`: a project's containers are one map.** `Project.interfaces`, `apis`,
+  `grpcApis`, `wsApis` and `extraContainers` are replaced by `Project.containers`, keyed by kind;
+  each protocol reads and replaces its own with a typed pair such as `restApisOf` and
+  `withRestApis` (#184).
 
 ## [5.0.0] - 2026-10-10
 

@@ -5,47 +5,51 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
+import { createGrpcApi, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
 import { grpcStorage } from '../../../src/grpc/storage.js';
 import { loadProject } from '../../../src/project/load.js';
 import type { Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { createBuiltinRegistry } from '../../../src/protocols.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import { restStorage } from '../../../src/rest/storage.js';
 import { soapStorage } from '../../../src/soap/storage.js';
-import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import { createWsApi, createWsRequest, wsApisOf } from '../../../src/ws/model.js';
 import { wsStorage } from '../../../src/ws/storage.js';
 import { sampleProject, tempProjectDir } from './fixture.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 /** The sample project's two interfaces, plus one API of each other kind. */
 function mixedProject(): Project {
   return {
     ...sampleProject(),
-    apis: [
-      createApi('Shop', {
-        id: 'A1',
-        order: 2,
-        baseUrl: 'https://shop.test',
-        requests: [createRestRequest('List', { id: 'R1', url: '/items' })],
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'G1',
-        order: 3,
-        target: 'localhost:50051',
-        requests: [createGrpcRequest('Hello', { id: 'GR1', service: 'demo.Greeter', method: 'SayHello' })],
-      }),
-    ],
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'W1',
-        order: 4,
-        url: 'wss://chat.test',
-        requests: [createWsRequest('Feed', { id: 'WR1', url: '/feed' })],
-      }),
-    ],
+    containers: {
+      ...sampleProject().containers,
+      rest: [
+        createApi('Shop', {
+          id: 'A1',
+          order: 2,
+          baseUrl: 'https://shop.test',
+          requests: [createRestRequest('List', { id: 'R1', url: '/items' })],
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'G1',
+          order: 3,
+          target: 'localhost:50051',
+          requests: [createGrpcRequest('Hello', { id: 'GR1', service: 'demo.Greeter', method: 'SayHello' })],
+        }),
+      ],
+      websocket: [
+        createWsApi('Chat', {
+          id: 'W1',
+          order: 4,
+          url: 'wss://chat.test',
+          requests: [createWsRequest('Feed', { id: 'WR1', url: '/feed' })],
+        }),
+      ],
+    },
   };
 }
 
@@ -66,12 +70,12 @@ describe('loading through the protocol modules', () => {
     const explicit = await loadProject(dir, { registry: createBuiltinRegistry() });
 
     expect(byDefault.problems).toEqual([]);
-    expect(byDefault.project.interfaces.map((iface) => iface.slug)).toEqual(
-      sampleProject().interfaces.map((iface) => iface.slug),
+    expect(soapInterfacesOf(byDefault.project).map((iface) => iface.slug)).toEqual(
+      soapInterfacesOf(sampleProject()).map((iface) => iface.slug),
     );
-    expect(byDefault.project.apis.map((api) => [api.kind, api.slug])).toEqual([['rest', 'Shop']]);
-    expect(byDefault.project.grpcApis.map((api) => [api.kind, api.slug])).toEqual([['grpc', 'Greeter']]);
-    expect(byDefault.project.wsApis.map((api) => [api.kind, api.slug])).toEqual([['websocket', 'Chat']]);
+    expect(restApisOf(byDefault.project).map((api) => [api.kind, api.slug])).toEqual([['rest', 'Shop']]);
+    expect(grpcApisOf(byDefault.project).map((api) => [api.kind, api.slug])).toEqual([['grpc', 'Greeter']]);
+    expect(wsApisOf(byDefault.project).map((api) => [api.kind, api.slug])).toEqual([['websocket', 'Chat']]);
     expect(explicit).toEqual(byDefault);
   });
 
@@ -84,15 +88,15 @@ describe('loading through the protocol modules', () => {
       'apis',
       'apis',
     ]);
-    expect(soapStorage.containers(project)).toBe(project.interfaces);
-    expect(restStorage.containers(project)).toBe(project.apis);
-    expect(grpcStorage.containers(project)).toBe(project.grpcApis);
-    expect(wsStorage.containers(project)).toBe(project.wsApis);
-    expect(soapStorage.withContainers(project, []).interfaces).toEqual([]);
-    expect(restStorage.withContainers(project, []).apis).toEqual([]);
-    expect(grpcStorage.withContainers(project, []).grpcApis).toEqual([]);
-    expect(wsStorage.withContainers(project, []).wsApis).toEqual([]);
-    expect(restStorage.withContainers(project, []).grpcApis).toBe(project.grpcApis);
+    expect(soapStorage.containers(project)).toBe(soapInterfacesOf(project));
+    expect(restStorage.containers(project)).toBe(restApisOf(project));
+    expect(grpcStorage.containers(project)).toBe(grpcApisOf(project));
+    expect(wsStorage.containers(project)).toBe(wsApisOf(project));
+    expect(soapInterfacesOf(soapStorage.withContainers(project, []))).toEqual([]);
+    expect(restApisOf(restStorage.withContainers(project, []))).toEqual([]);
+    expect(grpcApisOf(grpcStorage.withContainers(project, []))).toEqual([]);
+    expect(wsApisOf(wsStorage.withContainers(project, []))).toEqual([]);
+    expect(grpcApisOf(restStorage.withContainers(project, []))).toBe(grpcApisOf(project));
   });
 
   it('reads an api.yaml without a kind as REST, which its schema then refuses', async () => {
@@ -123,6 +127,6 @@ describe('loading through the protocol modules', () => {
         file: 'interfaces/Hollow/interface.yaml',
       },
     ]);
-    expect(project.apis.map((api) => api.slug)).toEqual(['Shop']);
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Shop']);
   });
 });

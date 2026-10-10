@@ -4,7 +4,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  SCRIPT_LIMITS,
   createApi,
   createFolder,
   createGrpcApi,
@@ -13,7 +12,10 @@ import {
   createProject,
   createRequest,
   createRestRequest,
+  grpcApisOf,
   isWirebenchError,
+  SCRIPT_LIMITS,
+  soapInterfacesOf,
 } from '@wirebench/engine';
 import type { Project, RequestScripts } from '@wirebench/engine';
 import { findGrpcRequest } from '../src/main/project-grpc-mutations.js';
@@ -64,7 +66,7 @@ function build(): Project {
     target: 'localhost:50051',
     requests: [createGrpcRequest('Hello', { id: 'grpc-1', order: 0, service: 'a.Greeter', method: 'SayHello' })],
   });
-  return { ...createProject('Demo', { id: 'p1' }), interfaces: [iface], apis: [api], grpcApis: [grpc] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { soap: [iface], rest: [api], grpc: [grpc] } };
 }
 
 describe('update-request-scripts', () => {
@@ -164,8 +166,8 @@ describe('enable-scripts', () => {
     expect(findRestRequest(project, 'rest-2')?.scripts?.enabled).toBe(true);
     expect(findGrpcRequest(project, 'grpc-1')).not.toHaveProperty('scripts');
     // Untouched parts of the tree stay the same objects.
-    expect(project.interfaces).toBe(before.interfaces);
-    expect(project.grpcApis).toBe(before.grpcApis);
+    expect(soapInterfacesOf(project)).toBe(soapInterfacesOf(before));
+    expect(grpcApisOf(project)).toBe(grpcApisOf(before));
   });
 });
 
@@ -204,7 +206,7 @@ describe('other edits keep scripts', () => {
     const rest = await applyChange(project, { kind: 'clone-rest-request', requestId: 'rest-1' }, deps);
     expect(findRestRequest(rest.project, rest.createdId!)?.scripts).toEqual(OFF);
     ({ project } = await applyChange(project, { kind: 'clone-grpc-request', requestId: 'grpc-1' }, deps));
-    const copies = project.grpcApis[0]!.requests.filter((request) => request.id !== 'grpc-1');
+    const copies = grpcApisOf(project)[0]!.requests.filter((request) => request.id !== 'grpc-1');
     expect(copies[0]?.scripts?.post?.text).toBe('log(1);');
   });
 });

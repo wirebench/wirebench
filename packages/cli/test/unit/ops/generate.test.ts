@@ -1,5 +1,5 @@
 // packages/cli/test/unit/ops/generate.test.ts
-import { loadProject, REDACTED_MARKER } from '@wirebench/engine';
+import { loadProject, REDACTED_MARKER, restApisOf, soapInterfacesOf } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { generateOp } from '../../../src/ops/generate.js';
@@ -96,7 +96,10 @@ describe('op generate', () => {
     const fixture = await soapProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({ ...iface, name: 'Calculator (renamed)' })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({ ...iface, name: 'Calculator (renamed)' })),
+      },
     }));
     const bySlug = await runOp(generateOp, { operation: 'CalculatorService/Add' }, fixture.base());
     const byName = await runOp(generateOp, { operation: 'Calculator (renamed)/Add' }, fixture.base());
@@ -124,7 +127,7 @@ describe('op generate', () => {
     const fixture = await emptyProject();
     await runOp(importOp, { source: await twoBindingWsdl() }, fixture.base());
     const { project } = await loadProject(fixture.dir);
-    const slugs = project.interfaces.flatMap((iface) => iface.operations.map((operation) => operation.slug));
+    const slugs = soapInterfacesOf(project).flatMap((iface) => iface.operations.map((operation) => operation.slug));
     expect(slugs).toHaveLength(2);
     expect(new Set(slugs).size).toBe(2);
 
@@ -148,10 +151,13 @@ describe('op generate', () => {
     await runOp(importOp, { source: await twoBindingWsdl() }, fixture.base());
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        operations: iface.operations.map((operation, index) => ({ ...operation, slug: `Add-${String(index + 1)}` })),
-      })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          operations: iface.operations.map((operation, index) => ({ ...operation, slug: `Add-${String(index + 1)}` })),
+        })),
+      },
     }));
     await expect(runOp(generateOp, { operation: 'CalculatorService/Add' }, fixture.base())).rejects.toMatchObject({
       code: 'item-ambiguous',
@@ -166,12 +172,15 @@ describe('op generate', () => {
     await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        name: 'Shared',
-        operations: iface.operations.map((operation) => ({ ...operation, name: 'listPets', slug: 'listPets' })),
-      })),
-      apis: project.apis.map((api) => ({ ...api, name: 'Shared' })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          name: 'Shared',
+          operations: iface.operations.map((operation) => ({ ...operation, name: 'listPets', slug: 'listPets' })),
+        })),
+        rest: restApisOf(project).map((api) => ({ ...api, name: 'Shared' })),
+      },
     }));
     await expect(runOp(generateOp, { operation: 'Shared/listPets' }, fixture.base())).rejects.toMatchObject({
       code: 'item-ambiguous',

@@ -19,6 +19,7 @@ import {
   updateProject,
 } from './helpers.js';
 import type { Fixture, Received, Reply, TestServer } from './helpers.js';
+import { restApisOf, soapInterfacesOf } from '@wirebench/engine';
 
 const ADD_RESPONSE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
@@ -131,7 +132,10 @@ describe('op call, SOAP', () => {
     await updateProject(fixture.dir, (project) => ({
       ...project,
       // The default endpoint id is left pointing at nothing, as a hand-edited project might.
-      interfaces: project.interfaces.map((iface) => ({ ...iface, endpoints: [] })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({ ...iface, endpoints: [] })),
+      },
     }));
     await expect(call(fixture, { a: 1, b: 2 })).rejects.toMatchObject({
       code: 'no-endpoint',
@@ -198,10 +202,13 @@ describe('op call, SOAP', () => {
     const fixture = await soapProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({
-        ...iface,
-        auth: { type: 'basic', username: 'calc', passwordRef: 'calcPass', preemptive: true },
-      })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({
+          ...iface,
+          auth: { type: 'basic', username: 'calc', passwordRef: 'calcPass', preemptive: true },
+        })),
+      },
     }));
     const server = await serving(fixture, {
       status: 500,
@@ -280,10 +287,13 @@ describe('op call, REST', () => {
     }));
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      apis: project.apis.map((api) => ({
-        ...api,
-        auth: { type: 'api-key', name: 'X-Api-Key', in: 'header', valueRef: 'petsKey' },
-      })),
+      containers: {
+        ...project.containers,
+        rest: restApisOf(project).map((api) => ({
+          ...api,
+          auth: { type: 'api-key', name: 'X-Api-Key', in: 'header', valueRef: 'petsKey' },
+        })),
+      },
     }));
     const result = await callRest(
       fixture,
@@ -392,7 +402,10 @@ paths:
     const fixture = await restProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      apis: project.apis.map((api) => ({ ...api, baseUrl: '', servers: [] })),
+      containers: {
+        ...project.containers,
+        rest: restApisOf(project).map((api) => ({ ...api, baseUrl: '', servers: [] })),
+      },
     }));
     await expect(callRest(fixture, 'pets_list_pets', 'Pets/GET /pets', {})).rejects.toMatchObject({
       code: 'no-endpoint',

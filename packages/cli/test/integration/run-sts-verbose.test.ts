@@ -10,7 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { saveProject } from '@wirebench/engine';
+import { saveProject, soapInterfacesOf } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
 import { projectWithWss, startTestSts } from '@wirebench/engine/test-helpers';
 import type { TestSts } from '@wirebench/engine/test-helpers';
@@ -72,23 +72,26 @@ afterAll(async () => {
 function twoRequests(project: Project, url: string): Project {
   return {
     ...project,
-    interfaces: project.interfaces.map((iface) => {
-      if (iface.kind !== 'soap') {
-        return iface;
-      }
-      return {
-        ...iface,
-        endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, url })),
-        operations: iface.operations.map((operation) => {
-          const [only] = operation.requests;
-          if (only === undefined) {
-            return operation;
-          }
-          const first = { ...only, envelopeXml: ENVELOPE };
-          return { ...operation, requests: [first, { ...first, id: 'req-2', name: 'Req2', slug: 'req2', order: 1 }] };
-        }),
-      };
-    }),
+    containers: {
+      ...project.containers,
+      soap: soapInterfacesOf(project).map((iface) => {
+        if (iface.kind !== 'soap') {
+          return iface;
+        }
+        return {
+          ...iface,
+          endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, url })),
+          operations: iface.operations.map((operation) => {
+            const [only] = operation.requests;
+            if (only === undefined) {
+              return operation;
+            }
+            const first = { ...only, envelopeXml: ENVELOPE };
+            return { ...operation, requests: [first, { ...first, id: 'req-2', name: 'Req2', slug: 'req2', order: 1 }] };
+          }),
+        };
+      }),
+    },
   };
 }
 

@@ -17,7 +17,7 @@ import { createProject } from '../../../src/project/model.js';
 import { APIS_DIR, MAX_FOLDER_DEPTH } from '../../../src/project/paths.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createFolder, createRestRequest, entry } from '../../../src/rest/model.js';
+import { createApi, createFolder, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
 import type { DefinitionAuth, Project } from '../../../src/project/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from './fixture.js';
@@ -124,15 +124,17 @@ function petstore(): RestApi {
 function apiProject(): Project {
   return {
     ...createProject('REST demo', { id: 'P1' }),
-    apis: [
-      petstore(),
-      createApi('Orders', {
-        id: 'A2',
-        order: 1,
-        baseUrl: '${#Env#ordersBase}',
-        requests: [createRestRequest('List orders', { id: 'R7', url: '/orders' })],
-      }),
-    ],
+    containers: {
+      rest: [
+        petstore(),
+        createApi('Orders', {
+          id: 'A2',
+          order: 1,
+          baseUrl: '${#Env#ordersBase}',
+          requests: [createRestRequest('List orders', { id: 'R7', url: '/orders' })],
+        }),
+      ],
+    },
   };
 }
 
@@ -188,7 +190,7 @@ describe('round trip through a folder', () => {
     const { project: loaded, problems } = await loadProject(dir);
 
     expect(problems).toEqual([]);
-    expect(loaded.apis).toEqual(project.apis);
+    expect(restApisOf(loaded)).toEqual(restApisOf(project));
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -212,23 +214,26 @@ describe('round trip through a folder', () => {
 
     const renamed: Project = {
       ...project,
-      apis: project.apis.map((api) =>
-        api.id !== 'A1'
-          ? api
-          : {
-              ...api,
-              folders: api.folders.map((folder) =>
-                folder.id !== 'F1'
-                  ? folder
-                  : {
-                      ...folder,
-                      requests: folder.requests.map((request) =>
-                        request.id !== 'R2' ? request : { ...request, name: 'Add pet', slug: 'Add pet' },
-                      ),
-                    },
-              ),
-            },
-      ),
+      containers: {
+        ...project.containers,
+        rest: restApisOf(project).map((api) =>
+          api.id !== 'A1'
+            ? api
+            : {
+                ...api,
+                folders: api.folders.map((folder) =>
+                  folder.id !== 'F1'
+                    ? folder
+                    : {
+                        ...folder,
+                        requests: folder.requests.map((request) =>
+                          request.id !== 'R2' ? request : { ...request, name: 'Add pet', slug: 'Add pet' },
+                        ),
+                      },
+                ),
+              },
+        ),
+      },
     };
     const result = await saveProject(renamed, dir);
 
@@ -251,7 +256,10 @@ describe('round trip through a folder', () => {
     await mkdir(join(dir, APIS_DIR, 'Petstore', 'definition'), { recursive: true });
     await writeFile(join(dir, APIS_DIR, 'Petstore', 'definition', 'openapi.json'), '{}');
 
-    const result = await saveProject({ ...project, apis: project.apis.filter((api) => api.id !== 'A1') }, dir);
+    const result = await saveProject(
+      { ...project, containers: { ...project.containers, rest: restApisOf(project).filter((api) => api.id !== 'A1') } },
+      dir,
+    );
 
     expect(result.removed).toContain('apis/Petstore');
     expect(await listTree(dir)).toEqual([
@@ -283,7 +291,7 @@ describe('problems a damaged apis/ folder reports', () => {
 
     const { project, problems } = await loadProject(dir);
 
-    expect(project.apis.map((api) => api.slug)).toEqual(['Petstore', 'Orders']);
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Petstore', 'Orders']);
     expect(problems).toEqual([
       {
         code: 'missing-api-file',
@@ -301,7 +309,7 @@ describe('problems a damaged apis/ folder reports', () => {
 
     const { project, problems } = await loadProject(dir);
 
-    const request = project.apis[0]!.folders[0]!.requests.find((r) => r.id === 'R2')!;
+    const request = restApisOf(project)[0]!.folders[0]!.requests.find((r) => r.id === 'R2')!;
     expect(request.body).toEqual({ kind: 'raw', language: 'json', text: '' });
     expect(problems).toEqual([
       {
@@ -357,7 +365,7 @@ describe('problems a damaged apis/ folder reports', () => {
 
     const { project, problems } = await loadProject(dir);
 
-    const folder = project.apis.find((api) => api.slug === 'Orders')!.folders[0]!;
+    const folder = restApisOf(project).find((api) => api.slug === 'Orders')!.folders[0]!;
     expect(folder).toMatchObject({ name: 'Drafts', slug: 'Drafts' });
     expect(folder.requests).toHaveLength(1);
     expect(problems).toEqual([]);
@@ -383,7 +391,7 @@ describe('problems a damaged apis/ folder reports', () => {
     }
     const tooDeep: Project = {
       ...createProject('Deep', { id: 'P' }),
-      apis: [createApi('A', { id: 'A', folders: [folder] })],
+      containers: { rest: [createApi('A', { id: 'A', folders: [folder] })] },
     };
     expect(() => projectFiles(tooDeep)).toThrow(ProjectError);
     expect(() => projectFiles(tooDeep)).toThrow(/more than 8 deep/);
@@ -415,7 +423,7 @@ describe('problems a damaged apis/ folder reports', () => {
 
     const { project: loaded, problems } = await loadProject(dir);
 
-    expect(loaded.apis.map((api) => api.slug)).toEqual(['Petstore']);
+    expect(restApisOf(loaded).map((api) => api.slug)).toEqual(['Petstore']);
     expect(problems).toEqual([
       {
         code: 'api-slug-conflict',
@@ -430,13 +438,19 @@ describe('problems a damaged apis/ folder reports', () => {
 describe("a definition's fetch credentials", () => {
   const withAuth = (auth: DefinitionAuth): Project => {
     const project = apiProject();
-    const [first, ...rest] = project.apis;
+    const [first, ...rest] = restApisOf(project);
     return {
       ...project,
-      apis: [
-        { ...first!, definition: { source: 'https://gateway.test/openapi.yaml', cache: true, version: '3.1.0', auth } },
-        ...rest,
-      ],
+      containers: {
+        ...project.containers,
+        rest: [
+          {
+            ...first!,
+            definition: { source: 'https://gateway.test/openapi.yaml', cache: true, version: '3.1.0', auth },
+          },
+          ...rest,
+        ],
+      },
     };
   };
 
@@ -453,7 +467,7 @@ describe("a definition's fetch credentials", () => {
     expect(yaml).toContain('  auth:\n');
     const { project: loaded, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    expect(loaded.apis[0]?.definition).toEqual(project.apis[0]?.definition);
+    expect(restApisOf(loaded)[0]?.definition).toEqual(restApisOf(project)[0]?.definition);
     const again = await saveProject(loaded, dir);
     expect(again.written).toEqual([]);
     await rm(dir, { recursive: true, force: true });
@@ -477,7 +491,7 @@ describe("a definition's fetch credentials", () => {
     await saveProject(apiProject(), dir);
 
     const { project: loaded } = await loadProject(dir);
-    expect(loaded.apis[0]?.definition).toEqual({
+    expect(restApisOf(loaded)[0]?.definition).toEqual({
       source: 'https://petstore.test/openapi.json',
       cache: true,
       version: '3.0.4',
@@ -510,7 +524,7 @@ describe('a kind this build does not support', () => {
 
     const { project, problems } = await loadProject(dir);
 
-    expect(project.apis.map((api) => api.slug)).toEqual(['Petstore']);
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Petstore']);
     expect(project.unsupported).toEqual([
       { dir: 'apis', slug: 'Orders', kind: 'graphql', reason: 'unknown-kind', name: 'Orders', order: 1 },
     ]);

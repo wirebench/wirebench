@@ -50,7 +50,7 @@ import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webh
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { expandRestSendInput } from './expand.js';
 import type { RestLiveEvent } from './events.js';
-import { createApi } from './model.js';
+import { createApi, restApisOf } from './model.js';
 import type { RestApi, RestFolder, RestRequestDef } from './model.js';
 import { sendRest } from './send.js';
 import { joinBase } from './url.js';
@@ -304,7 +304,7 @@ function webhookCandidates(collection: WebhookCollection, orphaned = false): Res
  */
 export function restItemFor(project: Project, requestId: string): RestSelected | undefined {
   const candidates = [
-    ...project.apis.flatMap((api) => apiCandidates(api, true)),
+    ...restApisOf(project).flatMap((api) => apiCandidates(api, true)),
     ...(project.webhooks !== undefined ? webhookCandidates(project.webhooks, true) : []),
   ];
   return candidates.find((candidate) => candidate.item.request.id === requestId)?.item;
@@ -442,7 +442,7 @@ async function sendRestItem(
 /** REST's run facet. */
 export const restRun: ProtocolRun<RestSelected> = {
   groups(project) {
-    const apis: RunGroup<RestSelected>[] = project.apis.map((api) => ({
+    const apis: RunGroup<RestSelected>[] = restApisOf(project).map((api) => ({
       order: api.order,
       name: api.name,
       candidates: apiCandidates(api),
@@ -457,7 +457,7 @@ export const restRun: ProtocolRun<RestSelected> = {
     if (project.webhooks !== undefined && findInTree(project.webhooks, requestId) !== undefined) {
       return 'A webhook cannot be a sequence step';
     }
-    for (const api of project.apis) {
+    for (const api of restApisOf(project)) {
       const request = findInTree(api, requestId);
       if (request !== undefined) {
         return request.orphaned === true ? ORPHANED_STEP_REASON : undefined;

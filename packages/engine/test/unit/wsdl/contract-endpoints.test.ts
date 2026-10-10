@@ -6,8 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { expand } from '../../../src/project/properties.js';
-import { createInterface, createProject } from '../../../src/project/model.js';
-import type { Endpoint, Project } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface, soapInterfacesOf } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { Endpoint } from '../../../src/soap/model.js';
 import { importWsdl } from '../../../src/soap/import.js';
 import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { contractPorts, endpointsFromContract, endpointUrlFromContract } from '../../../src/wsdl/contract-endpoints.js';
@@ -76,7 +78,7 @@ describe('Update Definition and a contract endpoint', () => {
       definitionUrl: 'inline:wsdl',
       endpoints: [...endpoints],
     });
-    return { ...createProject('P', { id: 'p-1' }), interfaces: [iface] };
+    return { ...createProject('P', { id: 'p-1' }), containers: { soap: [iface] } };
   }
 
   const urlsAfterUpdate = async (stored: readonly string[], before: string[], after: string[]): Promise<string[]> => {
@@ -98,7 +100,7 @@ describe('Update Definition and a contract endpoint', () => {
       newId: counterIds(),
     };
     const result = applyUpdate(projectWith(endpoints), 'if-1', planUpdate(oldImport, newImport), newImport, options);
-    return result.project.interfaces[0]?.endpoints.map((endpoint) => endpoint.url) ?? [];
+    return soapInterfacesOf(result.project)[0]?.endpoints.map((endpoint) => endpoint.url) ?? [];
   };
 
   it('names an added address escaped, and adds it escaped', async () => {
