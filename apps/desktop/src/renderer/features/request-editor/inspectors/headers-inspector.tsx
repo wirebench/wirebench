@@ -6,7 +6,6 @@ import type { HeaderEntryWire } from '../../../../shared/wire-types.js';
 import type { GridRowProps } from '../../../lib/grid-navigation.js';
 import { useGridNavigation } from '../../../lib/grid-navigation.js';
 import { InspectorIconButton } from './inspector-strip.js';
-import { ClampedValueField } from '../../../components/clamped-value-field.js';
 
 /**
  * Headers Wirebench computes for every send (`send.ts`'s SOAP content type and SOAPAction, plus
@@ -94,7 +93,7 @@ function HeaderRow({ index, rowProps, header, first, last, problems, onCommit, o
         {overrides && <p className="mt-0.5 text-xs text-fg-faint">overrides the default</p>}
       </td>
       <td role="gridcell" className="py-0.5 pr-2 align-top">
-        <ClampedValueField
+        <input
           aria-label={`Value of header ${position}`}
           className={INPUT_CLASS}
           value={value}

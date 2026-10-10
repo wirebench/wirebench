@@ -13,7 +13,7 @@
  * away commits it; Escape puts the row back to what it was. There is always one empty row at the
  * bottom, and typing into it appends a row rather than needing an "Add" button.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { ClampedValueField } from './clamped-value-field.js';
 import { IconButton } from './icon-button.js';
@@ -150,16 +150,38 @@ export function KvTable({
     onChange(rows.filter((_, at) => at !== index));
   };
 
+  const tableRef = useRef<HTMLTableElement>(null);
+  /**
+   * The column typed into on the add row, waiting for the row it created to arrive. Until focus
+   * moves there, every further keystroke would land on the add row again and append another row.
+   */
+  const pendingFocus = useRef<{ readonly column: KvColumn; readonly count: number } | undefined>(undefined);
+
   /** Appends a row the moment something is typed into the add row. */
-  const append = (changes: Partial<KeyValueWire>): void => {
-    const row: KeyValueWire = { name: '', value: '', enabled: true, ...changes };
+  const append = (column: KvColumn, text: string): void => {
+    const row: KeyValueWire = { name: '', value: '', enabled: true, [column]: text };
     if (row.name !== '' && !allowDuplicates && rows.some((existing) => existing.name === row.name)) {
       setError(`There is already a row named "${row.name}".`);
       return;
     }
     setError(undefined);
+    pendingFocus.current = { column, count: rows.length + 1 };
     onChange([...rows, row]);
   };
+
+  // Once the caller re-renders with the new row, its field takes over the typing, caret at the end.
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current;
+    if (pending === undefined || rows.length < pending.count) return;
+    pendingFocus.current = undefined;
+    const fields = tableRef.current?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      `[data-testid="${testidPrefix}-${pending.column}"]`,
+    );
+    const field = fields?.[pending.count - 1];
+    if (field === undefined) return;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, [rows.length, testidPrefix]);
 
   const testid = (part: string): string => `${testidPrefix}-${part}`;
 
@@ -170,6 +192,7 @@ export function KvTable({
           role="grid"
           aria-label={label}
           data-testid={testid('table')}
+          ref={tableRef}
           className="w-full table-fixed border-collapse text-sm"
         >
           <colgroup>
@@ -271,7 +294,7 @@ export function KvTable({
                       onChange={(event) => {
                         // One keystroke creates the row and the caller re-renders with it, so the
                         // add row is empty again and focus follows the new row's own input.
-                        append({ [column]: event.target.value });
+                        append(column, event.target.value);
                       }}
                     />
                   )}

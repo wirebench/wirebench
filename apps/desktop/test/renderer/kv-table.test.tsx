@@ -8,6 +8,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render as renderBare, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { KvTable } from '../../src/renderer/components/kv-table.js';
 import type { KeyValueWire } from '../../src/shared/wire-types.js';
@@ -101,6 +103,21 @@ describe('KvTable', () => {
     fireEvent.change(screen.getByTestId('rest-query-new-name'), { target: { value: 'b' } });
 
     expect(onChange).toHaveBeenCalledWith([row('a', '1'), row('b', '')]);
+  });
+
+  it('makes one row of a name typed key by key: focus moves into the row the first key made', async () => {
+    function Stateful() {
+      const [rows, setRows] = useState<readonly KeyValueWire[]>([]);
+      return <KvTable label="Headers" rows={rows} onChange={setRows} testidPrefix="rest-header" />;
+    }
+    render(<Stateful />);
+
+    await userEvent.type(screen.getByTestId('rest-header-new-name'), 'Accept');
+
+    const names = screen.getAllByTestId('rest-header-name');
+    expect(names).toHaveLength(1);
+    expect(names[0]).toHaveProperty('value', 'Accept');
+    expect(document.activeElement).toBe(names[0]);
   });
 
   it('appends from the value column as well, so a valueless name is not forced first', () => {
