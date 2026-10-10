@@ -1,5 +1,6 @@
 /**
- * The gRPC editor's top strip: the method the request calls, where the call goes, and Send.
+ * The gRPC editor's top strip: Send, the method the request calls, and where the call goes. Send
+ * leads the strip, as it does in every editor.
  *
  * The **method** is a select over the services the API's `.proto` set declares, grouped by
  * service, because a gRPC request is only ever one of the methods the definition names — there is
@@ -60,7 +61,7 @@ export interface CallBarProps {
 const FIELD_CLASS =
   'h-row rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none';
 
-/** The method, target and Send strip. */
+/** The Send, method and target strip. */
 export function CallBar({
   service,
   method,
@@ -82,6 +83,36 @@ export function CallBar({
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
+      {sending ? (
+        <Button variant="secondary" data-testid="grpc-send" onClick={onCancel} title="Cancel (Esc)">
+          <Square size={12} aria-hidden="true" />
+          Cancel
+        </Button>
+      ) : (
+        <>
+          <Button
+            variant="primary"
+            data-testid="grpc-send"
+            onClick={onSend}
+            {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
+          >
+            <Send size={12} aria-hidden="true" />
+            Send
+          </Button>
+          {onOpenStream !== undefined && (
+            <Button
+              variant="secondary"
+              data-testid="grpc-open-stream"
+              onClick={onOpenStream}
+              title="Open the call and keep sending messages into it"
+            >
+              <Radio size={12} aria-hidden="true" />
+              Open stream
+            </Button>
+          )}
+        </>
+      )}
+
       {hasDefinition ? (
         <select
           aria-label="Method"
@@ -139,36 +170,6 @@ export function CallBar({
           ? 'No target — set one on the API'
           : `${tls ? 'grpcs' : 'grpc'}://${target}`}
       </span>
-
-      {sending ? (
-        <Button variant="secondary" data-testid="grpc-send" onClick={onCancel} title="Cancel (Esc)">
-          <Square size={12} aria-hidden="true" />
-          Cancel
-        </Button>
-      ) : (
-        <>
-          {onOpenStream !== undefined && (
-            <Button
-              variant="secondary"
-              data-testid="grpc-open-stream"
-              onClick={onOpenStream}
-              title="Open the call and keep sending messages into it"
-            >
-              <Radio size={12} aria-hidden="true" />
-              Open stream
-            </Button>
-          )}
-          <Button
-            variant="primary"
-            data-testid="grpc-send"
-            onClick={onSend}
-            {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
-          >
-            <Send size={12} aria-hidden="true" />
-            Send
-          </Button>
-        </>
-      )}
     </div>
   );
 }

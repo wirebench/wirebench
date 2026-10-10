@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Check, Columns2, PanelTop, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
-import { Button } from '../../components/button.js';
+import { Button, SPLIT_HEAD_CLASS } from '../../components/button.js';
 import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
 import type { EndpointSourceWire, InterfaceSummary } from '../../../shared/wire-types.js';
-import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
+import { SendMenu } from '../multi-env/send-menu.js';
 import { EndpointSelect } from './endpoint-select.js';
 import { EndpointsDialog } from './endpoints-dialog.js';
 import { flipMode, flipOrientation, setEditorLayout, useEditorLayout } from './layout.js';
@@ -38,7 +38,8 @@ export interface RequestToolbarProps {
 }
 
 /**
- * The request editor's top strip: send/cancel, the endpoint, and the view toggles. The endpoint
+ * The request editor's top strip: the split Send button (▾ holds *Send to environments…*), the
+ * endpoint, and the view toggles. The endpoint
  * is the only thing allowed to grow — everything that used to compete with it for width
  * (Recreate, cURL, Clone, Show code) now lives in the command palette, the explorer's menu and the
  * right rail's Code panel.
@@ -72,18 +73,21 @@ export function RequestToolbar({
           Cancel
         </Button>
       ) : (
-        <Button
-          data-testid="request-send"
-          variant="primary"
-          onClick={onSend}
-          disabled={endpoint === undefined || endpoint.length === 0}
-          {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
-        >
-          <Send size={12} aria-hidden="true" />
-          Send
-        </Button>
+        <div className="flex shrink-0 items-center">
+          <Button
+            data-testid="request-send"
+            variant="primary"
+            className={SPLIT_HEAD_CLASS}
+            onClick={onSend}
+            disabled={endpoint === undefined || endpoint.length === 0}
+            {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
+          >
+            <Send size={12} aria-hidden="true" />
+            Send
+          </Button>
+          <SendMenu requestId={draft.id} kind="soap" />
+        </div>
       )}
-      <SendToEnvironmentsButton requestId={draft.id} kind="soap" />
 
       {endpointSource === 'environment' || endpointSource === 'workspace-environment' ? (
         // The active environment overrides this interface's address, so the request's own

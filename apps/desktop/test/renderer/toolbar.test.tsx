@@ -108,7 +108,7 @@ describe('RequestToolbar', () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }));
     expect(onSend).toHaveBeenCalledOnce();
   });
 
@@ -126,7 +126,30 @@ describe('RequestToolbar', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /send/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /^send$/i }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('leads with Send, split with a menu that offers Send to environments', async () => {
+    render(
+      <RequestToolbar
+        draft={makeDraft()}
+        summary={makeInterface()}
+        endpoint="https://example.test/calc.asmx"
+        sending={false}
+        onSend={noop}
+        onCancel={noop}
+        onEndpointChange={noop}
+        onValidate={noop}
+      />,
+    );
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons[0]?.getAttribute('data-testid')).toBe('request-send');
+    expect(buttons[1]?.getAttribute('aria-label')).toBe('More send options');
+    expect(screen.queryByText('Environments…')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'More send options' }));
+    expect(await screen.findByRole('menuitem', { name: 'Send to environments…' })).toBeTruthy();
   });
 
   it('replaces Send with Cancel while sending', async () => {
@@ -145,6 +168,7 @@ describe('RequestToolbar', () => {
     );
 
     expect(screen.queryByRole('button', { name: /^send$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'More send options' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onCancel).toHaveBeenCalledOnce();
   });

@@ -136,7 +136,7 @@ describe('RequestEditor', () => {
     const editor = screen.getByLabelText('Request envelope XML');
     editor.focus();
     await userEvent.type(editor, '<!-- fresh -->', { skipClick: true });
-    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }));
 
     await waitFor(() => {
       expect(send).toHaveBeenCalledOnce();
@@ -275,7 +275,7 @@ describe('RequestEditor', () => {
   it('shows the response once the send resolves', async () => {
     render(<RequestEditor requestId="req-1" />);
 
-    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain('200 OK');
@@ -413,7 +413,7 @@ describe('RequestEditor', () => {
 
   it('the response Outline renders no editable inputs', async () => {
     render(<RequestEditor requestId="req-1" />);
-    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^send$/i }));
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain('200 OK');
     });

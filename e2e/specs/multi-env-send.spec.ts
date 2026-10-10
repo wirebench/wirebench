@@ -46,6 +46,8 @@ async function activateEnvironment(page: Page, name: string): Promise<void> {
  * and `test`, sends, and waits for the compare tab.
  */
 async function compareDevAndTest(page: Page): Promise<void> {
+  // *Send to environments…* lives in the menu under Send's ▾.
+  await page.getByTestId('send-menu').click();
   const action = page.getByTestId('send-to-environments');
   await expect(action).toBeEnabled({ timeout: 20_000 });
   await action.click();

@@ -12,6 +12,12 @@ const VARIANTS: Readonly<Record<Variant, string>> = {
   ghost: 'bg-transparent text-fg-muted hover:bg-surface-hover hover:text-fg-default border-transparent',
 };
 
+/** The classes a button takes when a ▾ is joined to its right, as one split button. */
+export const SPLIT_HEAD_CLASS = 'rounded-r-none';
+
+/** The classes the ▾ of a split button takes, joined to the button on its left. */
+export const SPLIT_TAIL_CLASS = 'rounded-l-none border-l border-l-black/20 px-1.5';
+
 /** The shell's only button. Compact by default (26px), keyboard reachable, accent focus ring. */
 export function Button({ variant = 'secondary', className = '', type = 'button', ...rest }: ButtonProps) {
   return (
