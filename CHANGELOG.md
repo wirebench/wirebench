@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Mock stubs checked against the contract.** The mock tab lists each stub whose status, headers or
+  body the WSDL or OpenAPI document does not allow, by the checks a received response gets, and puts
+  the same findings in the Problems view; `wirebench mock check` runs the check in a pipeline and exits
+  1 when a stub does not conform (#325).
 - **Type-checked dispatch scripts.** A mock operation's `dispatch.ts` gets completion, hover and type
   errors in the mock tab as a request script does: a misspelt name, a wrong `request` field, or a
   `respond` with a name that is not one of the operation's responses shows under the editor instead of

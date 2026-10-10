@@ -96,6 +96,9 @@ wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--his
 wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
                        Serves the project's mocks until stopped: see "wirebench mock" below.
 
+wirebench mock check <path> [mock…] [--json]
+                       Checks the mocks' stubs against the contract: see "wirebench mock check" below.
+
 wirebench mock record <path> <mock> --target <url>
                        Records a mock's stubs from live traffic: see "wirebench mock record" below.
 
@@ -1030,6 +1033,37 @@ touches the network and behaves the same on a runner as on a laptop. A client ca
 from the mock itself: a SOAP mock serves its WSDL at `<url>?wsdl`, and a REST mock serves its OpenAPI
 document at `<url>/openapi.json` or `<url>/openapi.yaml`, with the server URL pointing at the mock and
 each referenced file served under `<url>/openapi/`.
+
+## `wirebench mock check`
+
+```text
+wirebench mock check <path> [mock…] [--json]
+```
+
+Checks every stub of a project's mocks against the contract, without serving them (#325). A mock checks
+the requests it receives; this checks the replies it would send, so a stub that drifted from the WSDL or
+the OpenAPI document fails here instead of letting a client test pass against the mock and fail against
+the real service. The contract comes from the definition cache, as when the mock serves.
+
+- `<path>` and `[mock…]` select mocks as `wirebench mock` does.
+- Each stub gets the checks a received response gets. SOAP: the envelope structure, the `Content-Type`
+  against the binding's SOAP version, and the body against the output message's schema (a fault gets the
+  structure checks only); a reply is sent with 200, a fault with 500 (400 or 500 in SOAP 1.2), and a
+  one-way operation's empty acknowledgement with 200 or 202. REST: the status must be one the operation
+  documents (exactly, by range or as `default`), the `Content-Type` one it declares for that status, and a
+  JSON body must match the media type's schema.
+- A stub of an operation the contract no longer has is not checked; `wirebench mock` warns of it.
+- stdout carries a line per mock: `<name>: <n> stubs conform to the contract`, or the count that do not,
+  followed by each such stub as `<operation> › <response> (<status>)` with its problems indented below it.
+  `--json` writes one object per mock instead: `{"mockId","mock","checked","findings"}`, each finding naming
+  the operation, the response and its problems (`in` is `status`, `header` or `body`).
+
+| Exit | When |
+| --- | --- |
+| 0 | Every stub conforms. |
+| 1 | At least one stub does not conform. |
+| 2 | Bad flags, an unknown or ambiguous mock, a project with no mocks, a path that is not a project. |
+| 3 | A mock's contract could not be read: definition not cached, a gRPC or WebSocket container. |
 
 ## Run in CI
 

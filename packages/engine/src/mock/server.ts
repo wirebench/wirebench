@@ -152,7 +152,7 @@ export async function openMockContract(
 }
 
 /** The reply's headers: the stub's own, then the protocol's defaults for names the stub did not set. */
-function replyHeaders(response: MockResponse, contract: MockContract): HeaderPair[] {
+export function replyHeaders(response: MockResponse, contract: MockContract): HeaderPair[] {
   const own = response.headers.map((header): HeaderPair => [header.name, header.value]);
   const named = new Set(own.map(([name]) => name.toLowerCase()));
   return [...own, ...contract.defaults(response).filter(([name]) => !named.has(name.toLowerCase()))];

@@ -52,6 +52,26 @@ export function selectResponse(
   if (content === undefined || Object.keys(content).length === 0) {
     return { kind: 'no-body', responseKey };
   }
+  const key = declaredMediaType(content, contentType);
+  if (key === undefined) {
+    return { kind: 'no-schema', responseKey };
+  }
+  const schema = content[key]?.schema;
+  if (schema === undefined) {
+    return { kind: 'no-schema', responseKey };
+  }
+  return { kind: 'schema', responseKey, mediaType: key, schema };
+}
+
+/**
+ * The key of `content` a response of `contentType` falls under, by the rules above: the exact type,
+ * then `application/json` for a `+json` suffix, then `application/*`, then `*\/*`. Undefined when
+ * the contract declares none of them.
+ */
+export function declaredMediaType(
+  content: Readonly<Record<string, unknown>>,
+  contentType: string | undefined,
+): string | undefined {
   const declared = new Map<string, string>();
   for (const key of Object.keys(content)) {
     const normal = essence(key);
@@ -68,14 +88,18 @@ export function selectResponse(
   ];
   for (const candidate of candidates) {
     const key = candidate === '' ? undefined : declared.get(candidate);
-    if (key === undefined) {
-      continue;
+    if (key !== undefined) {
+      return key;
     }
-    const schema = content[key]?.schema;
-    if (schema === undefined) {
-      return { kind: 'no-schema', responseKey };
-    }
-    return { kind: 'schema', responseKey, mediaType: key, schema };
   }
-  return { kind: 'no-schema', responseKey };
+  return undefined;
+}
+
+/** The documented response `status` falls under (exact, range, then `default`), or undefined. */
+export function declaredResponse(
+  responses: OpenApiResponses,
+  status: number,
+): { readonly responseKey: string; readonly response: OpenApiResponse } | undefined {
+  const found = findStatus(responses, status);
+  return found === undefined ? undefined : { responseKey: found[0], response: found[1] };
 }

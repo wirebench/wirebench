@@ -3181,6 +3181,35 @@ export const mockStateEventSchema = z.object({
 });
 export type MockStateEvent = z.infer<typeof mockStateEventSchema>;
 
+/** One problem a mock found with a request, or with a stub (#325). */
+const mockProblemWireSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  in: z.string().optional(),
+  name: z.string().optional(),
+  path: z.string().optional(),
+  line: z.number().optional(),
+  column: z.number().optional(),
+});
+export type MockProblemWire = z.infer<typeof mockProblemWireSchema>;
+
+/** Each stub of a mock the contract does not allow (#325), and how many were checked. */
+export const mockCheckResponseSchema = z.object({
+  checked: z.number(),
+  findings: z.array(
+    z.object({
+      operationId: z.string(),
+      operationName: z.string(),
+      operation: z.string(),
+      responseId: z.string(),
+      responseName: z.string(),
+      status: z.number(),
+      problems: z.array(mockProblemWireSchema),
+    }),
+  ),
+});
+export type MockCheckResponse = z.infer<typeof mockCheckResponseSchema>;
+
 export const mockStopResponseSchema = z.object({ stopped: z.boolean() });
 export const mockResetResponseSchema = z.object({ reset: z.boolean() });
 export const mockStatesResponseSchema = z.object({ states: z.array(mockStateEventSchema) });
@@ -3203,17 +3232,7 @@ export const mockExchangeEventSchema = z.object({
   responseName: z.string().optional(),
   status: z.number(),
   durationMs: z.number(),
-  problems: z.array(
-    z.object({
-      code: z.string(),
-      message: z.string(),
-      in: z.string().optional(),
-      name: z.string().optional(),
-      path: z.string().optional(),
-      line: z.number().optional(),
-      column: z.number().optional(),
-    }),
-  ),
+  problems: z.array(mockProblemWireSchema),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   log: z.array(z.string()).optional(),
   request: mockEventMessageWireSchema,

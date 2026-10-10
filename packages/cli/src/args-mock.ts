@@ -1,6 +1,7 @@
 /**
  * `wirebench mock <path> [mock…]` (#61, docs/specs/2026-10-08-headless-mock-design.md): serve a
- * project's mocks until stopped. `wirebench mock record` (#60) parses in `args-mock-record.ts`.
+ * project's mocks until stopped; `wirebench mock check` (#325): check their stubs against the
+ * contract. `wirebench mock record` (#60) parses in `args-mock-record.ts`.
  */
 import { refuseForeign } from './args-ops.js';
 import type { OptionValues } from './args-ops.js';
@@ -64,4 +65,34 @@ export function parseMockServe(rest: readonly string[], values: OptionValues): M
     json: values['json'] === true,
     quiet: values['quiet'] === true,
   };
+}
+
+export interface MockCheckArgs {
+  readonly command: 'mock-check';
+  readonly path: string;
+  /** Mock names, folder slugs or ids. Empty: every mock in the project. */
+  readonly mocks: readonly string[];
+  readonly json: boolean;
+}
+
+const CHECK_USAGE = 'wirebench mock check <path> [mock…] [--json]';
+
+export const MOCK_CHECK_HELP = `${CHECK_USAGE}
+
+Checks every stub of the project's mocks against the contract, read from the definition cache: the
+status, the Content-Type and the body, by the checks a received response gets.
+<path>                 The project directory (wirebench.yaml).
+[mock…]                Mocks by name, folder slug or id. None = every mock in the project.
+--json                 One JSON object per mock: { mockId, mock, checked, findings }.
+Exit 0 when every stub conforms, 1 when one does not, 2 for a usage error, an unknown mock or a
+project that does not load, 3 when a mock's contract cannot be read.`;
+
+/** Parses `mock check …` after the verb. @throws UsageError */
+export function parseMockCheck(rest: readonly string[], values: OptionValues): MockCheckArgs {
+  refuseForeign(values, ['json'], 'wirebench mock check');
+  const [, path, ...mocks] = rest;
+  if (path === undefined) {
+    throw new UsageError(`${CHECK_USAGE}: <path> is required`);
+  }
+  return { command: 'mock-check', path, mocks, json: values['json'] === true };
 }

@@ -148,6 +148,11 @@ a definition that is not cached, or an unknown mock fails at once (exit `3` or `
 tests to time out. See the
 [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-mock) for every flag.
 
+Before serving, `wirebench mock check ./project [mock…]` checks every stub against the contract, the way a
+received response is checked, and exits `1` when one does not conform, so a stub that drifted fails the job
+instead of a test passing against the mock that would fail against the real service. See
+[`wirebench mock check`](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-mock-check).
+
 ## Secret tokens
 
 A `${secret:name}` token in a request reads `WIREBENCH_SECRET_<NAME>`, with the name upper-cased:
