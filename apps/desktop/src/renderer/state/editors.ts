@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { tabSetOf, tabsInSet, type TabSet } from './tab-sets.js';
 import type { EditorLayout } from '../features/request-editor/layout.js';
 import type { EnvSendResult } from '../../shared/wire-types.js';
 
@@ -76,6 +77,11 @@ export interface EditorTab {
     | 'cookies'
     | 'ssh-terminal';
   readonly title: string;
+  /**
+   * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):
+   * History's Compare is a `diff` like a snapshot comparison, but it belongs with History.
+   */
+  readonly set?: TabSet;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
   /** Set when `kind` is `'interface'`: the imported interface this viewer tab shows. */
@@ -137,10 +143,22 @@ export interface EditorTab {
   };
 }
 
-/** The editors store: open tabs plus which one is active. */
+/**
+ * The editors store: open tabs plus which one is active.
+ *
+ * Tabs are kept in one list but shown in sets, one per activity-bar area (`tab-sets.ts`): only
+ * {@link EditorsStore.displayedSet}'s tabs are on the strip, each set remembers its own active tab,
+ * and `activeId` is always the displayed set's.
+ */
 export interface EditorsStore {
   readonly tabs: EditorTab[];
   readonly activeId: string | undefined;
+  /** The set on the strip. Opening or activating a tab of another set brings that set here. */
+  readonly displayedSet: TabSet;
+  /** Each set's active tab, kept while another set is displayed. */
+  readonly activeBySet: Readonly<Partial<Record<TabSet, string>>>;
+  /** Shows `set`'s tabs, back on the tab that was active there (or none, for its empty state). */
+  readonly showSet: (target: TabSet) => void;
   /** Form view type per request draft id. Editor state, not project data — never saved to disk. */
   readonly formViewTypes: Readonly<Record<string, FormViewType>>;
   /** Selected request tab per request draft id. Editor state, not project data. */
@@ -165,11 +183,14 @@ export interface EditorsStore {
   readonly openOrReplace: (tab: EditorTab) => void;
   readonly close: (id: string) => void;
   /**
-   * Moves an open tab to `toIndex` in the strip (clamped to the ends), leaving which tab is
-   * active untouched. Unknown ids are ignored. What drag-and-drop and Move Tab Left/Right do.
+   * Moves an open tab to `toIndex` among its own set's tabs — the strip the user sees — clamped to
+   * the ends, leaving which tab is active untouched. Unknown ids are ignored. What drag-and-drop
+   * and Move Tab Left/Right do.
    */
   readonly move: (id: string, toIndex: number) => void;
   readonly activate: (id: string) => void;
+  /** Puts `tabs` in the store and makes `id` active, bringing its set onto the strip. Internal. */
+  readonly activateIn: (tabs: EditorTab[], id: string) => void;
   /**
    * Leaves every tab unselected, which is what shows the empty Start tab. The editor area's
    * Start tab selects with this: Start is not an entry in `tabs`, so `activate` — which
@@ -219,6 +240,8 @@ export interface EditorsStore {
 const EMPTY_EDITORS = {
   tabs: [] as EditorTab[],
   activeId: undefined,
+  displayedSet: 'explorer' as TabSet,
+  activeBySet: {},
   formViewTypes: {},
   requestViewTypes: {},
   responseViewTypes: {},
@@ -237,69 +260,110 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     set({ ...EMPTY_EDITORS, tabs: [] });
   },
 
+  showSet: (target) => {
+    const { tabs, activeBySet, displayedSet, activeId } = get();
+    const remembered = activeBySet[target];
+    const next = remembered !== undefined && tabs.some((t) => t.id === remembered) ? remembered : undefined;
+    if (target === displayedSet && next === activeId) {
+      return;
+    }
+    set({ displayedSet: target, activeId: next });
+  },
+
   open: (tab) => {
     const { tabs } = get();
     const existing = tabs.find((t) => t.id === tab.id);
-    if (existing === undefined) {
-      set({ tabs: [...tabs, tab], activeId: tab.id });
-      return;
-    }
-    set({ activeId: existing.id });
+    get().activateIn(existing === undefined ? [...tabs, tab] : tabs, tab.id);
   },
 
   openOrReplace: (tab) => {
     const { tabs } = get();
     const index = tabs.findIndex((t) => t.id === tab.id);
     if (index === -1) {
-      set({ tabs: [...tabs, tab], activeId: tab.id });
+      get().activateIn([...tabs, tab], tab.id);
       return;
     }
     const nextTabs = [...tabs];
     nextTabs[index] = tab;
-    set({ tabs: nextTabs, activeId: tab.id });
+    get().activateIn(nextTabs, tab.id);
+  },
+
+  activateIn: (tabs, id) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab === undefined) {
+      return;
+    }
+    const tabSet = tabSetOf(tab);
+    set({
+      tabs,
+      activeId: id,
+      displayedSet: tabSet,
+      activeBySet: { ...get().activeBySet, [tabSet]: id },
+    });
   },
 
   close: (id) => {
-    const { tabs, activeId } = get();
-    const index = tabs.findIndex((t) => t.id === id);
-    if (index === -1) {
+    const { tabs, activeId, activeBySet, displayedSet } = get();
+    const tab = tabs.find((t) => t.id === id);
+    if (tab === undefined) {
       return;
     }
+    const tabSet = tabSetOf(tab);
+    const siblings = tabsInSet(tabs, tabSet);
+    const index = siblings.findIndex((t) => t.id === id);
     const nextTabs = tabs.filter((t) => t.id !== id);
-    let nextActive = activeId;
-    if (activeId === id) {
-      const fallback = nextTabs[Math.min(index, nextTabs.length - 1)];
-      nextActive = fallback?.id;
+    const nextActiveBySet = { ...activeBySet };
+    if (activeBySet[tabSet] === id) {
+      // The neighbour in the same set takes over, never a tab from another area's set.
+      const rest = siblings.filter((t) => t.id !== id);
+      const fallback = rest[Math.min(index, rest.length - 1)];
+      if (fallback === undefined) {
+        delete nextActiveBySet[tabSet];
+      } else {
+        nextActiveBySet[tabSet] = fallback.id;
+      }
     }
-    set({ tabs: nextTabs, activeId: nextActive });
+    set({
+      tabs: nextTabs,
+      activeBySet: nextActiveBySet,
+      activeId: tabSet === displayedSet ? nextActiveBySet[tabSet] : activeId,
+    });
   },
 
   move: (id, toIndex) => {
     const { tabs } = get();
-    const from = tabs.findIndex((t) => t.id === id);
-    if (from === -1) {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab === undefined) {
       return;
     }
-    const to = Math.max(0, Math.min(toIndex, tabs.length - 1));
+    const siblings = tabsInSet(tabs, tabSetOf(tab));
+    const from = siblings.indexOf(tab);
+    const to = Math.max(0, Math.min(toIndex, siblings.length - 1));
     if (to === from) {
       return;
     }
-    const nextTabs = [...tabs];
-    const [tab] = nextTabs.splice(from, 1);
-    if (tab !== undefined) {
-      nextTabs.splice(to, 0, tab);
-    }
-    set({ tabs: nextTabs });
+    // Reorder within the set, then lay the set back into the slots its tabs held in the full list,
+    // so other sets' tabs keep their places.
+    const reordered = [...siblings];
+    reordered.splice(from, 1);
+    reordered.splice(to, 0, tab);
+    let next = 0;
+    const tabSet = tabSetOf(tab);
+    set({ tabs: tabs.map((t) => (tabSetOf(t) === tabSet ? (reordered[next++] ?? t) : t)) });
   },
 
   activate: (id) => {
-    if (get().tabs.some((t) => t.id === id)) {
-      set({ activeId: id });
+    const { tabs } = get();
+    if (tabs.some((t) => t.id === id)) {
+      get().activateIn(tabs, id);
     }
   },
 
   showStart: () => {
-    set({ activeId: undefined });
+    const { activeBySet, displayedSet } = get();
+    const nextActiveBySet = { ...activeBySet };
+    delete nextActiveBySet[displayedSet];
+    set({ activeId: undefined, activeBySet: nextActiveBySet });
   },
 
   formViewTypeFor: (requestId) => get().formViewTypes[requestId] ?? DEFAULT_FORM_VIEW_TYPE,

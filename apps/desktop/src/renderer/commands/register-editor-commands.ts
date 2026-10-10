@@ -7,6 +7,7 @@ import { moveToAdjacentValue } from '../features/request-editor/value-navigation
 import { goToSchemaDefinitionAtCursor } from '../features/request-editor/schema-navigation.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
+import { tabsInSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useProjectStore } from '../state/project.js';
@@ -141,8 +142,9 @@ export function registerEditorCommands(): void {
       when: () => useEditorsStore.getState().activeId !== undefined,
       whenScope: 'editor',
       run: () => {
-        const { tabs, activeId, move } = useEditorsStore.getState();
-        const index = tabs.findIndex((tab) => tab.id === activeId);
+        const { tabs, activeId, displayedSet, move } = useEditorsStore.getState();
+        // `move` counts within the set on the strip, which is the only one the user can see.
+        const index = tabsInSet(tabs, displayedSet).findIndex((tab) => tab.id === activeId);
         if (activeId !== undefined && index !== -1) {
           move(activeId, index + step);
         }
