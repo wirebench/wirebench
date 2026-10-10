@@ -4,6 +4,7 @@ import { Button } from '../../components/button.js';
 import { HostDialog } from './host-dialog.js';
 import { HostTree } from './host-tree.js';
 import { useHostsStore } from './hosts-store.js';
+import { ImportDialog } from './import-dialog.js';
 
 const INPUT_CLASS =
   'w-full rounded border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -18,6 +19,7 @@ export function HostsView() {
   const selectedTags = useHostsStore((s) => s.selectedTags);
   const toggleTag = useHostsStore((s) => s.toggleTag);
   const openDialog = useHostsStore((s) => s.openDialog);
+  const setImportOpen = useHostsStore((s) => s.setImportOpen);
 
   useEffect(() => {
     void refresh();
@@ -42,6 +44,13 @@ export function HostsView() {
           }}
         >
           New group
+        </Button>
+        <Button
+          onClick={() => {
+            setImportOpen(true);
+          }}
+        >
+          Import…
         </Button>
       </div>
       <input
@@ -90,6 +99,7 @@ export function HostsView() {
       )}
       <HostTree />
       <HostDialog />
+      <ImportDialog />
     </div>
   );
 }

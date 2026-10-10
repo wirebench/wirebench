@@ -15,6 +15,7 @@ import {
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
   completionKindOf,
+  dispatchScriptModelPath,
   refreshScriptDiagnostics,
   registerScriptLanguageOnce,
   scriptModelPath,
@@ -70,10 +71,20 @@ describe('registration', () => {
   it('names a model after its script file', () => {
     expect(scriptModelPath('a b', 'post', 'wirebench')).toBe('wirebench-script/a%20b/post.ts');
     expect(scriptModelPath('r1', 'pre', 'postman')).toBe('wirebench-script/r1/pre.js');
+    expect(dispatchScriptModelPath('m 1', 'o1')).toBe('wirebench-script/m%201/o1/dispatch.ts');
   });
 });
 
 describe('completion', () => {
+  it("asks main about a mock operation's dispatch script by mock and operation (#352)", async () => {
+    completions.mockResolvedValue({ ok: true, value: { items: [{ name: 'respond', kind: 'function' }] } });
+    setScriptModelTarget('file:///dispatch', { mockId: 'm1', operationId: 'o1' });
+
+    await completion.provideCompletionItems(model('file:///dispatch', 're'), POSITION);
+
+    expect(completions).toHaveBeenCalledWith({ mockId: 'm1', operationId: 'o1', source: 're', line: 1, column: 3 });
+  });
+
   it("asks main about a script's model, and maps each item's kind", async () => {
     completions.mockResolvedValue({
       ok: true,

@@ -5,7 +5,14 @@
  * listed, bounded, and cleared.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { createApi, createProject, createRestRequest } from '@wirebench/engine';
+import {
+  createApi,
+  createMock,
+  createMockOperation,
+  createMockResponse,
+  createProject,
+  createRestRequest,
+} from '@wirebench/engine';
 import type { Project, RequestScripts } from '@wirebench/engine';
 import { SESSION_VALUE_LIMIT, ScriptHost } from '../src/main/script-host.js';
 import { recordSecretValue } from '../src/main/redact.js';
@@ -49,17 +56,46 @@ afterEach(async () => {
 describe('the editor', () => {
   it('reports a type error against the phase it is in', { timeout: 60_000 }, async () => {
     const scripts = hostFor(model(SCRIPTS));
-    const post = await scripts.diagnostics('r1', 'post', 'log(response.statuss);');
+    const post = await scripts.diagnostics({ requestId: 'r1', phase: 'post' }, 'log(response.statuss);');
     expect(post.map((d) => [d.line, d.code])).toEqual([[1, 2551]]);
     // A pre-request script has no response.
-    const pre = await scripts.diagnostics('r1', 'pre', 'log(response.status);');
+    const pre = await scripts.diagnostics({ requestId: 'r1', phase: 'pre' }, 'log(response.status);');
     expect(pre.map((d) => d.severity)).toEqual(['error']);
-    await scripts.closeModel('r1', 'post');
+    await scripts.closeModel({ requestId: 'r1', phase: 'post' });
   });
 
   it('completes the script API', { timeout: 60_000 }, async () => {
-    const items = await hostFor(model(SCRIPTS)).completions('r1', 'pre', 'va', 1, 3);
+    const items = await hostFor(model(SCRIPTS)).completions({ requestId: 'r1', phase: 'pre' }, 'va', 1, 3);
     expect(items.map((item) => item.name)).toContain('vars');
+  });
+});
+
+describe('the dispatch script editor (#352)', () => {
+  const DISPATCH = { mockId: 'm1', operationId: 'o1' };
+
+  function withMock(): Project {
+    const operation = createMockOperation('Get pet', 'get /pets', {
+      id: 'o1',
+      dispatch: 'script',
+      responses: [createMockResponse('Found'), createMockResponse('Missing')],
+    });
+    const mock = createMock('Pets', { containerId: 'api-1' }, { id: 'm1', operations: [operation] });
+    return { ...model(undefined), mocks: [mock] };
+  }
+
+  it('checks respond against the operation response names', { timeout: 60_000 }, async () => {
+    const scripts = hostFor(withMock());
+    expect(await scripts.diagnostics(DISPATCH, "respond(request.method === 'GET' ? 'Found' : 'Missing');")).toEqual([]);
+    const wrong = await scripts.diagnostics(DISPATCH, "respond('Gone');");
+    expect(wrong.map((d) => [d.line, d.code])).toEqual([[1, 2345]]);
+    // A dispatch script has no request-script globals.
+    expect((await scripts.diagnostics(DISPATCH, "vars.set('a', '1');")).map((d) => d.code)).toEqual([2304]);
+    await scripts.closeModel(DISPATCH);
+  });
+
+  it('completes the dispatch API', { timeout: 60_000 }, async () => {
+    const items = await hostFor(withMock()).completions(DISPATCH, 'res', 1, 4);
+    expect(items.map((item) => item.name)).toEqual(expect.arrayContaining(['respond', 'responses']));
   });
 });
 

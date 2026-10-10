@@ -43,5 +43,6 @@ export type {
 export { SecretPlaceholders } from './send.js';
 export { scriptProperties } from './props.js';
 export { apiDeclarations, apiReference, scriptDeclarations, secretNameType } from './types/api.js';
+export { dispatchDeclarations } from './types/dispatch.js';
 export type { ApiReferenceSection } from './types/api.js';
 export { stripTypes, StripError } from './strip.js';

@@ -1,6 +1,7 @@
 import { channels } from '../../shared/ipc.js';
 import { registerHandler } from '../ipc/register.js';
 import type { HostsService } from '../hosts-service.js';
+import type { SshImportService } from '../ssh-import.js';
 import type { SshSecretsService } from '../ssh-secrets.js';
 import type { SshService } from '../ssh-service.js';
 
@@ -8,6 +9,7 @@ export function registerSshChannels(deps: {
   hosts: Pick<HostsService, 'list' | 'save'>;
   secrets: Pick<SshSecretsService, 'names' | 'set'>;
   ssh: Pick<SshService, 'connect' | 'write' | 'resize' | 'close' | 'trust'>;
+  importer: Pick<SshImportService, 'preview' | 'apply'>;
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
   registerHandler(channels.ssh.saveHosts, (request) => deps.hosts.save(request.file));
@@ -34,4 +36,7 @@ export function registerSshChannels(deps: {
     await deps.ssh.trust(sender, request);
     return {};
   });
+  // A preview belongs to the window that asked for it; only that window can apply it.
+  registerHandler(channels.ssh.importPreview, (request, sender) => deps.importer.preview(sender, request));
+  registerHandler(channels.ssh.importApply, (request, sender) => deps.importer.apply(sender, request));
 }

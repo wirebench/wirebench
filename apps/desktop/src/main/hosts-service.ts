@@ -55,10 +55,21 @@ export class HostsService {
 
   /** @throws SshModelError when the file is invalid; WirebenchError `workspace-not-open` without a workspace. */
   async save(wire: HostsFileWire): Promise<SshListHostsResponse> {
+    let model: HostsFile;
+    try {
+      model = fileFromWire(wire);
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
+    return this.replace(model);
+  }
+
+  /** Writes a model file (an import's merge); validated exactly as {@link save}. */
+  async replace(model: HostsFile): Promise<SshListHostsResponse> {
     const dir = this.requireDir();
     let file: HostsFile;
     try {
-      file = parseHostsFile(serializeHostsFile(fileFromWire(wire))); // the round trip is the full validation
+      file = parseHostsFile(serializeHostsFile(model)); // the round trip is the full validation
     } catch (error) {
       throw asWirebenchError(error);
     }

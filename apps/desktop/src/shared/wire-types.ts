@@ -7045,20 +7045,32 @@ export const hooksCaptureResponseWireSchema = z.object({ capture: captureViewWir
 
 const scriptPhaseWireSchema = z.enum(['pre', 'post']);
 
-/** A script as the editor holds it: its request, which of its two scripts, and its text. */
-export const scriptSourceRequestSchema = z.object({
-  requestId: z.string(),
-  phase: scriptPhaseWireSchema,
-  /** Bounded as a script file is: text over the limit refuses to send anyway. */
-  source: z.string().max(256 * 1024),
-});
+/** Which script an editor holds: one of a request's two, or a mock operation's `dispatch.ts` (#352). */
+const requestScriptTargetShape = { requestId: z.string(), phase: scriptPhaseWireSchema };
+const dispatchScriptTargetShape = { mockId: z.string(), operationId: z.string() };
+
+/** Bounded as a script file is: text over the limit refuses to send anyway. */
+const scriptSourceShape = { source: z.string().max(256 * 1024) };
+/** A position in a script: 1-based line and column, as the diagnostics report them. */
+const scriptPositionShape = { line: z.number().int().min(1), column: z.number().int().min(1) };
+
+export const scriptTargetWireSchema = z.union([
+  z.object(requestScriptTargetShape),
+  z.object(dispatchScriptTargetShape),
+]);
+export type ScriptTargetWire = z.infer<typeof scriptTargetWireSchema>;
+
+/** A script as the editor holds it: which script, and its text. */
+export const scriptSourceRequestSchema = z.union([
+  z.object({ ...requestScriptTargetShape, ...scriptSourceShape }),
+  z.object({ ...dispatchScriptTargetShape, ...scriptSourceShape }),
+]);
 export type ScriptSourceRequest = z.infer<typeof scriptSourceRequestSchema>;
 
-/** A position in a script: 1-based line and column, as the diagnostics report them. */
-export const scriptPositionRequestSchema = scriptSourceRequestSchema.extend({
-  line: z.number().int().min(1),
-  column: z.number().int().min(1),
-});
+export const scriptPositionRequestSchema = z.union([
+  z.object({ ...requestScriptTargetShape, ...scriptSourceShape, ...scriptPositionShape }),
+  z.object({ ...dispatchScriptTargetShape, ...scriptSourceShape, ...scriptPositionShape }),
+]);
 export type ScriptPositionRequest = z.infer<typeof scriptPositionRequestSchema>;
 
 export const scriptDiagnosticWireSchema = z.object({
@@ -7095,7 +7107,7 @@ export const scriptSignatureHelpResponseSchema = z.object({
 });
 
 /** Request/response for `script.closeModel`: an editor closed, so its language service can go. */
-export const scriptCloseModelRequestSchema = z.object({ requestId: z.string(), phase: scriptPhaseWireSchema });
+export const scriptCloseModelRequestSchema = scriptTargetWireSchema;
 export const scriptCloseModelResponseSchema = z.object({});
 
 /** A project whose session values are asked for or cleared. */
