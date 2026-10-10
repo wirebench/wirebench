@@ -78,7 +78,7 @@ function build(method: string, message: unknown, slug: string, extra: { target?:
     tls: false,
     requests: [request],
   });
-  const p: Project = { ...createProject('gRPC exchange', { id: 'p-grpc' }), grpcApis: [api] };
+  const p: Project = { ...createProject('gRPC exchange', { id: 'p-grpc' }), containers: { grpc: [api] } };
   // Built by hand, as a host builds the item it sends.
   const item: GrpcSelected = {
     kind: 'grpc',
@@ -379,7 +379,7 @@ describe('grpcItemFor', () => {
     const gone = { ...createGrpcRequest('Gone', { id: 'g-gone', service: SERVICE, method: 'Gone' }), orphaned: true };
     const folder = createGrpcFolder('Inner', { id: 'f-1', requests: [chat, gone] });
     const api = createGrpcApi('Greeter', { id: 'api-1', target: server.target, tls: false, folders: [folder] });
-    const p: Project = { ...createProject('Items', { id: 'p-items' }), grpcApis: [api] };
+    const p: Project = { ...createProject('Items', { id: 'p-items' }), containers: { grpc: [api] } };
     expect(grpcItemFor(p, 'g-chat')).toEqual({
       kind: 'grpc',
       path: 'Greeter/Inner/Chat',

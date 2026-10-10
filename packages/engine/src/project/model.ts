@@ -17,13 +17,10 @@ import type { Assertion } from '../assert/model.js';
 import { slugify } from './paths.js';
 import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
 import type { WsaConfig } from '../wsa/model.js';
-import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
-import type { RestApi, RestRequestDef } from '../rest/model.js';
-import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { MockDef } from '../mock/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
-import type { ContainerBase, ContainerDir } from '../protocol/module.js';
+import type { ContainerBase } from '../protocol/module.js';
 import type { RequestScripts } from '../script/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
@@ -329,12 +326,6 @@ export interface SoapRequestDef {
   readonly envelopeXml: string;
 }
 
-/**
- * A saved request of either protocol, which is what a lookup by request id can return: the id
- * space is one (ULIDs), so `kind` is how a caller finds out what it has.
- */
-export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef;
-
 /** A binding operation of an interface, holding its saved requests. */
 export interface OperationDef {
   readonly name: string;
@@ -442,32 +433,14 @@ export interface Project {
   readonly properties: PropertyMap;
   /** Names of {@link properties} entries switched off; see {@link Environment.disabledProperties}. */
   readonly disabledProperties: readonly string[];
-  readonly interfaces: readonly Interface[];
   /**
-   * The project's REST APIs. `order` is shared with {@link interfaces}, so the two kinds
-   * interleave in the explorer in whatever order the user arranged them.
+   * Every container the project holds, keyed by its kind (`soap`, `rest`, `grpc`, `websocket`, or a
+   * kind a host registered), each list in load order. A kind with none may be absent. `order` is shared
+   * across every kind, so containers interleave in the explorer in whatever order the user arranged
+   * them. Read a built-in protocol's with its folder's reader (`restApisOf`, `soapInterfacesOf`, …),
+   * and any kind's with {@link containersOf}.
    */
-  readonly apis: readonly RestApi[];
-  /**
-   * The project's gRPC APIs. On disk they share `apis/` with the REST ones, each `api.yaml` saying
-   * which it is with `kind`; in memory they are their own list so every surface that handles one
-   * protocol has to say what it does with the third (ADR-0007). `order` is shared with both lists.
-   */
-  readonly grpcApis: readonly GrpcApi[];
-  /**
-   * The project's WebSocket APIs. On disk they share `apis/` with the REST and gRPC ones, each
-   * `api.yaml` saying which it is with `kind`; in memory they are their own list, the fourth
-   * sibling container beside {@link interfaces}, {@link apis} and {@link grpcApis} (ADR-0007).
-   * `order` is shared with all three.
-   */
-  readonly wsApis: readonly WsApi[];
-  /**
-   * Containers of a kind that has no list of its own above, keyed by kind. Absent means none.
-   * Read with {@link extraContainersOf}.
-   *
-   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
-   */
-  readonly extraContainers?: Readonly<Record<string, readonly ContainerBase[]>>;
+  readonly containers: Readonly<Record<string, readonly ContainerBase[]>>;
   /**
    * Containers this build could not load and left untouched on disk. Absent means none.
    *
@@ -509,38 +482,25 @@ export function unsupportedOf(project: Project): readonly UnsupportedContainer[]
 }
 
 /**
- * The project's containers of `kind` kept in {@link Project.extraContainers}.
- *
- * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ * The project's containers of `kind`; empty when it has none. A protocol's own reader narrows the type
+ * (`restApisOf`, `soapInterfacesOf`, …).
  */
-export function extraContainersOf(project: Project, kind: string): readonly ContainerBase[] {
-  return project.extraContainers?.[kind] ?? [];
+export function containersOf(project: Project, kind: string): readonly ContainerBase[] {
+  return project.containers[kind] ?? [];
 }
 
 /**
- * Every slug in use under one of the two container directories: the containers the project holds
- * there, and the placeholders (spec §6). A save keeps exactly these directories, whatever its
- * registry can write. Hand it to `uniqueSlug` when naming a new container, so a save never has to
- * refuse it with `container-slug-conflict`.
- *
- * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ * `project` with its containers of `kind` replaced; every other kind's are kept. A kind left with none
+ * is dropped from the map, as a load leaves it, so two projects holding the same containers are equal.
  */
-export function takenContainerSlugs(project: Project, dir: ContainerDir): ReadonlySet<string> {
-  const containers: readonly ContainerBase[] =
-    dir === 'interfaces'
-      ? project.interfaces
-      : [
-          ...project.apis,
-          ...project.grpcApis,
-          ...project.wsApis,
-          ...Object.values(project.extraContainers ?? {}).flat(),
-        ];
-  return new Set([
-    ...containers.map((container) => container.slug),
-    ...unsupportedOf(project)
-      .filter((placeholder) => placeholder.dir === dir)
-      .map((placeholder) => placeholder.slug),
-  ]);
+export function withContainersOf(project: Project, kind: string, containers: readonly ContainerBase[]): Project {
+  const next = { ...project.containers, [kind]: containers };
+  return { ...project, containers: Object.fromEntries(Object.entries(next).filter(([, list]) => list.length > 0)) };
+}
+
+/** Every container the project holds, of every kind. */
+export function allContainers(project: Project): readonly ContainerBase[] {
+  return Object.values(project.containers).flat();
 }
 
 /**
@@ -553,7 +513,7 @@ export function takenContainerSlugs(project: Project, dir: ContainerDir): Readon
  */
 export function nextApiOrder(project: Project): number {
   let highest = -1;
-  for (const container of [...project.interfaces, ...project.apis, ...project.grpcApis, ...project.wsApis]) {
+  for (const container of allContainers(project)) {
     if (container.order > highest) highest = container.order;
   }
   return highest + 1;
@@ -585,10 +545,7 @@ export function createProject(name: string, options?: CreateOptions): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
+    containers: {},
     sequences: [],
     mocks: [],
     environments: [],

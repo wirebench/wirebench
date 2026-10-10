@@ -109,7 +109,7 @@ function seeded(endpoint = `${server.url}/soap`): Project {
     cacheDefinition: false,
     operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
   });
-  return { ...createProject('P', { id: 'p1' }), interfaces: [iface] };
+  return { ...createProject('P', { id: 'p1' }), containers: { soap: [iface] } };
 }
 
 /**

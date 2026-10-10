@@ -352,10 +352,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     properties: manifest.properties,
     disabledProperties: manifest.disabled ?? [],
     ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
-    interfaces: [],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
+    containers: {},
     sequences: sequenceFiles.loaded.map((entry) => entry.sequence).sort(byOrder),
     mocks: mockFiles.loaded.map((entry) => entry.mock).sort(byOrder),
     ...(webhooks !== undefined ? { webhooks } : {}),
@@ -370,8 +367,8 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
       ? { unsupported: unsupported.sort((a, b) => a.dir.localeCompare(b.dir) || a.slug.localeCompare(b.slug)) }
       : {}),
   };
-  // A module that loaded nothing is not asked: the four built-in lists are already empty, and a
-  // kind kept in `extraContainers` must not appear there when the project holds none of it.
+  // A module that loaded nothing is not asked, so a kind the project holds none of has no entry in
+  // `containers`.
   let project = core;
   for (const [storage, containers] of loaded) {
     project = storage.withContainers(project, containers.sort(byOrder));

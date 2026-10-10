@@ -46,19 +46,21 @@ function project(): Project {
   const base: Project = {
     ...createProject('Echo', { id: 'proj-echo' }),
     properties: { greeting: 'hello' },
-    apis: [
-      createApi('Api', {
-        id: 'api-1',
-        slug: 'api',
-        order: 1,
-        requests: [
-          {
-            ...createRestRequest('Ping', { id: 'req-ping', url: `${rest.url}/echo` }),
-            assertions: [{ type: 'status', equals: 200 }],
-          },
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Api', {
+          id: 'api-1',
+          slug: 'api',
+          order: 1,
+          requests: [
+            {
+              ...createRestRequest('Ping', { id: 'req-ping', url: `${rest.url}/echo` }),
+              assertions: [{ type: 'status', equals: 200 }],
+            },
+          ],
+        }),
+      ],
+    },
   };
   return withEchoApis(base, [
     echoApi('Mirror', 0, [
@@ -178,7 +180,7 @@ describe('an echo API in a project folder', () => {
   };
   const onDisk: Project = {
     ...createProject('Echo on disk', { id: 'echo-project' }),
-    extraContainers: { echo: [mirror] },
+    containers: { echo: [mirror] },
   };
   const sandbox = createScriptSandbox();
   const checker = createScriptChecker();
@@ -228,7 +230,7 @@ describe('an echo API in a project folder', () => {
 
       const loaded = await loadProject(folder, { registry });
       expect(loaded.problems).toEqual([]);
-      expect(loaded.project.extraContainers).toEqual({ echo: [mirror] });
+      expect(loaded.project.containers).toEqual({ echo: [mirror] });
 
       const { selected, unmatched } = selectRequests(loaded.project, [], registry);
       expect(unmatched).toEqual([]);
@@ -264,7 +266,7 @@ describe('an echo API in a project folder', () => {
   it('removes the file of a request that is gone, and nothing else', async () => {
     await saveProject(onDisk, folder, { registry });
     const shorterMirror: EchoApi = { ...mirror, requests: mirror.requests.slice(0, 1) };
-    const shorter: Project = { ...onDisk, extraContainers: { echo: [shorterMirror] } };
+    const shorter: Project = { ...onDisk, containers: { echo: [shorterMirror] } };
 
     const result = await saveProject(shorter, folder, { registry });
 
@@ -278,7 +280,7 @@ describe('an echo API in a project folder', () => {
     const before = await readFile(apiFile);
 
     const loaded = await loadProject(folder);
-    expect(loaded.project.extraContainers).toBeUndefined();
+    expect(loaded.project.containers).toEqual({});
     expect(unsupportedOf(loaded.project)).toEqual([
       { dir: 'apis', slug: 'Mirror', kind: 'echo', reason: 'unknown-kind', name: 'Mirror', order: 0 },
     ]);

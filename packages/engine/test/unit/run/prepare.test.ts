@@ -105,10 +105,8 @@ function makeProject(options: ProjectOptions = {}): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: { baseUrl: 'https://base.example.test' },
     disabledProperties: [],
-    interfaces: [iface],
-    apis: [api],
-    grpcApis: [],
-    wsApis: [],
+    containers: { soap: [iface], rest: [api] },
+
     sequences: [],
     mocks: [],
     environments: [ENV],
@@ -686,7 +684,7 @@ describe('prepareFor — gRPC', () => {
     return {
       ...base,
       environments: [{ ...ENV, endpoints: { ...ENV.endpoints, greeter: 'grpc.env.test:443' } }],
-      grpcApis: [api],
+      containers: { ...base.containers, grpc: [api] },
     };
   }
   const grpcOf = (project: Project) => selectRequests(project, []).selected.find((s) => s.kind === 'grpc')!;

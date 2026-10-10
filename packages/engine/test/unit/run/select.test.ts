@@ -69,10 +69,8 @@ function makeProject(): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [alpha, beta],
-    apis: [billing],
-    grpcApis: [],
-    wsApis: [],
+    containers: { soap: [alpha, beta], rest: [billing] },
+
     sequences: [],
     mocks: [],
     environments: [],
@@ -127,7 +125,7 @@ describe('selectRequests — gRPC', () => {
         }),
       ],
     });
-    return { ...makeProject(), grpcApis: [greeter] };
+    return { ...makeProject(), containers: { ...makeProject().containers, grpc: [greeter] } };
   }
 
   it('walks a gRPC API in the shared order, non-orphaned requests of every method kind', () => {

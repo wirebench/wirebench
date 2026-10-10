@@ -408,8 +408,10 @@ behaviour except where it says so.
 
 1. **Engine leftovers** (§2): history records, issued tokens and the host slot, the WS-Security
    entry schemas.
-2. **One container map** (§9): SOAP's model out of core, the map and the typed readers, request
-   location and the secrets facet (§2).
+2. **One container map** (§9), in two pull requests:
+   1. the map, the typed readers and writers, and request location (§2);
+   2. SOAP's model out of core, the secrets facet (§2), and `workspace/reidentify.ts` reading SOAP's
+      containers through a module rather than its own exception.
 3. **Project-level files** (§3): webhooks into REST, WS-Security configurations into SOAP,
    `Project.keystores`.
 4. **Shared** (§4): `shared/kinds/`, wire types and channels per kind, composed; the channel-name

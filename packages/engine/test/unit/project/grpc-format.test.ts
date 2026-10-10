@@ -6,7 +6,13 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
+import {
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
+  grpcApisOf,
+  withGrpcApis,
+} from '../../../src/grpc/model.js';
 import type { GrpcApi } from '../../../src/grpc/model.js';
 import { loadProject } from '../../../src/project/load.js';
 import { createProject } from '../../../src/project/model.js';
@@ -14,7 +20,7 @@ import type { Project } from '../../../src/project/model.js';
 import { APIS_DIR } from '../../../src/project/paths.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, entry, restApisOf } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from './fixture.js';
 
 function greeter(): GrpcApi {
@@ -83,7 +89,7 @@ function project(): Project {
     baseUrl: 'https://petstore.test',
     requests: [createRestRequest('Health', { id: 'R0', url: '/health' })],
   });
-  return { ...createProject('Mixed', { id: 'P1' }), apis: [petstore], grpcApis: [greeter()] };
+  return { ...createProject('Mixed', { id: 'P1' }), containers: { rest: [petstore], grpc: [greeter()] } };
 }
 
 describe('the apis/ layout for a gRPC API', () => {
@@ -152,8 +158,8 @@ describe('round trip through a folder', () => {
     await saveProject(project(), dir);
     const { project: loaded, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    expect(loaded.grpcApis).toEqual([greeter()]);
-    expect(loaded.apis.map((api) => api.id)).toEqual(['A1']);
+    expect(grpcApisOf(loaded)).toEqual([greeter()]);
+    expect(restApisOf(loaded).map((api) => api.id)).toEqual(['A1']);
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -173,11 +179,13 @@ describe('round trip through a folder', () => {
     const dir = await tempProjectDir();
     const original = project();
     await saveProject(original, dir);
-    const api = original.grpcApis[0]!;
+    const api = grpcApisOf(original)[0]!;
     const folder = api.folders[0]!;
-    const renamed: Project = {
-      ...original,
-      grpcApis: [
+    const renamed: Project = withGrpcApis(
+      {
+        ...original,
+      },
+      [
         {
           ...api,
           folders: [
@@ -190,7 +198,7 @@ describe('round trip through a folder', () => {
           ],
         },
       ],
-    };
+    );
     const result = await saveProject(renamed, dir);
     expect([...result.written].sort()).toEqual([
       'apis/Greeter/requests/Greeter/Greet.body.json',
@@ -209,7 +217,7 @@ describe('round trip through a folder', () => {
     await mkdir(join(dir, APIS_DIR, 'Greeter', 'definition', 'protos'), { recursive: true });
     await writeFile(join(dir, APIS_DIR, 'Greeter', 'definition', 'manifest.yaml'), 'kind: proto\n');
     await writeFile(join(dir, APIS_DIR, 'Greeter', 'definition', 'protos', 'greeter.proto'), 'syntax = "proto3";\n');
-    await saveProject({ ...project(), grpcApis: [] }, dir);
+    await saveProject({ ...project(), containers: { ...project().containers, grpc: [] } }, dir);
     expect((await listTree(dir)).some((path) => path.startsWith('apis/Greeter/'))).toBe(false);
     await rm(dir, { recursive: true, force: true });
   });
@@ -221,7 +229,7 @@ describe('problems a damaged gRPC API reports', () => {
     await saveProject(project(), dir);
     await rm(join(dir, APIS_DIR, 'Greeter', 'requests', 'Health.body.json'));
     const { project: loaded, problems } = await loadProject(dir);
-    expect(loaded.grpcApis[0]?.requests[0]?.message).toBe('');
+    expect(grpcApisOf(loaded)[0]?.requests[0]?.message).toBe('');
     expect(problems).toEqual([
       {
         code: 'missing-body',
@@ -255,7 +263,7 @@ describe('problems a damaged gRPC API reports', () => {
     const file = join(dir, APIS_DIR, 'Greeter', 'requests', 'Health.request.yaml');
     await writeFile(file, (await readFile(file, 'utf8')).replace(/methodKind: .*\n/, ''));
     const { project: loaded } = await loadProject(dir);
-    expect(loaded.grpcApis[0]?.requests[0]?.methodKind).toBe('unary');
+    expect(grpcApisOf(loaded)[0]?.requests[0]?.methodKind).toBe('unary');
     await rm(dir, { recursive: true, force: true });
   });
 });

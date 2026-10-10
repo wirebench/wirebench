@@ -23,7 +23,7 @@ import { DEFAULT_CLI_SECRET_SOURCES } from '../../src/source-secrets.js';
 const request = createRestRequest('Me', { id: 'r1', slug: 'me', url: 'http://api.test/me' });
 const project = {
   ...createProject('P', { id: 'p1' }),
-  apis: [{ ...createApi('Api', { id: 'a1', slug: 'api' }), requests: [request] }],
+  containers: { rest: [{ ...createApi('Api', { id: 'a1', slug: 'api' }), requests: [request] }] },
 };
 
 const selected = selectRequests(project, ['Api/Me']).selected[0];

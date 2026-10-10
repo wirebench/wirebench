@@ -8,8 +8,13 @@
 import type { KeyValueEntry } from '../../http/entries.js';
 import type { RestBody, RestRequestDef } from '../../rest/model.js';
 import type { Project } from '../../project/model.js';
+import type { ContainerBase } from '../../protocol/module.js';
 import { SECRET_NAME_PATTERN, secretToken } from '../secret-token.js';
 import type { SecretFinding, SecretLocation } from './walk.js';
+import { soapInterfacesOf } from '../../soap/model.js';
+import { restApisOf } from '../../rest/model.js';
+import { grpcApisOf } from '../../grpc/model.js';
+import { wsApisOf } from '../../ws/model.js';
 
 export interface SecretMove {
   readonly finding: SecretFinding;
@@ -166,6 +171,61 @@ function restRequest(rw: Rewriter, request: RestRequestDef): RestRequestDef {
  */
 export function applySecretMoves(project: Project, moves: readonly SecretMove[]): SecretMovesResult {
   const rw = new Rewriter(moves);
+  const soap = mapShared(soapInterfacesOf(project), (iface) =>
+    patch(iface, {
+      operations: mapShared(iface.operations, (operation) =>
+        patch(operation, {
+          requests: mapShared(operation.requests, (request) =>
+            patch(request, {
+              headers: keyedEntries(rw, 'soap-header', { requestId: request.id }, request.headers),
+              envelopeXml: rw.text({ kind: 'soap-body', requestId: request.id }, request.envelopeXml),
+            }),
+          ),
+        }),
+      ),
+    }),
+  );
+  const rest = mapShared(restApisOf(project), (api) =>
+    mapTree(api, (request: RestRequestDef) => restRequest(rw, request)),
+  );
+  const grpc = mapShared(grpcApisOf(project), (api) =>
+    mapTree(
+      patch(api, { metadata: keyedEntries(rw, 'grpc-api-metadata', { apiId: api.id }, api.metadata) }),
+      (request: (typeof api.requests)[number]) =>
+        patch(request, {
+          metadata: keyedEntries(rw, 'grpc-metadata', { requestId: request.id }, request.metadata),
+          message: rw.text({ kind: 'grpc-message', requestId: request.id }, request.message),
+        }),
+    ),
+  );
+  const websocket = mapShared(wsApisOf(project), (api) =>
+    mapTree(
+      patch(api, { headers: keyedEntries(rw, 'ws-api-header', { apiId: api.id }, api.headers) }),
+      (request: (typeof api.requests)[number]) =>
+        patch(request, {
+          url: rw.text({ kind: 'ws-url', requestId: request.id }, request.url),
+          query: keyedEntries(rw, 'ws-query', { requestId: request.id }, request.query),
+          headers: keyedEntries(rw, 'ws-header', { requestId: request.id }, request.headers),
+          messages: mapShared(request.messages, (message) =>
+            message.format !== 'text'
+              ? message
+              : patch(message, {
+                  content: rw.text(
+                    { kind: 'ws-message', requestId: request.id, messageId: message.id },
+                    message.content,
+                  ),
+                }),
+          ),
+        }),
+    ),
+  );
+  // Only the kinds the project holds: one it has none of stays absent, and a kind no built-in
+  // protocol writes is kept as it is.
+  const lists: Readonly<Record<string, readonly ContainerBase[]>> = { soap, rest, grpc, websocket };
+  const containers = patch(
+    project.containers,
+    Object.fromEntries(Object.entries(lists).filter(([kind]) => kind in project.containers)),
+  );
   const next = patch(project, {
     properties: properties(rw, project.properties, (name) => ({ kind: 'project-property', name })),
     environments: mapShared(project.environments, (env) =>
@@ -177,55 +237,10 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
         })),
       }),
     ),
-    interfaces: mapShared(project.interfaces, (iface) =>
-      patch(iface, {
-        operations: mapShared(iface.operations, (operation) =>
-          patch(operation, {
-            requests: mapShared(operation.requests, (request) =>
-              patch(request, {
-                headers: keyedEntries(rw, 'soap-header', { requestId: request.id }, request.headers),
-                envelopeXml: rw.text({ kind: 'soap-body', requestId: request.id }, request.envelopeXml),
-              }),
-            ),
-          }),
-        ),
-      }),
-    ),
-    apis: mapShared(project.apis, (api) => mapTree(api, (request: RestRequestDef) => restRequest(rw, request))),
+    containers,
     ...(project.webhooks === undefined
       ? {}
       : { webhooks: mapTree(project.webhooks, (request: RestRequestDef) => restRequest(rw, request)) }),
-    grpcApis: mapShared(project.grpcApis, (api) =>
-      mapTree(
-        patch(api, { metadata: keyedEntries(rw, 'grpc-api-metadata', { apiId: api.id }, api.metadata) }),
-        (request: (typeof api.requests)[number]) =>
-          patch(request, {
-            metadata: keyedEntries(rw, 'grpc-metadata', { requestId: request.id }, request.metadata),
-            message: rw.text({ kind: 'grpc-message', requestId: request.id }, request.message),
-          }),
-      ),
-    ),
-    wsApis: mapShared(project.wsApis, (api) =>
-      mapTree(
-        patch(api, { headers: keyedEntries(rw, 'ws-api-header', { apiId: api.id }, api.headers) }),
-        (request: (typeof api.requests)[number]) =>
-          patch(request, {
-            url: rw.text({ kind: 'ws-url', requestId: request.id }, request.url),
-            query: keyedEntries(rw, 'ws-query', { requestId: request.id }, request.query),
-            headers: keyedEntries(rw, 'ws-header', { requestId: request.id }, request.headers),
-            messages: mapShared(request.messages, (message) =>
-              message.format !== 'text'
-                ? message
-                : patch(message, {
-                    content: rw.text(
-                      { kind: 'ws-message', requestId: request.id, messageId: message.id },
-                      message.content,
-                    ),
-                  }),
-            ),
-          }),
-      ),
-    ),
   });
   const stale = moves.map((m) => m.finding.id).filter((id) => !rw.applied.has(id));
   return { project: next, stale: [...new Set(stale)], values: Object.fromEntries(rw.applied) };

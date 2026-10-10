@@ -54,11 +54,11 @@ export async function mockProject(options: {
   let project: Project = createProject('Mocks', { id: 'P1' });
   if (options.wsdl !== undefined) {
     const iface = createInterface('Service', { id: 'I1', slug: 'service', definitionUrl: options.wsdl });
-    project = { ...project, interfaces: [iface] };
+    project = { ...project, containers: { ...project.containers, soap: [iface] } };
   }
   if (options.openapi !== undefined) {
     const api = createApi('Api', { id: 'A1', slug: 'api', order: 1 });
-    project = { ...project, apis: [api] };
+    project = { ...project, containers: { ...project.containers, rest: [api] } };
   }
   project = { ...project, mocks: options.mocks ?? [] };
   await saveProject(project, dir);

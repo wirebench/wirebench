@@ -22,7 +22,7 @@ function fixtureProject(): { project: Project; iface: ReturnType<typeof createIn
     ],
     defaultEndpointId: 'ep-default',
   });
-  project = { ...project, interfaces: [iface], properties: { name: 'proj-name' } };
+  project = { ...project, containers: { ...project.containers, soap: [iface] }, properties: { name: 'proj-name' } };
   return { project, iface };
 }
 

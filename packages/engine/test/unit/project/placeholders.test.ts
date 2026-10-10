@@ -5,50 +5,54 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
+import { createGrpcApi, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
 import { nodeFs } from '../../../src/project/fs.js';
 import type { FsLike } from '../../../src/project/fs.js';
 import { loadProject } from '../../../src/project/load.js';
-import { createProject, extraContainersOf, takenContainerSlugs, unsupportedOf } from '../../../src/project/model.js';
+import { containersOf, createProject, unsupportedOf, withContainersOf } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
+import { takenContainerSlugs } from '../../../src/project/container-slugs.js';
 import { uniqueSlug } from '../../../src/project/paths.js';
 import { saveProject } from '../../../src/project/save.js';
 import { defineProtocol } from '../../../src/protocol/module.js';
 import type { ContainerBase, ProtocolStorage } from '../../../src/protocol/module.js';
 import { createProtocolRegistry } from '../../../src/protocol/registry.js';
 import { BUILTIN_PROTOCOLS, createBuiltinRegistry, SCRIPTS_FEATURE } from '../../../src/protocols.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import { createWebhookCollection } from '../../../src/webhooks/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../src/ws/model.js';
 import { sampleProject, tempProjectDir } from './fixture.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 /** One REST API and one gRPC API, both with a request. */
 function baseProject(): Project {
   return {
     ...createProject('Placeholders', { id: 'P1' }),
-    apis: [
-      createApi('Shop', {
-        id: 'A1',
-        order: 0,
-        baseUrl: 'https://shop.test',
-        requests: [createRestRequest('List', { id: 'R1', url: '/items' })],
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'G1',
-        order: 1,
-        target: 'localhost:50051',
-        requests: [
-          createGrpcRequest('Hello', {
-            id: 'GR1',
-            service: 'demo.Greeter',
-            method: 'SayHello',
-            message: '{\n  "name": "abc123def456ghi789"\n}\n',
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Shop', {
+          id: 'A1',
+          order: 0,
+          baseUrl: 'https://shop.test',
+          requests: [createRestRequest('List', { id: 'R1', url: '/items' })],
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'G1',
+          order: 1,
+          target: 'localhost:50051',
+          requests: [
+            createGrpcRequest('Hello', {
+              id: 'GR1',
+              service: 'demo.Greeter',
+              method: 'SayHello',
+              message: '{\n  "name": "abc123def456ghi789"\n}\n',
+            }),
+          ],
+        }),
+      ],
+    },
   };
 }
 
@@ -95,11 +99,8 @@ const graphStorage: ProtocolStorage<GraphApi> = {
   },
   files: () => new Map<string, string>(),
   managed: () => Promise.resolve([]),
-  containers: (project) => extraContainersOf(project, 'graphql') as readonly GraphApi[],
-  withContainers: (project, containers) => ({
-    ...project,
-    extraContainers: { ...project.extraContainers, graphql: containers },
-  }),
+  containers: (project) => containersOf(project, 'graphql') as readonly GraphApi[],
+  withContainers: (project, containers) => withContainersOf(project, 'graphql', containers),
 };
 
 const withGraph = createProtocolRegistry(
@@ -130,8 +131,8 @@ describe('a container of an unknown kind', () => {
   it('loads as a placeholder with a problem, and the rest of the project loads', async () => {
     const { project, problems } = await loadProject(dir);
 
-    expect(project.apis.map((api) => api.slug)).toEqual(['Shop']);
-    expect(project.grpcApis.map((api) => api.slug)).toEqual(['Greeter']);
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Shop']);
+    expect(grpcApisOf(project).map((api) => api.slug)).toEqual(['Greeter']);
     expect(unsupportedOf(project)).toEqual([
       { dir: 'apis', slug: 'Graph', kind: 'graphql', reason: 'unknown-kind', name: 'Graph', order: 7 },
     ]);
@@ -179,7 +180,13 @@ describe('a container of an unknown kind', () => {
     const { project } = await loadProject(dir);
 
     const result = await saveProject(
-      { ...project, apis: project.apis.map((api) => ({ ...api, name: 'Shop, renamed' })) },
+      {
+        ...project,
+        containers: {
+          ...project.containers,
+          rest: restApisOf(project).map((api) => ({ ...api, name: 'Shop, renamed' })),
+        },
+      },
       dir,
     );
 
@@ -193,7 +200,10 @@ describe('a container of an unknown kind', () => {
     const { project } = await loadProject(dir);
 
     for (const name of ['Graph', 'graph']) {
-      const clashing = { ...project, apis: [...project.apis, createApi(name, { id: 'A9', order: 9 })] };
+      const clashing = {
+        ...project,
+        containers: { ...project.containers, rest: [...restApisOf(project), createApi(name, { id: 'A9', order: 9 })] },
+      };
       await expect(saveProject(clashing, dir)).rejects.toMatchObject({
         name: 'ProjectError',
         code: 'container-slug-conflict',
@@ -216,7 +226,7 @@ describe('a container of an unknown kind', () => {
 
     expect(problems).toEqual([]);
     expect(unsupportedOf(project)).toEqual([]);
-    expect(extraContainersOf(project, 'graphql')).toEqual([
+    expect(containersOf(project, 'graphql')).toEqual([
       { kind: 'graphql', id: 'GQ1', name: 'Graph', slug: 'Graph', order: 7 },
     ]);
   });
@@ -238,8 +248,8 @@ describe('a container whose protocol is switched off', () => {
   it('loads as a placeholder that says so', async () => {
     const { project, problems } = await loadProject(dir, { registry: grpcOff });
 
-    expect(project.grpcApis).toEqual([]);
-    expect(project.apis.map((api) => api.slug)).toEqual(['Shop']);
+    expect(grpcApisOf(project)).toEqual([]);
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Shop']);
     expect(unsupportedOf(project)).toEqual([
       { dir: 'apis', slug: 'Greeter', kind: 'grpc', reason: 'feature-disabled', name: 'Greeter', order: 1 },
     ]);
@@ -259,7 +269,13 @@ describe('a container whose protocol is switched off', () => {
     const { project } = await loadProject(dir, { registry: grpcOff });
 
     const result = await saveProject(
-      { ...project, apis: project.apis.map((api) => ({ ...api, name: 'Shop, renamed' })) },
+      {
+        ...project,
+        containers: {
+          ...project.containers,
+          rest: restApisOf(project).map((api) => ({ ...api, name: 'Shop, renamed' })),
+        },
+      },
       dir,
       { registry: grpcOff },
     );
@@ -271,21 +287,24 @@ describe('a container whose protocol is switched off', () => {
     const back = await loadProject(dir);
     expect(back.problems).toEqual([]);
     expect(unsupportedOf(back.project)).toEqual([]);
-    expect(back.project.grpcApis).toEqual(baseProject().grpcApis);
+    expect(grpcApisOf(back.project)).toEqual(grpcApisOf(baseProject()));
   });
 
   it('is left byte-identical by a save whose registry cannot write it, though the project holds it in memory', async () => {
     const before = await snapshot(join(dir, 'apis', 'Greeter'));
     // Loaded with every protocol on: the gRPC API is a container in memory, not a placeholder.
     const { project } = await loadProject(dir);
-    expect(project.grpcApis.map((api) => api.slug)).toEqual(['Greeter']);
+    expect(grpcApisOf(project).map((api) => api.slug)).toEqual(['Greeter']);
     expect(unsupportedOf(project)).toEqual([]);
 
     const result = await saveProject(
       {
         ...project,
-        apis: project.apis.map((api) => ({ ...api, name: 'Shop, renamed' })),
-        grpcApis: project.grpcApis.map((api) => ({ ...api, name: 'Greeter, renamed' })),
+        containers: {
+          ...project.containers,
+          rest: restApisOf(project).map((api) => ({ ...api, name: 'Shop, renamed' })),
+          grpc: grpcApisOf(project).map((api) => ({ ...api, name: 'Greeter, renamed' })),
+        },
       },
       dir,
       { registry: grpcOff },
@@ -318,7 +337,7 @@ describe('a kind in the wrong directory', () => {
       'apis/Soapy/api.yaml',
       'interfaces/Wrong/interface.yaml',
     ]);
-    expect(project.interfaces).toEqual([]);
+    expect(soapInterfacesOf(project)).toEqual([]);
 
     const result = await saveProject(project, dir);
     expect(result.removed).toEqual([]);
@@ -355,7 +374,13 @@ describe('the webhook collection with REST switched off', () => {
     ]);
 
     const result = await saveProject(
-      { ...project, grpcApis: project.grpcApis.map((api) => ({ ...api, name: 'Greeter, renamed' })) },
+      {
+        ...project,
+        containers: {
+          ...project.containers,
+          grpc: grpcApisOf(project).map((api) => ({ ...api, name: 'Greeter, renamed' })),
+        },
+      },
       dir,
       { registry: restOff },
     );
@@ -365,7 +390,7 @@ describe('the webhook collection with REST switched off', () => {
 
     const back = await loadProject(dir);
     expect(back.project.webhooks?.requests.map((request) => request.slug)).toEqual(['order-created']);
-    expect(back.project.apis.map((api) => api.slug)).toEqual(['Shop']);
+    expect(restApisOf(back.project).map((api) => api.slug)).toEqual(['Shop']);
     await rm(dir, { recursive: true, force: true });
   });
 });
@@ -376,10 +401,10 @@ describe('the webhook collection with REST switched off', () => {
  * loads them whole again.
  */
 describe.each([
-  { kind: 'soap', containers: (project: Project) => project.interfaces },
-  { kind: 'rest', containers: (project: Project) => project.apis },
-  { kind: 'grpc', containers: (project: Project) => project.grpcApis },
-  { kind: 'websocket', containers: (project: Project) => project.wsApis },
+  { kind: 'soap', containers: (project: Project) => soapInterfacesOf(project) },
+  { kind: 'rest', containers: (project: Project) => restApisOf(project) },
+  { kind: 'grpc', containers: (project: Project) => grpcApisOf(project) },
+  { kind: 'websocket', containers: (project: Project) => wsApisOf(project) },
 ])('the project with $kind switched off', ({ kind, containers }) => {
   let dir: string;
 
@@ -387,21 +412,25 @@ describe.each([
     dir = await tempProjectDir();
     const withHooks: Project = {
       ...sampleProject(),
-      apis: baseProject().apis,
-      grpcApis: baseProject().grpcApis,
-      wsApis: [
-        createWsApi('Live', {
-          id: 'W1',
-          order: 2,
-          url: 'wss://live.test/feed',
-          requests: [
-            createWsRequest('Feed', {
-              id: 'WR1',
-              messages: [createWsSavedMessage('Subscribe', { id: 'WM1', content: '{"op":"sub"}' })],
-            }),
-          ],
-        }),
-      ],
+      containers: {
+        ...sampleProject().containers,
+        rest: restApisOf(baseProject()),
+        grpc: grpcApisOf(baseProject()),
+        websocket: [
+          createWsApi('Live', {
+            id: 'W1',
+            order: 2,
+            url: 'wss://live.test/feed',
+            requests: [
+              createWsRequest('Feed', {
+                id: 'WR1',
+                messages: [createWsSavedMessage('Subscribe', { id: 'WM1', content: '{"op":"sub"}' })],
+              }),
+            ],
+          }),
+        ],
+      },
+
       webhooks: createWebhookCollection({
         target: 'https://hooks.test',
         requests: [createRestRequest('order.created', { id: 'H1', slug: 'order-created', url: '/orders' })],
@@ -443,12 +472,18 @@ describe('a container of a kind the save has no module for, held in memory', () 
     await saveProject(baseProject(), dir);
     await addGraph(dir);
     const before = await snapshot(join(dir, 'apis', 'Graph'));
-    // Loaded where GraphQL is a protocol: the container is in `extraContainers`, not a placeholder.
+    // Loaded where GraphQL is a protocol: the container is in `containers`, not a placeholder.
     const { project } = await loadProject(dir, { registry: withGraph });
-    expect(extraContainersOf(project, 'graphql').map((container) => container.slug)).toEqual(['Graph']);
+    expect(containersOf(project, 'graphql').map((container) => container.slug)).toEqual(['Graph']);
 
     const result = await saveProject(
-      { ...project, apis: project.apis.map((api) => ({ ...api, name: 'Shop, renamed' })) },
+      {
+        ...project,
+        containers: {
+          ...project.containers,
+          rest: restApisOf(project).map((api) => ({ ...api, name: 'Shop, renamed' })),
+        },
+      },
       dir,
     );
 

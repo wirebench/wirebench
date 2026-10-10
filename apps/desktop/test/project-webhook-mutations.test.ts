@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createApi, createProject, createRestRequest, createWebhookFolder } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, createWebhookFolder, restApisOf } from '@wirebench/engine';
 import {
   addWebhookFolder,
   addWebhookGroup,
@@ -95,7 +95,7 @@ describe('webhook mutations', () => {
   });
 
   it('adds an imported group and unlinks it when its API goes', () => {
-    const withApi = { ...bare(), apis: [createApi('Petstore', { id: 'api-1' })] };
+    const withApi = { ...bare(), containers: { rest: [createApi('Petstore', { id: 'api-1' })] } };
     const group = createWebhookFolder('Petstore', {
       id: 'g1',
       source: { apiId: 'api-1' },
@@ -118,7 +118,7 @@ describe('webhook mutations', () => {
 
   it('refuses to move a webhook item into an API, or an API item into the collection', () => {
     const withApi = addApi(bare(), { name: 'Petstore', baseUrl: 'https://petstore.test' }).project;
-    const apiId = withApi.apis[0]!.id;
+    const apiId = restApisOf(withApi)[0]!.id;
     const apiFolder = addFolder(withApi, { apiId, name: 'Root' });
     const hook = addWebhookRequest(apiFolder.project, {});
     expect(() => moveNode(hook.project, { nodeId: hook.createdId!, parentId: apiFolder.createdId!, index: 0 })).toThrow(

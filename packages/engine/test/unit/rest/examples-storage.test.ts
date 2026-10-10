@@ -11,7 +11,15 @@ import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createFolder, createRestRequest, entry, exampleBodyExtension } from '../../../src/rest/model.js';
+import {
+  createApi,
+  createFolder,
+  createRestRequest,
+  entry,
+  exampleBodyExtension,
+  restApisOf,
+  withRestApis,
+} from '../../../src/rest/model.js';
 import type { RestRequestDef, RestResponseExample } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from '../project/fixture.js';
 
@@ -43,7 +51,7 @@ function withExamples(request: RestRequestDef): RestRequestDef {
 function petsProject(requests: readonly RestRequestDef[]): Project {
   return {
     ...createProject('Pets', { id: 'P1' }),
-    apis: [createApi('pets', { id: 'A1', baseUrl: 'https://pets.test', requests })],
+    containers: { rest: [createApi('pets', { id: 'A1', baseUrl: 'https://pets.test', requests })] },
   };
 }
 
@@ -72,8 +80,8 @@ describe('response examples on disk', () => {
     const { project: loaded, problems } = await loadProject(dir);
 
     expect(problems).toEqual([]);
-    expect(loaded.apis[0]!.folders).toEqual([]);
-    expect(loaded.apis[0]!.requests[0]!.examples).toEqual(EXAMPLES);
+    expect(restApisOf(loaded)[0]!.folders).toEqual([]);
+    expect(restApisOf(loaded)[0]!.requests[0]!.examples).toEqual(EXAMPLES);
   });
 
   it('is byte-stable: saving what was loaded changes nothing', async () => {
@@ -97,7 +105,7 @@ describe('response examples on disk', () => {
     const { project, problems } = await loadProject(dir);
 
     expect(problems).toEqual([]);
-    expect(project.apis[0]!.requests[0]!.examples).toBeUndefined();
+    expect(restApisOf(project)[0]!.requests[0]!.examples).toBeUndefined();
   });
 
   it('names example body files by content type', () => {
@@ -113,7 +121,7 @@ describe('response examples on disk', () => {
 
     const { project, problems } = await loadProject(dir);
 
-    expect(project.apis[0]!.requests[0]!.examples![0]!.body).toBeUndefined();
+    expect(restApisOf(project)[0]!.requests[0]!.examples![0]!.body).toBeUndefined();
     expect(problems).toEqual([
       expect.objectContaining({
         code: 'missing-body',
@@ -149,7 +157,7 @@ describe('response examples on disk', () => {
 
     const { project, problems } = await loadProject(dir);
 
-    const request = project.apis[0]!.requests.find((r) => r.id === 'R1')!;
+    const request = restApisOf(project)[0]!.requests.find((r) => r.id === 'R1')!;
     expect(request.examples![0]!.body).toBeUndefined();
     expect(problems).toContainEqual(
       expect.objectContaining({ code: 'example-file-invalid', file: 'apis/pets/requests/get-pet.request.yaml' }),
@@ -172,22 +180,24 @@ describe('response examples on disk', () => {
     });
     // The request has no examples, so nothing of its own is written into the folder that shares the name.
     const project = petsProject([{ ...getPet(), examples: [] }]);
-    const api = project.apis[0]!;
-    const withFolder: Project = {
-      ...project,
-      apis: [
+    const api = restApisOf(project)[0]!;
+    const withFolder: Project = withRestApis(
+      {
+        ...project,
+      },
+      [
         {
           ...api,
           folders: [createFolder('get-pet.examples', { id: 'F1', slug: 'get-pet.examples', requests: [inner] })],
         },
       ],
-    };
+    );
     await saveProject(withFolder, dir);
 
     const { project: loaded, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    expect(loaded.apis[0]!.folders.map((folder) => folder.slug)).toEqual(['get-pet.examples']);
-    expect(loaded.apis[0]!.folders[0]!.requests.map((r) => r.id)).toEqual(['R3']);
+    expect(restApisOf(loaded)[0]!.folders.map((folder) => folder.slug)).toEqual(['get-pet.examples']);
+    expect(restApisOf(loaded)[0]!.folders[0]!.requests.map((r) => r.id)).toEqual(['R3']);
 
     const result = await saveProject(loaded, dir);
     expect(result.removed).toEqual([]);
@@ -201,7 +211,7 @@ describe('response examples on disk', () => {
   it('moves the examples folder with a renamed request', async () => {
     await saveProject(petsProject([getPet()]), dir);
     const { project } = await loadProject(dir);
-    const request = project.apis[0]!.requests[0]!;
+    const request = restApisOf(project)[0]!.requests[0]!;
 
     await saveProject(petsProject([{ ...request, name: 'Fetch pet', slug: 'fetch-pet' }]), dir);
 
@@ -211,7 +221,7 @@ describe('response examples on disk', () => {
     ]);
     const reloaded = await loadProject(dir);
     expect(reloaded.problems).toEqual([]);
-    expect(reloaded.project.apis[0]!.requests[0]!.examples).toEqual(EXAMPLES);
+    expect(restApisOf(reloaded.project)[0]!.requests[0]!.examples).toEqual(EXAMPLES);
   });
 
   it('deletes the examples folder with its request', async () => {

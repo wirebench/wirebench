@@ -10,6 +10,7 @@ import type { MockExchangeEvent, RunningMock } from '../../../src/mock/server.js
 import { nodeFs } from '../../../src/project/fs.js';
 import { soapMocking } from '../../../src/soap/mock.js';
 import { mockProject, wsdlFixture } from '../mock/fixture.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const CALCULATOR = wsdlFixture('public/calculator/service.wsdl');
 const SOAP11 = 'http://schemas.xmlsoap.org/soap/envelope/';
@@ -176,7 +177,13 @@ describe('SOAP mock services', () => {
     await expect(
       soapMocking.generate({ project, root: dir, fs: nodeFs, containerId: 'I1', binding: '{urn:x}Nope' }),
     ).rejects.toMatchObject({ code: 'mock-binding-unknown' });
-    const uncached = { ...project, interfaces: project.interfaces.map((i) => ({ ...i, cacheDefinition: false })) };
+    const uncached = {
+      ...project,
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((i) => ({ ...i, cacheDefinition: false })),
+      },
+    };
     await expect(
       soapMocking.generate({ project: uncached, root: dir, fs: nodeFs, containerId: 'I1' }),
     ).rejects.toMatchObject({

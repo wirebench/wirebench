@@ -4,6 +4,8 @@ import type { Project } from '../../../../src/project/model.js';
 import { createApi, createFolder, createRestRequest, entry as kv } from '../../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../../src/grpc/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../../src/ws/model.js';
+import type { GrpcApi } from '../../../../src/grpc/model.js';
+import type { WsApi } from '../../../../src/ws/model.js';
 import { maskedPreview, scanProjectForSecrets } from '../../../../src/secrets/scan/scan.js';
 import { hooksProject } from '../../webhooks/fixture.js';
 
@@ -62,7 +64,7 @@ describe('scanProjectForSecrets locations', () => {
       definitionUrl: 'x.wsdl',
       operations: [{ name: 'Login', bindingName: 'B', slug: 'login', order: 0, requests: [req] }],
     });
-    const findings = scanProjectForSecrets(project({ interfaces: [iface] }));
+    const findings = scanProjectForSecrets(project({ containers: { soap: [iface] } }));
     expect(findings.map((f) => [f.location, f.rule, f.value])).toEqual([
       [{ kind: 'soap-header', requestId: 's1', name: 'Authorization', index: 0 }, 'bearer', 'abc123def456ghi789'],
       [{ kind: 'soap-body', requestId: 's1' }, 'sensitive-name', 'FAKEpw'],
@@ -85,7 +87,7 @@ describe('scanProjectForSecrets locations', () => {
       body: { kind: 'form', fields: [kv('grant_type', 'x'), kv('client_secret', 'FAKEsecret')] },
     });
     const api = createApi('Billing API', { requests: [r], folders: [createFolder('Auth', { requests: [r2] })] });
-    const findings = scanProjectForSecrets(project({ apis: [api] }));
+    const findings = scanProjectForSecrets(project({ containers: { rest: [api] } }));
     expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
       [
         { kind: 'rest-url', requestId: 'r1', name: 'api_key' },
@@ -122,7 +124,9 @@ describe('scanProjectForSecrets locations', () => {
       metadata: [kv('authorization', 'Bearer abc123def456ghi789')],
       message: `{"token": "${GH}"}`,
     });
-    const findings = scanProjectForSecrets(project({ grpcApis: [createGrpcApi('Svc', { requests: [g] })] }));
+    const findings = scanProjectForSecrets(
+      project({ containers: { grpc: [createGrpcApi('Svc', { requests: [g] })] } }),
+    );
     expect(findings.map((f) => [f.location, f.rule])).toEqual([
       [{ kind: 'grpc-metadata', requestId: 'g1', name: 'authorization', index: 0 }, 'bearer'],
       [{ kind: 'grpc-message', requestId: 'g1' }, 'vendor-token'],
@@ -138,7 +142,9 @@ describe('scanProjectForSecrets locations', () => {
         createWsSavedMessage('bin', { id: 'm2', format: 'binary', content: GH }),
       ],
     });
-    const findings = scanProjectForSecrets(project({ wsApis: [createWsApi('Chat API', { requests: [w] })] }));
+    const findings = scanProjectForSecrets(
+      project({ containers: { websocket: [createWsApi('Chat API', { requests: [w] })] } }),
+    );
     expect(findings.map((f) => [f.location, f.rule, f.value])).toEqual([
       [{ kind: 'ws-header', requestId: 'w1', name: 'Cookie', index: 0 }, 'sensitive-name', 'sid=FAKE'],
       [{ kind: 'ws-message', requestId: 'w1', messageId: 'm1' }, 'sensitive-name', 'changeme'],
@@ -148,7 +154,9 @@ describe('scanProjectForSecrets locations', () => {
   it('ws request URL and query table', () => {
     const url = 'wss://h/socket?token=FAKEtok1&page=2';
     const w = createWsRequest('Chat', { id: 'w1', url, query: [kv('page', '2'), kv('access_token', 'FAKEq')] });
-    const findings = scanProjectForSecrets(project({ wsApis: [createWsApi('Chat API', { requests: [w] })] }));
+    const findings = scanProjectForSecrets(
+      project({ containers: { websocket: [createWsApi('Chat API', { requests: [w] })] } }),
+    );
     expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
       [{ kind: 'ws-url', requestId: 'w1', name: 'token' }, 'sensitive-name', 'FAKEtok1', 'Chat API › Chat › URL'],
       [
@@ -163,7 +171,9 @@ describe('scanProjectForSecrets locations', () => {
 
   it('ws request URL near miss: an ordinary parameter', () => {
     const w = createWsRequest('Chat', { id: 'w1', url: 'ws://h/?page=2', query: [kv('page', '3')] });
-    expect(scanProjectForSecrets(project({ wsApis: [createWsApi('Chat API', { requests: [w] })] }))).toEqual([]);
+    expect(
+      scanProjectForSecrets(project({ containers: { websocket: [createWsApi('Chat API', { requests: [w] })] } })),
+    ).toEqual([]);
   });
 
   it('the password of a URL userinfo, in a REST and a WS URL', () => {
@@ -171,8 +181,10 @@ describe('scanProjectForSecrets locations', () => {
     const w = createWsRequest('W', { id: 'w1', url: 'wss://bob:FAKEwspw@h/socket' });
     const findings = scanProjectForSecrets(
       project({
-        apis: [createApi('A', { requests: [r, createRestRequest('R2', { id: 'r2', url: 'https://alice@h/x' })] })],
-        wsApis: [createWsApi('W', { requests: [w] })],
+        containers: {
+          rest: [createApi('A', { requests: [r, createRestRequest('R2', { id: 'r2', url: 'https://alice@h/x' })] })],
+          websocket: [createWsApi('W', { requests: [w] })],
+        },
       }),
     );
     expect(findings.map((f) => [f.location, f.rule, f.value])).toEqual([
@@ -192,17 +204,19 @@ describe('scanProjectForSecrets locations', () => {
         ],
       },
     });
-    const f = only(project({ apis: [createApi('A', { requests: [r] })] }));
+    const f = only(project({ containers: { rest: [createApi('A', { requests: [r] })] } }));
     expect(f.location).toEqual({ kind: 'rest-body', requestId: 'r2', field: 1, name: 'client_secret' });
   });
 
   it('api-level gRPC metadata and WS headers', () => {
-    const g = createGrpcApi('Svc', { id: 'ga' });
-    const w = createWsApi('Chat API', { id: 'wa' });
+    const g: GrpcApi = {
+      ...createGrpcApi('Svc', { id: 'ga' }),
+      metadata: [kv('x-trace', '1'), kv('x-api-key', 'FAKEkey')],
+    };
+    const w: WsApi = { ...createWsApi('Chat API', { id: 'wa' }), headers: [kv('Authorization', `Token ${GH}`)] };
     const findings = scanProjectForSecrets(
       project({
-        grpcApis: [{ ...g, metadata: [kv('x-trace', '1'), kv('x-api-key', 'FAKEkey')] }],
-        wsApis: [{ ...w, headers: [kv('Authorization', `Token ${GH}`)] }],
+        containers: { grpc: [g], websocket: [w] },
       }),
     );
     expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
@@ -238,7 +252,9 @@ describe('finding ids', () => {
   it('are stable across two scans with repeats, and unique across a project', () => {
     const p = project({
       properties: { p: `${GH} x ${GH} y ${GH}`, token: GH },
-      apis: [createApi('A', { requests: [createRestRequest('R', { id: 'r1', url: `https://h/?token=${GH}` })] })],
+      containers: {
+        rest: [createApi('A', { requests: [createRestRequest('R', { id: 'r1', url: `https://h/?token=${GH}` })] })],
+      },
     });
     const a = scanProjectForSecrets(p).map((f) => f.id);
     const b = scanProjectForSecrets(p).map((f) => f.id);

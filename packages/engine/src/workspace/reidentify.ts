@@ -9,11 +9,12 @@
 
 import { defaultContentId, generateId } from '../project/model.js';
 import type { Attachment, IdGenerator, Project, SoapRequestDef, WssRef } from '../project/model.js';
+import { soapInterfacesOf } from '../soap/model.js';
 
 /** Every entity id in `project`, in visit order (an id shared by two entities is deduplicated). */
 function collectIds(project: Project): string[] {
   const ids: string[] = [project.id];
-  for (const iface of project.interfaces) {
+  for (const iface of soapInterfacesOf(project)) {
     ids.push(iface.id);
     for (const endpoint of iface.endpoints) {
       ids.push(endpoint.id);
@@ -113,16 +114,19 @@ export function reidentifyProject(project: Project, newId: IdGenerator = generat
   return {
     ...project,
     id: mapId(project.id),
-    interfaces: project.interfaces.map((iface) => ({
-      ...iface,
-      id: mapId(iface.id),
-      endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, id: mapId(endpoint.id) })),
-      ...optional('defaultEndpointId', mapRef(iface.defaultEndpointId)),
-      operations: iface.operations.map((operation) => ({
-        ...operation,
-        requests: operation.requests.map(reidentifyRequest),
+    containers: {
+      ...project.containers,
+      soap: soapInterfacesOf(project).map((iface) => ({
+        ...iface,
+        id: mapId(iface.id),
+        endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, id: mapId(endpoint.id) })),
+        ...optional('defaultEndpointId', mapRef(iface.defaultEndpointId)),
+        operations: iface.operations.map((operation) => ({
+          ...operation,
+          requests: operation.requests.map(reidentifyRequest),
+        })),
       })),
-    })),
+    },
     environments: project.environments.map((environment) => ({ ...environment, id: mapId(environment.id) })),
     ...optional('activeEnvironmentId', mapRef(project.activeEnvironmentId)),
     wss: {

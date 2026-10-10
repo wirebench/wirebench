@@ -111,59 +111,62 @@ const TEMPLATES: Record<string, Pick<RestSendInput['request'], 'method' | 'url' 
 function project(steps: SequenceStep[], settings?: SequenceSettings): Project {
   return {
     ...createProject('Shop', { id: 'P1' }),
-    apis: [
-      createApi('Shop', {
-        id: 'A1',
-        baseUrl: url,
-        requests: Object.entries(TEMPLATES).map(([id, template]) =>
-          createRestRequest(id, { id, method: template.method, url: template.url, headers: [...template.headers] }),
-        ),
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'G1',
-        target: grpc.target,
-        tls: false,
-        requests: [
-          createGrpcRequest('replies', {
-            id: 'replies',
-            service: 'wirebench.greet.Greeter',
-            method: 'LotsOfReplies',
-            methodKind: 'server-streaming',
-            message: '{"count": 3}',
-          }),
-          createGrpcRequest('endless', {
-            id: 'endless',
-            service: 'wirebench.greet.Greeter',
-            method: 'LotsOfReplies',
-            methodKind: 'server-streaming',
-            message: '{"count": 1000, "delay_ms": 50}',
-          }),
-        ],
-      }),
-    ],
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'W1',
-        url: lastOnly.url,
-        requests: [
-          createWsRequest('deaf', {
-            id: 'deaf',
-            url: deaf.url,
-            messages: [createWsSavedMessage('One', { id: 'm3', content: 'one' })],
-          }),
-          createWsRequest('chat', {
-            id: 'chat',
-            url: '/',
-            messages: [
-              createWsSavedMessage('One', { id: 'm1', content: 'one' }),
-              createWsSavedMessage('Two', { id: 'm2', content: 'two' }),
-            ],
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Shop', {
+          id: 'A1',
+          baseUrl: url,
+          requests: Object.entries(TEMPLATES).map(([id, template]) =>
+            createRestRequest(id, { id, method: template.method, url: template.url, headers: [...template.headers] }),
+          ),
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'G1',
+          target: grpc.target,
+          tls: false,
+          requests: [
+            createGrpcRequest('replies', {
+              id: 'replies',
+              service: 'wirebench.greet.Greeter',
+              method: 'LotsOfReplies',
+              methodKind: 'server-streaming',
+              message: '{"count": 3}',
+            }),
+            createGrpcRequest('endless', {
+              id: 'endless',
+              service: 'wirebench.greet.Greeter',
+              method: 'LotsOfReplies',
+              methodKind: 'server-streaming',
+              message: '{"count": 1000, "delay_ms": 50}',
+            }),
+          ],
+        }),
+      ],
+      websocket: [
+        createWsApi('Chat', {
+          id: 'W1',
+          url: lastOnly.url,
+          requests: [
+            createWsRequest('deaf', {
+              id: 'deaf',
+              url: deaf.url,
+              messages: [createWsSavedMessage('One', { id: 'm3', content: 'one' })],
+            }),
+            createWsRequest('chat', {
+              id: 'chat',
+              url: '/',
+              messages: [
+                createWsSavedMessage('One', { id: 'm1', content: 'one' }),
+                createWsSavedMessage('Two', { id: 'm2', content: 'two' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    },
+
     sequences: [createSequence('Checkout', { id: 'S1', steps, ...(settings !== undefined ? { settings } : {}) })],
   };
 }

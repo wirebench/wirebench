@@ -256,10 +256,12 @@ function project(scripts?: RequestScripts): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [iface],
-    apis: [api],
-    grpcApis: [grpcApi('Greeter', 'greeter', 2), grpcApi('Uncached', 'uncached', 3)],
-    wsApis: [],
+    containers: {
+      soap: [iface],
+      rest: [api],
+      grpc: [grpcApi('Greeter', 'greeter', 2), grpcApi('Uncached', 'uncached', 3)],
+    },
+
     sequences: [],
     mocks: [],
     webhooks: createWebhookCollection({

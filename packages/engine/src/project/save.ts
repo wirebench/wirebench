@@ -25,7 +25,8 @@ import { readSequences } from '../sequence/load.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
 import { listApiTreeFiles, toAbsolute } from './managed-files.js';
-import { takenContainerSlugs, unsupportedOf } from './model.js';
+import { takenContainerSlugs } from './container-slugs.js';
+import { unsupportedOf } from './model.js';
 import type { Project } from './model.js';
 import {
   APIS_DIR,

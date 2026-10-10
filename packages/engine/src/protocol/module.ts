@@ -9,6 +9,7 @@ import type { ProtocolMocking } from '../mock/contract.js';
 import type { FsLike } from '../project/fs.js';
 import type { ProjectProblem } from '../project/load.js';
 import type { Project } from '../project/model.js';
+import type { RequestFileLocation } from '../project/request-tree.js';
 import type { RunContext } from '../run/context.js';
 import type { ExchangeHandle, ExchangeOptions } from '../run/exchange.js';
 import type { SendHost } from '../run/host.js';
@@ -75,6 +76,11 @@ export interface ProtocolStorage<C extends ContainerBase = ContainerBase> {
   containers(project: Project): readonly C[];
   /** The project with its containers of this kind replaced. */
   withContainers(project: Project, containers: readonly C[]): Project;
+  /**
+   * Where the request with `requestId` is written, when `container` holds it. A kind that leaves it
+   * out has no request files a host places a sidecar beside.
+   */
+  requestLocation?(container: C, requestId: string): RequestFileLocation | undefined;
 }
 
 /**

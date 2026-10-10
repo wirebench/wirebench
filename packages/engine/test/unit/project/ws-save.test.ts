@@ -13,8 +13,8 @@ import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { APIS_DIR } from '../../../src/project/paths.js';
 import { saveProject } from '../../../src/project/save.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createGrpcApi, createGrpcRequest, grpcApisOf } from '../../../src/grpc/model.js';
+import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
 import { listTree, tempProjectDir } from './fixture.js';
 
@@ -32,19 +32,24 @@ describe('saveProject for a WebSocket API', () => {
         createWsSavedMessage('Blob', { id: 'm2', format: 'binary', content: 'AAEC' }),
       ],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     await saveProject(project, dir);
     expect(await listTree(dir)).toContain('apis/Live/requests/Feed.msg-Subscribe.json');
     expect(await listTree(dir)).toContain('apis/Live/requests/Feed.msg-Blob.b64');
 
     const withOneMessage = {
       ...emptyProject(),
-      wsApis: [
-        createWsApi('Live', {
-          id: 'a1',
-          requests: [{ ...request, messages: [request.messages[0]!] }],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Live', {
+            id: 'a1',
+            requests: [{ ...request, messages: [request.messages[0]!] }],
+          }),
+        ],
+      },
     };
     const result = await saveProject(withOneMessage, dir);
     expect(result.removed).toContain('apis/Live/requests/Feed.msg-Blob.b64');
@@ -60,17 +65,22 @@ describe('saveProject for a WebSocket API', () => {
       id: 'r1',
       messages: [createWsSavedMessage('Subscribe', { id: 'm1', content: '{"op":"sub"}' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     await saveProject(project, dir);
 
     const renamed = {
       ...emptyProject(),
-      wsApis: [
-        createWsApi('Live', {
-          id: 'a1',
-          requests: [{ ...request, name: 'Ticker', slug: 'Ticker' }],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Live', {
+            id: 'a1',
+            requests: [{ ...request, name: 'Ticker', slug: 'Ticker' }],
+          }),
+        ],
+      },
     };
     await saveProject(renamed, dir);
     const after = await listTree(dir);
@@ -86,18 +96,23 @@ describe('saveProject for a WebSocket API', () => {
       id: 'r1',
       messages: [createWsSavedMessage('Subscribe', { id: 'm1', content: '{"op":"sub"}' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     await saveProject(project, dir);
     expect(await listTree(dir)).toContain('apis/Live/requests/Feed.msg-Subscribe.json');
 
     const asText = {
       ...emptyProject(),
-      wsApis: [
-        createWsApi('Live', {
-          id: 'a1',
-          requests: [{ ...request, messages: [{ ...request.messages[0]!, content: 'plain text, not json' }] }],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Live', {
+            id: 'a1',
+            requests: [{ ...request, messages: [{ ...request.messages[0]!, content: 'plain text, not json' }] }],
+          }),
+        ],
+      },
     };
     const result = await saveProject(asText, dir);
     expect(result.removed).toContain('apis/Live/requests/Feed.msg-Subscribe.json');
@@ -113,7 +128,10 @@ describe('saveProject for a WebSocket API', () => {
       id: 'r1',
       messages: [createWsSavedMessage('Subscribe', { id: 'm1', content: '{"op":"sub"}' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     await saveProject(project, dir);
     await mkdir(join(dir, APIS_DIR, 'Live', 'requests'), { recursive: true });
     await writeFile(join(dir, APIS_DIR, 'Live', 'requests', 'notes.msg-x.txt'), 'not owned by any request');
@@ -141,13 +159,16 @@ describe('an existing REST/gRPC save still round-trips unchanged', () => {
       tls: false,
       requests: [createGrpcRequest('Health', { id: 'Q0', order: 0, service: 'S', method: 'M', message: '{}' })],
     });
-    const project: Project = { ...emptyProject(), apis: [petstore], grpcApis: [greeter] };
+    const project: Project = {
+      ...emptyProject(),
+      containers: { ...emptyProject().containers, rest: [petstore], grpc: [greeter] },
+    };
     const result = await saveProject(project, dir);
     expect(result.removed).toEqual([]);
     const { project: loaded, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    expect(loaded.apis.map((a) => a.id)).toEqual(['A1']);
-    expect(loaded.grpcApis.map((a) => a.id)).toEqual(['G1']);
+    expect(restApisOf(loaded).map((a) => a.id)).toEqual(['A1']);
+    expect(grpcApisOf(loaded).map((a) => a.id)).toEqual(['G1']);
     await rm(dir, { recursive: true, force: true });
   });
 });

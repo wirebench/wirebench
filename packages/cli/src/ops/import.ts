@@ -8,21 +8,23 @@ import { basename, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   apiDefinitionDir,
+  contractPorts,
   createHttpFetchDocument,
   createInterface,
   createRequest,
   DEFAULT_WSA_CONFIG,
   definitionCacheDir,
-  contractPorts,
   detectImportFormat,
   endpointsFromContract,
   generateId,
   generateSoapRequest,
-  importWsdl,
   importOpenApi,
+  importWsdl,
   nextApiOrder,
   qnameToString,
+  restApisOf,
   saveProject,
+  soapInterfacesOf,
   takenContainerSlugs,
   uniqueSlug,
   writeApiDefinitionCache,
@@ -189,7 +191,7 @@ async function addWsdl(
       slug,
       definitionUrl: result.bundle.root.location,
       targetNamespace: result.definition.targetNamespace,
-      order: project.interfaces.length,
+      order: soapInterfacesOf(project).length,
       cacheDefinition: cache,
       endpoints,
       operations: operationsOf(result, endpoints[0]?.id),
@@ -197,7 +199,10 @@ async function addWsdl(
     // A WSDL that declares WS-Addressing turns it on straight away, as the desktop's import does.
     wsa: { ...DEFAULT_WSA_CONFIG, enabled: result.wsa.enabled, version: result.wsa.version },
   };
-  await saveProject({ ...project, interfaces: [...project.interfaces, iface] }, context.projectDir);
+  await saveProject(
+    { ...project, containers: { ...project.containers, soap: [...soapInterfacesOf(project), iface] } },
+    context.projectDir,
+  );
   const cacheProblems = cache
     ? await cacheWrite(() => writeDefinitionCache(result.bundle, definitionCacheDir(context.projectDir, slug)))
     : [];
@@ -250,7 +255,10 @@ async function addOpenApi(
   const cache = project.settings.cacheDefinitions;
   const version = imported.summary.declaredVersion;
   const api: RestApi = { ...imported.api, slug, definition: { source: read.source, cache, version } };
-  await saveProject({ ...project, apis: [...project.apis, api] }, context.projectDir);
+  await saveProject(
+    { ...project, containers: { ...project.containers, rest: [...restApisOf(project), api] } },
+    context.projectDir,
+  );
   const cacheProblems = cache
     ? await cacheWrite(() =>
         writeApiDefinitionCache(imported.documents, apiDefinitionDir(context.projectDir, slug), {

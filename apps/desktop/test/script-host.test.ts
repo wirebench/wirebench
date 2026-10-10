@@ -31,7 +31,7 @@ function model(scripts: RequestScripts | undefined): Project {
     baseUrl: 'http://shop.test',
     requests: [scripts === undefined ? request : { ...request, scripts }],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 let host: ScriptHost | undefined;

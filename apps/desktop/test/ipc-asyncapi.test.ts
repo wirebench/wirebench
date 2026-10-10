@@ -32,6 +32,8 @@ import {
   type ProjectWire,
   type WsRequestWire,
 } from '../src/shared/wire-types.js';
+import { wsApisOf } from '@wirebench/engine';
+import type { WsApi } from '@wirebench/engine';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -448,13 +450,13 @@ describe('contract on the wire', () => {
       .project;
     type Folder = {
       readonly folders: readonly Folder[];
-      readonly requests: (typeof project.wsApis)[number]['requests'];
+      readonly requests: WsApi['requests'];
     };
     const all = (container: Folder): Folder['requests'] => [
       ...container.requests,
       ...container.folders.flatMap((folder) => all(folder)),
     ];
-    const api = project.wsApis[0];
+    const api = wsApisOf(project)[0];
     const request =
       api === undefined ? undefined : all(api).find((candidate) => candidate.messages.some((m) => m.contract));
     if (request === undefined) throw new Error('no request with a contract message');
@@ -467,7 +469,7 @@ describe('contract on the wire', () => {
         content: m.content,
       })),
     });
-    const patchedApi = patched.project.wsApis[0];
+    const patchedApi = wsApisOf(patched.project)[0];
     const after =
       patchedApi === undefined ? undefined : all(patchedApi).find((candidate) => candidate.id === request.id);
     expect(after?.messages.map((m) => m.contract)).toEqual(request.messages.map((m) => m.contract));

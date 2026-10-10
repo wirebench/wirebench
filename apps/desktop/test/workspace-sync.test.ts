@@ -83,7 +83,7 @@ function calcProject(envelope: string): Project {
       },
     ],
   });
-  return { ...createProject('Calc', { id: PROJECT_ID }), interfaces: [iface] };
+  return { ...createProject('Calc', { id: PROJECT_ID }), containers: { soap: [iface] } };
 }
 
 function share(overrides: Partial<GitShareSettings> = {}): Parameters<typeof saveShare>[1] {

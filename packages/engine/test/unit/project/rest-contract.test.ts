@@ -9,14 +9,14 @@ import { loadProject } from '../../../src/project/load.js';
 import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import { tempProjectDir } from './fixture.js';
 
 function projectWith(request: RestRequestDef): Project {
   return {
     ...createProject('Contract', { id: 'P1' }),
-    apis: [createApi('Pets', { id: 'a1', baseUrl: 'https://pets.example.test', requests: [request] })],
+    containers: { rest: [createApi('Pets', { id: 'a1', baseUrl: 'https://pets.example.test', requests: [request] })] },
   };
 }
 
@@ -47,7 +47,7 @@ describe('the contract link on a REST request file', () => {
 
     const { project, problems, again } = await roundTrip(files);
     expect(problems).toEqual([]);
-    expect(project.apis[0]?.requests[0]?.contract).toEqual({ method: 'get', path: '/pets/{petId}' });
+    expect(restApisOf(project)[0]?.requests[0]?.contract).toEqual({ method: 'get', path: '/pets/{petId}' });
     expect(again.get('apis/Pets/requests/Get pet.request.yaml')).toBe(text);
   });
 
@@ -59,7 +59,7 @@ describe('the contract link on a REST request file', () => {
 
     const { project, problems, again, onDisk } = await roundTrip(files);
     expect(problems).toEqual([]);
-    expect(project.apis[0]?.requests[0]).not.toHaveProperty('contract');
+    expect(restApisOf(project)[0]?.requests[0]).not.toHaveProperty('contract');
     expect(onDisk).toBe(text);
     for (const [relative, content] of files) {
       expect(again.get(relative), relative).toBe(content);

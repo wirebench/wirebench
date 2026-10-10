@@ -29,7 +29,11 @@ async function invoke(payload: unknown): Promise<{ ok: boolean; value?: unknown 
 function model(): Project {
   const request = createRestRequest('Add pet', { id: 'rest-1', method: 'POST', url: '/pets' });
   const api = createApi('Pets', { id: 'api-1', baseUrl: 'https://pets.example.test/v1', requests: [request] });
-  return { ...createProject('Demo', { id: 'p1' }), properties: { base: 'https://pets.example.test/v1' }, apis: [api] };
+  return {
+    ...createProject('Demo', { id: 'p1' }),
+    properties: { base: 'https://pets.example.test/v1' },
+    containers: { rest: [api] },
+  };
 }
 
 function setup(

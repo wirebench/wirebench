@@ -60,7 +60,7 @@ function resolution(
     ...(overrides.auth !== undefined ? { auth: overrides.auth } : {}),
   });
   const api = createApi('Petstore', { id: 'api-1', baseUrl: 'https://api.test', requests: [request] });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 /** The project surface these two channels touch, and nothing more. */
@@ -206,7 +206,7 @@ describe('request.curl for a REST request', () => {
       settings: { timeoutMs: 30_000, followRedirects: true },
     });
     const api = createApi('Petstore', { id: 'api-1', baseUrl: 'https://api.test', requests: [rest] });
-    const withValue: Project = { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+    const withValue: Project = { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 
     setup({ rest: withValue });
     const hidden = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }));

@@ -96,7 +96,7 @@ function model(opts: { unresolvedIn?: string; hang?: boolean } = {}): Project {
     auth: { type: 'basic', username: 'user', passwordRef: 'ref' },
     requests: [createRestRequest('List pets', { id: 'rest-1', method: 'GET', url: '/pets/${#Env#stage}' })],
   });
-  return { ...createProject('Shop', { id: 'p1' }), interfaces: [iface], apis: [api], environments };
+  return { ...createProject('Shop', { id: 'p1' }), containers: { soap: [iface], rest: [api] }, environments };
 }
 
 function fakeProject(project: Project) {

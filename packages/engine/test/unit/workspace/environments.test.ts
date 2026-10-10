@@ -34,7 +34,12 @@ function fixtureProject(environments: readonly Environment[] = []): { project: P
     endpoints: [{ id: 'ep-default', name: 'Default', url: 'https://default.test/soap', authMode: 'override' }],
     defaultEndpointId: 'ep-default',
   });
-  project = { ...project, interfaces: [iface], properties: { name: 'proj-name' }, environments };
+  project = {
+    ...project,
+    containers: { ...project.containers, soap: [iface] },
+    properties: { name: 'proj-name' },
+    environments,
+  };
   return { project, iface };
 }
 

@@ -17,26 +17,28 @@ import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
 function project(): Project {
   return {
     ...createProject('P', { id: 'P' }),
-    apis: [
-      createApi('Shop', {
-        id: 'A',
-        requests: [
-          createRestRequest('Log in', { id: 'login' }),
-          { ...createRestRequest('Cart', { id: 'cart' }), assertions: [{ type: 'status', equals: 201 }] },
-          createRestRequest('Pay', { id: 'pay' }),
-        ],
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Feed', {
-        id: 'G',
-        requests: [
-          createGrpcRequest('Watch', { id: 'watch', methodKind: 'server-streaming' }),
-          { ...createGrpcRequest('Old', { id: 'old', methodKind: 'server-streaming' }), orphaned: true },
-        ],
-      }),
-    ],
-    wsApis: [createWsApi('Live', { id: 'W', requests: [createWsRequest('Socket', { id: 'socket' })] })],
+    containers: {
+      rest: [
+        createApi('Shop', {
+          id: 'A',
+          requests: [
+            createRestRequest('Log in', { id: 'login' }),
+            { ...createRestRequest('Cart', { id: 'cart' }), assertions: [{ type: 'status', equals: 201 }] },
+            createRestRequest('Pay', { id: 'pay' }),
+          ],
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Feed', {
+          id: 'G',
+          requests: [
+            createGrpcRequest('Watch', { id: 'watch', methodKind: 'server-streaming' }),
+            { ...createGrpcRequest('Old', { id: 'old', methodKind: 'server-streaming' }), orphaned: true },
+          ],
+        }),
+      ],
+      websocket: [createWsApi('Live', { id: 'W', requests: [createWsRequest('Socket', { id: 'socket' })] })],
+    },
   };
 }
 

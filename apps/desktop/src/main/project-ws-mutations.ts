@@ -13,7 +13,16 @@
  * turned into a slug (`uniqueSlug`).
  */
 
-import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage, uniqueSlug } from '@wirebench/engine';
+import {
+  createWsApi,
+  createWsFolder,
+  createWsRequest,
+  createWsSavedMessage,
+  nextApiOrder,
+  ProjectError,
+  uniqueSlug,
+  wsApisOf,
+} from '@wirebench/engine';
 import type {
   AuthConfig,
   Project,
@@ -23,7 +32,6 @@ import type {
   WsRequestSettings,
   WsSavedMessage,
 } from '@wirebench/engine';
-import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type { WsApiPatchWire, WsRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
 import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
@@ -42,11 +50,14 @@ function notFound(what: string, id: string): never {
 
 /** The WebSocket API with this id, or a clear error naming it. */
 export function requireWsApi(project: Project, apiId: string): WsApi {
-  return project.wsApis.find((api) => api.id === apiId) ?? notFound('WebSocket API', apiId);
+  return wsApisOf(project).find((api) => api.id === apiId) ?? notFound('WebSocket API', apiId);
 }
 
 function replaceApi(project: Project, next: WsApi): Project {
-  return { ...project, wsApis: project.wsApis.map((api) => (api.id === next.id ? next : api)) };
+  return {
+    ...project,
+    containers: { ...project.containers, websocket: wsApisOf(project).map((api) => (api.id === next.id ? next : api)) },
+  };
 }
 
 function renumber<T extends { readonly order: number }>(items: readonly T[]): T[] {
@@ -118,7 +129,7 @@ function containerHolds(container: Container, nodeId: string): boolean {
 
 /** The WebSocket API holding `nodeId` (a folder or a request), if any. */
 export function wsApiOwning(project: Project, nodeId: string): WsApi | undefined {
-  return project.wsApis.find((api) => containerHolds(api, nodeId));
+  return wsApisOf(project).find((api) => containerHolds(api, nodeId));
 }
 
 /** The WebSocket request with this id, wherever it is. */
@@ -126,7 +137,7 @@ export function findWsRequest(project: Project, requestId: string): WsRequestDef
   const find = (container: Container): WsRequestDef | undefined =>
     container.requests.find((request) => request.id === requestId) ??
     container.folders.reduce<WsRequestDef | undefined>((found, folder) => found ?? find(folder), undefined);
-  return project.wsApis.reduce<WsRequestDef | undefined>((found, api) => found ?? find(api), undefined);
+  return wsApisOf(project).reduce<WsRequestDef | undefined>((found, api) => found ?? find(api), undefined);
 }
 
 /** The WebSocket folder with this id, wherever it is. */
@@ -139,7 +150,7 @@ export function findWsFolder(project: Project, folderId: string): WsFolder | und
     }
     return undefined;
   };
-  return project.wsApis.reduce<WsFolder | undefined>((found, api) => found ?? find(api.folders), undefined);
+  return wsApisOf(project).reduce<WsFolder | undefined>((found, api) => found ?? find(api.folders), undefined);
 }
 
 /** The request, the API it sits in, and the folders down to it, outermost first. */
@@ -159,7 +170,7 @@ export function locateWsRequest(
     }
     return undefined;
   };
-  for (const api of project.wsApis) {
+  for (const api of wsApisOf(project)) {
     const found = within(api, []);
     if (found !== undefined) return { api, ...found };
   }
@@ -185,7 +196,10 @@ export function addWsApi(project: Project, input: { readonly name: string; reado
     ...(input.url !== undefined ? { url: input.url } : {}),
     order: nextApiOrder(project),
   });
-  return { project: { ...project, wsApis: [...project.wsApis, api] }, createdId: api.id };
+  return {
+    project: { ...project, containers: { ...project.containers, websocket: [...wsApisOf(project), api] } },
+    createdId: api.id,
+  };
 }
 
 /** Applies a patch to a WebSocket API. A `null` clears an optional field; an absent one leaves it alone. */
@@ -223,7 +237,12 @@ export function removeWsApi(project: Project, apiId: string): WsMutationResult {
   requireWsApi(project, apiId);
   // The others keep their orders: APIs of every kind share one order, so renumbering one kind would
   // give an API an order another kind holds. A gap is harmless; `nextApiOrder` goes past the highest.
-  return { project: { ...project, wsApis: project.wsApis.filter((api) => api.id !== apiId) } };
+  return {
+    project: {
+      ...project,
+      containers: { ...project.containers, websocket: wsApisOf(project).filter((api) => api.id !== apiId) },
+    },
+  };
 }
 
 /** Adds a folder to a WebSocket API's root or to another of its folders. */

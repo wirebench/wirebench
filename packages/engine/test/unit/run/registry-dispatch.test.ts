@@ -26,35 +26,37 @@ import { emptyStorage } from '../../helpers/empty-storage.js';
 
 const project: Project = {
   ...createProject('Dispatch', { id: 'proj-dispatch' }),
-  apis: [
-    createApi('Api', {
-      id: 'api-1',
-      slug: 'api',
-      order: 0,
-      auth: { type: 'bearer', tokenRef: 'ref-token' },
-      requests: [
-        {
-          ...createRestRequest('Ping', { id: 'req-ping', url: 'https://api.example.test/ping' }),
-          headers: [entry('X-Tenant', '${secret:tenant}')],
-          scripts: { api: 'wirebench', enabled: true, secrets: [], pre: { text: '' } },
-        },
-      ],
-    }),
-  ],
-  grpcApis: [
-    createGrpcApi('Greeter', {
-      id: 'api-greeter',
-      slug: 'greeter',
-      order: 1,
-      requests: [
-        createGrpcRequest('Hello', { id: 'g-hello' }),
-        createGrpcRequest('Chat', { id: 'g-chat', methodKind: 'bidi-streaming' }),
-      ],
-    }),
-  ],
-  wsApis: [
-    createWsApi('Feed', { id: 'api-feed', order: 2, requests: [createWsRequest('Ticker', { id: 'ws-ticker' })] }),
-  ],
+  containers: {
+    rest: [
+      createApi('Api', {
+        id: 'api-1',
+        slug: 'api',
+        order: 0,
+        auth: { type: 'bearer', tokenRef: 'ref-token' },
+        requests: [
+          {
+            ...createRestRequest('Ping', { id: 'req-ping', url: 'https://api.example.test/ping' }),
+            headers: [entry('X-Tenant', '${secret:tenant}')],
+            scripts: { api: 'wirebench', enabled: true, secrets: [], pre: { text: '' } },
+          },
+        ],
+      }),
+    ],
+    grpc: [
+      createGrpcApi('Greeter', {
+        id: 'api-greeter',
+        slug: 'greeter',
+        order: 1,
+        requests: [
+          createGrpcRequest('Hello', { id: 'g-hello' }),
+          createGrpcRequest('Chat', { id: 'g-chat', methodKind: 'bidi-streaming' }),
+        ],
+      }),
+    ],
+    websocket: [
+      createWsApi('Feed', { id: 'api-feed', order: 2, requests: [createWsRequest('Ticker', { id: 'ws-ticker' })] }),
+    ],
+  },
 };
 
 const context: RunContext = {

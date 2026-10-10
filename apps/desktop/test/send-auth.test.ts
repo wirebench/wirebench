@@ -30,7 +30,7 @@ function seeded(auth: SoapOwnerAuth): Project {
     cacheDefinition: false,
     operations: [{ name: 'Call', bindingName: '{urn:x}B', slug: 'call', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { soap: [iface] } };
 }
 
 /** Sends `req-1` through the engine, with a secret store that resolves exactly `sec_pw`. */

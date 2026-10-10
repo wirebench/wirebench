@@ -7,7 +7,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import { createApi, createProject, createRestRequest, entry } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, entry, restApisOf, withRestApis } from '@wirebench/engine';
 import type { GetSecret, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import {
@@ -67,7 +67,7 @@ function seeded(baseUrl: string): Project {
       }),
     ],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 /**
@@ -223,11 +223,13 @@ describe('history.resendRest against the test server', () => {
 
   it("does not check the request's own assertions on a resend, though the editor Send did", async () => {
     const base = seeded(server.url);
-    const api = base.apis[0]!;
-    const model: Project = {
-      ...base,
-      apis: [{ ...api, requests: [{ ...api.requests[0]!, assertions: [{ type: 'status', equals: 200 }] }] }],
-    };
+    const api = restApisOf(base)[0]!;
+    const model: Project = withRestApis(
+      {
+        ...base,
+      },
+      [{ ...api, requests: [{ ...api.requests[0]!, assertions: [{ type: 'status', equals: 200 }] }] }],
+    );
     const { send, entries } = harness(model);
 
     const first = await send('first', 'req-1');

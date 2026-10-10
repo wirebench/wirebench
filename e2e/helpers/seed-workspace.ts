@@ -76,7 +76,7 @@ export async function seedWorkspace(options: SeedWorkspaceOptions): Promise<Seed
     );
     const projectDir = workspaceProjectDir(dir, slug);
     await mkdir(projectDir, { recursive: true });
-    await saveProject({ ...project, interfaces }, projectDir);
+    await saveProject({ ...project, containers: { ...project.containers, soap: interfaces } }, projectDir);
     refs.push({ id: project.id, slug, source: 'internal' });
   }
 

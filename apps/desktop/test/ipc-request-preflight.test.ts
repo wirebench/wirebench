@@ -9,8 +9,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
 import {
-  parseSecretSources,
-  secretSourcesHash,
   createApi,
   createGrpcApi,
   createGrpcRequest,
@@ -21,6 +19,10 @@ import {
   createWsApi,
   createWsRequest,
   entry,
+  parseSecretSources,
+  restApisOf,
+  secretSourcesHash,
+  withRestApis,
 } from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
@@ -86,56 +88,58 @@ function seeded(active: string | null = 'env-dev'): Project {
     properties: { who: 'ada' },
     environments: active !== null ? [DEV] : [],
     ...(active !== null ? { activeEnvironmentId: active } : {}),
-    apis: [
-      createApi('Petstore', {
-        id: 'api-1',
-        slug: 'petstore',
-        baseUrl: 'https://api.default',
-        auth: { type: 'basic', username: 'ada', passwordRef: 'sec_pw' },
-        requests: [
-          createRestRequest('Get pet', {
-            id: 'rest-1',
-            url: '/pets/{id}/${tenant}',
-            pathParams: [entry('id', '')],
-            query: [entry('q', '${nowhere}'), entry('who', '${#Project#who}')],
-            headers: [entry('X-Token', '${secret:tok}')],
-          }),
-          { ...createRestRequest('Legacy', { id: 'rest-orphan', url: '/legacy' }), orphaned: true },
-        ],
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'grpc-api-1',
-        slug: 'greeter',
-        target: 'localhost:50051',
-        requests: [
-          createGrpcRequest('SayHello', {
-            id: 'grpc-1',
-            service: 'greet.Greeter',
-            method: 'SayHello',
-            metadata: [entry('x-tenant', '${tenant}'), entry('x-missing', '${nothingHere}')],
-            message: '{"name": "${#Project#who}", "token": "${secret:tok}", "x": "${alsoNothing}"}',
-            auth: { type: 'bearer', tokenRef: 'sec_tok' },
-          }),
-        ],
-      }),
-    ],
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'ws-api-1',
-        slug: 'chat',
-        url: 'ws://chat.default',
-        requests: [
-          createWsRequest('Room', {
-            id: 'ws-1',
-            url: '/rooms/${tenant}',
-            query: [entry('k', '${notThere}'), entry('t', '${secret:tok}')],
-            auth: { type: 'api-key', name: 'key', in: 'header', valueRef: 'sec_key' },
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Petstore', {
+          id: 'api-1',
+          slug: 'petstore',
+          baseUrl: 'https://api.default',
+          auth: { type: 'basic', username: 'ada', passwordRef: 'sec_pw' },
+          requests: [
+            createRestRequest('Get pet', {
+              id: 'rest-1',
+              url: '/pets/{id}/${tenant}',
+              pathParams: [entry('id', '')],
+              query: [entry('q', '${nowhere}'), entry('who', '${#Project#who}')],
+              headers: [entry('X-Token', '${secret:tok}')],
+            }),
+            { ...createRestRequest('Legacy', { id: 'rest-orphan', url: '/legacy' }), orphaned: true },
+          ],
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'grpc-api-1',
+          slug: 'greeter',
+          target: 'localhost:50051',
+          requests: [
+            createGrpcRequest('SayHello', {
+              id: 'grpc-1',
+              service: 'greet.Greeter',
+              method: 'SayHello',
+              metadata: [entry('x-tenant', '${tenant}'), entry('x-missing', '${nothingHere}')],
+              message: '{"name": "${#Project#who}", "token": "${secret:tok}", "x": "${alsoNothing}"}',
+              auth: { type: 'bearer', tokenRef: 'sec_tok' },
+            }),
+          ],
+        }),
+      ],
+      websocket: [
+        createWsApi('Chat', {
+          id: 'ws-api-1',
+          slug: 'chat',
+          url: 'ws://chat.default',
+          requests: [
+            createWsRequest('Room', {
+              id: 'ws-1',
+              url: '/rooms/${tenant}',
+              query: [entry('k', '${notThere}'), entry('t', '${secret:tok}')],
+              auth: { type: 'api-key', name: 'key', in: 'header', valueRef: 'sec_key' },
+            }),
+          ],
+        }),
+      ],
+    },
   };
 }
 
@@ -145,20 +149,22 @@ const PARENT_AT = '2026-09-28T10:42:00.000Z';
 function hooks(): Project {
   return {
     ...createProject('P', { id: 'p1' }),
-    apis: [
-      createApi('Petstore', {
-        id: 'api-1',
-        baseUrl: 'https://api.test',
-        requests: [
-          createRestRequest('Subscribe', {
-            id: 'parent',
-            method: 'POST',
-            url: '/subscriptions',
-            contract: { method: 'post', path: '/subscriptions' },
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Petstore', {
+          id: 'api-1',
+          baseUrl: 'https://api.test',
+          requests: [
+            createRestRequest('Subscribe', {
+              id: 'parent',
+              method: 'POST',
+              url: '/subscriptions',
+              contract: { method: 'post', path: '/subscriptions' },
+            }),
+          ],
+        }),
+      ],
+    },
     webhooks: createWebhookCollection({
       target: `${server.url}/in`,
       folders: [
@@ -285,8 +291,8 @@ describe('request.preflightRest', () => {
   });
 
   it('pins an orphaned request, and agrees with the send about where it goes', async () => {
-    const api = { ...seeded().apis[0]!, baseUrl: server.url, auth: { type: 'none' as const } };
-    registerOver({ ...seeded(null), apis: [api] });
+    const api = { ...restApisOf(seeded())[0]!, baseUrl: server.url, auth: { type: 'none' as const } };
+    registerOver(withRestApis(seeded(null), [api]));
     const dry = (await preflight('request.preflightRest', { requestId: 'rest-orphan' })) as { endpoint: string };
     expect(dry).toEqual({
       endpoint: `${server.url}/legacy`,
@@ -438,16 +444,21 @@ describe('preflight and secret sources', () => {
 
   it('warns about an invalid entry whether or not the mapping is approved', async () => {
     const project = seeded();
-    const rest = project.apis[0]!.requests[0]!;
-    const withBad: Project = {
-      ...project,
-      apis: [
+    const rest = restApisOf(project)[0]!.requests[0]!;
+    const withBad: Project = withRestApis(
+      {
+        ...project,
+      },
+      [
         {
-          ...project.apis[0]!,
-          requests: [{ ...rest, headers: [entry('X-Token', '${secret:bad}')] }, ...project.apis[0]!.requests.slice(1)],
+          ...restApisOf(project)[0]!,
+          requests: [
+            { ...rest, headers: [entry('X-Token', '${secret:bad}')] },
+            ...restApisOf(project)[0]!.requests.slice(1),
+          ],
         },
       ],
-    };
+    );
     registerOver(withBad, {}, () => snapshot(secretSourcesHash(shared)));
     expect(secretRefs(await preflight('request.preflightRest', { requestId: 'rest-1' }))).toEqual([
       ['bad', 'secret-source-invalid'],

@@ -48,7 +48,13 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
-import type { IssuedToken, WssIssuedTokenEntry } from '../wss/model.js';
+import type {
+  IssuedToken,
+  WssContext,
+  WssIncomingConfig,
+  WssIssuedTokenEntry,
+  WssOutgoingConfig,
+} from '../wss/model.js';
 import type { IssuedTokenTarget, KerberosTokenFn } from '../wss/trust/client.js';
 import { kerberosToken } from '../http/auth/kerberos-token.js';
 import type { AttemptedRequest } from '../run/host.js';
@@ -72,10 +78,10 @@ import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { WsdlDefinition } from '../wsdl/model.js';
 import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { createWssContext } from '../wss/model.js';
-import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import { dropRejectedIssuedToken, issuedTokenSourceOf, soapHostOf, withSoapHost } from './host.js';
+import { soapInterfacesOf } from './model.js';
 
 /** The editor's unsent envelope, endpoint and headers. A send uses them in place of the saved ones. */
 export interface SoapOverride {
@@ -801,7 +807,7 @@ async function prepareSoap(
  * request has that id.
  */
 export function soapItemFor(project: Project, requestId: string): SoapSelected | undefined {
-  for (const iface of project.interfaces) {
+  for (const iface of soapInterfacesOf(project)) {
     for (const operation of iface.operations) {
       const request = operation.requests.find((candidate) => candidate.id === requestId);
       if (request !== undefined) {
@@ -816,7 +822,7 @@ export function soapItemFor(project: Project, requestId: string): SoapSelected |
 /** SOAP's run facet. */
 export const soapRun: ProtocolRun<SoapSelected> = {
   groups(project) {
-    return project.interfaces.map((iface) => ({
+    return soapInterfacesOf(project).map((iface) => ({
       order: iface.order,
       name: iface.name,
       candidates: [...iface.operations].sort(byOrder).flatMap((operation) => {
@@ -833,7 +839,7 @@ export const soapRun: ProtocolRun<SoapSelected> = {
   },
 
   whyNotRunnable(project, requestId) {
-    for (const iface of project.interfaces) {
+    for (const iface of soapInterfacesOf(project)) {
       for (const operation of iface.operations) {
         const request = operation.requests.find((candidate) => candidate.id === requestId);
         if (request !== undefined) {

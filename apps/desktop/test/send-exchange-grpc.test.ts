@@ -18,8 +18,10 @@ import {
   createProject,
   DEFAULT_PREFERENCES,
   entry,
+  grpcApisOf,
   parseSecretPseudoRef,
   WirebenchError,
+  withGrpcApis,
 } from '@wirebench/engine';
 import type { ExchangeHandle, GrpcMethodKind, GrpcRequestDef, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
@@ -125,16 +127,18 @@ function seeded(req: GrpcRequestDef = request('SayHello'), target = server.targe
   return {
     ...createProject('Demo', { id: 'p1' }),
     properties: { who: 'Ada', tenant: 'acme' },
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'g-1',
-        target,
-        tls: false,
-        metadata: [entry('x-tenant', '${tenant}')],
-        auth: { type: 'bearer', tokenRef: 'sec_tok' },
-        folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [req] })],
-      }),
-    ],
+    containers: {
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'g-1',
+          target,
+          tls: false,
+          metadata: [entry('x-tenant', '${tenant}')],
+          auth: { type: 'bearer', tokenRef: 'sec_tok' },
+          folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [req] })],
+        }),
+      ],
+    },
   };
 }
 
@@ -593,11 +597,13 @@ describe('request.curl for a Kerberos gRPC request', () => {
     async (shown) => {
       const getSecret = vi.fn(secrets);
       const project = seeded();
-      const api = project.grpcApis[0]!;
-      const kerberos: Project = {
-        ...project,
-        grpcApis: [{ ...api, auth: { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'sec_pw' } }],
-      };
+      const api = grpcApisOf(project)[0]!;
+      const kerberos: Project = withGrpcApis(
+        {
+          ...project,
+        },
+        [{ ...api, auth: { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'sec_pw' } }],
+      );
       registerOver(kerberos, { getSecret, showSecrets: { get: () => shown } });
       const reply = unwrap<RequestCurlResponse>(await invoke('request.curl', { requestId: 'q-1', shell: 'posix' }));
       expect(reply.notes).toContain('Kerberos is not expressible in this command; no authorization is shown.');

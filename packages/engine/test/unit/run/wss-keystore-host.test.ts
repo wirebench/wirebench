@@ -16,6 +16,7 @@ import { resolveSoap, soapItemFor } from '../../../src/soap/run.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 import { testHost } from '../../helpers/send-host.js';
+import { withSoapInterfaces } from '../../../src/soap/model.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -45,14 +46,34 @@ function projectWith(keystorePath: string): Project {
     endpointUrl: 'http://127.0.0.1:1/soap',
     wssOutgoingRef: 'wss-out',
   };
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-1',
-    name: 'Test project',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: {},
-    disabledProperties: [],
-    interfaces: [
+  return withSoapInterfaces(
+    {
+      formatVersion: FORMAT_VERSION,
+      id: 'proj-1',
+      name: 'Test project',
+      settings: DEFAULT_PROJECT_SETTINGS,
+      properties: {},
+      disabledProperties: [],
+      containers: {},
+
+      sequences: [],
+      mocks: [],
+      environments: [],
+      wss: {
+        keystores: [
+          { id: 'ks-1', name: 'signer', document: { id: 'ks-1', name: 'signer', path: keystorePath, type: 'pem' } },
+        ],
+        outgoing: [
+          {
+            id: 'wss-out',
+            name: 'Out',
+            document: { id: 'wss-out', name: 'Out', entries: [{ kind: 'timestamp', timeToLiveSeconds: 300 }] },
+          },
+        ],
+        incoming: [],
+      },
+    },
+    [
       {
         kind: 'soap',
         id: 'iface-1',
@@ -66,26 +87,7 @@ function projectWith(keystorePath: string): Project {
         operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
       },
     ],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: {
-      keystores: [
-        { id: 'ks-1', name: 'signer', document: { id: 'ks-1', name: 'signer', path: keystorePath, type: 'pem' } },
-      ],
-      outgoing: [
-        {
-          id: 'wss-out',
-          name: 'Out',
-          document: { id: 'wss-out', name: 'Out', entries: [{ kind: 'timestamp', timeToLiveSeconds: 300 }] },
-        },
-      ],
-      incoming: [],
-    },
-  };
+  );
 }
 
 async function keystoreLoaderOf(project: Project, projectDir: string, extra: Partial<SendHost> = {}) {

@@ -3,6 +3,7 @@
  * wherever it sits (#63 scripts, #192 assertions). A container nothing changed in keeps its identity.
  */
 import type { Project } from '@wirebench/engine';
+import { grpcApisOf, restApisOf, soapInterfacesOf, wsApisOf } from '@wirebench/engine';
 
 /** A saved request of any protocol, as far as these changes go. */
 export interface Identified {
@@ -44,7 +45,7 @@ export function mapRequests<X extends Identified = Identified>(
 ): Project {
   // Every request of every protocol carries at least what `X` names (`scripts` and `assertions` are optional).
   const update = edit as Update;
-  const interfaces = mapSame(project.interfaces, (iface) => {
+  const interfaces = mapSame(soapInterfacesOf(project), (iface) => {
     const operations = mapSame(iface.operations, (operation) => {
       const requests = mapSame(operation.requests, (request) => update(request));
       return requests === operation.requests ? operation : { ...operation, requests };
@@ -53,9 +54,12 @@ export function mapRequests<X extends Identified = Identified>(
   });
   return {
     ...project,
-    interfaces,
-    apis: mapSame(project.apis, (api) => mapTree(api, update)),
-    grpcApis: mapSame(project.grpcApis, (api) => mapTree(api, update)),
-    ...(protocols.websocket === true ? { wsApis: mapSame(project.wsApis, (api) => mapTree(api, update)) } : {}),
+    containers: {
+      ...project.containers,
+      soap: interfaces,
+      rest: mapSame(restApisOf(project), (api) => mapTree(api, update)),
+      grpc: mapSame(grpcApisOf(project), (api) => mapTree(api, update)),
+      ...(protocols.websocket === true ? { websocket: mapSame(wsApisOf(project), (api) => mapTree(api, update)) } : {}),
+    },
   };
 }

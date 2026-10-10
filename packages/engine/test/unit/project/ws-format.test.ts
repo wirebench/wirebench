@@ -15,7 +15,7 @@ import type { Project } from '../../../src/project/model.js';
 import { projectFiles } from '../../../src/project/serialize.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../src/ws/model.js';
 import { tempProjectDir } from './fixture.js';
 
 function emptyProject(): Project {
@@ -53,7 +53,9 @@ describe('round-trips a WebSocket API byte-identically', () => {
     });
     const project = {
       ...emptyProject(),
-      wsApis: [createWsApi('Live', { id: 'a1', url: 'wss://live.example.test', requests: [request] })],
+      containers: {
+        websocket: [createWsApi('Live', { id: 'a1', url: 'wss://live.example.test', requests: [request] })],
+      },
     };
     const first = serializeProject(project);
     expect([...first.keys()].filter((k) => k.startsWith('apis/Live/')).sort()).toEqual([
@@ -65,7 +67,10 @@ describe('round-trips a WebSocket API byte-identically', () => {
     expect(first.get('apis/Live/api.yaml')).toContain('kind: websocket\n');
     const reloaded = await loadFrom(first);
     expect(reloaded.problems).toEqual([]);
-    expect(reloaded.project.wsApis[0]?.requests[0]?.messages.map((m) => m.content)).toEqual(['{"op":"sub"}', 'AAEC']);
+    expect(wsApisOf(reloaded.project)[0]?.requests[0]?.messages.map((m) => m.content)).toEqual([
+      '{"op":"sub"}',
+      'AAEC',
+    ]);
     expect(serializeProject(reloaded.project)).toEqual(first);
   });
 });
@@ -85,8 +90,11 @@ describe('a project with no WebSocket API', () => {
       tls: false,
       requests: [createGrpcRequest('Health', { id: 'Q0', order: 0, service: 'S', method: 'M', message: '{}' })],
     });
-    const withoutWs: Project = { ...emptyProject(), apis: [petstore], grpcApis: [greeter] };
-    const withEmptyWs: Project = { ...withoutWs, wsApis: [] };
+    const withoutWs: Project = {
+      ...emptyProject(),
+      containers: { ...emptyProject().containers, rest: [petstore], grpc: [greeter] },
+    };
+    const withEmptyWs: Project = { ...withoutWs, containers: { ...withoutWs.containers, websocket: [] } };
 
     const filesWithout = serializeProject(withoutWs);
     const filesWithEmpty = serializeProject(withEmptyWs);
@@ -106,7 +114,10 @@ describe('problems a damaged WebSocket API reports', () => {
       id: 'r1',
       messages: [createWsSavedMessage('Subscribe', { id: 'm1', content: '{"op":"sub"}' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     const files = serializeProject(project);
     const { problems } = await loadFrom(files);
     expect(problems).toEqual([]);
@@ -117,12 +128,15 @@ describe('problems a damaged WebSocket API reports', () => {
       id: 'r1',
       messages: [createWsSavedMessage('Subscribe', { id: 'm1', content: '{"op":"sub"}' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     const files = serializeProject(project);
     const withoutMessage = new Map(files);
     withoutMessage.delete('apis/Live/requests/Feed.msg-Subscribe.json');
     const { project: loaded, problems } = await loadFrom(withoutMessage);
-    expect(loaded.wsApis[0]?.requests[0]?.messages[0]?.content).toBe('');
+    expect(wsApisOf(loaded)[0]?.requests[0]?.messages[0]?.content).toBe('');
     expect(problems).toEqual([
       {
         code: 'missing-body',
@@ -139,7 +153,10 @@ describe('path safety of a WebSocket message slug', () => {
       id: 'r1',
       messages: [createWsSavedMessage('bad', { id: 'm1', slug: '../../etc', content: 'x' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     expect(() => serializeProject(project)).toThrow(/path/i);
   });
 
@@ -151,7 +168,10 @@ describe('path safety of a WebSocket message slug', () => {
         createWsSavedMessage('Two', { id: 'm2', slug: 'Same', content: 'b' }),
       ],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     let error: unknown;
     try {
       serializeProject(project);
@@ -168,18 +188,23 @@ describe('renaming a WebSocket request', () => {
       id: 'r1',
       messages: [createWsSavedMessage('Subscribe', { id: 'm1', content: '{"op":"sub"}' })],
     });
-    const project = { ...emptyProject(), wsApis: [createWsApi('Live', { id: 'a1', requests: [request] })] };
+    const project = {
+      ...emptyProject(),
+      containers: { websocket: [createWsApi('Live', { id: 'a1', requests: [request] })] },
+    };
     const before = serializeProject(project);
     expect([...before.keys()].some((k) => k.includes('Feed.'))).toBe(true);
 
     const renamed = {
       ...emptyProject(),
-      wsApis: [
-        createWsApi('Live', {
-          id: 'a1',
-          requests: [{ ...request, name: 'Ticker', slug: 'Ticker' }],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Live', {
+            id: 'a1',
+            requests: [{ ...request, name: 'Ticker', slug: 'Ticker' }],
+          }),
+        ],
+      },
     };
     const after = serializeProject(renamed);
     const afterKeys = [...after.keys()].filter((k) => k.startsWith('apis/Live/'));
@@ -214,13 +239,15 @@ describe('a WebSocket request linked to its contract', () => {
     });
     const project = {
       ...emptyProject(),
-      wsApis: [
-        createWsApi('Chat', {
-          id: 'a1',
-          url: 'wss://chat.example.test',
-          requests: [{ ...request, orphaned: true }],
-        }),
-      ],
+      containers: {
+        websocket: [
+          createWsApi('Chat', {
+            id: 'a1',
+            url: 'wss://chat.example.test',
+            requests: [{ ...request, orphaned: true }],
+          }),
+        ],
+      },
     };
     const first = serializeProject(project);
     const yaml = first.get('apis/Chat/requests/User chat.request.yaml') ?? '';
@@ -231,7 +258,7 @@ describe('a WebSocket request linked to its contract', () => {
 
     const reloaded = await loadFrom(first);
     expect(reloaded.problems).toEqual([]);
-    const loaded = reloaded.project.wsApis[0]?.requests[0];
+    const loaded = wsApisOf(reloaded.project)[0]?.requests[0];
     expect(loaded?.contract).toEqual({ channel: 'userChat' });
     expect(loaded?.orphaned).toBe(true);
     expect(loaded?.messages[0]?.contract).toEqual({ message: 'sendChat', generated });
@@ -246,13 +273,13 @@ describe('a WebSocket request linked to its contract', () => {
     });
     const project = {
       ...emptyProject(),
-      wsApis: [createWsApi('Live', { id: 'a1', url: 'wss://x.test', requests: [request] })],
+      containers: { websocket: [createWsApi('Live', { id: 'a1', url: 'wss://x.test', requests: [request] })] },
     };
     const first = serializeProject(project);
     const yaml = first.get('apis/Live/requests/Plain.request.yaml') ?? '';
     expect(yaml).not.toContain('contract');
     expect(yaml).not.toContain('orphaned');
-    const loaded = (await loadFrom(first)).project.wsApis[0]?.requests[0];
+    const loaded = wsApisOf((await loadFrom(first)).project)[0]?.requests[0];
     expect(loaded !== undefined && 'contract' in loaded).toBe(false);
     expect(loaded !== undefined && 'orphaned' in loaded).toBe(false);
     expect(loaded?.messages[0] !== undefined && 'contract' in loaded.messages[0]).toBe(false);
@@ -277,17 +304,19 @@ describe('the server an AsyncAPI-imported API was mapped against', () => {
   it('round-trips a chosen server and writes no server key when none was chosen', async () => {
     const withServer = {
       ...emptyProject(),
-      wsApis: [
-        {
-          ...createWsApi('Chat', { id: 'a1', url: 'wss://staging.example.test' }),
-          definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true, server: 'staging' },
-        },
-      ],
+      containers: {
+        websocket: [
+          {
+            ...createWsApi('Chat', { id: 'a1', url: 'wss://staging.example.test' }),
+            definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true, server: 'staging' },
+          },
+        ],
+      },
     };
     const files = serializeProject(withServer);
     expect(files.get('apis/Chat/api.yaml')).toContain('server: staging\n');
     const reloaded = await loadFrom(files);
-    expect(reloaded.project.wsApis[0]?.definition).toEqual({
+    expect(wsApisOf(reloaded.project)[0]?.definition).toEqual({
       kind: 'asyncapi',
       source: 'https://x.test/a.yaml',
       cache: true,
@@ -297,16 +326,18 @@ describe('the server an AsyncAPI-imported API was mapped against', () => {
 
     const without = {
       ...emptyProject(),
-      wsApis: [
-        {
-          ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
-          definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true },
-        },
-      ],
+      containers: {
+        websocket: [
+          {
+            ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
+            definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true },
+          },
+        ],
+      },
     };
     const plain = serializeProject(without);
     expect(plain.get('apis/Chat/api.yaml')).not.toContain('server');
-    expect((await loadFrom(plain)).project.wsApis[0]?.definition).toEqual({
+    expect(wsApisOf((await loadFrom(plain)).project)[0]?.definition).toEqual({
       kind: 'asyncapi',
       source: 'https://x.test/a.yaml',
       cache: true,
@@ -319,18 +350,20 @@ describe("an AsyncAPI definition's fetch credentials", () => {
     const auth = { type: 'bearer' as const, tokenRef: 'ref-t' };
     const project = {
       ...emptyProject(),
-      wsApis: [
-        {
-          ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
-          definition: { kind: 'asyncapi' as const, source: 'https://gateway.test/a.yaml', cache: true, auth },
-        },
-      ],
+      containers: {
+        websocket: [
+          {
+            ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
+            definition: { kind: 'asyncapi' as const, source: 'https://gateway.test/a.yaml', cache: true, auth },
+          },
+        ],
+      },
     };
     const files = serializeProject(project);
     expect(files.get('apis/Chat/api.yaml')).toContain('tokenRef: ref-t\n');
     const reloaded = await loadFrom(files);
     expect(reloaded.problems).toEqual([]);
-    expect(reloaded.project.wsApis[0]?.definition).toEqual({
+    expect(wsApisOf(reloaded.project)[0]?.definition).toEqual({
       kind: 'asyncapi',
       source: 'https://gateway.test/a.yaml',
       cache: true,
@@ -357,14 +390,16 @@ describe("a WebSocket request's assertions", () => {
     const bare = createWsRequest('Bare', { id: 'r2', url: '/bare', order: 1 });
     const project = {
       ...emptyProject(),
-      wsApis: [createWsApi('Live', { id: 'a1', url: 'wss://live.example.test', requests: [asserted, bare] })],
+      containers: {
+        websocket: [createWsApi('Live', { id: 'a1', url: 'wss://live.example.test', requests: [asserted, bare] })],
+      },
     };
     const files = serializeProject(project);
     expect(files.get('apis/Live/requests/Feed.request.yaml')).toContain('assertions:');
     expect(files.get('apis/Live/requests/Bare.request.yaml')).not.toContain('assertions');
 
     const loaded = await loadFrom(files);
-    const requests = loaded.project.wsApis[0]?.requests ?? [];
+    const requests = wsApisOf(loaded.project)[0]?.requests ?? [];
     expect(requests.find((r) => r.id === 'r1')?.assertions).toEqual(assertions);
     expect(requests.find((r) => r.id === 'r2')?.assertions).toEqual([]);
     expect(serializeProject(loaded.project)).toEqual(files);

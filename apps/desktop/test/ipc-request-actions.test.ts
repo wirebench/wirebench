@@ -112,7 +112,10 @@ class FakeProject {
       cacheDefinition: false,
       operations: [{ name: 'Add', bindingName: `{${TEM}}CalculatorSoap`, slug: 'add', order: 0, requests: [request] }],
     });
-    return { project: { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] }, projectDir: '/tmp/none' };
+    return {
+      project: { ...createProject('Demo', { id: 'proj-1' }), containers: { soap: [iface] } },
+      projectDir: '/tmp/none',
+    };
   }
   defaultWsaActionFor(): string {
     return this.wsa?.defaultAction ?? '';

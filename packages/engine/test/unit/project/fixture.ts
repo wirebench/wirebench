@@ -6,9 +6,11 @@ import {
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_REQUEST_PROPERTIES,
   FORMAT_VERSION,
+  type Interface,
   type Project,
 } from '../../../src/project/model.js';
 import { slugify } from '../../../src/project/paths.js';
+import { withSoapInterfaces } from '../../../src/soap/model.js';
 
 /** Deterministic ids so the fixture project is byte-stable across runs. */
 export function fixedIds(prefix = 'ID'): () => string {
@@ -77,168 +79,173 @@ export function sampleProject(): Project {
   const ordersEndpointId = 'EP-orders';
   const countryEndpointId = 'EP-country';
 
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: nextId(),
-    name: 'Demo Project',
-    description: 'Round-trip fixture',
-    settings: { ...DEFAULT_PROJECT_SETTINGS, resourceRoot: './res' },
-    properties: { region: 'eu-west-1', tier: 'gold' },
-    disabledProperties: ['tier'],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    interfaces: [
-      {
-        kind: 'soap',
-        id: nextId(),
-        name: 'CountryInfo',
-        slug: 'CountryInfo',
-        order: 0,
-        definitionUrl: 'http://example.test/CountryInfo.wsdl',
-        cacheDefinition: true,
-        targetNamespace: 'urn:country',
-        endpoints: [
-          { id: countryEndpointId, name: 'prod', url: 'https://prod.example.test/country', authMode: 'complement' },
-        ],
-        defaultEndpointId: countryEndpointId,
-        wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
-        operations: [
-          {
-            name: 'ListOfCountryNamesByCode',
-            bindingName: '{urn:country}CountryInfoSoap',
-            slug: 'ListOfCountryNamesByCode',
-            order: 0,
-            requests: [
-              request('Request 1', 0, '<Envelope/>\n', countryEndpointId),
-              request('Smoke test', 1, CRLF_ENVELOPE, countryEndpointId),
-              {
-                // Exercises every optional request field at once.
-                ...request('Kitchen sink', 2, '<Envelope>all</Envelope>', countryEndpointId),
-                description: 'uses every optional field',
-                endpointUrl: 'https://override.example.test/country',
-                auth: { type: 'basic', username: 'u', passwordRef: 'secret://country/basic' },
-                wsa: normalizeWsa({ enabled: true, version: '2004/08' }),
-                wssOutgoingRef: 'prod-signature',
-                wssIncomingRef: 'default',
-                attachments: [
-                  {
-                    id: 'AT1',
-                    name: 'invoice.pdf',
-                    contentType: 'application/pdf',
-                    size: 1234,
-                    part: 'file',
-                    type: 'MIME' as const,
-                    contentId: 'AT1@wirebench',
-                    cached: true,
-                    source: { kind: 'cache' as const, sha256: 'a'.repeat(64) },
-                  },
-                  {
-                    id: 'AT2',
-                    name: 'note.txt',
-                    contentType: 'text/plain',
-                    size: 6,
-                    type: 'CONTENT' as const,
-                    contentId: 'AT2@wirebench',
-                    cached: false,
-                    source: { kind: 'path' as const, path: 'notes/note.txt' },
-                  },
-                ],
-                properties: {
-                  ...DEFAULT_REQUEST_PROPERTIES,
-                  bindAddress: '127.0.0.1',
-                  dumpFile: './dump.xml',
-                  maxSizeBytes: 1024,
-                  wssPasswordType: 'digest' as const,
-                  wssTimeToLive: 300,
+  // Ids in the order the project always took them: its own, then the interfaces', then the rest.
+  const projectId = nextId();
+  const interfaces: Interface[] = [
+    {
+      kind: 'soap',
+      id: nextId(),
+      name: 'CountryInfo',
+      slug: 'CountryInfo',
+      order: 0,
+      definitionUrl: 'http://example.test/CountryInfo.wsdl',
+      cacheDefinition: true,
+      targetNamespace: 'urn:country',
+      endpoints: [
+        { id: countryEndpointId, name: 'prod', url: 'https://prod.example.test/country', authMode: 'complement' },
+      ],
+      defaultEndpointId: countryEndpointId,
+      wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
+      operations: [
+        {
+          name: 'ListOfCountryNamesByCode',
+          bindingName: '{urn:country}CountryInfoSoap',
+          slug: 'ListOfCountryNamesByCode',
+          order: 0,
+          requests: [
+            request('Request 1', 0, '<Envelope/>\n', countryEndpointId),
+            request('Smoke test', 1, CRLF_ENVELOPE, countryEndpointId),
+            {
+              // Exercises every optional request field at once.
+              ...request('Kitchen sink', 2, '<Envelope>all</Envelope>', countryEndpointId),
+              description: 'uses every optional field',
+              endpointUrl: 'https://override.example.test/country',
+              auth: { type: 'basic', username: 'u', passwordRef: 'secret://country/basic' },
+              wsa: normalizeWsa({ enabled: true, version: '2004/08' }),
+              wssOutgoingRef: 'prod-signature',
+              wssIncomingRef: 'default',
+              attachments: [
+                {
+                  id: 'AT1',
+                  name: 'invoice.pdf',
+                  contentType: 'application/pdf',
+                  size: 1234,
+                  part: 'file',
+                  type: 'MIME' as const,
+                  contentId: 'AT1@wirebench',
+                  cached: true,
+                  source: { kind: 'cache' as const, sha256: 'a'.repeat(64) },
                 },
+                {
+                  id: 'AT2',
+                  name: 'note.txt',
+                  contentType: 'text/plain',
+                  size: 6,
+                  type: 'CONTENT' as const,
+                  contentId: 'AT2@wirebench',
+                  cached: false,
+                  source: { kind: 'path' as const, path: 'notes/note.txt' },
+                },
+              ],
+              properties: {
+                ...DEFAULT_REQUEST_PROPERTIES,
+                bindAddress: '127.0.0.1',
+                dumpFile: './dump.xml',
+                maxSizeBytes: 1024,
+                wssPasswordType: 'digest' as const,
+                wssTimeToLive: 300,
               },
-            ],
-          },
-        ],
-      },
-      {
-        kind: 'soap',
-        id: nextId(),
-        name: 'Orders: v2/legacy?',
-        slug: slugify('Orders: v2/legacy?'),
-        order: 1,
-        definitionUrl: 'https://example.test/orders?wsdl',
-        cacheDefinition: false,
-        endpoints: [
-          {
-            id: ordersEndpointId,
-            name: 'staging',
-            url: 'https://staging.example.test/orders',
-            authMode: 'override',
-            auth: { type: 'basic', username: 'svc', passwordRef: 'secret://orders/staging', preemptive: true },
-          },
-        ],
-        defaultEndpointId: ordersEndpointId,
-        wsa: normalizeWsa({ enabled: true, version: '2004/08' }),
-        auth: { type: 'ntlm', username: 'corp-svc', domain: 'CORP', passwordRef: 'secret://orders/ntlm' },
-        operations: [
-          {
-            name: 'PlaceOrder',
-            bindingName: '{urn:orders}OrdersSoap12',
-            slug: 'PlaceOrder',
-            order: 0,
-            requests: [
-              request('Request 1', 0, '<Envelope>place</Envelope>', ordersEndpointId),
-              request('Bulk / batch', 1, '<Envelope>bulk</Envelope>', ordersEndpointId),
-            ],
-          },
-        ],
-      },
-    ],
-    environments: [
-      {
-        id: nextId(),
-        name: 'dev',
-        slug: 'dev',
-        order: 0,
-        endpoints: { CountryInfo: 'http://localhost:8080/country' },
-        properties: { region: 'local' },
-        disabledProperties: ['region'],
-      },
-      {
-        id: nextId(),
-        name: 'prod',
-        slug: 'prod',
-        order: 1,
-        endpoints: {},
-        properties: {},
-        disabledProperties: [],
-      },
-    ],
-    wss: {
-      outgoing: (() => {
-        const id = nextId();
-        return [
-          {
-            id,
-            name: 'prod-signature',
-            file: 'wss/outgoing/prod-signature.yaml',
-            document: { id, name: 'prod-signature' },
-          },
-        ];
-      })(),
-      incoming: (() => {
-        const id = nextId();
-        return [{ id, name: 'default', file: 'wss/incoming/default.yaml', document: { id, name: 'default' } }];
-      })(),
-      keystores: (() => {
-        const id = nextId();
-        return [
-          {
-            id,
-            name: 'corp-p12',
-            document: { id, name: 'corp-p12', path: 'certs/corp.p12', type: 'pkcs12', passwordSecretRef: 'secret:1' },
-          },
-        ];
-      })(),
+            },
+          ],
+        },
+      ],
     },
-  };
+    {
+      kind: 'soap',
+      id: nextId(),
+      name: 'Orders: v2/legacy?',
+      slug: slugify('Orders: v2/legacy?'),
+      order: 1,
+      definitionUrl: 'https://example.test/orders?wsdl',
+      cacheDefinition: false,
+      endpoints: [
+        {
+          id: ordersEndpointId,
+          name: 'staging',
+          url: 'https://staging.example.test/orders',
+          authMode: 'override',
+          auth: { type: 'basic', username: 'svc', passwordRef: 'secret://orders/staging', preemptive: true },
+        },
+      ],
+      defaultEndpointId: ordersEndpointId,
+      wsa: normalizeWsa({ enabled: true, version: '2004/08' }),
+      auth: { type: 'ntlm', username: 'corp-svc', domain: 'CORP', passwordRef: 'secret://orders/ntlm' },
+      operations: [
+        {
+          name: 'PlaceOrder',
+          bindingName: '{urn:orders}OrdersSoap12',
+          slug: 'PlaceOrder',
+          order: 0,
+          requests: [
+            request('Request 1', 0, '<Envelope>place</Envelope>', ordersEndpointId),
+            request('Bulk / batch', 1, '<Envelope>bulk</Envelope>', ordersEndpointId),
+          ],
+        },
+      ],
+    },
+  ];
+  return withSoapInterfaces(
+    {
+      formatVersion: FORMAT_VERSION,
+      id: projectId,
+      name: 'Demo Project',
+      description: 'Round-trip fixture',
+      settings: { ...DEFAULT_PROJECT_SETTINGS, resourceRoot: './res' },
+      properties: { region: 'eu-west-1', tier: 'gold' },
+      disabledProperties: ['tier'],
+      containers: {},
+
+      sequences: [],
+      mocks: [],
+
+      environments: [
+        {
+          id: nextId(),
+          name: 'dev',
+          slug: 'dev',
+          order: 0,
+          endpoints: { CountryInfo: 'http://localhost:8080/country' },
+          properties: { region: 'local' },
+          disabledProperties: ['region'],
+        },
+        {
+          id: nextId(),
+          name: 'prod',
+          slug: 'prod',
+          order: 1,
+          endpoints: {},
+          properties: {},
+          disabledProperties: [],
+        },
+      ],
+      wss: {
+        outgoing: (() => {
+          const id = nextId();
+          return [
+            {
+              id,
+              name: 'prod-signature',
+              file: 'wss/outgoing/prod-signature.yaml',
+              document: { id, name: 'prod-signature' },
+            },
+          ];
+        })(),
+        incoming: (() => {
+          const id = nextId();
+          return [{ id, name: 'default', file: 'wss/incoming/default.yaml', document: { id, name: 'default' } }];
+        })(),
+        keystores: (() => {
+          const id = nextId();
+          return [
+            {
+              id,
+              name: 'corp-p12',
+              document: { id, name: 'corp-p12', path: 'certs/corp.p12', type: 'pkcs12', passwordSecretRef: 'secret:1' },
+            },
+          ];
+        })(),
+      },
+    },
+    interfaces,
+  );
 }

@@ -18,13 +18,14 @@ import {
   type TestRestServer,
 } from '@wirebench/engine/test-helpers';
 import {
-  DEFAULT_PREFERENCES,
   createApi,
   createFolder,
   createProject,
   createRestRequest,
+  DEFAULT_PREFERENCES,
   entry,
   mergePreferences,
+  restApisOf,
 } from '@wirebench/engine';
 import type { Environment, Preferences, Project, RestApi } from '@wirebench/engine';
 import { resolveAuthConfig } from '../src/main/secret-resolver.js';
@@ -69,7 +70,7 @@ function seeded(overrides: Partial<RestApi> = {}): Project {
     properties: { tier: 'gold' },
     environments: [UAT],
     activeEnvironmentId: UAT.id,
-    apis: [api],
+    containers: { rest: [api] },
   };
 }
 
@@ -119,7 +120,7 @@ describe('resolving a REST send (previewRest)', () => {
     const project = seeded();
     const withEnv: Project = {
       ...project,
-      environments: [{ ...UAT, endpoints: { [project.apis[0]!.slug]: 'https://second.test' } }],
+      environments: [{ ...UAT, endpoints: { [restApisOf(project)[0]!.slug]: 'https://second.test' } }],
     };
     const resolved = (await resolve(withEnv, 'req-1'))!;
 
@@ -147,7 +148,7 @@ describe('resolving a REST send (previewRest)', () => {
     expect(resolved.input.request.method).toBe('POST');
     expect(resolved.input.request.body).toEqual({ kind: 'raw', language: 'json', text: '{"tier":"gold"}' });
     // The saved model is untouched: the draft applies to this send only.
-    expect(project.apis[0]!.requests[0]!.method).toBe('GET');
+    expect(restApisOf(project)[0]!.requests[0]!.method).toBe('GET');
   });
 
   it('climbs the settings ladder: request over API over project', async () => {

@@ -11,6 +11,10 @@ import type { GrpcRequestDef } from '../../grpc/model.js';
 import type { WsRequestDef } from '../../ws/model.js';
 import type { Project } from '../../project/model.js';
 import type { DetectContext, SecretRule } from './rules.js';
+import { soapInterfacesOf } from '../../soap/model.js';
+import { restApisOf } from '../../rest/model.js';
+import { grpcApisOf } from '../../grpc/model.js';
+import { wsApisOf } from '../../ws/model.js';
 
 /**
  * Where a finding's value is stored. The finding's `valueStart`/`valueEnd` index into that stored
@@ -217,7 +221,7 @@ export function* scanTargets(project: Project): Generator<ScanTarget> {
       };
     }
   }
-  for (const iface of project.interfaces) {
+  for (const iface of soapInterfacesOf(project)) {
     for (const operation of iface.operations) {
       for (const request of operation.requests) {
         const path = `${iface.name}${SEP}${operation.name}${SEP}${request.name}`;
@@ -233,13 +237,13 @@ export function* scanTargets(project: Project): Generator<ScanTarget> {
       }
     }
   }
-  for (const api of project.apis) yield* tree(api, api.name, restRequest);
+  for (const api of restApisOf(project)) yield* tree(api, api.name, restRequest);
   if (project.webhooks !== undefined) yield* tree(project.webhooks, 'Webhooks', restRequest);
-  for (const api of project.grpcApis) {
+  for (const api of grpcApisOf(project)) {
     yield* keyed('grpc-api-metadata', api.id, api.name, 'metadata', 'header', api.metadata);
     yield* tree(api, api.name, grpcRequest);
   }
-  for (const api of project.wsApis) {
+  for (const api of wsApisOf(project)) {
     yield* keyed('ws-api-header', api.id, api.name, 'header', 'header', api.headers);
     yield* tree(api, api.name, wsRequest);
   }

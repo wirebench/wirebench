@@ -27,6 +27,7 @@ import type { ProtocolStorage } from '../protocol/module.js';
 import { isScriptFileOf } from '../script/model.js';
 import { normalizeWsa } from '../wsa/model.js';
 import { interfaceFileSchema, requestFileSchema } from './files.js';
+import { soapInterfacesOf, withSoapInterfaces } from './model.js';
 
 /**
  * Authentication at one of the three SOAP owner sites (interface, endpoint, request), loaded
@@ -278,6 +279,15 @@ export const soapStorage: ProtocolStorage<Interface> = {
     return managed;
   },
 
-  containers: (project) => project.interfaces,
-  withContainers: (project, interfaces) => ({ ...project, interfaces }),
+  containers: (project) => soapInterfacesOf(project),
+  withContainers: (project, interfaces) => withSoapInterfaces(project, interfaces),
+  requestLocation: (iface, requestId) => {
+    for (const operation of iface.operations) {
+      const request = operation.requests.find((candidate) => candidate.id === requestId);
+      if (request !== undefined) {
+        return { dir: `${INTERFACES_DIR}/${iface.slug}/${OPERATIONS_DIR}/${operation.slug}`, slug: request.slug };
+      }
+    }
+    return undefined;
+  },
 };

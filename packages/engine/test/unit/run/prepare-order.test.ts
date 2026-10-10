@@ -210,10 +210,8 @@ function project(shape: Shape = {}): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [iface],
-    apis: [api],
-    grpcApis: [grpcApi],
-    wsApis: [],
+    containers: { soap: [iface], rest: [api], grpc: [grpcApi] },
+
     sequences: [],
     mocks: [],
     environments: [],

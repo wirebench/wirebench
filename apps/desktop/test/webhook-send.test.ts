@@ -24,20 +24,22 @@ function project(): Project {
   return {
     ...createProject('P', { id: 'p1' }),
     properties: { webhookTarget: 'https://receiver.test/hooks' },
-    apis: [
-      createApi('Petstore', {
-        id: 'api-1',
-        baseUrl: 'https://api.test',
-        requests: [
-          createRestRequest('Subscribe', {
-            id: 'parent',
-            method: 'POST',
-            url: '/subscriptions',
-            contract: { method: 'post', path: '/subscriptions' },
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      rest: [
+        createApi('Petstore', {
+          id: 'api-1',
+          baseUrl: 'https://api.test',
+          requests: [
+            createRestRequest('Subscribe', {
+              id: 'parent',
+              method: 'POST',
+              url: '/subscriptions',
+              contract: { method: 'post', path: '/subscriptions' },
+            }),
+          ],
+        }),
+      ],
+    },
     webhooks: createWebhookCollection({
       requests: [
         createRestRequest('Ping', {

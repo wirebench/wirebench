@@ -50,7 +50,7 @@ function holding(endpointUrl: string): Project {
     cacheDefinition: false,
     operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
   });
-  return { ...createProject('Demo', { id: 'proj-b' }), interfaces: [iface] };
+  return { ...createProject('Demo', { id: 'proj-b' }), containers: { soap: [iface] } };
 }
 
 /** Sends `input` ad hoc through the engine, recorded under `names`, as `request.send` does with no request. */

@@ -18,12 +18,14 @@ const HOOK = '01K000000000000000000000H1';
 
 const project = (): Project => ({
   ...createProject('P', { id: 'P' }),
-  apis: [
-    createApi('Shop', {
-      id: 'A',
-      requests: [createRestRequest('Order', { id: 'order' }), createRestRequest('Pay', { id: 'pay' })],
-    }),
-  ],
+  containers: {
+    rest: [
+      createApi('Shop', {
+        id: 'A',
+        requests: [createRestRequest('Order', { id: 'order' }), createRestRequest('Pay', { id: 'pay' })],
+      }),
+    ],
+  },
 });
 
 const json = (body: unknown): AssertionSubject => ({

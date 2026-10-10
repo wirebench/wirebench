@@ -8,17 +8,21 @@ import { projectFiles } from '../../../src/project/serialize.js';
 import { stringifyYaml } from '../../../src/project/yaml.js';
 import type { Project, SoapRequestDef } from '../../../src/project/model.js';
 import { CRLF_ENVELOPE, listTree, readBytes, sampleProject, tempProjectDir } from './fixture.js';
+import { soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
 
 function withRequests(project: Project, map: (r: SoapRequestDef) => SoapRequestDef | undefined): Project {
   return {
     ...project,
-    interfaces: project.interfaces.map((i) => ({
-      ...i,
-      operations: i.operations.map((o) => ({
-        ...o,
-        requests: o.requests.map(map).filter((r): r is SoapRequestDef => r !== undefined),
+    containers: {
+      ...project.containers,
+      soap: soapInterfacesOf(project).map((i) => ({
+        ...i,
+        operations: i.operations.map((o) => ({
+          ...o,
+          requests: o.requests.map(map).filter((r): r is SoapRequestDef => r !== undefined),
+        })),
       })),
-    })),
+    },
   };
 }
 
@@ -239,7 +243,10 @@ describe('saveProject', () => {
     await writeFile(join(dir, 'interfaces', 'Orders_ v2_legacy_', 'definition', 'orders.wsdl'), 'cached');
 
     const result = await saveProject(
-      { ...project, interfaces: project.interfaces.filter((i) => i.slug === 'CountryInfo') },
+      {
+        ...project,
+        containers: { ...project.containers, soap: soapInterfacesOf(project).filter((i) => i.slug === 'CountryInfo') },
+      },
       dir,
     );
 
@@ -258,9 +265,12 @@ describe('saveProject', () => {
 
     const emptied: Project = {
       ...project,
-      interfaces: project.interfaces.map((i) =>
-        i.slug === 'PlaceOrderHost' ? i : { ...i, operations: i.operations.map((o) => ({ ...o, requests: [] })) },
-      ),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((i) =>
+          i.slug === 'PlaceOrderHost' ? i : { ...i, operations: i.operations.map((o) => ({ ...o, requests: [] })) },
+        ),
+      },
     };
     const result = await saveProject(emptied, dir);
 
@@ -333,7 +343,7 @@ describe('loadProject', () => {
     expect(problems[0]?.code).toBe('missing-envelope');
     expect(problems[0]?.file).toBe(xml);
     expect(problems[0]?.message).toContain('Request 1');
-    expect(loaded.interfaces[0]?.operations[0]?.requests[0]?.envelopeXml).toBe('');
+    expect(soapInterfacesOf(loaded)[0]?.operations[0]?.requests[0]?.envelopeXml).toBe('');
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -359,7 +369,7 @@ describe('loadProject', () => {
 
     const { project: loaded, problems } = await loadProject(dir);
     expect(problems.map((p) => p.code)).toEqual(['missing-interface-file']);
-    expect(loaded.interfaces).toHaveLength(2);
+    expect(soapInterfacesOf(loaded)).toHaveLength(2);
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -504,7 +514,7 @@ describe('SOAP owners with a token auth scheme', () => {
   it('round-trips bearer, api-key and oauth2 on an interface, endpoint and request', async () => {
     const dir = await tempProjectDir();
     const project = sampleProject();
-    const [countryIface, ...restIfaces] = project.interfaces;
+    const [countryIface, ...restIfaces] = soapInterfacesOf(project);
     if (countryIface === undefined) {
       throw new Error('sampleProject must have at least one interface');
     }
@@ -521,9 +531,11 @@ describe('SOAP owners with a token auth scheme', () => {
       throw new Error('sampleProject must have at least one request');
     }
 
-    const withTokenAuth: Project = {
-      ...project,
-      interfaces: [
+    const withTokenAuth: Project = withSoapInterfaces(
+      {
+        ...project,
+      },
+      [
         {
           ...countryIface,
           auth: { type: 'bearer', tokenRef: 'secret://country/iface-bearer', scheme: 'Bearer' },
@@ -559,7 +571,7 @@ describe('SOAP owners with a token auth scheme', () => {
         },
         ...restIfaces,
       ],
-    };
+    );
 
     await saveProject(withTokenAuth, dir);
     const { project: loaded, problems } = await loadProject(dir);

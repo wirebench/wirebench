@@ -4,7 +4,7 @@
  * `<API>/<operationId>` or `<API>/<METHOD> <path>` for REST (the interface or API by name or slug),
  * or the item path of a saved request, which names its operation.
  */
-import { selectRequests } from '@wirebench/engine';
+import { restApisOf, selectRequests, soapInterfacesOf } from '@wirebench/engine';
 import type { Interface, OpenApiDocument, OpenApiOperation, OperationDef, Project, RestApi } from '@wirebench/engine';
 import { OpsError } from './errors.js';
 import { readOpenApi, readWsdl } from './project.js';
@@ -49,14 +49,14 @@ type Container =
  */
 function containersOf(project: Project, ref: string): Container[] {
   const keyed = [
-    ...project.interfaces.flatMap((iface) =>
+    ...soapInterfacesOf(project).flatMap((iface) =>
       [iface.name, iface.slug].map((key) => ({
         key: `${key}/`,
         id: `soap:${iface.id}`,
         container: { kind: 'soap', iface } as const,
       })),
     ),
-    ...project.apis.flatMap((api) =>
+    ...restApisOf(project).flatMap((api) =>
       [api.name, api.slug].map((key) => ({
         key: `${key}/`,
         id: `rest:${api.id}`,

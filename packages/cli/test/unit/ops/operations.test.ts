@@ -6,6 +6,8 @@ import {
   createWsFolder,
   createWsRequest,
   loadProject,
+  restApisOf,
+  soapInterfacesOf,
 } from '@wirebench/engine';
 import type { RestFolder, RestRequestDef } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -82,7 +84,7 @@ describe('op operations', () => {
     const fixture = await emptyProject();
     await runOp(importOp, { source: await twoBindingWsdl() }, fixture.base());
     const { project } = await loadProject(fixture.dir);
-    const slugs = (project.interfaces[0]?.operations ?? []).map((operation) => operation.slug);
+    const slugs = (soapInterfacesOf(project)[0]?.operations ?? []).map((operation) => operation.slug);
 
     const result = await runOp(operationsOp, {}, fixture.base());
     expect(result.operations.map((row) => row.ref)).toEqual(slugs.map((slug) => `CalculatorService/${slug}`));
@@ -99,8 +101,11 @@ describe('op operations', () => {
     await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      interfaces: project.interfaces.map((iface) => ({ ...iface, name: 'Shared' })),
-      apis: project.apis.map((api) => ({ ...api, name: 'Shared' })),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) => ({ ...iface, name: 'Shared' })),
+        rest: restApisOf(project).map((api) => ({ ...api, name: 'Shared' })),
+      },
     }));
     const result = await runOp(operationsOp, {}, fixture.base());
     expect(result.notes).toEqual([expect.stringContaining('"Shared"')]);
@@ -130,11 +135,14 @@ describe('op operations', () => {
     });
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      apis: project.apis.map((api) => ({
-        ...api,
-        requests: retargetRequests(api.requests),
-        folders: api.folders.map(retargetFolder),
-      })),
+      containers: {
+        ...project.containers,
+        rest: restApisOf(project).map((api) => ({
+          ...api,
+          requests: retargetRequests(api.requests),
+          folders: api.folders.map(retargetFolder),
+        })),
+      },
     }));
 
     const result = await runOp(operationsOp, {}, fixture.base());
@@ -167,21 +175,24 @@ describe('op operations', () => {
     const fixture = await emptyProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      wsApis: [
-        createWsApi('Chat', {
-          id: 'ws-chat',
-          slug: 'chat',
-          url: 'ws://127.0.0.1:9',
-          requests: [createWsRequest('Echo', { id: 'ws-echo', url: `/echo?token=${SECRET}` })],
-          folders: [
-            createWsFolder('Rooms', {
-              id: 'ws-rooms',
-              requests: [createWsRequest('Join', { id: 'ws-join', url: '/join' })],
-            }),
-          ],
-        }),
-      ],
-      grpcApis: [createGrpcApi('Greeter', { id: 'g', requests: [createGrpcRequest('Hello', { id: 'g-hello' })] })],
+      containers: {
+        ...project.containers,
+        websocket: [
+          createWsApi('Chat', {
+            id: 'ws-chat',
+            slug: 'chat',
+            url: 'ws://127.0.0.1:9',
+            requests: [createWsRequest('Echo', { id: 'ws-echo', url: `/echo?token=${SECRET}` })],
+            folders: [
+              createWsFolder('Rooms', {
+                id: 'ws-rooms',
+                requests: [createWsRequest('Join', { id: 'ws-join', url: '/join' })],
+              }),
+            ],
+          }),
+        ],
+        grpc: [createGrpcApi('Greeter', { id: 'g', requests: [createGrpcRequest('Hello', { id: 'g-hello' })] })],
+      },
     }));
 
     const result = await runOp(operationsOp, {}, fixture.base());

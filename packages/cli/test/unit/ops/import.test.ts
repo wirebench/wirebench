@@ -6,7 +6,9 @@ import {
   createWsApi,
   definitionCacheDir,
   loadProject,
+  restApisOf,
   saveProject,
+  soapInterfacesOf,
 } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
@@ -35,7 +37,7 @@ describe('op import', () => {
       problems: [],
     });
     const { project } = await loadProject(fixture.dir);
-    const iface = project.interfaces[0];
+    const iface = soapInterfacesOf(project)[0];
     expect(iface?.endpoints.map((endpoint) => endpoint.url)).toEqual(['http://127.0.0.1:9/calculator']);
     expect(iface?.operations[0]?.requests[0]?.name).toBe('Request 1');
     expect(iface?.operations[0]?.requests[0]?.soapAction).toBe('urn:wirebench:calculator/Add');
@@ -52,7 +54,7 @@ describe('op import', () => {
       added: [{ kind: 'rest', name: 'Pets', slug: 'Pets', operations: 3, requests: 3 }],
     });
     const { project } = await loadProject(fixture.dir);
-    expect(project.apis[0]?.definition).toMatchObject({ source: PETS_OPENAPI, cache: true, version: '3.0.3' });
+    expect(restApisOf(project)[0]?.definition).toMatchObject({ source: PETS_OPENAPI, cache: true, version: '3.0.3' });
     await access(apiDefinitionDir(fixture.dir, 'Pets'));
   });
 
@@ -61,14 +63,17 @@ describe('op import', () => {
     // Orders 0 and 1 were deleted; a count would give the new API 2, which Chat still holds.
     await updateProject(fixture.dir, (project) => ({
       ...project,
-      apis: [createApi('Shop', { id: 'A1', order: 3 })],
-      wsApis: [createWsApi('Chat', { id: 'W1', order: 2 })],
+      containers: {
+        ...project.containers,
+        rest: [createApi('Shop', { id: 'A1', order: 3 })],
+        websocket: [createWsApi('Chat', { id: 'W1', order: 2 })],
+      },
     }));
 
     await runOp(importOp, { source: PETS_OPENAPI }, fixture.base());
 
     const { project } = await loadProject(fixture.dir);
-    expect(project.apis.find((api) => api.name === 'Pets')?.order).toBe(4);
+    expect(restApisOf(project).find((api) => api.name === 'Pets')?.order).toBe(4);
   });
 
   it('takes a name, and gives a second import of the same definition its own slug', async () => {
@@ -80,14 +85,17 @@ describe('op import', () => {
 
   it('gives an interface another slug than an API, so the next save keeps the API', async () => {
     const fixture = await emptyProject();
-    await updateProject(fixture.dir, (project) => ({ ...project, apis: [createApi('Shop', { id: 'A1' })] }));
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      containers: { ...project.containers, rest: [createApi('Shop', { id: 'A1' })] },
+    }));
 
     const result = await runOp(importOp, { source: CALCULATOR_WSDL, name: 'Shop' }, fixture.base());
 
     expect(result.added[0]).toMatchObject({ kind: 'soap', name: 'Shop', slug: 'Shop-2' });
     const { project, problems } = await loadProject(fixture.dir);
     expect(problems).toEqual([]);
-    expect(project.apis.map((api) => api.slug)).toEqual(['Shop']);
+    expect(restApisOf(project).map((api) => api.slug)).toEqual(['Shop']);
     await saveProject(project, fixture.dir);
     await access(join(fixture.dir, 'apis', 'Shop', 'api.yaml'));
   });
@@ -116,7 +124,7 @@ describe('op import', () => {
       message: expect.stringContaining('--allow-write') as unknown,
     });
     const { project } = await loadProject(fixture.dir);
-    expect(project.interfaces).toEqual([]);
+    expect(soapInterfacesOf(project)).toEqual([]);
   });
 
   it('refuses a format it does not import, and a file it cannot read', async () => {
@@ -148,7 +156,7 @@ describe('op import', () => {
       expect(result.problems.length).toBeGreaterThan(0);
       expect(JSON.stringify(result)).not.toContain(SECRET);
       const { project } = await loadProject(fixture.dir);
-      expect(project.interfaces[0]?.definitionUrl).toBe(source);
+      expect(soapInterfacesOf(project)[0]?.definitionUrl).toBe(source);
     } finally {
       await server.close();
     }
@@ -183,6 +191,6 @@ describe('op import', () => {
     const problem = result.problems.find((found) => found.code === 'definition-cache-write-failed');
     expect(problem?.message).toMatch(/; import it again once the folder is writable$/);
     const { project } = await loadProject(fixture.dir);
-    expect(project.interfaces).toHaveLength(1);
+    expect(soapInterfacesOf(project)).toHaveLength(1);
   });
 });

@@ -19,7 +19,6 @@ const ADDED = [
   'createFeatureSet',
   'createProtocolRegistry',
   'defineProtocol',
-  'extraContainersOf',
   'takenContainerSlugs',
   'unsupportedOf',
   'grpcStatusNames',
@@ -152,12 +151,13 @@ const INTERNAL: Readonly<Record<string, readonly string[]>> = {
   'grpc/status.ts': ['grpcStatusNames'],
   'assert/model.ts': ['StatusNames'],
   'protocols.ts': ['BUILTIN_PROTOCOLS', 'createBuiltinRegistry'],
-  'project/model.ts': ['UnsupportedContainer', 'unsupportedOf', 'extraContainersOf', 'takenContainerSlugs'],
+  'project/model.ts': ['UnsupportedContainer', 'unsupportedOf'],
+  'project/container-slugs.ts': ['takenContainerSlugs'],
 };
 
 /** File under `src/`, and the fields in it that carry the tag. */
 const INTERNAL_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  'project/model.ts': ['extraContainers', 'unsupported'],
+  'project/model.ts': ['unsupported'],
   'assert/model.ts': ['statusNames'],
 };
 

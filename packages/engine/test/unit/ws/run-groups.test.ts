@@ -25,7 +25,7 @@ const feed = createWsApi('Feed', {
   requests: [ticker, gone],
   folders: [admin],
 });
-const project: Project = { ...createProject('WebSocket groups', { id: 'proj-ws' }), wsApis: [feed] };
+const project: Project = { ...createProject('WebSocket groups', { id: 'proj-ws' }), containers: { websocket: [feed] } };
 
 describe('wsRun.groups', () => {
   it('lists every request of each API in explorer order, without the orphaned ones', () => {
@@ -52,7 +52,7 @@ describe('wsRun.groups', () => {
   });
 
   it('has nothing for a project without WebSocket APIs', () => {
-    expect(wsRun.groups({ ...project, wsApis: [] })).toEqual([]);
+    expect(wsRun.groups({ ...project, containers: { ...project.containers, websocket: [] } })).toEqual([]);
   });
 });
 

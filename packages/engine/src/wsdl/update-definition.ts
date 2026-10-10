@@ -30,6 +30,7 @@ import { findBinding, findPortType } from './model.js';
 import type { MessageRef, WsdlDefinition } from './model.js';
 import type { QName } from './qname.js';
 import { qnameToString } from './qname.js';
+import { soapInterfacesOf } from '../soap/model.js';
 
 export type { OperationRef } from '../soap/request-builder.js';
 
@@ -258,7 +259,7 @@ export interface ApplyUpdateResult {
 }
 
 function requireInterface(project: Project, interfaceId: string): Interface {
-  const iface = project.interfaces.find((candidate) => candidate.id === interfaceId);
+  const iface = soapInterfacesOf(project).find((candidate) => candidate.id === interfaceId);
   if (iface === undefined) {
     throw new Error(`No interface with id "${interfaceId}"`);
   }
@@ -427,7 +428,10 @@ export function applyUpdate(
   return {
     project: {
       ...project,
-      interfaces: project.interfaces.map((candidate) => (candidate.id === interfaceId ? iface : candidate)),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((candidate) => (candidate.id === interfaceId ? iface : candidate)),
+      },
     },
     requestsCreated,
     requestsRecreated,

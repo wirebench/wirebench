@@ -74,7 +74,7 @@ function build(
   const p: Project = {
     ...createProject('WebSocket exchange', { id: 'p-ws' }),
     properties: { x: 'expanded' },
-    wsApis: [api],
+    containers: { websocket: [api] },
   };
   const item: WsSelected = { kind: 'websocket', path: 'Chat/Echo', group: 'Chat', api, chain: [], request };
   return { p, item };

@@ -49,22 +49,25 @@ describe('endpointCandidates', () => {
     const base = createProject('Demo');
     const project = {
       ...base,
-      interfaces: [{ endpoints: [{ url: 'https://soap.example/svc' }] }],
+      containers: {
+        ...base.containers,
+        soap: [{ endpoints: [{ url: 'https://soap.example/svc' }] }],
+        rest: [
+          {
+            baseUrl: '${base}',
+            servers: [{ url: 'https://servers.example' }],
+            folders: [{ folders: [], requests: [{ url: 'https://absolute.example/x' }] }],
+            requests: [{ url: '/relative' }],
+          },
+        ],
+        grpc: [
+          { target: 'grpc.example:443', tls: true },
+          { target: 'localhost:50051', tls: false },
+          { target: 'https://grpc-url.example', tls: false },
+        ],
+        websocket: [{ url: 'wss://ws.example/feed', folders: [], requests: [{ url: '/sub' }] }],
+      },
       environments: [{ endpoints: { calc: 'https://soap.dev.example/svc' } }],
-      apis: [
-        {
-          baseUrl: '${base}',
-          servers: [{ url: 'https://servers.example' }],
-          folders: [{ folders: [], requests: [{ url: 'https://absolute.example/x' }] }],
-          requests: [{ url: '/relative' }],
-        },
-      ],
-      grpcApis: [
-        { target: 'grpc.example:443', tls: true },
-        { target: 'localhost:50051', tls: false },
-        { target: 'https://grpc-url.example', tls: false },
-      ],
-      wsApis: [{ url: 'wss://ws.example/feed', folders: [], requests: [{ url: '/sub' }] }],
     } as unknown as Parameters<typeof endpointCandidates>[0];
 
     expect(endpointCandidates(project, ['https://workspace.example', 'https://soap.example/svc'])).toEqual([

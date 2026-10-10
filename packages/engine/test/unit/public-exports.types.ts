@@ -96,7 +96,6 @@ export type Unchanged = [
 /** The fields 3.0 adds exist. */
 export type AddedFields = [
   Engine.Project['unsupported'],
-  Engine.Project['extraContainers'],
   Engine.AssertionSubject['statusNames'],
   Engine.RequestScriptTypes['binding'],
   Engine.RunContext['registry'],

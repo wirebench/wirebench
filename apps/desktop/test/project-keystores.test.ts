@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { createProject } from '@wirebench/engine';
+import { createProject, soapInterfacesOf } from '@wirebench/engine';
 import {
   generateClientCert,
   generateClientPkcs12,
@@ -123,46 +123,49 @@ describe('keystore mutations', () => {
     const { project, keystoreId } = addKeystore(base, { path: 'a.p12' });
     const withRequest = {
       ...project,
-      interfaces: [
-        {
-          kind: 'soap' as const,
-          id: 'i1',
-          name: 'I',
-          slug: 'i',
-          order: 0,
-          definitionUrl: 'http://x',
-          cacheDefinition: true,
-          targetNamespace: '',
-          endpoints: [],
-          wsa: { enabled: false, version: '1.0' as const },
-          operations: [
-            {
-              name: 'Op',
-              bindingName: 'B',
-              slug: 'op',
-              order: 0,
-              requests: [
-                {
-                  id: 'r1',
-                  name: 'Request 1',
-                  slug: 'request-1',
-                  order: 0,
-                  envelopeXml: '<x/>',
-                  soapVersion: '1.1' as const,
-                  headers: [],
-                  attachments: [],
-                  properties: { sslKeystoreRef: keystoreId, encoding: 'UTF-8' },
-                },
-              ],
-            },
-          ],
-        },
-      ],
+      containers: {
+        ...project.containers,
+        soap: [
+          {
+            kind: 'soap' as const,
+            id: 'i1',
+            name: 'I',
+            slug: 'i',
+            order: 0,
+            definitionUrl: 'http://x',
+            cacheDefinition: true,
+            targetNamespace: '',
+            endpoints: [],
+            wsa: { enabled: false, version: '1.0' as const },
+            operations: [
+              {
+                name: 'Op',
+                bindingName: 'B',
+                slug: 'op',
+                order: 0,
+                requests: [
+                  {
+                    id: 'r1',
+                    name: 'Request 1',
+                    slug: 'request-1',
+                    order: 0,
+                    envelopeXml: '<x/>',
+                    soapVersion: '1.1' as const,
+                    headers: [],
+                    attachments: [],
+                    properties: { sslKeystoreRef: keystoreId, encoding: 'UTF-8' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
     } as unknown as typeof project;
 
     const removed = removeKeystore(withRequest, keystoreId);
     expect(removed.wss.keystores).toHaveLength(0);
-    expect(removed.interfaces[0]?.operations[0]?.requests[0]?.properties.sslKeystoreRef).toBeUndefined();
+    expect(soapInterfacesOf(removed)[0]?.operations[0]?.requests[0]?.properties.sslKeystoreRef).toBeUndefined();
   });
 
   it('derives a name from a path with no extension', () => {

@@ -50,7 +50,11 @@ function project(endpointUrl: string, extra: Partial<SoapRequestDef> = {}): Proj
     cacheDefinition: false,
     operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
   });
-  return { ...createProject('Soap exchange', { id: 'p-soap' }), properties: { who: 'ada' }, interfaces: [iface] };
+  return {
+    ...createProject('Soap exchange', { id: 'p-soap' }),
+    properties: { who: 'ada' },
+    containers: { soap: [iface] },
+  };
 }
 
 function open(p: Project, hostExtra: Partial<SendHost> = {}, secrets: Record<string, string> = {}) {

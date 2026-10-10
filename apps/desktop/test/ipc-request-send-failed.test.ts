@@ -52,7 +52,7 @@ function resolution(options: { readonly auth?: AuthConfig; readonly baseUrl?: st
     ...(options.auth !== undefined ? { auth: options.auth } : {}),
     requests: [request],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 /** The send's run context: the project `resolution` builds, for a REST id. */

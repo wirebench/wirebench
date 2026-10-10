@@ -50,7 +50,7 @@ function seeded(auth: AuthConfig, x = '1'): Project {
     auth,
     requests: [createRestRequest('Echo', { id: 'req-1', url: '/echo', query: [entry('x', x)] })],
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
 }
 
 const SECRETS: Readonly<Record<string, string>> = { sec_key: KEY, sec_token: TOKEN, sec_pass: 'admin' };

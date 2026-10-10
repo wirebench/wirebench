@@ -86,8 +86,8 @@ function mock(over: Partial<MockDef> = {}): MockDef {
 function project(m: MockDef = mock()): Project {
   return {
     ...createProject('P', { id: 'P1' }),
-    apis: [createApi('Api', { id: 'A1' })],
-    grpcApis: [createGrpcApi('Grpc', { id: 'G1' })],
+    containers: { rest: [createApi('Api', { id: 'A1' })], grpc: [createGrpcApi('Grpc', { id: 'G1' })] },
+
     mocks: [m],
   };
 }

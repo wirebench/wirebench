@@ -66,7 +66,7 @@ function send(
     ],
   });
   const deps = sendDepsFor(
-    { ...createProject('Demo', { id: 'p1' }), apis: [api] },
+    { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } },
     {
       getSecret: (ref) => Promise.resolve(options.secrets?.[ref]),
       showSecrets: { get: () => options.showSecrets ?? false },

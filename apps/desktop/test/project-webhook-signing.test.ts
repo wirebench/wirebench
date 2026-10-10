@@ -35,7 +35,7 @@ const deps = { generate: () => Promise.reject(new Error('not needed')) };
 function project(): Project {
   return {
     ...createProject('P', { id: 'p1' }),
-    apis: [createApi('Shop', { id: 'api-1', requests: [createRestRequest('List', { id: 'r1' })] })],
+    containers: { rest: [createApi('Shop', { id: 'api-1', requests: [createRestRequest('List', { id: 'r1' })] })] },
     webhooks: createWebhookCollection({
       requests: [createRestRequest('Ping', { id: 'w1', method: 'POST' })],
       folders: [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest } from '@wirebench/engine';
+import { createInterface, createProject, createRequest, soapInterfacesOf } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import { applyChange } from '../src/main/project-mutations.js';
 import type { MutationDeps } from '../src/main/project-mutations.js';
@@ -26,7 +26,7 @@ function build(): Project {
       },
     ],
   });
-  return { ...createProject('P'), interfaces: [iface] };
+  return { ...createProject('P'), containers: { soap: [iface] } };
 }
 
 /** The three SOAP auth mutations, each carrying `auth`. */
@@ -88,7 +88,7 @@ describe('the SOAP auth normaliser', () => {
       },
       deps,
     );
-    expect(result.project.interfaces[0]?.endpoints[0]?.auth).toEqual({
+    expect(soapInterfacesOf(result.project)[0]?.endpoints[0]?.auth).toEqual({
       type: 'api-key',
       name: 'X-Key',
       in: 'query',

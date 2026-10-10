@@ -77,7 +77,7 @@ function seeded(extra: Partial<SoapRequestDef> = {}, auth?: SoapOwnerAuth): Proj
       },
     ],
     activeEnvironmentId: 'env-dev',
-    interfaces: [iface],
+    containers: { soap: [iface] },
   };
 }
 

@@ -134,10 +134,8 @@ export function sampleProject(): Project {
     ...createProject('Pet Store', { newId }),
     properties: { host: 'pets.example.com', apiToken: '${secret:petsToken}', off: 'x' },
     disabledProperties: ['off'],
-    interfaces: [iface],
-    apis: [rest],
-    grpcApis: [grpc],
-    wsApis: [ws],
+    containers: { soap: [iface], rest: [rest], grpc: [grpc], websocket: [ws] },
+
     environments: [
       {
         id: 'env1',

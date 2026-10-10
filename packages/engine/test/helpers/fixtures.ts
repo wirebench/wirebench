@@ -9,6 +9,7 @@ import type { SoapSelected } from '../../src/soap/run.js';
 import { normalizeWsa } from '../../src/wsa/model.js';
 import { toWssOutgoingRef } from '../../src/wss/configs.js';
 import type { WssEntry } from '../../src/wss/model.js';
+import { withSoapInterfaces } from '../../src/soap/model.js';
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 
@@ -57,14 +58,26 @@ export function readFixtureWsdl(name: string): string {
  */
 export function projectWithWss(entries: readonly WssEntry[]): { project: Project; selected: SoapSelected } {
   const keystore = (id: string) => toKeystoreRef({ id, name: id, path: `${id}.pem`, type: 'pem' });
-  const project: Project = {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-wss',
-    name: 'WSS',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: {},
-    disabledProperties: [],
-    interfaces: [
+  const project: Project = withSoapInterfaces(
+    {
+      formatVersion: FORMAT_VERSION,
+      id: 'proj-wss',
+      name: 'WSS',
+      settings: DEFAULT_PROJECT_SETTINGS,
+      properties: {},
+      disabledProperties: [],
+      containers: {},
+
+      sequences: [],
+      mocks: [],
+      environments: [],
+      wss: {
+        outgoing: [toWssOutgoingRef({ id: 'w1', name: 'w1', mustUnderstand: false, entries: [...entries] })],
+        incoming: [],
+        keystores: ['ks-proof', 'ks-tls', 'ks-issuer'].map(keystore),
+      },
+    },
+    [
       {
         kind: 'soap',
         id: 'iface-1',
@@ -102,18 +115,7 @@ export function projectWithWss(entries: readonly WssEntry[]): { project: Project
         ],
       },
     ],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: {
-      outgoing: [toWssOutgoingRef({ id: 'w1', name: 'w1', mustUnderstand: false, entries: [...entries] })],
-      incoming: [],
-      keystores: ['ks-proof', 'ks-tls', 'ks-issuer'].map(keystore),
-    },
-  };
+  );
   const selected = soapRun.groups(project).flatMap((group) => group.candidates.map((candidate) => candidate.item))[0];
   if (selected === undefined) {
     throw new Error('projectWithWss: no request selected');

@@ -113,15 +113,17 @@ function seeded(path = '/echo', extra: Partial<WsRequestDef> = {}, auth?: AuthCo
   return {
     ...createProject('Demo', { id: 'p1' }),
     properties: { tenant: 'acme' },
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'w-1',
-        url: server.url,
-        headers: [entry('x-tenant', '${tenant}')],
-        ...(auth !== undefined ? { auth } : {}),
-        requests: [createWsRequest('Echo', { id: 'q-1', url: path, headers: [entry('x-trace', 'abc')], ...extra })],
-      }),
-    ],
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'w-1',
+          url: server.url,
+          headers: [entry('x-tenant', '${tenant}')],
+          ...(auth !== undefined ? { auth } : {}),
+          requests: [createWsRequest('Echo', { id: 'q-1', url: path, headers: [entry('x-trace', 'abc')], ...extra })],
+        }),
+      ],
+    },
   };
 }
 

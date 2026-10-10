@@ -5,7 +5,15 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startTestWsServer, type TestWsServer } from '@wirebench/engine/test-helpers';
-import { createProject, createWsApi, createWsFolder, createWsRequest, entry } from '@wirebench/engine';
+import {
+  createProject,
+  createWsApi,
+  createWsFolder,
+  createWsRequest,
+  entry,
+  withWsApis,
+  wsApisOf,
+} from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
 import { previewWs } from '../src/main/send/exchange.js';
 import type { WsRequestPatchWire } from '../src/shared/wire-types.js';
@@ -25,28 +33,30 @@ function project(): Project {
   return {
     ...createProject('Demo', { id: 'p1' }),
     properties: { who: 'Ada', tenant: 'acme', host: server.url },
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'w-1',
-        url: '${host}',
-        headers: [entry('x-api', 'ws')],
-        auth: { type: 'bearer', tokenRef: 'sec_tok' },
-        folders: [
-          createWsFolder('Rooms', {
-            id: 'f-1',
-            requests: [
-              createWsRequest('Echo', {
-                id: 'q-1',
-                url: '/echo',
-                query: [entry('who', '${who}')],
-                headers: [entry('x-trace', 'abc')],
-                subprotocols: ['chat.${tenant}'],
-              }),
-            ],
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      websocket: [
+        createWsApi('Chat', {
+          id: 'w-1',
+          url: '${host}',
+          headers: [entry('x-api', 'ws')],
+          auth: { type: 'bearer', tokenRef: 'sec_tok' },
+          folders: [
+            createWsFolder('Rooms', {
+              id: 'f-1',
+              requests: [
+                createWsRequest('Echo', {
+                  id: 'q-1',
+                  url: '/echo',
+                  query: [entry('who', '${who}')],
+                  headers: [entry('x-trace', 'abc')],
+                  subprotocols: ['chat.${tenant}'],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    },
   };
 }
 
@@ -88,7 +98,7 @@ describe('resolving a WebSocket open (previewWs)', () => {
       name: 'dev',
       slug: 'dev',
       order: 0,
-      endpoints: { [project().wsApis[0]!.slug]: server.url },
+      endpoints: { [wsApisOf(project())[0]!.slug]: server.url },
       properties: {},
       disabledProperties: [],
     };
@@ -105,22 +115,24 @@ describe('resolving a WebSocket open (previewWs)', () => {
 
   it('resolves the auth chain: request inherits, so the folder above it wins over the API', async () => {
     const base = project();
-    const p: Project = {
-      ...base,
-      wsApis: [
+    const p: Project = withWsApis(
+      {
+        ...base,
+      },
+      [
         {
-          ...base.wsApis[0]!,
+          ...wsApisOf(base)[0]!,
           auth: { type: 'bearer', tokenRef: 'api-tok' },
           folders: [
             {
-              ...base.wsApis[0]!.folders[0]!,
+              ...wsApisOf(base)[0]!.folders[0]!,
               auth: { type: 'basic', username: 'u', passwordRef: 'folder-pass' },
-              requests: [{ ...base.wsApis[0]!.folders[0]!.requests[0]!, auth: { type: 'inherit' } }],
+              requests: [{ ...wsApisOf(base)[0]!.folders[0]!.requests[0]!, auth: { type: 'inherit' } }],
             },
           ],
         },
       ],
-    };
+    );
     const resolved = (await resolve(p))!;
     expect(resolved.auth).toEqual({ type: 'basic', username: 'u', passwordRef: 'folder-pass' });
   });

@@ -50,15 +50,11 @@ function project(requests: readonly EchoRequest[]): Project {
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
     disabledProperties: [],
-    interfaces: [],
-    apis: [],
-    grpcApis: [],
-    wsApis: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
     sequences: [],
     mocks: [],
-    extraContainers: { echo: [api] },
+    containers: { echo: [api] },
   } as unknown as Project;
 }
 

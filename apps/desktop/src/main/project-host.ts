@@ -26,159 +26,169 @@ import { endpointCandidates, resolveEndpointTargets } from './certificate-expiry
 import type { KeystoreCertificates, ProjectCertificateSources } from './certificate-expiry.js';
 import {
   apiDefinitionDir,
+  applyAsyncApiUpdate,
+  applyOutgoingWss,
+  applyRestUpdate,
   applyUpdate,
+  applyWebhookUpdate,
+  applyWsaHeaders,
+  asyncApiChannelMessages,
   attachmentFile,
   attachmentsDir,
-  createFileAttachmentResolver,
+  createCachedApiFetch,
   createDefaultFetchDocument,
+  createFileAttachmentResolver,
   createInterface,
   createProject,
+  createWssContext,
   DEFAULT_PREFERENCES,
+  DEFAULT_WSA_CONFIG,
   definitionCacheDir,
   definitionRootOf,
+  describeMessageAt,
+  describeServices,
+  DESCRIPTORS_FILE,
+  descriptorSetBytes,
+  effectiveWsa,
   enabledProperties,
+  endpointsFromContract,
+  expand,
   exportDefinition,
-  generateMock,
   fetchDocumentFromCache,
+  findWebhookRequest,
   generateDocs,
   generateId,
+  generateMock,
+  grpcApisOf,
+  hookKey,
   IMPORTED_SCRIPTS_DIR,
   interfaceDir,
+  isEndpointAuth,
+  loadKeystore,
   loadProject,
+  loadProtoSet,
   mapLegacyProject,
+  matchOperation,
+  nextApiOrder,
   nodeFs,
+  overlayCurrent,
+  parseAsyncApi,
+  parseOpenApi,
+  pemCertificates,
+  planAsyncApiUpdate,
+  planRestUpdate,
   planUpdate,
   ProjectError,
   projectFiles,
+  protoPathSegments,
+  PROTOS_DIR,
+  protoSetFromDescriptorSet,
   putAttachment,
   readApiDefinitionCache,
-  describeMessageAt,
-  describeServices,
-  loadProtoSet,
-  sampleMessageText,
-  writeProtoDefinitionCache,
-  PROTOS_DIR,
-  protoPathSegments,
-  resolveEndpoint,
-  resolveScopes,
-  withSystemValuesReported,
-  resolveWorkspaceEndpoint,
-  resolveWorkspaceScopes,
-  saveProject,
-  toSoapSendInput,
-  uniqueSlug,
-  writeApiDefinitionCache,
-  applyAsyncApiUpdate,
-  applyRestUpdate,
-  applyWebhookUpdate,
-  asyncApiChannelMessages,
-  createCachedApiFetch,
-  matchOperation,
-  toWireSchema,
-  parseAsyncApi,
-  parseOpenApi,
-  planAsyncApiUpdate,
-  planRestUpdate,
-  hookKey,
-  webhookItemsOf,
-  webhooksFromDocument,
-  writeDefinitionCache,
-  writeDescriptorDefinitionCache,
-  writeFileAtomic,
-  DESCRIPTORS_FILE,
-  descriptorSetBytes,
-  expand,
-  overlayCurrent,
-  withCurrentValues,
-  protoSetFromDescriptorSet,
   readGrpcDefinitionCache,
   reconcileGrpcApi,
   reflectProtoSet,
+  removeOutgoingWss,
+  resolveEndpoint,
+  resolveScopes,
+  resolveWorkspaceEndpoint,
+  resolveWorkspaceScopes,
+  restApisOf,
+  sampleMessageText,
+  saveProject,
+  soapInterfacesOf,
   soapIssuedTokenKeyTarget,
   soapIssuedTokenTarget,
   soapItemFor,
-  endpointsFromContract,
+  stripWsaHeaders,
+  toKeystoreDef,
+  toSoapSendInput,
+  toTlsClientIdentity,
+  toWireSchema,
+  toWssIncomingConfig,
+  toWssOutgoingConfig,
+  uniqueSlug,
+  webhookFolders,
+  webhookItemsOf,
+  webhookPath,
+  webhooksFromDocument,
+  WirebenchError,
+  withCurrentValues,
+  withSystemValuesReported,
+  writeApiDefinitionCache,
+  writeDefinitionCache,
+  writeDescriptorDefinitionCache,
+  writeFileAtomic,
+  writeProtoDefinitionCache,
+  wsApisOf,
+  WssError,
 } from '@wirebench/engine';
 import type {
+  AsyncApiApplyResult,
+  AsyncApiDocument,
+  AsyncApiUpdatePlan,
+  Attachment,
+  AttachmentResolvers,
+  AttachmentSource,
   AuthConfig,
+  ChannelMessages,
   CurrentValues,
-  LegacyImportReport,
-  LegacyProject,
-  ResolvedLegacyInterface,
+  DefinitionAuth,
+  Endpoint,
+  EndpointAuth,
+  EndpointSource,
+  FsLike,
+  GetSecret,
   GrpcApi,
   GrpcReconcileResult,
   GrpcReflectionVersion,
   GrpcServiceDescriptor,
-  MessageDescriptor,
-  ProtoImportSummary,
-  ProtoSet,
-  ProtoSources,
-  TlsOptions,
-  ResolvedDocument,
-  AsyncApiApplyResult,
-  AsyncApiDocument,
-  OpenApiDocument,
-  AsyncApiUpdatePlan,
-  ParsedOpenApi,
-  RestApplyResult,
-  RestUpdatePlan,
-  WebhookApplyResult,
-  WebhookFolder,
-  WebhookItemRef,
-  ChannelMessages,
-  ParsedAsyncApi,
-  RestApi,
-  WsApi,
-  RestFolder,
-  RestRequestDef,
-  Attachment,
-  AttachmentResolvers,
-  AttachmentSource,
-  Endpoint,
-  EndpointSource,
-  FsLike,
-  Preferences,
   Interface,
+  IssuedTokenSource,
+  JsonSchema,
+  KerberosSendAuth,
+  Keystore,
+  KeystoreDef,
+  LegacyImportReport,
+  LegacyProject,
+  MessageDescriptor,
+  OpenApiDocument,
   OperationDef,
+  ParsedAsyncApi,
+  ParsedOpenApi,
+  PemCertificateSummary,
+  Preferences,
   Project,
   ProjectFiles,
   PropertyMap,
   PropertyScopes,
-  SoapRequestDef,
-  SoapAttachmentOptions,
-  Workspace,
-} from '@wirebench/engine';
-import {
-  DEFAULT_WSA_CONFIG,
-  applyWsaHeaders,
-  effectiveWsa,
-  stripWsaHeaders,
-  applyOutgoingWss,
-  createWssContext,
-  loadKeystore,
-  removeOutgoingWss,
-  toKeystoreDef,
-  toTlsClientIdentity,
-  toWssIncomingConfig,
-  toWssOutgoingConfig,
-  findWebhookRequest,
-  webhookFolders,
-  webhookPath,
-  WirebenchError,
-  WssError,
-} from '@wirebench/engine';
-import type {
-  GetSecret,
-  IssuedTokenSource,
-  Keystore,
-  KeystoreDef,
+  ProtoImportSummary,
+  ProtoSet,
+  ProtoSources,
   ProxyOptions,
+  ResolvedDocument,
+  ResolvedLegacyInterface,
+  RestApi,
+  RestApplyResult,
+  RestFolder,
+  RestRequestDef,
+  RestUpdatePlan,
   RunContext,
+  RunWorkspace,
   SendHost,
+  SoapAttachmentOptions,
+  SoapOwnerAuth,
+  SoapRequestDef,
   SoapSendWss,
+  TlsOptions,
+  WebhookApplyResult,
+  WebhookFolder,
+  WebhookItemRef,
+  Workspace,
+  WsaConfig,
+  WsApi,
   WssContext,
   WssEntry,
-  WsaConfig,
   WssIncomingConfig,
   WssIssuedTokenEntry,
   WssOutgoingConfig,
@@ -203,16 +213,6 @@ import type {
   UpdatePlanWire,
   WssPolicyWire,
 } from '../shared/wire-types.js';
-import { isEndpointAuth, nextApiOrder, pemCertificates } from '@wirebench/engine';
-import type { PemCertificateSummary } from '@wirebench/engine';
-import type {
-  DefinitionAuth,
-  EndpointAuth,
-  JsonSchema,
-  KerberosSendAuth,
-  RunWorkspace,
-  SoapOwnerAuth,
-} from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -940,7 +940,7 @@ export class ProjectHost {
     if (this.open === undefined) {
       return undefined;
     }
-    for (const iface of this.open.project.interfaces) {
+    for (const iface of soapInterfacesOf(this.open.project)) {
       if (iface.id === ownerId) {
         return iface.auth;
       }
@@ -1207,7 +1207,7 @@ export class ProjectHost {
       dirty: false,
       lastSavedAt: undefined,
       problems,
-      runtime: new Map(project.interfaces.map((iface) => [iface.id, { hydration: 'pending' as const }])),
+      runtime: new Map(soapInterfacesOf(project).map((iface) => [iface.id, { hydration: 'pending' as const }])),
       lastWritten: undefined,
       baseline: baseline ?? projectFiles(project),
       watcher,
@@ -1239,7 +1239,7 @@ export class ProjectHost {
     this.asyncApiContracts.clear();
     this.asyncApiInfo.clear();
     this.openApiDocuments.clear();
-    for (const iface of this.open.project.interfaces) {
+    for (const iface of soapInterfacesOf(this.open.project)) {
       this.engine.close(iface.id);
     }
     this.open = undefined;
@@ -1683,7 +1683,7 @@ export class ProjectHost {
       return undefined;
     }
     const project = this.open.project;
-    const api = project.apis.find((candidate) => candidate.id === ownerId);
+    const api = restApisOf(project).find((candidate) => candidate.id === ownerId);
     if (api !== undefined) {
       return api.auth;
     }
@@ -1737,7 +1737,7 @@ export class ProjectHost {
     if (this.open === undefined) {
       return undefined;
     }
-    for (const api of this.open.project.apis) {
+    for (const api of restApisOf(this.open.project)) {
       const found = restPathWithin(api, requestId, []);
       if (found !== undefined) {
         return { requestName: found.request.name, apiName: api.name, folderPath: found.folders.join(' / ') };
@@ -1761,7 +1761,7 @@ export class ProjectHost {
       return undefined;
     }
     const project = this.open.project;
-    const api = project.grpcApis.find((candidate) => candidate.id === ownerId);
+    const api = grpcApisOf(project).find((candidate) => candidate.id === ownerId);
     if (api !== undefined) {
       return api.auth;
     }
@@ -1813,7 +1813,7 @@ export class ProjectHost {
   /** The gRPC API that is, or that holds, `entityId`. */
   private grpcApiOf(entityId: string): GrpcApi | undefined {
     const project = this.require().project;
-    return project.grpcApis.find((api) => api.id === entityId) ?? grpcApiOwning(project, entityId);
+    return grpcApisOf(project).find((api) => api.id === entityId) ?? grpcApiOwning(project, entityId);
   }
 
   /**
@@ -1897,7 +1897,7 @@ export class ProjectHost {
 
   /** The open project's gRPC API with `apiId`, or a `not-found` error. */
   private requireGrpcApi(apiId: string): GrpcApi {
-    const api = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    const api = grpcApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (api === undefined) {
       throw new ProjectError('not-found', `No gRPC API with id "${apiId}"`, { details: { id: apiId } });
     }
@@ -1970,7 +1970,10 @@ export class ProjectHost {
           : {}),
       },
     };
-    open.project = { ...open.project, grpcApis: [...open.project.grpcApis, api] };
+    open.project = {
+      ...open.project,
+      containers: { ...open.project.containers, grpc: [...grpcApisOf(open.project), api] },
+    };
     open.dirty = true;
     this.protoSets.delete(api.id);
     // The schema was just resolved for the import; keep it rather than re-reading the cache on the
@@ -2048,7 +2051,10 @@ export class ProjectHost {
     }
     open.project = {
       ...open.project,
-      grpcApis: open.project.grpcApis.map((candidate) => (candidate.id === api.id ? next : candidate)),
+      containers: {
+        ...open.project.containers,
+        grpc: grpcApisOf(open.project).map((candidate) => (candidate.id === api.id ? next : candidate)),
+      },
     };
     open.dirty = true;
     this.protoSets.set(api.id, Promise.resolve(discovered.set));
@@ -2640,7 +2646,7 @@ export class ProjectHost {
 
   /** The first SOAP request, in project order, whose outgoing WS-Security is `configId`. */
   private firstRequestSelecting(project: Project, configId: string): string | undefined {
-    for (const iface of project.interfaces) {
+    for (const iface of soapInterfacesOf(project)) {
       for (const operation of iface.operations) {
         const request = operation.requests.find((candidate) => candidate.wssOutgoingRef === configId);
         if (request !== undefined) return request.id;
@@ -2846,7 +2852,7 @@ export class ProjectHost {
         slug,
         definitionUrl: summary.definitionUrl,
         targetNamespace: summary.targetNamespace,
-        order: open.project.interfaces.length,
+        order: soapInterfacesOf(open.project).length,
         // The WSDL preference is the default for a newly imported interface; the Details
         // panel's "Cache definition" toggle is what changes it afterwards, per interface.
         cacheDefinition: this.prefs()?.wsdl.cacheDefinitions ?? true,
@@ -2863,7 +2869,10 @@ export class ProjectHost {
       },
     };
 
-    open.project = { ...open.project, interfaces: [...open.project.interfaces, iface] };
+    open.project = {
+      ...open.project,
+      containers: { ...open.project.containers, soap: [...soapInterfacesOf(open.project), iface] },
+    };
     open.runtime.set(interfaceId, { hydration: 'ready', summary });
 
     const generateOptions = generateOptionsFrom(this.prefs());
@@ -3020,7 +3029,7 @@ export class ProjectHost {
         ? { description: input.project.description }
         : {}),
       properties: { ...open.project.properties, ...mapped.properties },
-      interfaces: [...open.project.interfaces, ...interfaces],
+      containers: { ...open.project.containers, soap: [...soapInterfacesOf(open.project), ...interfaces] },
       environments: [...open.project.environments, ...mapped.environments],
     };
     open.dirty = true;
@@ -3109,7 +3118,7 @@ export class ProjectHost {
       slug: uniqueSlug(input.api.name, takenApiSlugs(project)),
       order: nextApiOrder(project),
     };
-    open.project = { ...project, wsApis: [...project.wsApis, api] };
+    open.project = { ...project, containers: { ...project.containers, websocket: [...wsApisOf(project), api] } };
     open.dirty = true;
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
@@ -3137,7 +3146,7 @@ export class ProjectHost {
       slug: uniqueSlug(input.api.name, takenApiSlugs(project)),
       order: nextApiOrder(project),
     };
-    open.project = { ...project, grpcApis: [...project.grpcApis, api] };
+    open.project = { ...project, containers: { ...project.containers, grpc: [...grpcApisOf(project), api] } };
     open.dirty = true;
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
@@ -3166,7 +3175,7 @@ export class ProjectHost {
   /** The open project's interface with `interfaceId`, or a `not-found` error. */
   private requireInterface(interfaceId: string): Interface {
     const open = this.require();
-    const iface = open.project.interfaces.find((candidate) => candidate.id === interfaceId);
+    const iface = soapInterfacesOf(open.project).find((candidate) => candidate.id === interfaceId);
     if (iface === undefined) {
       throw new ProjectError('not-found', `No interface with id "${interfaceId}"`, {
         details: { id: interfaceId },
@@ -3362,7 +3371,10 @@ export class ProjectHost {
         ...(input.auth !== undefined ? { auth: input.auth } : {}),
       },
     };
-    let project: Project = { ...open.project, apis: [...open.project.apis, api] };
+    let project: Project = {
+      ...open.project,
+      containers: { ...open.project.containers, rest: [...restApisOf(open.project), api] },
+    };
     if (input.webhooks !== undefined) {
       project = addWebhookGroup(project, input.webhooks, this.workspaceContext?.()?.workspace.properties).project;
     }
@@ -3421,7 +3433,7 @@ export class ProjectHost {
         ...(input.auth !== undefined ? { auth: input.auth } : {}),
       },
     };
-    open.project = { ...project, wsApis: [...project.wsApis, api] };
+    open.project = { ...project, containers: { ...project.containers, websocket: [...wsApisOf(project), api] } };
     open.dirty = true;
     await this.save({ reason: 'import' });
     // Read the cache just written, so the Definition card has the version and servers at once.
@@ -3433,7 +3445,7 @@ export class ProjectHost {
 
   /** The open project's AsyncAPI-imported WebSocket API with `apiId`, or a `not-found` error. */
   private requireAsyncApi(apiId: string): WsApi & { readonly definition: NonNullable<WsApi['definition']> } {
-    const api = this.require().project.wsApis.find((candidate) => candidate.id === apiId);
+    const api = wsApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (api?.definition?.kind !== 'asyncapi') {
       throw new ProjectError('not-found', `No AsyncAPI-imported API with id "${apiId}"`, { details: { id: apiId } });
     }
@@ -3450,7 +3462,7 @@ export class ProjectHost {
     if (known !== undefined) {
       return known;
     }
-    const api = this.require().project.wsApis.find((candidate) => candidate.id === apiId);
+    const api = wsApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (api?.definition?.kind !== 'asyncapi' || !api.definition.cache) {
       return Promise.resolve(undefined);
     }
@@ -3641,7 +3653,10 @@ export class ProjectHost {
     this.rememberAsyncApiInfo(apiId, next.document);
     open.project = {
       ...open.project,
-      wsApis: open.project.wsApis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+      containers: {
+        ...open.project.containers,
+        websocket: wsApisOf(open.project).map((candidate) => (candidate.id === apiId ? updated : candidate)),
+      },
     };
     open.dirty = true;
     await this.save({ reason: 'update-definition' });
@@ -3791,7 +3806,10 @@ export class ProjectHost {
     const priorDirty = open.dirty;
     open.project = {
       ...open.project,
-      apis: open.project.apis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+      containers: {
+        ...open.project.containers,
+        rest: restApisOf(open.project).map((candidate) => (candidate.id === apiId ? updated : candidate)),
+      },
       ...(webhooks !== open.project.webhooks ? { webhooks } : {}),
     };
     open.dirty = true;
@@ -3961,7 +3979,7 @@ export class ProjectHost {
 
   /** The open project's API with `apiId`, or a `not-found` error. */
   private requireApi(apiId: string): RestApi {
-    const api = this.require().project.apis.find((candidate) => candidate.id === apiId);
+    const api = restApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (api === undefined) {
       throw new ProjectError('not-found', `No API with id "${apiId}"`, { details: { id: apiId } });
     }
@@ -3983,7 +4001,7 @@ export class ProjectHost {
   }> {
     // A gRPC API's cache holds `.proto` files rather than documents; the same card lists them by
     // import path, and says `proto` where an OpenAPI card says the document's version.
-    const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    const grpc = grpcApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (grpc !== undefined) {
       const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
       return {
@@ -4013,7 +4031,7 @@ export class ProjectHost {
    * `unknown-document` error, so this can never be turned into a read of an arbitrary file.
    */
   async apiDefinitionText(apiId: string, location: string): Promise<string> {
-    const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    const grpc = grpcApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (grpc !== undefined) {
       const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
       if (cache.kind === 'descriptors') {
@@ -4045,7 +4063,7 @@ export class ProjectHost {
 
   /** Writes every cached document of `apiId` into `dir`, byte for byte, returning the file names. */
   async exportApiDefinitionTo(apiId: string, dir: string): Promise<string[]> {
-    const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    const grpc = grpcApisOf(this.require().project).find((candidate) => candidate.id === apiId);
     if (grpc !== undefined) {
       const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
       if (cache.kind === 'descriptors') {
@@ -4105,7 +4123,7 @@ export class ProjectHost {
     if (open === undefined) {
       return;
     }
-    for (const iface of open.project.interfaces) {
+    for (const iface of soapInterfacesOf(open.project)) {
       if (this.open !== open) {
         return; // The project was closed or replaced while hydrating.
       }
@@ -4132,7 +4150,7 @@ export class ProjectHost {
       this.emitChanged();
     }
     // The Definition card's version and servers come from each AsyncAPI API's cached document.
-    for (const api of open.project.wsApis) {
+    for (const api of wsApisOf(open.project)) {
       if (this.open !== open) {
         return;
       }

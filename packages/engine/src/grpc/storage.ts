@@ -42,6 +42,7 @@ import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import { grpcApiFileSchema, grpcRequestFileSchema } from './files.js';
 import type { GrpcApi, GrpcRequestDef, GrpcRequestSettings } from './model.js';
+import { grpcApisOf, withGrpcApis } from './model.js';
 
 /**
  * Reads a gRPC request and its message file. A request whose message file is gone loads with an
@@ -228,6 +229,6 @@ export const grpcStorage: ProtocolStorage<GrpcApi> = {
   },
   managed: (fs, root, slug) => apiManagedFiles(fs, root, slug),
 
-  containers: (project) => project.grpcApis,
-  withContainers: (project, grpcApis) => ({ ...project, grpcApis }),
+  containers: (project) => grpcApisOf(project),
+  withContainers: (project, grpcApis) => withGrpcApis(project, grpcApis),
 };

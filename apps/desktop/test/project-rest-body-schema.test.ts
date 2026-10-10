@@ -7,7 +7,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createDefaultFetchDocument, importOpenApi } from '@wirebench/engine';
+import { createDefaultFetchDocument, importOpenApi, restApisOf } from '@wirebench/engine';
 import type { RestApi, RestRequestDef } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -65,7 +65,7 @@ async function importPets(cache: boolean): Promise<{ api: RestApi; apiId: string
     declaredVersion: '3.0.3',
     cache,
   });
-  const api = host.model()?.apis.find((candidate) => candidate.id === apiId) as RestApi;
+  const api = restApisOf(host.model()!).find((candidate) => candidate.id === apiId) as RestApi;
   return { api, apiId };
 }
 
@@ -102,7 +102,7 @@ describe('ProjectHost.restBodySchema', () => {
     const { createdId } = await host.mutate({ kind: 'add-rest-request', apiId });
     const addedId =
       createdId ??
-      allRequests(host.model()?.apis.find((candidate) => candidate.id === apiId) as RestApi).find(
+      allRequests(restApisOf(host.model()!).find((candidate) => candidate.id === apiId) as RestApi).find(
         (request) => !before.has(request.id),
       )?.id ??
       '';

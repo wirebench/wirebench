@@ -7,13 +7,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  createApi,
   createGrpcApi,
   createProject,
-  createApi,
   createWsApi,
   createWsFolder,
   createWsRequest,
+  grpcApisOf,
   ProjectError,
+  restApisOf,
+  wsApisOf,
 } from '@wirebench/engine';
 import type { Project, WsApi } from '@wirebench/engine';
 import {
@@ -64,15 +67,15 @@ function seeded(): Project {
       }),
     ],
   });
-  return { ...createProject('Demo', { id: 'p1' }), wsApis: [api] };
+  return { ...createProject('Demo', { id: 'p1' }), containers: { websocket: [api] } };
 }
 
-const api = (project: Project): WsApi => project.wsApis[0]!;
+const api = (project: Project): WsApi => wsApisOf(project)[0]!;
 
 describe('add-ws-api', () => {
   it('adds an API ordered after everything already there', () => {
     const { project, createdId } = addWsApi(seeded(), { name: 'Orders', url: 'wss://orders.test' });
-    const added = project.wsApis.find((candidate) => candidate.id === createdId)!;
+    const added = wsApisOf(project).find((candidate) => candidate.id === createdId)!;
     expect(added).toMatchObject({ kind: 'websocket', name: 'Orders', url: 'wss://orders.test', order: 1 });
   });
 
@@ -80,11 +83,14 @@ describe('add-ws-api', () => {
     const base = seeded();
     const withOthers: Project = {
       ...base,
-      apis: [createApi('Chat API', { id: 'r-1' })],
-      grpcApis: [createGrpcApi('Chat API 2', { id: 'g-1', target: 'x:1', slug: 'Chat API-2' })],
+      containers: {
+        ...base.containers,
+        rest: [createApi('Chat API', { id: 'r-1' })],
+        grpc: [createGrpcApi('Chat API 2', { id: 'g-1', target: 'x:1', slug: 'Chat API-2' })],
+      },
     };
     const { project } = addWsApi(withOthers, { name: 'Chat API' });
-    expect(project.wsApis.map((candidate) => candidate.slug)).toEqual(['Chat API', 'Chat API-3']);
+    expect(wsApisOf(project).map((candidate) => candidate.slug)).toEqual(['Chat API', 'Chat API-3']);
   });
 });
 
@@ -111,7 +117,7 @@ describe('update-ws-api', () => {
 describe('remove-ws-api', () => {
   it('removes the API and everything in it', () => {
     const { project } = removeWsApi(seeded(), 'w-1');
-    expect(project.wsApis).toEqual([]);
+    expect(wsApisOf(project)).toEqual([]);
   });
 
   it('refuses an unknown API by id', () => {
@@ -161,12 +167,15 @@ describe('folders', () => {
   it('does not disturb the REST or gRPC trees', () => {
     const mixed: Project = {
       ...seeded(),
-      apis: [createApi('Orders', { id: 'r-1' })],
-      grpcApis: [createGrpcApi('Greeter', { id: 'g-1', target: 'x:1' })],
+      containers: {
+        ...seeded().containers,
+        rest: [createApi('Orders', { id: 'r-1' })],
+        grpc: [createGrpcApi('Greeter', { id: 'g-1', target: 'x:1' })],
+      },
     };
     const { project } = addWsFolder(mixed, { apiId: 'w-1', name: 'New' });
-    expect(project.apis[0]?.folders).toEqual([]);
-    expect(project.grpcApis[0]?.folders).toEqual([]);
+    expect(restApisOf(project)[0]?.folders).toEqual([]);
+    expect(grpcApisOf(project)[0]?.folders).toEqual([]);
   });
 });
 
@@ -393,8 +402,8 @@ describe('applyChange dispatch', () => {
     const cloned = await applyChange(removedMessage.project, { kind: 'clone-ws-request', requestId: 'q-ping' }, deps);
     expect(findWsRequest(cloned.project, cloned.createdId!)?.name).toBe('Ping copy');
     const removed = await applyChange(cloned.project, { kind: 'remove-ws-api', apiId: 'w-1' }, deps);
-    expect(removed.project.wsApis).toEqual([]);
-    expect(removeWsApi(seeded(), 'w-1').project.wsApis).toEqual([]);
+    expect(wsApisOf(removed.project)).toEqual([]);
+    expect(wsApisOf(removeWsApi(seeded(), 'w-1').project)).toEqual([]);
     expect(() => removeWsApi(seeded(), 'nope')).toThrow(ProjectError);
   });
 });

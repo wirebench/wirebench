@@ -40,7 +40,7 @@ import { callGrpc } from './call.js';
 import type { GrpcCallResult, GrpcCallStreamHandle, GrpcResponseMessage } from './call.js';
 import type { GrpcLiveEvent } from './events.js';
 import { expandGrpcInput } from './expand.js';
-import { clientStreams, grpcMethodPath } from './model.js';
+import { clientStreams, grpcApisOf, grpcMethodPath } from './model.js';
 import type { GrpcApi, GrpcFolder, GrpcRequestDef } from './model.js';
 import { loadProtoSet } from './proto/load.js';
 import type { ProtoSet } from './proto/load.js';
@@ -81,7 +81,7 @@ export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
  */
 export function grpcItemFor(project: Project, requestId: string): GrpcSelected | undefined {
   const candidates: { item: GrpcSelected; diskPath: string }[] = [];
-  for (const api of project.grpcApis) {
+  for (const api of grpcApisOf(project)) {
     walkTree<GrpcFolder, GrpcRequestDef, GrpcSelected>(
       api,
       [],
@@ -485,7 +485,7 @@ async function sendGrpcItem(
 /** gRPC's run facet. */
 export const grpcRun: ProtocolRun<GrpcSelected> = {
   groups(project) {
-    return project.grpcApis.map((api) => {
+    return grpcApisOf(project).map((api) => {
       const candidates: RunGroup<GrpcSelected>['candidates'][number][] = [];
       walkTree<GrpcFolder, GrpcRequestDef, GrpcSelected>(
         api,
@@ -503,7 +503,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
   },
 
   whyNotRunnable(project, requestId) {
-    for (const api of project.grpcApis) {
+    for (const api of grpcApisOf(project)) {
       const request = findInTree(api, requestId);
       if (request !== undefined) {
         return request.orphaned === true ? ORPHANED_STEP_REASON : undefined;

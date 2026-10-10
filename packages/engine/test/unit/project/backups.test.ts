@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { saveProject } from '../../../src/project/save.js';
 import { readBytes, sampleProject, tempProjectDir } from './fixture.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const REQUEST_PATH = 'interfaces/CountryInfo/operations/ListOfCountryNamesByCode/Request 1.xml';
 const BACKUP_REQUEST = `${REQUEST_PATH}.bak`;
@@ -14,19 +15,22 @@ describe('saveProject — timestamped backups', () => {
 
     const withEdit = (envelopeXml: string) => ({
       ...original,
-      interfaces: original.interfaces.map((iface) =>
-        iface.name === 'CountryInfo'
-          ? {
-              ...iface,
-              operations: iface.operations.map((operation) => ({
-                ...operation,
-                requests: operation.requests.map((request) =>
-                  request.name === 'Request 1' ? { ...request, envelopeXml } : request,
-                ),
-              })),
-            }
-          : iface,
-      ),
+      containers: {
+        ...original.containers,
+        soap: soapInterfacesOf(original).map((iface) =>
+          iface.name === 'CountryInfo'
+            ? {
+                ...iface,
+                operations: iface.operations.map((operation) => ({
+                  ...operation,
+                  requests: operation.requests.map((request) =>
+                    request.name === 'Request 1' ? { ...request, envelopeXml } : request,
+                  ),
+                })),
+              }
+            : iface,
+        ),
+      },
     });
 
     const first = withEdit(originalEnvelope.replace('1.1', '2.1'));
@@ -54,7 +58,7 @@ describe('saveProject — timestamped backups', () => {
     // The first backup file is untouched: it still holds the original envelope.
     expect((await readBytes(dir, firstBackupPath)).toString('utf8')).toBe(originalEnvelope);
     expect((await readBytes(dir, secondBackupPath)).toString('utf8')).toBe(
-      first.interfaces
+      soapInterfacesOf(first)
         .find((i) => i.name === 'CountryInfo')
         ?.operations.find((o) => o.requests.some((r) => r.name === 'Request 1'))
         ?.requests.find((r) => r.name === 'Request 1')?.envelopeXml ?? '',
@@ -67,21 +71,24 @@ describe('saveProject — timestamped backups', () => {
     await saveProject(project, dir);
     const edited = {
       ...project,
-      interfaces: project.interfaces.map((iface) =>
-        iface.name === 'CountryInfo'
-          ? {
-              ...iface,
-              operations: iface.operations.map((operation) => ({
-                ...operation,
-                requests: operation.requests.map((request) =>
-                  request.name === 'Request 1'
-                    ? { ...request, envelopeXml: `${request.envelopeXml}<!--x-->` }
-                    : request,
-                ),
-              })),
-            }
-          : iface,
-      ),
+      containers: {
+        ...project.containers,
+        soap: soapInterfacesOf(project).map((iface) =>
+          iface.name === 'CountryInfo'
+            ? {
+                ...iface,
+                operations: iface.operations.map((operation) => ({
+                  ...operation,
+                  requests: operation.requests.map((request) =>
+                    request.name === 'Request 1'
+                      ? { ...request, envelopeXml: `${request.envelopeXml}<!--x-->` }
+                      : request,
+                  ),
+                })),
+              }
+            : iface,
+        ),
+      },
     };
     const result = await saveProject(edited, dir, {
       backups: [BACKUP_REQUEST],

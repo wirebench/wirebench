@@ -32,43 +32,46 @@ const FIXTURE_PROJECTS: readonly (readonly [string, string])[] = [
 function mixedProject(): Project {
   return {
     ...sampleProject(),
-    apis: [
-      createApi('Shop', {
-        id: 'A1',
-        order: 2,
-        baseUrl: 'https://shop.test',
-        requests: [
-          createRestRequest('Create', {
-            id: 'R1',
-            method: 'POST',
-            url: '/items',
-            body: { kind: 'raw', language: 'json', text: '{\n  "name": "Fido"\n}\n' },
-          }),
-        ],
-      }),
-    ],
-    grpcApis: [
-      createGrpcApi('Greeter', {
-        id: 'G1',
-        order: 3,
-        target: 'localhost:50051',
-        requests: [createGrpcRequest('Hello', { id: 'GR1', service: 'demo.Greeter', method: 'SayHello' })],
-      }),
-    ],
-    wsApis: [
-      createWsApi('Chat', {
-        id: 'W1',
-        order: 4,
-        url: 'wss://chat.test',
-        requests: [
-          createWsRequest('Feed', {
-            id: 'WR1',
-            url: '/feed',
-            messages: [createWsSavedMessage('Ping', { id: 'M1', content: '{"type":"ping"}' })],
-          }),
-        ],
-      }),
-    ],
+    containers: {
+      ...sampleProject().containers,
+      rest: [
+        createApi('Shop', {
+          id: 'A1',
+          order: 2,
+          baseUrl: 'https://shop.test',
+          requests: [
+            createRestRequest('Create', {
+              id: 'R1',
+              method: 'POST',
+              url: '/items',
+              body: { kind: 'raw', language: 'json', text: '{\n  "name": "Fido"\n}\n' },
+            }),
+          ],
+        }),
+      ],
+      grpc: [
+        createGrpcApi('Greeter', {
+          id: 'G1',
+          order: 3,
+          target: 'localhost:50051',
+          requests: [createGrpcRequest('Hello', { id: 'GR1', service: 'demo.Greeter', method: 'SayHello' })],
+        }),
+      ],
+      websocket: [
+        createWsApi('Chat', {
+          id: 'W1',
+          order: 4,
+          url: 'wss://chat.test',
+          requests: [
+            createWsRequest('Feed', {
+              id: 'WR1',
+              url: '/feed',
+              messages: [createWsSavedMessage('Ping', { id: 'M1', content: '{"type":"ping"}' })],
+            }),
+          ],
+        }),
+      ],
+    },
   };
 }
 

@@ -5,8 +5,9 @@ import type { CallbackAssertion } from '../../../src/assert/model.js';
 import { loadProject } from '../../../src/project/load.js';
 import { createProject } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import { tempProjectDir } from './fixture.js';
+import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const V3_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
 
@@ -31,7 +32,7 @@ describe('assertions on a request file', () => {
 
     const { project, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    const all = project.interfaces.flatMap((i) => i.operations.flatMap((o) => o.requests));
+    const all = soapInterfacesOf(project).flatMap((i) => i.operations.flatMap((o) => o.requests));
     expect(all.find((r) => r.assertions.length > 0)?.assertions).toEqual([
       { type: 'status', equals: 200 },
       { type: 'sla', maxMs: 500 },
@@ -52,7 +53,7 @@ describe('assertions on a request file', () => {
 
     const { project, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    const all = project.interfaces.flatMap((i) => i.operations.flatMap((o) => o.requests));
+    const all = soapInterfacesOf(project).flatMap((i) => i.operations.flatMap((o) => o.requests));
     expect(all.find((r) => r.auth !== undefined && 'passwordEnv' in r.auth)?.auth).toMatchObject({
       passwordEnv: 'BILLING_PASSWORD',
     });
@@ -82,19 +83,21 @@ describe('a callback assertion on a request file', () => {
     };
     const project = {
       ...createProject('Shop', { id: 'P1' }),
-      apis: [
-        createApi('Shop API', {
-          id: 'A1',
-          requests: [
-            { ...createRestRequest('Pay', { id: 'R1', method: 'POST', url: '/pay' }), assertions: [callback] },
-          ],
-        }),
-      ],
+      containers: {
+        rest: [
+          createApi('Shop API', {
+            id: 'A1',
+            requests: [
+              { ...createRestRequest('Pay', { id: 'R1', method: 'POST', url: '/pay' }), assertions: [callback] },
+            ],
+          }),
+        ],
+      },
     };
     await saveProject(project, dir);
     const { project: loaded, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
-    expect(loaded.apis[0]?.requests[0]?.assertions).toEqual([callback]);
+    expect(restApisOf(loaded)[0]?.requests[0]?.assertions).toEqual([callback]);
     const file = join(dir, 'apis', 'Shop API', 'requests', 'Pay.request.yaml');
     const first = await readFile(file, 'utf8');
     await saveProject(loaded, dir);

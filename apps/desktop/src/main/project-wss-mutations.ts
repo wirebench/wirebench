@@ -10,6 +10,7 @@ import {
   DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
   generateId,
   ProjectError,
+  soapInterfacesOf,
   toWssIncomingConfig,
   toWssIncomingRef,
   toWssOutgoingConfig,
@@ -138,7 +139,7 @@ export function updateWssOutgoing(project: Project, configId: string, patch: Wss
  */
 export function removeWssOutgoing(project: Project, configId: string): Project {
   requireConfig(project, configId);
-  const interfaces = project.interfaces.map((iface) => ({
+  const interfaces = soapInterfacesOf(project).map((iface) => ({
     ...iface,
     operations: iface.operations.map((operation) => ({
       ...operation,
@@ -153,7 +154,7 @@ export function removeWssOutgoing(project: Project, configId: string): Project {
     })),
   }));
   return withOutgoing(
-    { ...project, interfaces },
+    { ...project, containers: { ...project.containers, soap: interfaces } },
     project.wss.outgoing.filter((candidate) => candidate.id !== configId),
   );
 }
@@ -254,7 +255,7 @@ export function updateWssIncoming(project: Project, configId: string, patch: Wss
  */
 export function removeWssIncoming(project: Project, configId: string): Project {
   requireIncoming(project, configId);
-  const interfaces = project.interfaces.map((iface) => ({
+  const interfaces = soapInterfacesOf(project).map((iface) => ({
     ...iface,
     operations: iface.operations.map((operation) => ({
       ...operation,
@@ -269,7 +270,7 @@ export function removeWssIncoming(project: Project, configId: string): Project {
     })),
   }));
   return withIncoming(
-    { ...project, interfaces },
+    { ...project, containers: { ...project.containers, soap: interfaces } },
     project.wss.incoming.filter((candidate) => candidate.id !== configId),
   );
 }

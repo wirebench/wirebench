@@ -7,7 +7,9 @@ import {
   generateMock,
   isWirebenchError,
   loadProject,
+  restApisOf,
   saveProject,
+  soapInterfacesOf,
   startRecorder,
 } from '@wirebench/engine';
 import type { MockDef, Project, RecordExchangeEvent, RunningRecorder } from '@wirebench/engine';
@@ -54,7 +56,7 @@ function findMock(project: Project, wanted: string): MockDef | undefined {
 
 /** The id of the interface or API named `wanted` (name or slug, any case). */
 function findContainer(project: Project, wanted: string): string | undefined {
-  return [...project.interfaces, ...project.apis].find(
+  return [...soapInterfacesOf(project), ...restApisOf(project)].find(
     (container) => same(container.name, wanted) || same(container.slug, wanted),
   )?.id;
 }

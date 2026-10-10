@@ -24,6 +24,7 @@ import type { TestRestServer } from '../../helpers/index.js';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestProxy } from '../../helpers/test-proxy.js';
 import { testHost } from '../../helpers/send-host.js';
+import { withRestApis } from '../../../src/rest/model.js';
 
 let server: TestRestServer;
 let dir: string;
@@ -39,10 +40,12 @@ afterAll(async () => {
 });
 
 function project(base: string, request: RestRequestDef): Project {
-  return {
-    ...createProject('Rest exchange', { id: 'p-rest' }),
-    apis: [{ ...createApi('Api', { id: 'api-1', slug: 'api', baseUrl: base }), requests: [request] }],
-  };
+  return withRestApis(
+    {
+      ...createProject('Rest exchange', { id: 'p-rest' }),
+    },
+    [{ ...createApi('Api', { id: 'api-1', slug: 'api', baseUrl: base }), requests: [request] }],
+  );
 }
 
 function restItemAt(base: string, path: string, settings: RestRequestDef['settings'] = {}) {

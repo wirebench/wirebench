@@ -61,9 +61,10 @@ an editor does not flag a wrong import, and `pnpm check` (and CI) does.
 | --- | --- | --- |
 | `protocols.ts` | every module: it is the composition file | stays; becomes the `engine` package in phase 5 |
 | `index.ts` | the public exports | stays |
-| `project/model.ts` | the REST, gRPC, WebSocket and webhook container types, type-only; the WS-Addressing model | phase 3 |
+| `project/model.ts` | the webhook container type, type-only; the WS-Addressing model | phase 3 |
 | `project/load.ts`, `project/serialize.ts` | REST's request reader and writer for `webhooks/`; the webhook model | phase 3 |
-| `project/request-location.ts`, `secrets/scan/walk.ts`, `secrets/scan/apply.ts` | request types, type-only | phase 3 |
+| `secrets/scan/walk.ts`, `secrets/scan/apply.ts` | every built-in protocol's container reader | phase 3 |
+| `workspace/reidentify.ts` | SOAP's container reader | phase 3 |
 | `import-detect.ts` | format detectors | phase 7 |
 
 The groups are: SOAP (`soap/`, `wsdl/`, `xsd/`, `wss/`, `wsa/`, `validate/`), REST (`rest/`, `webhooks/`), gRPC
@@ -81,6 +82,10 @@ into `keystore/`.
 nothing in this phase and would cost a desktop-wide change. The price is the `project/model.ts` exception above.
 Phase 3 replaces the lists, together with the desktop's per-kind code. A kind with no list of its own keeps its
 containers in `Project.extraContainers`.
+
+_Amended in 6.0 (#184 phase 3):_ the lists and `extraContainers` are gone. `Project.containers` holds every kind's
+containers keyed by kind, and each protocol's folder exports a typed reader and writer (`restApisOf` /
+`withRestApis` and the like), so `project/model.ts` imports no protocol's container type.
 
 **The script rules stay in core.** The rules of ADR-0016 are applied by `script/apply.ts` to every protocol the same
 way: the changed request parses against the module's schema and keeps its protocol; its destination keeps its origin;

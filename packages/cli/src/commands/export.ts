@@ -5,7 +5,15 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { exportCollection, formatImportReport, isWirebenchError } from '@wirebench/engine';
+import {
+  exportCollection,
+  formatImportReport,
+  grpcApisOf,
+  isWirebenchError,
+  restApisOf,
+  soapInterfacesOf,
+  wsApisOf,
+} from '@wirebench/engine';
 import type { CollectionExportEnvironment, CollectionExportTarget, Project } from '@wirebench/engine';
 import type { ExportArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
@@ -15,7 +23,12 @@ import { openProject } from '../ops/project.js';
 
 /** The container `wanted` names, by id, slug or name (any case); a message when none or several match. */
 function targetFor(project: Project, wanted: string): CollectionExportTarget | string {
-  const containers = [...project.interfaces, ...project.apis, ...project.grpcApis, ...project.wsApis];
+  const containers = [
+    ...soapInterfacesOf(project),
+    ...restApisOf(project),
+    ...grpcApisOf(project),
+    ...wsApisOf(project),
+  ];
   const byId = containers.find((c) => c.id === wanted || c.slug === wanted);
   if (byId !== undefined) return { kind: 'container', id: byId.id };
   const byName = containers.filter((c) => c.name.toLowerCase() === wanted.toLowerCase());

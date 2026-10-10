@@ -13,6 +13,7 @@ import {
   createSourceCache,
   loadProject,
   requestFileLocation,
+  restApisOf,
   saveProject,
   selectRequests,
   upsertEnvironment,
@@ -123,11 +124,14 @@ export async function updateRestRequest(
   await updateProject(dir, (project) => {
     const changed = {
       ...project,
-      apis: project.apis.map((api) => ({
-        ...api,
-        folders: inFolders(api.folders),
-        requests: inRequests(api.requests),
-      })),
+      containers: {
+        ...project.containers,
+        rest: restApisOf(project).map((api) => ({
+          ...api,
+          folders: inFolders(api.folders),
+          requests: inRequests(api.requests),
+        })),
+      },
     };
     if (matched === 0) {
       throw new Error(`no request for ${method} ${path}`);

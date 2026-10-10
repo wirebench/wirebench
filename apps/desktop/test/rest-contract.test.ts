@@ -159,7 +159,7 @@ describe('the contract on the wire and in History', () => {
     });
     const model = {
       ...createProject('Demo', { id: 'p1' }),
-      apis: [createApi('Api', { id: 'api-1', baseUrl: server.url, requests: [request] })],
+      containers: { rest: [createApi('Api', { id: 'api-1', baseUrl: server.url, requests: [request] })] },
     };
     return sendDepsFor(model, lookup !== undefined ? { project: { restContractFor: lookup } } : {});
   }

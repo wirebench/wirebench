@@ -16,8 +16,15 @@ import type { Assertion } from '../assert/model.js';
 import type { KeyValueEntry } from '../http/entries.js';
 import type { RawLanguage } from '../http/escape.js';
 import type { RequestScripts } from '../script/model.js';
-import type { AttachmentSource, AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
-import { generateId } from '../project/model.js';
+import type {
+  AttachmentSource,
+  AuthConfig,
+  CreateOptions,
+  DefinitionAuth,
+  IdGenerator,
+  Project,
+} from '../project/model.js';
+import { containersOf, generateId, withContainersOf } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 
@@ -382,4 +389,14 @@ export function apiFolders(api: RestApi): RestFolder[] {
   const walk = (folders: readonly RestFolder[]): RestFolder[] =>
     folders.flatMap((folder) => [folder, ...walk(folder.folders)]);
   return walk(api.folders);
+}
+
+/** The project's REST APIs, in the order the project holds them. */
+export function restApisOf(project: Project): readonly RestApi[] {
+  return containersOf(project, 'rest') as readonly RestApi[];
+}
+
+/** `project` with its REST APIs replaced; every other kind's containers are kept. */
+export function withRestApis(project: Project, apis: readonly RestApi[]): Project {
+  return withContainersOf(project, 'rest', apis);
 }

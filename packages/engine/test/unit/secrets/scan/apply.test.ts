@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { createInterface, createProject, createRequest } from '../../../../src/project/model.js';
 import type { Project } from '../../../../src/project/model.js';
-import { createApi, createRestRequest, entry as kv } from '../../../../src/rest/model.js';
+import { createApi, createRestRequest, entry as kv, restApisOf } from '../../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../../src/grpc/model.js';
-import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../../src/ws/model.js';
+import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../../src/ws/model.js';
+import type { GrpcApi } from '../../../../src/grpc/model.js';
+import type { WsApi } from '../../../../src/ws/model.js';
 import { projectFiles } from '../../../../src/project/serialize.js';
 import { scanProjectForSecrets } from '../../../../src/secrets/scan/scan.js';
 import { applySecretMoves, proposeSecretName } from '../../../../src/secrets/scan/apply.js';
 import { expand } from '../../../../src/project/properties.js';
 import type { SecretFinding } from '../../../../src/secrets/scan/walk.js';
 import { hooksProject } from '../../webhooks/fixture.js';
+import { soapInterfacesOf, withSoapInterfaces } from '../../../../src/soap/model.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
 const AWS = 'AKIAFAKEFAKEFAKEFAKE';
@@ -30,7 +33,9 @@ function moveAll(p: Project, name = (_f: SecretFinding, i: number) => `s${i}`) {
 }
 
 function restProject(req: Parameters<typeof createRestRequest>[1]): Project {
-  return project({ apis: [createApi('A', { requests: [createRestRequest('R', { id: 'r1', ...req })] })] });
+  return project({
+    containers: { rest: [createApi('A', { requests: [createRestRequest('R', { id: 'r1', ...req })] })] },
+  });
 }
 
 describe('applySecretMoves', () => {
@@ -38,21 +43,21 @@ describe('applySecretMoves', () => {
     const p = restProject({ headers: [kv('Authorization', 'Bearer abc123def456ghi789')] });
     const r = moveAll(p, () => 'n');
     expect(r.stale).toEqual([]);
-    expect(r.project.apis[0]!.requests[0]!.headers[0]!.value).toBe('Bearer ${secret:n}');
+    expect(restApisOf(r.project)[0]!.requests[0]!.headers[0]!.value).toBe('Bearer ${secret:n}');
     expect(r.values).toEqual({ [r.findings[0]!.id]: 'abc123def456ghi789' });
   });
 
   it('does not mutate the input and shares untouched branches', () => {
     const p = project({
       properties: { password: 'changeme' },
-      apis: [createApi('A', { requests: [createRestRequest('R', { id: 'r1' })] })],
+      containers: { rest: [createApi('A', { requests: [createRestRequest('R', { id: 'r1' })] })] },
     });
     const before = JSON.stringify(p);
     const r = moveAll(p);
     expect(JSON.stringify(p)).toBe(before);
     expect(r.project).not.toBe(p);
     expect(r.project.properties).toEqual({ password: '${secret:s0}' });
-    expect(r.project.apis).toBe(p.apis);
+    expect(restApisOf(r.project)).toBe(restApisOf(p));
     expect(applySecretMoves(p, []).project).toBe(p);
   });
 
@@ -60,7 +65,7 @@ describe('applySecretMoves', () => {
     const text = `{"password":"changeme","token":"${GH}"}`;
     const r = moveAll(restProject({ body: { kind: 'raw', language: 'json', text } }));
     expect(r.findings).toHaveLength(2);
-    const body = r.project.apis[0]!.requests[0]!.body;
+    const body = restApisOf(r.project)[0]!.requests[0]!.body;
     expect(body).toMatchObject({ text: '{"password":"${secret:s0}","token":"${secret:s1}"}' });
   });
 
@@ -78,8 +83,8 @@ describe('applySecretMoves', () => {
       definitionUrl: 'x.wsdl',
       operations: [{ name: 'O', bindingName: 'B', slug: 'o', order: 0, requests: [req] }],
     });
-    const r = moveAll(project({ interfaces: [iface] }));
-    expect(r.project.interfaces[0]!.operations[0]!.requests[0]!.envelopeXml).toBe(
+    const r = moveAll(project({ containers: { soap: [iface] } }));
+    expect(soapInterfacesOf(r.project)[0]!.operations[0]!.requests[0]!.envelopeXml).toBe(
       '<E><password>${secret:s0}</password></E>',
     );
     expect(Object.values(r.values)).toEqual(['p&amp;w&#33;']);
@@ -90,7 +95,7 @@ describe('applySecretMoves', () => {
       restProject({ url: 'https://h/x?api_key=FAKE%2Bkey+1&p=2', query: [kv('access_token', 'FAKEtok')] }),
     );
     expect(r.stale).toEqual([]);
-    const req = r.project.apis[0]!.requests[0]!;
+    const req = restApisOf(r.project)[0]!.requests[0]!;
     expect(req.url).toBe('https://h/x?api_key=${secret:s0}&p=2');
     expect(req.query[0]!.value).toBe('${secret:s1}');
     expect(r.values[r.findings[0]!.id]).toBe('FAKE%2Bkey+1');
@@ -113,17 +118,24 @@ describe('applySecretMoves', () => {
       headers: [kv('Cookie', 'sid=FAKE')],
       messages: [createWsSavedMessage('m', { id: 'm1', content: '{"password":"changeme"}' })],
     });
+    const grpcApi: GrpcApi = { ...createGrpcApi('G', { id: 'ga', requests: [g] }), metadata: [kv('x-api-key', AWS)] };
+    const wsApi: WsApi = {
+      ...createWsApi('W', { id: 'wa', requests: [w] }),
+      headers: [kv('Authorization', `Token ${GH}`)],
+    };
     const p = project({
       environments: [env],
-      apis: [
-        createApi('A', {
-          requests: [
-            createRestRequest('R', { id: 'r1', body: { kind: 'form', fields: [kv('client_secret', 'FAKEs')] } }),
-          ],
-        }),
-      ],
-      grpcApis: [{ ...createGrpcApi('G', { id: 'ga', requests: [g] }), metadata: [kv('x-api-key', AWS)] }],
-      wsApis: [{ ...createWsApi('W', { id: 'wa', requests: [w] }), headers: [kv('Authorization', `Token ${GH}`)] }],
+      containers: {
+        rest: [
+          createApi('A', {
+            requests: [
+              createRestRequest('R', { id: 'r1', body: { kind: 'form', fields: [kv('client_secret', 'FAKEs')] } }),
+            ],
+          }),
+        ],
+        grpc: [grpcApi],
+        websocket: [wsApi],
+      },
     });
     const r = moveAll(p);
     expect(r.stale).toEqual([]);
@@ -134,9 +146,9 @@ describe('applySecretMoves', () => {
   it('rewrites a WS URL parameter and a WS query entry, and expanding restores both', () => {
     const url = 'wss://h/socket?token=FAKE%2Btok&page=2';
     const w = createWsRequest('W', { id: 'w1', url, query: [kv('access_token', 'FAKEq')] });
-    const r = moveAll(project({ wsApis: [createWsApi('W', { id: 'wa', requests: [w] })] }));
+    const r = moveAll(project({ containers: { websocket: [createWsApi('W', { id: 'wa', requests: [w] })] } }));
     expect(r.stale).toEqual([]);
-    const req = r.project.wsApis[0]!.requests[0]!;
+    const req = wsApisOf(r.project)[0]!.requests[0]!;
     expect(req.url).toBe('wss://h/socket?token=${secret:s0}&page=2');
     expect(req.query[0]!.value).toBe('${secret:s1}');
     expect(scanProjectForSecrets(r.project)).toEqual([]);
@@ -153,7 +165,7 @@ describe('applySecretMoves', () => {
       { kind: 'rest-url', requestId: 'r1', name: 'api_key' },
     ]);
     expect(r.stale).toEqual([]);
-    expect(r.project.apis[0]!.requests[0]!.url).toBe(
+    expect(restApisOf(r.project)[0]!.requests[0]!.url).toBe(
       'https://alice:${secret:s0}@h/x?token=${secret:s1}&page=1&api_key=${secret:s2}',
     );
   });
@@ -162,7 +174,7 @@ describe('applySecretMoves', () => {
     const url = 'https://alice:FAKE%40pass@h/x?page=1';
     const r = moveAll(restProject({ url }), () => 'url_pw');
     expect(r.stale).toEqual([]);
-    const moved = r.project.apis[0]!.requests[0]!.url;
+    const moved = restApisOf(r.project)[0]!.requests[0]!.url;
     expect(moved).toBe('https://alice:${secret:url_pw}@h/x?page=1');
     expect(scanProjectForSecrets(r.project)).toEqual([]);
     const secrets = { url_pw: r.values[r.findings[0]!.id]! };
@@ -176,8 +188,8 @@ describe('applySecretMoves', () => {
       definitionUrl: 'x.wsdl',
       operations: [{ name: 'O', bindingName: 'B', slug: 'o', order: 0, requests: [req] }],
     });
-    const r = moveAll(project({ interfaces: [iface] }));
-    const moved = r.project.interfaces[0]!.operations[0]!.requests[0]!.envelopeXml;
+    const r = moveAll(project({ containers: { soap: [iface] } }));
+    const moved = soapInterfacesOf(r.project)[0]!.operations[0]!.requests[0]!.envelopeXml;
     expect(moved).toBe('<E><wsse:Password><![CDATA[${secret:s0}]]></wsse:Password></E>');
     const secrets = { s0: r.values[r.findings[0]!.id]! };
     expect(expand(moved, { project: {}, global: {}, system: {}, secrets }).text).toBe(envelope);
@@ -187,7 +199,7 @@ describe('applySecretMoves', () => {
     const text = '{"password": 123456, "page": 2}';
     const r = moveAll(restProject({ body: { kind: 'raw', language: 'json', text } }));
     expect(r.findings.map((f) => f.value)).toEqual(['123456']);
-    const body = r.project.apis[0]!.requests[0]!.body as { text: string };
+    const body = restApisOf(r.project)[0]!.requests[0]!.body as { text: string };
     expect(body.text).toBe('{"password": ${secret:s0}, "page": 2}');
     expect(scanProjectForSecrets(r.project)).toEqual([]);
     expect(expand(body.text, { project: {}, global: {}, system: {}, secrets: { s0: '123456' } }).text).toBe(text);
@@ -223,12 +235,12 @@ describe('applySecretMoves', () => {
       definitionUrl: 'x.wsdl',
       operations: [{ name: 'O', bindingName: 'B', slug: 'o', order: 0, requests: [req] }],
     });
-    const p = { ...restProject({ body: { kind: 'raw', language: 'json', text: json } }), interfaces: [iface] };
+    const p = withSoapInterfaces(restProject({ body: { kind: 'raw', language: 'json', text: json } }), [iface]);
     const r = moveAll(p);
     expect(r.findings).toHaveLength(2);
     const secrets = Object.fromEntries(r.findings.map((f, i) => [`s${i}`, r.values[f.id]!]));
-    const body = r.project.apis[0]!.requests[0]!.body as { text: string };
-    const env = r.project.interfaces[0]!.operations[0]!.requests[0]!.envelopeXml;
+    const body = restApisOf(r.project)[0]!.requests[0]!.body as { text: string };
+    const env = soapInterfacesOf(r.project)[0]!.operations[0]!.requests[0]!.envelopeXml;
     expect(body.text).not.toBe(json);
     expect(expand(body.text, { project: {}, global: {}, system: {}, secrets }).text).toBe(json);
     expect(expand(env, { project: {}, global: {}, system: {}, secrets }).text).toBe(envelope);
@@ -282,7 +294,7 @@ describe('proposeSecretName', () => {
     expect(proposeSecretName(password!, new Set())).toBe('url_password');
     expect(proposeSecretName(token!, new Set())).toBe('token');
     const w = createWsRequest('W', { id: 'w1', url: 'wss://h/socket?access_token=FAKEtok' });
-    const ws = find(project({ wsApis: [createWsApi('W', { requests: [w] })] }));
+    const ws = find(project({ containers: { websocket: [createWsApi('W', { requests: [w] })] } }));
     expect(proposeSecretName(ws, new Set())).toBe('access_token');
   });
 

@@ -8,9 +8,17 @@
  * because the file layout is main's business (ADR-0005).
  */
 
-import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor, uniqueSlug } from '@wirebench/engine';
+import {
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
+  defaultTlsFor,
+  grpcApisOf,
+  nextApiOrder,
+  ProjectError,
+  uniqueSlug,
+} from '@wirebench/engine';
 import type { AuthConfig, GrpcApi, GrpcFolder, GrpcRequestDef, GrpcRequestSettings, Project } from '@wirebench/engine';
-import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type { GrpcApiPatchWire, GrpcRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
 import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
@@ -29,11 +37,14 @@ function notFound(what: string, id: string): never {
 
 /** The gRPC API with this id, or a clear error naming it. */
 export function requireGrpcApi(project: Project, apiId: string): GrpcApi {
-  return project.grpcApis.find((api) => api.id === apiId) ?? notFound('gRPC API', apiId);
+  return grpcApisOf(project).find((api) => api.id === apiId) ?? notFound('gRPC API', apiId);
 }
 
 function replaceApi(project: Project, next: GrpcApi): Project {
-  return { ...project, grpcApis: project.grpcApis.map((api) => (api.id === next.id ? next : api)) };
+  return {
+    ...project,
+    containers: { ...project.containers, grpc: grpcApisOf(project).map((api) => (api.id === next.id ? next : api)) },
+  };
 }
 
 function renumber<T extends { readonly order: number }>(items: readonly T[]): T[] {
@@ -100,7 +111,7 @@ function containerHolds(container: Container, nodeId: string): boolean {
 
 /** The gRPC API holding `nodeId` (a folder or a request), if any. */
 export function grpcApiOwning(project: Project, nodeId: string): GrpcApi | undefined {
-  return project.grpcApis.find((api) => containerHolds(api, nodeId));
+  return grpcApisOf(project).find((api) => containerHolds(api, nodeId));
 }
 
 /** The gRPC request with this id, wherever it is. */
@@ -108,7 +119,7 @@ export function findGrpcRequest(project: Project, requestId: string): GrpcReques
   const find = (container: Container): GrpcRequestDef | undefined =>
     container.requests.find((request) => request.id === requestId) ??
     container.folders.reduce<GrpcRequestDef | undefined>((found, folder) => found ?? find(folder), undefined);
-  return project.grpcApis.reduce<GrpcRequestDef | undefined>((found, api) => found ?? find(api), undefined);
+  return grpcApisOf(project).reduce<GrpcRequestDef | undefined>((found, api) => found ?? find(api), undefined);
 }
 
 /** The gRPC folder with this id, wherever it is. */
@@ -121,7 +132,7 @@ export function findGrpcFolder(project: Project, folderId: string): GrpcFolder |
     }
     return undefined;
   };
-  return project.grpcApis.reduce<GrpcFolder | undefined>((found, api) => found ?? find(api.folders), undefined);
+  return grpcApisOf(project).reduce<GrpcFolder | undefined>((found, api) => found ?? find(api.folders), undefined);
 }
 
 /** The request, the API it sits in, and the names of the folders down to it, outermost first. */
@@ -141,7 +152,7 @@ export function locateGrpcRequest(
     }
     return undefined;
   };
-  for (const api of project.grpcApis) {
+  for (const api of grpcApisOf(project)) {
     const found = within(api, []);
     if (found !== undefined) return { api, ...found };
   }
@@ -166,7 +177,10 @@ export function addGrpcApi(
     ...(input.tls !== undefined ? { tls: input.tls } : {}),
     order: nextApiOrder(project),
   });
-  return { project: { ...project, grpcApis: [...project.grpcApis, api] }, createdId: api.id };
+  return {
+    project: { ...project, containers: { ...project.containers, grpc: [...grpcApisOf(project), api] } },
+    createdId: api.id,
+  };
 }
 
 /** Applies a patch to a gRPC API. A `null` clears an optional field; an absent one leaves it alone. */
@@ -209,7 +223,12 @@ export function removeGrpcApi(project: Project, apiId: string): GrpcMutationResu
   requireGrpcApi(project, apiId);
   // The others keep their orders: APIs of every kind share one order, so renumbering one kind would
   // give an API an order another kind holds. A gap is harmless; `nextApiOrder` goes past the highest.
-  return { project: { ...project, grpcApis: project.grpcApis.filter((api) => api.id !== apiId) } };
+  return {
+    project: {
+      ...project,
+      containers: { ...project.containers, grpc: grpcApisOf(project).filter((api) => api.id !== apiId) },
+    },
+  };
 }
 
 /** Adds a folder to a gRPC API's root or to another of its folders. */

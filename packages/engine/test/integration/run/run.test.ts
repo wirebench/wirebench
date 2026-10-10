@@ -12,7 +12,7 @@ import type { SelectedRequest } from '../../../src/protocols.js';
 import { REDACTED_MARKER } from '../../../src/redact/index.js';
 import { createSecretMasker } from '../../../src/redact/literal.js';
 import { readGoldenFile, writeGoldenFile, type GoldenFile } from '../../../src/snapshot/golden-file.js';
-import { createApi, createRestRequest } from '../../../src/rest/model.js';
+import { createApi, createRestRequest, withRestApis } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
@@ -25,6 +25,7 @@ import { testHost } from '../../helpers/send-host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestRestServer, startTestSoapServer } from '../../helpers/index.js';
 import type { TestRestServer, TestSoapServer } from '../../helpers/index.js';
+import { withSoapInterfaces } from '../../../src/soap/model.js';
 
 const ENVELOPE = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/><soapenv:Body><w:Echo xmlns:w="urn:wb:wsa"><w:text>hi</w:text></w:Echo></soapenv:Body></soapenv:Envelope>`;
 
@@ -81,38 +82,48 @@ function makeProject(
   restRequests: readonly RestRequestDef[] = [],
   iface: Partial<Interface> = {},
 ): Project {
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: 'proj-run',
-    name: 'Run project',
-    settings: DEFAULT_PROJECT_SETTINGS,
-    properties: {},
-    disabledProperties: [],
-    interfaces: [
+  return withRestApis(
+    withSoapInterfaces(
       {
-        kind: 'soap',
-        id: 'iface-wsa',
-        name: 'Wsa',
-        slug: 'Wsa',
-        order: 0,
-        definitionUrl: soap.wsdlUrl,
-        cacheDefinition: false,
-        endpoints: [],
-        wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
-        operations: [
-          { name: 'Echo', bindingName: '{urn:wb:wsa}WsaPolicyBinding', slug: 'echo', order: 0, requests: soapRequests },
-        ],
-        ...iface,
+        formatVersion: FORMAT_VERSION,
+        id: 'proj-run',
+        name: 'Run project',
+        settings: DEFAULT_PROJECT_SETTINGS,
+        properties: {},
+        disabledProperties: [],
+        containers: {},
+
+        sequences: [],
+        mocks: [],
+        environments: [],
+        wss: { outgoing: [], incoming: [], keystores: [] },
       },
-    ],
-    apis: [{ ...createApi('Api', { id: 'api-1', slug: 'api', order: 1, baseUrl: '' }), requests: [...restRequests] }],
-    grpcApis: [],
-    wsApis: [],
-    sequences: [],
-    mocks: [],
-    environments: [],
-    wss: { outgoing: [], incoming: [], keystores: [] },
-  };
+      [
+        {
+          kind: 'soap',
+          id: 'iface-wsa',
+          name: 'Wsa',
+          slug: 'Wsa',
+          order: 0,
+          definitionUrl: soap.wsdlUrl,
+          cacheDefinition: false,
+          endpoints: [],
+          wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
+          operations: [
+            {
+              name: 'Echo',
+              bindingName: '{urn:wb:wsa}WsaPolicyBinding',
+              slug: 'echo',
+              order: 0,
+              requests: soapRequests,
+            },
+          ],
+          ...iface,
+        },
+      ],
+    ),
+    [{ ...createApi('Api', { id: 'api-1', slug: 'api', order: 1, baseUrl: '' }), requests: [...restRequests] }],
+  );
 }
 
 function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {
