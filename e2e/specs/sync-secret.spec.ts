@@ -64,9 +64,8 @@ test.describe('shared workspaces: secrets', () => {
     await expandExplorer(pageA, 'Request 1');
     await openFirstRequest(pageA);
     await pageA.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
-    await pageA.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await pageA.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     const panelA = pageA.getByTestId('inspector-panel-request');
-    await pageA.getByTestId('auth-inherit').uncheck();
     await panelA.getByLabel('Authentication type').selectOption('basic');
     await panelA.getByLabel('Username').fill('user');
     await panelA.getByRole('button', { name: 'Set…' }).click();
@@ -85,7 +84,7 @@ test.describe('shared workspaces: secrets', () => {
     await expandExplorer(pageB, 'Request 1');
     await openFirstRequest(pageB);
     await expect(pageB.getByTestId('request-endpoint')).toHaveValue(/\/auth\/basic$/, { timeout: 20_000 });
-    await pageB.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await pageB.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     const panelB = pageB.getByTestId('inspector-panel-request');
     await expect(panelB.getByTestId('secret-missing')).toHaveText('Not on this machine', { timeout: 20_000 });
 

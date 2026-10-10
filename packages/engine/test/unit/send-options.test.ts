@@ -119,6 +119,22 @@ describe('toSoapSendInput headers', () => {
     expect(input.headers?.['User-Agent']).toBeUndefined();
   });
 
+  it('leaves a header switched off out of the send', () => {
+    const input = build({
+      request: request(
+        {},
+        {
+          headers: [
+            { name: 'X-Off', value: '1', enabled: false },
+            { name: 'X-On', value: '2', description: 'kept' },
+          ],
+        },
+      ),
+    });
+    expect(input.headers?.['X-Off']).toBeUndefined();
+    expect(input.headers?.['X-On']).toBe('2');
+  });
+
   it('omits Accept-Encoding when response compression is off', () => {
     const preferences = mergePreferences({ http: { responseCompression: false } });
     expect(build({ preferences }).headers?.['Accept-Encoding']).toBeUndefined();

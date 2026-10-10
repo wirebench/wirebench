@@ -339,7 +339,15 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     ...optional('endpointUrl'),
     soapVersion: request.soapVersion,
     ...optional('soapAction'),
-    headers: patch.headers ?? request.headers,
+    headers:
+      patch.headers?.map((header) => ({
+        name: header.name,
+        value: header.value,
+        ...(header.enabled === false ? { enabled: false } : {}),
+        ...(header.description !== undefined && header.description.length > 0
+          ? { description: header.description }
+          : {}),
+      })) ?? request.headers,
     attachments: request.attachments,
     ...(request.auth !== undefined ? { auth: request.auth } : {}),
     ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),

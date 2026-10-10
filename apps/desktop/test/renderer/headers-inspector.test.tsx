@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { HeadersInspector } from '../../src/renderer/features/request-editor/inspectors/headers-inspector.js';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  computedSoapHeaders,
+  HeadersInspector,
+} from '../../src/renderer/features/request-editor/inspectors/headers-inspector.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
@@ -9,15 +12,29 @@ import type { HeaderEntryWire } from '../../src/shared/wire-types.js';
 
 const editRequest = vi.fn();
 
-function renderInspector(): void {
-  render(<HeadersInspector requestId="req-1" />);
+/** `makeDraft` leaves out the properties the computed headers read; these are the defaults. */
+function draft(overrides: Parameters<typeof makeDraft>[0]): ReturnType<typeof makeDraft> {
+  const base = makeDraft(overrides);
+  return { ...base, properties: { encoding: 'UTF-8', skipSoapAction: false } as typeof base.properties };
 }
 
-function install(headers: readonly HeaderEntryWire[]): void {
+function renderInspector(): void {
+  render(
+    <TooltipPrimitive.Provider>
+      <HeadersInspector requestId="req-1" />
+    </TooltipPrimitive.Provider>,
+  );
+}
+
+function install(headers: readonly HeaderEntryWire[], overrides: Parameters<typeof makeDraft>[0] = {}): void {
   useProjectStore.setState({
-    requests: { 'req-1': makeDraft({ headers: [...headers] }) },
+    requests: { 'req-1': draft({ headers: [...headers], ...overrides }) },
     editRequest,
   } as never);
+}
+
+function computedNames(): string[] {
+  return screen.getAllByTestId('soap-header-computed-row').map((row) => row.textContent ?? '');
 }
 
 describe('HeadersInspector (request)', () => {
@@ -31,141 +48,79 @@ describe('HeadersInspector (request)', () => {
     cleanup();
   });
 
-  it('invites a first header when the request has none', () => {
-    install([]);
+  it('shows the REST editor’s table, with the On and Description columns', () => {
     renderInspector();
-    expect(screen.getByText(/No custom headers/i)).toBeDefined();
+    expect(screen.getByRole('grid', { name: 'Request headers' })).toBeDefined();
+    expect(screen.getByTestId<HTMLInputElement>('soap-header-name').value).toBe('X-Trace');
+    expect(screen.getByTestId<HTMLInputElement>('soap-header-enabled').checked).toBe(true);
+    expect(screen.getByTestId('soap-header-description')).toBeDefined();
   });
 
-  it('adds a header, appending it to the ordered list', async () => {
+  it('switches a header off by writing enabled: false, keeping the row', () => {
     renderInspector();
+    fireEvent.click(screen.getByTestId('soap-header-enabled'));
+    expect(editRequest).toHaveBeenCalledWith('req-1', {
+      headers: [{ name: 'X-Trace', value: 'abc', enabled: false }],
+    });
+  });
 
-    await userEvent.type(screen.getByLabelText('New header name'), 'X-Extra');
-    await userEvent.type(screen.getByLabelText('New header value'), 'yes');
-    await userEvent.click(screen.getByRole('button', { name: 'Add header' }));
+  it('reads a header saved off as unchecked, and writes nothing extra for one that is on', () => {
+    install([
+      { name: 'X-Off', value: '1', enabled: false },
+      { name: 'X-On', value: '2' },
+    ]);
+    renderInspector();
+    const [off, on] = screen.getAllByTestId<HTMLInputElement>('soap-header-enabled');
+    expect(off?.checked).toBe(false);
+    expect(on?.checked).toBe(true);
 
+    fireEvent.click(off!);
+    expect(editRequest).toHaveBeenCalledWith('req-1', {
+      headers: [
+        { name: 'X-Off', value: '1' },
+        { name: 'X-On', value: '2' },
+      ],
+    });
+  });
+
+  it('saves a description, and drops an emptied one', () => {
+    renderInspector();
+    const description = screen.getByTestId('soap-header-description');
+    fireEvent.change(description, { target: { value: 'trace id' } });
+    fireEvent.keyDown(description, { key: 'Enter' });
+    expect(editRequest).toHaveBeenLastCalledWith('req-1', {
+      headers: [{ name: 'X-Trace', value: 'abc', description: 'trace id' }],
+    });
+  });
+
+  it('adds a header from the add row', () => {
+    renderInspector();
+    fireEvent.change(screen.getByTestId('soap-header-new-name'), { target: { value: 'X-Extra' } });
     expect(editRequest).toHaveBeenCalledWith('req-1', {
       headers: [
         { name: 'X-Trace', value: 'abc' },
-        { name: 'X-Extra', value: 'yes' },
+        { name: 'X-Extra', value: '' },
       ],
     });
   });
 
-  it('commits an inline value edit on Enter and reverts it on Escape', async () => {
+  it('lists the headers the binding computes, greyed under the typed ones', () => {
     renderInspector();
-    const value = screen.getByLabelText<HTMLInputElement>('Value of header 1');
-
-    await userEvent.clear(value);
-    await userEvent.type(value, 'zzz{Enter}');
-    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Trace', value: 'zzz' }] });
-
-    editRequest.mockClear();
-    await userEvent.clear(value);
-    await userEvent.type(value, 'nope{Escape}');
-    expect(value.value).toBe('abc');
-    expect(editRequest).not.toHaveBeenCalled();
+    expect(computedNames()).toEqual([expect.stringContaining('Content-Type'), expect.stringContaining('SOAPAction')]);
   });
 
-  it('commits a name edit on blur', async () => {
+  it('drops a computed header a typed one replaces, case-insensitively, unless that row is off', () => {
+    install([{ name: 'content-TYPE', value: 'text/plain' }]);
     renderInspector();
-    const name = screen.getByLabelText('Name of header 1');
+    expect(computedNames()).toEqual([expect.stringContaining('SOAPAction')]);
+    cleanup();
 
-    await userEvent.clear(name);
-    await userEvent.type(name, 'X-Renamed');
-    await userEvent.tab();
-
-    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Renamed', value: 'abc' }] });
+    install([{ name: 'content-TYPE', value: 'text/plain', enabled: false }]);
+    renderInspector();
+    expect(computedNames()).toHaveLength(2);
   });
 
-  it('trims a name edit before committing, same as adding a new header', async () => {
-    renderInspector();
-    const name = screen.getByLabelText<HTMLInputElement>('Name of header 1');
-
-    await userEvent.clear(name);
-    await userEvent.type(name, '  X-Padded  {Enter}');
-
-    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Padded', value: 'abc' }] });
-  });
-
-  it('rejects an empty or whitespace-only name on inline commit, reverting to the previous name', async () => {
-    renderInspector();
-    const name = screen.getByLabelText<HTMLInputElement>('Name of header 1');
-
-    await userEvent.clear(name);
-    await userEvent.type(name, '{Enter}');
-    expect(name.value).toBe('X-Trace');
-    expect(editRequest).not.toHaveBeenCalled();
-
-    await userEvent.clear(name);
-    await userEvent.type(name, '   ');
-    await userEvent.tab();
-    expect(name.value).toBe('X-Trace');
-    expect(editRequest).not.toHaveBeenCalled();
-  });
-
-  it('removes a header by index, keeping the duplicate that shares its name', async () => {
-    install([
-      { name: 'Accept', value: 'a' },
-      { name: 'Accept', value: 'b' },
-    ]);
-    renderInspector();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Remove header 1 (Accept)' }));
-
-    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'Accept', value: 'b' }] });
-  });
-
-  it('keeps duplicate names and their order when rendering', () => {
-    install([
-      { name: 'Accept', value: 'a' },
-      { name: 'Accept', value: 'b' },
-    ]);
-    renderInspector();
-
-    expect(screen.getByLabelText<HTMLInputElement>('Value of header 1').value).toBe('a');
-    expect(screen.getByLabelText<HTMLInputElement>('Value of header 2').value).toBe('b');
-  });
-
-  it('reorders with the up/down buttons', async () => {
-    install([
-      { name: 'A', value: '1' },
-      { name: 'B', value: '2' },
-    ]);
-    renderInspector();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Move header 2 (B) up' }));
-
-    expect(editRequest).toHaveBeenCalledWith('req-1', {
-      headers: [
-        { name: 'B', value: '2' },
-        { name: 'A', value: '1' },
-      ],
-    });
-  });
-
-  it('cannot move the first header up nor the last one down', () => {
-    install([
-      { name: 'A', value: '1' },
-      { name: 'B', value: '2' },
-    ]);
-    renderInspector();
-
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Move header 1 (A) up' }).disabled).toBe(true);
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Move header 2 (B) down' }).disabled).toBe(true);
-  });
-
-  it('warns that a header overrides one the app computes, case-insensitively', () => {
-    install([
-      { name: 'content-TYPE', value: 'text/plain' },
-      { name: 'X-Trace', value: 'abc' },
-    ]);
-    renderInspector();
-
-    expect(screen.getAllByText(/overrides the default/i)).toHaveLength(1);
-  });
-
-  it('shows this request’s unresolved expansions next to the header they sit in', () => {
+  it('shows this request’s unresolved expansions under the table', () => {
     useProblemsStore.setState({
       items: [
         {
@@ -180,5 +135,28 @@ describe('HeadersInspector (request)', () => {
     renderInspector();
 
     expect(screen.getByText(/\$\{#Project#nope\}/)).toBeDefined();
+  });
+});
+
+describe('computedSoapHeaders', () => {
+  it('computes SOAP 1.1’s content type and quoted SOAPAction', () => {
+    const request = draft({ headers: [], soapVersion: '1.1', soapAction: 'urn:Add' });
+    expect(computedSoapHeaders(request).map((row) => [row.name, row.value])).toEqual([
+      ['Content-Type', 'text/xml;charset=UTF-8'],
+      ['SOAPAction', '"urn:Add"'],
+    ]);
+  });
+
+  it('folds the action into SOAP 1.2’s content type', () => {
+    const request = draft({ headers: [], soapVersion: '1.2', soapAction: 'urn:Add' });
+    expect(computedSoapHeaders(request).map((row) => [row.name, row.value])).toEqual([
+      ['Content-Type', 'application/soap+xml;charset=UTF-8;action="urn:Add"'],
+    ]);
+  });
+
+  it('leaves the action out when the request skips it', () => {
+    const base = draft({ headers: [], soapVersion: '1.1', soapAction: 'urn:Add' });
+    const request = { ...base, properties: { ...base.properties, skipSoapAction: true } };
+    expect(computedSoapHeaders(request).map((row) => row.name)).toEqual(['Content-Type']);
   });
 });

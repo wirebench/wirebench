@@ -42,7 +42,7 @@ export function DetailsInspector({ requestId }: DetailsInspectorProps) {
   }
 
   return (
-    <div data-testid="request-details-inspector" className="p-2">
+    <div data-testid="request-details-inspector" className="overflow-auto p-3">
       <SettingsGroup>
         <ReadOnlySetting label="Interface" value={iface?.name ?? '—'} />
         <ReadOnlySetting label="Operation" value={request.operationName} />

@@ -135,6 +135,9 @@ export function revealProblem(requestId: string, direction: ValidationDirection,
     // The response pane may be showing another view (Outline, Raw, …); the reveal needs its XML
     // view on screen so there is an editor to select in.
     useEditorsStore.getState().setResponseView(requestId, 'xml');
+  } else {
+    // The envelope only has an editor while the request pane shows its Body tab.
+    useEditorsStore.getState().setInspector(requestId, 'request', 'body');
   }
   if (line === undefined) {
     return;

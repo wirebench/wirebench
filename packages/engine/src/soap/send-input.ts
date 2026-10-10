@@ -104,6 +104,9 @@ export function toSoapSendInput(args: ToSoapSendInputArgs): SoapSendInput {
 
   const headers: Record<string, string> = {};
   for (const header of args.request.headers) {
+    if (header.enabled === false) {
+      continue;
+    }
     headers[header.name] = header.value;
   }
   if (!hasHeader(headers, 'user-agent') && preferences.http.userAgent.length > 0) {

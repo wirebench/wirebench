@@ -28,14 +28,25 @@ export type RestBodyViewType = 'text' | 'form';
 
 const DEFAULT_REST_BODY_VIEW: RestBodyViewType = 'text';
 
-/** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
+/** Which tab a SOAP pane's top strip shows — `'body'` is the envelope with its view switcher.
+ * Editor state, never saved to disk. */
 export type InspectorId =
-  'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties' | 'scripts' | 'assertions';
+  | 'body'
+  | 'headers'
+  | 'attachments'
+  | 'auth'
+  | 'wsa'
+  | 'wss'
+  | 'ssl'
+  | 'details'
+  | 'properties'
+  | 'scripts'
+  | 'assertions';
 
 /** Which pane's strip an inspector selection belongs to — the two are independent. */
 export type InspectorPane = 'request' | 'response';
 
-const DEFAULT_INSPECTOR: InspectorId = 'headers';
+const DEFAULT_INSPECTOR: InspectorId = 'body';
 
 /** Inspector state is per request AND per pane, so the two strips key off distinct entries. */
 function inspectorKey(requestId: string, pane: InspectorPane): string {
@@ -146,8 +157,6 @@ export interface EditorsStore {
   readonly restBodyViews: Readonly<Record<string, RestBodyViewType>>;
   /** Selected inspector per `${requestId}:${pane}`. Editor state, not project data. */
   readonly inspectorTabs: Readonly<Record<string, InspectorId>>;
-  /** Whether a pane's inspector panel is collapsed, per `${requestId}:${pane}`. */
-  readonly inspectorCollapsed: Readonly<Record<string, boolean>>;
   /** The attachment row selected in a request's Attachments inspector. Editor state, not project data. */
   readonly selectedAttachments: Readonly<Record<string, string>>;
   readonly open: (tab: EditorTab) => void;
@@ -173,12 +182,13 @@ export interface EditorsStore {
 
   /** The selected request tab for `requestId`, defaulting to `'xml'` when never set. */
   readonly requestViewFor: (requestId: string) => RequestViewType;
-  /** Selects a request tab (XML · Form · Outline · Raw). */
+  /** Selects a request tab (XML · Form · Outline · Raw), and brings the pane to its Body tab. */
   readonly setRequestView: (requestId: string, viewType: RequestViewType) => void;
 
   /** The selected response tab for `requestId`, defaulting to `'xml'` when never set. */
   readonly responseViewFor: (requestId: string) => ResponseViewType;
-  /** Records the user's own tab choice — pins it, so a later fault no longer overrides it. */
+  /** Records the user's own tab choice — pins it, so a later fault no longer overrides it — and
+   * brings the pane to its Body tab. */
   readonly setResponseView: (requestId: string, viewType: ResponseViewType) => void;
   /** Switches to the Fault tab when a fault just arrived, unless the user already pinned a
    * different tab for this request (see `setResponseView`). */
@@ -190,14 +200,9 @@ export interface EditorsStore {
   readonly restBodyViewFor: (requestId: string) => RestBodyViewType;
   readonly setRestBodyView: (requestId: string, view: RestBodyViewType) => void;
 
-  /** The selected inspector for one pane of one request, defaulting to `'headers'`. */
+  /** The selected tab for one pane of one request, defaulting to `'body'`. */
   readonly inspectorFor: (requestId: string, pane: InspectorPane) => InspectorId;
-  /** Selects an inspector — which also expands the panel, since picking a tab means "show me it". */
   readonly setInspector: (requestId: string, pane: InspectorPane, inspector: InspectorId) => void;
-  /** Whether one pane's inspector panel is collapsed. Panels start collapsed, so the editor keeps
-   * the full pane until the user asks for an inspector. */
-  readonly inspectorCollapsedFor: (requestId: string, pane: InspectorPane) => boolean;
-  readonly setInspectorCollapsed: (requestId: string, pane: InspectorPane, collapsed: boolean) => void;
 
   /** The selected attachment row for `requestId`, or `undefined` when none is selected. */
   readonly selectedAttachmentFor: (requestId: string) => string | undefined;
@@ -221,7 +226,6 @@ const EMPTY_EDITORS = {
   editorLayouts: {},
   restBodyViews: {},
   inspectorTabs: {},
-  inspectorCollapsed: {},
   selectedAttachments: {},
 } as const;
 
@@ -307,7 +311,10 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   requestViewFor: (requestId) => get().requestViewTypes[requestId] ?? DEFAULT_REQUEST_VIEW_TYPE,
 
   setRequestView: (requestId, viewType) => {
-    set({ requestViewTypes: { ...get().requestViewTypes, [requestId]: viewType } });
+    set({
+      requestViewTypes: { ...get().requestViewTypes, [requestId]: viewType },
+      inspectorTabs: { ...get().inspectorTabs, [inspectorKey(requestId, 'request')]: 'body' },
+    });
   },
 
   responseViewFor: (requestId) => get().responseViewTypes[requestId] ?? DEFAULT_RESPONSE_VIEW_TYPE,
@@ -316,6 +323,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     set({
       responseViewTypes: { ...get().responseViewTypes, [requestId]: viewType },
       responseViewPinned: { ...get().responseViewPinned, [requestId]: true },
+      inspectorTabs: { ...get().inspectorTabs, [inspectorKey(requestId, 'response')]: 'body' },
     });
   },
 
@@ -332,17 +340,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   inspectorFor: (requestId, pane) => get().inspectorTabs[inspectorKey(requestId, pane)] ?? DEFAULT_INSPECTOR,
 
   setInspector: (requestId, pane, inspector) => {
-    const key = inspectorKey(requestId, pane);
-    set({
-      inspectorTabs: { ...get().inspectorTabs, [key]: inspector },
-      inspectorCollapsed: { ...get().inspectorCollapsed, [key]: false },
-    });
-  },
-
-  inspectorCollapsedFor: (requestId, pane) => get().inspectorCollapsed[inspectorKey(requestId, pane)] ?? true,
-
-  setInspectorCollapsed: (requestId, pane, collapsed) => {
-    set({ inspectorCollapsed: { ...get().inspectorCollapsed, [inspectorKey(requestId, pane)]: collapsed } });
+    set({ inspectorTabs: { ...get().inspectorTabs, [inspectorKey(requestId, pane)]: inspector } });
   },
 
   selectedAttachmentFor: (requestId) => get().selectedAttachments[requestId],

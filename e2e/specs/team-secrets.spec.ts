@@ -27,7 +27,7 @@ function vaultBlobs(dir: string): string {
 async function authPanel(page: Page) {
   await expandExplorer(page, 'Request 1');
   await openFirstRequest(page);
-  await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+  await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
   return page.getByTestId('inspector-panel-request');
 }
 
@@ -78,7 +78,6 @@ test.describe('shared workspaces: team secrets', () => {
     // --- A: Basic auth with a first (wrong) value --------------------------------------------
     const panelA = await authPanel(pageA);
     await pageA.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
-    await pageA.getByTestId('auth-inherit').uncheck();
     await panelA.getByLabel('Authentication type').selectOption('basic');
     await panelA.getByLabel('Username').fill('user');
     await panelA.getByRole('button', { name: 'Set…' }).click();

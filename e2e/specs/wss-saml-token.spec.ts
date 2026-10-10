@@ -57,7 +57,7 @@ test.describe('wss saml token', () => {
     await editor.getByLabel('Subject', { exact: true }).fill('alice');
 
     // --- select it on Request 1 and send ----------------------------------------------------
-    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
 
     await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
