@@ -299,7 +299,7 @@ export function KvTable({
               {columns.map((column) => (
                 <th
                   key={column}
-                  className={`relative px-2 py-1.5 font-medium ${column === 'enabled' ? 'text-center' : ''}`}
+                  className={`relative px-2 py-1.5 font-medium ${column === 'enabled' ? 'text-center' : divider(columns, column)}`}
                   {...(column === 'enabled' ? { title: 'Enabled' } : {})}
                 >
                   {HEADING[column]}
@@ -344,7 +344,7 @@ export function KvTable({
                   ) : (
                     // The text sits where an editable cell's text does (field padding plus its 1px
                     // border), and wraps like it.
-                    <td key={column} className="px-2 py-1 align-top font-mono text-sm">
+                    <td key={column} className={`px-2 py-1 align-top font-mono text-sm ${divider(columns, column)}`}>
                       <span className="block px-[9px] py-[4px] leading-[18px] [overflow-wrap:anywhere] whitespace-pre-wrap">
                         {column === 'name' ? row.name : column === 'value' ? row.value : (row.description ?? '')}
                       </span>
@@ -380,7 +380,7 @@ export function KvTable({
               {...rowProps(computed.length + rows.length)}
             >
               {columns.map((column) => (
-                <td key={column} className="px-2 py-1 align-top">
+                <td key={column} className={`px-2 py-1 align-top ${divider(columns, column)}`}>
                   {column === 'enabled' ? (
                     // Nothing to toggle yet: the row does not exist until something is typed.
                     <span className={FIRST_LINE}>
@@ -421,6 +421,16 @@ export function KvTable({
       )}
     </div>
   );
+}
+
+/**
+ * The rule between two text columns, the same border on the heading and down every row so the two
+ * line up to the pixel: on the left edge of each text column but the first. The On and delete
+ * columns get none. The header's resize handle sits over this rule and only lights up on hover.
+ */
+function divider(columns: readonly KvColumn[], column: KvColumn): string {
+  const text: readonly KvColumn[] = columns.filter((candidate) => candidate !== 'enabled');
+  return text.indexOf(column) > 0 ? 'border-l border-hairline' : '';
 }
 
 /** The column an add-row keystroke typed into. */
@@ -480,7 +490,7 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
             </span>
           </td>
         ) : (
-          <td key={column} className="px-2 py-1 align-top">
+          <td key={column} className={`px-2 py-1 align-top ${divider(columns, column)}`}>
             <textarea
               rows={1}
               aria-label={`${HEADING[column]} of ${row.name}`}
@@ -526,7 +536,7 @@ function ColumnResizer({ label, testid, onResize, onReset }: ColumnResizerProps)
       data-testid={testid}
       tabIndex={0}
       title="Drag to resize, double-click to reset"
-      className="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize touch-none after:absolute after:top-1/4 after:left-1/2 after:h-1/2 after:w-px after:bg-hairline-strong hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent"
+      className="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize touch-none after:absolute after:top-1/4 after:left-1/2 after:h-1/2 after:w-px after:bg-transparent hover:after:bg-accent focus-visible:outline-none focus-visible:after:bg-accent"
       onPointerDown={(event) => {
         event.preventDefault();
         lastX.current = event.clientX;
