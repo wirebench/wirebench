@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadProject } from '../../../src/project/load.js';
-import { createInterface, createProject } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface } from '../../../src/soap/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { createApi, createRestRequest, restApisOf, withRestApis } from '../../../src/rest/model.js';
 

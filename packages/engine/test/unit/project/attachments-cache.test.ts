@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ProjectError } from '../../../src/errors.js';
-import type { Attachment } from '../../../src/project/model.js';
+import type { Attachment } from '../../../src/soap/model.js';
 import {
   attachmentFile,
   attachmentsIndexFile,

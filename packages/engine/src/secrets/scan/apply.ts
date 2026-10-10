@@ -1,26 +1,18 @@
 /**
  * `applySecretMoves`: rewrite a project so each chosen finding's value is replaced by a
  * `${secret:name}` token, and `proposeSecretName`: the name the review dialog offers for a finding
- * (docs/specs/2026-09-22-secret-scanning-design.md, "Move to secret").
+ * (docs/specs/2026-09-22-secret-scanning-design.md, "Move to secret"). Core rewrites the project's
+ * and its environments' properties; each protocol's secrets facet rewrites its own texts.
  *
  * Pure module: no I/O. The input project is never mutated; unchanged branches are shared.
  */
-import type { KeyValueEntry } from '../../http/entries.js';
-import type { RestBody, RestRequestDef } from '../../rest/model.js';
 import type { Project } from '../../project/model.js';
-import type { ContainerBase } from '../../protocol/module.js';
-import { SECRET_NAME_PATTERN, secretToken } from '../secret-token.js';
-import type { SecretFinding, SecretLocation } from './walk.js';
-import { soapInterfacesOf } from '../../soap/model.js';
-import { restApisOf } from '../../rest/model.js';
-import { grpcApisOf } from '../../grpc/model.js';
-import { wsApisOf } from '../../ws/model.js';
+import type { ProtocolRegistry } from '../../protocol/registry.js';
+import { defaultRegistry } from '../../protocols.js';
+import { mapShared, patch, SecretRewriter } from './support.js';
+import type { SecretFinding, SecretLocation, SecretMove } from './support.js';
 
-export interface SecretMove {
-  readonly finding: SecretFinding;
-  /** The secret name to write; must match `SECRET_NAME_PATTERN`. */
-  readonly name: string;
-}
+export type { SecretMove } from './support.js';
 
 export interface SecretMovesResult {
   /** The rewritten project (the input itself when nothing was applied). */
@@ -38,94 +30,8 @@ export interface SecretMovesResult {
   readonly values: Record<string, string>;
 }
 
-/** The stored text a location is in: a URL finding's query key is left out, as the URL is one text. */
-function locationKey(location: SecretLocation): string {
-  if (location.kind === 'rest-url' || location.kind === 'ws-url') {
-    return JSON.stringify({ kind: location.kind, requestId: location.requestId });
-  }
-  return JSON.stringify(location);
-}
-
-/** Rewrites stored texts; records which moves applied and the raw values they replaced. */
-class Rewriter {
-  readonly applied = new Map<string, string>();
-  private readonly byKey = new Map<string, SecretMove[]>();
-
-  constructor(moves: readonly SecretMove[]) {
-    for (const move of moves) {
-      if (!SECRET_NAME_PATTERN.test(move.name)) continue;
-      const key = locationKey(move.finding.location);
-      const list = this.byKey.get(key) ?? [];
-      list.push(move);
-      this.byKey.set(key, list);
-    }
-  }
-
-  /** `text` with every move at `location` applied right to left; the same string when none apply. */
-  text(location: SecretLocation, text: string): string {
-    const moves = this.byKey.get(locationKey(location));
-    if (moves === undefined) return text;
-    const sorted = [...moves].sort((a, b) => b.finding.valueStart - a.finding.valueStart);
-    let out = text;
-    let limit = Infinity;
-    for (const { finding, name } of sorted) {
-      const { valueStart: start, valueEnd: end, value, id } = finding;
-      // Compare against the original `text`: ranges index into it, and moves to the right only change `out` past `limit`.
-      if (this.applied.has(id) || end > limit || start >= end || text.slice(start, end) !== value) continue;
-      out = out.slice(0, start) + secretToken(name) + out.slice(end);
-      limit = start;
-      this.applied.set(id, value);
-    }
-    return out;
-  }
-}
-
-/** `list` mapped by `fn`, or `list` itself when no element changed. */
-function mapShared<T>(list: readonly T[], fn: (item: T, index: number) => T): readonly T[] {
-  let changed = false;
-  const out = list.map((item, index) => {
-    const next = fn(item, index);
-    if (next !== item) changed = true;
-    return next;
-  });
-  return changed ? out : list;
-}
-
-function patch<T extends object>(obj: T, next: Partial<T>): T {
-  for (const key of Object.keys(next) as (keyof T)[]) {
-    if (next[key] !== obj[key]) return { ...obj, ...next };
-  }
-  return obj;
-}
-
-interface TreeNode<R> {
-  readonly folders: readonly TreeNode<R>[];
-  readonly requests: readonly R[];
-}
-
-function mapTree<N extends TreeNode<R>, R>(node: N, fn: (request: R) => R): N {
-  return patch(node, {
-    requests: mapShared(node.requests, fn),
-    folders: mapShared(node.folders, (folder) => mapTree(folder, fn)),
-  } as Partial<N>);
-}
-
-type KeyedKind = Extract<SecretLocation, { index: number }>['kind'];
-
-function keyedEntries<E extends { readonly name: string; readonly value: string }>(
-  rw: Rewriter,
-  kind: KeyedKind,
-  owner: { requestId: string } | { apiId: string },
-  entries: readonly E[],
-): readonly E[] {
-  return mapShared(entries, (entry, index) => {
-    const location = { kind, ...owner, name: entry.name, index } as SecretLocation;
-    return patch(entry, { value: rw.text(location, entry.value) } as Partial<E>);
-  });
-}
-
 function properties(
-  rw: Rewriter,
+  rw: SecretRewriter,
   props: Readonly<Record<string, string>>,
   location: (name: string) => SecretLocation,
 ): Readonly<Record<string, string>> {
@@ -137,96 +43,19 @@ function properties(
   return out ?? props;
 }
 
-function restBody(rw: Rewriter, requestId: string, body: RestBody): RestBody {
-  if (body.kind === 'raw') {
-    return patch(body, { text: rw.text({ kind: 'rest-body', requestId }, body.text) });
-  }
-  // Built in the key order `walk.ts` uses: the location's JSON is the rewriter's key.
-  const field = <E extends KeyValueEntry | { readonly kind: 'file' }>(entry: E, index: number): E =>
-    'value' in entry
-      ? (patch<KeyValueEntry>(entry, {
-          value: rw.text({ kind: 'rest-body', requestId, field: index, name: entry.name }, entry.value),
-        }) as E)
-      : entry;
-  if (body.kind === 'form') return patch(body, { fields: mapShared(body.fields, field) });
-  if (body.kind === 'multipart') return patch(body, { parts: mapShared(body.parts, field) });
-  return body;
-}
-
-function restRequest(rw: Rewriter, request: RestRequestDef): RestRequestDef {
-  const requestId = request.id;
-  return patch(request, {
-    url: rw.text({ kind: 'rest-url', requestId }, request.url),
-    query: keyedEntries(rw, 'rest-query', { requestId }, request.query),
-    headers: keyedEntries(rw, 'rest-header', { requestId }, request.headers),
-    body: restBody(rw, requestId, request.body),
-  });
-}
-
 /**
  * Replace each move's finding range with `${secret:name}`. Moves in the same text apply right to
  * left, so earlier ranges stay valid; a REST or WS URL and its query table are separate texts. A move
  * whose text no longer holds `finding.value` at `[valueStart, valueEnd)` is skipped and listed in
  * `stale`. See {@link SecretMovesResult.values} for the value main stores.
  */
-export function applySecretMoves(project: Project, moves: readonly SecretMove[]): SecretMovesResult {
-  const rw = new Rewriter(moves);
-  const soap = mapShared(soapInterfacesOf(project), (iface) =>
-    patch(iface, {
-      operations: mapShared(iface.operations, (operation) =>
-        patch(operation, {
-          requests: mapShared(operation.requests, (request) =>
-            patch(request, {
-              headers: keyedEntries(rw, 'soap-header', { requestId: request.id }, request.headers),
-              envelopeXml: rw.text({ kind: 'soap-body', requestId: request.id }, request.envelopeXml),
-            }),
-          ),
-        }),
-      ),
-    }),
-  );
-  const rest = mapShared(restApisOf(project), (api) =>
-    mapTree(api, (request: RestRequestDef) => restRequest(rw, request)),
-  );
-  const grpc = mapShared(grpcApisOf(project), (api) =>
-    mapTree(
-      patch(api, { metadata: keyedEntries(rw, 'grpc-api-metadata', { apiId: api.id }, api.metadata) }),
-      (request: (typeof api.requests)[number]) =>
-        patch(request, {
-          metadata: keyedEntries(rw, 'grpc-metadata', { requestId: request.id }, request.metadata),
-          message: rw.text({ kind: 'grpc-message', requestId: request.id }, request.message),
-        }),
-    ),
-  );
-  const websocket = mapShared(wsApisOf(project), (api) =>
-    mapTree(
-      patch(api, { headers: keyedEntries(rw, 'ws-api-header', { apiId: api.id }, api.headers) }),
-      (request: (typeof api.requests)[number]) =>
-        patch(request, {
-          url: rw.text({ kind: 'ws-url', requestId: request.id }, request.url),
-          query: keyedEntries(rw, 'ws-query', { requestId: request.id }, request.query),
-          headers: keyedEntries(rw, 'ws-header', { requestId: request.id }, request.headers),
-          messages: mapShared(request.messages, (message) =>
-            message.format !== 'text'
-              ? message
-              : patch(message, {
-                  content: rw.text(
-                    { kind: 'ws-message', requestId: request.id, messageId: message.id },
-                    message.content,
-                  ),
-                }),
-          ),
-        }),
-    ),
-  );
-  // Only the kinds the project holds: one it has none of stays absent, and a kind no built-in
-  // protocol writes is kept as it is.
-  const lists: Readonly<Record<string, readonly ContainerBase[]>> = { soap, rest, grpc, websocket };
-  const containers = patch(
-    project.containers,
-    Object.fromEntries(Object.entries(lists).filter(([kind]) => kind in project.containers)),
-  );
-  const next = patch(project, {
+export function applySecretMoves(
+  project: Project,
+  moves: readonly SecretMove[],
+  registry: ProtocolRegistry = defaultRegistry(),
+): SecretMovesResult {
+  const rw = new SecretRewriter(moves);
+  let next = patch(project, {
     properties: properties(rw, project.properties, (name) => ({ kind: 'project-property', name })),
     environments: mapShared(project.environments, (env) =>
       patch(env, {
@@ -237,11 +66,10 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
         })),
       }),
     ),
-    containers,
-    ...(project.webhooks === undefined
-      ? {}
-      : { webhooks: mapTree(project.webhooks, (request: RestRequestDef) => restRequest(rw, request)) }),
   });
+  for (const module of registry.modules) {
+    if (module.secrets !== undefined) next = module.secrets.applyMoves(next, rw);
+  }
   const stale = moves.map((m) => m.finding.id).filter((id) => !rw.applied.has(id));
   return { project: next, stale: [...new Set(stale)], values: Object.fromEntries(rw.applied) };
 }

@@ -8,15 +8,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Keystore } from '../../../src/keystore/index.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, withSoapInterfaces } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { SoapRequestDef } from '../../../src/soap/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import type { SendHost } from '../../../src/run/host.js';
 import { resolveSoap, soapItemFor } from '../../../src/soap/run.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 import { testHost } from '../../helpers/send-host.js';
-import { withSoapInterfaces } from '../../../src/soap/model.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

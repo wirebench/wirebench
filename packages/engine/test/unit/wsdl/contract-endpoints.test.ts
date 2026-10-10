@@ -6,13 +6,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { expand } from '../../../src/project/properties.js';
-import { createInterface, createProject } from '../../../src/project/model.js';
-import type { Endpoint, Project } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface, soapInterfacesOf } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { Endpoint } from '../../../src/soap/model.js';
 import { importWsdl } from '../../../src/soap/import.js';
 import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { contractPorts, endpointsFromContract, endpointUrlFromContract } from '../../../src/wsdl/contract-endpoints.js';
 import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const PROBE = '${#System#WB_PROBE}';
 const sent = (text: string): string =>

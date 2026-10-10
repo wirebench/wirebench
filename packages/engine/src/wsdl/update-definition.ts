@@ -19,8 +19,10 @@
 import { generateSoapRequest } from '../soap/generate.js';
 import { endpointUrlFromContract } from './contract-endpoints.js';
 import { hasExpansions } from '../project/properties.js';
-import { createRequest, generateId } from '../project/model.js';
-import type { Endpoint, IdGenerator, Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
+import { generateId } from '../project/model.js';
+import { createRequest, soapInterfacesOf } from '../soap/model.js';
+import type { IdGenerator, Project } from '../project/model.js';
+import type { Endpoint, Interface, OperationDef, SoapRequestDef } from '../soap/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
 import { recreateRequest } from '../soap/recreate.js';
 import type { OperationRef } from '../soap/request-builder.js';
@@ -30,7 +32,6 @@ import { findBinding, findPortType } from './model.js';
 import type { MessageRef, WsdlDefinition } from './model.js';
 import type { QName } from './qname.js';
 import { qnameToString } from './qname.js';
-import { soapInterfacesOf } from '../soap/model.js';
 
 export type { OperationRef } from '../soap/request-builder.js';
 

@@ -7,26 +7,18 @@
  * project keeps its ids, since it stays the same on-disk project.
  */
 
-import { defaultContentId, generateId } from '../project/model.js';
-import type { Attachment, IdGenerator, Project, SoapRequestDef, WssRef } from '../project/model.js';
-import { soapInterfacesOf } from '../soap/model.js';
+import { generateId } from '../project/model.js';
+import type { IdGenerator, Project, WssRef } from '../project/model.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import { defaultRegistry } from '../protocols.js';
 
 /** Every entity id in `project`, in visit order (an id shared by two entities is deduplicated). */
-function collectIds(project: Project): string[] {
+function collectIds(project: Project, registry: ProtocolRegistry): string[] {
   const ids: string[] = [project.id];
-  for (const iface of soapInterfacesOf(project)) {
-    ids.push(iface.id);
-    for (const endpoint of iface.endpoints) {
-      ids.push(endpoint.id);
-    }
-    for (const operation of iface.operations) {
-      for (const request of operation.requests) {
-        ids.push(request.id);
-        for (const attachment of request.attachments) {
-          ids.push(attachment.id);
-        }
-      }
-    }
+  for (const module of registry.modules) {
+    const { storage } = module;
+    if (storage.entityIds === undefined) continue;
+    for (const container of storage.containers(project)) ids.push(...storage.entityIds(container));
   }
   for (const environment of project.environments) {
     ids.push(environment.id);
@@ -79,10 +71,15 @@ function optional<K extends string>(key: K, value: string | undefined): { [P in 
  * @param project the project to give a fresh identity
  * @param newId id generator; defaults to {@link generateId}. Injectable so the result is
  *   deterministic in tests.
+ * @param registry whose modules' storage says which of a container's ids to renew
  * @returns a new `Project` with fresh ids throughout
  */
-export function reidentifyProject(project: Project, newId: IdGenerator = generateId): Project {
-  const idMap = buildIdMap(collectIds(project), newId);
+export function reidentifyProject(
+  project: Project,
+  newId: IdGenerator = generateId,
+  registry: ProtocolRegistry = defaultRegistry(),
+): Project {
+  const idMap = buildIdMap(collectIds(project, registry), newId);
   const mapId = (id: string): string => idMap.get(id) ?? id;
   const mapRef = (id: string | undefined): string | undefined => (id === undefined ? undefined : mapId(id));
   const mapWssRef = (ref: WssRef): WssRef => ({
@@ -91,42 +88,19 @@ export function reidentifyProject(project: Project, newId: IdGenerator = generat
     document: remapValue(ref.document, idMap) as Readonly<Record<string, unknown>>,
   });
 
-  const reidentifyAttachment = (attachment: Attachment): Attachment => {
-    const id = mapId(attachment.id);
-    const hadDefaultContentId = attachment.contentId === defaultContentId(attachment.id);
-    return {
-      ...attachment,
-      id,
-      contentId: hadDefaultContentId ? defaultContentId(id) : attachment.contentId,
-    };
-  };
-
-  const reidentifyRequest = (request: SoapRequestDef): SoapRequestDef => ({
-    ...request,
-    id: mapId(request.id),
-    ...optional('endpointId', mapRef(request.endpointId)),
-    ...optional('wssOutgoingRef', mapRef(request.wssOutgoingRef)),
-    ...optional('wssIncomingRef', mapRef(request.wssIncomingRef)),
-    attachments: request.attachments.map(reidentifyAttachment),
-    properties: { ...request.properties, ...optional('sslKeystoreRef', mapRef(request.properties.sslKeystoreRef)) },
-  });
+  let next = project;
+  for (const { storage } of registry.modules) {
+    if (storage.withEntityIds === undefined) continue;
+    const containers = storage.containers(next);
+    if (containers.length === 0) continue;
+    const renewed = [];
+    for (const container of containers) renewed.push(storage.withEntityIds(container, mapId));
+    next = storage.withContainers(next, renewed);
+  }
 
   return {
-    ...project,
+    ...next,
     id: mapId(project.id),
-    containers: {
-      ...project.containers,
-      soap: soapInterfacesOf(project).map((iface) => ({
-        ...iface,
-        id: mapId(iface.id),
-        endpoints: iface.endpoints.map((endpoint) => ({ ...endpoint, id: mapId(endpoint.id) })),
-        ...optional('defaultEndpointId', mapRef(iface.defaultEndpointId)),
-        operations: iface.operations.map((operation) => ({
-          ...operation,
-          requests: operation.requests.map(reidentifyRequest),
-        })),
-      })),
-    },
     environments: project.environments.map((environment) => ({ ...environment, id: mapId(environment.id) })),
     ...optional('activeEnvironmentId', mapRef(project.activeEnvironmentId)),
     wss: {

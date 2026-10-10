@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../src/soap/model.js';
 import { mergePreferences } from '../../src/project/preferences.js';
 import { toSoapSendInput } from '../../src/soap/send-input.js';
 import { sendSoapRequest } from '../../src/soap/send.js';

@@ -9,6 +9,7 @@ export type {
   ProtocolModule,
   ProtocolRun,
   ProtocolScripting,
+  ProtocolSecrets,
   ProtocolStorage,
   RequestSnapshotBase,
   ResponseSnapshotBase,

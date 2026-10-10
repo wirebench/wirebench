@@ -1,7 +1,9 @@
 /** SOAP's run facet on its own: what it offers a run, why a request cannot run, its needs, one send. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -9,7 +11,6 @@ import { selectRequests } from '../../../src/run/select.js';
 import { soapProtocol } from '../../../src/soap/module.js';
 import { soapRun } from '../../../src/soap/run.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
-import { soapInterfacesOf } from '../../../src/soap/model.js';
 
 const { events, cacheReads } = vi.hoisted(() => ({ events: [] as string[], cacheReads: [] as string[] }));
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Attachment } from '../../../../src/project/model.js';
+import type { Attachment } from '../../../../src/soap/model.js';
 import { parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
 import { collectResponseAttachments, prepareSwaRequest } from '../../../../src/soap/mime/swa.js';
 import type { AttachmentResolver } from '../../../../src/soap/mime/types.js';

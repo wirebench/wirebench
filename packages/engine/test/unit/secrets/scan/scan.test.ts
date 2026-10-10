@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest } from '../../../../src/project/model.js';
+import { createProject } from '../../../../src/project/model.js';
+import { createInterface, createRequest } from '../../../../src/soap/model.js';
 import type { Project } from '../../../../src/project/model.js';
 import { createApi, createFolder, createRestRequest, entry as kv } from '../../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../../src/grpc/model.js';

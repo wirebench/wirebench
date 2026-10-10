@@ -7,7 +7,8 @@ import {
   resolveScopes,
   upsertEnvironment,
 } from '../../../src/project/environments.js';
-import { createInterface, createProject, type Environment, type Project } from '../../../src/project/model.js';
+import { createProject, type Environment, type Project } from '../../../src/project/model.js';
+import { createInterface } from '../../../src/soap/model.js';
 import { expand } from '../../../src/project/properties.js';
 
 function fixtureProject(): { project: Project; iface: ReturnType<typeof createInterface> } {

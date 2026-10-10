@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { findStepRequest, selectRequests } from '../../../src/run/select.js';
 import { hooksProject } from '../webhooks/fixture.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, OperationDef, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { Interface, OperationDef, SoapRequestDef } from '../../../src/soap/model.js';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
 import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';

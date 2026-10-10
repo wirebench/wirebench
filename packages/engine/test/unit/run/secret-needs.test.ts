@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { secretNeedsOf } from '../../../src/run/secret-needs.js';
 import { selectRequests } from '../../../src/run/select.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { EndpointAuth, Interface, Project, SoapRequestDef, WssRef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { EndpointAuth, Project, WssRef } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, withGrpcApis } from '../../../src/grpc/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestApi } from '../../../src/rest/model.js';

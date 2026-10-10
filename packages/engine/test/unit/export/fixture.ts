@@ -1,7 +1,8 @@
 /** A small project with one container of each kind, for the exporter tests. */
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
 import type { Project } from '../../../src/project/model.js';
-import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
+import { createProject } from '../../../src/project/model.js';
+import { createInterface, createRequest } from '../../../src/soap/model.js';
 import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
 

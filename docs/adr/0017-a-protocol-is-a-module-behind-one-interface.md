@@ -61,10 +61,9 @@ an editor does not flag a wrong import, and `pnpm check` (and CI) does.
 | --- | --- | --- |
 | `protocols.ts` | every module: it is the composition file | stays; becomes the `engine` package in phase 5 |
 | `index.ts` | the public exports | stays |
-| `project/model.ts` | the webhook container type, type-only; the WS-Addressing model | phase 3 |
+| `project/model.ts` | the webhook container type, type-only | phase 3 |
 | `project/load.ts`, `project/serialize.ts` | REST's request reader and writer for `webhooks/`; the webhook model | phase 3 |
-| `secrets/scan/walk.ts`, `secrets/scan/apply.ts` | every built-in protocol's container reader | phase 3 |
-| `workspace/reidentify.ts` | SOAP's container reader | phase 3 |
+| `project/environments.ts`, `workspace/environments.ts`, `project/attachments-cache.ts` | SOAP's endpoint and attachment types, type-only | phase 5 |
 | `import-detect.ts` | format detectors | phase 7 |
 
 The groups are: SOAP (`soap/`, `wsdl/`, `xsd/`, `wss/`, `wsa/`, `validate/`), REST (`rest/`, `webhooks/`), gRPC
@@ -85,7 +84,8 @@ containers in `Project.extraContainers`.
 
 _Amended in 6.0 (#184 phase 3):_ the lists and `extraContainers` are gone. `Project.containers` holds every kind's
 containers keyed by kind, and each protocol's folder exports a typed reader and writer (`restApisOf` /
-`withRestApis` and the like), so `project/model.ts` imports no protocol's container type.
+`withRestApis` and the like), so `project/model.ts` imports no protocol's container type. SOAP's model (`Interface`,
+`SoapRequestDef`, `Endpoint`, `Attachment` and their factories) is in `soap/model.ts`.
 
 **The script rules stay in core.** The rules of ADR-0016 are applied by `script/apply.ts` to every protocol the same
 way: the changed request parses against the module's schema and keeps its protocol; its destination keeps its origin;

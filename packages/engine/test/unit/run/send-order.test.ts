@@ -15,8 +15,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
+import type { OAuth2Auth, Project } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';

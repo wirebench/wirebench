@@ -7,7 +7,7 @@
  * rewritten; the reference simply has to name a part that is actually there.
  */
 
-import type { Attachment } from '../../project/model.js';
+import type { Attachment } from '../model.js';
 import { findCidReferences } from './cid-scan.js';
 import type { ParsedMultipart } from './multipart.js';
 import type { AttachmentResolver, MultipartPart, ResponseAttachment } from './types.js';

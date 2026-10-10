@@ -15,6 +15,7 @@ import type { ExchangeHandle, ExchangeOptions } from '../run/exchange.js';
 import type { SendHost } from '../run/host.js';
 import type { ScriptSession } from '../run/script-support.js';
 import type { SecretNeed } from '../secrets/env-names.js';
+import type { ScanTarget, SecretRewriter } from '../secrets/scan/support.js';
 import type { HeaderPair, RequestScripts, ScriptFailure, ScriptPhase } from '../script/model.js';
 import type { RequestScriptTypes } from '../script/request-scripts.js';
 import type { SecretPlaceholders } from '../script/send.js';
@@ -81,6 +82,27 @@ export interface ProtocolStorage<C extends ContainerBase = ContainerBase> {
    * out has no request files a host places a sidecar beside.
    */
   requestLocation?(container: C, requestId: string): RequestFileLocation | undefined;
+  /**
+   * Every entity id in `container`, its own first, for a copy that takes fresh ids
+   * (`reidentifyProject`). A kind that leaves it out keeps its ids in a copy.
+   */
+  entityIds?(container: C): readonly string[];
+  /** `container` with every id it holds, and every reference to one, passed through `mapId`. */
+  withEntityIds?(container: C, mapId: (id: string) => string): C;
+}
+
+/**
+ * Where the secret scanner looks in what a protocol stores, and how a move to a secret rewrites it
+ * (docs/specs/2026-09-22-secret-scanning-design.md). Each location it yields and rewrites is one of
+ * its own `SecretLocation` kinds.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export interface ProtocolSecrets {
+  /** Every stored text of the protocol's in `project` worth scanning, in explorer order. */
+  scanTargets(project: Project): Iterable<ScanTarget>;
+  /** `project` with each move at one of the protocol's texts applied; `project` itself when none applied. */
+  applyMoves(project: Project, rw: SecretRewriter): Project;
 }
 
 /**
@@ -254,6 +276,8 @@ export interface ProtocolModule {
   readonly scripting?: ProtocolScripting;
   /** Absent: the protocol's containers cannot be mocked (mock services spec §The protocol facet). */
   readonly mock?: ProtocolMocking;
+  /** Absent: the secret scanner does not look in the protocol's containers. */
+  readonly secrets?: ProtocolSecrets;
 }
 
 function assertKind(module: string, item: { readonly kind: string }): void {
@@ -276,6 +300,7 @@ export function defineProtocol<S extends SelectedBase>(module: {
   readonly run?: ProtocolRun<S>;
   readonly scripting?: ProtocolScripting;
   readonly mock?: ProtocolMocking;
+  readonly secrets?: ProtocolSecrets;
 }): ProtocolModule {
   const { run } = module;
   if (module.feature.id !== module.kind) {
@@ -287,6 +312,7 @@ export function defineProtocol<S extends SelectedBase>(module: {
     storage: module.storage,
     ...(module.scripting !== undefined ? { scripting: module.scripting } : {}),
     ...(module.mock !== undefined ? { mock: module.mock } : {}),
+    ...(module.secrets !== undefined ? { secrets: module.secrets } : {}),
     ...(run !== undefined
       ? {
           run: {

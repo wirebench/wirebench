@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Assertion } from '../../../src/assert/model.js';
 import { importWsdl } from '../../../src/soap/import.js';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Interface, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, withSoapInterfaces } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { Interface, SoapRequestDef } from '../../../src/soap/model.js';
 import { definitionCacheDir } from '../../../src/project/paths.js';
 import { requestFileLocation } from '../../../src/project/request-location.js';
 import type { SelectedRequest } from '../../../src/protocols.js';
@@ -25,7 +27,6 @@ import { testHost } from '../../helpers/send-host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestRestServer, startTestSoapServer } from '../../helpers/index.js';
 import type { TestRestServer, TestSoapServer } from '../../helpers/index.js';
-import { withSoapInterfaces } from '../../../src/soap/model.js';
 
 const ENVELOPE = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/><soapenv:Body><w:Echo xmlns:w="urn:wb:wsa"><w:text>hi</w:text></w:Echo></soapenv:Body></soapenv:Envelope>`;
 

@@ -18,7 +18,8 @@ import type {
 } from '../mock/contract.js';
 import type { MockResponse, MockValidation } from '../mock/model.js';
 import type { FsLike } from '../project/fs.js';
-import type { Interface, Project } from '../project/model.js';
+import type { Project } from '../project/model.js';
+import type { Interface } from './model.js';
 import { definitionCacheDir } from '../project/paths.js';
 import type { HeaderPair } from '../script/model.js';
 import { bindingContextFor, checkSoapStructure, validateMessage } from '../validate/index.js';

@@ -83,7 +83,7 @@ with a phase that has merged. This phase removes them.
 | `project/schema.ts` | WS-Security defaults | The typed WS-Security entry schemas move to `wss/schema.ts`. Core keeps the loose stored-entry schema the loader uses. |
 | `project/load.ts`, `serialize.ts` | REST's request reader and writer, the webhook model | §3. |
 | `project/request-location.ts` | `RestFolder` (type-only) | A storage hook, `requestLocation(container, requestId)`, asked of each enabled module. |
-| `secrets/scan/walk.ts`, `apply.ts` | the request types (type-only) | A secrets facet on the module: `scanTargets(container)` and `applyMoves(container, moves)`. `SecretLocation` becomes `{ kind, part, … }`, with the part names unchanged. |
+| `secrets/scan/walk.ts`, `apply.ts` | the request types (type-only) | A secrets facet on the module: `scanTargets(project)` and `applyMoves(project, rewriter)`, per project so REST covers the webhook collection in its place. `SecretLocation` keeps its kinds, which the desktop's wire mirrors. |
 
 `RunContext.defaultWsaActionFor` and `loadedDefinitionFor`, the SOAP members of the run context, stay:
 they name no protocol folder, only the composition file's `SelectedRequest`.

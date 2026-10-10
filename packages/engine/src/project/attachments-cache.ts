@@ -12,7 +12,7 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { ProjectError } from '../errors.js';
-import type { Attachment } from './model.js';
+import type { Attachment } from '../soap/model.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic, type FsLike } from './fs.js';
 import { ATTACHMENTS_DIR } from './paths.js';
 import { parseYaml, stringifyYaml } from './yaml.js';

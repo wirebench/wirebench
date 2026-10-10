@@ -10,15 +10,8 @@ import type { FsLike } from '../project/fs.js';
 import { readFileIfExists, readdirIfExists } from '../project/fs.js';
 import { abs, authConfig, byOrder, exact, loadScripts, optional, readYaml } from '../project/load-helpers.js';
 import type { ProjectProblem } from '../project/load.js';
-import type {
-  Attachment,
-  Endpoint,
-  Interface,
-  OperationDef,
-  RequestProperties,
-  SoapOwnerAuth,
-  SoapRequestDef,
-} from '../project/model.js';
+import type { SoapOwnerAuth } from '../project/model.js';
+import type { Attachment, Endpoint, Interface, OperationDef, RequestProperties, SoapRequestDef } from './model.js';
 import { assertPathSegment, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX } from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
 import { authDocument, scriptsDocument, writeScriptFiles } from '../project/serialize-helpers.js';
@@ -27,6 +20,7 @@ import type { ProtocolStorage } from '../protocol/module.js';
 import { isScriptFileOf } from '../script/model.js';
 import { normalizeWsa } from '../wsa/model.js';
 import { interfaceFileSchema, requestFileSchema } from './files.js';
+import { interfaceIds, withInterfaceIds } from './identity.js';
 import { soapInterfacesOf, withSoapInterfaces } from './model.js';
 
 /**
@@ -281,6 +275,8 @@ export const soapStorage: ProtocolStorage<Interface> = {
 
   containers: (project) => soapInterfacesOf(project),
   withContainers: (project, interfaces) => withSoapInterfaces(project, interfaces),
+  entityIds: interfaceIds,
+  withEntityIds: withInterfaceIds,
   requestLocation: (iface, requestId) => {
     for (const operation of iface.operations) {
       const request = operation.requests.find((candidate) => candidate.id === requestId);

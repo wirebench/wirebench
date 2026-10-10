@@ -7,8 +7,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
-import type { Project, SoapRequestDef } from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { SoapRequestDef } from '../../../src/soap/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { openExchange } from '../../../src/run/open.js';
 import { createRunScope } from '../../../src/run/scope.js';
@@ -19,7 +21,6 @@ import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestSoapServer } from '../../helpers/index.js';
 import type { TestSoapServer } from '../../helpers/index.js';
 import { testHost } from '../../helpers/send-host.js';
-import { soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
 
 const ENVELOPE_WITH = (text: string): string =>
   `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><w:Echo xmlns:w="urn:wb"><w:text>${text}</w:text></w:Echo></soapenv:Body></soapenv:Envelope>`;

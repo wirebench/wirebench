@@ -19,7 +19,7 @@ import type { RestSelected } from './rest/run.js';
 import type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
 import type { RestLiveEvent } from './rest/events.js';
 import type { RestExchange, RestSendInput } from './rest/send.js';
-import type { SoapRequestDef } from './project/model.js';
+import type { SoapRequestDef } from './soap/model.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';

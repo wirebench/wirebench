@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Attachment } from '../../../../src/project/model.js';
+import type { Attachment } from '../../../../src/soap/model.js';
 import { parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
 import { expandMtomResponse, prepareMtomRequest, xopContentType } from '../../../../src/soap/mime/mtom.js';
 import type { AttachmentResolver } from '../../../../src/soap/mime/types.js';

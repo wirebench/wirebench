@@ -12,7 +12,8 @@ import { blankIfLiteral, blankUrlCredentials } from '../import/credential-values
 import { referencesOnly } from '../import/values.js';
 import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../grpc/model.js';
 import type { KeyValueEntry } from '../http/entries.js';
-import type { AuthConfig, Interface, Project, PropertyMap, SoapOwnerAuth, SoapRequestDef } from '../project/model.js';
+import type { AuthConfig, Project, PropertyMap, SoapOwnerAuth } from '../project/model.js';
+import type { Interface, SoapRequestDef } from '../soap/model.js';
 import type {
   MultipartFormPart,
   RestApi,

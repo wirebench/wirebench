@@ -10,7 +10,8 @@
 
 import { DEFAULT_PREFERENCES } from '../project/preferences.js';
 import type { Preferences } from '../project/preferences.js';
-import type { Attachment, HeaderEntry, ProjectSettings, RequestProperties } from '../project/model.js';
+import type { HeaderEntry, ProjectSettings } from '../project/model.js';
+import type { Attachment, RequestProperties } from './model.js';
 import type { AttachmentResolver } from './mime/types.js';
 import { soapActionHeaders } from './soap-action.js';
 import { prettyPrint, removeEmptyContent, stripWhitespaces } from './transforms.js';

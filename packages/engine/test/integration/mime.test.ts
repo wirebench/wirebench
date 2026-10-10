@@ -1,10 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Attachment } from '../../src/project/model.js';
-import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
+import type { Attachment } from '../../src/soap/model.js';
+import { DEFAULT_REQUEST_PROPERTIES } from '../../src/soap/model.js';
 import { mergePreferences } from '../../src/project/preferences.js';
 import { parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import type { AttachmentResolver } from '../../src/soap/mime/types.js';

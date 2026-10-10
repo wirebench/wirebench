@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, withSoapInterfaces } from '../../src/soap/model.js';
 import type { Project } from '../../src/project/model.js';
 import { toKeystoreRef } from '../../src/project/keystores.js';
 import { soapRun } from '../../src/soap/run.js';
@@ -9,7 +10,6 @@ import type { SoapSelected } from '../../src/soap/run.js';
 import { normalizeWsa } from '../../src/wsa/model.js';
 import { toWssOutgoingRef } from '../../src/wss/configs.js';
 import type { WssEntry } from '../../src/wss/model.js';
-import { withSoapInterfaces } from '../../src/soap/model.js';
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 

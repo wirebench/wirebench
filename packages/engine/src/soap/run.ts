@@ -13,15 +13,8 @@ import { createFileAttachmentResolver } from '../project/attachments-cache.js';
 import { effectiveAuth } from '../project/endpoints.js';
 import { resolveAuthEndpoint, resolveEndpoint } from '../project/environments.js';
 import type { EndpointSource } from '../project/environments.js';
-import type {
-  Attachment,
-  Endpoint,
-  Interface,
-  OperationDef,
-  Project,
-  SoapOwnerAuth,
-  SoapRequestDef,
-} from '../project/model.js';
+import type { Project, SoapOwnerAuth } from '../project/model.js';
+import type { Attachment, Endpoint, Interface, OperationDef, SoapRequestDef } from './model.js';
 import { definitionCacheDir } from '../project/paths.js';
 import { expandSendInput } from './expand.js';
 import { expand } from '../project/properties.js';

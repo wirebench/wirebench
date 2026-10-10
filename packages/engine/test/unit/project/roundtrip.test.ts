@@ -6,7 +6,8 @@ import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
 import { stringifyYaml } from '../../../src/project/yaml.js';
-import type { Project, SoapRequestDef } from '../../../src/project/model.js';
+import type { Project } from '../../../src/project/model.js';
+import type { SoapRequestDef } from '../../../src/soap/model.js';
 import { CRLF_ENVELOPE, listTree, readBytes, sampleProject, tempProjectDir } from './fixture.js';
 import { soapInterfacesOf, withSoapInterfaces } from '../../../src/soap/model.js';
 

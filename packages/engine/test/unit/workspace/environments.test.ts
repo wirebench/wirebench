@@ -4,13 +4,8 @@ import {
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
 } from '../../../src/workspace/environments.js';
-import {
-  createInterface,
-  createProject,
-  type Environment,
-  type Interface,
-  type Project,
-} from '../../../src/project/model.js';
+import { createProject, type Environment, type Project } from '../../../src/project/model.js';
+import { createInterface, type Interface } from '../../../src/soap/model.js';
 import type { Workspace, WorkspaceEnvironment } from '../../../src/workspace/model.js';
 import { WORKSPACE_FORMAT_VERSION } from '../../../src/workspace/model.js';
 import { expand } from '../../../src/project/properties.js';

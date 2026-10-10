@@ -10,7 +10,8 @@
  * default; then the interface's first endpoint.
  */
 
-import type { Endpoint, Environment, Interface, Project, PropertyMap, SoapRequestDef } from './model.js';
+import type { Environment, Project, PropertyMap } from './model.js';
+import type { Endpoint, Interface, SoapRequestDef } from '../soap/model.js';
 import type { PropertyScopes } from './properties.js';
 import { enabledProperties } from './properties.js';
 

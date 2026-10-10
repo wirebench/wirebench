@@ -19,7 +19,7 @@
 | `requestFileLocation(project, id)`                             | Takes an optional registry; each module's storage answers through its new `requestLocation(container, id)`.                                                   |
 | `HistoryWs.frames`, `HistorySse.rows`, `HistoryEntry.contract` | Typed with History's own `HistoryWsFrame`, `HistorySseRow` and `HistoryContract`, which have the same fields as `WsFrame`, `SseRow` and `RestContractResult`. |
 
-`historyWsOf`, `historySseOf`, `historyContractOf`, `RestEventStreamLike`, `createIssuedTokenSource`, `wssEntrySchema` and `AnyRequestDef` keep their names and signatures; they moved within the package.
+`historyWsOf`, `historySseOf`, `historyContractOf`, `RestEventStreamLike`, `createIssuedTokenSource`, `wssEntrySchema`, `AnyRequestDef` and SOAP's model (`Interface`, `OperationDef`, `SoapRequestDef`, `Endpoint`, `Attachment`, `RequestProperties`, `createInterface`, `createRequest` and the rest) keep their names and signatures; they moved within the package.
 
 A kind with no containers is absent from `containers`: a loaded project, a new one and one whose last API of a kind was removed through a writer all leave it out. Build a project's containers through the writers, so each container literal is checked against its own type rather than `ContainerBase`.
 

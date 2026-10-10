@@ -2,13 +2,8 @@ import { normalizeWsa } from '../../../src/wsa/model.js';
 import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  DEFAULT_PROJECT_SETTINGS,
-  DEFAULT_REQUEST_PROPERTIES,
-  FORMAT_VERSION,
-  type Interface,
-  type Project,
-} from '../../../src/project/model.js';
+import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION, type Project } from '../../../src/project/model.js';
+import { DEFAULT_REQUEST_PROPERTIES, type Interface } from '../../../src/soap/model.js';
 import { slugify } from '../../../src/project/paths.js';
 import { withSoapInterfaces } from '../../../src/soap/model.js';
 

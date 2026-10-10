@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest } from '../../../../src/project/model.js';
+import { createProject } from '../../../../src/project/model.js';
+import { createInterface, createRequest, soapInterfacesOf, withSoapInterfaces } from '../../../../src/soap/model.js';
 import type { Project } from '../../../../src/project/model.js';
 import { createApi, createRestRequest, entry as kv, restApisOf } from '../../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../../src/grpc/model.js';
@@ -12,7 +13,6 @@ import { applySecretMoves, proposeSecretName } from '../../../../src/secrets/sca
 import { expand } from '../../../../src/project/properties.js';
 import type { SecretFinding } from '../../../../src/secrets/scan/walk.js';
 import { hooksProject } from '../../webhooks/fixture.js';
-import { soapInterfacesOf, withSoapInterfaces } from '../../../../src/soap/model.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
 const AWS = 'AKIAFAKEFAKEFAKEFAKE';
