@@ -106,7 +106,7 @@ export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from './grpc/ru
 export { wsEffectiveAuth, wsItemFor, wsSubject } from './ws/run.js';
 export type { WsSelected } from './ws/run.js';
 // One WebSocket session as History records it, for every host that writes History.
-export { buildWsHistoryEntry, redactWsExchange } from './ws/history-entry.js';
+export { buildWsHistoryEntry, historyWsOf, redactWsExchange } from './ws/history-entry.js';
 export type { WsHistoryInput, WsHistoryMasks } from './ws/history-entry.js';
 export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
 export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
@@ -629,8 +629,14 @@ export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
 export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
 export type { SseParser, SseRow } from './rest/sse.js';
-export { capSseRows, createSseRowStore, SSE_HISTORY_LIMITS, SSE_SUMMARY_LIMITS } from './rest/sse-transcript.js';
-export type { SseRowStore, SseTranscript } from './rest/sse-transcript.js';
+export {
+  capSseRows,
+  createSseRowStore,
+  historySseOf,
+  SSE_HISTORY_LIMITS,
+  SSE_SUMMARY_LIMITS,
+} from './rest/sse-transcript.js';
+export type { RestEventStreamLike, SseRowStore, SseTranscript } from './rest/sse-transcript.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 // OpenAPI: reading a description into the model an import maps onto an API.
 export { parseAsyncApi } from './asyncapi/parse.js';
@@ -728,6 +734,7 @@ export type {
 export {
   checkRestResponse,
   DEFAULT_REST_CHECK_BUDGET_MS,
+  historyContractOf,
   MAX_CHECKED_BODY_BYTES,
   MAX_CONTRACT_MESSAGE_LENGTH,
   MAX_CONTRACT_PROBLEMS,
@@ -1081,9 +1088,6 @@ export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export {
   appendHistory,
   generateHistoryId,
-  historyContractOf,
-  historySseOf,
-  historyWsOf,
   normalizeHistoryEntry,
   openHistory,
 } from './project/history.js';
@@ -1098,9 +1102,11 @@ export type {
   HistoryListQuery,
   HistoryLockOptions,
   HistoryOptions,
+  HistoryContract,
   HistorySse,
+  HistorySseRow,
   HistoryWs,
-  RestEventStreamLike,
+  HistoryWsFrame,
 } from './project/history.js';
 export {
   enabledProperties,
@@ -1160,8 +1166,10 @@ export type {
   WssPolicyTokenRole,
 } from './wss/policy/model.js';
 
-export { createIssuedTokenSource, issuedCacheKey, ISSUED_TOKEN_REFRESH_MARGIN_MS } from './run/issued-token.js';
-export type { IssuedTokenSource, IssuedTokenSourceOptions, IssuedTokenStatus } from './run/issued-token.js';
+export { createIssuedTokenSource, issuedCacheKey, ISSUED_TOKEN_REFRESH_MARGIN_MS } from './wss/trust/issued-token.js';
+export type { IssuedTokenSource, IssuedTokenSourceOptions, IssuedTokenStatus } from './wss/trust/issued-token.js';
+export { soapHostOf, withSoapHost } from './soap/host.js';
+export type { SoapSendHost } from './soap/host.js';
 export { requestIssuedToken } from './wss/trust/client.js';
 export type { IssuedTokenTarget, TrustDeps } from './wss/trust/client.js';
 export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';

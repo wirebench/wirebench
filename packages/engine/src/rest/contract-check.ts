@@ -246,3 +246,29 @@ export function checkRestResponse(input: RestContractInput, options?: RestContra
   }
   return { status: problems.length === 0 ? 'ok' : 'violation', ...found, problems: capped(problems), notes };
 }
+
+function clipped(text: string): string {
+  return text.length > MAX_CONTRACT_MESSAGE_LENGTH ? text.slice(0, MAX_CONTRACT_MESSAGE_LENGTH) : text;
+}
+
+/**
+ * A contract result as a history entry keeps it: only the fields the result declares, under the
+ * check's own caps (problems, notes, message length), so a line cannot grow past what the live
+ * result could show — whatever produced the value.
+ */
+export function historyContractOf(result: RestContractResult): RestContractResult {
+  return {
+    status: result.status,
+    ...(result.operation !== undefined
+      ? { operation: { method: result.operation.method, path: result.operation.path } }
+      : {}),
+    ...(result.responseKey !== undefined ? { responseKey: result.responseKey } : {}),
+    ...(result.mediaType !== undefined ? { mediaType: result.mediaType } : {}),
+    problems: result.problems.slice(0, MAX_CONTRACT_PROBLEMS).map((problem) => ({
+      path: clipped(problem.path),
+      keyword: problem.keyword,
+      message: clipped(problem.message),
+    })),
+    notes: result.notes.slice(0, MAX_CONTRACT_PROBLEMS).map(clipped),
+  };
+}

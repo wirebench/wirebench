@@ -20,6 +20,6 @@ export function cliSendHost(args: {
     proxyFor: (url) => Promise.resolve(proxyFor(url)),
     onSecretValue: args.onSecretValue,
     ...(args.cookies !== undefined ? { cookies: args.cookies } : {}),
-    ...(args.issuedTokens !== undefined ? { issuedTokens: args.issuedTokens } : {}),
+    ...(args.issuedTokens !== undefined ? { protocols: { soap: { issuedTokens: args.issuedTokens } } } : {}),
   };
 }

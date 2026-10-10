@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { historyContractOf, openHistory } from '../../../src/project/history.js';
+import { openHistory } from '../../../src/project/history.js';
+import { historyContractOf } from '../../../src/rest/contract-check.js';
 import type { HistoryEntry } from '../../../src/project/history.js';
 import { MAX_CONTRACT_MESSAGE_LENGTH, MAX_CONTRACT_PROBLEMS } from '../../../src/rest/contract-check.js';
 import type { RestContractResult } from '../../../src/rest/contract-check.js';

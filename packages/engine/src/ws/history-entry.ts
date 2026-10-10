@@ -2,10 +2,28 @@
  * One WebSocket session as History records it, for every host that writes History: the desktop on
  * a session's close, the command line's `send`. Redaction is History's, whatever was shown live.
  */
-import { generateHistoryId, historyWsOf } from '../project/history.js';
-import type { HistoryEntry, HistoryHeader } from '../project/history.js';
+import { generateHistoryId } from '../project/history.js';
+import type { HistoryEntry, HistoryHeader, HistoryWs } from '../project/history.js';
 import { redactHeaders, redactUrl } from '../redact/index.js';
 import type { WsExchange } from './model.js';
+import { capFrames } from './transcript.js';
+
+/** Builds a {@link HistoryWs} from a completed session, applying {@link capFrames}. */
+export function historyWsOf(exchange: WsExchange): HistoryWs {
+  const { frames, truncated, omittedFrames } = capFrames(exchange.frames);
+  return {
+    url: exchange.url,
+    ...(exchange.handshake.status !== undefined ? { status: exchange.handshake.status } : {}),
+    ...(exchange.handshake.protocol !== undefined ? { protocol: exchange.handshake.protocol } : {}),
+    closeCode: exchange.closed.code,
+    closeReason: exchange.closed.reason,
+    closedBy: exchange.closed.by,
+    counts: exchange.counts,
+    frames,
+    ...(truncated ? { truncated: true, ...(omittedFrames > 0 ? { omittedFrames } : {}) } : {}),
+    ...(exchange.handshake.error !== undefined ? { error: exchange.handshake.error } : {}),
+  };
+}
 
 /** What {@link buildWsHistoryEntry} needs to build one WebSocket entry. */
 export interface WsHistoryInput {

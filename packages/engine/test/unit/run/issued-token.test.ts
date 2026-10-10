@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createIssuedTokenSource, issuedCacheKey } from '../../../src/run/issued-token.js';
+import { createIssuedTokenSource, issuedCacheKey } from '../../../src/wss/trust/issued-token.js';
 import { createWssContext } from '../../../src/wss/model.js';
 import type { IssuedToken, WssIssuedTokenEntry } from '../../../src/wss/model.js';
 import type { IssuedTokenTarget } from '../../../src/wss/trust/client.js';
