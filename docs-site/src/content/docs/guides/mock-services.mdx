@@ -57,8 +57,48 @@ expression, or a query parameter, a header or a REST path parameter by name. It 
 value **equals** a string, **matches** a regular expression, **is present** or **is absent**.
 
 Each response sets its **Status**, a **Delay (ms)**, its **Headers** and its **Body** (XML, JSON,
-text or none). The body is sent exactly as written: it never reads a property, a secret or a value
-from the request.
+text or none). The body is sent exactly as written, unless the response echoes request values (below).
+It never reads a property, a secret or the environment.
+
+### Echoing request values
+
+A response can put values from the request into its body and header values. Declare each value under
+`values` in the response file, reading it the way a match condition does, and write `{{name}}` where it
+goes:
+
+```yaml
+# accepted.response.yaml
+id: 01J9…
+name: Accepted
+body: json
+headers:
+  - name: X-Correlation-Id
+    value: '{{correlation}}'
+values:
+  orderId: { from: body, language: jsonpath, expression: $.order.id }
+  correlation: { from: header, name: X-Correlation-Id }
+```
+
+```json
+{ "id": "{{orderId}}", "state": "accepted" }
+```
+
+- A value can come from the body (`xpath` or `jsonpath`), a `query` parameter, a `header` or a REST
+  `path` parameter. Nothing else: a template never reads a property, a secret or the environment.
+- A value the request does not carry is inserted as empty text.
+- Each value is escaped once for where it lands: XML entities in an XML body, string escaping in a JSON
+  body. In a JSON body a placeholder must sit inside a string (`"{{orderId}}"`), so a request can never
+  add a field. A text body gets the value as it is.
+- A value is inserted once and never read again, so a request that sends `{{orderId}}` gets that text
+  back.
+- A header value that would carry a line break or another character a header may not hold is not sent:
+  the request gets a 500 (`mock-template-refused`) and the log says why.
+- A `{{name}}` that names no declared value is refused when the project loads. A response without
+  `values` is never a template, so `{{` in it is plain text.
+
+A mock with a templated response is saved as `version: 2`. Wirebench 5.0.0 leaves such a mock alone
+rather than load it without its values. A mock without one stays at `version: 1`. Editing `values` in the
+app is not available yet: edit the response file, and the app keeps the values on every other edit.
 
 ### Scenarios
 

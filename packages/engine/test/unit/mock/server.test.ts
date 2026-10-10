@@ -244,4 +244,34 @@ describe('startMock', () => {
       'mock-protocol-unsupported',
     );
   });
+
+  it('renders a templated response, and refuses one whose header would carry a line break', async () => {
+    const templated = mock({
+      operations: [
+        createMockOperation('Op', 'op', {
+          id: 'O1',
+          responses: [
+            createMockResponse('Echo', {
+              id: 'R1',
+              headers: [{ name: 'X-Order', value: '{{id}}' }],
+              body: 'xml',
+              bodyText: '<id>{{id}}</id>',
+              values: { id: { from: 'query', name: 'id' } },
+            }),
+          ],
+        }),
+      ],
+    });
+    const events: MockExchangeEvent[] = [];
+    const m = await start(templated, events);
+    const reply = await send(m, '/m/op?id=a%3Cb');
+    expect(reply.status).toBe(200);
+    expect(reply.body).toBe('<id>a&lt;b</id>');
+    expect(reply.headers['x-order']).toBe('a<b');
+
+    const refused = await send(m, '/m/op?id=a%0D%0AX-Injected%3A%201');
+    expect(refused.status).toBe(500);
+    expect(refused.headers['x-injected']).toBeUndefined();
+    expect(events.at(-1)?.error?.code).toBe('mock-template-refused');
+  });
 });

@@ -36,6 +36,7 @@ import {
 } from './http.js';
 import { mockPathPrefix } from './model.js';
 import type { MockDef, MockOperation, MockResponse } from './model.js';
+import { renderResponse } from './render.js';
 import { createDispatchScriptRunner } from './script.js';
 
 export { MOCK_EVENT_BODY_BYTES, MOCK_REQUEST_BODY_BYTES, MOCK_REQUEST_TIMEOUT_MS } from './http.js';
@@ -297,7 +298,21 @@ export async function startMock(input: StartMockInput): Promise<RunningMock> {
       });
       return;
     }
-    const response = picked.response;
+    const chosen = picked.response;
+    const rendered = await renderResponse(chosen, request, route.view);
+    problems.push(...rendered.problems);
+    if (!rendered.ok) {
+      finish(contract.fail(rendered.code, rendered.message), request.bodyText, {
+        operation: route.operation,
+        responseId: chosen.id,
+        responseName: chosen.name,
+        problems,
+        error: { code: rendered.code, message: rendered.message },
+        ...(picked.log !== undefined ? { log: picked.log } : {}),
+      });
+      return;
+    }
+    const response: MockResponse = { ...chosen, headers: rendered.headers, bodyText: rendered.bodyText };
     const reply: MockReply = {
       status: response.status,
       headers: replyHeaders(response, contract),

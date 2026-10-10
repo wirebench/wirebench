@@ -17,8 +17,9 @@ import {
   MOCK_OPERATIONS_DIR,
   MOCKS_DIR,
   OPERATION_FILE,
+  assertResponseTemplate,
   bodyFilePath,
-  parseMockFile,
+  parseMockFileVersioned,
   parseOperationFile,
   parseResponseFile,
   responseFilePath,
@@ -94,10 +95,11 @@ export async function readMocks(fs: FsLike, root: string): Promise<MockFiles> {
     if (bytes === undefined) {
       continue;
     }
-    const settings = attempt(problems, file, () => parseMockFile(bytes, file, entry.name));
-    if (settings === undefined) {
+    const parsed = attempt(problems, file, () => parseMockFileVersioned(bytes, file, entry.name));
+    if (parsed === undefined) {
       continue;
     }
+    const { settings, version } = parsed;
     const first = seen.get(settings.id);
     if (first !== undefined) {
       problems.push({
@@ -109,7 +111,7 @@ export async function readMocks(fs: FsLike, root: string): Promise<MockFiles> {
     }
     seen.set(settings.id, file);
     const files = [file];
-    const operations = await readOperations(fs, root, dir, files, problems);
+    const operations = await readOperations(fs, root, dir, version, files, problems);
     loaded.push({ dir, files, mock: { ...settings, operations } });
   }
   return { loaded, problems };
@@ -119,6 +121,7 @@ async function readOperations(
   fs: FsLike,
   root: string,
   mockDir: string,
+  version: number,
   files: string[],
   problems: MockFileProblem[],
 ): Promise<MockOperation[]> {
@@ -175,7 +178,7 @@ async function readOperations(
       }
     }
 
-    const responses = await readResponses(fs, root, dir, files, problems, budget);
+    const responses = await readResponses(fs, root, dir, version, files, problems, budget);
     let defaultResponseId = settings.defaultResponseId;
     if (defaultResponseId !== undefined && !responses.some((response) => response.id === defaultResponseId)) {
       problems.push({
@@ -204,6 +207,7 @@ async function readResponses(
   fs: FsLike,
   root: string,
   operationDir: string,
+  version: number,
   files: string[],
   problems: MockFileProblem[],
   budget: Budget,
@@ -242,6 +246,7 @@ async function readResponses(
     }
 
     let bodyText = '';
+    let bodyBytes: number | undefined;
     const bodyFile = bodyFilePath(operationDir, slug, settings.body);
     if (bodyFile !== undefined) {
       const body = await readFileIfExists(fs, join(root, bodyFile));
@@ -266,14 +271,26 @@ async function readResponses(
         });
         continue;
       } else {
-        budget.bodyBytes += body.byteLength;
+        bodyBytes = body.byteLength;
         bodyText = body.toString('utf8');
-        files.push(bodyFile);
       }
+    }
+    const response: MockResponse = { ...settings, bodyText };
+    // A refused template leaves its response file and its body file foreign, so a save keeps both.
+    const template = attempt(problems, file, () => {
+      assertResponseTemplate(response, version, file);
+      return true;
+    });
+    if (template === undefined) {
+      continue;
+    }
+    if (bodyFile !== undefined && bodyBytes !== undefined) {
+      budget.bodyBytes += bodyBytes;
+      files.push(bodyFile);
     }
     ids.add(settings.id);
     files.push(file);
-    responses.push({ ...settings, bodyText });
+    responses.push(response);
   }
   return responses.sort(byOrderThenSlug);
 }

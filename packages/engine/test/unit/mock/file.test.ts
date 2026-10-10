@@ -180,7 +180,7 @@ describe('mock files', () => {
   });
 
   it('refuse a mock written by a newer build, by name', () => {
-    expect(codeOf(() => parseMockFile('kind: mock\nversion: 2\nid: M\nname: x\n', 'm.yaml', 'm'))).toBe(
+    expect(codeOf(() => parseMockFile('kind: mock\nversion: 3\nid: M\nname: x\n', 'm.yaml', 'm'))).toBe(
       'mock-version-too-new',
     );
   });
@@ -284,5 +284,82 @@ describe('validateMock', () => {
       'mock-file-invalid',
     );
     expect(codeOf(() => validateMock({ ...ok(), path: 'no-slash' }))).toBe('mock-file-invalid');
+  });
+});
+
+describe('response templates (ADR-0022)', () => {
+  const echo = (patch: Parameters<typeof createMockResponse>[1] = {}): MockDef =>
+    createMock(
+      'Echo',
+      { containerId: 'A1' },
+      {
+        id: 'M1',
+        operations: [
+          createMockOperation('Get', 'get /orders/{id}', {
+            id: 'O1',
+            responses: [
+              createMockResponse('Echo', {
+                id: 'R1',
+                headers: [{ name: 'X-Correlation-Id', value: '{{correlation}}' }],
+                body: 'json',
+                bodyText: '{"id":"{{id}}","note":"{{ not a placeholder }}"}',
+                values: {
+                  id: { from: 'path', name: 'id' },
+                  correlation: { from: 'header', name: 'X-Correlation-Id' },
+                  sku: { from: 'body', language: 'xpath', expression: '//o:sku', namespaces: { o: 'urn:o' } },
+                },
+                ...patch,
+              }),
+            ],
+          }),
+        ],
+      },
+    );
+
+  it('round-trip values, and write the mock as version 2 only when a response has them', () => {
+    const mock = echo();
+    expect(roundTrip(mock)).toEqual(mock);
+    expect(mockDocument(mock)).toContain('version: 2');
+    expect(mockDocument(orders())).toContain('version: 1');
+    expect(responseDocument(mock.operations[0]!.responses[0]!)).toContain('values:');
+  });
+
+  it('accept a templated mock, and refuse an undeclared placeholder or one outside a JSON string', () => {
+    expect(() => validateMock(echo())).not.toThrow();
+    expect(codeOf(() => validateMock(echo({ bodyText: '{"id":"{{idd}}"}' })))).toBe('mock-file-invalid');
+    expect(codeOf(() => validateMock(echo({ headers: [{ name: 'X-A', value: '{{nope}}' }] })))).toBe(
+      'mock-file-invalid',
+    );
+    expect(codeOf(() => validateMock(echo({ bodyText: '{"id":{{id}}}' })))).toBe('mock-file-invalid');
+    expect(() => validateMock(echo({ bodyText: '{"a":"x\\"{{id}}"}' }))).not.toThrow();
+    expect(codeOf(() => validateMock(echo({ bodyText: '{"a":"x\\\\"{{id}}}' })))).toBe('mock-file-invalid');
+  });
+
+  it('leave a body that is not a template alone, braces and all', () => {
+    const plain = createMock(
+      'Plain',
+      { containerId: 'A1' },
+      {
+        operations: [
+          createMockOperation('Get', 'get /a', {
+            responses: [createMockResponse('Braces', { body: 'json', bodyText: '{"a":{{b}}}' })],
+          }),
+        ],
+      },
+    );
+    expect(() => validateMock(plain)).not.toThrow();
+    expect(mockDocument(plain)).toContain('version: 1');
+  });
+
+  it.each([
+    ['a bad value name', 'values:\n  1x: { from: query, name: a }\n'],
+    ['a value with no source', 'values:\n  a: { name: a }\n'],
+    ['a body value with no expression', 'values:\n  a: { from: body, language: xpath }\n'],
+    [
+      'too many values',
+      `values:\n${Array.from({ length: MOCK_LIMITS.valuesPerResponse + 1 }, (_, i) => `  v${i}: { from: query, name: a }\n`).join('')}`,
+    ],
+  ])('refuse a response with %s', (_label, extra) => {
+    expect(codeOf(() => parseResponseFile(`id: R\nname: r\n${extra}`, 'r.yaml', 'r'))).toBe('mock-file-invalid');
   });
 });

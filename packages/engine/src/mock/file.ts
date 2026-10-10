@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { ProjectError } from '../errors.js';
 import { assertPathSegment } from '../project/paths.js';
 import { compact, parseYaml, stringifyYaml } from '../project/yaml.js';
-import { MOCK_LIMITS, MOCK_VERSION, SCENARIO_NAME_PATTERN } from './model.js';
+import { MOCK_BASE_VERSION, MOCK_LIMITS, MOCK_VERSION, SCENARIO_NAME_PATTERN, TEMPLATE_NAME_PATTERN } from './model.js';
 import type {
   MockBodyLanguage,
   MockDef,
@@ -32,7 +32,9 @@ import type {
   MockOperation,
   MockResponse,
   MockScenarioStep,
+  MockTemplateValue,
 } from './model.js';
+import { checkTemplate } from './template.js';
 
 /** Directory holding every mock, beside `interfaces/` and `apis/`. */
 export const MOCKS_DIR = 'mocks';
@@ -83,6 +85,19 @@ const matchSchema = z.discriminatedUnion('from', [
   z.looseObject({ from: z.literal('path'), name: nonEmpty, ...check }),
 ]);
 
+/** A response template value: a match condition's source without its checks (ADR-0022). */
+const templateValueSchema = z.discriminatedUnion('from', [
+  z.looseObject({
+    from: z.literal('body'),
+    language: z.enum(['xpath', 'jsonpath']),
+    expression: nonEmpty,
+    namespaces: z.record(z.string(), z.string()).optional(),
+  }),
+  z.looseObject({ from: z.literal('query'), name: nonEmpty }),
+  z.looseObject({ from: z.literal('header'), name: nonEmpty }),
+  z.looseObject({ from: z.literal('path'), name: nonEmpty }),
+]);
+
 const headerSchema = z
   .looseObject({ name: z.string(), value: text })
   .refine((header) => HEADER_NAME.test(header.name), { message: 'not a valid header name' })
@@ -94,7 +109,7 @@ const headerSchema = z
 /** `mock.yaml`, after its `kind` and `version` have been checked. */
 export const mockFileSchema = z.looseObject({
   kind: z.literal('mock'),
-  version: z.literal(MOCK_VERSION),
+  version: z.union([z.literal(MOCK_BASE_VERSION), z.literal(MOCK_VERSION)]),
   id: nonEmpty,
   name: z.string(),
   order: z.number().int().default(0),
@@ -131,6 +146,16 @@ export const responseFileSchema = z.looseObject({
   match: z.array(matchSchema).max(MOCK_LIMITS.matchesPerResponse).default([]),
   scenario: z
     .looseObject({ name: scenarioName, state: scenarioName.optional(), next: scenarioName.optional() })
+    .optional(),
+  /** Mock version 2 (ADR-0022): the request values `{{name}}` inserts. */
+  values: z
+    .record(
+      z.string().regex(TEMPLATE_NAME_PATTERN, 'a letter or _, then letters, digits or _, at most 64'),
+      templateValueSchema,
+    )
+    .refine((values) => Object.keys(values).length <= MOCK_LIMITS.valuesPerResponse, {
+      message: `at most ${MOCK_LIMITS.valuesPerResponse} values`,
+    })
     .optional(),
 });
 
@@ -208,6 +233,13 @@ function validated<S extends z.ZodType>(schema: S, document: unknown, file: stri
 /** `mock.yaml`'s fields: a {@link MockDef} without its operations. */
 export type MockSettings = Omit<MockDef, 'operations'>;
 
+/** The version a mock must be written as: 2 only when a response uses templates (ADR-0022). */
+export function mockVersionOf(mock: MockDef): number {
+  return mock.operations.some((operation) => operation.responses.some((response) => response.values !== undefined))
+    ? MOCK_VERSION
+    : MOCK_BASE_VERSION;
+}
+
 /**
  * Parses `mock.yaml`.
  *
@@ -215,6 +247,19 @@ export type MockSettings = Omit<MockDef, 'operations'>;
  * `mock-version-too-new` (a `version` above {@link MOCK_VERSION})
  */
 export function parseMockFile(bytes: Uint8Array | string, file: string, slug: string): MockSettings {
+  return parseMockFileVersioned(bytes, file, slug).settings;
+}
+
+/**
+ * {@link parseMockFile}, with the `version` the file carries: the loader holds each response file to it.
+ *
+ * @throws ProjectError as {@link parseMockFile}
+ */
+export function parseMockFileVersioned(
+  bytes: Uint8Array | string,
+  file: string,
+  slug: string,
+): { readonly settings: MockSettings; readonly version: number } {
   const document = readDocument(bytes, file);
   if (document['kind'] !== 'mock') {
     refuse('mock-file-invalid', `${file} is not a mock (kind: ${String(document['kind'])})`, file);
@@ -228,7 +273,7 @@ export function parseMockFile(bytes: Uint8Array | string, file: string, slug: st
     );
   }
   const parsed = validated(mockFileSchema, document, file, 'mock file');
-  return {
+  const settings: MockSettings = {
     id: parsed.id,
     name: parsed.name,
     slug,
@@ -242,6 +287,7 @@ export function parseMockFile(bytes: Uint8Array | string, file: string, slug: st
     path: parsed.path,
     validation: parsed.validation,
   };
+  return { settings, version: parsed.version };
 }
 
 /** `operation.yaml`'s fields: a {@link MockOperation} without its responses and script. */
@@ -278,7 +324,45 @@ export function parseResponseFile(bytes: Uint8Array | string, file: string, slug
     body: parsed.body,
     match: parsed.match.map(toMatch),
     ...(parsed.scenario !== undefined ? { scenario: toScenario(parsed.scenario) } : {}),
+    ...(parsed.values !== undefined ? { values: toValues(parsed.values) } : {}),
   };
+}
+
+/**
+ * Refuses a response's template where the file shape or its body breaks the template rules: `values`
+ * under a mock version before 2, a placeholder naming no declared value, or one outside a JSON string.
+ *
+ * @throws ProjectError `mock-file-invalid`
+ */
+export function assertResponseTemplate(response: MockResponse, mockVersion: number, file: string): void {
+  if (response.values !== undefined && mockVersion < MOCK_VERSION) {
+    refuse(
+      'mock-file-invalid',
+      `${file} has values, which need mock version ${MOCK_VERSION}; its mock.yaml says version ${mockVersion}`,
+      file,
+    );
+  }
+  const problem = checkTemplate(response);
+  if (problem !== undefined) {
+    refuse('mock-file-invalid', `${file}: ${problem}`, file);
+  }
+}
+
+/** Only the fields a template value defines, so an unknown key is not written back. */
+function toValues(raw: Record<string, z.output<typeof templateValueSchema>>): Record<string, MockTemplateValue> {
+  const out: Record<string, MockTemplateValue> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    out[name] =
+      value.from === 'body'
+        ? {
+            from: 'body',
+            language: value.language,
+            expression: value.expression,
+            ...(value.namespaces !== undefined ? { namespaces: value.namespaces } : {}),
+          }
+        : { from: value.from, name: value.name };
+  }
+  return out;
 }
 
 function checkOf(raw: { equals?: string | undefined; matches?: string | undefined; exists?: boolean | undefined }): {
@@ -322,7 +406,7 @@ export function mockDocument(mock: MockDef): string {
   return stringifyYaml(
     compact({
       kind: 'mock',
-      version: MOCK_VERSION,
+      version: mockVersionOf(mock),
       id: mock.id,
       name: mock.name,
       order: mock.order,
@@ -346,6 +430,12 @@ export function operationDocument(operation: MockOperation): string {
       default: operation.defaultResponseId,
     }),
   );
+}
+
+function valueDocument(value: MockTemplateValue): Record<string, unknown> {
+  return value.from === 'body'
+    ? compact({ from: 'body', language: value.language, expression: value.expression, namespaces: value.namespaces })
+    : { from: value.from, name: value.name };
 }
 
 function matchDocument(match: MockMatch): Record<string, unknown> {
@@ -378,6 +468,10 @@ export function responseDocument(response: MockResponse): string {
       scenario:
         response.scenario !== undefined
           ? compact({ name: response.scenario.name, state: response.scenario.state, next: response.scenario.next })
+          : undefined,
+      values:
+        response.values !== undefined
+          ? Object.fromEntries(Object.entries(response.values).map(([name, value]) => [name, valueDocument(value)]))
           : undefined,
     }),
   );
@@ -421,6 +515,7 @@ export function mockFiles(mock: MockDef): Map<string, string> {
  */
 export function validateMock(mock: MockDef): void {
   const files = mockFiles(mock);
+  const version = mockVersionOf(mock);
   parseMockFile(files.get(mockFilePath(mock.slug)) ?? '', mockFilePath(mock.slug), mock.slug);
   if (mock.operations.length > MOCK_LIMITS.operations) {
     refuse('mock-file-invalid', `A mock holds at most ${MOCK_LIMITS.operations} operations`, mockFilePath(mock.slug));
@@ -447,6 +542,7 @@ export function validateMock(mock: MockDef): void {
     for (const response of operation.responses) {
       const file = responseFilePath(dir, response.slug);
       parseResponseFile(files.get(file) ?? '', file, response.slug);
+      assertResponseTemplate(response, version, file);
       const bytes = Buffer.byteLength(response.bodyText, 'utf8');
       if (bytes > MOCK_LIMITS.bodyBytes) {
         refuse(

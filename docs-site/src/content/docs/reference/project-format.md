@@ -67,7 +67,7 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/docs/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
 | `mocks/<Mock>/mock.yaml` | One mock service: the interface or API it implements (by id), for SOAP the binding it speaks, the port, the path and how it treats a request that breaks the contract (`reject`, `report` or `off`). It carries `kind: mock` and its own `version` (see below). The listening host is never in the file: it is chosen when the mock is started and defaults to loopback |
 | `mocks/<Mock>/operations/<Operation>/operation.yaml` | One operation of a mock: the contract operation it answers (the operation name for SOAP, `<method> <path template>` for REST), how it picks a response (`sequence`, `random`, `match` or `script`) and its default response |
-| `<Response>.response.yaml` + `<Response>.body.<ext>` | One canned response: status, headers, delay, the conditions under which it is picked and the scenario state it needs and sets. The body sits beside it in its own language and is sent exactly as written — no `${…}` is expanded in it |
+| `<Response>.response.yaml` + `<Response>.body.<ext>` | One canned response: status, headers, delay, the conditions under which it is picked and the scenario state it needs and sets. The body sits beside it in its own language and is sent exactly as written — no `${…}` is expanded in it. A response with `values` echoes request values into its body and header values with `{{name}}` (version 2, see [Echoing request values](/wirebench/docs/guides/mock-services/#echoing-request-values)) |
 | `definition/` | The fetched or imported API definition (WSDL, XSD, OpenAPI), kept byte-exact, plus a manifest mapping each URL to its cached file and checksum |
 | `wss/` | WS-Security configuration and keystore entries — no secret values |
 | `attachments/` | Files attached to a request, stored by content hash |
@@ -218,8 +218,9 @@ reads, lists or deletes `sequences/`, so it opens the project and leaves the fol
 was. A build that finds a sequence file newer than it understands, malformed, or sharing another's
 id reports it as a problem, skips it, and never deletes or overwrites it on save.
 
-Mock files follow the same rule: `mock.yaml` carries `version: 1`, and the operation and response files
-under it belong to that version. An older build leaves `mocks/` exactly as it was. A build that finds a
+Mock files follow the same rule: `mock.yaml` carries `version: 1`, or `version: 2` when one of its
+responses has `values` ([ADR-0022](https://github.com/wirebench/wirebench/blob/main/docs/adr/0022-mock-response-templates-read-only-the-request.md)),
+and the operation and response files under it belong to that version. An older build leaves `mocks/` exactly as it was. A build that finds a
 mock file it cannot load (`mock-file-invalid`, `mock-version-too-new`, `mock-duplicate-id`) skips that
 file — a bad `mock.yaml` skips its whole mock — and a save never deletes or overwrites it
 (`mock-file-conflict`). See [ADR-0021](https://github.com/wirebench/wirebench/blob/main/docs/adr/0021-mock-stubs-are-files-under-mocks.md).

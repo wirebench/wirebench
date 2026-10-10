@@ -14,7 +14,7 @@ import { parseXml } from '../xml/parse.js';
 import { collectNamespaces } from '../xpath/namespaces.js';
 import type { MockProblem, MockRequest, MockRequestView } from './contract.js';
 import { SCENARIO_START_STATE } from './model.js';
-import type { MockMatch, MockOperation, MockResponse } from './model.js';
+import type { MockMatch, MockOperation, MockResponse, MockTemplateValue } from './model.js';
 
 /** The state of one running mock: scenario states and sequence counters. */
 export class MockState {
@@ -227,14 +227,18 @@ async function allHold(
   return true;
 }
 
-/** What one condition read: whether there is a value, and its text. */
-interface Read {
+/** What one condition or template value read: whether there is a value, and its text. */
+export interface Read {
   readonly found: boolean;
   readonly value: string;
 }
 
-async function read(
-  condition: MockMatch,
+/**
+ * Reads the value a match condition or a template value names from the request. Checks are not applied
+ * here. Resolves to `undefined` when a body expression failed, with the failure in `problems`.
+ */
+export async function readRequestValue(
+  condition: MockMatch | MockTemplateValue,
   request: MockRequest,
   view: MockRequestView,
   problems: MockProblem[],
@@ -301,7 +305,7 @@ async function holds(
   view: MockRequestView,
   problems: MockProblem[],
 ): Promise<boolean> {
-  const got = await read(condition, request, view, problems);
+  const got = await readRequestValue(condition, request, view, problems);
   if (got === undefined) {
     return false;
   }
