@@ -149,6 +149,10 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     })),
     ...(step.error !== undefined ? { error: { code: step.error.code, message: mask(step.error.message) } } : {}),
     ...(step.skipped !== undefined ? { skipped: step.skipped } : {}),
+    ...(step.attempt !== undefined ? { attempt: step.attempt } : {}),
+    ...(step.retried === true ? { retried: true as const } : {}),
+    // Step and request names, never a response value: nothing in it to mask.
+    ...(step.branch !== undefined ? { branch: { ...step.branch } } : {}),
     ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog.map(mask) } : {}),
     ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
     ...(sendId !== undefined ? { sendId } : {}),
@@ -215,12 +219,15 @@ export class SequenceRunner {
     this.runs.set(request.runId, active);
     const tags = [`sequence:${sequence.id}`, `run:${request.runId}`];
     const sendIds = new Map<string, string>();
+    const sendIdOf = (step: SequenceStepResult): string | undefined =>
+      sendIds.get(`${step.stepId}#${step.attempt ?? 1}`);
     // The request channels' own send through the engine, and the registry they cancel through.
     const sendDeps = toSendDeps(deps.service, deps.requests);
 
     const send: SequenceStepSender = async (resolved, sequenceScope, signal) => {
-      const sendId = `${request.runId}:${resolved.index}`;
-      sendIds.set(resolved.step.id, sendId);
+      // Each run of a step is its own send: a branch may run one step several times (#347).
+      const sendId = `${request.runId}:${resolved.index}:${resolved.attempt}`;
+      sendIds.set(`${resolved.step.id}#${resolved.attempt}`, sendId);
       const requestId = resolved.selected.request.id;
       // The step's scripts hand their values to the run, not to the project's session (#63).
       let ran: SentScripts | undefined;
@@ -287,7 +294,7 @@ export class SequenceRunner {
           signal: active.controller.signal,
           onStepDone: (step) => {
             done.push(step);
-            deps.emit({ runId: request.runId, sequenceId: sequence.id, step: toWire(step, sendIds.get(step.stepId)) });
+            deps.emit({ runId: request.runId, sequenceId: sequence.id, step: toWire(step, sendIdOf(step)) });
           },
           onSecretValue: recordSecretValue,
           containsKnownSecret: containsRecordedSecret,
@@ -329,7 +336,7 @@ export class SequenceRunner {
         name: result.name,
         startedAt: result.startedAt,
         outcome: result.outcome,
-        steps: result.steps.map((step) => toWire(step, sendIds.get(step.stepId))),
+        steps: result.steps.map((step) => toWire(step, sendIdOf(step))),
       };
     } finally {
       this.runs.delete(request.runId);

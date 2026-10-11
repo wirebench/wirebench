@@ -16,8 +16,9 @@ import {
   sequenceFilePath,
   uniqueSlug,
 } from '@wirebench/engine';
-import type { Project, SequenceDef, SequenceStep, StepAssertion, Transfer } from '@wirebench/engine';
+import type { BranchRule, Project, SequenceDef, SequenceStep, StepAssertion, Transfer } from '@wirebench/engine';
 import type {
+  BranchRuleWire,
   SequencePatch,
   SequenceStepWire,
   SequenceTransferWire,
@@ -113,6 +114,9 @@ function toStep(wire: SequenceStepWire): SequenceStep {
     requestAssertions: wire.requestAssertions,
     transfers: wire.transfers.map(toTransfer),
     assertions: wire.assertions.map((assertion) => defined(assertion) as StepAssertion),
+    ...(wire.branches !== undefined && wire.branches.length > 0
+      ? { branches: wire.branches.map((branch) => ({ ...defined(branch), when: defined(branch.when) }) as BranchRule) }
+      : {}),
   };
 }
 
@@ -169,6 +173,22 @@ export function removeSequence(project: Project, sequenceId: string): SequenceMu
   };
 }
 
+/** The steps with new ids, each go-to following its target to the target's new id. */
+function withNewStepIds(steps: readonly SequenceStep[]): SequenceStep[] {
+  const ids = new Map(steps.map((step) => [step.id, generateId()]));
+  return steps.map((step) => ({
+    ...step,
+    id: ids.get(step.id) ?? generateId(),
+    ...(step.branches !== undefined
+      ? {
+          branches: step.branches.map((branch) =>
+            branch.then === 'goto' ? { ...branch, step: ids.get(branch.step) ?? branch.step } : branch,
+          ),
+        }
+      : {}),
+  }));
+}
+
 /** Copies a sequence under a new name, with new ids for it and each of its steps. */
 export function duplicateSequence(
   project: Project,
@@ -183,7 +203,7 @@ export function duplicateSequence(
     name,
     slug: uniqueSlug(name, takenSlugs(project, reserved)),
     order: project.sequences.length,
-    steps: source.steps.map((step) => ({ ...step, id: generateId() })),
+    steps: withNewStepIds(source.steps),
   });
   return { project: { ...project, sequences: [...project.sequences, copy] }, createdId: copy.id };
 }
@@ -219,6 +239,9 @@ export function toSequenceWire(sequence: SequenceDef): SequenceWire {
       requestAssertions: step.requestAssertions,
       transfers: step.transfers.map((transfer) => ({ ...transfer })),
       assertions: step.assertions.map((assertion) => ({ ...assertion }) as StepAssertionWire),
+      ...(step.branches !== undefined
+        ? { branches: step.branches.map((branch) => ({ ...branch, when: { ...branch.when } }) as BranchRuleWire) }
+        : {}),
     })),
   };
 }
