@@ -538,7 +538,10 @@ test.describe('docs site screenshots', () => {
     await createWorkspace(window, 'Demo');
     await window.keyboard.press(`${MOD}+Comma`);
     await expect(window.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
-    await window.getByTestId('preferences-editor').getByRole('button', { name: 'Shortcuts', exact: true }).click();
+    await window
+      .getByTestId('preferences-editor')
+      .getByRole('button', { name: 'Keyboard shortcuts', exact: true })
+      .click();
     await expect(window.getByTestId('shortcuts-table')).toBeVisible();
     await shoot(window, 'preferences/shortcuts');
   });

@@ -20,6 +20,7 @@ import type { RestSendInput } from './send.js';
 import { applyAuth } from '../http/auth/apply-auth.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
 import { expandBundles, takesNoValue } from '../http/curl-flags.js';
+import { isOmitted, omittedBasic } from './request-headers.js';
 import { composeUrl, splitQuery, trimTrailingSlashes } from './url.js';
 
 /** What a redacted secret reads as in an exported command. Matches the host's own marker. */
@@ -104,7 +105,10 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
       headers.push({ name: row.name, value: row.value });
     }
   }
+  // A credential header the request switched off (`omitHeaders`) is left out, as the send leaves it out.
+  const omit = input.settings.omitHeaders;
   for (const [name, value] of Object.entries(applied.headers)) {
+    if (isOmitted(omit, name)) continue;
     headers.push({ name, value: redact ? CURL_REDACTED : value });
   }
   // A request that asks the server for an event stream must not have curl buffer its output either,
@@ -113,7 +117,7 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
     (header) => header.name.toLowerCase() === 'accept' && header.value.toLowerCase().includes('text/event-stream'),
   );
 
-  const transport = applied.transportAuth;
+  const transport = omittedBasic(applied.transportAuth, omit) ? undefined : applied.transportAuth;
   const basic =
     transport?.type === 'basic'
       ? { username: transport.username, password: redact ? CURL_REDACTED : transport.password }

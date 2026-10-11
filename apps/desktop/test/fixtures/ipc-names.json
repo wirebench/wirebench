@@ -152,6 +152,7 @@
     "request.preflightWs",
     "request.recreate",
     "request.restBodySchema",
+    "request.restHeaders",
     "request.send",
     "request.sendGrpc",
     "request.sendRest",

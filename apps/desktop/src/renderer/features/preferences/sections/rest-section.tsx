@@ -21,6 +21,7 @@ export function RestSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Redirects">
         <BooleanSetting
           label="Follow redirects"
+          setting="rest.followRedirects"
           testId="rest-pref-follow-redirects"
           value={rest.followRedirects}
           onChange={(followRedirects) => update({ rest: { followRedirects } })}
@@ -28,6 +29,7 @@ export function RestSection({ preferences, update }: SectionProps) {
         />
         <NumberSetting
           label="Maximum redirects"
+          setting="rest.maxRedirects"
           testId="rest-pref-max-redirects"
           value={rest.maxRedirects}
           min={0}
@@ -43,6 +45,7 @@ export function RestSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Requests">
         <TextSetting
           label="Default Accept header"
+          setting="rest.defaultAccept"
           testId="rest-pref-default-accept"
           value={rest.defaultAccept}
           monospace
@@ -54,6 +57,7 @@ export function RestSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Responses">
         <NumberSetting
           label="Pretty-print up to (MiB)"
+          setting="rest.prettyPrintMaxBytes"
           testId="rest-pref-pretty-max"
           value={toMib(rest.prettyPrintMaxBytes)}
           min={0}
@@ -72,6 +76,7 @@ export function RestSection({ preferences, update }: SectionProps) {
       >
         <NumberSetting
           label="Callback port"
+          setting="rest.oauth2CallbackPort"
           testId="rest-pref-oauth2-port"
           value={rest.oauth2CallbackPort}
           min={0}

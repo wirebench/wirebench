@@ -36,6 +36,8 @@ import {
   requestImportCurlResponseSchema,
   requestPreflightRestRequestSchema,
   requestRestBodySchemaRequestSchema,
+  requestRestHeadersRequestSchema,
+  requestRestHeadersResponseSchema,
   requestRestBodySchemaResponseSchema,
   requestSendRestRequestSchema,
   requestSendToEnvironmentsRequestSchema,
@@ -66,6 +68,15 @@ export const restChannels = {
       'request.preflightRest',
       requestPreflightRestRequestSchema,
       requestPreflightResponseSchema,
+    ),
+    /**
+     * The headers a send of the REST request would put on the wire, each with its source, resolved
+     * as the send resolves it with nothing sent; secrets masked unless the session shows them.
+     */
+    restHeaders: defineChannel(
+      'request.restHeaders',
+      requestRestHeadersRequestSchema,
+      requestRestHeadersResponseSchema,
     ),
     importCurl: defineChannel('request.importCurl', requestImportCurlRequestSchema, requestImportCurlResponseSchema),
     /** The JSON schema of the body a REST request's operation declares, or `null`; feeds the body form. */

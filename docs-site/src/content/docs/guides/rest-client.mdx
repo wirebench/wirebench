@@ -63,6 +63,30 @@ authentication, or leaves it on **Inherit** to use the API's own — Basic, Bear
 header or a query parameter), or OAuth 2 with client credentials or authorization code, whose
 client secret is stored through the same masked **Set…**/**Save** field as any other secret.
 
+### Generated headers
+
+Under your own rows, the **Headers** tab lists the headers the send adds for you, before you send:
+the `User-Agent`, `Accept`, `Accept-Encoding` and `Connection` from your preferences, the
+`Authorization` or API key header from the auth, the body's `Content-Type`, the cookie jar's
+`Cookie`, and the `Host` and `Content-Length` the connection adds. Each row says where it comes from
+and whether it goes out. The list is worked out the way a send works it out, from your unsaved edits,
+the active environment and its current values.
+
+- Clear a row's checkbox to leave that header out of every send of this request: desktop, CLI and
+  runs alike. The request file keeps the names under `settings.omitHeaders`. Leaving out `Cookie`
+  means the jar is not read for this request; leaving out `Authorization` also drops a preemptive
+  Basic header.
+- **Override** adds a header of the same name to your rows, with the generated value, so you can
+  change it. A header you type always wins over a generated one.
+- `Host`, `Content-Length`, and an `Authorization` that only follows the server's challenge (NTLM,
+  Kerberos, Basic that is not preemptive) cannot be switched off here. To stop the last one, set
+  **Auth** to **None**.
+
+Credentials and cookies are masked unless **Show secrets** is on, and while they are masked no secret
+is read to build the list. An OAuth 2 header shows only once a token is cached; until then a note says
+it is added when the token is fetched at send. A webhook item's signing headers are not listed: they
+are computed at send, over the final body.
+
 ## Send and read the response
 
 Choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The response pane shows:

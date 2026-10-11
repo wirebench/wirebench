@@ -19,7 +19,7 @@ function chordLabel(row: KeymapRow, context: CommandContext): string {
 }
 
 /**
- * Preferences → Shortcuts. Every command, what runs it, and a way to change it.
+ * Settings → Keyboard shortcuts. Every command, what runs it, and a way to change it.
  *
  * Recording a chord means capturing the next keystroke rather than typing its name: the field
  * swallows the keystroke (`preventDefault`) so recording ⌘S saves a binding instead of the

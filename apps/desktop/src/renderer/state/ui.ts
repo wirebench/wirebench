@@ -15,7 +15,7 @@ import type {
   UiSnapshot,
 } from './ui-state.js';
 import type { RequestImportCurlTarget } from '../../shared/kinds/rest/wire.js';
-import type { PreferencesSectionWire } from '../../shared/wire-base.js';
+import type { SettingsSectionRequest } from '../features/preferences/settings-model.js';
 import { DEFAULT_UI_STATE, readUi, sidebarSizeGroup, SSH_SIDEBAR_SIZE, writeUi } from './ui-state.js';
 
 /**
@@ -169,8 +169,8 @@ export interface UiStore extends UiSnapshot {
   readonly secretSourcesDialog: SecretSourcesDialogTarget | null;
   /** The dialog that approves the workspace's shared secret sources on this machine. */
   readonly secretSourcesApproval: boolean;
-  /** Whether the Settings dialog is open, and which section it should land on. Transient. */
-  readonly preferences: { readonly open: boolean; readonly section: PreferencesSectionWire | undefined };
+  /** Whether the Settings page is open, and which section it should land on. Transient. */
+  readonly preferences: { readonly open: boolean; readonly section: SettingsSectionRequest | undefined };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
   readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
@@ -203,8 +203,8 @@ export interface UiStore extends UiSnapshot {
   readonly setSecretTokenDialog: (target: SecretTokenDialogTarget | null) => void;
   readonly setSecretSourcesDialog: (target: SecretSourcesDialogTarget | null) => void;
   readonly setSecretSourcesApproval: (open: boolean) => void;
-  /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
-  readonly openPreferences: (section?: PreferencesSectionWire) => void;
+  /** Opens the Settings page, optionally on one section. Every route into Settings goes here. */
+  readonly openPreferences: (section?: SettingsSectionRequest) => void;
   readonly setPreferencesOpen: (open: boolean) => void;
   readonly requestRemoveProject: (projectId: string | undefined) => void;
   /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. What

@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format follows
   took, and `wirebench run --sequence` names the path on each step's line and in the json and html
   reports. A sequence with branches is saved as sequence file version 2, which an older build refuses and
   leaves as it is; one without stays version 1 (#347).
+- **The REST Headers tab lists the headers a send adds, before you send.** Under your own rows it
+  shows each generated header with its source: `User-Agent`, `Accept`, `Accept-Encoding` and
+  `Connection` from the preferences, the auth header, the body's `Content-Type`, the cookie jar's
+  `Cookie`, and the connection's `Host` and `Content-Length`. It is worked out the way the send works
+  it out, from the unsaved edits and the active environment. A checkbox leaves a header out through
+  the request's new `settings.omitHeaders`, which the CLI and runs honour too, as do the cURL export
+  and code generation. **Override** adds a typed header of the same name. Credentials and cookies stay
+  masked, and unread, unless Show secrets is on (#346).
 - **Scripts on APIs, interfaces and folders.** An API, a SOAP interface and each REST or gRPC folder
   can have a pre-request and a post-response script, which run around every request inside it: the
   API's, then each folder's outermost first, then the request's own, in both phases. A pre-request
