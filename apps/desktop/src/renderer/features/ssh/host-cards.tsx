@@ -82,14 +82,17 @@ interface CardProps {
 }
 
 /**
- * The card the last single click landed on, and where. That click opens the host's details, and the
- * right panel narrowing the content can move the card out from under the pointer before the second
- * click of a double-click: the second click connects the host the first one picked, wherever it lands.
+ * The card the last single press landed on, and where. The press picks the host (its focus does), the
+ * details open, and the right panel narrowing the content can move the card out from under the pointer
+ * before the release, let alone the second press of a double-click: so the press is what is remembered,
+ * and the second press connects that host wherever it lands.
  */
 let lastPress: { readonly id: string; readonly x: number; readonly y: number; readonly at: number } | undefined;
-/** How far apart, in time and in pixels, the two clicks of a double-click may be. */
+/** How far apart, in time and in pixels, the two presses of a double-click may be. */
 const DOUBLE_CLICK_MS = 600;
 const DOUBLE_CLICK_PX = 6;
+/** Until when the click that follows a connecting press is swallowed, so it presses nothing it lands on. */
+let swallowClickUntil = 0;
 
 function HostCard({ host, resolved, avatar, layout, selected, tabbable, onSelect }: CardProps) {
   const status = sessionStatus(useHostsStore((s) => s.sessions[host.id]));
@@ -137,13 +140,15 @@ function HostCard({ host, resolved, avatar, layout, selected, tabbable, onSelect
         className={`group flex min-w-0 cursor-default border bg-surface-raised hover:border-hairline-strong hover:bg-surface-hover focus-visible:outline-none ${
           selected ? 'border-accent ring-1 ring-accent' : 'border-hairline'
         } ${grid ? 'flex-col gap-2 rounded-lg p-3' : 'items-center gap-3 rounded-md px-3 py-1.5'}`}
-        onMouseDown={() => {
+        onMouseDown={(e) => {
           pressedWhileShown.current = selected && useHostsStore.getState().detailsOpen;
+          if (e.button === 0 && e.detail === 1) {
+            lastPress = { id: host.id, x: e.clientX, y: e.clientY, at: performance.now() };
+          }
         }}
         onClick={(e) => {
           // The second click of a double-click belongs to connecting (see `lastPress`).
           if (e.detail > 1) return;
-          lastPress = { id: host.id, x: e.clientX, y: e.clientY, at: performance.now() };
           if (pressedWhileShown.current) useHostsStore.getState().setDetailsOpen(false);
           else onSelect();
         }}
@@ -230,21 +235,30 @@ export function HostCards({
   const selectHost = useHostsStore((s) => s.selectHost);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Taken before anything under the pointer sees it: the second click may land on another card or on
-  // the details panel that the first click opened, and connecting is all it should do.
+  // Taken before anything under the pointer sees it: the second press may land on another card, a gap
+  // or the details panel the first one opened, and connecting is all it should do.
   useEffect(() => {
-    const onClick = (e: MouseEvent): void => {
+    const onMouseDown = (e: MouseEvent): void => {
       const first = lastPress;
-      if (e.detail !== 2 || first === undefined) return;
+      if (e.button !== 0 || e.detail !== 2 || first === undefined) return;
       lastPress = undefined;
       const near = Math.abs(e.clientX - first.x) <= DOUBLE_CLICK_PX && Math.abs(e.clientY - first.y) <= DOUBLE_CLICK_PX;
       if (!near || performance.now() - first.at > DOUBLE_CLICK_MS) return;
       e.preventDefault();
       e.stopPropagation();
+      swallowClickUntil = performance.now() + DOUBLE_CLICK_MS;
       openTerminalFor(first.id);
     };
+    const onClick = (e: MouseEvent): void => {
+      if (e.detail < 2 || performance.now() > swallowClickUntil) return;
+      swallowClickUntil = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener('mousedown', onMouseDown, true);
     window.addEventListener('click', onClick, true);
     return () => {
+      window.removeEventListener('mousedown', onMouseDown, true);
       window.removeEventListener('click', onClick, true);
     };
   }, []);

@@ -228,20 +228,20 @@ describe('Hosts tab', () => {
     ]);
     expect(useEditorsStore.getState().activeId).toBe('ssh:b');
   });
-  it('the second click connects the host the first picked, even when the card moved from under it', () => {
+  it('the second press connects the host the first picked, even when the card moved from under it', () => {
     useEditorsStore.getState().reset();
     render(<SshArea />);
-    // The first click opens the details, and the content narrowing moves the cards: the second
-    // click, at the same spot, lands on another card.
-    fireEvent.click(screen.getByTestId('host-row-b'), { detail: 1, clientX: 40, clientY: 40 });
-    fireEvent.click(screen.getByTestId('host-row-a'), { detail: 2, clientX: 41, clientY: 40 });
+    // The first press opens the details, and the content narrowing moves the cards: the second
+    // press, at the same spot, lands on another card.
+    fireEvent.mouseDown(screen.getByTestId('host-row-b'), { detail: 1, clientX: 40, clientY: 40 });
+    fireEvent.mouseDown(screen.getByTestId('host-row-a'), { detail: 2, clientX: 41, clientY: 40 });
     expect(useEditorsStore.getState().tabs.map((t) => t.id)).toEqual(['ssh:b']);
   });
-  it('two single clicks far apart connect nothing', () => {
+  it('two presses far apart connect nothing', () => {
     useEditorsStore.getState().reset();
     render(<SshArea />);
-    fireEvent.click(screen.getByTestId('host-row-b'), { detail: 1, clientX: 40, clientY: 40 });
-    fireEvent.click(screen.getByTestId('host-row-a'), { detail: 2, clientX: 300, clientY: 40 });
+    fireEvent.mouseDown(screen.getByTestId('host-row-b'), { detail: 1, clientX: 40, clientY: 40 });
+    fireEvent.mouseDown(screen.getByTestId('host-row-a'), { detail: 2, clientX: 300, clientY: 40 });
     expect(useEditorsStore.getState().tabs).toEqual([]);
   });
   it('a connected host shows it in its row', () => {
