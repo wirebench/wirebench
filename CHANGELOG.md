@@ -17,6 +17,15 @@ All notable changes to this project are documented here. The format follows
   took, and `wirebench run --sequence` names the path on each step's line and in the json and html
   reports. A sequence with branches is saved as sequence file version 2, which an older build refuses and
   leaves as it is; one without stays version 1 (#347).
+- **Scripts steer a run.** `execution.setNextRequest(name)` sends an API or folder run on at another
+  selected request by name, to skip ahead or to poll in a loop, and `setNextRequest(null)` ends it.
+  `execution.skipRequest()` in a pre-request script skips its request without sending it. The
+  `pm.execution.setNextRequest`, `postman.setNextRequest` and `pm.execution.skipRequest` calls of
+  imported scripts now work through the same calls. A run is capped at 1 000 jumps, and a name the run
+  did not select errors the request (`script-next-unknown`). A single send and a sequence step ignore
+  these calls and log that they did. Every reporter shows the path the run took. `pm.sendRequest`
+  stays unsupported, and the import summary now says what to use instead. ADR-0016 records the
+  decision (#335).
 - **Environment colour and a production guard.** An environment can have a colour: one of eight
   palette swatches or a custom `#rrggbb`. The switcher shows it as a dot, and the active
   environment's colour bands the editor tab strip. An environment can also be marked

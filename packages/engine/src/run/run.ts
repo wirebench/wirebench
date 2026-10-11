@@ -26,7 +26,7 @@ import {
   type ScriptedRequest,
   type ScriptLevel,
 } from '../script/request-scripts.js';
-import type { RequestScripts } from '../script/model.js';
+import type { RequestScripts, ScriptValue } from '../script/model.js';
 import { SecretPlaceholders } from '../script/send.js';
 import type { StepBranch, TransferResult } from '../sequence/run.js';
 import { finishBaselineUpdate, planBaselineUpdate, type SinkOutcome } from './baseline-update.js';
@@ -45,6 +45,7 @@ import {
   scriptSession,
   type ScriptSession,
   type ScriptSessionOptions,
+  ScriptSkipped,
   type SentScripts,
 } from './script-support.js';
 
@@ -97,7 +98,18 @@ export interface RequestResult {
   readonly scriptLog?: readonly string[];
   /** True when the request has scripts and they are switched off, so none ran. */
   readonly scriptsOff?: boolean;
+  /**
+   * What the request's scripts asked of an API or folder run (#335): that it was skipped, and the
+   * request the run goes on at (`null`: the run ended).
+   */
+  readonly control?: { readonly skipped?: true; readonly next?: string | null };
 }
+
+/** Bounds on run control (#335): fixed, with no option to raise or remove them. */
+export const RUN_CONTROL_LIMITS = Object.freeze({
+  /** The most times one run may go on at a request its scripts named. */
+  jumps: 1_000,
+});
 
 export interface RunSummary {
   readonly total: number;
@@ -127,6 +139,11 @@ export interface RunResult {
 
 export interface RunOptions {
   readonly bail?: boolean;
+  /**
+   * True for an API or folder run (#335): scripts may skip their request, end the run or send it on
+   * at another selected request. Off, as in a single send, they are ignored and the log says so.
+   */
+  readonly runControl?: boolean;
   readonly defaultSlaMs?: number;
   readonly requireAssertions?: boolean;
   /** Compare each response with its golden (#36). Sequence steps never are. */
@@ -251,7 +268,10 @@ export interface SentRequest {
 }
 
 /** What a run's sender may change for one request. */
-export type RunSendOverrides = Pick<RunContext, 'sequence' | 'timeoutMs'>;
+export type RunSendOverrides = Pick<RunContext, 'sequence' | 'timeoutMs'> & {
+  /** True in an API or folder run: the request's scripts may steer it (#335). A sequence step never sets it. */
+  readonly runControl?: boolean;
+};
 
 /** Sends one selected request as a run does. Throws what preparing or sending throws. */
 export type RunRequestSender = (item: SelectedRequest, overrides?: RunSendOverrides) => Promise<SentRequest>;
@@ -381,7 +401,15 @@ export function createRunSender(context: RunContext): RunRequestSender {
       scope: itemScope,
       interactive: false,
       run: true,
-      scripts: { session: deferredSession(scripting, scripted, itemContext), placeholders: new SecretPlaceholders() },
+      scripts: {
+        session: deferredSession(
+          scripting,
+          scripted,
+          itemContext,
+          overrides.runControl === true ? { runControl: true } : {},
+        ),
+        placeholders: new SecretPlaceholders(),
+      },
     }).result;
   };
 }
@@ -468,7 +496,7 @@ async function runOne(
   options: RunOptions,
   overrides: RunSendOverrides,
   context: RunContext,
-): Promise<{ result: RequestResult; sent?: SentRequest }> {
+): Promise<{ result: RequestResult; sent?: SentRequest; values?: readonly ScriptValue[] }> {
   try {
     const own = assertionsOf(item);
     // The cursor is taken inside this helper, before the send (§2.3 step 1).
@@ -522,14 +550,30 @@ async function runOne(
         ...(error !== undefined ? { error } : {}),
         ...(compared !== undefined ? { baseline: compared.report } : {}),
         ...scriptReport(script, sent.scriptsOff === true),
+        ...(script?.control !== undefined ? { control: script.control } : {}),
         ...(outcome !== 'passed'
           ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
           : {}),
       },
     };
   } catch (e) {
+    if (e instanceof ScriptSkipped) {
+      return {
+        result: {
+          ...skippedResult(item),
+          ...(e.log.lines.length > 0 ? { scriptLog: e.log.lines } : {}),
+          control: { skipped: true, ...(e.next !== undefined ? { next: e.next } : {}) },
+        },
+        values: e.values,
+      };
+    }
     return { result: erroredResult(item, errorOf(e)) };
   }
+}
+
+/** A request the run did not send: after an abort, a bail, a script's skip or a jump past it. */
+function skippedResult(item: SelectedRequest): RequestResult {
+  return { ...identity(item), outcome: 'skipped', assertions: [], unasserted: assertionsOf(item).length === 0 };
 }
 
 /** What a result reports of a request's scripts: their log, or that they were switched off. */
@@ -557,9 +601,15 @@ export function cappedExchange(raw: SentRequest['raw']): NonNullable<RequestResu
   return { request: capped(raw.rawRequest), response: capped(raw.rawResponse) };
 }
 
+/** A result errored by its scripts' run control (#335): the request ran, and the run cannot go where they said. */
+function runControlError(result: RequestResult, code: string, message: string): RequestResult {
+  return { ...result, outcome: 'errored', error: { code, message } };
+}
+
 /**
  * Sends `selected` in order and reports each. A request after an abort, or after the first
- * failure under `bail`, is `skipped` and never sent.
+ * failure under `bail`, is `skipped` and never sent. A script may skip its request, end the run or
+ * send it on at another selected request by name (#335), at most `RUN_CONTROL_LIMITS.jumps` times.
  */
 export async function runRequests(
   selected: readonly SelectedRequest[],
@@ -574,15 +624,21 @@ export async function runRequests(
   // Values scripts set, which later requests of the run read as `${#Sequence#name}` (#63).
   const runValues = new Map<string, string>(Object.entries(context.sequence ?? {}));
   let stopped = false;
-  for (const item of selected) {
+  let jumps = 0;
+  const report = (result: RequestResult): void => {
+    results.push(result);
+    options.onRequestDone?.(result);
+    if (options.bail === true && (result.outcome === 'failed' || result.outcome === 'errored')) {
+      stopped = true;
+    }
+  };
+  // By index, not in order: a script may send the run on at another selected request (#335).
+  let index = 0;
+  while (index < selected.length) {
+    const item = selected[index]!;
     let result: RequestResult;
     if (stopped || context.signal?.aborted === true) {
-      result = {
-        ...identity(item),
-        outcome: 'skipped',
-        assertions: [],
-        unasserted: assertionsOf(item).length === 0,
-      };
+      result = skippedResult(item);
     } else if (
       assertionsOf(item).length === 0 &&
       options.requireAssertions === true &&
@@ -590,20 +646,55 @@ export async function runRequests(
     ) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
-      const ran = await runOne(item, send, options, { sequence: Object.fromEntries(runValues) }, context);
+      const ran = await runOne(
+        item,
+        send,
+        options,
+        { sequence: Object.fromEntries(runValues), ...(options.runControl === true ? { runControl: true } : {}) },
+        context,
+      );
       result = ran.result;
       mergeScriptValues(
         runValues,
-        ran.sent?.script?.values ?? [],
+        ran.values ?? ran.sent?.script?.values ?? [],
         context.host.onSecretValue,
         context.containsKnownSecret,
       );
     }
-    results.push(result);
-    options.onRequestDone?.(result);
-    if (options.bail === true && (result.outcome === 'failed' || result.outcome === 'errored')) {
+    const next = result.control?.next;
+    let target = index + 1;
+    if (next === null) {
       stopped = true;
+    } else if (next !== undefined) {
+      const found = selected.findIndex((s) => s.request.name === next);
+      if (found === -1) {
+        result = runControlError(
+          result,
+          'script-next-unknown',
+          `The scripts asked for "${next}", which this run did not select`,
+        );
+        stopped = true;
+      } else if (jumps >= RUN_CONTROL_LIMITS.jumps) {
+        result = runControlError(
+          result,
+          'script-jump-limit',
+          `The scripts sent this run on ${String(RUN_CONTROL_LIMITS.jumps)} times, the most a run allows`,
+        );
+        stopped = true;
+      } else {
+        jumps += 1;
+        target = found;
+      }
     }
+    report(result);
+    if (stopped || context.signal?.aborted === true) {
+      target = index + 1;
+    }
+    // A jump forward passes over requests: they are reported, as skipped, where the run passed them.
+    for (let passed = index + 1; passed < target; passed += 1) {
+      report(skippedResult(selected[passed]!));
+    }
+    index = target;
   }
   const count = (outcome: RequestOutcome): number => results.filter((r) => r.outcome === outcome).length;
   const baselineCount = (status: BaselineReport['status']): number =>

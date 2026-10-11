@@ -173,9 +173,45 @@ The layer covers what collections mostly use: `pm.test`, `pm.expect` with the co
 `pm.response` (`code`, `status`, `headers.get`, `json()`, `text()`, `responseTime`,
 `to.have.status`), `pm.request` (`url`, headers, `body.raw`), `pm.info.requestName`, the `pm.*.get`
 and `pm.*.set` variable calls (all kept as the run's values), `CryptoJS` hashes, HMACs and Base64,
-`btoa` and `atob`. Anything else — `pm.sendRequest`, `pm.cookies.jar()`, `pm.visualizer`, `require`,
-`setNextRequest` — fails when it is called, with `script-unsupported` naming it. The import summary
-lists the scripts that call one.
+`btoa` and `atob`. `pm.execution.setNextRequest`, `postman.setNextRequest` and
+`pm.execution.skipRequest` steer a run as `execution` does ([below](#steer-a-run)). Anything else —
+`pm.sendRequest`, `pm.cookies.jar()`, `pm.visualizer`, `require` — fails when it is called, with
+`script-unsupported` naming it. The import summary lists the scripts that call one.
+
+A script can't send a request, so a `pm.sendRequest` call needs rewriting:
+
+- A login whose token the next request uses is a [sequence](/wirebench/docs/guides/sequences/) step with a
+  transfer.
+- A token fetched before every request is the request's or its API's OAuth2 auth.
+
+## Steer a run
+
+In an API or folder run (`wirebench run`), a script can choose what the run sends next:
+
+```ts
+// post-response: poll until the job is ready, at most five times
+const tries = Number(vars.get('tries') ?? '0') + 1;
+vars.set('tries', tries);
+if ((response.json() as { ready: boolean }).ready === false && tries < 5) {
+  execution.setNextRequest('Job status');
+}
+```
+
+- `execution.setNextRequest(name)`:
+  - After this request, the run goes on at the first selected request with that name.
+  - Requests a jump passes over are reported as skipped, and a jump back runs requests again.
+  - `null` ends the run, and the requests after it are reported as skipped.
+  - The last call wins, across every level's scripts.
+- `execution.skipRequest()`:
+  - Pre-request scripts only. The request isn't sent, and is reported as skipped.
+  - The rest of its pre-request scripts don't run.
+
+The name must be one of the requests the run selected. Any other name errors the request with
+`script-next-unknown`, and the run stops there. A run can jump at most 1,000 times
+(`script-jump-limit`), and the limit can't be raised or turned off.
+
+A single send and a sequence step don't obey these calls. They log a line saying the call was ignored.
+A sequence's order is the sequence's own.
 
 ## In CI
 
