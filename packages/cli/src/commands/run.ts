@@ -351,6 +351,8 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
           })
         : runRequests(selected, iterated, {
             bail: args.bail,
+            // An API or folder run: its scripts may steer it (#335).
+            runControl: true,
             ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
             requireAssertions: args.requireAssertions,
             ...(args.baseline

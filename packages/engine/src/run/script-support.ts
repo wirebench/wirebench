@@ -37,6 +37,24 @@ export interface SentScripts {
   readonly error?: { readonly code: string; readonly message: string };
   /** Each script that ran, in order: the API's or interface's, each folder's, then the request's (#334). */
   readonly levels: readonly SentScriptLevel[];
+  /** In a run that obeys run control (#335): the request its scripts asked for next, `null` to end the run. */
+  readonly control?: { readonly next: string | null };
+}
+
+/**
+ * Thrown by a session's pre-request chain when a script skipped its request (#335) in a run that
+ * obeys run control: nothing is connected or sent. It carries what the scripts did up to the skip.
+ */
+export class ScriptSkipped extends Error {
+  constructor(
+    /** The request the scripts asked for next, `null` to end the run; undefined when they did not say. */
+    readonly next: string | null | undefined,
+    readonly log: ScriptLog,
+    readonly values: readonly ScriptValue[],
+  ) {
+    super('A script skipped this request');
+    this.name = 'ScriptSkipped';
+  }
 }
 
 /** The values of the secrets a request's scripts list. */
@@ -88,6 +106,11 @@ export interface ScriptSession {
 }
 
 export interface ScriptSessionOptions {
+  /**
+   * True in an API or folder run (#335): a script's `execution.setNextRequest` and `skipRequest` are
+   * carried to the run. Otherwise they are ignored, and the log says so.
+   */
+  readonly runControl?: boolean;
   /** Told each value a script sets that is secret, or holds a known secret, as soon as it is set. */
   readonly onSecretValue?: (value: string) => void;
   readonly containsKnownSecret?: (value: string) => boolean;
@@ -109,6 +132,26 @@ export function scriptSession(
   const lines: string[] = [];
   const ran: SentScriptLevel[] = [];
   let truncated = false;
+  let next: string | null | undefined;
+  const ignored = new Set<string>();
+  /** Keeps a script's run control, or logs that it was ignored; true when it skipped the request. */
+  const steer = (outcome: ScriptOutcome): boolean => {
+    if (!outcome.ok || outcome.control === undefined) return false;
+    const { control } = outcome;
+    if (options.runControl !== true) {
+      for (const call of [
+        ...(control.next !== undefined ? ['setNextRequest'] : []),
+        ...(control.skip === true ? ['skipRequest'] : []),
+      ]) {
+        if (ignored.has(call)) continue;
+        ignored.add(call);
+        lines.push(`execution.${call} is obeyed only in an API or folder run; ignored here`);
+      }
+      return false;
+    }
+    if (control.next !== undefined) next = control.next;
+    return control.skip === true;
+  };
   const now = (): ScriptRunValues => ({
     ...values,
     vars: { ...values.vars, ...Object.fromEntries(set.map((v) => [v.name, v.value])) },
@@ -141,6 +184,7 @@ export function scriptSession(
         const outcome = await scripting.runLevel(scripted, level, 'pre', current, undefined, now());
         collect(level, 'pre', outcome);
         if (!outcome.ok) throw scriptError(outcome.error, scripting.fileOf(level, 'pre'));
+        if (steer(outcome)) throw new ScriptSkipped(next, { lines: [...lines], truncated }, [...set]);
         current = (outcome.request ?? current) as typeof before;
       }
       return current;
@@ -151,6 +195,7 @@ export function scriptSession(
         if (level.scripts.post === undefined) continue;
         const outcome = await scripting.runLevel(scripted, level, 'post', sent, response, now());
         const error = collect(level, 'post', outcome);
+        steer(outcome);
         first ??= error;
       }
       return {
@@ -159,6 +204,7 @@ export function scriptSession(
         log: { lines, truncated },
         levels: ran,
         ...(first !== undefined ? { error: first } : {}),
+        ...(next !== undefined ? { control: { next } } : {}),
       };
     },
   };
