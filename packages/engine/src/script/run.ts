@@ -16,7 +16,9 @@ import { buildPrelude } from './api/prelude.js';
 import { POSTMAN_LAYER } from './api/postman.js';
 import { scriptingOf } from './lookup.js';
 import {
+  SCRIPT_CONTROL_LIMITS,
   SCRIPT_OUTPUT_LIMITS,
+  type ScriptControl,
   type ScriptApi,
   type ScriptErrorCode,
   type ScriptFailure,
@@ -89,6 +91,13 @@ const outputSchema = z.object({
     )
     .max(SCRIPT_OUTPUT_LIMITS.values),
   request: z.unknown().optional(),
+  control: z
+    .object({
+      next: z.string().max(SCRIPT_CONTROL_LIMITS.nameLength).nullable().optional(),
+      skip: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 type Output = z.infer<typeof outputSchema>;
@@ -107,6 +116,16 @@ function failureOf(error: SandboxError): ScriptFailure {
 function readOutput(output: unknown): Output | undefined {
   const parsed = outputSchema.safeParse(output);
   return parsed.success ? parsed.data : undefined;
+}
+
+/** The run control a script handed back, without the empty parts; undefined when it steered nothing. */
+function controlOf(control: Output['control']): ScriptControl | undefined {
+  if (control === undefined) return undefined;
+  const clean: ScriptControl = {
+    ...(control.next !== undefined ? { next: control.next } : {}),
+    ...(control.skip === true ? { skip: true as const } : {}),
+  };
+  return Object.keys(clean).length > 0 ? clean : undefined;
 }
 
 const cleanTests = (tests: Output['tests']): ScriptTest[] =>
@@ -185,7 +204,8 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
   if (!result.ok) {
     return { ok: false, error: failureOf(result.error), tests, values, log: result.log };
   }
-  if (output === undefined) {
+  // Only a pre-request script can skip its request (`execution.skipRequest` refuses in post).
+  if (output === undefined || (input.phase === 'post' && output.control?.skip === true)) {
     return {
       ok: false,
       error: { code: 'script-error', message: 'The script handed back something the engine cannot read' },
@@ -193,6 +213,8 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
       log: result.log,
     };
   }
+  const control = controlOf(output.control);
+  const steered = control !== undefined ? { control } : {};
   if (input.phase === 'pre') {
     const applied = applyRequestChanges(scripting, request, output.request);
     if (!applied.ok) {
@@ -206,7 +228,7 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
       return { ok: false, error: written.error, tests, values, log: result.log };
     }
     if (scripting.views === undefined) {
-      return { ok: true, request: written.request, tests, values, log: result.log };
+      return { ok: true, request: written.request, ...steered, tests, values, log: result.log };
     }
     // A view (SOAP's `request.body`) is written back after the rules ran, so what it wrote has not
     // been checked yet: hold the request that is sent to the rules again, against the one the
@@ -215,7 +237,7 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     if (!checked.ok) {
       return { ok: false, error: checked.error, tests, values, log: result.log };
     }
-    return { ok: true, request: checked.request, tests, values, log: result.log };
+    return { ok: true, request: checked.request, ...steered, tests, values, log: result.log };
   }
-  return { ok: true, tests, values, log: result.log };
+  return { ok: true, ...steered, tests, values, log: result.log };
 }
