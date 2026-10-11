@@ -114,6 +114,25 @@ describe('op call, SOAP', () => {
     expect(server.received).toHaveLength(1);
   });
 
+  it('refuses a protected environment when the server refuses them, unless the call allows it', async () => {
+    const fixture = await soapProject();
+    const server = await serving(fixture, { body: ADD_RESPONSE });
+    await addEnvironment(fixture.dir, 'prod', { CalculatorService: server.url }, { protected: true });
+    const gates = { gates: { write: false, send: true, refuseProtected: true } };
+
+    await expect(call(fixture, { environment: 'prod', a: 1, b: 2 }, gates)).rejects.toMatchObject({
+      code: 'environment-protected',
+      message: expect.stringContaining('allowProtected') as unknown,
+    });
+    expect(server.received).toEqual([]);
+    await expect(
+      call(fixture, { environment: 'prod', allowProtected: true, a: 1, b: 2 }, gates),
+    ).resolves.toMatchObject({ ok: true });
+    // The CLI's own verbs run with open gates: the person typing it chose the environment.
+    await expect(call(fixture, { environment: 'prod', a: 1, b: 2 })).resolves.toMatchObject({ ok: true });
+    expect(server.received).toHaveLength(2);
+  });
+
   it("follows send's environment rules", async () => {
     const fixture = await soapProject();
     await serving(fixture, { body: ADD_RESPONSE });

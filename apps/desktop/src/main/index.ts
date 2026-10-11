@@ -18,7 +18,7 @@ import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } fro
 import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
-import { pickFile, saveOverride } from './native-dialogs.js';
+import { confirmProtectedDialog, pickFile, saveOverride } from './native-dialogs.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
@@ -885,6 +885,7 @@ void app.whenReady().then(() => {
       void scope?.audit.enqueue(event, workspaceId);
     },
     auditWorkspace: () => scopes.callerOrOnly()?.audit.workspaceId,
+    confirmProtected: confirmProtectedDialog,
   };
   registerRequestChannels(engineService, requestDeps);
   registerMockChannels(mockRunner, {

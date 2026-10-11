@@ -201,6 +201,10 @@ export interface Environment {
    * `properties` — see `serialize.ts`.
    */
   readonly disabledProperties: readonly string[];
+  /** A palette name or `#rrggbb` (see `schema.ts`); absent means no colour. */
+  readonly color?: string;
+  /** True asks before every send under this environment; absent means false. */
+  readonly protected?: boolean;
 }
 
 /** A pointer to a WS-Security or keystore configuration file (contents land in later tasks). */

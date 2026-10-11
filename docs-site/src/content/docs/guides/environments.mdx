@@ -46,6 +46,35 @@ whichever scope defines it first.
 Only one environment is active at a time. The status bar always shows which one, and every open
 request tab picks it up immediately — there's no per-tab environment.
 
+## Colour an environment and protect it
+
+Production should look different from local, and should be hard to hit by accident. Both settings
+sit under the name on an environment's page.
+
+- **Colour** — pick one of the eight swatches, type a custom `#rrggbb`, or choose **None**. The
+  environment switcher shows the colour as a dot beside each environment's name. The active
+  environment's colour also runs along the top of the editor tab strip, so it stays in view while
+  you work.
+- **Protected** — tick it, and every send under this environment asks first. A warning box
+  names the environment, and **Cancel** is the default, so a stray <kbd>Enter</kbd> sends nothing.
+  This covers a send from the editor, a History re-send and an HTTP Log resend. A sequence run asks
+  once, before its first step. **Send to environments…** asks once for all the protected
+  environments in the batch; if you cancel, the other environments are still sent. The switcher
+  shows a lock beside a protected environment.
+
+Inside a workspace, a workspace environment also counts as protected when the linked project
+environment of the same name is protected. Duplicating an environment keeps its colour and its
+protection.
+
+Both settings are saved in the environment's file as `color` and `protected`. The command line acts
+on `protected` too:
+
+- `wirebench run` prints a warning before sending under a protected environment.
+- `wirebench run --refuse-protected` exits with code 2 instead, before anything is sent. Use it in
+  a pipeline that must never reach production.
+- `wirebench mcp` refuses a protected environment unless the call passes `allowProtected: true`. See
+  [Agents and MCP](/wirebench/docs/guides/agents-mcp/).
+
 ## Set variables
 
 Each scope's page (Globals, Workspace, or an environment) has its own table: name, value, and a

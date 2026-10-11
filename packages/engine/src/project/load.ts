@@ -110,6 +110,8 @@ async function loadEnvironments(fs: FsLike, root: string): Promise<Environment[]
       endpoints: parsed.endpoints,
       properties: parsed.properties,
       disabledProperties: parsed.disabled ?? [],
+      ...(parsed.color !== undefined ? { color: parsed.color } : {}),
+      ...(parsed.protected === true ? { protected: true } : {}),
     });
   }
   return environments.sort(byOrder);

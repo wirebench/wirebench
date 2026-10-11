@@ -184,11 +184,14 @@ export async function toolNamesByRef(project: Project, projectDir: string): Prom
 }
 
 export type EnvironmentKey = 'environment' | 'wirebench_environment';
+export type AllowProtectedKey = 'allowProtected' | 'wirebench_allowProtected';
 
 export interface ToolSchema {
   readonly inputSchema: JsonSchemaObject;
   /** `environment`, unless the operation has an argument of that name. */
   readonly environmentKey: EnvironmentKey;
+  /** `allowProtected`, unless the operation has an argument of that name. */
+  readonly allowProtectedKey: AllowProtectedKey;
   readonly notes: readonly string[];
   readonly cookies: readonly string[];
 }
@@ -197,6 +200,11 @@ const ENVIRONMENT_PROPERTY: JsonSchemaObject = {
   type: 'string',
   minLength: 1,
   description: 'The environment to send under, by name; required when the project defines any',
+};
+
+const ALLOW_PROTECTED_PROPERTY: JsonSchemaObject = {
+  type: 'boolean',
+  description: 'Send even though the environment is protected; without it this server refuses one',
 };
 
 /** The tool's input schema: the operation's arguments, with the environment argument first. */
@@ -214,9 +222,20 @@ export function toolSchemaOf(resolved: ResolvedOperation): ToolSchema {
   const { schema } = operationSchema;
   const properties = (schema['properties'] ?? {}) as Record<string, unknown>;
   const environmentKey: EnvironmentKey = 'environment' in properties ? 'wirebench_environment' : 'environment';
+  const allowProtectedKey: AllowProtectedKey =
+    'allowProtected' in properties ? 'wirebench_allowProtected' : 'allowProtected';
   return {
-    inputSchema: { ...schema, type: 'object', properties: { [environmentKey]: ENVIRONMENT_PROPERTY, ...properties } },
+    inputSchema: {
+      ...schema,
+      type: 'object',
+      properties: {
+        [environmentKey]: ENVIRONMENT_PROPERTY,
+        [allowProtectedKey]: ALLOW_PROTECTED_PROPERTY,
+        ...properties,
+      },
+    },
     environmentKey,
+    allowProtectedKey,
     notes: operationSchema.notes,
     cookies: operationSchema.cookies,
   };

@@ -2,7 +2,7 @@
  * Current values in resolution (cookie jar spec §5.2): each overlay lands on its own scope, under the
  * command line's `--var`, never on a disabled variable, and it stays a template.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createProject } from '../../../src/project/model.js';
 import type { Environment, Project } from '../../../src/project/model.js';
 import { expand } from '../../../src/project/properties.js';
@@ -95,6 +95,13 @@ describe('scopesFor with current values', () => {
   });
 
   it('changes nothing without current values', () => {
-    expect(scopesFor(context())).toEqual(scopesFor(context({ current: {} })));
+    // Each call's Dynamic scope takes the time it was made: one clock for both, or a millisecond
+    // between them fails the comparison.
+    vi.useFakeTimers({ now: new Date('2026-10-11T12:00:00Z') });
+    try {
+      expect(scopesFor(context())).toEqual(scopesFor(context({ current: {} })));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

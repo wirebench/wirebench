@@ -1,6 +1,7 @@
 import { useEditorsStore } from '../../state/editors.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import { isEnvironmentColor } from '../../../shared/environment-colors.js';
 
 /**
  * What the environment editor page shows: one of the workspace's own environments or a linked
@@ -97,8 +98,23 @@ export function openEnvironmentTab(target: EnvironmentTarget): void {
 }
 
 /**
+ * The colour and protection a copy carries over (#345): a copy of production stays protected. A
+ * colour this build does not know is left behind, since a patch may only write one it does.
+ */
+function flagsOf(environment: { readonly color?: string | undefined; readonly protected?: boolean | undefined }): {
+  color?: string;
+  protected?: boolean;
+} {
+  return {
+    ...(environment.color !== undefined && isEnvironmentColor(environment.color) ? { color: environment.color } : {}),
+    ...(environment.protected === true ? { protected: true } : {}),
+  };
+}
+
+/**
  * Copies an environment: a new one named `<name> (copy)`, then a patch carrying the original's
- * endpoints and properties (both maps replace wholesale). Returns the new environment's id.
+ * endpoints, properties (both maps replace wholesale), colour and protection. Returns the new
+ * environment's id.
  */
 export async function duplicateEnvironment(environmentId: string): Promise<string | undefined> {
   const workspace = useWorkspaceStore.getState();
@@ -114,7 +130,11 @@ export async function duplicateEnvironment(environmentId: string): Promise<strin
     await workspace.mutate({
       kind: 'update-workspace-environment',
       environmentId: createdEnvironmentId,
-      patch: { endpoints: { ...fromWorkspace.endpoints }, properties: { ...fromWorkspace.properties } },
+      patch: {
+        endpoints: { ...fromWorkspace.endpoints },
+        properties: { ...fromWorkspace.properties },
+        ...flagsOf(fromWorkspace),
+      },
     });
     return createdEnvironmentId;
   }
@@ -128,6 +148,7 @@ export async function duplicateEnvironment(environmentId: string): Promise<strin
   await store.updateEnvironment(projectId, createdId, {
     endpoints: { ...source.endpoints },
     properties: { ...source.properties },
+    ...flagsOf(source),
   });
   return createdId;
 }

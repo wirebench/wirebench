@@ -145,6 +145,7 @@ export async function addEnvironment(
   dir: string,
   name: string,
   endpoints: Readonly<Record<string, string>>,
+  extra: { readonly protected?: boolean } = {},
 ): Promise<void> {
   await updateProject(dir, (project) =>
     upsertEnvironment(project, {
@@ -155,6 +156,7 @@ export async function addEnvironment(
       endpoints,
       properties: {},
       disabledProperties: [],
+      ...extra,
     }),
   );
 }

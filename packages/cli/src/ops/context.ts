@@ -15,6 +15,11 @@ export interface Gates {
   readonly send: boolean;
   /** `--env`: the environments `send` may use, by name, slug or id. Absent: any. */
   readonly environments?: readonly string[];
+  /**
+   * True for `wirebench mcp`: a send under a protected environment is refused unless the call
+   * passes `allowProtected`. The CLI's own verbs leave it off — the person typing chose it.
+   */
+  readonly refuseProtected?: boolean;
 }
 
 export const OPEN_GATES: Gates = { write: true, send: true };

@@ -17,6 +17,7 @@ import { useProjectStore, type ProjectStore } from '../state/project.js';
 import { useWebhooksStore } from '../state/webhooks.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
+import { environmentColorCss } from '../../shared/environment-colors.js';
 
 const DiffView = lazy(async () => {
   const module = await import('../features/history/diff-view.js');
@@ -89,6 +90,13 @@ export function EditorArea() {
   const close = useEditorsStore((state) => state.close);
   const move = useEditorsStore((state) => state.move);
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
+  // The active environment's colour bands the top of the strip (#345): where a send goes, in view.
+  const envColor = useWorkspaceStore((state) =>
+    environmentColorCss(
+      state.workspace?.environments.find((environment) => environment.id === state.workspace?.activeEnvironmentId)
+        ?.color,
+    ),
+  );
   const enabledKinds = useUiStore((state) => state.enabledKinds);
   const catchUrls = useWebhooksStore((state) => state.hooks);
   // Each tab's live name and unsaved state, read through its kind's row in `TAB_KINDS`: renames
@@ -258,7 +266,13 @@ export function EditorArea() {
     <section data-testid="editor-area" aria-label="Editors" className="flex h-full min-h-0 flex-col bg-surface-base">
       <ChangedOnDiskBanner />
       <SyncBanner />
-      <div className="flex h-row shrink-0 border-b border-hairline">
+      <div
+        data-testid="editor-tab-strip"
+        className={`flex h-row shrink-0 border-b border-hairline${
+          envColor !== undefined ? ' box-content border-t-[3px] border-t-[var(--env-color)]' : ''
+        }`}
+        style={envColor !== undefined ? ({ '--env-color': envColor } as React.CSSProperties) : undefined}
+      >
         {overflow.left && (
           <button
             type="button"

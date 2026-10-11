@@ -75,6 +75,7 @@ export { reidentifyProject } from './reidentify.js';
 
 export {
   resolveWorkspaceApiBaseUrl,
+  isProtectedEnvironment,
   linkedEnvironment,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,

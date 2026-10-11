@@ -11,7 +11,13 @@
 
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { RequestChannelDeps } from './ipc/request.js';
-import { sendThroughEngine, type ExchangeRegistry, type SendThroughEngineDeps } from './send/exchange.js';
+import {
+  confirmProtectedSend,
+  sendDeclined,
+  sendThroughEngine,
+  type ExchangeRegistry,
+  type SendThroughEngineDeps,
+} from './send/exchange.js';
 import type { EnvSendResult, RequestSendToEnvironmentsResponse } from '../shared/wire-types.js';
 import type { RequestSendToEnvironmentsRequest } from '../shared/kinds/rest/wire.js';
 
@@ -58,10 +64,11 @@ async function sendOne(
   request: RequestSendToEnvironmentsRequest,
   envId: string,
   envName: string,
+  protectedConfirmed: boolean,
 ): Promise<EnvSendResult> {
   const sendId = childSendId(request.batchId, envId);
   const base = { outcome: 'ok', environmentId: envId, environmentName: envName } as const;
-  const options = { envId, environmentName: envName } as const;
+  const options = { envId, environmentName: envName, protectedConfirmed } as const;
   if (request.soap !== undefined) {
     const headers = request.soap.headers !== undefined ? { headers: { ...request.soap.headers } } : {};
     // Refused as it always was, naming the environment, before anything is prepared.
@@ -105,6 +112,18 @@ export async function sendToEnvironments(
   const nameOf = (envId: string): string | undefined =>
     environments.find((environment) => environment.id === envId)?.name;
 
+  // One question for the whole batch (#345), before any child is sent: declined, only the protected
+  // environments are refused, and the others still go.
+  const guarded = new Set(
+    request.environmentIds.filter(
+      (envId) => environments.find((environment) => environment.id === envId)?.protected === true,
+    ),
+  );
+  const confirmed = await confirmProtectedSend(
+    sendDeps,
+    [...guarded].map((envId) => nameOf(envId) ?? envId),
+  );
+
   batches.set(
     request.batchId,
     request.environmentIds.map((envId) => childSendId(request.batchId, envId)),
@@ -120,8 +139,11 @@ export async function sendToEnvironments(
             new WirebenchError('unknown-environment', `No environment "${envId}" applies to this request`),
           );
         }
+        if (guarded.has(envId) && !confirmed) {
+          return errorResult(envId, envName, sendDeclined([envName]));
+        }
         try {
-          return await sendOne(sendDeps, request, envId, envName);
+          return await sendOne(sendDeps, request, envId, envName, confirmed);
         } catch (error) {
           return errorResult(envId, envName, error);
         }

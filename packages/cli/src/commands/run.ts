@@ -7,6 +7,7 @@ import {
   createScriptSandbox,
   createSourceCache,
   createSecretMasker,
+  isProtectedEnvironment,
   isWirebenchError,
   jarCookieHost,
   loadProject,
@@ -203,6 +204,15 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     return loaded;
   }
   const { project, workspace, environment, selected, sequences } = loaded;
+  if (environment !== undefined && isProtectedEnvironment(project, environment)) {
+    if (args.refuseProtected) {
+      io.stderr.write(
+        `environment-protected: "${environment.name}" is a protected environment; --refuse-protected refuses it\n`,
+      );
+      return ExitCode.Usage;
+    }
+    io.stderr.write(`warning: "${environment.name}" is a protected environment\n`);
+  }
   const needs = secretNeedsOf(selected, project, args.vars, workspace?.workspace);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
   // one as it arrives, and every mask built after that — they are built per result — hides it.

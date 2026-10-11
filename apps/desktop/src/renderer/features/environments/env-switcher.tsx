@@ -3,6 +3,7 @@ import { Braces, Check, ChevronDown } from 'lucide-react';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore } from '../../state/ui.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-base.js';
+import { EnvBadge } from './env-badge.js';
 import { openEnvironmentTab } from './environment-actions.js';
 
 const ITEM_CLASS =
@@ -60,6 +61,7 @@ export function EnvSwitcher() {
           className="wb-no-drag inline-flex h-row max-w-48 items-center gap-1.5 rounded-md border border-hairline bg-surface-raised px-2 text-xs text-fg-muted transition-colors hover:border-hairline-strong hover:text-fg-default"
         >
           <Braces size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          <EnvBadge color={active?.color} guarded={active?.protected === true} />
           <span className="min-w-0 truncate">{active?.name ?? NO_ENVIRONMENT_LABEL}</span>
           <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
         </button>
@@ -84,6 +86,7 @@ export function EnvSwitcher() {
                 aria-hidden="true"
                 className={environment.id === activeId ? 'text-accent' : 'text-transparent'}
               />
+              <EnvBadge color={environment.color} guarded={environment.protected === true} />
               {environment.name}
             </DropdownMenu.Item>
           ))}
