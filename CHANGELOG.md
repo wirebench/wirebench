@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Branching in sequences.** A sequence step can repeat itself, go to another step or skip the next
+  one, depending on its response: the status, a header, a body expression, a SOAP fault, or whether the
+  step passed, failed or errored. Every repeat and go-to has a maximum (at most 100) and can wait before
+  it jumps, and a run stops after 1000 step runs, so no loop is unbounded. Only the last run of a step
+  counts towards the result, and a branch that fires goes ahead even under Stop on first failure. The
+  sequence tab has a **Branches** list per step; the run panel shows each run of a step and the path it
+  took, and `wirebench run --sequence` names the path on each step's line and in the json and html
+  reports. A sequence with branches is saved as sequence file version 2, which an older build refuses and
+  leaves as it is; one without stays version 1 (#347).
 - **Scripts on APIs, interfaces and folders.** An API, a SOAP interface and each REST or gRPC folder
   can have a pre-request and a post-response script, which run around every request inside it: the
   API's, then each folder's outermost first, then the request's own, in both phases. A pre-request
