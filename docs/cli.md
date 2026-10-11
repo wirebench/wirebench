@@ -286,6 +286,15 @@ beside it (`<request>.pre.ts`, `<request>.post.ts`). `wirebench run` runs them o
   `scriptLog`, and the `html` report shows it. It is masked like everything else.
 - A request whose scripts are switched off (`scripts.enabled: false`, which is how scripts imported from a
   collection arrive) is sent without them, and is marked `(scripts off)`.
+- A script can steer the run (#335):
+  - `execution.skipRequest()` in a pre-request script skips its request.
+  - `execution.setNextRequest("Name")` sends the run on at the first selected request of that name. Requests it
+    jumps past are reported as skipped, and a jump back runs requests again.
+  - `execution.setNextRequest(null)` ends the run.
+  - A name the run did not select errors the request with `script-next-unknown`.
+  - A run allows at most 1 000 jumps (`script-jump-limit`).
+  - The `cli` report prints `↳ skipped by its script`, `↳ next: "Name"` or `↳ ended the run` under the request.
+  - `wirebench send` and `--sequence` steps ignore these calls, and their script log says so.
 
 ## Secrets
 
@@ -549,7 +558,8 @@ The stable machine interface, its own `formatVersion` starting at 1:
 code. A sequence step (`--sequence`) carries three more fields, added within `formatVersion` 1:
 `sequence` (`{ id, name, stepId }`), `transfers` (`[{ name, outcome, secret, value?, message? }]`, with no
 `value` for a secret transfer) and `origin`, where the step's request went. A request with scripts may carry
-`scriptLog` (what its scripts logged, masked) and `scriptsOff: true`, also within `formatVersion` 1, and a script's
+`scriptLog` (what its scripts logged, masked), `scriptsOff: true` and `control` (`{ skipped?: true, next?: string | null }`,
+what its scripts asked of the run), also within `formatVersion` 1, and a script's
 tests are assertions with `"type": "script"`. `exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
 shape after S5 is an ask-first.
 

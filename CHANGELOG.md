@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Scripts steer a run.** `execution.setNextRequest(name)` sends an API or folder run on at another
+  selected request by name, to skip ahead or to poll in a loop, and `setNextRequest(null)` ends it.
+  `execution.skipRequest()` in a pre-request script skips its request without sending it. The
+  `pm.execution.setNextRequest`, `postman.setNextRequest` and `pm.execution.skipRequest` calls of
+  imported scripts now work through the same calls. A run is capped at 1 000 jumps, and a name the run
+  did not select errors the request (`script-next-unknown`). A single send and a sequence step ignore
+  these calls and log that they did. Every reporter shows the path the run took. `pm.sendRequest`
+  stays unsupported, and the import summary now says what to use instead. ADR-0016 records the
+  decision (#335).
 - **Scripts on APIs, interfaces and folders.** An API, a SOAP interface and each REST or gRPC folder
   can have a pre-request and a post-response script, which run around every request inside it: the
   API's, then each folder's outermost first, then the request's own, in both phases. A pre-request
