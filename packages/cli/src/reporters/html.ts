@@ -1,5 +1,6 @@
 import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engine';
 import { escapeHtml } from './escape.js';
+import { controlLine } from './run-control.js';
 
 /** The outcome mark and its colour class, shared by the summary line and the assertion table. */
 const OUTCOME_MARK: Readonly<Record<RequestResult['outcome'], string>> = {
@@ -57,6 +58,12 @@ function renderTransfers(result: RequestResult): string {
     })
     .join('');
   return `<table><thead><tr><th>Transfer</th><th>Outcome</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/** Where the request's scripts sent the run (#335). */
+function renderControl(result: RequestResult): string {
+  const line = controlLine(result);
+  return line === undefined ? '' : `<p class="control">${escapeHtml(line)}</p>`;
 }
 
 /** What a request's scripts logged, already masked. */
@@ -129,7 +136,7 @@ function renderRequest(result: RequestResult): string {
   const open = result.outcome === 'failed' || result.outcome === 'errored' ? ' open' : '';
   return (
     `<details${open}><summary>${renderSummary(result)}</summary>` +
-    `${renderAssertions(result.assertions)}${renderBaseline(result)}${renderTransfers(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
+    `${renderAssertions(result.assertions)}${renderBaseline(result)}${renderTransfers(result)}${renderControl(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
   );
 }
 

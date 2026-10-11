@@ -25,6 +25,7 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *   - For a request with scripts (#63), two more optional fields, also added without a version change:
  *     - `scriptLog[]`: what its scripts logged, masked like every other string.
  *     - `scriptsOff`: `true` when its scripts are switched off and none ran.
+ *     - `control`: what its scripts asked of the run (#335), `{ skipped?: true, next?: string | null }`.
  *   - A script's tests appear in `assertions[]` with `type: "script"`.
  *
  *   - `baseline`: the `--baseline` comparison — `status`, `format?`, `changes?` (at most 100), `ignored?`,
@@ -66,12 +67,13 @@ export interface JsonReportRequest {
   readonly origin?: string;
   readonly scriptLog?: readonly string[];
   readonly scriptsOff?: true;
+  readonly control?: RequestResult['control'];
   readonly baseline?: RequestResult['baseline'];
 }
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
   const { path, group, name, protocol, outcome, status, durationMs, unasserted, assertions, error, exchange } = result;
-  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline } = result;
+  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline, control } = result;
   return {
     path,
     group,
@@ -90,6 +92,7 @@ function toReportRequest(result: RequestResult): JsonReportRequest {
     ...(origin !== undefined ? { origin } : {}),
     ...(scriptLog !== undefined ? { scriptLog } : {}),
     ...(scriptsOff === true ? { scriptsOff: true as const } : {}),
+    ...(control !== undefined ? { control } : {}),
   };
 }
 

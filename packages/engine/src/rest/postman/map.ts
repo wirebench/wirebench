@@ -139,11 +139,15 @@ export function apiFromPostmanCollection(
   // Each level keeps its own scripts (#334): the collection's on the API, a folder's on the folder.
   const scripted = { api: false, folders: 0, requests: 0 };
   const unsupported = new Map<string, Set<string>>();
+  const steering = new Map<string, readonly string[]>();
   const scriptsAt = (events: readonly PostmanEvent[] | undefined, path: string): RequestScripts | undefined => {
     const scripts = importedScripts(events);
     if (scripts !== undefined) {
-      const calls = unsupportedCalls([scripts.pre?.text ?? '', scripts.post?.text ?? ''].join('\n'));
+      const text = [scripts.pre?.text ?? '', scripts.post?.text ?? ''].join('\n');
+      const calls = unsupportedCalls(text);
       if (calls.length > 0) unsupported.set(path, new Set(calls));
+      const steers = runControlCalls(text);
+      if (steers.length > 0) steering.set(path, steers);
     }
     return scripts;
   };
@@ -229,7 +233,18 @@ export function apiFromPostmanCollection(
     warnings.push(`Scripts on ${listed} were imported switched off: read each on its Scripts tab, then switch them on`);
   }
   for (const [path, calls] of unsupported) {
-    warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
+    // A request a script sends is the one call people most often need, so its warning says what to do instead.
+    if (calls.delete('pm.sendRequest')) {
+      warnings.push(
+        `The scripts of "${path}" call pm.sendRequest, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token`,
+      );
+    }
+    if (calls.size > 0) {
+      warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
+    }
+  }
+  for (const [path, calls] of steering) {
+    warnings.push(`The scripts of "${path}" steer the run (${calls.join(', ')}): obeyed in API and folder runs only`);
   }
   if (dynamic.size > 0) {
     warnings.push(`Dynamic variables are kept as written and not expanded: ${[...dynamic].sort().join(', ')}`);
@@ -715,8 +730,6 @@ const UNSUPPORTED_CALLS: readonly [RegExp, string][] = [
   [/\bpm\.sendRequest\b/, 'pm.sendRequest'],
   [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar'],
   [/\bpm\.visualizer\b/, 'pm.visualizer'],
-  [/\bpm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
-  [/\bpostman\.setNextRequest\b/, 'postman.setNextRequest'],
   [/\brequire\s*\(/, 'require'],
   [/\bpm\.iterationData\b/, 'pm.iterationData'],
   [/\bpm\.vault\b/, 'pm.vault'],
@@ -724,4 +737,15 @@ const UNSUPPORTED_CALLS: readonly [RegExp, string][] = [
 
 export function unsupportedCalls(text: string): string[] {
   return UNSUPPORTED_CALLS.filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
+}
+
+/** The Postman calls that steer a run (#335), found by name: obeyed in API and folder runs only. */
+const RUN_CONTROL_CALLS: readonly [RegExp, string][] = [
+  [/\bpm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
+  [/\bpostman\.setNextRequest\b/, 'postman.setNextRequest'],
+  [/\bpm\.execution\.skipRequest\b/, 'pm.execution.skipRequest'],
+];
+
+export function runControlCalls(text: string): string[] {
+  return RUN_CONTROL_CALLS.filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
 }

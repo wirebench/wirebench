@@ -7,13 +7,16 @@
  * host checks everything `__finish` returns (`../apply.ts`, `../run.ts`): a script can call
  * `__finish` or `__host` itself, and gains nothing by it.
  *
+ * `execution` records run control (#335): which request a run sends next, or that it skips this
+ * one. It is data `__finish` hands back like the values, and only an API or folder run obeys it.
+ *
  * Errors a rule raises carry a name the host maps to a code: `ScriptSecretDenied` →
  * `script-secret-denied`, `ScriptValueInvalid` → `script-value-invalid`, `ScriptUnsupported` →
  * `script-unsupported`.
  */
 import type { ProtocolScripting } from '../../protocol/module.js';
 import type { ScriptApi, ScriptPhase } from '../model.js';
-import { SCRIPT_OUTPUT_LIMITS } from '../model.js';
+import { SCRIPT_CONTROL_LIMITS, SCRIPT_OUTPUT_LIMITS } from '../model.js';
 
 const COMMON = String.raw`
 const input = JSON.parse(__host.inputJson);
@@ -79,6 +82,20 @@ define('vars', Object.freeze({
       throw new ScriptValueInvalid('A script may set at most ${String(SCRIPT_OUTPUT_LIMITS.values)} values');
     }
     state.values.set(key, { value: text, secret: options !== null && typeof options === 'object' && options.secret === true });
+  },
+}));
+
+const control = { next: undefined, skip: false };
+define('execution', Object.freeze({
+  setNextRequest(name) {
+    if (name !== null && (typeof name !== 'string' || name.length > ${String(SCRIPT_CONTROL_LIMITS.nameLength)})) {
+      throw new ScriptValueInvalid('execution.setNextRequest takes a request name of at most ${String(SCRIPT_CONTROL_LIMITS.nameLength)} characters, or null');
+    }
+    control.next = name;
+  },
+  skipRequest() {
+    if (input.phase !== 'pre') throw new ScriptUnsupported('execution.skipRequest works only in a pre-request script');
+    control.skip = true;
   },
 }));
 
@@ -221,6 +238,9 @@ globalThis.__finish = () => ({
   tests: state.tests,
   values: [...state.values.entries()].map(([name, entry]) => ({ name, value: entry.value, secret: entry.secret })),
   request: state.request === undefined ? undefined : state.request(),
+  control: control.next === undefined && !control.skip
+    ? undefined
+    : { ...(control.next !== undefined ? { next: control.next } : {}), ...(control.skip ? { skip: true } : {}) },
 });
 `;
 

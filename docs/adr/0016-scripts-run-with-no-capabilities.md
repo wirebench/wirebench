@@ -57,3 +57,27 @@ convention.
 - The engine gains two runtime dependencies, QuickJS (MIT) and TypeScript 5.9 (Apache-2.0). Both are JavaScript or
   WebAssembly, so the build stays a plain `pnpm install` on every OS (ADR-0001).
 - Any later feature that runs project code (mock-service scripts, suite set-up) runs it under this ADR.
+
+## Update of 2026-10-11: a script may steer a run (#335)
+
+Issue #335 asked whether imported scripts may call `sendRequest`, `setNextRequest` and `skipRequest`. The two
+options were (a) to allow all three behind a permission prompt for each project, or (b) to map them onto sequence
+steps at import time. The owner chose neither. The decision splits the calls by what they need, as
+`docs/specs/2026-10-11-script-run-control-design.md` describes.
+
+- **`setNextRequest` and `skipRequest` are directives, not capabilities.** A script records them through a typed
+  `execution` global, and the Postman layer builds its calls on that global. They come back through `__finish()` as
+  checked data, beside the tests and values. No host function is added. Only an API or folder run obeys them, and it
+  looks a name up among the requests it already selected. A single send and a sequence step ignore them and log that
+  they did.
+- **A run stays bounded.** Jumps are capped at 1 000 per run, and the cap cannot be turned off. A name the run did not
+  select errors the request and ends the run. An abort stops any loop.
+- **`sendRequest` stays refused.** A script still cannot send a request. The import report names each script that
+  calls it, and points to a sequence step or OAuth2 auth instead.
+
+Consequences:
+
+- The rule "a script cannot control the run" no longer holds for API and folder runs. Every other rule in this ADR is
+  unchanged.
+- The worst a hostile script can now do is reorder, repeat (at most 1 000 jumps) or skip requests the run would have
+  sent anyway. That is no more than editing the run's selection would do.
