@@ -156,6 +156,14 @@ describe('restToCurl', () => {
     expect(command).toContain("--header 'Authorization: Bearer at-9'");
   });
 
+  it('leaves out a credential the request switched off, as the send does', () => {
+    const omit = { settings: { omitHeaders: ['authorization'] } };
+    expect(restToCurl(input({ auth: { type: 'bearer', token: 't' }, ...omit }))).not.toContain('Authorization');
+    expect(
+      restToCurl(input({ auth: { type: 'basic', username: 'u', password: 'p', preemptive: true }, ...omit })),
+    ).not.toContain('--user');
+  });
+
   it('says -k and -L only when the send actually does either', () => {
     expect(restToCurl(input({}))).not.toContain('--insecure');
     expect(restToCurl(input({}))).not.toContain('--location');

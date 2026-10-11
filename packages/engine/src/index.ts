@@ -661,6 +661,9 @@ export { expandRestSendInput } from './rest/expand.js';
 export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export { previewRestHeaders } from './rest/header-preview.js';
+export { headersOfRows, isOmitted, restHeaderRows } from './rest/request-headers.js';
+export type { RestHeaderLayers, RestHeaderRow, RestHeaderSource, RestHeaderState } from './rest/request-headers.js';
 export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
 export type { SseParser, SseRow } from './rest/sse.js';
 export {

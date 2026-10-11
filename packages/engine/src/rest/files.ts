@@ -74,6 +74,7 @@ const restSettingsSchema = z.looseObject({
   maxSizeBytes: z.number().int().nonnegative().optional(),
   sendCookies: z.boolean().optional(),
   escapeProperties: z.boolean().optional(),
+  omitHeaders: z.array(z.string()).optional(),
 });
 
 /** `apis/<slug>/requests/[<folder>/…]<name>.request.yaml`. */

@@ -57,7 +57,7 @@ function petstore(): RestApi {
             method: 'POST',
             url: '/pet',
             body: { kind: 'raw', language: 'json', text: '{\n  "name": "Fido"\n}\n' },
-            settings: { followRedirects: false, escapeProperties: true },
+            settings: { followRedirects: false, escapeProperties: true, omitHeaders: ['User-Agent'] },
           }),
           createRestRequest('Upload image', {
             id: 'R3',

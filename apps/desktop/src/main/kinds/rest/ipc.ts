@@ -43,6 +43,7 @@ import {
 } from '../../send/exchange.js';
 import { type WebhookUrlSource } from '../../webhook-send.js';
 import type { KindChannelDeps } from '../kind-main.js';
+import { restHeaders } from './header-preview.js';
 
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
 function isWebhookUrlSource(source: RestUrlSource): source is WebhookUrlSource {
@@ -148,6 +149,7 @@ export function registerRestRequestChannels(service: EngineService, deps: Reques
   registerHandler(channels.request.preflightRest, (request) =>
     preflightRest(sendDeps, deps.secretSources?.(), request),
   );
+  registerHandler(channels.request.restHeaders, (request) => restHeaders(deps, sendDeps, request));
   registerHandler(channels.request.restBodySchema, async (request) => {
     // The operation is found from what a send would call — the draft laid over the saved request and
     // its properties expanded — the same method and URL the contract check matches after a send, so

@@ -171,15 +171,24 @@ describe('RestEditor', () => {
     expect(staged()?.['query']).toEqual([{ name: 'status', value: 'sold', enabled: false }]);
   });
 
-  it('shows the computed content type on the Headers tab, and drops it once one is typed', () => {
+  it('lists what main says the send adds under the typed headers, asking with the draft', async () => {
+    const restHeaders = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { headers: [{ name: 'Content-Type', value: 'application/json', source: 'body', state: 'sent' }] },
+    });
+    installWirebenchApi({ request: { sendRest, preflightRest, cancel, restHeaders } });
     seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{}' } }));
     mount();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
-    expect(screen.getByTestId('rest-header-computed-row').textContent).toContain('application/json');
+    expect(screen.queryByTestId('rest-header-computed-row')).toBeNull();
+    expect((await screen.findByTestId('rest-generated-header')).textContent).toContain('application/json');
 
     fireEvent.change(screen.getByTestId('rest-header-new-name'), { target: { value: 'Content-Type' } });
     expect(staged()?.['headers']).toEqual([{ name: 'Content-Type', value: '', enabled: true }]);
+    await waitFor(() => {
+      expect(restHeaders).toHaveBeenLastCalledWith({ requestId: 'rest-1', draft: staged() });
+    });
   });
 
   it('keeps each body kind draft while the switch moves between them', () => {

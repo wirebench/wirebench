@@ -114,6 +114,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       recreate: fail('request.recreate'),
       curl: fail('request.curl'),
       code: fail('request.code'),
+      restHeaders: vi.fn(() => Promise.resolve({ ok: true as const, value: { headers: [] } })),
       importCurl: fail('request.importCurl'),
       sendGrpc: fail('request.sendGrpc'),
       grpcPush: fail('request.grpcPush'),

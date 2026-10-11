@@ -63,29 +63,29 @@ test.describe('request properties and preferences', () => {
     await expect(page.getByRole('grid', { name: 'Problems' })).toContainText('timeout', { ignoreCase: true });
   });
 
-  test('the Editor tab size drives a recreated envelope, and the UI theme drives the shell', async () => {
+  test('the Appearance tab size drives a recreated envelope, and its theme drives the shell', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
 
-    // ⌘, / Ctrl+, opens the Settings dialog.
+    // ⌘, / Ctrl+, opens the Settings page, on Appearance.
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma');
     await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
 
-    await page.getByTestId('preferences-editor').getByRole('button', { name: 'Editor', exact: true }).click();
+    await page.getByTestId('preferences-editor').getByRole('button', { name: 'Appearance', exact: true }).click();
     const tabSize = page.getByTestId('preferences-tab-size');
     await tabSize.fill('2');
     await tabSize.press('Enter');
 
-    // --- the theme, from the same editor --------------------------------------
-    await page.getByTestId('preferences-editor').getByRole('button', { name: 'UI', exact: true }).click();
-    await page.getByTestId('preferences-theme').selectOption('light');
+    // --- the theme, from the same section -------------------------------------
+    await page.getByTestId('preferences-theme-light').click();
+    await expect(page.getByTestId('preferences-theme-light')).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light', { timeout: 10_000 });
 
-    // Settings is a modal now: close it before touching the editor behind it.
+    // Settings takes the whole window while open: leave it before touching the editor.
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('settings-page')).toHaveCount(0);
 
     // --- back to the request, and recreate it with the new indent -------------
     await page.getByRole('tab', { name: 'Request 1' }).click();

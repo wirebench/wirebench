@@ -246,7 +246,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
         {shownTab === 'params' && (
           <ParamsTab url={request.url} pathParams={request.pathParams} query={request.query} onChange={stage} />
         )}
-        {shownTab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
+        {shownTab === 'headers' && (
+          <HeadersTab headers={request.headers} body={request.body} request={request} onChange={stage} />
+        )}
         {shownTab === 'body' && (
           <BodyTab
             requestId={requestId}

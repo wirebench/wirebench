@@ -11,6 +11,7 @@ export function UpdatesSection({ preferences, update, locked = () => false }: Se
     <SettingsGroup title="Updates">
       <BooleanSetting
         label="Check for updates on launch"
+        setting="updates.checkOnLaunch"
         value={preferences.updates.checkOnLaunch}
         locked={locked('updates.checkOnLaunch')}
         onChange={(checkOnLaunch) => update({ updates: { checkOnLaunch } })}

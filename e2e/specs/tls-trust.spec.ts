@@ -72,7 +72,7 @@ test.describe('endpoint TLS trust', () => {
     // --- configure the CA bundle through Preferences → SSL ----------------------------------
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId('preferences-editor').getByRole('button', { name: 'SSL', exact: true }).click();
+    await page.getByTestId('preferences-editor').getByRole('button', { name: 'SSL / TLS', exact: true }).click();
     // The path is never typed: Browse… asks main to run the picker (pinned here with
     // `WIREBENCH_E2E_OPEN_PATH`), and main records the pick and persists the path itself. The
     // field is read-only, so what it shows is what main stored.
@@ -84,9 +84,9 @@ test.describe('endpoint TLS trust', () => {
     await expect(trustAll).not.toBeChecked();
     await expect(trustAll).toBeDisabled();
 
-    // Settings is a modal now: close it before touching the editor behind it.
+    // Settings takes the whole window while open: leave it before touching the editor.
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('settings-page')).toHaveCount(0);
 
     // --- the private-CA server is now reachable, with no per-endpoint opt-out ----------------
     await page.getByRole('tab', { name: 'Request 1' }).click();

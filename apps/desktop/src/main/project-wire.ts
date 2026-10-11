@@ -33,6 +33,7 @@ import type {
   RestApi,
   RestBody,
   RestRequestDef,
+  RestRequestSettings,
   Attachment,
   Endpoint,
   Environment,
@@ -50,7 +51,7 @@ import type {
 } from '@wirebench/engine';
 import type { ProjectWire } from '../shared/wire-types.js';
 import type { GrpcApiWire, GrpcRequestWire } from '../shared/kinds/grpc/wire.js';
-import type { RestApiWire, RestBodyWire, RestRequestWire } from '../shared/kinds/rest/wire.js';
+import type { RestApiWire, RestBodyWire, RestRequestWire, RestSettingsWire } from '../shared/kinds/rest/wire.js';
 import type {
   AttachmentWire,
   EndpointWire,
@@ -523,7 +524,7 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     headers: toKeyValueWires(request.headers),
     body: toRestBodyWire(request.body),
     auth: toAuthConfigWire(request.auth),
-    settings: { ...request.settings },
+    settings: toRestSettingsWire(request.settings),
     ...scriptsField(request.scripts),
     assertions: toAssertionWires(request.assertions),
     ...(request.orphaned === true ? { orphaned: true } : {}),
@@ -930,4 +931,10 @@ export function findRequest(project: Project, requestId: string): RequestLocatio
     }
   }
   return undefined;
+}
+
+/** A REST request's settings onto the wire: a copy, its `omitHeaders` list made the wire's own array. */
+export function toRestSettingsWire(settings: RestRequestSettings): RestSettingsWire {
+  const { omitHeaders, ...rest } = settings;
+  return { ...rest, ...(omitHeaders !== undefined ? { omitHeaders: [...omitHeaders] } : {}) };
 }

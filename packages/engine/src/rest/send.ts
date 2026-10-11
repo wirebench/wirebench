@@ -35,6 +35,7 @@ import { decodeResponseText, detectLanguage, parseSetCookie } from './response.j
 import { createSseParser, isEventStream } from './sse.js';
 import type { SseRow } from './sse.js';
 import { createSseRowStore } from './sse-transcript.js';
+import { headersOfRows, isOmitted, omittedBasic, restHeaderRows } from './request-headers.js';
 import { composeUrl } from './url.js';
 import type { UrlProblem } from './url.js';
 
@@ -61,6 +62,11 @@ export interface RestSendSettings {
   readonly decompress?: boolean;
   /** Charset for a raw or form body, and for the `Content-Type` that declares it. */
   readonly charset?: string;
+  /**
+   * Generated headers this send leaves out, by name, case-insensitive (`request-headers.ts`). A typed
+   * header is never left out; an omitted `Cookie` means the jar is not read.
+   */
+  readonly omitHeaders?: readonly string[];
 }
 
 /** Everything {@link sendRest} needs. */
@@ -150,43 +156,6 @@ export interface RestExchange extends HttpExchange {
   readonly durationMs: number;
 }
 
-/**
- * Merges the header sources in precedence order, lowest first: host defaults, then what the body
- * and credentials imply, then the request's own typed headers.
- *
- * The request always wins — a user who typed a `Content-Type` meant it, even when the body kind
- * implies another — which is the same rule the SOAP path applies to its computed headers.
- */
-function mergeRequestHeaders(input: {
-  readonly defaults: Readonly<Record<string, string>>;
-  readonly computed: Readonly<Record<string, string>>;
-  readonly typed: readonly KeyValueEntry[];
-}): Record<string, string> {
-  const merged = new Map<string, [string, string]>();
-  const put = (name: string, value: string): void => {
-    merged.set(name.toLowerCase(), [name, value]);
-  };
-  for (const [name, value] of Object.entries(input.defaults)) {
-    put(name, value);
-  }
-  for (const [name, value] of Object.entries(input.computed)) {
-    put(name, value);
-  }
-  // A repeated header name in the request's own table is joined with `, `, which is what RFC 9110
-  // §5.3 says a recipient must treat as equivalent to two headers; undici takes one value per name.
-  const typedSeen = new Set<string>();
-  for (const header of input.typed) {
-    if (!header.enabled || header.name === '') {
-      continue;
-    }
-    const key = header.name.toLowerCase();
-    const previous = typedSeen.has(key) ? merged.get(key)?.[1] : undefined;
-    put(header.name, previous === undefined ? header.value : `${previous}, ${header.value}`);
-    typedSeen.add(key);
-  }
-  return Object.fromEntries([...merged.values()]);
-}
-
 /** `headers` with the signing headers set over `body`, replacing any header of the same name. */
 function withSignature(
   headers: Record<string, string>,
@@ -256,15 +225,17 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   });
 
   const cookies = input.jar === undefined ? cookieHeader(input.cookies ?? []) : undefined;
-  const merged = mergeRequestHeaders({
-    defaults: input.defaultHeaders ?? {},
-    computed: {
-      ...applied.headers,
-      ...(encoded.contentType !== undefined ? { 'Content-Type': encoded.contentType } : {}),
-      ...(cookies !== undefined ? { Cookie: cookies } : {}),
-    },
-    typed: request.headers,
-  });
+  const omit = settings.omitHeaders;
+  const merged = headersOfRows(
+    restHeaderRows({
+      defaults: input.defaultHeaders ?? {},
+      auth: applied.headers,
+      contentType: encoded.contentType,
+      cookie: cookies,
+      typed: request.headers,
+      omit,
+    }),
+  );
   // Signing runs last (§5.2): after auth, encoding and merging, so it signs the bytes that go out.
   const headers =
     input.sign === undefined ? merged : withSignature(merged, input.sign, encoded.bytes ?? new Uint8Array());
@@ -272,14 +243,16 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   const onStream = input.onStream;
   const sseState = onStream !== undefined ? createSseState() : undefined;
 
-  // The jar stores every hop's cookies whatever the setting; it is read only when `send` is on.
+  // The jar stores every hop's cookies whatever the setting; it is read only when `send` is on and
+  // the request does not omit its `Cookie`.
   const jar = input.jar;
+  const readJar = jar?.send === true && !isOmitted(omit, 'Cookie');
   const received: { verdicts?: readonly CookieVerdict[] } = {};
   const cookieHook: HttpCookieHook | undefined =
     jar === undefined
       ? undefined
       : {
-          header: (url, handSet) => (jar.send ? mergeCookieHeader(jar.host.cookiesFor(url), handSet) : handSet),
+          header: (url, handSet) => (readJar ? mergeCookieHeader(jar.host.cookiesFor(url), handSet) : handSet),
           received: (url, rawHeaders) => {
             received.verdicts = jar.host.remember(url, parseSetCookie(rawHeaders));
           },
@@ -307,7 +280,10 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   };
 
   // Basic, NTLM and Kerberos may need a round trip of their own; every other scheme is already in `headers`.
-  const authenticated = await sendWithAuth(httpRequest, applied.transportAuth);
+  // An omitted `Authorization` drops a preemptive Basic one too; a challenge-based credential is
+  // not something a header switch can turn off (spec decision 4).
+  const transportAuth = omittedBasic(applied.transportAuth, omit) ? undefined : applied.transportAuth;
+  const authenticated = await sendWithAuth(httpRequest, transportAuth);
   return {
     ...decodeRestResponse(authenticated.http, methodFor(request.method), sseState),
     ...(authenticated.auth !== undefined ? { auth: authenticated.auth } : {}),

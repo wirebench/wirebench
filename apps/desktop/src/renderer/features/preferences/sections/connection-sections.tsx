@@ -13,6 +13,7 @@ export function WsiSection({ preferences, update }: SectionProps) {
       />
       <BooleanSetting
         label="Verbose report"
+        setting="wsi.verbose"
         value={preferences.wsi.verbose}
         onChange={(verbose) => update({ wsi: { verbose } })}
       />

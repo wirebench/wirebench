@@ -9,6 +9,7 @@ import { applyAuth } from '../http/auth/apply-auth.js';
 import type { CodeHeader, CodeRequest } from '../http/codegen/model.js';
 import { rawContentType } from './body.js';
 import { curlBody } from './curl.js';
+import { isOmitted, omittedBasic } from './request-headers.js';
 import type { RestSendInput } from './send.js';
 import { composeUrl } from './url.js';
 
@@ -43,11 +44,13 @@ export function restCodeRequest(input: RestSendInput): CodeRequest {
   const computed: CodeHeader[] = Object.entries(applied.headers).map(([name, value]) => ({ name, value }));
   const contentType = impliedContentType(input);
   if (contentType !== undefined) computed.push({ name: 'Content-Type', value: contentType });
+  // ... and a header the request switched off (`omitHeaders`) is left out, as the send leaves it out.
+  const omit = settings.omitHeaders;
   for (const row of computed) {
-    if (!typed(row.name)) headers.push(row);
+    if (!typed(row.name) && !isOmitted(omit, row.name)) headers.push(row);
   }
 
-  const transport = applied.transportAuth;
+  const transport = omittedBasic(applied.transportAuth, omit) ? undefined : applied.transportAuth;
   return {
     method: request.method,
     url,

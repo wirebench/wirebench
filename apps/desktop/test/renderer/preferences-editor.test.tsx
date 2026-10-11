@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Monaco-backed editor commands — which jsdom cannot load.
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { PreferencesEditor } from '../../src/renderer/features/preferences/preferences-editor.js';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
@@ -42,27 +42,36 @@ describe('PreferencesEditor', () => {
 
   it('lists every section', () => {
     render(<PreferencesEditor />);
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    for (const group of ['General', 'Requests', 'Network', 'Workspace', 'Account']) {
+      expect(within(nav).getByRole('heading', { name: group })).toBeTruthy();
+    }
     for (const label of [
+      'Appearance',
+      'Behaviour',
+      'Keyboard shortcuts',
+      'Updates',
       'HTTP',
-      'Proxy',
-      'SSL',
       'REST',
-      'Git',
       'WSDL',
       'WS-I',
-      'Editor',
-      'UI',
-      'Accounts',
+      'Proxy',
+      'SSL / TLS',
+      'Git',
+      'Mock services',
+      'Terminal',
       'Secrets',
-      'Shortcuts',
+      'Accounts',
+      'Devices & tokens',
     ]) {
-      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+      expect(within(nav).getByRole('button', { name: label })).toBeTruthy();
     }
   });
 
-  it('opens on HTTP and switches sections on click', () => {
+  it('opens on Appearance and switches sections on click', () => {
     render(<PreferencesEditor />);
-    expect(screen.getByLabelText('User-Agent')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Appearance');
+    expect(screen.getByText('Theme, editor fonts and the default request layout.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'WSDL' }));
     expect(screen.getByLabelText('Sample values')).toBeTruthy();
@@ -71,7 +80,7 @@ describe('PreferencesEditor', () => {
   it('sends one field as a patch', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
-    render(<PreferencesEditor initialSection="editor" />);
+    render(<PreferencesEditor initialSection="appearance" />);
 
     const tabSize = screen.getByLabelText('Tab size');
     fireEvent.change(tabSize, { target: { value: '2' } });
@@ -102,15 +111,15 @@ describe('PreferencesEditor', () => {
     render(<PreferencesEditor />);
     fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
 
-    const confirm = screen.getByLabelText<HTMLInputElement>('Confirm multi-line paste');
-    expect(confirm.checked).toBe(true);
+    const confirm = screen.getByRole('switch', { name: 'Confirm multi-line paste' });
+    expect(confirm.getAttribute('aria-checked')).toBe('true');
     fireEvent.click(confirm);
     await vi.waitFor(() => {
       expect(update).toHaveBeenCalledWith({ patch: { terminal: { confirmMultilinePaste: false } } });
     });
 
-    const copy = screen.getByLabelText<HTMLInputElement>('Copy on select');
-    expect(copy.checked).toBe(false);
+    const copy = screen.getByRole('switch', { name: 'Copy on select' });
+    expect(copy.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(copy);
     await vi.waitFor(() => {
       expect(update).toHaveBeenCalledWith({ patch: { terminal: { copyOnSelect: true } } });
@@ -139,7 +148,7 @@ describe('PreferencesEditor', () => {
   it('sets HTTP Log rows kept, clamped to 100–5000', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
-    render(<PreferencesEditor initialSection="ui" />);
+    render(<PreferencesEditor initialSection="behaviour" />);
 
     const field = screen.getByLabelText('HTTP Log rows kept');
     fireEvent.change(field, { target: { value: '1000' } });
@@ -157,25 +166,54 @@ describe('PreferencesEditor', () => {
 
   it('pushes a theme change into the ui store, which is what the shell renders from', async () => {
     installWirebenchApi({ preferences: { update: stubUpdate() } });
-    render(<PreferencesEditor initialSection="ui" />);
+    render(<PreferencesEditor initialSection="appearance" />);
 
-    fireEvent.change(screen.getByLabelText('Theme'), { target: { value: 'light' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
 
     await vi.waitFor(() => {
       expect(useUiStore.getState().theme).toBe('light');
     });
   });
 
-  it('resets the section that is showing', async () => {
+  it('resets a stored section from the section menu', async () => {
     const reset = vi.fn().mockResolvedValue({ ok: true, value: { preferences: DEFAULTS } });
     installWirebenchApi({ preferences: { reset } });
-    render(<PreferencesEditor initialSection="editor" />);
+    render(<PreferencesEditor initialSection="http" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset section' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for HTTP' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reset HTTP to defaults' }));
 
     await vi.waitFor(() => {
-      expect(reset).toHaveBeenCalledWith({ section: 'editor' });
+      expect(reset).toHaveBeenCalledWith({ section: 'http' });
     });
+  });
+
+  it('resets Appearance field by field, leaving Behaviour alone', async () => {
+    const update = stubUpdate();
+    const reset = vi.fn();
+    installWirebenchApi({ preferences: { update, reset } });
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULTS,
+        editor: { ...DEFAULTS.editor, wordWrap: true, autosave: true },
+        ui: { ...DEFAULTS.ui, theme: 'light' },
+      },
+    });
+    render(<PreferencesEditor initialSection="appearance" />);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Appearance' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reset Appearance to defaults' }));
+
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(1);
+    });
+    const patch = update.mock.calls[0]![0].patch as { editor: Record<string, unknown>; ui: Record<string, unknown> };
+    expect(patch.editor['wordWrap']).toBe(false);
+    expect(patch.ui['theme']).toBe('dark');
+    expect(patch.ui['defaultLayout']).toEqual(DEFAULTS.ui.defaultLayout);
+    expect('autosave' in patch.editor).toBe(false);
+    expect('confirmOnDelete' in patch.ui).toBe(false);
+    expect(reset).not.toHaveBeenCalled();
   });
 
   it('says the proxy applies to every send, and how excludes behave', () => {
@@ -186,15 +224,15 @@ describe('PreferencesEditor', () => {
 
   it('points the user at the per-endpoint opt-in instead of a global trust-all', () => {
     render(<PreferencesEditor initialSection="ssl" />);
-    expect(screen.getByTitle(/Trust invalid certificates/)).toBeTruthy();
+    expect(screen.getByText(/Trust invalid certificates/)).toBeTruthy();
     expect(screen.getByLabelText('CA bundle')).toBeTruthy();
   });
 
   it('never lets trust-all be turned on', () => {
     render(<PreferencesEditor initialSection="ssl" />);
-    const trustAll = screen.getByLabelText<HTMLInputElement>('Trust all certificates');
-    expect(trustAll.checked).toBe(false);
-    expect(trustAll.disabled).toBe(true);
+    const trustAll = screen.getByRole('switch', { name: 'Trust all certificates' });
+    expect(trustAll.getAttribute('aria-checked')).toBe('false');
+    expect(trustAll.hasAttribute('disabled')).toBe(true);
   });
 
   it('shows the rebindable shortcuts table', () => {
@@ -271,7 +309,7 @@ describe('PreferencesEditor — REST', () => {
 
   it('says the loopback listener is the only thing the port changes', () => {
     openRest();
-    expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
+    expect(screen.getByText(/The loopback listener only ever binds 127\.0\.0\.1/)).toBeTruthy();
   });
 });
 
@@ -303,8 +341,9 @@ describe('PreferencesEditor under a managed-preferences policy', () => {
   it('shows a locked proxy mode as such and leaves the rest editable', () => {
     render(<PreferencesEditor initialSection="proxy" />);
     const mode = screen.getByTestId('proxy-mode');
-    expect(mode.hasAttribute('disabled')).toBe(true);
-    expect(mode.closest('[data-locked]')?.textContent).toContain('Locked by policy');
+    expect(mode.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('proxy-mode-manual').hasAttribute('disabled')).toBe(true);
+    expect(mode.closest('[data-locked]')?.textContent).toContain('Managed');
     const port = screen.getByTestId('proxy-port');
     expect(port.hasAttribute('disabled')).toBe(false);
     expect(port.closest('[data-locked]')).toBeNull();
@@ -332,5 +371,184 @@ describe('PreferencesEditor under a managed-preferences policy', () => {
     render(<PreferencesEditor />);
     expect(screen.queryByTestId('preferences-policy')).toBeNull();
     expect(screen.getByRole('alert').textContent).toContain('not valid YAML');
+  });
+});
+
+describe('PreferencesEditor — Appearance and Behaviour', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true });
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('puts the theme, editor and default layout under Appearance', () => {
+    render(<PreferencesEditor initialSection="appearance" />);
+    for (const label of ['Font family', 'Font size', 'Tab size', 'Line numbers', 'Word wrap']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeTruthy();
+    expect(screen.getByRole('radiogroup', { name: 'Orientation' })).toBeTruthy();
+    expect(screen.getByRole('radiogroup', { name: 'Mode' })).toBeTruthy();
+    for (const label of ['Validate before sending', 'Autosave projects', 'History entries kept']) {
+      expect(screen.queryByLabelText(label)).toBeNull();
+    }
+  });
+
+  it('puts what happens around sends, saves and history under Behaviour', () => {
+    render(<PreferencesEditor initialSection="behaviour" />);
+    for (const label of [
+      'Validate before sending',
+      'Format responses',
+      'Autosave projects',
+      'Confirm before deleting',
+      'History entries kept',
+      'HTTP Log rows kept',
+    ]) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    expect(screen.queryByRole('radiogroup', { name: 'Theme' })).toBeNull();
+    expect(screen.queryByLabelText('Tab size')).toBeNull();
+  });
+});
+
+describe('PreferencesEditor — search', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true });
+    registerShellCommands(() => undefined);
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  function search(text: string): void {
+    fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: text } });
+  }
+
+  it('finds matching settings across sections, each with where it lives', () => {
+    render(<PreferencesEditor />);
+    search('timeout');
+
+    const results = screen.getByTestId('settings-search-results');
+    expect(within(results).getByLabelText('Socket timeout (ms)')).toBeTruthy();
+    expect(
+      within(results)
+        .getAllByTestId('setting-crumb')
+        .map((crumb) => crumb.textContent),
+    ).toContain('Requests › HTTP');
+    // Everything else is filtered out, and no section is marked current while searching.
+    expect(within(results).queryByLabelText('User-Agent')).toBeNull();
+    expect(screen.queryByRole('button', { current: 'page' })).toBeNull();
+    expect(screen.getByTestId('settings-search-summary').textContent).toMatch(/^\d+ settings? match “timeout”$/);
+  });
+
+  it('matches hints, group titles and section names too', () => {
+    render(<PreferencesEditor />);
+    search('keychain');
+    expect(screen.getByText('Network › Proxy')).toBeTruthy();
+
+    search('generated requests');
+    expect(screen.getByLabelText('Sample values')).toBeTruthy();
+
+    search('ssl / tls');
+    expect(screen.getByLabelText('Expiry warning (days)')).toBeTruthy();
+  });
+
+  it('leaves the matching controls fully working', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    search('copy on select');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Copy on select' }));
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { copyOnSelect: true } } });
+    });
+  });
+
+  it('finds sections that are not lists of settings by name, and opens them', () => {
+    render(<PreferencesEditor />);
+    search('shortcuts');
+    fireEvent.click(screen.getByTestId('settings-search-open-shortcuts'));
+    expect(screen.getByTestId('shortcuts-table')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Search settings').value).toBe('');
+  });
+
+  it('says so when nothing matches', () => {
+    render(<PreferencesEditor />);
+    search('zzz-no-such-setting');
+    expect(screen.getByTestId('settings-search-empty')).toBeTruthy();
+    expect(screen.getByTestId('settings-search-summary').textContent).toContain('0 settings match');
+  });
+});
+
+describe('PreferencesEditor — changed settings', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    registerShellCommands(() => undefined);
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('marks a changed row and resets just that field', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    usePreferencesStore.setState({
+      preferences: { ...DEFAULTS, http: { ...DEFAULTS.http, maxConnections: 7, allowH2: true } },
+      loaded: true,
+    });
+    render(<PreferencesEditor initialSection="http" />);
+
+    expect(screen.getAllByTestId('setting-modified')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Max connections to default' }));
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { http: { maxConnections: DEFAULTS.http.maxConnections } } });
+    });
+  });
+
+  it('resets a nested field together with its siblings', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    usePreferencesStore.setState({
+      preferences: { ...DEFAULTS, ui: { ...DEFAULTS.ui, defaultLayout: { orientation: 'stacked', mode: 'tabs' } } },
+      loaded: true,
+    });
+    render(<PreferencesEditor initialSection="appearance" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Orientation to default' }));
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({
+        patch: { ui: { defaultLayout: { orientation: 'side-by-side', mode: 'tabs' } } },
+      });
+    });
+  });
+
+  it('puts a dot on sections with changes, and only those', () => {
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULTS,
+        terminal: { ...DEFAULTS.terminal, copyOnSelect: true },
+        editor: { ...DEFAULTS.editor, autosave: true },
+      },
+      loaded: true,
+    });
+    render(<PreferencesEditor />);
+
+    const modified = screen
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('data-modified') === 'true')
+      .map((button) => button.textContent);
+    expect(modified.sort()).toEqual(['Behaviour', 'Terminal']);
+    expect(screen.getAllByTestId('settings-nav-modified')).toHaveLength(2);
+  });
+
+  it('offers no per-row reset on a field at its default', () => {
+    usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true });
+    render(<PreferencesEditor initialSection="http" />);
+    expect(screen.queryByTestId('setting-modified')).toBeNull();
+    expect(screen.queryByTestId('setting-reset')).toBeNull();
   });
 });
