@@ -11,6 +11,7 @@ import {
   createSourceCache,
   createSecretMasker,
   dataFormatOf,
+  isProtectedEnvironment,
   isWirebenchError,
   iterationContext,
   jarCookieHost,
@@ -240,6 +241,15 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     return loaded;
   }
   const { project, workspace, environment, selected, sequences } = loaded;
+  if (environment !== undefined && isProtectedEnvironment(project, environment)) {
+    if (args.refuseProtected) {
+      io.stderr.write(
+        `environment-protected: "${environment.name}" is a protected environment; --refuse-protected refuses it\n`,
+      );
+      return ExitCode.Usage;
+    }
+    io.stderr.write(`warning: "${environment.name}" is a protected environment\n`);
+  }
   const table = args.data !== undefined ? await readDataTable(args.data, io) : undefined;
   if (typeof table === 'number') {
     return table;

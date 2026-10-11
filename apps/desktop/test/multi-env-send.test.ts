@@ -65,7 +65,7 @@ afterAll(async () => {
  * One project with SOAP request `r1` and REST request `rest-1`, and the three environments: each
  * names its own SOAP endpoint and its own `stage` — except `unresolvedIn`, which has none.
  */
-function model(opts: { unresolvedIn?: string; hang?: boolean } = {}): Project {
+function model(opts: { unresolvedIn?: string; hang?: boolean; protectedIn?: string } = {}): Project {
   const environments: Environment[] = ENVS.map((env, order) => ({
     ...env,
     slug: env.id,
@@ -73,6 +73,7 @@ function model(opts: { unresolvedIn?: string; hang?: boolean } = {}): Project {
     endpoints: { calc: `${url}/${opts.hang === true ? 'hang' : 'soap'}/${env.id}` },
     properties: env.id === opts.unresolvedIn ? {} : { stage: env.id },
     disabledProperties: [],
+    ...(env.id === opts.protectedIn ? { protected: true } : {}),
   }));
   const iface = createInterface('Calc', {
     id: 'iface-1',
@@ -112,7 +113,7 @@ function fakeProject(project: Project) {
     requestMeta: () => ({ requestName: 'Add', interfaceName: 'Calc', operationName: 'Add' }),
     restMeta: () => ({ requestName: 'List pets', apiName: 'Pets', folderPath: '' }),
     projectId: () => 'p1',
-    projectSnapshot: () => ({ environments: ENVS, activeEnvironmentId: active.id }),
+    projectSnapshot: () => ({ environments: project.environments, activeEnvironmentId: active.id }),
     endpointFor: vi.fn((_requestId: string, envId?: string) =>
       ENVS.some((env) => env.id === envId) ? `http://${envId}.example/soap` : undefined,
     ),
@@ -130,12 +131,14 @@ function fakeHistory() {
 function depsOf(
   project: ReturnType<typeof fakeProject> & Record<string, unknown>,
   history = fakeHistory(),
+  confirmProtected?: (names: readonly string[]) => Promise<boolean>,
 ): { sendDeps: SendThroughEngineDeps; deps: RequestChannelDeps } {
   const surface = project as unknown as RequestChannelDeps['project'];
   const sendDeps = sendDepsFor(createProject('unused'), {
     project: surface,
     history: history as unknown as HistoryService,
     secretsFor: () => (ref) => Promise.resolve(ref === 'ref' ? 'pw' : undefined),
+    ...(confirmProtected !== undefined ? { confirmProtected } : {}),
   });
   return { sendDeps, deps: { project: surface } };
 }
@@ -143,6 +146,40 @@ function depsOf(
 const basic = (user: string): string => `Basic ${Buffer.from(`${user}:pw`).toString('base64')}`;
 
 describe('sendToEnvironments', () => {
+  it('asks once for the protected environments of a batch; declined, only they are not sent', async () => {
+    const confirm = vi.fn(() => Promise.resolve(false));
+    const { sendDeps, deps } = depsOf(fakeProject(model({ protectedIn: 'prod' })), undefined, confirm);
+    const before = received.length;
+    const response = await sendToEnvironments(sendDeps, deps, {
+      batchId: 'b-guard',
+      requestId: 'rest-1',
+      environmentIds: ['dev', 'prod'],
+      restDraft: {},
+    });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith(['Prod']);
+    expect(response.results.map((result) => [result.environmentId, result.outcome])).toEqual([
+      ['dev', 'ok'],
+      ['prod', 'error'],
+    ]);
+    expect(response.results[1]).toMatchObject({ code: 'send-declined' });
+    expect(received.slice(before).map((request) => request.url)).toEqual(['/pets/dev']);
+  });
+
+  it('sends every environment of a batch once its protected ones are confirmed, asking once', async () => {
+    const confirm = vi.fn(() => Promise.resolve(true));
+    const { sendDeps, deps } = depsOf(fakeProject(model({ protectedIn: 'prod' })), undefined, confirm);
+    const response = await sendToEnvironments(sendDeps, deps, {
+      batchId: 'b-guard-2',
+      requestId: 'rest-1',
+      environmentIds: ['dev', 'prod'],
+      restDraft: {},
+    });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(response.results.every((result) => result.outcome === 'ok')).toBe(true);
+  });
+
   it('sends a SOAP request once per environment with that environment’s endpoint and scopes', async () => {
     const project = fakeProject(model());
     const { sendDeps, deps } = depsOf(project);

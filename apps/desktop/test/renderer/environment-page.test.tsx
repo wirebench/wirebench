@@ -171,6 +171,42 @@ describe('EnvironmentPage — a workspace environment', () => {
     });
   });
 
+  it('sets a palette colour, a custom colour, none, and the Protected flag through patches', async () => {
+    const { mutate } = setUp();
+    const patched = (patch: object) => ({ kind: 'update-workspace-environment', environmentId: 'e1', patch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Colour red' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith(patched({ color: 'red' }));
+    });
+    const custom = screen.getByLabelText('Custom colour');
+    fireEvent.change(custom, { target: { value: '#12ab9f' } });
+    fireEvent.keyDown(custom, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith(patched({ color: '#12ab9f' }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'No colour' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith(patched({ color: null }));
+    });
+    fireEvent.click(screen.getByLabelText('Protected'));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith(patched({ protected: true }));
+    });
+  });
+
+  it('marks the chosen swatch, and writes nothing for a custom colour that is not #rrggbb', () => {
+    const { mutate } = setUp({ ...environment, color: 'teal', protected: true });
+    expect(screen.getByRole('button', { name: 'Colour teal' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Colour red' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByLabelText<HTMLInputElement>('Protected').checked).toBe(true);
+    const custom = screen.getByLabelText<HTMLInputElement>('Custom colour');
+    fireEvent.change(custom, { target: { value: 'pink' } });
+    fireEvent.blur(custom);
+    expect(mutate).not.toHaveBeenCalled();
+    expect(custom.value).toBe('');
+  });
+
   it('renders the name as text, not an input, at rest', () => {
     setUp();
     const field = screen.getByTestId('environment-name');
@@ -357,6 +393,14 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     const checkbox = screen.getByLabelText<HTMLInputElement>('Enable host');
     expect(checkbox.checked).toBe(false);
     expect(checkbox.disabled).toBe(true);
+  });
+
+  it('sets the colour and the Protected flag through the project store', () => {
+    const { updateEnvironment } = setUp();
+    fireEvent.click(screen.getByRole('button', { name: 'Colour orange' }));
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { color: 'orange' });
+    fireEvent.click(screen.getByLabelText('Protected'));
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { protected: true });
   });
 
   it('saves a property edit through the project store', () => {

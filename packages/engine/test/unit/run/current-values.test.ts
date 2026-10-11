@@ -95,8 +95,9 @@ describe('scopesFor with current values', () => {
   });
 
   it('changes nothing without current values', () => {
-    // Each call stamps its dynamic values with the time; hold it still so the two compare equal.
-    vi.useFakeTimers({ now: new Date('2026-10-11T12:00:00Z'), toFake: ['Date'] });
+    // Each call's Dynamic scope takes the time it was made: one clock for both, or a millisecond
+    // between them fails the comparison.
+    vi.useFakeTimers({ now: new Date('2026-10-11T12:00:00Z') });
     try {
       expect(scopesFor(context())).toEqual(scopesFor(context({ current: {} })));
     } finally {

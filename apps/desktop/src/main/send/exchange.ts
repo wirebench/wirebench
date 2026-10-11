@@ -12,6 +12,7 @@ import {
   expandSendInput,
   findWebhookRequest,
   grpcEffectiveAuth,
+  isProtectedEnvironment,
   isWirebenchError,
   openExchange,
   parseSecretPseudoRef,
@@ -109,6 +110,12 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
    * returned with the result. Resends, multi-environment sends and sequence steps leave it off.
    */
   readonly checkAssertions?: boolean;
+  /**
+   * True when the caller already asked about a protected environment (#345): a sequence run asks
+   * once before its first step, a multi-environment batch once for all its protected environments.
+   * Absent, a send under a protected environment asks for itself.
+   */
+  readonly protectedConfirmed?: boolean;
   /** The History entry's tags in place of the request's own: the run a sequence step belongs to. */
   readonly tags?: readonly string[];
   /** Appended to the History entry's request name: the environment a multi-environment send went to. */
@@ -358,6 +365,48 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
   readonly audit?: (event: DesktopAuditEvent, workspaceId: string | undefined) => void;
   /** The server workspace audit events are queued for now. */
   readonly auditWorkspace?: () => string | undefined;
+  /**
+   * Asks the person whether to send under the protected environments named (#345); resolves
+   * `true` to send. Absent (a test, a headless caller), a guarded send is refused: it fails safe.
+   */
+  readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
+}
+
+/**
+ * The name of the environment a send runs under when it is protected (#345) — the workspace's
+ * when the send runs inside one, its linked project environment counting too — else `undefined`.
+ */
+export function protectedEnvironmentOf(
+  located: Pick<Located, 'environmentId' | 'workspace' | 'project'>,
+): string | undefined {
+  const id = located.environmentId;
+  if (id === undefined) return undefined;
+  const environments = located.workspace?.workspace.environments ?? located.project.environments;
+  const environment = environments.find((candidate) => candidate.id === id);
+  return environment !== undefined && isProtectedEnvironment(located.project, environment)
+    ? environment.name
+    : undefined;
+}
+
+/** Asks about the protected environments named, `true` at once when there are none; never throws. */
+export async function confirmProtectedSend(
+  deps: Pick<SendThroughEngineDeps, 'confirmProtected'>,
+  environmentNames: readonly string[],
+): Promise<boolean> {
+  if (environmentNames.length === 0) return true;
+  try {
+    return (await deps.confirmProtected?.(environmentNames)) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The refusal of a send the person did not confirm, naming its protected environments. */
+export function sendDeclined(environmentNames: readonly string[]): WirebenchError {
+  const names = environmentNames.map((name) => `"${name}"`).join(', ');
+  return new WirebenchError('send-declined', `Not sent: ${names} is protected and the send was not confirmed`, {
+    details: { environments: [...environmentNames] },
+  });
 }
 
 /**
@@ -419,6 +468,13 @@ async function sendReserved(
         details: { requestId },
       },
     );
+  }
+  // Asked before anything is resolved or sent; an ad-hoc send runs under no environment.
+  if (adHoc === undefined && options.protectedConfirmed !== true) {
+    const guarded = protectedEnvironmentOf(located);
+    if (guarded !== undefined && !(await confirmProtectedSend(deps, [guarded]))) {
+      throw sendDeclined([guarded]);
+    }
   }
   // An ad-hoc send belongs to no project: no project's secrets, proxy, keystore or session values.
   const projectId = adHoc === undefined ? deps.project.projectId(requestId) : undefined;

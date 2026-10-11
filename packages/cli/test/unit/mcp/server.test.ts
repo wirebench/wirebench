@@ -213,13 +213,13 @@ describe('mcpBaseFor', () => {
 
   it('turns --allow-send and -e into the send gate and the environment list', () => {
     const base = mcpBaseFor(parse(['mcp', '--allow-send', '-e', 'a,b']), io);
-    expect(base.gates).toEqual({ write: false, send: true, environments: ['a', 'b'] });
+    expect(base.gates).toEqual({ write: false, send: true, refuseProtected: true, environments: ['a', 'b'] });
     expect(base.origin).toBe('mcp');
   });
 
   it('turns --allow-write alone into the write gate only', () => {
     const base = mcpBaseFor(parse(['mcp', '--allow-write']), io);
-    expect(base.gates).toEqual({ write: true, send: false });
+    expect(base.gates).toEqual({ write: true, send: false, refuseProtected: true });
     expect(base.origin).toBe('mcp');
   });
 });

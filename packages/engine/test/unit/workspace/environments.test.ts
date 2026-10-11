@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isProtectedEnvironment,
   linkedEnvironment,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
@@ -62,6 +63,26 @@ const workspaceEnv: WorkspaceEnvironment = {
   endpoints: { 'demo/calculator': 'https://qa.workspace.test/soap' },
   disabledProperties: [],
 };
+
+describe('isProtectedEnvironment', () => {
+  it('is false with no environment, and for one that is not protected', () => {
+    const { project } = fixtureProject([projectEnv]);
+    expect(isProtectedEnvironment(project, undefined)).toBe(false);
+    expect(isProtectedEnvironment(project, workspaceEnv)).toBe(false);
+    expect(isProtectedEnvironment(project, projectEnv)).toBe(false);
+  });
+
+  it('is true for a protected environment, project or workspace', () => {
+    const { project } = fixtureProject([]);
+    expect(isProtectedEnvironment(project, { ...workspaceEnv, protected: true })).toBe(true);
+    expect(isProtectedEnvironment(project, { ...projectEnv, protected: true })).toBe(true);
+  });
+
+  it('is true for a workspace environment whose linked project environment is protected', () => {
+    const { project } = fixtureProject([{ ...projectEnv, protected: true }]);
+    expect(isProtectedEnvironment(project, workspaceEnv)).toBe(true);
+  });
+});
 
 describe('linkedEnvironment', () => {
   it('finds the project environment whose slug matches the workspace environment', () => {

@@ -102,10 +102,29 @@
   --wb-right-rail-width: 40px;
 
   --wb-shadow-overlay: 0 16px 48px rgb(0 0 0 / 55%);
+
+  /* Environment colours (#345): a dot in the switcher and a band over the tab strip, never text. */
+  --wb-env-red: #e0685f;
+  --wb-env-orange: #e08a4f;
+  --wb-env-yellow: #d9b441;
+  --wb-env-green: #6fbf8f;
+  --wb-env-teal: #5fb8b0;
+  --wb-env-blue: #7fa6dd;
+  --wb-env-purple: #b08fdc;
+  --wb-env-grey: #8d8780;
 }
 
 [data-theme='light'] {
   color-scheme: light;
+
+  --wb-env-red: #c4423a;
+  --wb-env-orange: #c4651f;
+  --wb-env-yellow: #b08a12;
+  --wb-env-green: #2f8a57;
+  --wb-env-teal: #24857c;
+  --wb-env-blue: #3a6fb8;
+  --wb-env-purple: #7a52b5;
+  --wb-env-grey: #6d675f;
 
   --wb-bg-sunken: #efece7;
   --wb-bg-base: #faf9f7;

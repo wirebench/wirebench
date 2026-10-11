@@ -18,6 +18,7 @@ import { runRequests } from '../../../src/run/run.js';
 import { createRunScope } from '../../../src/run/scope.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
+import type { WsLiveEvent } from '../../../src/ws/events.js';
 import type { WsFrame, WsHandshake, WsSavedMessage } from '../../../src/ws/model.js';
 import { effectiveWsSettings } from '../../../src/ws/run.js';
 import type { WsSelected } from '../../../src/ws/run.js';
@@ -225,12 +226,22 @@ describe('WebSocket through openExchange', () => {
   });
 
   it('close settles the result with the transcript and the subject', async () => {
-    const handle = open(build('/echo'));
+    const handle = open(build('/echo'), { live: true });
+    // The subject is built from the frames the client received: close only once both echoes are
+    // back, not once the server has 'b' — its echo may still be on the wire.
+    const received: string[] = [];
+    const reading = (async () => {
+      for await (const live of handle.events) {
+        const event = live as WsLiveEvent;
+        if (event.kind === 'frame' && event.frame.direction === 'received') received.push(event.frame.text ?? '');
+      }
+    })();
     await handle.push({ text: 'a' });
     await handle.push({ text: 'b' });
-    await until(() => server.received.filter((f) => f.payload.toString() === 'b').length > 0, 'b');
+    await until(() => received.length === 2, 'both echoes');
     handle.close(1000, 'done');
     const sent = await handle.result;
+    await reading;
     expect(sent.exchange?.kind).toBe('websocket');
     const ws = sent.exchange?.kind === 'websocket' ? sent.exchange.ws : undefined;
     expect(ws?.closed).toEqual({ code: 1000, reason: 'done', by: 'client' });

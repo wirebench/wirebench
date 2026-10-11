@@ -156,6 +156,8 @@ export function ownerOf(project: Pick<RequestChannelProject, 'projectId'>, entit
 export interface RequestChannelDeps {
   /** Supplies the scopes; `ProjectRouter` in the app, a stub in tests. */
   readonly project: RequestChannelProject;
+  /** Asks before a send under protected environments (#345); see `SendThroughEngineDeps.confirmProtected`. */
+  readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
   /**
    * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
    * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
@@ -295,6 +297,7 @@ export function toSendDeps(
     ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
     ...(deps.audit !== undefined ? { audit: deps.audit } : {}),
     ...(deps.auditWorkspace !== undefined ? { auditWorkspace: deps.auditWorkspace } : {}),
+    ...(deps.confirmProtected !== undefined ? { confirmProtected: deps.confirmProtected } : {}),
   };
 }
 
