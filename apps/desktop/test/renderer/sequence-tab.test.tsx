@@ -153,6 +153,39 @@ describe('SequenceTab', () => {
     expect(lastPatch().steps?.[0]?.assertions).toEqual([{ type: 'status', equals: 200 }]);
   });
 
+  it('adds a branch, turns it into a go-to, and drops go-tos to a step that is removed', () => {
+    mount();
+    fireEvent.click(screen.getByTestId('sequence-add-branch'));
+    expect(lastPatch().steps?.[0]?.branches).toEqual([
+      { when: { type: 'status', equals: 503 }, then: 'repeat', max: 5 },
+    ]);
+
+    // The store echoes each patch, as main would.
+    const withRepeat = sequenceWire({
+      steps: [{ ...LOGIN, branches: lastPatch().steps?.[0]?.branches ?? [] }, ...SEQUENCE.steps.slice(1)],
+    });
+    cleanup();
+    mount(withRepeat);
+    fireEvent.change(screen.getByTestId('sequence-branch-action'), { target: { value: 'goto' } });
+    expect(lastPatch().steps?.[0]?.branches).toEqual([
+      { when: { type: 'status', equals: 503 }, then: 'goto', step: 'step-ws', max: 5 },
+    ]);
+
+    const withGoto = sequenceWire({
+      steps: [{ ...LOGIN, branches: lastPatch().steps?.[0]?.branches ?? [] }, ...SEQUENCE.steps.slice(1)],
+    });
+    cleanup();
+    mount(withGoto);
+    fireEvent.change(screen.getByTestId('sequence-branch-condition'), { target: { value: 'outcome' } });
+    expect(lastPatch().steps?.[0]?.branches?.[0]?.when).toEqual({ type: 'outcome', equals: 'errored' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove step 2' }));
+    expect(lastPatch().steps?.map((step) => [step.id, step.branches])).toEqual([
+      ['step-login', undefined],
+      ['step-gone', undefined],
+    ]);
+  });
+
   it('renames the sequence', () => {
     mount();
     const name = screen.getByTestId('sequence-name');
