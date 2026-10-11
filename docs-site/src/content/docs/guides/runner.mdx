@@ -28,7 +28,7 @@ times as you ask. Give it a data file and each iteration reads one row of it: a 
 
 </Steps>
 
-The run uses the active environment. Every request is sent exactly as it would be on its own: with its
+The run uses the active environment. Under a protected environment it asks once, before the first send, and sends nothing if you cancel. Every request is sent exactly as it would be on its own: with its
 auth, TLS and proxy settings, scripts, a row in the HTTP Log and an entry in History. Every History
 entry of the run is tagged with it, so **Show in History** lists them.
 

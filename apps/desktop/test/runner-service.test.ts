@@ -9,7 +9,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   createApi,
   createFolder,
@@ -89,9 +89,13 @@ function project(): Project {
 }
 
 /** The request surface a send reads: the project the requests live in, and their names. */
-function surface(projectId: string, model: Project) {
+function surface(projectId: string, model: Project, environmentId?: string) {
   return {
-    runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+    runContextFor: () => ({
+      project: model,
+      projectDir: '/tmp/none',
+      ...(environmentId !== undefined ? { environmentId } : {}),
+    }),
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     projectId: () => projectId,
     requestMeta: () => undefined,
@@ -99,18 +103,38 @@ function surface(projectId: string, model: Project) {
   } as unknown as RequestChannelDeps['project'];
 }
 
-async function harness(projectId: string, files: Record<string, string> = {}) {
+/** A protected environment the run is under, and the person's answer when asked about it (#345). */
+interface Guard {
+  readonly confirm: (environmentNames: readonly string[]) => Promise<boolean>;
+}
+
+const PROD = {
+  id: 'prod',
+  name: 'Prod',
+  slug: 'prod',
+  order: 0,
+  endpoints: {},
+  properties: {},
+  disabledProperties: [],
+  protected: true,
+};
+
+async function harness(projectId: string, files: Record<string, string> = {}, guard?: Guard) {
   seen = [];
   const history = new HistoryService(userDataDir);
   await history.open(projectId);
-  const model = project();
+  const model = guard === undefined ? project() : { ...project(), environments: [PROD] };
   const events: RunnerProgressEvent[] = [];
   const store = join(userDataDir, projectId);
   const settings = new RunnerSettingsStore(store);
   const runs = new RunnerHistoryStore(store);
   const runner = new RunnerService({
     service: new EngineService(),
-    requests: { project: surface(projectId, model), history },
+    requests: {
+      project: surface(projectId, model, guard !== undefined ? PROD.id : undefined),
+      history,
+      ...(guard !== undefined ? { confirmProtected: guard.confirm } : {}),
+    },
     modelOf: () => model,
     settings,
     history: runs,
@@ -169,6 +193,24 @@ describe('RunnerService', () => {
     for (const line of lines) expect(JSON.parse(line)).toMatchObject({ tags: ['runner:F1', 'run:R1'] });
     expect((await runs.list('F1')).map((entry) => entry.runId)).toEqual(['R1']);
     expect((await runner.historyGet('F1', 'R1')).run?.requests).toHaveLength(4);
+  });
+
+  it('asks once before a run under a protected environment, and sends nothing when declined', async () => {
+    const confirm = vi.fn<(names: readonly string[]) => Promise<boolean>>(() => Promise.resolve(false));
+    const { runner } = await harness('P-guard', { '/d.csv': ROWS }, { confirm });
+    await runner.chooseData('F1', () => Promise.resolve('/d.csv'));
+
+    await expect(runner.run({ targetId: 'F1', runId: 'R-declined' })).rejects.toMatchObject({
+      code: 'send-declined',
+    });
+    expect(seen).toEqual([]);
+
+    confirm.mockResolvedValue(true);
+    const result = await runner.run({ targetId: 'F1', runId: 'R-confirmed' });
+    expect(result.summary.total).toBe(4);
+    // Once for the declined run, once for this one: never per request or per iteration.
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm).toHaveBeenCalledWith(['Prod']);
   });
 
   it('runs no iteration after a failure when stop on first failure is on', async () => {

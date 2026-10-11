@@ -44,7 +44,8 @@ import type {
 } from '@wirebench/engine';
 import { UNLINKED_WORKSPACE_MESSAGE } from '../hooks/capture-source.js';
 import { containsRecordedSecret, recordSecretValue, redactSecretText } from '../redact.js';
-import { environmentNameOf } from '../send/exchange.js';
+import { toSendDeps } from '../ipc/request.js';
+import { confirmProtectedSend, environmentNameOf, protectedEnvironmentOf, sendDeclined } from '../send/exchange.js';
 import type {
   RunnerDataChooseResponse,
   RunnerDataFile,
@@ -266,6 +267,14 @@ export class RunnerService {
     }
 
     const located = this.deps.requests.project.runContextFor?.(request.targetId);
+    // Asked once for the whole run (#345), before its first send; its sends then never ask.
+    const guarded = located === undefined ? undefined : protectedEnvironmentOf(located);
+    if (
+      guarded !== undefined &&
+      !(await confirmProtectedSend(toSendDeps(this.deps.service, this.deps.requests), [guarded]))
+    ) {
+      throw sendDeclined([guarded]);
+    }
     const base: RunContext = {
       project,
       projectDir: located?.projectDir ?? '',

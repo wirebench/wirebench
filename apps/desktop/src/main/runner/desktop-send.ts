@@ -62,6 +62,8 @@ export function createDesktopRunSend(
         ...(overrides.timeoutMs !== undefined ? { timeoutMs: overrides.timeoutMs } : {}),
         tags,
         run: true,
+        // The run asked about a protected environment before its first send (`runner-service.ts`).
+        protectedConfirmed: true,
         onScriptsRan: (scripts) => {
           ran = scripts;
         },
