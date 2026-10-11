@@ -553,6 +553,20 @@ describe('op send', () => {
     });
   });
 
+  it('refuses a protected environment when the server refuses them, unless allowProtected is set', async () => {
+    const fixture = await soapProject();
+    await addEnvironment(fixture.dir, 'prod', { CalculatorService: 'http://127.0.0.1:9' }, { protected: true });
+    const refusing = fixture.base({ gates: { write: true, send: true, refuseProtected: true } });
+
+    await expect(runOp(sendOp, { item: SOAP_ITEM, environment: 'prod' }, refusing)).rejects.toMatchObject({
+      code: 'environment-protected',
+    });
+    // Allowed, it goes as far as the wire: nothing listens on port 9.
+    await expect(
+      runOp(sendOp, { item: SOAP_ITEM, environment: 'prod', allowProtected: true }, refusing),
+    ).rejects.toMatchObject({ code: 'connection-refused' });
+  });
+
   it('refuses a send under no environment when --env narrows it', async () => {
     const fixture = await soapProject();
     const narrowed = fixture.base({ gates: { write: true, send: true, environments: ['local'] } });

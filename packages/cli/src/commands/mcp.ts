@@ -29,6 +29,7 @@ export function mcpBaseFor(args: McpArgs, io: Pick<CliIo, 'stderr' | 'env'>): Op
       gates: {
         write: args.allowWrite,
         send: args.allowSend,
+        refuseProtected: true,
         ...(args.environments !== undefined ? { environments: args.environments } : {}),
       },
       origin: 'mcp',

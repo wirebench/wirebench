@@ -317,6 +317,22 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
       endpoints: { 'Calc/calculator': 'http://x.test' },
     });
 
+    // Colour and protection (#345): written, mirrored on the wire, and taken off again.
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId: dev as string,
+      patch: { color: 'red', protected: true },
+    });
+    expect((await reload()).environments[0]).toMatchObject({ color: 'red', protected: true });
+    expect(service.snapshot()?.environments[0]).toMatchObject({ color: 'red', protected: true });
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId: dev as string,
+      patch: { color: null, protected: false },
+    });
+    expect((await reload()).environments[0]).not.toHaveProperty('color');
+    expect((await reload()).environments[0]).not.toHaveProperty('protected');
+
     // A patch replaces the whole map, so a key left out of it is gone.
     await service.mutate({
       kind: 'update-workspace-environment',

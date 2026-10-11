@@ -78,6 +78,14 @@ export const environmentFileSchema = z.looseObject({
   properties: propertyMapSchema,
   /** Names of `properties` entries switched off; absent means none. */
   disabled: z.array(z.string()).optional(),
+  /**
+   * A palette name (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `grey`) or
+   * `#rrggbb`. Any other string loads and shows no colour, so a later palette name never fails an
+   * older build's load.
+   */
+  color: z.string().optional(),
+  /** True asks before every send under this environment; absent means false. */
+  protected: z.boolean().optional(),
 });
 
 /** True when `value` holds a `password` key at any depth: secrets are references, everywhere. */

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EndpointsTable } from './endpoints-table.js';
 import type { EnvironmentTarget } from './environment-actions.js';
+import { EnvironmentLook } from './environment-look.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from './variables-table.js';
 import { currentColumn, useCurrentValues } from '../../state/current-values.js';
@@ -107,6 +108,7 @@ function PageHeader({
   editableName,
   active,
   hint,
+  look,
 }: {
   readonly name: string;
   /** For a linked project's own environment: the project that owns it, so two environments named
@@ -116,6 +118,8 @@ function PageHeader({
   readonly editableName?: { readonly onCommit: (name: string) => void };
   readonly active?: { readonly value: boolean; readonly onToggle: () => void };
   readonly hint: string;
+  /** A real environment's colour and protection (#345); Globals and Workspace have neither. */
+  readonly look?: ReactNode;
 }) {
   return (
     <header className="flex flex-col gap-2">
@@ -143,6 +147,7 @@ function PageHeader({
           </label>
         )}
       </div>
+      {look}
       <p className="text-xs text-fg-subtle">{hint}</p>
     </header>
   );
@@ -438,6 +443,27 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
             }
           },
         }}
+        look={
+          <EnvironmentLook
+            name={environment.name}
+            color={environment.color}
+            guarded={environment.protected === true}
+            onColor={(color) => {
+              if (isWorkspaceScoped) {
+                void queueEnvironmentPatch(environmentId, () => ({ color }));
+              } else if (projectId !== undefined) {
+                void useProjectStore.getState().updateEnvironment(projectId, environmentId, { color });
+              }
+            }}
+            onProtected={(guarded) => {
+              if (isWorkspaceScoped) {
+                void queueEnvironmentPatch(environmentId, () => ({ protected: guarded }));
+              } else if (projectId !== undefined) {
+                void useProjectStore.getState().updateEnvironment(projectId, environmentId, { protected: guarded });
+              }
+            }}
+          />
+        }
         hint={
           isWorkspaceScoped
             ? "A workspace environment, shared across every project — beaten by a linked project's own environment of the same name, when one is active."

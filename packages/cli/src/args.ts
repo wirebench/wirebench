@@ -55,6 +55,8 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --delay <ms>       Wait between requests (and sequence steps), across iterations.
 
 -e, --env <name>       Environment by name or slug. Required when the target defines any.
+    --refuse-protected Exit 2 before sending when the environment is protected; without it a
+                       protected environment is only warned about.
     --var <k=v>        Override an environment property for this run. Repeatable.
     --reporter <spec>  cli | junit=<file> | json=<file> | html=<file>. Repeatable. Default: cli.
     --bail             Stop at the first failed or errored request; the rest are skipped, and so
@@ -111,6 +113,8 @@ export interface RunArgs extends RunDataArgs {
   /** `--sequence` names; when any are given the run is of those sequences, not of requests. */
   readonly sequences: readonly string[];
   readonly env?: string;
+  /** `--refuse-protected`: a protected environment is a usage error, not a warning. */
+  readonly refuseProtected: boolean;
   readonly vars: Readonly<Record<string, string>>;
   readonly reporters: readonly ReporterSpec[];
   readonly bail: boolean;
@@ -217,6 +221,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       strict: true,
       options: {
         env: { type: 'string', short: 'e' },
+        'refuse-protected': { type: 'boolean' },
         sequence: { type: 'string', multiple: true },
         var: { type: 'string', multiple: true },
         reporter: { type: 'string', multiple: true },
@@ -318,6 +323,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       selectors,
       sequences,
       ...(values.env !== undefined ? { env: values.env } : {}),
+      refuseProtected: values['refuse-protected'] ?? false,
       vars,
       reporters,
       bail: values.bail ?? false,

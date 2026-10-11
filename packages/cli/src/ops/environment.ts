@@ -1,4 +1,6 @@
-import type { Environment, WorkspaceEnvironment } from '@wirebench/engine';
+import { isProtectedEnvironment } from '@wirebench/engine';
+import type { Environment, Project, WorkspaceEnvironment } from '@wirebench/engine';
+import type { Gates } from './context.js';
 import { OpsError } from './errors.js';
 
 /**
@@ -57,4 +59,25 @@ export function checkAllowed(
       { environment: environment.name },
     );
   }
+}
+
+/**
+ * `wirebench mcp`: a send under a protected environment (#345) needs the call's `allowProtected`,
+ * so an agent never reaches production by default. The CLI's own verbs run with open gates.
+ */
+export function checkProtected(
+  project: Project,
+  environment: Environment | WorkspaceEnvironment | undefined,
+  gates: Pick<Gates, 'refuseProtected'>,
+  allowProtected: boolean,
+): void {
+  if (gates.refuseProtected !== true || allowProtected || !isProtectedEnvironment(project, environment)) {
+    return;
+  }
+  const name = environment?.name ?? '';
+  throw new OpsError(
+    'environment-protected',
+    `the environment "${name}" is protected; pass allowProtected: true to send under it`,
+    { environment: name },
+  );
 }

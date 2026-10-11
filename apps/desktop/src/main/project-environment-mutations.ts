@@ -8,6 +8,7 @@
 import { generateId, ProjectError, removeEnvironment, uniqueSlug, upsertEnvironment } from '@wirebench/engine';
 import type { Environment, Project } from '@wirebench/engine';
 import type { EnvironmentPatchWire } from '../shared/wire-base.js';
+import { applyColorAndProtection } from './environment-flags.js';
 
 function notFound(environmentId: string): never {
   throw new ProjectError('not-found', `No environment with id "${environmentId}"`, {
@@ -67,7 +68,7 @@ export function updateEnvironment(project: Project, environmentId: string, patch
     properties: patch.properties === undefined ? existing.properties : { ...patch.properties },
     disabledProperties: existing.disabledProperties,
   };
-  return upsertEnvironment(project, next);
+  return upsertEnvironment(project, applyColorAndProtection({ ...existing, ...next }, patch));
 }
 
 /** Deletes an environment, deactivating it first when it was the active one. */

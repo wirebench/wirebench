@@ -50,6 +50,7 @@ import type { HistoryEntryInput } from './history-entry.js';
 import { resolveItem } from './items.js';
 import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
+import { checkProtected } from './environment.js';
 import { environmentFor, openProject } from './project.js';
 import type { OpenedProject } from './project.js';
 import { createSendMasker, redactAssertions, redactBaseline, redactBody, redactUrlsInText } from './redact.js';
@@ -97,6 +98,10 @@ const input = z.object({
     .min(1)
     .optional()
     .describe('The environment to send under, by name; required when the project defines any'),
+  allowProtected: z
+    .boolean()
+    .optional()
+    .describe('Send even though the environment is protected; without it this server refuses one'),
   body: z
     .string()
     .optional()
@@ -407,6 +412,7 @@ export const sendOp = defineOp({
     }
     const opened = await openProject(context);
     const environment = environmentFor(opened, value.environment, context.gates.environments);
+    checkProtected(opened.project, environment, context.gates, value.allowProtected === true);
     const found = resolveItem(opened.project, value.item);
     if (value.body !== undefined) {
       checkOverride(value.body);
