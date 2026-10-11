@@ -35,7 +35,7 @@ interface SequenceRunsStore {
   readonly start: (sequenceId: string) => Promise<void>;
   /** Stops the running run of `sequenceId`, if there is one. */
   readonly cancel: (sequenceId: string) => Promise<void>;
-  /** Folds one `sequence.progress` event in; one for a run that is no longer the latest is dropped. */
+  /** Folds one `sequence.progress` event in; one for a run that is not the latest, running one is dropped. */
   readonly applyProgress: (event: SequenceProgressEvent) => void;
   /** Folds one `sequence.waiting` event in; one for a run that is not the latest, running one is dropped. */
   readonly applyWaiting: (event: SequenceWaitingEvent) => void;
@@ -112,7 +112,9 @@ export const useSequenceRunsStore = create<SequenceRunsStore>((set, get) => ({
   applyProgress: (event) => {
     set((state) => {
       const current = state.runs[event.sequenceId];
-      if (current?.runId !== event.runId) {
+      // Once the run has ended its full result is in, and a step event that arrives after it would
+      // add that step a second time to the ordered list.
+      if (current?.runId !== event.runId || current.status !== 'running') {
         return state;
       }
       return {

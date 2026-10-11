@@ -303,6 +303,12 @@ describe('a branching run in the run panel (#347)', () => {
     unsubscribe();
   });
 
+  it('drops a progress event that arrives after the run has ended', () => {
+    useSequenceRunsStore.setState({ runs: { 'seq-1': { runId: 'R', status: 'done', steps: [base] } } });
+    useSequenceRunsStore.getState().applyProgress({ runId: 'R', sequenceId: 'seq-1', step: base });
+    expect(useSequenceRunsStore.getState().runs['seq-1']!.steps).toHaveLength(1);
+  });
+
   it('marks the earlier run of a step retried as soon as a later one reports', () => {
     useSequenceRunsStore.setState({ runs: { 'seq-1': { runId: 'R', status: 'running', steps: [] } } });
     const apply = useSequenceRunsStore.getState().applyProgress;
