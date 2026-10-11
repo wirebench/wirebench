@@ -73,8 +73,9 @@ script no reach beyond choosing an order among requests that were already going 
 
 ## Running
 
-The session (`run/script-support.ts`) gets `runControl: boolean` in its options. It is false by default, and only
-`runRequests` sets it.
+The session (`run/script-support.ts`) gets `runControl: boolean` in its options. It is false by default. It is set
+only by `runRequests` called with `RunOptions.runControl`, which `wirebench run` passes. `wirebench send` also sends
+through `runRequests`, one request at a time, and does not pass it: a single send must not loop on itself.
 
 - Pre-request chain: the levels run outermost first. A level's `next` is kept, and the last one set wins. When a level
   calls skip:
