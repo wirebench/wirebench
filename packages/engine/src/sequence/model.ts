@@ -41,8 +41,8 @@ export const SEQUENCE_LIMITS = Object.freeze({
   /** The longest wait a rule may ask for before it jumps. */
   branchDelayMs: 60_000,
   /**
-   * Step runs in one run, whatever the rules say: each rule's `max` bounds its own loop, and this bounds
-   * loops nested in loops. Reaching it errors the step that would run next (`sequence-run-limit`).
+   * Step runs in one run, whatever the rules say: each rule's `max` bounds how often it fires, and this
+   * bounds a long loop body run that often. Reaching it errors the step that would run next (`sequence-run-limit`).
    */
   stepRuns: 1000,
 });

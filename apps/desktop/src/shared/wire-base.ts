@@ -951,7 +951,7 @@ export const sequenceStepResultWireSchema = z.object({
   assertions: z.array(sequenceAssertionResultWireSchema),
   transfers: z.array(sequenceTransferResultWireSchema),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
-  skipped: z.enum(['disabled', 'after-failure', 'cancelled']).optional(),
+  skipped: z.enum(['disabled', 'after-failure', 'cancelled', 'branch']).optional(),
   /** What the step request's scripts logged, masked (#63). */
   scriptLog: z.array(z.string()).optional(),
   /** The step's request has scripts, switched off, so none ran. */

@@ -60,11 +60,11 @@ steps:
 | `delayMs` | Optional for `goto` and `repeat`, 0–60000: a wait before the jump. Cancel ends it at once. |
 
 - **When a condition holds.** A check condition holds when the same check as an assertion would *pass*. A check
-  that errors (a JSONPath over an XML body) does not hold; the branch result says why. For a step that got no
+  that errors (a JSONPath over an XML body) does not hold, and `not` does not invert an error. For a step that got no
   response (errored before or during the send) only an `outcome` condition can hold.
 - **A disabled step** never runs its branches. A cancelled run takes no branch.
 - **Run limit.** On top of every rule's `max`, one run executes at most 1000 step runs (`SEQUENCE_LIMITS.stepRuns`),
-  which is what bounds nested loops. Reaching it errors the next step with `sequence-run-limit` and ends the run.
+  which bounds a long loop body run many times. Reaching it errors the next step with `sequence-run-limit` and ends the run.
 
 ### Versions and older builds
 

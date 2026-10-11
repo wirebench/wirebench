@@ -32,6 +32,7 @@ const SKIPPED_BECAUSE: Record<NonNullable<SequenceStepResultWire['skipped']>, st
   disabled: 'disabled',
   'after-failure': 'after a failure',
   cancelled: 'cancelled',
+  branch: 'passed over by a branch',
 };
 
 /**
