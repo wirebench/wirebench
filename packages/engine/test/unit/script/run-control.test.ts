@@ -5,10 +5,11 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
-import type { ScriptOutcome } from '../../../src/script/model.js';
+import { ScriptSkipped, scriptSession } from '../../../src/run/script-support.js';
+import type { RequestScripts, ScriptOutcome } from '../../../src/script/model.js';
 import { runScript, type ScriptRunInput } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { levelScriptTypes } from '../../../src/script/request-scripts.js';
+import { levelScriptTypes, RequestScripting, type ScriptedRequest } from '../../../src/script/request-scripts.js';
 import { scriptDeclarations } from '../../../src/script/types/api.js';
 import { typeErrors } from './ts-check.js';
 
@@ -174,5 +175,73 @@ describe('the execution types', () => {
 
   it('refuse anything but a name or null', () => {
     expect(typeErrors(declarations('post'), 'execution.setNextRequest(42);\n')).toHaveLength(1);
+  });
+});
+
+describe('the scripts of a send, and run control', () => {
+  const scripting = new RequestScripting({ sandbox });
+  const scripts = (pre?: string, post?: string): RequestScripts => ({
+    api: 'wirebench',
+    enabled: true,
+    secrets: [],
+    ...(pre !== undefined ? { pre: { text: pre } } : {}),
+    ...(post !== undefined ? { post: { text: post } } : {}),
+  });
+  const scripted = (api: RequestScripts | undefined, own: RequestScripts): ScriptedRequest => ({
+    protocol: 'rest',
+    path: 'Shop/Poll',
+    name: 'Poll',
+    slug: 'Poll',
+    scripts: own,
+    outer: api !== undefined ? [{ level: 'api', name: 'Shop', stem: 'api', scripts: api }] : [],
+    types: { generated: '' },
+  });
+  const VALUES = { vars: {}, props: {}, secrets: {} };
+
+  it('in a run, stops the pre-request chain at a skip and carries the next request', async () => {
+    const session = scriptSession(
+      scripting,
+      scripted(
+        scripts('log("api"); execution.setNextRequest("Done"); execution.skipRequest();'),
+        scripts('log("own");'),
+      ),
+      VALUES,
+      { runControl: true },
+    );
+    const thrown = await session.pre(REQUEST).catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(ScriptSkipped);
+    expect(thrown).toMatchObject({ next: 'Done', log: { lines: ['api'] } });
+  });
+
+  it('in a run, carries the last next request across levels and phases', async () => {
+    const session = scriptSession(
+      scripting,
+      scripted(
+        scripts('execution.setNextRequest("A");', 'execution.setNextRequest("B");'),
+        scripts(undefined, 'execution.setNextRequest(null);'),
+      ),
+      VALUES,
+      { runControl: true },
+    );
+    const sent = await session.pre(REQUEST);
+    expect((await session.post(sent, RESPONSE)).control).toEqual({ next: null });
+  });
+
+  it('outside a run, ignores run control and logs that it did, once per call', async () => {
+    const session = scriptSession(
+      scripting,
+      scripted(
+        scripts('execution.skipRequest(); execution.setNextRequest("A");'),
+        scripts('execution.skipRequest();', 'execution.setNextRequest("B");'),
+      ),
+      VALUES,
+    );
+    const sent = await session.pre(REQUEST);
+    const done = await session.post(sent, RESPONSE);
+    expect(done.control).toBeUndefined();
+    expect(done.log.lines).toEqual([
+      'execution.setNextRequest is obeyed only in an API or folder run; ignored here',
+      'execution.skipRequest is obeyed only in an API or folder run; ignored here',
+    ]);
   });
 });

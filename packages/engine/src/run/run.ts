@@ -245,7 +245,10 @@ export interface SentRequest {
 }
 
 /** What a run's sender may change for one request. */
-export type RunSendOverrides = Pick<RunContext, 'sequence' | 'timeoutMs'>;
+export type RunSendOverrides = Pick<RunContext, 'sequence' | 'timeoutMs'> & {
+  /** True in an API or folder run: the request's scripts may steer it (#335). A sequence step never sets it. */
+  readonly runControl?: boolean;
+};
 
 /** Sends one selected request as a run does. Throws what preparing or sending throws. */
 export type RunRequestSender = (item: SelectedRequest, overrides?: RunSendOverrides) => Promise<SentRequest>;
@@ -375,7 +378,15 @@ export function createRunSender(context: RunContext): RunRequestSender {
       scope: itemScope,
       interactive: false,
       run: true,
-      scripts: { session: deferredSession(scripting, scripted, itemContext), placeholders: new SecretPlaceholders() },
+      scripts: {
+        session: deferredSession(
+          scripting,
+          scripted,
+          itemContext,
+          overrides.runControl === true ? { runControl: true } : {},
+        ),
+        placeholders: new SecretPlaceholders(),
+      },
     }).result;
   };
 }
