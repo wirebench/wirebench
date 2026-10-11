@@ -88,6 +88,8 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
           endpoints: { ...environment.endpoints },
           properties: { ...environment.properties },
           disabled: disabledList(environment.disabledProperties, environment.properties),
+          color: environment.color,
+          protected: environment.protected === true ? true : undefined,
         }),
       ),
     );

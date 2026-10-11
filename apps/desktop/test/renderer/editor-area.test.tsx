@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { EditorArea } from '../../src/renderer/shell/editor-area.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { wsRequestWire } from '../helpers/wire-defaults.js';
@@ -169,5 +171,31 @@ describe('EditorArea — the Cookies tab', () => {
     useEditorsStore.getState().open({ id: 'cookies', kind: 'cookies', title: 'Cookies' });
     render(<EditorArea />);
     expect(await screen.findByTestId('cookie-manager')).toBeTruthy();
+  });
+});
+
+describe('EditorArea environment colour', () => {
+  afterEach(() => {
+    cleanup();
+    useWorkspaceStore.setState({ workspace: null });
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
+  });
+
+  const env = { id: 'e1', name: 'prod', slug: 'prod', order: 0, endpoints: {}, properties: {}, disabled: [] };
+
+  it('borders the tab strip in the active environment colour', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ environments: [{ ...env, color: '#12ab9f' }], activeEnvironmentId: 'e1' }),
+    });
+    setUp();
+    const strip = screen.getByTestId('editor-tab-strip');
+    expect(strip.style.getPropertyValue('--env-color')).toBe('#12ab9f');
+    expect(strip.className).toContain('border-t-');
+  });
+
+  it('leaves the strip plain with no colour, or no active environment', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [{ ...env, color: 'red' }] }) });
+    setUp();
+    expect(screen.getByTestId('editor-tab-strip').style.getPropertyValue('--env-color')).toBe('');
   });
 });

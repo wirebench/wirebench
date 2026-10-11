@@ -95,6 +95,7 @@ import type {
 } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
+import { applyColorAndProtection } from './environment-flags.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { CurrentValuesStore } from './current-values.js';
@@ -2744,7 +2745,7 @@ export class WorkspaceService implements ProjectRouter {
         case 'update-workspace-environment': {
           const existing = requireEnvironment(open.workspace, change.environmentId);
           const updated: WorkspaceEnvironment = {
-            ...existing,
+            ...applyColorAndProtection(existing, change.patch),
             ...(change.patch.name !== undefined ? { name: change.patch.name } : {}),
             ...(change.patch.properties !== undefined ? { properties: { ...change.patch.properties } } : {}),
             ...(change.patch.endpoints !== undefined ? { endpoints: { ...change.patch.endpoints } } : {}),
@@ -3004,6 +3005,8 @@ export class WorkspaceService implements ProjectRouter {
         properties: { ...environment.properties },
         endpoints: { ...environment.endpoints },
         disabled: [...environment.disabledProperties],
+        ...(environment.color !== undefined ? { color: environment.color } : {}),
+        ...(environment.protected === true ? { protected: true } : {}),
       })),
       ...(workspace.activeEnvironmentId !== undefined ? { activeEnvironmentId: workspace.activeEnvironmentId } : {}),
       projects: open.entries.map((entry): WorkspaceProjectWire => {

@@ -18,7 +18,9 @@
       "propertyNames": { "type": "string" },
       "additionalProperties": { "type": "string" }
     },
-    "disabled": { "type": "array", "items": { "type": "string" } }
+    "disabled": { "type": "array", "items": { "type": "string" } },
+    "color": { "type": "string" },
+    "protected": { "type": "boolean" }
   },
   "required": ["id", "name", "order", "endpoints", "properties"],
   "additionalProperties": {}

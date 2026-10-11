@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { clarkToQName, environmentFor, openProject, readWsdl } from '../../../src/ops/project.js';
+import { checkProtected } from '../../../src/ops/environment.js';
 import { soapInterfacesOf } from '@wirebench/engine';
 
 const FIXTURE = join(import.meta.dirname, '..', '..', 'fixtures', 'runner-project');
@@ -51,6 +52,21 @@ describe('environmentFor', () => {
     expect(environmentFor(opened, 'local')?.name).toBe('local');
     expect(codeOf(() => environmentFor(opened, 'local', ['staging']))).toBe('environment-not-allowed');
     expect(environmentFor(opened, 'local', ['local'])?.name).toBe('local');
+  });
+});
+
+describe('checkProtected', () => {
+  it('refuses a protected environment only when the gates refuse and the call does not allow it', async () => {
+    const opened = await openProject(context(FIXTURE));
+    const local = environmentFor(opened, 'local');
+    const guarded = { ...local!, protected: true };
+    const refuse = { write: true, send: true, refuseProtected: true };
+    const open = { write: true, send: true, refuseProtected: false };
+    expect(codeOf(() => checkProtected(opened.project, guarded, refuse, false))).toBe('environment-protected');
+    expect(codeOf(() => checkProtected(opened.project, guarded, refuse, true))).toBeUndefined();
+    expect(codeOf(() => checkProtected(opened.project, guarded, open, false))).toBeUndefined();
+    expect(codeOf(() => checkProtected(opened.project, local, refuse, false))).toBeUndefined();
+    expect(codeOf(() => checkProtected(opened.project, undefined, refuse, false))).toBeUndefined();
   });
 });
 

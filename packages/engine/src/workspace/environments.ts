@@ -39,6 +39,24 @@ export function linkedEnvironment(
 }
 
 /**
+ * True when a send under `environment` must be confirmed first: it is marked `protected`, or —
+ * inside a workspace — the project environment linked to it is, since that one applies too.
+ * Outside a workspace `environment` is the project's own, and the slug lookup finds itself.
+ */
+export function isProtectedEnvironment(
+  project: Project,
+  environment: Environment | WorkspaceEnvironment | undefined,
+): boolean {
+  if (environment === undefined) {
+    return false;
+  }
+  return (
+    environment.protected === true ||
+    project.environments.some((candidate) => candidate.slug === environment.slug && candidate.protected === true)
+  );
+}
+
+/**
  * `workspace` with `environmentId` as its active environment, or with none active when it is
  * `undefined`: resolution under a chosen environment without touching the workspace's own.
  */

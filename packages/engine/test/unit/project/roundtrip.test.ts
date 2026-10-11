@@ -314,6 +314,41 @@ describe('saveProject', () => {
   });
 });
 
+describe('environment colour and protection', () => {
+  it('round-trips color and protected, and writes protected only when true', async () => {
+    const dir = await tempProjectDir();
+    const base = sampleProject();
+    const [first, ...rest] = base.environments;
+    const project: Project = {
+      ...base,
+      environments: [{ ...first!, color: 'red', protected: true }, ...rest.map((e) => ({ ...e, protected: false }))],
+    };
+    await saveProject(project, dir);
+
+    const text = (await readBytes(dir, `environments/${first!.slug}.yaml`)).toString('utf8');
+    expect(text).toContain('color: red\n');
+    expect(text).toContain('protected: true\n');
+    for (const other of rest) {
+      expect((await readBytes(dir, `environments/${other.slug}.yaml`)).toString('utf8')).not.toContain('protected');
+    }
+
+    const { project: loaded } = await loadProject(dir);
+    expect(loaded.environments[0]).toMatchObject({ color: 'red', protected: true });
+    expect(loaded.environments.slice(1).every((e) => e.protected === undefined)).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('loads an environment whose colour it does not know', async () => {
+    const dir = await tempProjectDir();
+    const base = sampleProject();
+    await saveProject({ ...base, environments: [{ ...base.environments[0]!, color: 'chartreuse' }] }, dir);
+    const { project: loaded } = await loadProject(dir);
+    expect(loaded.environments[0]?.color).toBe('chartreuse');
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe('loadProject', () => {
   it('round-trips a project to a deep-equal model', async () => {
     const dir = await tempProjectDir();

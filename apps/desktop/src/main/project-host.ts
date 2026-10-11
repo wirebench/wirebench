@@ -29,6 +29,7 @@ import {
   enabledProperties,
   generateMock,
   IMPORTED_SCRIPTS_DIR,
+  isProtectedEnvironment,
   loadKeystore,
   loadProject,
   overlayCurrent,
@@ -385,10 +386,14 @@ export class ProjectHost {
    * nothing to resolution there), else the project's. What *Send to environments…* names and
    * validates its environment ids against.
    */
-  sendEnvironments(): { environments: { id: string; name: string }[]; activeId: string | undefined } {
+  sendEnvironments(): {
+    environments: { id: string; name: string; protected?: boolean }[];
+    activeId: string | undefined;
+  } {
     if (this.open === undefined) {
       return { environments: [], activeId: undefined };
     }
+    const { project } = this.open;
     const context = this.workspaceContext?.();
     const source =
       context === undefined
@@ -397,7 +402,12 @@ export class ProjectHost {
     return {
       environments: [...source.environments]
         .sort((a, b) => a.order - b.order)
-        .map((environment) => ({ id: environment.id, name: environment.name })),
+        .map((environment) => ({
+          id: environment.id,
+          name: environment.name,
+          // Inside a workspace, the linked project environment's flag counts too (#345).
+          ...(isProtectedEnvironment(project, environment) ? { protected: true } : {}),
+        })),
       activeId: source.activeId,
     };
   }
