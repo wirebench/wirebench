@@ -1,4 +1,5 @@
 import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engine';
+import { branchText } from './branch-text.js';
 import { escapeHtml } from './escape.js';
 
 /** The outcome mark and its colour class, shared by the summary line and the assertion table. */
@@ -57,6 +58,14 @@ function renderTransfers(result: RequestResult): string {
     })
     .join('');
   return `<table><thead><tr><th>Transfer</th><th>Outcome</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/** The path a sequence step took (#347), and whether a later run of it superseded this one. */
+function renderPath(result: RequestResult): string {
+  const parts = [branchText(result), result.retried === true ? '(retried)' : undefined].filter(
+    (part): part is string => part !== undefined,
+  );
+  return parts.length > 0 ? `<p>Path: ${escapeHtml(parts.join(' '))}</p>` : '';
 }
 
 /** What a request's scripts logged, already masked. */
@@ -129,7 +138,7 @@ function renderRequest(result: RequestResult): string {
   const open = result.outcome === 'failed' || result.outcome === 'errored' ? ' open' : '';
   return (
     `<details${open}><summary>${renderSummary(result)}</summary>` +
-    `${renderAssertions(result.assertions)}${renderBaseline(result)}${renderTransfers(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
+    `${renderPath(result)}${renderAssertions(result.assertions)}${renderBaseline(result)}${renderTransfers(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
   );
 }
 

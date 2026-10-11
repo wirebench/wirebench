@@ -371,26 +371,30 @@ export async function runSequence(
     options.onStepDone?.(result);
   };
 
-  const nameAt = (index: number): string => {
-    const target = sequence.steps[index]!;
-    const found = findStepRequest(project, target.requestId, options.registry);
-    return stepName(target, found.kind === 'found' ? found.selected : undefined);
+  /** The fields every result of the step at `index` shares, and its request as the run finds it. */
+  const baseAt = (index: number): { base: StepBase; target: ReturnType<typeof findStepRequest> } => {
+    const step = sequence.steps[index]!;
+    const target = findStepRequest(project, step.requestId, options.registry);
+    const selected = target.kind === 'found' ? target.selected : undefined;
+    return {
+      target,
+      base: {
+        index,
+        stepId: step.id,
+        requestId: step.requestId,
+        name: stepName(step, selected),
+        ...(selected !== undefined ? { protocol: selected.kind } : {}),
+        assertions: [],
+        transfers: [],
+      },
+    };
   };
+  const nameAt = (index: number): string => baseAt(index).base.name;
 
   /** Reports `from`..`to` (exclusive) as passed over by a branch. */
   const passOver = (from: number, to: number): void => {
     for (let index = from; index < to; index += 1) {
-      const step = sequence.steps[index]!;
-      report({
-        index,
-        stepId: step.id,
-        requestId: step.requestId,
-        name: nameAt(index),
-        assertions: [],
-        transfers: [],
-        outcome: 'skipped',
-        skipped: 'branch',
-      });
+      report({ ...baseAt(index).base, outcome: 'skipped', skipped: 'branch' });
     }
   };
 
@@ -398,17 +402,7 @@ export async function runSequence(
   while (cursor < sequence.steps.length) {
     const index = cursor;
     const step = sequence.steps[index]!;
-    const target = findStepRequest(project, step.requestId, options.registry);
-    const selected = target.kind === 'found' ? target.selected : undefined;
-    const base = {
-      index,
-      stepId: step.id,
-      requestId: step.requestId,
-      name: stepName(step, selected),
-      ...(selected !== undefined ? { protocol: selected.kind } : {}),
-      assertions: [],
-      transfers: [],
-    };
+    const { base, target } = baseAt(index);
 
     const skip = signal.aborted ? 'cancelled' : stopped ? 'after-failure' : !step.enabled ? 'disabled' : undefined;
     if (skip !== undefined) {

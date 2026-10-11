@@ -28,7 +28,7 @@ import {
 } from '../script/request-scripts.js';
 import type { RequestScripts } from '../script/model.js';
 import { SecretPlaceholders } from '../script/send.js';
-import type { TransferResult } from '../sequence/run.js';
+import type { StepBranch, TransferResult } from '../sequence/run.js';
 import { finishBaselineUpdate, planBaselineUpdate, type SinkOutcome } from './baseline-update.js';
 import { BASELINE_PROTOCOLS, checkBaseline } from './baseline.js';
 import type { BaselineCheck, BaselineReport } from './baseline.js';
@@ -87,6 +87,12 @@ export interface RequestResult {
   readonly transfers?: readonly TransferResult[];
   /** Where the request went, for a sequence step. */
   readonly origin?: string;
+  /** A sequence step's run of it, from 2, when a branch ran it again (#347). */
+  readonly attempt?: number;
+  /** A later run of this sequence step superseded this one; it is reported as skipped. */
+  readonly retried?: true;
+  /** What a sequence step's branches did. */
+  readonly branch?: StepBranch;
   /** What the request's scripts logged, capped. NOT yet redacted. */
   readonly scriptLog?: readonly string[];
   /** True when the request has scripts and they are switched off, so none ran. */

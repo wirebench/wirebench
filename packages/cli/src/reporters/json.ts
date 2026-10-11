@@ -22,6 +22,10 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *     - `sequence`: `{ id, name, stepId }`.
  *     - `transfers[]`: `{ name, outcome, secret, value?, message? }`; a secret transfer has no `value`.
  *     - `origin`: where the step's request went.
+ *   - For a sequence step whose branches acted (#347), three more optional fields, also additive:
+ *     - `attempt`: which run of the step this is, from 2.
+ *     - `retried`: `true` when a later run of the step superseded this one; its `outcome` is then `skipped`.
+ *     - `branch`: `{ rule, action, to?, count, max?, limitReached? }`, what the step's branches did.
  *   - For a request with scripts (#63), two more optional fields, also added without a version change:
  *     - `scriptLog[]`: what its scripts logged, masked like every other string.
  *     - `scriptsOff`: `true` when its scripts are switched off and none ran.
@@ -64,6 +68,9 @@ export interface JsonReportRequest {
   readonly sequence?: RequestResult['sequence'];
   readonly transfers?: RequestResult['transfers'];
   readonly origin?: string;
+  readonly attempt?: number;
+  readonly retried?: true;
+  readonly branch?: RequestResult['branch'];
   readonly scriptLog?: readonly string[];
   readonly scriptsOff?: true;
   readonly baseline?: RequestResult['baseline'];
@@ -71,7 +78,7 @@ export interface JsonReportRequest {
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
   const { path, group, name, protocol, outcome, status, durationMs, unasserted, assertions, error, exchange } = result;
-  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline } = result;
+  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline, attempt, retried, branch } = result;
   return {
     path,
     group,
@@ -88,6 +95,9 @@ function toReportRequest(result: RequestResult): JsonReportRequest {
     ...(sequence !== undefined ? { sequence } : {}),
     ...(transfers !== undefined ? { transfers } : {}),
     ...(origin !== undefined ? { origin } : {}),
+    ...(attempt !== undefined ? { attempt } : {}),
+    ...(retried === true ? { retried: true as const } : {}),
+    ...(branch !== undefined ? { branch } : {}),
     ...(scriptLog !== undefined ? { scriptLog } : {}),
     ...(scriptsOff === true ? { scriptsOff: true as const } : {}),
   };

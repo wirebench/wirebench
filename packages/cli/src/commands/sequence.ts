@@ -153,7 +153,7 @@ export async function runSequences(
           sequence: sequenceScope,
           ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
         });
-        raw.set(step.step.id, sent.raw);
+        raw.set(`${step.step.id}#${step.attempt}`, sent.raw);
         return {
           subject: sent.subject,
           ...(sent.origin !== undefined ? { origin: sent.origin } : {}),
@@ -164,7 +164,8 @@ export async function runSequences(
         return { error: errorOf(error) };
       }
     };
-    const toResult = (step: SequenceStepResult): RequestResult => stepResult(sequence, step, raw.get(step.stepId));
+    const toResult = (step: SequenceStepResult): RequestResult =>
+      stepResult(sequence, step, raw.get(`${step.stepId}#${step.attempt ?? 1}`));
     const controller = new AbortController();
     const abort = (): void => controller.abort();
     options.signal.addEventListener('abort', abort, { once: true });
@@ -185,6 +186,7 @@ export async function runSequences(
         onCallbackWaiting: (step, waiting) =>
           options.onCallbackWaiting(`${sequence.name}/${step.index + 1}. ${step.name}`, waiting),
       });
+      // The run's own list: an earlier run of a step that ran again is marked retried by now.
       results.push(...run.steps.map(toResult));
       if (options.bail && (run.outcome === 'failed' || run.outcome === 'errored')) {
         bailed = true;
@@ -213,7 +215,9 @@ export async function runSequences(
 
 /**
  * One step as a request of the run: grouped by its sequence, named `<sequence>/<n>. <step>` so two steps
- * sending the same request stay apart, with the sequence, the step and the transfers alongside.
+ * sending the same request stay apart, with the sequence, the step and the transfers alongside. A
+ * second or later run of a step adds ` (attempt k)`; a run a later one superseded (#347) is reported
+ * as skipped and `retried`, keeping what it found, so only the last run of a step counts.
  */
 function stepResult(
   sequence: SequenceDef,
@@ -224,24 +228,28 @@ function stepResult(
     // `resolveSteps` refused the run before any send for a step without a request.
     throw new Error(`step ${step.stepId} has no request`);
   }
-  const name = `${step.index + 1}. ${step.name}`;
+  const name = `${step.index + 1}. ${step.name}${step.attempt !== undefined ? ` (attempt ${step.attempt})` : ''}`;
+  const retried = step.retried === true;
   return {
     path: `${sequence.name}/${name}`,
     group: sequence.name,
     name,
     protocol: step.protocol,
-    outcome: step.outcome,
+    outcome: retried ? 'skipped' : step.outcome,
     ...(step.status !== undefined ? { status: step.status } : {}),
     ...(step.durationMs !== undefined ? { durationMs: step.durationMs } : {}),
     assertions: step.assertions,
     ...(step.error !== undefined ? { error: step.error } : {}),
-    unasserted: step.outcome !== 'skipped' && step.assertions.length === 0,
-    ...(raw !== undefined && (step.outcome === 'failed' || step.outcome === 'errored')
+    unasserted: !retried && step.outcome !== 'skipped' && step.assertions.length === 0,
+    ...(!retried && raw !== undefined && (step.outcome === 'failed' || step.outcome === 'errored')
       ? { exchange: cappedExchange(raw) }
       : {}),
     sequence: { id: sequence.id, name: sequence.name, stepId: step.stepId },
     transfers: step.transfers,
     ...(step.origin !== undefined ? { origin: step.origin } : {}),
+    ...(step.attempt !== undefined ? { attempt: step.attempt } : {}),
+    ...(retried ? { retried: true as const } : {}),
+    ...(step.branch !== undefined ? { branch: step.branch } : {}),
     ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog } : {}),
     ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
   };

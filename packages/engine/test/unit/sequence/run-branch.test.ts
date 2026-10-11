@@ -174,7 +174,13 @@ describe('runSequence with branches', () => {
     );
     expect(sent.map((s) => s.step.requestId)).toEqual(['start', 'done']);
     expect(result.steps[0]?.branch).toEqual({ rule: 2, action: 'skip-next', count: 1 });
-    expect(result.steps[1]).toMatchObject({ stepId: 'T-report', outcome: 'skipped', skipped: 'branch' });
+    // A step passed over keeps its protocol, so a report can place it like any other.
+    expect(result.steps[1]).toMatchObject({
+      stepId: 'T-report',
+      protocol: 'rest',
+      outcome: 'skipped',
+      skipped: 'branch',
+    });
   });
 
   it('loops back over several steps, retrying each of them', async () => {
