@@ -103,7 +103,8 @@ through `runRequests`, one request at a time, and does not pass it: a single sen
 
 - CLI reporter: after the request line, `↳ skipped by its script`, `↳ next: "Login"` or `↳ ended the run`.
 - JSON reporter: carries `control`.
-- JUnit reporter: a skipped request is `<skipped message="skipped by its script"/>`.
+- JUnit reporter: the same line in the case's `<system-out>`. The schema JUnit consumers read gives `<skipped/>` no
+  attributes.
 - HTML reporter: shows the same line as the CLI reporter.
 
 ## Errors
