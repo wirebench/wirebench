@@ -186,3 +186,25 @@ export async function pickSaveFile(
   }
   return result.canceled ? undefined : result.filePath;
 }
+
+/**
+ * Asks whether to send under the protected environments named (#345), over the focused window.
+ * Cancel is the default and the answer to Escape, so a stray Enter never sends to production.
+ */
+export async function confirmProtectedDialog(environmentNames: readonly string[]): Promise<boolean> {
+  const list = environmentNames.map((name) => `"${name}"`).join(', ');
+  const one = environmentNames.length === 1;
+  const options = {
+    type: 'warning' as const,
+    buttons: ['Send', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    message: `Send to ${one ? (environmentNames[0] ?? '') : list}?`,
+    detail: `${list} ${one ? 'is a protected environment' : 'are protected environments'}. Check this is where you mean to send.`,
+  };
+  const parent = BrowserWindow.getFocusedWindow();
+  const { response } =
+    parent === null ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options);
+  return response === 0;
+}

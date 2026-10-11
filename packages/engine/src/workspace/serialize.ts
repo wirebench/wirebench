@@ -78,6 +78,8 @@ export function workspaceFiles(workspace: Workspace): WorkspaceFiles {
           properties: { ...environment.properties },
           endpoints: { ...environment.endpoints },
           disabled: disabledList(environment.disabledProperties, environment.properties),
+          color: environment.color,
+          protected: environment.protected === true ? true : undefined,
         }),
       ),
     );

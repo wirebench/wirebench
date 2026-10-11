@@ -46,6 +46,7 @@ describe('wirebench call', () => {
       expect(code).toBe(0);
       expect(Object.keys((JSON.parse(stdout) as { properties: object }).properties)).toEqual([
         'environment',
+        'allowProtected',
         'a',
         'b',
         'note',

@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { isEnvironmentColor } from './environment-colors.js';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
@@ -633,6 +634,10 @@ export const environmentWireSchema = z.object({
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabled: z.array(z.string()),
+  /** A palette name or `#rrggbb` (#345), as the file holds it; absent means no colour. */
+  color: z.string().optional(),
+  /** True asks before every send under this environment (#345); absent means false. */
+  protected: z.boolean().optional(),
 });
 export type EnvironmentWire = z.infer<typeof environmentWireSchema>;
 
@@ -1258,6 +1263,9 @@ export const environmentPatchSchema = z.object({
   name: z.string().optional(),
   endpoints: z.record(z.string(), z.string()).optional(),
   properties: z.record(z.string(), z.string()).optional(),
+  /** A palette name or `#rrggbb`; `null` takes the colour off. */
+  color: z.string().refine(isEnvironmentColor, 'not a palette name or #rrggbb').nullable().optional(),
+  protected: z.boolean().optional(),
 });
 export type EnvironmentPatchWire = z.infer<typeof environmentPatchSchema>;
 
@@ -2548,6 +2556,10 @@ export const workspaceEnvironmentWireSchema = z.object({
   endpoints: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabled: z.array(z.string()),
+  /** A palette name or `#rrggbb` (#345), as the file holds it; absent means no colour. */
+  color: z.string().optional(),
+  /** True asks before every send under this environment (#345); absent means false. */
+  protected: z.boolean().optional(),
 });
 export type WorkspaceEnvironmentWire = z.infer<typeof workspaceEnvironmentWireSchema>;
 
@@ -2581,6 +2593,9 @@ export const workspaceEnvironmentPatchSchema = z.object({
   endpoints: z.record(z.string(), z.string()).optional(),
   /** Replaces the whole disabled-names list, like `properties`/`endpoints` above. */
   disabled: z.array(z.string()).optional(),
+  /** A palette name or `#rrggbb`; `null` takes the colour off. */
+  color: z.string().refine(isEnvironmentColor, 'not a palette name or #rrggbb').nullable().optional(),
+  protected: z.boolean().optional(),
 });
 export type WorkspaceEnvironmentPatchWire = z.infer<typeof workspaceEnvironmentPatchSchema>;
 

@@ -194,6 +194,35 @@ describe('saveWorkspace', () => {
   });
 });
 
+describe('workspace environment colour and protection', () => {
+  it('round-trips color and protected, and writes protected only when true', async () => {
+    const dir = await tempWorkspaceDir();
+    const base = sampleWorkspace();
+    const [first, ...rest] = base.environments;
+    const workspace: Workspace = {
+      ...base,
+      environments: [
+        { ...first!, color: '#12ab9f', protected: true },
+        ...rest.map((e) => ({ ...e, protected: false })),
+      ],
+    };
+    await saveWorkspace(workspace, dir);
+
+    const text = (await readBytes(dir, `environments/${first!.slug}.yaml`)).toString('utf8');
+    expect(text).toContain('color: "#12ab9f"\n');
+    expect(text).toContain('protected: true\n');
+    for (const other of rest) {
+      expect((await readBytes(dir, `environments/${other.slug}.yaml`)).toString('utf8')).not.toContain('protected');
+    }
+
+    const { workspace: loaded } = await loadWorkspace(dir);
+    expect(loaded.environments[0]).toMatchObject({ color: '#12ab9f', protected: true });
+    expect(loaded.environments.slice(1).every((e) => e.protected === undefined)).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe('loadWorkspace', () => {
   it('round-trips a workspace to a deep-equal model, activeEnvironmentId aside (it is never saved)', async () => {
     const dir = await tempWorkspaceDir();

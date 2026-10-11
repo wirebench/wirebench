@@ -46,7 +46,13 @@ import { UNLINKED_WORKSPACE_MESSAGE } from './hooks/capture-source.js';
 import { toSendDeps, type RequestChannelDeps } from './ipc/request.js';
 import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
 import type { DraftOf } from './send/draft.js';
-import { environmentNameOf, sendThroughEngine } from './send/exchange.js';
+import {
+  confirmProtectedSend,
+  environmentNameOf,
+  protectedEnvironmentOf,
+  sendDeclined,
+  sendThroughEngine,
+} from './send/exchange.js';
 import type {
   SequenceProgressEvent,
   SequenceRunRequest,
@@ -223,6 +229,13 @@ export class SequenceRunner {
       sendIds.get(`${step.stepId}#${step.attempt ?? 1}`);
     // The request channels' own send through the engine, and the registry they cancel through.
     const sendDeps = toSendDeps(deps.service, deps.requests);
+    // Asked once for the whole run (#345), before its first step; its steps then never ask.
+    const located = deps.requests.project.runContextFor?.(sequence.id);
+    const guarded = located === undefined ? undefined : protectedEnvironmentOf(located);
+    if (guarded !== undefined && !(await confirmProtectedSend(sendDeps, [guarded]))) {
+      this.runs.delete(request.runId);
+      throw sendDeclined([guarded]);
+    }
 
     const send: SequenceStepSender = async (resolved, sequenceScope, signal) => {
       // Each run of a step is its own send: a branch may run one step several times (#347).
@@ -246,6 +259,7 @@ export class SequenceRunner {
           sequence: sequenceScope,
           tags,
           run: true,
+          protectedConfirmed: true,
           ...(resolved.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
           onScriptsRan: (sent) => {
             ran = sent;

@@ -53,6 +53,30 @@ describe('EnvSwitcher', () => {
     expect(screen.getByTestId('env-switcher').textContent).toContain('No environment');
   });
 
+  it("shows the active environment's colour, and a lock when it is protected", () => {
+    setUp('e2');
+    const workspace = useWorkspaceStore.getState().workspace;
+    useWorkspaceStore.setState({
+      workspace: workspace && {
+        ...workspace,
+        environments: [dev, { ...uat, color: 'red', protected: true }],
+      },
+    });
+    render(<EnvSwitcher />);
+    const trigger = screen.getByTestId('env-switcher');
+    const dot = trigger.querySelector<HTMLElement>('[data-testid="env-color-dot"]');
+    expect(dot?.style.getPropertyValue('--env-color')).toBe('var(--wb-env-red)');
+    expect(trigger.querySelector('[aria-label="Protected environment"]')).not.toBeNull();
+  });
+
+  it('shows no dot or lock for an environment with neither', () => {
+    setUp('e1');
+    render(<EnvSwitcher />);
+    const trigger = screen.getByTestId('env-switcher');
+    expect(trigger.querySelector('[data-testid="env-color-dot"]')).toBeNull();
+    expect(trigger.querySelector('[aria-label="Protected environment"]')).toBeNull();
+  });
+
   it('shows the active environment name', () => {
     setUp('e2');
     render(<EnvSwitcher />);

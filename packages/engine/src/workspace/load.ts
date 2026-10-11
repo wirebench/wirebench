@@ -132,6 +132,8 @@ async function loadEnvironments(
       properties: parsed.properties,
       endpoints: parsed.endpoints,
       disabledProperties: parsed.disabled ?? [],
+      ...(parsed.color !== undefined ? { color: parsed.color } : {}),
+      ...(parsed.protected === true ? { protected: true } : {}),
     });
   }
   return environments.sort(byOrder);

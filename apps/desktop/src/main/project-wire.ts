@@ -304,6 +304,8 @@ function toEnvironmentWire(environment: Environment): EnvironmentWire {
     endpoints: { ...environment.endpoints },
     properties: { ...environment.properties },
     disabled: [...environment.disabledProperties],
+    ...(environment.color !== undefined ? { color: environment.color } : {}),
+    ...(environment.protected === true ? { protected: true } : {}),
   };
 }
 

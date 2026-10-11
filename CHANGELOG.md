@@ -17,6 +17,15 @@ All notable changes to this project are documented here. The format follows
   took, and `wirebench run --sequence` names the path on each step's line and in the json and html
   reports. A sequence with branches is saved as sequence file version 2, which an older build refuses and
   leaves as it is; one without stays version 1 (#347).
+- **Environment colour and a production guard.** An environment can have a colour: one of eight
+  palette swatches or a custom `#rrggbb`. The switcher shows it as a dot, and the active
+  environment's colour bands the editor tab strip. An environment can also be marked
+  **Protected**. Every send under it then asks first, with Cancel as the default: editor sends,
+  History re-sends and HTTP Log resends. A sequence run asks once, and **Send to environments…**
+  asks once per batch. `wirebench run` warns before sending under a protected environment, and
+  `--refuse-protected` exits 2 instead. `wirebench mcp` refuses one unless the call passes
+  `allowProtected: true`. Both settings are new optional keys in the environment file (`color`,
+  `protected`), which older builds still read (#345).
 - **The REST Headers tab lists the headers a send adds, before you send.** Under your own rows it
   shows each generated header with its source: `User-Agent`, `Accept`, `Accept-Encoding` and
   `Connection` from the preferences, the auth header, the body's `Content-Type`, the cookie jar's

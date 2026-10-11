@@ -25,6 +25,7 @@ import { OpsError } from './errors.js';
 import { MAX_STORED_CHARS } from './history-entry.js';
 import { resolveOperation } from './operation-refs.js';
 import type { ResolvedOperation } from './operation-refs.js';
+import { checkProtected } from './environment.js';
 import { clarkToQName, environmentFor, openProject } from './project.js';
 import type { OpenedProject } from './project.js';
 import { isRecord } from './records.js';
@@ -318,7 +319,7 @@ export const callOp = defineOp({
     }
     const opened = await openProject(context);
     const resolved = await resolveFresh(opened, context.projectDir, value.tool, value.ref);
-    const { inputSchema, environmentKey } = toolSchemaOf(resolved);
+    const { inputSchema, environmentKey, allowProtectedKey } = toolSchemaOf(resolved);
     checkArgs(inputSchema, value.args);
     const wanted = value.args[environmentKey];
     const environment = environmentFor(
@@ -326,7 +327,10 @@ export const callOp = defineOp({
       typeof wanted === 'string' ? wanted : undefined,
       context.gates.environments,
     );
-    const args = Object.fromEntries(Object.entries(value.args).filter(([key]) => key !== environmentKey));
+    checkProtected(opened.project, environment, context.gates, value.args[allowProtectedKey] === true);
+    const args = Object.fromEntries(
+      Object.entries(value.args).filter(([key]) => key !== environmentKey && key !== allowProtectedKey),
+    );
     const operationName =
       resolved.kind === 'soap'
         ? resolved.operation.name
