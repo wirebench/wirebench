@@ -99,7 +99,7 @@ describe('sequence file', () => {
 
   it('refuses a newer version by name, and a file that is not a sequence', () => {
     const base = 'id: S\nname: N\norder: 0\n';
-    expect(codeOf(() => parseSequenceFile(`kind: sequence\nversion: 2\n${base}`, 'f', 's'))).toBe(
+    expect(codeOf(() => parseSequenceFile(`kind: sequence\nversion: 3\n${base}`, 'f', 's'))).toBe(
       'sequence-version-too-new',
     );
     expect(codeOf(() => parseSequenceFile(`kind: rest\nversion: 1\n${base}`, 'f', 's'))).toBe('sequence-file-invalid');

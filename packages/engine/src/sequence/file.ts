@@ -12,12 +12,12 @@
  */
 
 import { z } from 'zod';
-import { stepAssertionsSchema, toCallbackAssertion } from '../assert/schema.js';
+import { refineCheck, responseCheckSchemas, stepAssertionsSchema, toCallbackAssertion } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import { compact, parseYaml, stringifyYaml } from '../project/yaml.js';
 import { SEQUENCE_LIMITS, SEQUENCE_VERSION, TRANSFER_NAME_PATTERN } from './model.js';
 import type { StepAssertion } from '../assert/model.js';
-import type { SequenceDef, SequenceStep, Transfer } from './model.js';
+import type { BranchCondition, BranchRule, SequenceDef, SequenceStep, Transfer } from './model.js';
 
 /** Directory holding every sequence file, beside `interfaces/` and `apis/`. */
 export const SEQUENCES_DIR = 'sequences';
@@ -45,6 +45,40 @@ const transferSchema = z.discriminatedUnion('from', [
   z.looseObject({ ...transferBase, from: z.literal('cookie'), cookie: nonEmpty }),
 ]);
 
+const not = { not: z.boolean().optional() };
+const outcomeValue = z.enum(['passed', 'failed', 'errored']);
+
+const conditionSchema = z
+  .discriminatedUnion('type', [
+    responseCheckSchemas.status.extend(not),
+    responseCheckSchemas.soapFault.extend(not),
+    responseCheckSchemas.match.extend(not),
+    responseCheckSchemas.header.extend(not),
+    z.looseObject({
+      type: z.literal('outcome'),
+      equals: z.union([outcomeValue, z.array(outcomeValue).min(1)]),
+      ...not,
+    }),
+  ])
+  .superRefine(refineCheck);
+
+const loopFields = {
+  max: z.number().int().min(1).max(SEQUENCE_LIMITS.branchMax),
+  delayMs: z.number().int().min(0).max(SEQUENCE_LIMITS.branchDelayMs).optional(),
+};
+
+/** `max` is required wherever a rule can loop and refused where it cannot, so no loop goes unbounded. */
+const branchSchema = z.discriminatedUnion('then', [
+  z.looseObject({ when: conditionSchema, then: z.literal('goto'), step: nonEmpty, ...loopFields }),
+  z.looseObject({ when: conditionSchema, then: z.literal('repeat'), ...loopFields }),
+  z.looseObject({
+    when: conditionSchema,
+    then: z.literal('skip-next'),
+    max: z.never({ error: 'skip-next cannot loop, so it takes no max' }).optional(),
+    delayMs: z.never({ error: 'skip-next does not wait' }).optional(),
+  }),
+]);
+
 const stepSchema = z.looseObject({
   id: nonEmpty,
   name: z.string().optional(),
@@ -53,12 +87,13 @@ const stepSchema = z.looseObject({
   requestAssertions: z.boolean().default(true),
   transfers: z.array(transferSchema).max(SEQUENCE_LIMITS.transfersPerStep).default([]),
   assertions: stepAssertionsSchema.max(SEQUENCE_LIMITS.assertionsPerStep).default([]),
+  branches: z.array(branchSchema).max(SEQUENCE_LIMITS.branchesPerStep).optional(),
 });
 
 /** One sequence file, after its `kind` and `version` have been checked. */
 export const sequenceFileSchema = z.looseObject({
   kind: z.literal('sequence'),
-  version: z.literal(SEQUENCE_VERSION),
+  version: z.union([z.literal(1), z.literal(SEQUENCE_VERSION)]),
   id: nonEmpty,
   name: z.string(),
   order: z.number().int(),
@@ -69,7 +104,25 @@ export const sequenceFileSchema = z.looseObject({
       stepTimeoutMs: z.number().int().positive().optional(),
     })
     .default({ stopOnFailure: true }),
-  steps: z.array(stepSchema).max(SEQUENCE_LIMITS.steps).default([]),
+  steps: z
+    .array(stepSchema)
+    .max(SEQUENCE_LIMITS.steps)
+    .default([])
+    .superRefine((steps, ctx) => {
+      // A goto names a step of this sequence by id; one naming nothing would jump nowhere.
+      const ids = new Set(steps.map((step) => step.id));
+      for (const [index, step] of steps.entries()) {
+        for (const [rule, branch] of (step.branches ?? []).entries()) {
+          if (branch.then === 'goto' && !ids.has(branch.step)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [index, 'branches', rule, 'step'],
+              message: `no step with id "${branch.step}" in this sequence`,
+            });
+          }
+        }
+      }
+    }),
 });
 
 /** The relative path of a sequence's file. */
@@ -151,6 +204,9 @@ export function parseSequenceFile(bytes: Uint8Array | string, file: string, slug
       requestAssertions: step.requestAssertions,
       transfers: step.transfers.map(toTransfer),
       assertions: step.assertions.map(knownAssertionFields),
+      ...(step.branches !== undefined && step.branches.length > 0
+        ? { branches: step.branches.map(knownBranchFields) }
+        : {}),
     })),
   };
 }
@@ -192,6 +248,36 @@ function knownAssertionFields(raw: StepAssertion | z.infer<typeof stepAssertions
         ...(raw.exists !== undefined ? { exists: raw.exists } : {}),
         ...name,
       };
+  }
+}
+
+/** Only the fields a condition of its type defines; `not` only when set. */
+function knownConditionFields(raw: BranchCondition | z.infer<typeof conditionSchema>): BranchCondition {
+  const not = raw.not === true ? { not: true } : {};
+  if (raw.type === 'outcome') {
+    return { type: 'outcome', equals: raw.equals, ...not };
+  }
+  // The check itself, without the `name` an assertion may carry: a condition is never reported by name.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+  const { name: _name, ...check } = knownAssertionFields(raw);
+  return { ...(check as BranchCondition), ...not };
+}
+
+function knownBranchFields(raw: BranchRule | z.infer<typeof branchSchema>): BranchRule {
+  const when = knownConditionFields(raw.when);
+  switch (raw.then) {
+    case 'goto':
+      return {
+        when,
+        then: 'goto',
+        step: raw.step,
+        max: raw.max,
+        ...(raw.delayMs !== undefined ? { delayMs: raw.delayMs } : {}),
+      };
+    case 'repeat':
+      return { when, then: 'repeat', max: raw.max, ...(raw.delayMs !== undefined ? { delayMs: raw.delayMs } : {}) };
+    case 'skip-next':
+      return { when, then: 'skip-next' };
   }
 }
 
@@ -239,7 +325,8 @@ export function sequenceDocument(sequence: SequenceDef): string {
   return stringifyYaml(
     compact({
       kind: 'sequence',
-      version: SEQUENCE_VERSION,
+      // Version 2 only when it is needed, so a build that predates branches still reads the rest.
+      version: sequence.steps.some((step) => (step.branches ?? []).length > 0) ? SEQUENCE_VERSION : 1,
       id: sequence.id,
       name: sequence.name,
       order: sequence.order,
@@ -259,6 +346,13 @@ export function sequenceDocument(sequence: SequenceDef): string {
           assertions:
             step.assertions.length > 0
               ? step.assertions.map((a) => compact({ ...knownAssertionFields(a) }))
+              : undefined,
+          branches:
+            step.branches !== undefined && step.branches.length > 0
+              ? step.branches.map((b) => {
+                  const rule = knownBranchFields(b);
+                  return compact({ ...rule, when: compact({ ...rule.when }) });
+                })
               : undefined,
         }),
       ),
