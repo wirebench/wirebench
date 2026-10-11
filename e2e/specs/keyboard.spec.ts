@@ -25,15 +25,15 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function shortcutButton(page: Page, command: string) {
   await page.keyboard.press(`${MOD}+Comma`);
   await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
-  await page.getByTestId('preferences-editor').getByRole('button', { name: 'Shortcuts', exact: true }).click();
+  await page.getByTestId('preferences-editor').getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click();
   await expect(page.getByTestId('shortcuts-table')).toBeVisible();
   return page.locator(`[data-testid="shortcut-row"][data-command="${command}"] [data-testid="shortcut-chord"]`);
 }
 
-/** Closes the Settings dialog — it is modal, so nothing behind it is reachable until it goes. */
+/** Leaves Settings — it takes the whole window, so nothing behind it is reachable until it goes. */
 async function closeSettings(page: Page) {
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
+  await expect(page.getByTestId('settings-page')).toHaveCount(0);
 }
 
 test.describe('keyboard', () => {
@@ -204,7 +204,7 @@ test.describe('keyboard', () => {
 
     // --- the old chord is dead, the new one sends -----------------------------
     await closeSettings(page);
-    // No ⌘⇧E here: ⌘, opens a dialog now and never moves the sidebar off the Explorer, so
+    // No ⌘⇧E here: ⌘, opens the Settings page and never moves the sidebar off the Explorer, so
     // pressing the Explorer chord would *re-select* the active view — which collapses it.
     await openFirstRequest(page);
     const status = page.getByTestId('response-status');

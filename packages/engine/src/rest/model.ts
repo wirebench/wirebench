@@ -143,6 +143,11 @@ export interface RestRequestSettings {
   readonly sendCookies?: boolean;
   /** JSON- or XML-escape every property value substituted into the body. Off by default. */
   readonly escapeProperties?: boolean;
+  /**
+   * Generated headers this request leaves out (`User-Agent`, `Authorization`, `Cookie`, …), by name,
+   * case-insensitive. A header typed on the request is never left out. Not inherited from the API.
+   */
+  readonly omitHeaders?: readonly string[];
 }
 
 /** A saved REST request: everything but a raw body lives in `<slug>.request.yaml`. */

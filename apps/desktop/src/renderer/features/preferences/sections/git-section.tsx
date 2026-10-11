@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '../../../components/button.js';
-import { SettingsGroup, TextSetting } from '../../../components/settings-grid.js';
+import { SettingsGroup, SettingsRow, TextSetting } from '../../../components/settings-grid.js';
 import { ipc } from '../../../state/ipc-client.js';
 import type { GitLocationWire } from '../../../../shared/wire-base.js';
 import type { SectionProps } from './section-props.js';
@@ -81,8 +81,7 @@ export function GitSection({ preferences }: SectionProps) {
         hint="Found automatically on PATH; choose one with Locate… if it is not."
         onCommit={() => undefined}
       />
-      <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
-        <span className="text-sm text-fg-muted">Version</span>
+      <SettingsRow label="Version">
         <output data-testid="git-version" className="block truncate py-1 text-sm text-fg-muted">
           {detected === undefined
             ? 'Checking…'
@@ -90,10 +89,9 @@ export function GitSection({ preferences }: SectionProps) {
               ? 'Not found — install git to sync workspaces'
               : `git ${detected.version}`}
         </output>
-      </div>
-      <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
-        <span />
-        <div className="flex flex-col gap-2">
+      </SettingsRow>
+      <SettingsRow label="Find git" hint="Detect it again on PATH, or pick the executable.">
+        <div className="flex flex-col items-end gap-2">
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -132,7 +130,7 @@ export function GitSection({ preferences }: SectionProps) {
             </p>
           )}
         </div>
-      </div>
+      </SettingsRow>
     </SettingsGroup>
   );
 }

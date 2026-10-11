@@ -13,17 +13,20 @@ export function WsdlSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Definitions">
         <BooleanSetting
           label="Cache definitions"
+          setting="wsdl.cacheDefinitions"
           value={wsdl.cacheDefinitions}
           onChange={(cacheDefinitions) => update({ wsdl: { cacheDefinitions } })}
           hint="Default for a newly imported interface."
         />
         <BooleanSetting
           label="Compress the cache"
+          setting="wsdl.compression"
           value={wsdl.compression}
           onChange={(compression) => update({ wsdl: { compression } })}
         />
         <BooleanSetting
           label="Strict schema handling"
+          setting="wsdl.strictSchema"
           value={wsdl.strictSchema}
           onChange={(strictSchema) => update({ wsdl: { strictSchema } })}
         />
@@ -32,27 +35,32 @@ export function WsdlSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Generated requests">
         <BooleanSetting
           label="Sample values"
+          setting="wsdl.sampleValues"
           value={wsdl.sampleValues}
           onChange={(sampleValues) => update({ wsdl: { sampleValues } })}
           hint="Fill leaves with schema-derived samples instead of ? placeholders."
         />
         <BooleanSetting
           label="Type comments"
+          setting="wsdl.typeComments"
           value={wsdl.typeComments}
           onChange={(typeComments) => update({ wsdl: { typeComments } })}
         />
         <BooleanSetting
           label="Include optional elements"
+          setting="wsdl.includeOptional"
           value={wsdl.includeOptional}
           onChange={(includeOptional) => update({ wsdl: { includeOptional } })}
         />
         <BooleanSetting
           label="Pretty print"
+          setting="wsdl.prettyPrint"
           value={wsdl.prettyPrint}
           onChange={(prettyPrint) => update({ wsdl: { prettyPrint } })}
         />
         <BooleanSetting
           label="Name requests with the binding"
+          setting="wsdl.nameWithBinding"
           value={wsdl.nameWithBinding}
           onChange={(nameWithBinding) => update({ wsdl: { nameWithBinding } })}
         />

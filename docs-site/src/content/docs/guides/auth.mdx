@@ -239,7 +239,7 @@ as any other credential — Wirebench holds no key material or password in the r
 Keystores serve two purposes:
 
 - **WS-Security signing and encryption** — a Signature or Encryption entry above references one.
-- **TLS client certificates** — under **Preferences → SSL**, set a **Client keystore** to present
+- **TLS client certificates** — under **Settings → SSL / TLS**, set a **Client keystore** to present
   by default whenever a server asks for one. A request can also select its own keystore, which
   always wins over the default.
 
@@ -252,7 +252,7 @@ in red.
 
 Wirebench warns before a certificate your workspace relies on runs out. Every expired certificate is
 an error in **Problems**, and every one that expires within the warning window (30 days by default;
-**Preferences → SSL → Expiry warning**) is a warning, so the problem count in the status bar shows it
+**Settings → SSL / TLS → Expiry warning**) is a warning, so the problem count in the status bar shows it
 wherever you are. Each row names the certificate's subject, the days left, and where it is: a
 keystore and alias, the CA bundle, or an endpoint's `host:port`.
 
@@ -270,7 +270,7 @@ keystore and alias, the CA bundle, or an endpoint's `host:port`.
 
 <Aside type="tip" title="Trusting a custom CA">
 To trust a corporate or internal root CA without disabling certificate validation, add its PEM
-bundle under **Preferences → SSL → CA bundle**. It's added to the built-in trusted roots; nothing is
+bundle under **Settings → SSL / TLS → CA bundle**. It's added to the built-in trusted roots; nothing is
 replaced. There is no global "trust all certificates" switch — turn on **Trust invalid
 certificates** on the individual endpoint that needs it instead.
 </Aside>
