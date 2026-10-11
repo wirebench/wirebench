@@ -284,6 +284,13 @@ export const explorerActions = {
     }
   },
 
+  /** Opens a folder's scripts dialog (#334), the editor for what runs around its requests. */
+  editFolderScripts(folderId: string | undefined): void {
+    if (folderId !== undefined) {
+      useUiStore.getState().setFolderScriptsId(folderId);
+    }
+  },
+
   /**
    * Creates a webhook request in a project's collection (or one of its folders) and opens its
    * editor. No new tab kind: a webhook item is a REST request on the wire, so it opens in the

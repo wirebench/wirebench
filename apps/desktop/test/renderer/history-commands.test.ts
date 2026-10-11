@@ -19,7 +19,7 @@ const context: CommandContext = {
   ui: {
     sidebar: { visible: true, view: 'history', size: 20, lastSize: 20 },
     console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
-    slideOver: { open: false, width: 420, codeShell: 'posix' },
+    slideOver: { open: false, width: 420, codeShell: 'posix', codeLanguage: 'curl', codeSettings: {} },
     theme: 'dark',
     editorLineNumbers: true,
     editorLayout: { orientation: 'side-by-side', mode: 'split' },

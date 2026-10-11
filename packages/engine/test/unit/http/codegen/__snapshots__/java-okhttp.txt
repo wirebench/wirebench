@@ -1,0 +1,231 @@
+=== query and headers
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .build();
+        Request request = new Request.Builder()
+                .url("https://api.example.com/v1/items?q=red%20shoes&page=2")
+                .method("GET", null)
+                .addHeader("Accept", "application/json")
+                .addHeader("X-Trace", "it's \"quoted\"")
+                .addHeader("X-Trace", "second")
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== json body
+import java.util.concurrent.TimeUnit;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .callTimeout(30000, TimeUnit.MILLISECONDS)
+                .build();
+        String content = """
+{
+  "name": "Widget",
+  "price": 9.5
+}""";
+        RequestBody body = RequestBody.create(content, MediaType.parse("application/json"));
+        Request request = new Request.Builder()
+                .url("https://api.example.com/v1/items")
+                .method("POST", body)
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== form body
+import okhttp3.FormBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .build();
+        RequestBody body = new FormBody.Builder()
+                .add("user", "ada lovelace")
+                .add("scope", "read&write")
+                .build();
+        Request request = new Request.Builder()
+                .url("https://api.example.com/login")
+                .method("POST", body)
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== multipart body
+import java.io.File;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .build();
+        RequestBody body = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("title", "Report")
+                .addFormDataPart("file", "report.pdf", RequestBody.create(new File("/tmp/report.pdf"), MediaType.parse("application/pdf")))
+                .build();
+        Request request = new Request.Builder()
+                .url("https://api.example.com/upload")
+                .method("POST", body)
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== binary body
+import java.io.File;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .build();
+        RequestBody body = RequestBody.create(new File("/tmp/blob.bin"), MediaType.parse("application/octet-stream"));
+        Request request = new Request.Builder()
+                .url("https://api.example.com/blobs/1")
+                .method("PUT", body)
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== basic auth from the environment
+import okhttp3.Credentials;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .build();
+        Request request = new Request.Builder()
+                .url("https://api.example.com/me")
+                .method("GET", null)
+                .addHeader("Authorization", Credentials.basic("ada", System.getenv("WIREBENCH_SECRET_PASSWORD")))
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== bearer token and query key from the environment
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .build();
+        Request request = new Request.Builder()
+                .url("https://api.example.com/items/7?api_key=" + System.getenv("WIREBENCH_SECRET_KEY"))
+                .method("DELETE", null)
+                .addHeader("Authorization", "Bearer " + System.getenv("WIREBENCH_SECRET_API_TOKEN"))
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+
+=== insecure, no redirects, redirect limit ignored
+// Note: This request skips TLS verification; the snippet verifies certificates.
+import java.util.concurrent.TimeUnit;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .callTimeout(1500, TimeUnit.MILLISECONDS)
+                .build();
+        Request request = new Request.Builder()
+                .url("https://self-signed.example.com/health")
+                .method("GET", null)
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}
+--- notes
+This request skips TLS verification; the snippet verifies certificates.
+
+=== soap envelope
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build();
+        String content = """
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>""";
+        RequestBody body = RequestBody.create(content, MediaType.parse("text/xml;charset=UTF-8"));
+        Request request = new Request.Builder()
+                .url("http://soap.example.com/calculator")
+                .method("POST", body)
+                .addHeader("SOAPAction", "\"http://tempuri.org/Add\"")
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            System.out.println(response.code());
+            System.out.println(response.body().string());
+        }
+    }
+}

@@ -1,7 +1,8 @@
 /**
- * Scripts in an imported collection (#63): kept, concatenated collection → folder → request in the
- * order Postman runs them, written for the Postman layer and switched off, with the summary saying
- * so and naming the calls Wirebench does not run.
+ * Scripts in an imported collection (#63, #334): kept at the level Postman runs them from — the
+ * collection's on the API, a folder's on its folder, a request's on the request — written for the
+ * Postman layer and switched off, with the summary saying so and naming the calls Wirebench does not
+ * run.
  */
 import { describe, expect, it } from 'vitest';
 import { apiFromPostmanCollection, unsupportedCalls } from '../../../../src/rest/postman/map.js';
@@ -42,47 +43,60 @@ const collection = {
 
 describe('imported Postman scripts', () => {
   const { api, summary } = apiFromPostmanCollection(parsePostmanCollection(collection));
-  const login = api.folders[0]?.requests[0];
+  const auth = api.folders[0];
+  const login = auth?.requests[0];
+  const off = { api: 'postman', enabled: false, secrets: [] } as const;
 
-  it('concatenates collection, folder and request scripts in order, switched off', () => {
-    expect(login?.scripts).toEqual({
-      pre: {
-        text: '// --- From the collection "Shop" ---\n// collection pre\n\n// --- From the folder "Auth" ---\npm.sendRequest("https://x.test", () => {});\n',
-      },
-      post: {
-        text: "// --- From the collection \"Shop\" ---\npm.test('ok', () => {});\n\n// --- From the request ---\nconst t = pm.response.json().token;\npm.environment.set('token', t);\n",
-      },
-      api: 'postman',
-      enabled: false,
-      secrets: [],
+  it("puts the collection's scripts on the API, switched off", () => {
+    expect(api.scripts).toEqual({
+      pre: { text: '// collection pre\n' },
+      post: { text: "pm.test('ok', () => {});\n" },
+      ...off,
     });
   });
 
-  it("gives a request the collection's scripts even when it has none of its own", () => {
-    const plain = api.requests.find((r) => r.name === 'Plain');
-    expect(plain?.scripts?.pre?.text).toContain('collection pre');
-    expect(plain?.scripts?.enabled).toBe(false);
+  it("puts a folder's scripts on the folder, and a request's on the request", () => {
+    expect(auth?.scripts).toEqual({ pre: { text: 'pm.sendRequest("https://x.test", () => {});\n' }, ...off });
+    expect(login?.scripts).toEqual({
+      post: { text: "const t = pm.response.json().token;\npm.environment.set('token', t);\n" },
+      ...off,
+    });
+  });
+
+  it("copies no level's scripts into a request", () => {
+    expect(api.requests.find((r) => r.name === 'Plain')?.scripts).toBeUndefined();
   });
 
   it('leaves out a disabled script and one of another kind', () => {
-    const off = api.requests.find((r) => r.name === 'Off');
-    expect(off?.scripts?.post?.text).not.toContain('pm.test("x"');
+    expect(api.requests.find((r) => r.name === 'Off')?.scripts).toBeUndefined();
   });
 
   it('says the scripts are switched off, and names the calls that will not run', () => {
     expect(summary.warnings).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/^Scripts on 3 requests were imported switched off/),
-        'The scripts of "Auth / Log in" call what Wirebench does not run: pm.sendRequest',
+        expect.stringMatching(/^Scripts on the API, 1 folder and 1 request were imported switched off/),
+        'The scripts of "Auth" call what Wirebench does not run: pm.sendRequest',
       ]),
     );
     expect(summary.warnings?.some((w) => w.includes('were not imported'))).toBe(false);
+  });
+
+  it('joins two scripts of one kind on one level, in order', () => {
+    const twice = apiFromPostmanCollection(
+      parsePostmanCollection({
+        info,
+        event: [script('prerequest', 'a();'), script('prerequest', 'b();')],
+        item: [{ name: 'R', request: { method: 'GET', url: '/r' } }],
+      }),
+    );
+    expect(twice.api.scripts?.pre?.text).toBe('a();\n\nb();\n');
   });
 
   it('imports a collection with no scripts without any', () => {
     const bare = apiFromPostmanCollection(
       parsePostmanCollection({ info, item: [{ name: 'R', request: { method: 'GET', url: '/r' } }] }),
     );
+    expect(bare.api.scripts).toBeUndefined();
     expect(bare.api.requests[0]?.scripts).toBeUndefined();
     expect(bare.summary.warnings ?? []).toEqual([]);
   });

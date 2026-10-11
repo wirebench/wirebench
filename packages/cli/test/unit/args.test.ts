@@ -58,6 +58,11 @@ describe('parseCliArgs', () => {
     });
   });
 
+  it('parses --refuse-protected on run, off by default', () => {
+    expect(parseCliArgs(['run', './p', '--refuse-protected'])).toMatchObject({ refuseProtected: true });
+    expect(parseCliArgs(['run', './p'])).toMatchObject({ refuseProtected: false });
+  });
+
   it('defaults to the cli reporter', () => {
     expect(parseCliArgs(['run', './p'])).toMatchObject({ reporters: [{ kind: 'cli' }], bail: false });
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findStepRequest, selectRequests } from '../../../src/run/select.js';
+import { findStepRequest, runSelectorOf, selectRequests } from '../../../src/run/select.js';
 import { hooksProject } from '../webhooks/fixture.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
 import { DEFAULT_REQUEST_PROPERTIES } from '../../../src/soap/model.js';
@@ -102,6 +102,20 @@ describe('selectRequests', () => {
   it('accepts the on-disk path of a request file too', () => {
     const { selected } = selectRequests(makeProject(), ['./interfaces/Alpha/operations/OpA/Request 1.request.yaml']);
     expect(selected.map((s) => s.path)).toEqual(['Alpha/OpA/Request 1']);
+  });
+});
+
+describe('runSelectorOf', () => {
+  it('names a request by its path on disk, which selectRequests reads back', () => {
+    const project = makeProject();
+    const selector = runSelectorOf(project, 'req-list');
+    expect(selector).toBeDefined();
+    expect(selectRequests(project, [selector as string]).selected.map((s) => s.request.id)).toEqual(['req-list']);
+  });
+
+  it('is undefined for a request a run cannot send', () => {
+    expect(runSelectorOf(makeProject(), 'req-Ghost')).toBeUndefined();
+    expect(runSelectorOf(makeProject(), 'no-such-request')).toBeUndefined();
   });
 });
 

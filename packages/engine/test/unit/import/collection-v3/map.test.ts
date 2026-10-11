@@ -49,9 +49,9 @@ describe('mapCollectionV3: a workspace folder', () => {
     });
     expect(local?.variables.find((v) => v.name === 'debug')?.enabled).toBe(false);
     expect(workspace.variables.globals?.variables.map((v) => v.name)).toEqual(['traceId']);
-    expect(workspace.variables.report.warnings).toContain(
-      'Dynamic variables are kept as written and not expanded: $guid',
-    );
+    // A known dynamic variable maps onto the Dynamic scope, so nothing is reported as kept (#333).
+    expect(workspace.variables.globals?.variables.find((v) => v.name === 'traceId')?.value).toBe('${$guid}');
+    expect(workspace.variables.report.warnings.join('\n')).not.toContain('Dynamic variables');
   });
 
   it("gathers the collections' variables as project properties, base URLs aside", () => {
@@ -85,7 +85,7 @@ describe('mapCollectionV3: HTTP requests through the v2.1 mapping', () => {
     ]);
     expect(requestNamed('Add book').headers.map((h) => [h.name, h.value])).toEqual([
       ['Content-Type', 'application/json'],
-      ['X-Request-Id', '{{$guid}}'],
+      ['X-Request-Id', '${$guid}'],
     ]);
   });
 
@@ -131,10 +131,13 @@ describe('mapCollectionV3: HTTP requests through the v2.1 mapping', () => {
     expect(JSON.stringify(rest)).not.toContain('hunter2');
   });
 
-  it('imports scripts switched off: collection, then folder, then request, read from a file when named', () => {
+  it('imports scripts switched off at their level, read from a file when named (#334)', () => {
+    // The collection's script goes on the API, not into each request.
+    expect(rest.scripts?.enabled).toBe(false);
+    expect(rest.scripts?.pre?.text).toContain("pm.request.headers.add({ key: 'X-Trace'");
     const add = requestNamed('Add book').scripts;
     expect(add?.enabled).toBe(false);
-    expect(add?.pre?.text).toContain("pm.request.headers.add({ key: 'X-Trace'");
+    expect(add?.pre?.text ?? '').not.toContain('X-Trace');
     expect(add?.post?.text).toContain('pm.test("created"');
     expect(requestNamed('Audit').scripts?.pre?.text).toContain("value: 'yes'");
     expect(warnings).toContain(
@@ -229,7 +232,7 @@ describe('mapCollectionV3: a single collection and refusals', () => {
     const single = mapFolder('single', 'status');
     expect(single.collections[0]?.rest?.name).toBe('status');
     expect(single.collections[0]?.rest?.requests.map((r) => r.name)).toEqual(['Create', 'Health']);
-    expect(single.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $randomInt');
+    expect(single.report.warnings.join('\n')).not.toContain('Dynamic variables');
     const renamed = mapCollectionV3(readCollectionV3(fixtureFiles('single'), 'status'), { name: 'Health checks' });
     expect(renamed.collections[0]?.rest?.name).toBe('Health checks');
   });

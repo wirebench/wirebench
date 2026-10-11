@@ -20,6 +20,7 @@ import { Button } from './button.js';
 import { SecretField } from './secret-field.js';
 import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
+import { VariableInput } from './variable-field.js';
 import type { SoapOwnerAuthWire } from '../../shared/kinds/soap/wire.js';
 import type { AuthConfigWire } from '../../shared/wire-base.js';
 
@@ -226,13 +227,14 @@ export function AuthFields({
   ): ReactNode => (
     <label className="flex items-center gap-2">
       <span className="w-28 shrink-0 text-xs text-fg-subtle">{label}</span>
-      <input
+      {/* Inside a request editor, `${` completes and a reference is marked and explained (#340). */}
+      <VariableInput
         aria-label={`${scope} ${label.toLowerCase()}`}
         className={INPUT_CLASS}
         {...(placeholder !== undefined ? { placeholder } : {})}
         value={auth?.[field] ?? ''}
-        onChange={(event) => {
-          patch({ [field]: event.target.value });
+        onValueChange={(next) => {
+          patch({ [field]: next });
         }}
       />
     </label>

@@ -52,7 +52,7 @@ describe('mapHttpFile', () => {
     expect(create?.auth).toEqual({ type: 'inherit' });
     expect(create?.headers).toContainEqual(entry('Authorization', 'Bearer ${token}'));
     expect(create?.settings).toMatchObject({ followRedirects: false, timeoutMs: 5000 });
-    expect(create?.body).toMatchObject({ kind: 'raw', language: 'json', text: '{"name": "Rex", "id": "{{$uuid}}"}' });
+    expect(create?.body).toMatchObject({ kind: 'raw', language: 'json', text: '{"name": "Rex", "id": "${$uuid}"}' });
     expect(upload?.body).toEqual({
       kind: 'binary',
       source: { kind: 'path', path: '/work/photo.png' },
@@ -79,7 +79,7 @@ describe('mapHttpFile', () => {
     );
   });
 
-  it('puts WEBSOCKET requests in a WebSocket API, skips GRAPHQL, and reports chaining and dynamic variables', () => {
+  it('puts WEBSOCKET requests in a WebSocket API, skips GRAPHQL, and reports chaining but not a mapped dynamic variable', () => {
     expect(mapped.websocket?.name).toBe('api (WebSocket)');
     expect(mapped.websocket?.requests[0]).toMatchObject({ url: 'wss://example.com/ws' });
     expect(mapped.websocket?.requests[0]?.messages[0]?.content).toBe('{"hello": "world"}');
@@ -88,9 +88,9 @@ describe('mapHttpFile', () => {
       expect.arrayContaining([
         expect.stringContaining('GRAPHQL request at line'),
         expect.stringContaining('createPet.response'),
-        'Dynamic variables are kept as written and not expanded: $uuid',
       ]),
     );
+    expect(mapped.report.warnings.join('\n')).not.toContain('Dynamic variables');
     expect(mapped.report.notes).toEqual(expect.arrayContaining([expect.stringContaining('output redirect')]));
     expect(mapped.report.notes).toEqual(
       expect.arrayContaining(['Project properties: "host" is defined more than once; the first value was kept.']),
@@ -395,7 +395,7 @@ describe('mapHttpFile credentials, review round 1', () => {
     expect(request?.headers).toEqual([
       entry('Authorization', 'Bearer {{login.response.body.token}}'),
       entry('X-Session', '{{login.response.headers.X-Session}}'),
-      entry('X-Nonce-Token', '{{$uuid}}'),
+      entry('X-Nonce-Token', '${$uuid}'),
     ]);
   });
 

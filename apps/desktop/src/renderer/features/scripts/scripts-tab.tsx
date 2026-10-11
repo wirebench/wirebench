@@ -1,6 +1,7 @@
 /**
  * A request's **Scripts** tab (#63): the pre-request and post-response scripts, the secrets they may
- * read, and their timeout. Shared by the SOAP, REST and gRPC editors.
+ * read, and their timeout. Shared by the SOAP, REST and gRPC editors, and by an API's, an
+ * interface's and a folder's scripts (#334), which run around every request inside it.
  *
  * Edits are written through to main as the request's properties are, not staged with the rest of
  * the request: a script is its own file, and the checker answering the editor reads main's copy of
@@ -63,12 +64,20 @@ export function parseSecretNames(text: string): { readonly names: string[]; read
 }
 
 export interface ScriptsTabProps {
+  /** The request's id, or the API's, interface's or folder's whose scripts these are. */
   readonly requestId: string;
   readonly scripts: RequestScriptsWire | undefined;
+  /** Set for a level's scripts (#334): what it is called — `API`, `interface` or `folder`. */
+  readonly level?: string;
+}
+
+/** What a script error stops: the request, or every request inside the level. */
+function blockedBy(level: string | undefined): string {
+  return level === undefined ? 'the request will not send' : `no request in this ${level} will send`;
 }
 
 /** The Scripts tab. */
-export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
+export function ScriptsTab({ requestId, scripts, level }: ScriptsTabProps) {
   const updateRequestScripts = useProjectStore((state) => state.updateRequestScripts);
   const [phase, setPhase] = useState<ScriptPhase>('pre');
   const api = scripts?.api ?? 'wirebench';
@@ -108,6 +117,15 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
           </Button>
         </div>
       )}
+      {level !== undefined && (
+        <p
+          data-testid="scripts-level-hint"
+          className="shrink-0 border-b border-hairline px-3 py-1 text-xs text-fg-subtle"
+        >
+          Runs for every request in this {level}, outer levels first: its pre-request script before the request’s own,
+          its post-response script before the request’s own too.
+        </p>
+      )}
       {scripts?.problems?.map((problem) => (
         <p
           key={problem.phase}
@@ -115,8 +133,8 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
           className="shrink-0 border-b border-hairline px-3 py-1 text-xs text-status-danger"
           data-testid={`scripts-problem-${problem.phase}`}
         >
-          The {problem.phase === 'pre' ? 'pre-request' : 'post-response'} script {PROBLEM_TEXT[problem.code]}; the
-          request will not send until it is fixed.
+          The {problem.phase === 'pre' ? 'pre-request' : 'post-response'} script {PROBLEM_TEXT[problem.code]};{' '}
+          {blockedBy(level)} until it is fixed.
         </p>
       ))}
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
@@ -132,6 +150,8 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
           phase={phase}
           api={api}
           value={scripts?.[phase] ?? ''}
+          blocked={blockedBy(level)}
+          {...(level !== undefined ? { owner: `this ${level}` } : {})}
           onCommit={async (text) => {
             const next = text === '' ? null : text;
             await write(phase === 'pre' ? { pre: next } : { post: next });
@@ -187,6 +207,10 @@ export interface ScriptEditorProps {
   readonly phase: ScriptPhase;
   readonly api: 'wirebench' | 'postman';
   readonly value: string;
+  /** What an error stops, as a clause: `the request will not send`. */
+  readonly blocked?: string;
+  /** Whose script it is, for a level's (#334): `this API`, so its editor's name differs from a request's. */
+  readonly owner?: string;
   /** Writes the text; resolves once main has it. */
   readonly onCommit: (text: string) => Promise<void>;
 }
@@ -197,7 +221,15 @@ export interface ScriptEditorProps {
  * keystroke made meanwhile survives the echo. A send or save made inside the pause waits for the
  * write (`flushScriptEdits`).
  */
-export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptEditorProps) {
+export function ScriptEditor({
+  requestId,
+  phase,
+  api,
+  value,
+  blocked = 'the request will not send',
+  owner,
+  onCommit,
+}: ScriptEditorProps) {
   const [local, setLocal] = useState(value);
   const [errors, setErrors] = useState<number | undefined>(undefined);
   const committed = useRef(value);
@@ -274,7 +306,7 @@ export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptE
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
         <CodeEditor
-          ariaLabel={`${phase === 'pre' ? 'Pre-request' : 'Post-response'} script`}
+          ariaLabel={`${phase === 'pre' ? 'Pre-request' : 'Post-response'} script${owner === undefined ? '' : ` for ${owner}`}`}
           language={api === 'postman' ? 'javascript' : 'typescript'}
           path={scriptModelPath(requestId, phase, api)}
           value={local}
@@ -293,7 +325,7 @@ export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptE
       </div>
       {errors !== undefined && errors > 0 && (
         <p role="status" data-testid="script-errors" className="shrink-0 px-3 py-1 text-xs text-status-danger">
-          {errors === 1 ? '1 error' : `${String(errors)} errors`} — the request will not send until{' '}
+          {errors === 1 ? '1 error' : `${String(errors)} errors`} — {blocked} until{' '}
           {errors === 1 ? 'it is' : 'they are'} fixed.
         </p>
       )}

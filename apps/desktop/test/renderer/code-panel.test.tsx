@@ -64,7 +64,7 @@ describe('CodePanel', () => {
       expect(screen.getByTestId('code-panel-preview').textContent).toBe(COMMAND);
     });
 
-    await userEvent.selectOptions(screen.getByLabelText('Shell'), 'powershell');
+    await userEvent.selectOptions(screen.getByLabelText('Language'), 'curl:powershell');
 
     await waitFor(
       () => {
@@ -73,6 +73,97 @@ describe('CodePanel', () => {
       { timeout: 3000 },
     );
     expect(curl).toHaveBeenLastCalledWith({ requestId: 'req-1', shell: 'powershell' });
+    expect(useUiStore.getState().slideOver.codeShell).toBe('powershell');
+  });
+
+  it('asks main for the chosen language, and remembers it', async () => {
+    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: COMMAND } });
+    const code = vi.fn().mockResolvedValue({ ok: true, value: { command: 'import requests' } });
+    installWirebenchApi({ request: { curl, code } });
+    openRequestTab();
+    render(<CodePanel />);
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe(COMMAND);
+    });
+
+    await userEvent.selectOptions(screen.getByLabelText('Language'), 'python-requests');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe('import requests');
+    });
+    expect(code).toHaveBeenLastCalledWith({ requestId: 'req-1', target: 'python-requests' });
+    expect(useUiStore.getState().slideOver.codeLanguage).toBe('python-requests');
+  });
+
+  it('opens in the language picked last', async () => {
+    const code = vi.fn().mockResolvedValue({ ok: true, value: { command: 'package main' } });
+    installWirebenchApi({ request: { code } });
+    useUiStore.getState().setCodeLanguage('go-net-http');
+    openRequestTab();
+    render(<CodePanel />);
+
+    await waitFor(() => {
+      expect(code).toHaveBeenCalledWith({ requestId: 'req-1', target: 'go-net-http' });
+    });
+    expect(screen.getByLabelText<HTMLSelectElement>('Language').value).toBe('go-net-http');
+  });
+
+  it('sends the language’s own settings, and keeps them per language', async () => {
+    const code = vi.fn().mockResolvedValue({ ok: true, value: { command: 'import requests' } });
+    installWirebenchApi({ request: { code } });
+    useUiStore.getState().setCodeLanguage('python-requests');
+    openRequestTab();
+    render(<CodePanel />);
+    await waitFor(() => {
+      expect(code).toHaveBeenCalled();
+    });
+
+    await userEvent.selectOptions(screen.getByLabelText('Indent'), '2');
+    await userEvent.selectOptions(screen.getByLabelText('Redirects'), 'none');
+
+    await waitFor(
+      () => {
+        expect(code).toHaveBeenLastCalledWith({
+          requestId: 'req-1',
+          target: 'python-requests',
+          settings: { indent: 2, followRedirects: false },
+        });
+      },
+      { timeout: 3000 },
+    );
+    expect(useUiStore.getState().slideOver.codeSettings).toEqual({
+      'python-requests': { indent: 2, followRedirects: false },
+    });
+  });
+
+  it('hides the settings for the wirebench run line', async () => {
+    const code = vi.fn().mockResolvedValue({ ok: true, value: { command: "wirebench run '/p' 'r'" } });
+    installWirebenchApi({ request: { code } });
+    useUiStore.getState().setCodeLanguage('wirebench-run');
+    openRequestTab();
+    render(<CodePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe("wirebench run '/p' 'r'");
+    });
+    expect(screen.queryByTestId('code-panel-settings')).toBeNull();
+  });
+
+  it('says where a snippet reads its secrets from', async () => {
+    const code = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { command: "headers = {'Authorization': 'Bearer ' + os.environ['WIREBENCH_SECRET_TOKEN']}" },
+    });
+    installWirebenchApi({ request: { code } });
+    useUiStore.getState().setCodeLanguage('python-requests');
+    openRequestTab();
+    render(<CodePanel />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Secrets are read from WIREBENCH_SECRET_* environment variables unless Show secrets is on.'),
+      ).toBeDefined();
+    });
   });
 
   it('copies the shown command', async () => {
@@ -245,6 +336,26 @@ describe('CodePanel with a REST request', () => {
     await waitFor(() => {
       expect(curl).toHaveBeenCalledWith({ requestId: 'rest-1', shell: 'posix' });
     });
+  });
+
+  it('keeps a gRPC request on its own command, whatever language was picked last', async () => {
+    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: 'grpcurl x' } });
+    const code = vi.fn();
+    installWirebenchApi({ request: { curl, code } });
+    useUiStore.getState().setCodeLanguage('python-requests');
+    useEditorsStore.setState({
+      tabs: [{ id: 'grpc:g-1', kind: 'grpc-request', title: 'Say hello', grpcRequestId: 'g-1' }],
+      activeId: 'grpc:g-1',
+    });
+
+    render(<CodePanel />);
+
+    await waitFor(() => {
+      expect(curl).toHaveBeenCalledWith({ requestId: 'g-1', shell: 'posix' });
+    });
+    expect(code).not.toHaveBeenCalled();
+    const options = [...screen.getByLabelText<HTMLSelectElement>('Language').options].map((option) => option.value);
+    expect(options).toEqual(['curl:posix', 'curl:powershell']);
   });
 
   it("still shows a SOAP request's command when one is active", async () => {

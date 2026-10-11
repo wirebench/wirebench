@@ -1,0 +1,211 @@
+=== query and headers
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/v1/items?q=red%20shoes&page=2')
+request = Net::HTTP::Get.new(uri)
+request['Accept'] = 'application/json'
+request['X-Trace'] = 'it\'s "quoted"'
+request.add_field('X-Trace', 'second')
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== json body
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/v1/items')
+request = Net::HTTP::Post.new(uri)
+request['Content-Type'] = 'application/json'
+request.body = '{
+  "name": "Widget",
+  "price": 9.5
+}'
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https',
+  open_timeout: 30,
+  read_timeout: 30
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== form body
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/login')
+request = Net::HTTP::Post.new(uri)
+request['Content-Type'] = 'application/x-www-form-urlencoded'
+request.body = 'user=ada+lovelace&scope=read%26write'
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== multipart body
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/upload')
+request = Net::HTTP::Post.new(uri)
+request.set_form([
+  ['title', 'Report'],
+  ['file', File.open('/tmp/report.pdf'), { filename: 'report.pdf', content_type: 'application/pdf' }],
+], 'multipart/form-data')
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== binary body
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/blobs/1')
+request = Net::HTTP::Put.new(uri)
+request['Content-Type'] = 'application/octet-stream'
+request.body = File.binread('/tmp/blob.bin')
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== basic auth from the environment
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/me')
+request = Net::HTTP::Get.new(uri)
+request.basic_auth('ada', ENV.fetch('WIREBENCH_SECRET_PASSWORD'))
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== bearer token and query key from the environment
+# Note: This request follows redirects; the library does not, so the snippet stops at the first.
+require 'net/http'
+require 'uri'
+
+uri = URI('https://api.example.com/items/7?api_key=' + ENV.fetch('WIREBENCH_SECRET_KEY'))
+request = Net::HTTP::Delete.new(uri)
+request['Authorization'] = 'Bearer ' + ENV.fetch('WIREBENCH_SECRET_API_TOKEN')
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+--- notes
+This request follows redirects; the library does not, so the snippet stops at the first.
+
+=== insecure, no redirects, redirect limit ignored
+require 'net/http'
+require 'openssl'
+require 'uri'
+
+uri = URI('https://self-signed.example.com/health')
+request = Net::HTTP::Get.new(uri)
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https',
+  verify_mode: OpenSSL::SSL::VERIFY_NONE,
+  open_timeout: 1.5,
+  read_timeout: 1.5
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body
+
+=== soap envelope
+require 'net/http'
+require 'uri'
+
+uri = URI('http://soap.example.com/calculator')
+request = Net::HTTP::Post.new(uri)
+request['Content-Type'] = 'text/xml;charset=UTF-8'
+request['SOAPAction'] = '"http://tempuri.org/Add"'
+request.body = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>'
+
+response = Net::HTTP.start(
+  uri.hostname,
+  uri.port,
+  use_ssl: uri.scheme == 'https'
+) do |http|
+  http.request(request)
+end
+
+puts response.code
+puts response.body

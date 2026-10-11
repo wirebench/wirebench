@@ -12,7 +12,13 @@ import { abs, authConfig, byOrder, exact, loadScripts, optional, readYaml } from
 import type { ProjectProblem } from '../project/load.js';
 import type { SoapOwnerAuth } from '../project/model.js';
 import type { Attachment, Endpoint, Interface, OperationDef, RequestProperties, SoapRequestDef } from './model.js';
-import { assertPathSegment, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX } from '../project/paths.js';
+import {
+  assertPathSegment,
+  INTERFACE_SCRIPT_STEM,
+  INTERFACES_DIR,
+  OPERATIONS_DIR,
+  REQUEST_SUFFIX,
+} from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
 import { authDocument, scriptsDocument, writeScriptFiles } from '../project/serialize-helpers.js';
 import { compact, stringifyYaml } from '../project/yaml.js';
@@ -63,8 +69,15 @@ async function loadRequests(
     }
     names.delete(entry.name);
     names.delete(`${slug}.xml`);
-    const scripts = await loadScripts(fs, root, dir, slug, parsed.scripts, parsed.name, problems, (name) =>
-      names.delete(name),
+    const scripts = await loadScripts(
+      fs,
+      root,
+      dir,
+      slug,
+      parsed.scripts,
+      `Request "${parsed.name}"`,
+      problems,
+      (name) => names.delete(name),
     );
     requests.push({
       kind: 'soap',
@@ -152,6 +165,7 @@ function interfaceDocument(iface: Interface): Record<string, unknown> {
     defaultEndpointId: iface.defaultEndpointId,
     wsa: compact({ ...iface.wsa }),
     auth: iface.auth === undefined ? undefined : authDocument(iface.auth),
+    scripts: scriptsDocument(iface.scripts, INTERFACE_SCRIPT_STEM).document,
     operations: iface.operations.map((op) => ({
       name: op.name,
       bindingName: op.bindingName,
@@ -169,6 +183,16 @@ export const soapStorage: ProtocolStorage<Interface> = {
     const { fs, root, problems } = ctx;
     const relative = `${INTERFACES_DIR}/${slug}/interface.yaml`;
     const parsed = parseFile(interfaceFileSchema, document, relative);
+    const scripts = await loadScripts(
+      fs,
+      root,
+      `${INTERFACES_DIR}/${slug}`,
+      INTERFACE_SCRIPT_STEM,
+      parsed.scripts,
+      `Interface "${parsed.name}"`,
+      problems,
+      () => undefined,
+    );
     const operationsDir = `${INTERFACES_DIR}/${slug}/${OPERATIONS_DIR}`;
     const folders = new Set(
       (await readdirIfExists(fs, abs(root, operationsDir))).filter((e) => e.isDirectory).map((e) => e.name),
@@ -211,6 +235,7 @@ export const soapStorage: ProtocolStorage<Interface> = {
       ...optional('defaultEndpointId', parsed.defaultEndpointId),
       wsa: normalizeWsa(parsed.wsa),
       ...optional('auth', soapOwnerAuth(parsed.auth)),
+      ...(scripts !== undefined ? { scripts } : {}),
       operations: operations.sort(byOrder),
     };
   },
@@ -220,6 +245,7 @@ export const soapStorage: ProtocolStorage<Interface> = {
     assertPathSegment(iface.slug);
     const base = `${INTERFACES_DIR}/${iface.slug}`;
     files.set(`${base}/interface.yaml`, stringifyYaml(interfaceDocument(iface)));
+    writeScriptFiles(files, base, iface.scripts, INTERFACE_SCRIPT_STEM);
     for (const operation of iface.operations) {
       assertPathSegment(operation.slug);
       const dir = `${base}/${OPERATIONS_DIR}/${operation.slug}`;
@@ -244,6 +270,9 @@ export const soapStorage: ProtocolStorage<Interface> = {
     const ifaceFile = `${base}/interface.yaml`;
     if ((await readFileIfExists(fs, abs(root, ifaceFile))) !== undefined) {
       managed.push(ifaceFile);
+      for (const entry of await readdirIfExists(fs, abs(root, base))) {
+        if (entry.isFile && isScriptFileOf(entry.name, INTERFACE_SCRIPT_STEM)) managed.push(`${base}/${entry.name}`);
+      }
     }
     const opsDir = `${base}/${OPERATIONS_DIR}`;
     for (const opEntry of await readdirIfExists(fs, abs(root, opsDir))) {

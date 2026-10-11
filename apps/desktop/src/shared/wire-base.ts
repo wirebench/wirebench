@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { isEnvironmentColor } from './environment-colors.js';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
@@ -235,6 +236,7 @@ export const unresolvedRefWireSchema = z.object({
     'too-deep',
     'malformed',
     'name-from-response',
+    'bad-arguments',
     'secret-source-invalid',
     'secret-source-untrusted',
   ]),
@@ -265,6 +267,43 @@ export const requestAuthSourceSchema = z.object({
 });
 export type RequestAuthSourceWire = z.infer<typeof requestAuthSourceSchema>;
 
+/** Where the editor's "Edit" link for a variable goes: the tab that edits its scope (#340). */
+export const variableEditTargetWireSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('environment'), id: z.string() }),
+  z.object({ kind: z.literal('project'), projectId: z.string() }),
+  z.object({ kind: z.literal('workspace') }),
+  z.object({ kind: z.literal('globals') }),
+]);
+export type VariableEditTargetWire = z.infer<typeof variableEditTargetWireSchema>;
+
+/**
+ * One variable a request can reference, as its send would resolve it (#340). `value` is the value
+ * with its own references expanded, and is absent when `masked`: a value that reaches a
+ * `${secret:…}` token or a `${#System#…}` variable never crosses to the renderer.
+ */
+export const requestVariableWireSchema = z.object({
+  name: z.string(),
+  scope: z.enum(['Env', 'Project', 'Workspace', 'Global', 'System']),
+  value: z.string().optional(),
+  masked: z.boolean(),
+  /** The secret a masked value reads, when it reads one directly. */
+  secretName: z.string().optional(),
+  /** A nearer scope defines the same name, so the shorthand `${name}` does not reach this one. */
+  shadowed: z.boolean(),
+  edit: variableEditTargetWireSchema.optional(),
+});
+export type RequestVariableWire = z.infer<typeof requestVariableWireSchema>;
+
+/** Request payload for `request.variables`. */
+export const requestVariablesRequestSchema = z.object({ requestId: z.string() });
+
+/** Response payload for `request.variables`: the variables in scope, and the secret names (never values). */
+export const requestVariablesResponseSchema = z.object({
+  entries: z.array(requestVariableWireSchema),
+  secretNames: z.array(z.string()),
+});
+export type RequestVariablesResponse = z.infer<typeof requestVariablesResponseSchema>;
+
 /** Request payload for `request.preflight`. */
 export const requestPreflightRequestSchema = z.object({ requestId: z.string() });
 
@@ -288,6 +327,23 @@ export const scriptResultWireSchema = z.object({
   truncated: z.boolean(),
   /** A post-response script that failed: the response is kept, and this says why the script did not finish. */
   error: z.object({ code: z.string(), message: z.string() }).optional(),
+  /**
+   * Each script that ran, in order (#334): the API's or interface's, each folder's, then the
+   * request's own. Its tests, log and failure, which the flat fields above join together.
+   */
+  levels: z
+    .array(
+      z.object({
+        level: z.enum(['api', 'interface', 'folder', 'request']),
+        name: z.string(),
+        phase: z.enum(['pre', 'post']),
+        tests: z.array(z.object({ name: z.string(), passed: z.boolean(), message: z.string().optional() })),
+        log: z.array(z.string()),
+        truncated: z.boolean(),
+        error: z.object({ code: z.string(), message: z.string() }).optional(),
+      }),
+    )
+    .optional(),
 });
 export type ScriptResultWire = z.infer<typeof scriptResultWireSchema>;
 
@@ -578,6 +634,10 @@ export const environmentWireSchema = z.object({
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabled: z.array(z.string()),
+  /** A palette name or `#rrggbb` (#345), as the file holds it; absent means no colour. */
+  color: z.string().optional(),
+  /** True asks before every send under this environment (#345); absent means false. */
+  protected: z.boolean().optional(),
 });
 export type EnvironmentWire = z.infer<typeof environmentWireSchema>;
 
@@ -681,6 +741,8 @@ export const restFolderWireSchema = z.object({
   source: z.object({ apiId: z.string() }).optional(),
   /** Webhook folder only. */
   signing: webhookSigningWireSchema.optional(),
+  /** The folder's scripts, run around every request inside it (#334). REST and gRPC folders only. */
+  scripts: requestScriptsWireSchema.optional(),
 });
 export type RestFolderWire = z.infer<typeof restFolderWireSchema>;
 
@@ -1149,6 +1211,9 @@ export const environmentPatchSchema = z.object({
   name: z.string().optional(),
   endpoints: z.record(z.string(), z.string()).optional(),
   properties: z.record(z.string(), z.string()).optional(),
+  /** A palette name or `#rrggbb`; `null` takes the colour off. */
+  color: z.string().refine(isEnvironmentColor, 'not a palette name or #rrggbb').nullable().optional(),
+  protected: z.boolean().optional(),
 });
 export type EnvironmentPatchWire = z.infer<typeof environmentPatchSchema>;
 
@@ -2439,6 +2504,10 @@ export const workspaceEnvironmentWireSchema = z.object({
   endpoints: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabled: z.array(z.string()),
+  /** A palette name or `#rrggbb` (#345), as the file holds it; absent means no colour. */
+  color: z.string().optional(),
+  /** True asks before every send under this environment (#345); absent means false. */
+  protected: z.boolean().optional(),
 });
 export type WorkspaceEnvironmentWire = z.infer<typeof workspaceEnvironmentWireSchema>;
 
@@ -2472,6 +2541,9 @@ export const workspaceEnvironmentPatchSchema = z.object({
   endpoints: z.record(z.string(), z.string()).optional(),
   /** Replaces the whole disabled-names list, like `properties`/`endpoints` above. */
   disabled: z.array(z.string()).optional(),
+  /** A palette name or `#rrggbb`; `null` takes the colour off. */
+  color: z.string().refine(isEnvironmentColor, 'not a palette name or #rrggbb').nullable().optional(),
+  protected: z.boolean().optional(),
 });
 export type WorkspaceEnvironmentPatchWire = z.infer<typeof workspaceEnvironmentPatchSchema>;
 

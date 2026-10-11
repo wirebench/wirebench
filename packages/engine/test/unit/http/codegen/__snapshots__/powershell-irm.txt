@@ -1,0 +1,135 @@
+=== query and headers
+$headers = @{
+    'Accept' = 'application/json'
+    'X-Trace' = 'it''s "quoted", second'
+}
+$params = @{
+    Uri = 'https://api.example.com/v1/items?q=red%20shoes&page=2'
+    Method = 'GET'
+    Headers = $headers
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== json body
+$body = @'
+{
+  "name": "Widget",
+  "price": 9.5
+}
+'@
+$params = @{
+    Uri = 'https://api.example.com/v1/items'
+    Method = 'POST'
+    Body = $body
+    ContentType = 'application/json'
+    TimeoutSec = 30
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== form body
+$body = 'user=ada+lovelace&scope=read%26write'
+$params = @{
+    Uri = 'https://api.example.com/login'
+    Method = 'POST'
+    Body = $body
+    ContentType = 'application/x-www-form-urlencoded'
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== multipart body
+$form = @{
+    'title' = 'Report'
+    'file' = Get-Item -LiteralPath '/tmp/report.pdf'
+}
+$params = @{
+    Uri = 'https://api.example.com/upload'
+    Method = 'POST'
+    Form = $form
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== binary body
+$params = @{
+    Uri = 'https://api.example.com/blobs/1'
+    Method = 'PUT'
+    InFile = '/tmp/blob.bin'
+    ContentType = 'application/octet-stream'
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== basic auth from the environment
+$credential = [pscredential]::new('ada', (ConvertTo-SecureString $env:WIREBENCH_SECRET_PASSWORD -AsPlainText -Force))
+$params = @{
+    Uri = 'https://api.example.com/me'
+    Method = 'GET'
+    Authentication = 'Basic'
+    Credential = $credential
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== bearer token and query key from the environment
+$headers = @{
+    'Authorization' = ('Bearer ' + $env:WIREBENCH_SECRET_API_TOKEN)
+}
+$params = @{
+    Uri = ('https://api.example.com/items/7?api_key=' + $env:WIREBENCH_SECRET_KEY)
+    Method = 'DELETE'
+    Headers = $headers
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== insecure, no redirects, redirect limit ignored
+$params = @{
+    Uri = 'https://self-signed.example.com/health'
+    Method = 'GET'
+    MaximumRedirection = 0
+    TimeoutSec = 2
+    SkipCertificateCheck = $true
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response
+
+=== soap envelope
+$headers = @{
+    'SOAPAction' = '"http://tempuri.org/Add"'
+}
+$body = @'
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>
+'@
+$params = @{
+    Uri = 'http://soap.example.com/calculator'
+    Method = 'POST'
+    Headers = $headers
+    Body = $body
+    ContentType = 'text/xml;charset=UTF-8'
+    MaximumRedirection = 0
+    SkipHttpErrorCheck = $true
+}
+
+$response = Invoke-RestMethod @params
+$response

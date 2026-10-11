@@ -97,6 +97,8 @@ export interface GrpcFolder {
   readonly description?: string;
   /** Default credentials for everything inside, unless a child says otherwise. */
   readonly auth?: AuthConfig;
+  /** Scripts run around every request inside, after the API's and outer folders' (#334). */
+  readonly scripts?: RequestScripts;
   readonly folders: readonly GrpcFolder[];
   readonly requests: readonly GrpcRequestDef[];
 }
@@ -148,6 +150,8 @@ export interface GrpcApi {
   /** Metadata every request under this API sends unless it sets the same key itself. */
   readonly metadata: readonly KeyValueEntry[];
   readonly auth?: AuthConfig;
+  /** Scripts run around every request in the API, before its folders' and its own (#334). */
+  readonly scripts?: RequestScripts;
   readonly definition?: GrpcDefinitionRef;
   readonly folders: readonly GrpcFolder[];
   readonly requests: readonly GrpcRequestDef[];
@@ -166,6 +170,7 @@ export interface CreateGrpcApiInput extends CreateOptions {
   readonly metadata?: readonly KeyValueEntry[];
   readonly auth?: AuthConfig;
   readonly definition?: GrpcDefinitionRef;
+  readonly scripts?: RequestScripts;
   readonly folders?: readonly GrpcFolder[];
   readonly requests?: readonly GrpcRequestDef[];
 }
@@ -188,6 +193,7 @@ export function createGrpcApi(name: string, input: CreateGrpcApiInput = {}): Grp
     metadata: input.metadata ?? [],
     ...(input.auth !== undefined ? { auth: input.auth } : {}),
     ...(input.definition !== undefined ? { definition: input.definition } : {}),
+    ...(input.scripts !== undefined ? { scripts: input.scripts } : {}),
     folders: input.folders ?? [],
     requests: input.requests ?? [],
   };
@@ -198,6 +204,7 @@ export interface CreateGrpcFolderInput extends CreateOptions {
   readonly slug?: string;
   readonly description?: string;
   readonly auth?: AuthConfig;
+  readonly scripts?: RequestScripts;
   readonly folders?: readonly GrpcFolder[];
   readonly requests?: readonly GrpcRequestDef[];
 }
@@ -211,6 +218,7 @@ export function createGrpcFolder(name: string, input: CreateGrpcFolderInput = {}
     order: input.order ?? 0,
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.auth !== undefined ? { auth: input.auth } : {}),
+    ...(input.scripts !== undefined ? { scripts: input.scripts } : {}),
     folders: input.folders ?? [],
     requests: input.requests ?? [],
   };

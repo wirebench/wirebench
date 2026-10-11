@@ -406,18 +406,19 @@ describe('mapOpenCollection — credentials', () => {
     );
   });
 
-  it('reports dynamic variables once, kept as written', () => {
+  it('maps known dynamic variables, and reports the rest once, kept as written', () => {
     const m = mapText(
       collection(`  - info: { name: A, type: http }
     http:
       method: GET
       url: "https://h/{{$guid}}"
-      headers: [{ name: X-Id, value: "{{$guid}}" }, { name: X-Ts, value: "{{$timestamp}}" }]
+      headers: [{ name: X-Id, value: "{{$randomJobTitle}}" }, { name: X-Ts, value: "{{$timestamp}}" }]
 `),
     );
-    expect(m.rest?.requests[0]?.url).toBe('https://h/{{$guid}}');
+    expect(m.rest?.requests[0]?.url).toBe('https://h/${$guid}');
+    expect(m.rest?.requests[0]?.headers.map((h) => h.value)).toEqual(['{{$randomJobTitle}}', '${$timestamp}']);
     expect(m.report.warnings.filter((w) => w.startsWith('Dynamic'))).toEqual([
-      'Dynamic variables are kept as written and not expanded: $guid, $timestamp',
+      'Dynamic variables are kept as written and not expanded: $randomJobTitle',
     ]);
   });
 });
@@ -546,18 +547,18 @@ describe('mapOpenCollection — fix round 1', () => {
       url: "https://h/q"
       body:
         query: "{ a }"
-        variables: { id: "{{id}}", trace: "{{$guid}}", auth: { password: sekret456 }, list: ["{{x}}"] }
+        variables: { id: "{{id}}", trace: "{{$randomJobTitle}}", auth: { password: sekret456 }, list: ["{{x}}"] }
 `),
     );
     expect(JSON.parse(rawText(request.body))).toEqual({
       query: '{ a }',
-      variables: { id: '${id}', trace: '{{$guid}}', auth: '', list: ['${x}'] },
+      variables: { id: '${id}', trace: '{{$randomJobTitle}}', auth: '', list: ['${x}'] },
     });
     expect(JSON.stringify(mapped)).not.toContain('sekret456');
     expect(mapped.report.warnings).toEqual(
       expect.arrayContaining([
         'G: the recorded value of password, auth was not imported; set it on the request.',
-        'Dynamic variables are kept as written and not expanded: $guid',
+        'Dynamic variables are kept as written and not expanded: $randomJobTitle',
       ]),
     );
   });
@@ -662,21 +663,21 @@ describe('mapOpenCollection — final fix wave', () => {
   it('rewrites assertion values, reporting each dynamic name once', () => {
     const m = mapText(
       collection(`  - info: { name: A, type: http }
-    http: { method: GET, url: "https://h/{{$guid}}" }
+    http: { method: GET, url: "https://h/{{$randomJobTitle}}" }
     runtime:
       assertions:
         - { expression: res.body.name, operator: eq, value: "{{expected}}" }
-        - { expression: res.body.id, operator: eq, value: "{{$guid}}" }
+        - { expression: res.body.id, operator: eq, value: "{{$randomJobTitle}}" }
         - { expression: res.body.token, operator: eq, value: "{{tok}}" }
 `),
     );
     expect(m.rest?.requests[0]?.assertions).toEqual([
       { type: 'match', language: 'jsonpath', expression: '$.name', equals: '${expected}' },
-      { type: 'match', language: 'jsonpath', expression: '$.id', equals: '{{$guid}}' },
+      { type: 'match', language: 'jsonpath', expression: '$.id', equals: '{{$randomJobTitle}}' },
       { type: 'match', language: 'jsonpath', expression: '$.token', equals: '${tok}' },
     ]);
     expect(m.report.warnings.filter((w) => w.startsWith('Dynamic'))).toEqual([
-      'Dynamic variables are kept as written and not expanded: $guid',
+      'Dynamic variables are kept as written and not expanded: $randomJobTitle',
     ]);
   });
 

@@ -33,6 +33,7 @@ import type {
   RestApi,
   RestBody,
   RestRequestDef,
+  RestRequestSettings,
   Attachment,
   Endpoint,
   Environment,
@@ -50,7 +51,7 @@ import type {
 } from '@wirebench/engine';
 import type { ProjectWire } from '../shared/wire-types.js';
 import type { GrpcApiWire, GrpcRequestWire } from '../shared/kinds/grpc/wire.js';
-import type { RestApiWire, RestBodyWire, RestRequestWire } from '../shared/kinds/rest/wire.js';
+import type { RestApiWire, RestBodyWire, RestRequestWire, RestSettingsWire } from '../shared/kinds/rest/wire.js';
 import type {
   AttachmentWire,
   EndpointWire,
@@ -179,6 +180,7 @@ export function toInterfaceWire(iface: Interface, runtime: InterfaceRuntime | un
     hydration: runtime?.hydration ?? 'pending',
     // `EndpointAuth` only ever carries a `passwordRef`, never a password — safe on the wire.
     ...(iface.auth !== undefined ? { auth: toAuthConfigWire(iface.auth) } : {}),
+    ...scriptsField(iface.scripts),
   };
 }
 
@@ -229,7 +231,7 @@ function toAssertionWires(assertions: readonly Assertion[] | undefined): Request
   return (assertions ?? []).map((assertion) => structuredClone(assertion) as RequestAssertionWire);
 }
 
-/** `{ scripts }` for a wire object, or nothing when the request has none. */
+/** `{ scripts }` for a wire object, or nothing when the request, API, interface or folder has none. */
 function scriptsField(scripts: RequestScripts | undefined): { scripts?: RequestScriptsWire } {
   const wire = toRequestScriptsWire(scripts);
   return wire === undefined ? {} : { scripts: wire };
@@ -302,6 +304,8 @@ function toEnvironmentWire(environment: Environment): EnvironmentWire {
     endpoints: { ...environment.endpoints },
     properties: { ...environment.properties },
     disabled: [...environment.disabledProperties],
+    ...(environment.color !== undefined ? { color: environment.color } : {}),
+    ...(environment.protected === true ? { protected: true } : {}),
   };
 }
 
@@ -454,6 +458,7 @@ function toApiWire(api: RestApi): RestApiWire {
       ...(server.description !== undefined ? { description: server.description } : {}),
     })),
     ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
+    ...scriptsField(api.scripts),
     ...(api.definition !== undefined
       ? {
           definition: {
@@ -519,7 +524,7 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     headers: toKeyValueWires(request.headers),
     body: toRestBodyWire(request.body),
     auth: toAuthConfigWire(request.auth),
-    settings: { ...request.settings },
+    settings: toRestSettingsWire(request.settings),
     ...scriptsField(request.scripts),
     assertions: toAssertionWires(request.assertions),
     ...(request.orphaned === true ? { orphaned: true } : {}),
@@ -562,6 +567,7 @@ function toRestTreeWires(apis: readonly RestApi[]): {
         order: folder.order,
         ...(folder.description !== undefined ? { description: folder.description } : {}),
         ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
+        ...scriptsField(folder.scripts),
       });
       walk(api, folder, folder.id);
     }
@@ -638,6 +644,7 @@ function toGrpcApiWire(api: GrpcApi): GrpcApiWire {
     tls: api.tls,
     metadata: toKeyValueWires(api.metadata),
     ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
+    ...scriptsField(api.scripts),
     ...(api.definition !== undefined
       ? {
           definition: {
@@ -698,6 +705,7 @@ function toGrpcTreeWires(apis: readonly GrpcApi[]): {
         order: folder.order,
         ...(folder.description !== undefined ? { description: folder.description } : {}),
         ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
+        ...scriptsField(folder.scripts),
       });
       walk(api, folder, folder.id);
     }
@@ -923,4 +931,10 @@ export function findRequest(project: Project, requestId: string): RequestLocatio
     }
   }
   return undefined;
+}
+
+/** A REST request's settings onto the wire: a copy, its `omitHeaders` list made the wire's own array. */
+export function toRestSettingsWire(settings: RestRequestSettings): RestSettingsWire {
+  const { omitHeaders, ...rest } = settings;
+  return { ...rest, ...(omitHeaders !== undefined ? { omitHeaders: [...omitHeaders] } : {}) };
 }

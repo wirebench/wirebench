@@ -8,7 +8,9 @@
  */
 
 import type { ReactNode } from 'react';
+import type * as Monaco from 'monaco-editor';
 import * as ContextMenu from '@radix-ui/react-context-menu';
+import { useVariableAssist } from '../../components/variable-field.js';
 import { getActiveRequestEditor, getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 import { gotoLine } from '../../editor/xml-language.js';
 import type { RequestDraft } from '../../state/project.js';
@@ -48,7 +50,18 @@ function responseEnvelopeXml(requestId: string): string | undefined {
   return useExchangesStore.getState().byRequest[requestId]?.exchange?.response?.envelopeXml;
 }
 
+/** The envelope editor's selected text and its range, or `undefined` when nothing is selected. */
+function envelopeSelection(): { readonly text: string; readonly range: Monaco.Selection } | undefined {
+  const editor = getActiveRequestEditor();
+  const range = editor?.getSelection();
+  if (editor === undefined || range === null || range === undefined || range.isEmpty()) return undefined;
+  const text = editor.getModel()?.getValueInRange(range) ?? '';
+  return text === '' ? undefined : { text, range };
+}
+
 export function RequestContextMenu({ draft, children }: RequestContextMenuProps) {
+  // Monaco's own menu is off here, so the envelope's Set as Variable (#340) lives in this one.
+  const assist = useVariableAssist();
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
@@ -86,6 +99,23 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
           >
             Go to Schema Definition
           </ContextMenu.Item>
+          {assist !== undefined && (
+            <ContextMenu.Item
+              className={ITEM_CLASS}
+              disabled={envelopeSelection() === undefined}
+              onSelect={() => {
+                const selection = envelopeSelection();
+                if (selection === undefined) return;
+                assist.setAsVariable(selection.text, (reference) => {
+                  getActiveRequestEditor()?.executeEdits('variables', [
+                    { range: selection.range, text: reference, forceMoveMarkers: true },
+                  ]);
+                });
+              }}
+            >
+              Set as Variable…
+            </ContextMenu.Item>
+          )}
           <ContextMenu.Separator className={SEPARATOR_CLASS} />
           <ContextMenu.Item
             className={ITEM_CLASS}

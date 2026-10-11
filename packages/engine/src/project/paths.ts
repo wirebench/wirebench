@@ -191,6 +191,14 @@ export const FOLDER_FILE = 'folder.yaml';
 /** File describing an API. */
 export const API_FILE = 'api.yaml';
 /**
+ * The stems a level's script files are named from (#334), as a request's are from its slug:
+ * `api.pre.ts` beside `api.yaml`, `interface.pre.ts` beside `interface.yaml`, `folder.pre.ts`
+ * beside `folder.yaml`. Only the folder's can meet a request's: one slugged `folder` in it.
+ */
+export const API_SCRIPT_STEM = 'api';
+export const INTERFACE_SCRIPT_STEM = 'interface';
+export const FOLDER_SCRIPT_STEM = 'folder';
+/**
  * How deeply folders may nest inside an API's request tree.
  *
  * Eight is not a taste judgement: `apis/<slug>/requests/` plus eight 80-character folder slugs

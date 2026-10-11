@@ -1,7 +1,8 @@
 /**
  * The Interface editor ("Show Interface Viewer"): a read-mostly view of one imported WSDL —
  * what it declares (Overview), where it can be called (Endpoints), its documents (WSDL Content),
- * its schema components (Schema) and its WS-I Basic Profile report (WS-I).
+ * its schema components (Schema), its WS-I Basic Profile report (WS-I), and the scripts that run
+ * around every request of every operation (Scripts, #334).
  *
  * Everything it shows comes from main's cached `WsdlImportResult` through `definition.documents` /
  * `definition.schemaIndex`; the renderer neither fetches nor reads files.
@@ -20,6 +21,7 @@ import { UpdateDefinitionDialog } from './update-definition-dialog.js';
 import { OverviewTab } from './overview-tab.js';
 import { SchemaTab } from './schema-tab.js';
 import { WsdlContentTab } from './wsdl-content-tab.js';
+import { ScriptsTab } from '../scripts/scripts-tab.js';
 
 export interface InterfaceEditorProps {
   readonly interfaceId: string;
@@ -31,6 +33,7 @@ const TABS: readonly TabItem<InterfaceTabId>[] = [
   { id: 'wsdl', label: 'WSDL Content' },
   { id: 'schema', label: 'Schema' },
   { id: 'wsi', label: 'WS-I' },
+  { id: 'scripts', label: 'Scripts' },
 ];
 
 /**
@@ -80,6 +83,7 @@ export function InterfaceEditor({ interfaceId }: InterfaceEditorProps) {
   const setDialog = useInterfaceEditorStore((state) => state.setDialog);
   const load = useInterfaceEditorStore((state) => state.load);
   const name = useProjectStore((state) => state.interfaces[interfaceId]?.name);
+  const scripts = useProjectStore((state) => state.interfaces[interfaceId]?.scripts);
   // A re-import stamps a new `loadedAt` on the summary, which re-runs `load` and refetches
   // everything the viewer has cached for the old bytes.
   const loadedAt = useProjectStore((state) => state.interfaces[interfaceId]?.loadedAt);
@@ -107,8 +111,10 @@ export function InterfaceEditor({ interfaceId }: InterfaceEditorProps) {
           <WsdlContentTab interfaceId={interfaceId} />
         ) : tab === 'schema' ? (
           <SchemaTab interfaceId={interfaceId} />
-        ) : (
+        ) : tab === 'wsi' ? (
           <WsiTab interfaceId={interfaceId} />
+        ) : (
+          <ScriptsTab requestId={interfaceId} scripts={scripts} level="interface" />
         )}
       </div>
       <UpdateDefinitionDialog

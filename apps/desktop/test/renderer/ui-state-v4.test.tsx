@@ -142,13 +142,63 @@ describe('ui-state v4 migration', () => {
     const storage = fakeStorage();
     const state = {
       ...DEFAULT_UI_STATE,
-      slideOver: { open: true, width: 520, codeShell: 'powershell' as const },
+      slideOver: {
+        open: true,
+        width: 520,
+        codeShell: 'powershell' as const,
+        codeLanguage: 'python-requests' as const,
+        codeSettings: { 'python-requests': { indent: 2, followRedirects: false, timeoutMs: 1500 } },
+      },
       sidebar: { ...DEFAULT_UI_STATE.sidebar, size: 24, lastSize: 24 },
     };
 
     writeUi(state, storage);
 
     expect(readUi(storage)).toEqual(state);
+  });
+
+  it('opens the Code panel in cURL for a blob written before it had other languages', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: 4,
+        state: { ...DEFAULT_UI_STATE, slideOver: { open: false, width: 360, codeShell: 'powershell' } },
+      }),
+    );
+
+    expect(readUi(storage).slideOver).toEqual({
+      open: false,
+      width: 360,
+      codeShell: 'powershell',
+      codeLanguage: 'curl',
+      codeSettings: {},
+    });
+  });
+
+  it('drops a stored language or setting the panel could not have written', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: 4,
+        state: {
+          ...DEFAULT_UI_STATE,
+          slideOver: {
+            ...DEFAULT_UI_STATE.slideOver,
+            codeLanguage: 'cobol',
+            codeSettings: {
+              'go-net-http': { indent: 99, followRedirects: 'yes', timeoutMs: 2000 },
+              nope: { indent: 2 },
+            },
+          },
+        },
+      }),
+    );
+
+    const { codeLanguage, codeSettings } = readUi(storage).slideOver;
+    expect(codeLanguage).toBe('curl');
+    expect(codeSettings).toEqual({ 'go-net-http': { timeoutMs: 2000 } });
   });
 
   it('falls back to defaults rather than throwing for a missing blob', () => {

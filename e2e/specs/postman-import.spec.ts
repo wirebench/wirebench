@@ -64,7 +64,7 @@ test.describe('Postman import', () => {
 
     await expect(page.getByTestId('import-postman-counts')).toContainText('1 request');
     const warnings = page.getByTestId('import-postman-warnings');
-    await expect(warnings).toContainText('Scripts on 1 request was imported switched off');
+    await expect(warnings).toContainText('Scripts on 1 request were imported switched off');
     await expect(warnings).toContainText('Credentials are not copied');
     await expect(page.getByTestId('import-postman-copy-report')).toBeVisible();
 

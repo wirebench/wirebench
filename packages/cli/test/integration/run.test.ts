@@ -242,6 +242,29 @@ describe('wirebench run — a project inside a workspace', () => {
     }
   });
 
+  it('warns before sending under a protected environment, and --refuse-protected refuses it', async () => {
+    const dir = await workspaceWith({ baseUrl: demo.url });
+    const envFile = join(dir, '..', '..', 'environments', 'ci.yaml');
+    await writeFile(envFile, `${await readFile(envFile, 'utf8')}protected: true\n`);
+
+    const warned = await runCli(['run', dir, '-e', 'CI', 'demo/ok']);
+    expect(warned.code).toBe(0);
+    expect(warned.stderr).toContain('warning: "CI" is a protected environment');
+    expect(demo.requests).toHaveLength(1);
+
+    const refused = await runCli(['run', dir, '-e', 'CI', '--refuse-protected', 'demo/ok']);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('environment-protected');
+    expect(demo.requests).toHaveLength(1);
+  });
+
+  it('runs an unprotected environment with --refuse-protected and no warning', async () => {
+    const dir = await workspaceWith({ baseUrl: demo.url });
+    const { code, stderr } = await runCli(['run', dir, '-e', 'CI', '--refuse-protected', 'demo/ok']);
+    expect(code).toBe(0);
+    expect(stderr).not.toContain('protected');
+  });
+
   it('resolves ${#Workspace#name} from the workspace properties', async () => {
     const dir = await workspaceWith({}, { demoUrl: demo.url });
     const api = join(dir, 'apis', 'demo', 'api.yaml');

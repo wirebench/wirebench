@@ -26,6 +26,8 @@
 
 `webhooks/` and `wss/outgoing/`, `wss/incoming/` are read and written by REST's and SOAP's new `projectFiles` facet (`ProtocolProjectFiles`), so with REST or SOAP switched off in the registry they are not loaded, and a save leaves them on disk as they are. `protocolDataOf` and `withProtocolData` read and replace any kind's entry in `Project.protocols`. `webhooksFileSchema` and `webhookFolderFileSchema` keep their names and exports; they moved to `webhooks/schema.ts`.
 
+A protocol module's scripting facet (`ProtocolScripting`) has a new required `levelTypes()`: the generated types an API's, interface's or folder's script is checked against, without any one operation's messages (#334). `ScriptedRequest.scripts` is optional and `ScriptedRequest.outer` lists the levels' scripts, outermost first; `SentScripts.levels` lists each script that ran, in order. `scriptLevels`, `activeLevels`, `containerScriptLevels` and `levelScriptTypes` build and read them.
+
 A kind with no containers is absent from `containers`: a loaded project, a new one and one whose last API of a kind was removed through a writer all leave it out. Build a project's containers through the writers, so each container literal is checked against its own type rather than `ContainerBase`.
 
 ## Migrating to 3.1

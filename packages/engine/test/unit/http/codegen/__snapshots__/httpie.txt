@@ -1,0 +1,63 @@
+=== query and headers
+http --follow \
+  GET 'https://api.example.com/v1/items?q=red%20shoes&page=2' \
+  'Accept:application/json' \
+  'X-Trace:it'\''s "quoted"' \
+  'X-Trace:second'
+
+=== json body
+http --follow \
+  --timeout=30 \
+  POST 'https://api.example.com/v1/items' \
+  'Content-Type:application/json' \
+  <<'EOF'
+{
+  "name": "Widget",
+  "price": 9.5
+}
+EOF
+
+=== form body
+http --form \
+  --follow \
+  POST 'https://api.example.com/login' \
+  'user=ada lovelace' \
+  'scope=read&write'
+
+=== multipart body
+http --multipart \
+  --follow \
+  POST 'https://api.example.com/upload' \
+  'title=Report' \
+  'file@/tmp/report.pdf;type=application/pdf'
+
+=== binary body
+http --follow \
+  PUT 'https://api.example.com/blobs/1' \
+  'Content-Type:application/octet-stream' \
+  < '/tmp/blob.bin'
+
+=== basic auth from the environment
+http --follow \
+  --auth='ada:'"$WIREBENCH_SECRET_PASSWORD" \
+  GET 'https://api.example.com/me'
+
+=== bearer token and query key from the environment
+http --follow \
+  DELETE 'https://api.example.com/items/7?api_key='"$WIREBENCH_SECRET_KEY" \
+  'Authorization:Bearer '"$WIREBENCH_SECRET_API_TOKEN"
+
+=== insecure, no redirects, redirect limit ignored
+http --timeout=1.5 \
+  --verify=no \
+  GET 'https://self-signed.example.com/health'
+
+=== soap envelope
+http POST 'http://soap.example.com/calculator' \
+  'Content-Type:text/xml;charset=UTF-8' \
+  'SOAPAction:"http://tempuri.org/Add"' \
+  <<'EOF'
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>
+EOF

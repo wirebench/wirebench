@@ -256,14 +256,18 @@ describe('Postman entity mapping (map.ts)', () => {
       info: { name: 'Pets' },
       variable: [
         { key: 'id', value: '{{$guid}}' },
+        { key: 'job', value: '{{$randomJobTitle}}' },
         { key: 'blob', value: {} as unknown as string },
       ],
       item: [],
     });
-    expect(mapped.projectProperties.variables.map((v) => v.name)).toEqual(['id']);
+    expect(mapped.projectProperties.variables.map((v) => [v.name, v.value])).toEqual([
+      ['id', '${$guid}'],
+      ['job', '{{$randomJobTitle}}'],
+    ]);
     expect(mapped.summary.warnings).toEqual(
       expect.arrayContaining([
-        'Dynamic variables are kept as written and not expanded: $guid',
+        'Dynamic variables are kept as written and not expanded: $randomJobTitle',
         'Variable "blob" has a value that is not text and was skipped.',
       ]),
     );

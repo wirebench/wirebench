@@ -7,8 +7,18 @@ import { soapExplorer } from './explorer.js';
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
 // thing that pulls it in — is split out and fetched the first time a request tab is opened.
 const RequestEditor = lazy(async () => {
-  const module = await import('../../features/request-editor/request-editor.js');
-  return { default: ({ id }: { readonly id: string }) => <module.RequestEditor requestId={id} /> };
+  // The request's variables, for completion, hover and the unresolved marks in every field (#340).
+  const [module, { VariableAssistProvider }] = await Promise.all([
+    import('../../features/request-editor/request-editor.js'),
+    import('../../features/environments/variable-assist-provider.js'),
+  ]);
+  return {
+    default: ({ id }: { readonly id: string }) => (
+      <VariableAssistProvider requestId={id}>
+        <module.RequestEditor requestId={id} />
+      </VariableAssistProvider>
+    ),
+  };
 });
 
 const InterfaceEditor = lazy(async () => {

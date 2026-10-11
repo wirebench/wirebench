@@ -75,6 +75,7 @@ describe('OpenCollection environments', () => {
         - { name: sealed, value: "s3cr3t", secret: true }
         - { name: authToken, value: "{{other}}" }
         - { name: sessionId, value: "{{$guid}}" }
+        - { name: jobTitle, value: "{{$randomJobTitle}}" }
         - { name: off, value: "x", disabled: true }
 items: []
 `);
@@ -94,14 +95,15 @@ items: []
       secretValue: 's3cr3t',
     });
     expect(dev.get('authToken')).toEqual({ name: 'authToken', value: '${other}', enabled: true, secret: false });
-    expect(dev.get('sessionId')).toMatchObject({ value: '{{$guid}}', secret: false });
+    expect(dev.get('sessionId')).toMatchObject({ value: '${$guid}', secret: false });
+    expect(dev.get('jobTitle')).toMatchObject({ value: '{{$randomJobTitle}}', secret: false });
     expect(dev.get('off')).toMatchObject({ value: 'x', enabled: false });
     expect(m.variables.report.notes).toContain(
       'dev: "apiPassword" looks like a credential, so its value was imported as a secret rather than plain text.',
     );
     const plain = m.variables.environments.flatMap((e) => e.variables.filter((v) => !v.secret));
     expect(JSON.stringify(plain)).not.toContain('hunter2');
-    expect(m.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $guid');
+    expect(m.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $randomJobTitle');
   });
 
   it('cuts literal user info from a URL value, with a warning', () => {
@@ -292,13 +294,13 @@ ${item('Neq', '        - { expression: res.headers.x-api-key, operator: neq, val
       variables:
         - { name: sealed, value: "{{$secretish}}x", secret: true }
         - { name: password, value: "{{$alsosecret}}pw" }
-        - { name: plain, value: "{{$guid}}" }
+        - { name: plain, value: "{{$randomJobTitle}}" }
 items: []
 `);
     const report = JSON.stringify([m.report, m.variables.report]);
     expect(report).not.toContain('secretish');
     expect(report).not.toContain('alsosecret');
-    expect(m.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $guid');
+    expect(m.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $randomJobTitle');
   });
 
   it('notes the assertions of gRPC and WebSocket items as not imported', () => {

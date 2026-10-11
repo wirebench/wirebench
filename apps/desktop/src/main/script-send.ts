@@ -13,7 +13,7 @@
  * single send keeps them in its project's session, which `${#Sequence#name}` reads outside a run.
  */
 
-import type { PropertyMap, RequestScripting, ScriptValue, SentScripts } from '@wirebench/engine';
+import type { PropertyMap, RequestScripting, ScriptTest, ScriptValue, SentScripts } from '@wirebench/engine';
 import type { ScriptLookup } from './script-host.js';
 import { redactSecretText } from './redact.js';
 import type { ScriptResultWire } from '../shared/wire-base.js';
@@ -66,22 +66,34 @@ export function scriptsFailed(error: unknown): SentScripts {
     values: [],
     log: { lines: [], truncated: false },
     error: { code: 'script-error', message: error instanceof Error ? error.message : String(error) },
+    levels: [],
   };
 }
 
 const mask = (text: string): string => redactSecretText(text, { show: false });
 
+const maskTest = (test: ScriptTest): ScriptResultWire['tests'][number] => ({
+  name: mask(test.name),
+  passed: test.passed,
+  ...(test.message !== undefined ? { message: mask(test.message) } : {}),
+});
+
 /** What a send's scripts did, as its summary carries it: every string masked. */
 export function toScriptResultWire(sent: SentScripts): ScriptResultWire {
   return {
-    tests: sent.tests.map((test) => ({
-      name: mask(test.name),
-      passed: test.passed,
-      ...(test.message !== undefined ? { message: mask(test.message) } : {}),
-    })),
+    tests: sent.tests.map(maskTest),
     log: sent.log.lines.map(mask),
     truncated: sent.log.truncated,
     ...(sent.error !== undefined ? { error: { code: sent.error.code, message: mask(sent.error.message) } } : {}),
+    levels: sent.levels.map((level) => ({
+      level: level.level,
+      name: level.name,
+      phase: level.phase,
+      tests: level.tests.map(maskTest),
+      log: level.log.lines.map(mask),
+      truncated: level.log.truncated,
+      ...(level.error !== undefined ? { error: { code: level.error.code, message: mask(level.error.message) } } : {}),
+    })),
   };
 }
 

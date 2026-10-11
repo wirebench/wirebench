@@ -26,8 +26,8 @@ import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { createRunSender } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import type { SelectedRequest } from '../../../src/run/select.js';
-import type { RequestScripts, ScriptOutcome } from '../../../src/script/model.js';
-import { RequestScripting } from '../../../src/script/request-scripts.js';
+import type { RequestScripts, ScriptOutcome, ScriptPhase } from '../../../src/script/model.js';
+import { RequestScripting, type ScriptedRequest, type ScriptRunLevel } from '../../../src/script/request-scripts.js';
 import type { ScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { createWebhookCollection } from '../../../src/webhooks/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
@@ -173,13 +173,8 @@ class RecordingScripting extends RequestScripting {
     return Promise.resolve();
   }
 
-  override pre(): Promise<Extract<ScriptOutcome, { ok: true }>> {
-    events.push('pre');
-    return Promise.resolve({ ok: true, ...NOTHING });
-  }
-
-  override post(): Promise<ScriptOutcome> {
-    events.push('post');
+  override runLevel(_request: ScriptedRequest, _level: ScriptRunLevel, phase: ScriptPhase): Promise<ScriptOutcome> {
+    events.push(phase);
     return Promise.resolve({ ok: true, ...NOTHING });
   }
 }

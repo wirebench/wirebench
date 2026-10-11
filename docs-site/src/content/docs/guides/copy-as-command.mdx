@@ -1,6 +1,6 @@
 ---
-title: Copy as a command
-description: Turn a SOAP, REST, gRPC or WebSocket request into the command a shell would run — curl, grpcurl or websocat — from the Code panel or the command palette.
+title: Copy as a command or code
+description: Turn a request into the command a shell would run (curl, grpcurl or websocat), into code in eleven languages, or into the wirebench run line that sends it, from the Code panel or the command palette.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -16,7 +16,9 @@ properties expanded and the request's credentials in place, masked unless you ch
 | gRPC      | `grpcurl`  |
 | WebSocket | `websocat` |
 
-Each command comes in two shell flavours: **POSIX shell** and **PowerShell**.
+Each command comes in two shell flavours: **POSIX shell** and **PowerShell**. A SOAP or REST request can
+also be shown as [code in another language](#code-in-other-languages), or as the
+[`wirebench run` line](#the-wirebench-run-line) that sends it from a terminal.
 
 ## The Code panel
 
@@ -29,7 +31,9 @@ The **Code** panel shows the command for the request in front of you and regener
 2. Open the panel with the **Code** icon on the right rail, **Toggle Code Panel**
    (<kbd>⌘⌥B</kbd> / <kbd>Ctrl+Alt+B</kbd>), or, in a SOAP request, **Request: Show Code** from the
    command palette.
-3. Choose the **Shell**: **POSIX shell** or **PowerShell**. Wirebench remembers the choice.
+3. Choose the **Language**: **cURL — POSIX shell**, **cURL — PowerShell**, one of the languages below, or
+   **wirebench run**. Wirebench remembers the choice. A gRPC or WebSocket request offers its own command
+   in either shell.
 4. Click **Copy**.
 
 </Steps>
@@ -39,6 +43,43 @@ For a SOAP or REST request, **Import cURL…** beside **Copy** does the reverse:
 `curl` command into a new request. See [cURL commands](/wirebench/docs/guides/importers/#curl-commands).
 
 Press <kbd>Escape</kbd> or the close icon to dismiss the panel.
+
+## Code in other languages
+
+For a SOAP or REST request the **Language** list also offers:
+
+| Language                       | Notes                                                    |
+| ------------------------------ | -------------------------------------------------------- |
+| JavaScript — fetch             | Node.js 18 or later                                      |
+| Node.js — axios                | Answers every status rather than throwing on a 4xx or 5xx |
+| Python — requests              |                                                          |
+| Go — net/http                  | A whole program; imports only what it uses               |
+| Java — HttpClient              | `java.net.http`; a multi-line body needs Java 15 or later |
+| Java — OkHttp                  | OkHttp 4                                                 |
+| C# — HttpClient                | Top-level statements (.NET 6 or later)                   |
+| PHP — cURL                     |                                                          |
+| Ruby — Net::HTTP               |                                                          |
+| PowerShell — Invoke-RestMethod | PowerShell 7                                             |
+| HTTPie                         |                                                          |
+
+Every snippet is built from the same resolved request as the `curl` command, so the URL, headers, body
+and credentials match what a send puts on the wire.
+
+Under the list, three settings apply to the chosen language and are remembered for it:
+
+- **Indent**: 2 spaces, 4 spaces or a tab. Each language starts with its own convention.
+- **Redirects**: as the request, follow, or don't follow.
+- **Timeout (s)**: blank takes the request's own timeout; 0 means none.
+
+When a library cannot do what the request does, the snippet says so in a comment and a note appears
+under it. For example, `fetch` cannot skip certificate verification, and Ruby's `Net::HTTP` never
+follows a redirect.
+
+## The `wirebench run` line
+
+**wirebench run** shows the [command line](/wirebench/docs/guides/run-in-ci/) that sends the saved request: the
+project folder, the request's path in it, and `--env` with the active environment. It runs the request as
+saved, so save your edits first.
 
 ## From the command palette
 
@@ -63,15 +104,22 @@ rather than as the saved request would be sent now.
 
 ## Secrets
 
-Credentials from a request's authentication settings are masked as `<redacted>` by default: a Basic
+In code, a credential is never written out. Each snippet reads it from the environment variable that
+[`wirebench run`](/wirebench/docs/guides/run-in-ci/) reads it from, such as `WIREBENCH_SECRET_API_TOKEN`, so
+it runs once that variable is set. A `${secret:name}` reference becomes a read of
+`WIREBENCH_SECRET_<NAME>`. The panel says *Secrets are read from WIREBENCH_SECRET\_\* environment
+variables unless Show secrets is on.* NTLM, Kerberos and an OAuth 2 access token are not written into a
+snippet; a note says so.
+
+In a command, credentials from a request's authentication settings are masked as `<redacted>` by default: a Basic
 password, a bearer token, an API key in a header or the query string. A SOAP or gRPC command also masks
 an `Authorization` header typed by hand. A REST or WebSocket command copies a typed header as written, so
 keep credentials in the authentication settings or behind a `${secret:…}` reference. The panel says *Secrets are masked unless Show
 secrets is on.*
 
 **Toggle Show Secrets in HTTP Log** from the command palette shows them for the current session, in the
-HTTP Log and in the command alike. A command copied with secrets showing carries real credentials, so
-treat it as a secret.
+HTTP Log, the command and the code alike. A command or snippet copied with secrets showing carries real
+credentials, so treat it as a secret.
 
 Some things stay out whatever the setting:
 

@@ -222,8 +222,20 @@ describe('explorerMenuItems on a REST row', () => {
       'Import cURL…',
       'Rename…',
       'Auth…',
+      'Scripts…',
       'Delete',
     ]);
+  });
+
+  it('Scripts… opens the folder scripts dialog on a REST or gRPC folder, and a WebSocket folder has none (#334)', () => {
+    const rest = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+    rest.find((item) => item.label === 'Scripts…')?.run();
+    expect(useUiStore.getState().folderScriptsId).toBe('f1');
+
+    const grpc = node({ kind: 'folder', id: 'folder:g1', apiId: 'a1', folderId: 'g1', ownerKind: 'grpc' });
+    expect(explorerMenuItems(grpc).map((item) => item.label)).toContain('Scripts…');
+    const ws = node({ kind: 'folder', id: 'folder:w1', apiId: 'a1', folderId: 'w1', ownerKind: 'websocket' });
+    expect(explorerMenuItems(ws).map((item) => item.label)).not.toContain('Scripts…');
   });
 
   it('Auth… opens the folder credentials dialog, which is a folder’s only editable field', () => {
@@ -287,7 +299,14 @@ describe('explorerMenuItems on a gRPC row', () => {
       node({ kind: 'folder', id: 'folder:f1', apiId: 'g1', folderId: 'f1', ownerKind: 'grpc' }),
     );
 
-    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Auth…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual([
+      'New folder',
+      'New request',
+      'Rename…',
+      'Auth…',
+      'Scripts…',
+      'Delete',
+    ]);
   });
 
   it('offers a gRPC request duplicate, rename and delete, and no Open', () => {
@@ -320,7 +339,7 @@ describe('explorerMenuItems on a WebSocket row', () => {
     ]);
   });
 
-  it('offers a folder inside a WebSocket API the same entries as a gRPC folder, minus Import cURL…', () => {
+  it('offers a folder inside a WebSocket API the same entries as a gRPC folder, minus Scripts…', () => {
     const items = explorerMenuItems(
       node({ kind: 'folder', id: 'folder:f1', apiId: 'w1', folderId: 'f1', ownerKind: 'websocket' }),
     );

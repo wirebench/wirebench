@@ -23,6 +23,11 @@ export type { KeyValueEntry } from './model.js';
 // The `${secret:name}` name rule, so the renderer's secret review checks a name typed into it
 // exactly as main's move will — a request's headers, query and body are where those tokens land.
 export { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
+// Where a text's `${…}` references are, so the editor completes, explains and marks them (#340)
+// by the same scanning rules the send expands them with.
+export { propertyReferences, type PropertyReference, type PropertyReferenceForm } from '../project/references.js';
+// The Dynamic scope's generators, which the body editors' `${$` completion lists (#333).
+export { DYNAMIC_GENERATORS, type DynamicGeneratorInfo } from '../project/dynamic.js';
 export {
   createSseParser,
   eventStreamDocument,

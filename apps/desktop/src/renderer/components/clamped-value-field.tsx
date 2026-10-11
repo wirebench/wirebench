@@ -13,6 +13,7 @@
  * what commit and Escape mean.
  */
 import { useLayoutEffect, useRef, useState } from 'react';
+import { VariableText, type VariableFieldBindings } from './variable-field.js';
 
 /** One line of text, and the vertical padding plus border around it: 26px, the `h-row` height. */
 const LINE = 18;
@@ -37,9 +38,22 @@ export interface ClampedValueFieldProps {
   readonly readOnly?: boolean;
   /** The look of the box — border, background, text size — as the table's other inputs have it. */
   readonly className: string;
+  /**
+   * Variable help from the surrounding request editor (#340): completion while editing, and the
+   * folded copy drawn with its references coloured, the unresolved ones underlined and hoverable.
+   */
+  readonly variableField?: VariableFieldBindings;
 }
 
-export function ClampedValueField({ value, onChange, onBlur, onKeyDown, className, ...rest }: ClampedValueFieldProps) {
+export function ClampedValueField({
+  value,
+  onChange,
+  onBlur,
+  onKeyDown,
+  className,
+  variableField,
+  ...rest
+}: ClampedValueFieldProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [focused, setFocused] = useState(false);
   // The table's class may fix one row's height or size to the content; here the height is set below.
@@ -61,10 +75,28 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
     area.style.overflowY = focused && full > height ? 'auto' : 'hidden';
   }, [value, focused]);
 
+  const keyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+      // Enter saves, as it does in every other cell; a header value never holds a line break.
+      event.preventDefault();
+    }
+    onKeyDown?.(event);
+  };
+  const blur = (): void => {
+    setFocused(false);
+    onBlur?.();
+  };
+  const assisted =
+    variableField?.active === true ? variableField.fieldProps({ onKeyDown: keyDown, onBlur: blur }) : undefined;
+
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0" {...variableField?.wrapperProps}>
       <textarea
-        ref={ref}
+        {...assisted}
+        ref={(element) => {
+          ref.current = element;
+          assisted?.ref(element);
+        }}
         rows={1}
         spellCheck={false}
         value={value}
@@ -78,17 +110,8 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
         onFocus={() => {
           setFocused(true);
         }}
-        onBlur={() => {
-          setFocused(false);
-          onBlur?.();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-            // Enter saves, as it does in every other cell; a header value never holds a line break.
-            event.preventDefault();
-          }
-          onKeyDown?.(event);
-        }}
+        onBlur={assisted?.onBlur ?? blur}
+        onKeyDown={assisted?.onKeyDown ?? keyDown}
         {...rest}
       />
       {!focused && (
@@ -99,9 +122,10 @@ export function ClampedValueField({ value, onChange, onBlur, onKeyDown, classNam
           // the clamp, which needs exactly this display and overflow.
           style={CLAMP_TWO_LINES}
         >
-          {value}
+          {variableField?.active === true ? <VariableText text={value} /> : value}
         </div>
       )}
+      {variableField?.popups}
     </div>
   );
 }

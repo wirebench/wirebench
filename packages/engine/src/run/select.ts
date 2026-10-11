@@ -107,3 +107,15 @@ export function findStepRequest(
   const runnable = candidates(project, registry).find((candidate) => candidate.item.request.id === requestId);
   return runnable !== undefined ? { kind: 'found', selected: asSelected(runnable.item) } : { kind: 'missing' };
 }
+
+/**
+ * The selector `wirebench run` takes for one request — its path on disk, without the
+ * `.request.yaml` suffix — or undefined when a run cannot send it.
+ */
+export function runSelectorOf(
+  project: Project,
+  requestId: string,
+  registry: ProtocolRegistry = defaultRegistry(),
+): string | undefined {
+  return candidates(project, registry).find((candidate) => candidate.item.request.id === requestId)?.diskPath;
+}

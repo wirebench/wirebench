@@ -7,31 +7,49 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 Preferences hold everything that applies across projects — transport defaults, the theme, keyboard
 shortcuts — as opposed to a project's own settings, which travel with the project file. Open
-Preferences with <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>, or from the command palette.
+**Settings** with <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>, the gear at the foot of the activity bar, or the
+command palette.
+
+## The Settings page
+
+Settings takes the whole window while it is open, and nothing you had open behind it changes. On the
+left are **← Back to app**, a search field, and the sections in five groups; the chosen section is on
+the right. **Back to app** or <kbd>Escape</kbd> returns to your work (Escape leaves a text field alone
+while it has focus, so it can undo what you were typing).
+
+Every setting is a row: its name, a line saying what it does, and its control on the right. Switches,
+segmented controls and drop-downs apply the moment you change them; text and number fields apply when
+you press <kbd>Enter</kbd> or move on, and <kbd>Escape</kbd> puts back the previous value.
+
+- **Changed settings** — a row that differs from its default shows a small dot, and a **Reset** link
+  appears next to its name when you hover over or tab into it; it puts back just that setting. Sections
+  with changes have a dot in the sidebar.
+- **Reset a whole section** — the **•••** menu next to the section's title has
+  **Reset _section_ to defaults**.
+- **Search** — type in the search field (<kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>) to list every matching
+  setting from every section, each labelled with where it lives, for example _Requests › HTTP_. The
+  controls in the results work as they do in their section. <kbd>Escape</kbd> clears the search.
 
 ## Sections
 
-Preferences is a list of sections on the left and that section's form on the right. Every field
-commits as you change it (or on blur, for text and number fields); **Reset section** restores that
-section's defaults without touching any other.
-
-| Section | What it covers |
-| --- | --- |
-| **HTTP** | User-Agent, request/response compression, keep-alive vs. `Connection: close`, socket timeout, max connections, whether to offer HTTP/2, and the chunking threshold |
-| **Proxy** | No proxy / system proxy / manual, with host, port, username, password, and a comma-separated exclude list (hosts, `*.wildcards`, CIDR blocks, `localhost`) |
-| **SSL** | Minimum TLS version, a CA bundle to trust in addition to the system store, the default client keystore, how many days ahead certificate expiry warnings start, and why there's no global "trust all certificates" switch |
-| **REST** | Follow redirects and the maximum redirect chain length, the default `Accept` header, and the pretty-print size threshold — all floors a request's own Settings tab can override |
-| **Git** | The `git` executable Wirebench runs for shared workspaces: auto-detected, or located with a picker |
-| **WSDL** | Definition caching and compression, strict schema handling, and defaults for generated requests (sample values, type comments, optional elements, pretty print) |
-| **WS-I** | WS-I Basic Profile validation: the profile (currently BP1.1 only) and whether its report is verbose |
-| **Editor** | Monaco's font, tab size, line numbers, word wrap, validate-before-send, auto-format responses, and autosave |
-| **Secrets** | How long a value fetched from a secret manager stays in memory |
-| **Terminal** | Whether a multi-line paste into an SSH terminal asks first, and whether a selection is copied to the clipboard as soon as it is made |
-| **UI** | Theme, the default request layout (side-by-side/stacked, split/tabs), delete confirmations, and how many history entries and HTTP Log rows to keep |
-| **Updates** | Whether Wirebench checks GitHub Releases for a new version at launch |
-| **Mock services** | Whether a [mock](/wirebench/docs/guides/mock-services/) listens on every network interface instead of this machine only |
-| **Accounts** | Every server you're known to, sign out or remove one, add another, and whether the status bar shows who you're signed in as |
-| **Shortcuts** | Every command's keybinding, and a way to change it |
+| Group | Section | What it covers |
+| --- | --- | --- |
+| General | **Appearance** | Theme (system, light or dark); the editor's font family and size, tab size, line numbers and word wrap; the default request layout (side by side or stacked, split or tabs) |
+| | **Behaviour** | Validate before sending, format responses, autosave, confirm before deleting, and how many history entries and HTTP Log rows to keep |
+| | **Keyboard shortcuts** | Every command's keybinding, and a way to change it |
+| | **Updates** | Whether Wirebench checks GitHub Releases for a new version at launch |
+| Requests | **HTTP** | User-Agent, request/response compression, keep-alive vs. `Connection: close`, socket timeout, max connections, whether to offer HTTP/2, and the chunking threshold |
+| | **REST** | Follow redirects and the maximum redirect chain length, the default `Accept` header, the pretty-print size threshold, and the OAuth2 callback port — all floors a request's own Settings tab can override |
+| | **WSDL** | Definition caching and compression, strict schema handling, and defaults for generated requests (sample values, type comments, optional elements, pretty print) |
+| | **WS-I** | WS-I Basic Profile validation: the profile (currently BP1.1 only) and whether its report is verbose |
+| Network | **Proxy** | No proxy / system proxy / manual, with host, port, username, password, and a comma-separated exclude list (hosts, `*.wildcards`, CIDR blocks, `localhost`) |
+| | **SSL / TLS** | Minimum TLS version, a CA bundle to trust in addition to the system store, the default client keystore, how many days ahead certificate expiry warnings start, and why there's no global "trust all certificates" switch |
+| Workspace | **Git** | The `git` executable Wirebench runs for shared workspaces: auto-detected, or located with a picker |
+| | **Mock services** | Whether a [mock](/wirebench/docs/guides/mock-services/) listens on every network interface instead of this machine only |
+| | **Terminal** | Whether a multi-line paste into an SSH terminal asks first, and whether a selection is copied to the clipboard as soon as it is made |
+| | **Secrets** | How long a value fetched from a secret manager stays in memory |
+| Account | **Accounts** | Every server you're known to, sign out or remove one, add another, and whether the status bar shows who you're signed in as |
+| | **Devices & tokens** | CI tokens for the open server workspace |
 
 <Aside type="tip" title="A request's own settings win">
 REST and WSDL preferences are defaults, not locks. A request or project that sets its own
@@ -46,18 +64,18 @@ password goes through the same secret store as any other credential (see
 runs a native file picker, since Wirebench never trusts a path the interface alone claims.
 
 On a managed machine, your organization can lock the proxy, the minimum TLS version, the CA bundle and
-update checks. Locked settings are read-only and marked **Locked by policy**; see
+update checks. Locked settings are read-only and marked **Managed**; see
 [Managed preferences](/wirebench/docs/guides/managed-preferences/).
 
 ### Locating git
 
-Preferences → Git only ever asks Wirebench to detect, locate, or clear the git executable — it
+Settings → Git only ever asks Wirebench to detect, locate, or clear the git executable — it
 never lets you type a path directly. **Detect** looks for `git` where it would normally be found;
 if that fails, or you want a different one, **Browse…** opens a native picker.
 
 ### Accounts
 
-Preferences → Accounts lists every server Wirebench knows about, each with its email, display
+Settings → Accounts lists every server Wirebench knows about, each with its email, display
 name, device name, and whether it's currently signed in. Per row, **Sign out** ends that session
 without forgetting the server, and **Remove** signs out and forgets it; **Add server…** opens the
 same sign-in dialog as the status bar item, to add another. See
@@ -86,13 +104,14 @@ off by default.
 
 ## Theme
 
-Preferences → UI → **Theme** switches between **Dark**, **Light**, and **Follow the system**.
+Settings → Appearance → **Theme** switches between **System** (follow the operating system), **Light**, and
+**Dark**.
 
 ## Rebinding shortcuts
 
 <Steps>
 
-1. Open Preferences → **Shortcuts**. Every command is listed with its category, its default
+1. Open Settings → **Keyboard shortcuts**. Every command is listed with its category, its default
    binding, and its current one.
 2. Click a row's shortcut cell to start recording, then press the key combination you want.
    <kbd>Escape</kbd> cancels without changing anything; <kbd>Backspace</kbd> leaves the command
@@ -102,13 +121,13 @@ Preferences → UI → **Theme** switches between **Dark**, **Light**, and **Fol
 
 </Steps>
 
-![Preferences open on Shortcuts, listing commands with their category and key binding](/wirebench/docs/images/preferences/shortcuts.png)
+![Settings open on Keyboard shortcuts, listing commands with their category and key binding](/wirebench/docs/images/preferences/shortcuts.png)
 
 A rebind takes effect immediately and is remembered across restarts. Some defaults you'll see
 listed: <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> for the command palette (also <kbd>⌘⇧P</kbd> /
 <kbd>Ctrl+Shift+P</kbd>), <kbd>⌘P</kbd> / <kbd>Ctrl+P</kbd> for quick open, <kbd>⌘I</kbd> /
 <kbd>Ctrl+I</kbd> for Import, <kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd> to save, <kbd>⌘⏎</kbd> /
-<kbd>Ctrl+Enter</kbd> to send, and <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd> for Preferences itself. The
+<kbd>Ctrl+Enter</kbd> to send, and <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd> for Settings itself. The
 full, generated list is in [Commands and shortcuts](/wirebench/docs/reference/commands/).
 
 ## Layout

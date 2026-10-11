@@ -11,6 +11,7 @@ import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
 import { BooleanSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
+import { ScriptsTab } from '../scripts/scripts-tab.js';
 import { GrpcDefinitionCard } from './grpc-definition-card.js';
 import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
@@ -133,6 +134,15 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
             api.auth?.type === 'oauth2' ? <OAuth2StatusPanel ownerId={apiId} grant={api.auth.grant} /> : undefined
           }
         />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Scripts"
+        hint="Run around every call in this API, before any folder’s and the request’s own (#334)."
+      >
+        <div data-testid="grpc-api-scripts" className="flex h-[28rem] flex-col rounded-md border border-hairline">
+          <ScriptsTab requestId={apiId} scripts={api.scripts} level="API" />
+        </div>
       </SettingsGroup>
 
       <SettingsGroup title="Definition">

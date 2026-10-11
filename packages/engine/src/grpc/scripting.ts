@@ -10,6 +10,7 @@ import type { HeaderPair, ScriptFailure } from '../script/model.js';
 import { entriesOf, pairsOf, recordPairs } from '../script/send.js';
 import type { GrpcCallResult } from './call.js';
 import type { GrpcResolvedInput } from './run.js';
+import { grpcScriptTypes } from './script-types.js';
 
 export interface GrpcRequestSnapshot {
   readonly protocol: 'grpc';
@@ -155,6 +156,7 @@ const requestSchema: z.ZodType<GrpcRequestSnapshot> = z.object({
 /** gRPC's scripting facet. */
 export const grpcScripting: ProtocolScripting<GrpcRequestSnapshot, GrpcResponseSnapshot> = {
   declarations: (phase) => (phase === 'pre' ? GRPC_PRE : GRPC_POST),
+  levelTypes: () => grpcScriptTypes(undefined, '', ''),
   reference: () => [
     { title: 'gRPC: pre-request', declarations: GRPC_PRE },
     { title: 'gRPC: post-response', declarations: GRPC_POST },

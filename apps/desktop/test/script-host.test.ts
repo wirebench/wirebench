@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createApi,
+  createFolder,
   createMock,
   createMockOperation,
   createMockResponse,
@@ -109,6 +110,58 @@ describe('lookup', () => {
       'Shop / Echo',
       'Echo',
     ]);
+  });
+});
+
+describe('level scripts (#334)', () => {
+  const PRE: RequestScripts = { pre: { text: 'log("level");' }, api: 'wirebench', enabled: true, secrets: [] };
+
+  function levelled(own: RequestScripts | undefined, folder: RequestScripts = PRE): Project {
+    const request = createRestRequest('Echo', { id: 'r1', url: '/echo' });
+    const api = createApi('Shop', {
+      id: 'api-1',
+      baseUrl: 'http://shop.test',
+      scripts: PRE,
+      folders: [
+        createFolder('Orders', {
+          id: 'f-1',
+          scripts: folder,
+          requests: [own === undefined ? request : { ...request, scripts: own }],
+        }),
+      ],
+    });
+    return { ...createProject('Demo', { id: 'p1' }), containers: { rest: [api] } };
+  }
+
+  it('looks up the API’s and folder’s scripts with the request’s, outermost first', async () => {
+    const on = await hostFor(levelled(SCRIPTS)).lookup('r1');
+    expect(on.kind).toBe('on');
+    if (on.kind !== 'on') return;
+    expect(on.request.outer?.map((level) => [level.level, level.name, level.stem])).toEqual([
+      ['api', 'Shop', 'api'],
+      ['folder', 'Orders', 'Orders/folder'],
+    ]);
+    expect(on.request.scripts).toEqual(SCRIPTS);
+  });
+
+  it('runs the levels of a request with no scripts of its own', async () => {
+    const on = await hostFor(levelled(undefined)).lookup('r1');
+    expect(on.kind === 'on' ? [on.request.scripts, on.request.outer?.length] : on).toEqual([undefined, 2]);
+  });
+
+  it('says the scripts are off when every level and the request are switched off', async () => {
+    const off = { ...PRE, enabled: false };
+    const project = levelled({ ...SCRIPTS, enabled: false }, off);
+    const api = project.containers['rest']![0] as ReturnType<typeof createApi>;
+    const allOff = { ...project, containers: { rest: [{ ...api, scripts: off }] } };
+    expect(await hostFor(allOff).lookup('r1')).toEqual({ kind: 'off' });
+  });
+
+  it('checks a level’s script in the editor against the generic declarations', { timeout: 60_000 }, async () => {
+    const scripts = hostFor(levelled(undefined));
+    expect(await scripts.diagnostics({ requestId: 'f-1', phase: 'pre' }, 'request.headers.set("a", "b");')).toEqual([]);
+    const wrong = await scripts.diagnostics({ requestId: 'api-1', phase: 'post' }, 'log(response.statuss);');
+    expect(wrong.map((d) => d.severity)).toEqual(['error']);
   });
 });
 

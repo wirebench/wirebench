@@ -20,7 +20,11 @@ ${#Workspace#region}
 ${#Global#userAgent}
 ${#System#HOME}
 ${#Sequence#token}
+${#Dynamic#guid}
 ```
+
+**Dynamic**, `${$name}` — the short form of `${#Dynamic#name}`, a value made fresh for each send (see
+[Dynamic values](#dynamic-values)).
 
 **Shorthand**, `${name}` — resolves through a fixed chain of scopes, stopping at the first one
 that defines `name`:
@@ -42,6 +46,7 @@ on your machine.
 | `Workspace` | The workspace's `properties` | When the project is inside a workspace |
 | `Global` | Properties set once for the whole app, independent of any project | Always |
 | `System` | The OS process environment (`process.env` by default) | Always, only via the explicit `${#System#name}` form |
+| `Dynamic` | A value generated for each send: a UUID, a timestamp, a random number or fake data | Always, via `${#Dynamic#name}` or `${$name}` |
 | `Sequence` | Values the earlier steps of a running [sequence](/wirebench/docs/guides/sequences/) lifted from their responses, or that a request's [scripts](/wirebench/docs/guides/scripts/) set | Only via the explicit `${#Sequence#name}` form: in a sequence run, in `wirebench run`, and in the app's single sends, which read the project's session values |
 
 A `Sequence` value came from a server, so it follows stricter rules than the others. It is never
@@ -50,6 +55,57 @@ expanded again, so `${…}` inside it stays as it is. It can't form another refe
 It is always escaped for the body it lands in. And it may not supply the scheme, host or port of a
 URL. In the app, a single send reads the values its project's scripts kept this session (the
 explorer lists them under **Values**); with none by that name, `${#Sequence#name}` is unresolved.
+
+## Dynamic values
+
+`${$name}` (or `${#Dynamic#name}`) is replaced by a value generated when the request is sent:
+
+```
+X-Request-Id: ${$guid}
+{"createdAt": "${$isoTimestamp}", "due": "${$isoTimestamp(+7d)}", "qty": ${$randomInt(1,100)}}
+```
+
+A generator can take arguments in parentheses, by position (`randomInt(1,100)`) or by name
+(`lorem(words=5)`). A reference inside them is expanded first, so `${$randomInt(1,${max})}` works.
+
+Each reference is generated **once per send**: the same `${$guid}` in the URL and a header of one
+request carries one value, and the next send makes a new one. `${$guid}` and `${$uuid}` count as the
+same reference; `randomInt(1,10)` and `randomInt(1,100)` do not. The HTTP Log and History show the
+values that were sent. A generated value is never expanded again.
+
+| Generator | Value | Arguments |
+| --- | --- | --- |
+| `guid` (`uuid`, `randomUUID`) | A random UUID, version 4 | — |
+| `timestamp` | The time in Unix seconds | an offset: `+1d`, `-30m` (`s`, `m`, `h`, `d`, `w`) |
+| `isoTimestamp` | The time in ISO 8601, UTC | an offset |
+| `randomInt` | A whole number, 0 to 1000 | `min,max` |
+| `randomBoolean` | `true` or `false` | — |
+| `randomAlphaNumeric` | Letters and digits, one by default | `length` |
+| `firstName`, `lastName`, `fullName`, `userName` | A made-up person | — |
+| `email`, `phone` | An address at an `example.` domain; a number in the reserved 555 range | — |
+| `streetAddress`, `city`, `country`, `countryCode` | A made-up address | — |
+| `company` | A company name | — |
+| `lorem` | Placeholder text, one sentence by default | `words=N`, `sentences=N` or `paragraphs=N` |
+| `datePast`, `dateFuture` | A date within a year before or after now, ISO 8601 | `days` |
+| `dateRecent` | A date within the last day | `days` |
+| `ip`, `ipv6`, `mac` | An address | — |
+| `url`, `domain` | An `https://` URL, a domain name | — |
+| `color`, `hexColor` | A colour name, `#rrggbb` | — |
+| `currencyCode`, `price` | An ISO 4217 code, a price with two decimals | — |
+| `fileName`, `mimeType` | A file name with an extension, a MIME type | — |
+
+The `random…` spellings imported files use work too (`randomFirstName`, `randomEmail`,
+`randomLoremWords`…), so an imported `{{$randomFirstName}}` becomes `${$randomFirstName}` and sends a
+name. An imported dynamic variable with no generator is kept as written, and the import report names
+it.
+
+In the app, type `${$` in a body editor to list the generators, or pick one from **Get Data…** in the
+form view.
+
+<Aside type="note">
+A property whose name starts with `$` is no longer reached by the shorthand: `${$x}` always means the
+Dynamic scope. Reach such a property through its explicit scope, `${#Project#$x}`.
+</Aside>
 
 ## Precedence
 
@@ -127,12 +183,34 @@ before a send) with a reason:
 | `cycle` | The property refers back to itself, directly or indirectly |
 | `too-deep` | Expansion recursed past the depth limit |
 | `malformed` | A `${` was never closed with a matching `}` |
+| `bad-arguments` | A dynamic generator refused its arguments, such as `${$randomInt(9,1)}` |
 
 <Aside type="note">
 An unresolved reference nested inside another property's value is still reported against the
 outer `${...}` you can see and edit — not against an offset inside the property's own text — so
 the message always points at something in front of you.
 </Aside>
+
+## In the editor
+
+A request's URL, parameters, headers, form fields, auth fields and body help you write references.
+They resolve against the variables the request would be sent with: the active environment, the
+project, the workspace, globals and the session's current values.
+
+- **Completion.** Type `${` to list the names in scope, with each one's scope. A name hidden by a
+  nearer scope is inserted in its explicit form, `${#Project#name}`, so the reference reaches the
+  variable you picked. `${#` lists the scopes, `${secret:` lists the secret names, and `${$` lists
+  the [dynamic values](#dynamic-values).
+- **Hover.** Point at a reference to see its value and scope, with a link to the page that edits it.
+  A value that reads a secret or an environment variable is always shown as `••••••`, even with
+  **Show secrets** on. A dynamic value's hover says what it generates; a variable whose value
+  generates one is shown as written, since each send makes a new value.
+- **Unresolved names.** A reference that resolves to nothing is underlined where it is written. In a
+  body it is also a warning marker. A `${$…}` name with no generator is marked too. `${#Sequence#…}` values and names built from other references
+  are known only during a send, so they are never marked.
+- **Set as Variable…** Select text in a request or a response, then right-click. Name the variable
+  and pick its scope. In a request the selection becomes a reference to it; in a response, only the
+  variable is created.
 
 ## Disabled variables
 

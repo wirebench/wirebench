@@ -723,6 +723,8 @@ export const interfaceWireSchema = interfaceSummarySchema.extend({
   auth: soapOwnerAuthWireSchema.optional(),
   /** The interface-level WS-Addressing defaults every request of it inherits. */
   wsaConfig: wsaConfigWireSchema.optional(),
+  /** The interface's scripts, run around every request of every operation (#334). */
+  scripts: requestScriptsWireSchema.optional(),
 });
 export type InterfaceWire = z.infer<typeof interfaceWireSchema>;
 

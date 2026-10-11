@@ -144,6 +144,7 @@ if (input.phase === 'pre') {
 /** Echo's scripting facet: one text, which is also every place a secret reference could be. */
 export const echoScripting: ProtocolScripting<EchoRequestSnapshot, EchoResponseSnapshot> = {
   declarations: (phase) => (phase === 'pre' ? ECHO_PRE : ECHO_POST),
+  levelTypes: () => '',
   reference: () => [
     { title: 'Echo: pre-request', declarations: ECHO_PRE },
     { title: 'Echo: post-response', declarations: ECHO_POST },

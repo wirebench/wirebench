@@ -34,6 +34,7 @@ export function writePostman(tree: XCollection, ctx: ExportContext, newId: () =>
   const collection: Json = {
     info: { _postman_id: newId(), name: tree.name, ...optional('description', tree.description), schema: SCHEMA },
     item: items,
+    ...optional('event', tree.scripts !== undefined ? events(tree.scripts) : undefined),
     ...optional('auth', tree.auth !== undefined ? writer.auth(tree.auth) : undefined),
     ...optional('variable', tree.variables.length > 0 ? tree.variables.map(variable) : undefined),
   };
@@ -142,6 +143,7 @@ class PostmanWriter {
       name: folder.name,
       ...optional('description', folder.description),
       item,
+      ...optional('event', folder.scripts !== undefined ? events(folder.scripts) : undefined),
       ...optional('auth', folder.auth !== undefined ? this.auth(folder.auth) : undefined),
     };
   }

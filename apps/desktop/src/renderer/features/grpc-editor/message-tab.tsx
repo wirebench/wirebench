@@ -23,6 +23,7 @@ import {
 } from '../../editor/json-completion.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import type { GrpcMethodKindWire } from '../../../shared/kinds/grpc/wire.js';
+import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 
 export interface MessageTabProps {
   readonly message: string;
@@ -54,6 +55,8 @@ export function MessageTab({
   onSend,
   onSave,
 }: MessageTabProps) {
+  // Variable help in the editor (#340): completion, hover, unresolved marks, Set as Variable.
+  const attachVariables = useEditorVariableAssist();
   const [modelUri, setModelUri] = useState<string | undefined>(undefined);
 
   // Keyed on the request type rather than set once at mount: picking a different method changes
@@ -97,6 +100,7 @@ export function MessageTab({
             editor.addCommand(SAVE_KEYBINDING, () => {
               onSave?.();
             });
+            attachVariables(editor, monacoNS);
             const model = editor.getModel();
             if (model === null) {
               return;

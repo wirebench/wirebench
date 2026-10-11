@@ -12,7 +12,7 @@ import type { KeyValueEntry } from '../http/entries.js';
 import { scriptFileName } from '../script/model.js';
 import type { RequestScripts } from '../script/model.js';
 import type { AuthConfig, DefinitionAuth } from './model.js';
-import { assertPathSegment, FOLDER_FILE, MAX_FOLDER_DEPTH } from './paths.js';
+import { assertPathSegment, FOLDER_FILE, FOLDER_SCRIPT_STEM, MAX_FOLDER_DEPTH } from './paths.js';
 import { compact, stringifyYaml } from './yaml.js';
 
 /**
@@ -37,12 +37,13 @@ export function definitionDocument(definition: { readonly auth?: DefinitionAuth 
 }
 
 /**
- * A request's `scripts` key as written, plus the script files beside it (#63). Each file is named
- * from the slug; the key records the name only so the YAML reads on its own.
+ * A request's or a level's `scripts` key as written, plus the script files beside it (#63, #334).
+ * Each file is named from `stem` (a request's slug, or a level's `api`, `interface` or `folder`);
+ * the key records the name only so the YAML reads on its own.
  */
 export function scriptsDocument(
   scripts: RequestScripts | undefined,
-  slug: string,
+  stem: string,
 ): { readonly document?: Record<string, unknown>; readonly files: readonly (readonly [string, string])[] } {
   if (scripts === undefined) {
     return { files: [] };
@@ -53,7 +54,7 @@ export function scriptsDocument(
     if (source === undefined) {
       return undefined;
     }
-    const name = scriptFileName(slug, phase, scripts.api);
+    const name = scriptFileName(stem, phase, scripts.api);
     assertPathSegment(name);
     files.push([name, source.text]);
     return name;
@@ -73,14 +74,14 @@ export function scriptsDocument(
   };
 }
 
-/** Writes a request's script files into `files` under `dir`. */
+/** Writes a request's or a level's script files into `files` under `dir`. */
 export function writeScriptFiles(
   files: Map<string, string>,
   dir: string,
   scripts: RequestScripts | undefined,
-  slug: string,
+  stem: string,
 ): void {
-  for (const [name, text] of scriptsDocument(scripts, slug).files) {
+  for (const [name, text] of scriptsDocument(scripts, stem).files) {
     files.set(`${dir}/${name}`, text);
   }
 }
@@ -105,6 +106,7 @@ export interface FolderNode<R> {
   readonly order: number;
   readonly description?: string;
   readonly auth?: AuthConfig;
+  readonly scripts?: RequestScripts;
   readonly folders: readonly FolderNode<R>[];
   readonly requests: readonly R[];
 }
@@ -119,7 +121,7 @@ export type RequestWriter<R> = (files: Map<string, string>, dir: string, request
  * @throws ProjectError `project-path-invalid` for an unsafe slug, `project-folder-too-deep` for a
  * tree deeper than {@link MAX_FOLDER_DEPTH} — before any path is built, never after.
  */
-export function addFolderFiles<R extends { readonly slug: string }>(
+export function addFolderFiles<R extends { readonly slug: string; readonly scripts?: RequestScripts }>(
   files: Map<string, string>,
   dir: string,
   node: Pick<FolderNode<R>, 'folders' | 'requests'>,
@@ -141,6 +143,16 @@ export function addFolderFiles<R extends { readonly slug: string }>(
       );
     }
     const childDir = `${dir}/${folder.slug}`;
+    const clash = folder.requests.find(
+      (request) => request.slug === FOLDER_SCRIPT_STEM && request.scripts !== undefined,
+    );
+    if (folder.scripts !== undefined && clash !== undefined) {
+      throw new ProjectError(
+        'duplicate-slug',
+        `Folder "${folder.name}" and its request slugged "${FOLDER_SCRIPT_STEM}" both have scripts, which would share one file; rename the request`,
+        { details: { file: `${childDir}/${FOLDER_SCRIPT_STEM}` } },
+      );
+    }
     files.set(
       `${childDir}/${FOLDER_FILE}`,
       stringifyYaml(
@@ -150,10 +162,12 @@ export function addFolderFiles<R extends { readonly slug: string }>(
           order: folder.order,
           description: folder.description,
           auth: folder.auth === undefined ? undefined : authDocument(folder.auth),
+          scripts: scriptsDocument(folder.scripts, FOLDER_SCRIPT_STEM).document,
           ...(folderExtra?.(folder) ?? {}),
         }),
       ),
     );
+    writeScriptFiles(files, childDir, folder.scripts, FOLDER_SCRIPT_STEM);
     addFolderFiles(files, childDir, folder, depth + 1, writeRequest, folderExtra);
   }
 }

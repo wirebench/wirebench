@@ -48,7 +48,7 @@ export default defineConfig({
             { label: 'Hosts and terminals', slug: 'guides/hosts-and-terminals' },
             { label: 'HTTP Log', slug: 'guides/http-log' },
             { label: 'History', slug: 'guides/history' },
-            { label: 'Copy as a command', slug: 'guides/copy-as-command' },
+            { label: 'Copy as a command or code', slug: 'guides/copy-as-command' },
             { label: 'Assertions', slug: 'guides/assertions' },
             { label: 'Sequences', slug: 'guides/sequences' },
             { label: 'Mock services', slug: 'guides/mock-services' },

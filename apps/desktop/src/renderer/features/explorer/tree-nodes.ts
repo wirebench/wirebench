@@ -146,8 +146,8 @@ export interface ExplorerNode {
    */
   readonly suffix?: string;
   /**
-   * Set on an interface, API or folder with requests beneath it whose scripts are switched off
-   * (#63): their ids, for **Switch on scripts…**.
+   * Set on an interface, API or folder whose own scripts, or whose requests' or inner folders'
+   * scripts, are switched off (#63, #334): their ids, for **Switch on scripts…**.
    */
   readonly scriptsOff?: readonly string[];
   /** Set on `placeholder` nodes: the kind of the container it stands for, as its file names it. */
@@ -415,16 +415,14 @@ export function buildExplorerTree(
   mocks: Readonly<Record<string, readonly ExplorerMock[]>> = {},
   placeholders: Readonly<Record<string, readonly UnsupportedContainerWire[]>> = {},
 ): ExplorerNode[] {
-  // Every request whose scripts are switched off, whichever protocol it is.
-  const scriptsOff = new Set(
-    [
-      ...requests,
-      ...Object.values(rest).flatMap((data) => data.requests),
-      ...Object.values(grpc).flatMap((data) => data.requests),
-    ]
-      .filter((request) => request.scripts?.enabled === false)
-      .map((request) => request.id),
-  );
+  // Every request, interface, API and folder whose scripts are switched off, whichever protocol it is.
+  const owners: readonly { readonly id: string; readonly scripts?: { readonly enabled: boolean } | undefined }[] = [
+    ...requests,
+    ...Object.values(rest).flatMap((data) => [...data.requests, ...data.apis, ...data.folders]),
+    ...Object.values(grpc).flatMap((data) => [...data.requests, ...data.apis]),
+    ...Object.values(interfaces),
+  ];
+  const scriptsOff = new Set(owners.filter((owner) => owner.scripts?.enabled === false).map((owner) => owner.id));
   const roots = projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
     const children: ExplorerNode[] = broken
@@ -563,22 +561,28 @@ const SCRIPT_CONTAINERS: ReadonlySet<ExplorerNodeKind> = new Set(
   EXPLORER_TREES.flatMap((tree) => tree.scriptContainers ?? []),
 );
 
-/** The ids of the requests under `nodes` whose scripts are off. */
-function scriptsOffUnder(nodes: readonly ExplorerNode[], off: ReadonlySet<string>): string[] {
-  return nodes.flatMap((node) => [
-    ...(node.requestId !== undefined && off.has(node.requestId) ? [node.requestId] : []),
-    ...scriptsOffUnder(node.children ?? [], off),
-  ]);
+/** The id of the interface, API or folder a container node stands for, whose scripts it carries (#334). */
+function levelIdOf(node: ExplorerNode): string | undefined {
+  return SCRIPT_CONTAINERS.has(node.kind) ? (node.folderId ?? node.interfaceId ?? node.apiId) : undefined;
+}
+
+/** The ids of `node`'s own scripts and those of the requests and levels under it, where they are off. */
+function scriptsOffAt(node: ExplorerNode, off: ReadonlySet<string>): string[] {
+  const own = node.requestId ?? levelIdOf(node);
+  return [
+    ...(own !== undefined && off.has(own) ? [own] : []),
+    ...(node.children ?? []).flatMap((child) => scriptsOffAt(child, off)),
+  ];
 }
 
 /** `node` with {@link ExplorerNode.scriptsOff} set on it and on every container beneath it. */
 function withScriptsOff(node: ExplorerNode, off: ReadonlySet<string>): ExplorerNode {
-  if (node.children === undefined) {
+  const children = node.children?.map((child) => withScriptsOff(child, off));
+  const ids = SCRIPT_CONTAINERS.has(node.kind) ? [...new Set(scriptsOffAt(node, off))] : [];
+  if (children === undefined && ids.length === 0) {
     return node;
   }
-  const children = node.children.map((child) => withScriptsOff(child, off));
-  const ids = SCRIPT_CONTAINERS.has(node.kind) ? [...new Set(scriptsOffUnder(children, off))] : [];
-  return { ...node, children, ...(ids.length > 0 ? { scriptsOff: ids } : {}) };
+  return { ...node, ...(children !== undefined ? { children } : {}), ...(ids.length > 0 ? { scriptsOff: ids } : {}) };
 }
 
 /**

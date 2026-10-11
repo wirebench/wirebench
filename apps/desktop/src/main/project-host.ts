@@ -25,9 +25,11 @@ import type { KeystoreCertificates, ProjectCertificateSources } from './certific
 import {
   createProject,
   DEFAULT_PREFERENCES,
+  DynamicValues,
   enabledProperties,
   generateMock,
   IMPORTED_SCRIPTS_DIR,
+  isProtectedEnvironment,
   loadKeystore,
   loadProject,
   overlayCurrent,
@@ -384,10 +386,14 @@ export class ProjectHost {
    * nothing to resolution there), else the project's. What *Send to environments…* names and
    * validates its environment ids against.
    */
-  sendEnvironments(): { environments: { id: string; name: string }[]; activeId: string | undefined } {
+  sendEnvironments(): {
+    environments: { id: string; name: string; protected?: boolean }[];
+    activeId: string | undefined;
+  } {
     if (this.open === undefined) {
       return { environments: [], activeId: undefined };
     }
+    const { project } = this.open;
     const context = this.workspaceContext?.();
     const source =
       context === undefined
@@ -396,7 +402,12 @@ export class ProjectHost {
     return {
       environments: [...source.environments]
         .sort((a, b) => a.order - b.order)
-        .map((environment) => ({ id: environment.id, name: environment.name })),
+        .map((environment) => ({
+          id: environment.id,
+          name: environment.name,
+          // Inside a workspace, the linked project environment's flag counts too (#345).
+          ...(isProtectedEnvironment(project, environment) ? { protected: true } : {}),
+        })),
       activeId: source.activeId,
     };
   }
@@ -415,7 +426,11 @@ export class ProjectHost {
   scopesFor(envId?: string): PropertyScopes {
     // A `${#System#…}` value these scopes expand is recorded like a resolved secret, as a send's are (#181):
     // a pushed WebSocket message and a sequence step's callback assertions expand against them.
-    return withSystemValuesReported(this.unreportedScopesFor(envId), recordSecretValue);
+    // A fresh `${#Dynamic#…}` memo each call: one push or check shares its values, the next does not.
+    return {
+      ...withSystemValuesReported(this.unreportedScopesFor(envId), recordSecretValue),
+      dynamic: new DynamicValues(),
+    };
   }
 
   private unreportedScopesFor(envId?: string): PropertyScopes {

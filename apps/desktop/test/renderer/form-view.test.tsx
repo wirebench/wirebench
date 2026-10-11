@@ -334,12 +334,12 @@ describe('FormView', () => {
     await waitFor(() => expect(screen.getByText("Can't build a form for this operation")).toBeDefined());
   });
 
-  it('Get Data inserts a ${#Project#…} reference into the field', async () => {
+  it('Get Data opens with the dynamic generators even when no property is in scope', async () => {
     const { onValueEdit } = renderView();
     await waitFor(() => expect(screen.getByLabelText('Get Data for tem:intA')).toBeDefined());
     await userEvent.click(screen.getByLabelText('Get Data for tem:intA'));
-    // With no project open there is nothing to pick; the dialog still opens and says so.
-    expect(screen.getByText(/No properties in scope/)).toBeDefined();
+    // With no project open there is no property to pick, but the generators are always there.
+    expect(screen.getByText('guid')).toBeDefined();
     expect(onValueEdit).not.toHaveBeenCalled();
   });
 

@@ -70,6 +70,8 @@ export interface XFolder {
   readonly description?: string;
   /** Absent: inherit. */
   readonly auth?: AuthConfig;
+  /** Scripts run around every request inside (#334): a container's or a folder's. */
+  readonly scripts?: XScripts;
   readonly items: readonly XItem[];
 }
 
@@ -133,6 +135,8 @@ export interface XCollection {
   readonly description?: string;
   /** The exported API's own auth; absent for a whole project. */
   readonly auth?: AuthConfig;
+  /** The exported API's or interface's own scripts (#334); absent for a whole project. */
+  readonly scripts?: XScripts;
   readonly items: readonly XItem[];
   readonly variables: readonly XVariable[];
   readonly environments: readonly XEnvironment[];
@@ -171,6 +175,7 @@ class TreeBuilder {
         name: container.name,
         ...(folder.description !== undefined ? { description: folder.description } : {}),
         ...(folder.auth !== undefined ? { auth: folder.auth } : {}),
+        ...(folder.scripts !== undefined ? { scripts: folder.scripts } : {}),
         items: folder.items,
       };
       this.folders -= 1; // the container itself is the collection, not a folder in it
@@ -243,10 +248,12 @@ class TreeBuilder {
   private container(container: Container): XFolder {
     this.folders += 1;
     const description = 'description' in container ? container.description : undefined;
+    const scripts = this.levelScripts('scripts' in container ? container.scripts : undefined, container.name);
     const base = {
       kind: 'folder' as const,
       name: container.name,
       ...(description !== undefined ? { description } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
     };
     switch (container.kind) {
       case 'soap':
@@ -291,11 +298,13 @@ class TreeBuilder {
     const folders = byOrder(node.folders).map((folder): XFolder => {
       this.folders += 1;
       const path = [...trail, folder.name];
+      const scripts = this.levelScripts(folder.scripts, path.join(' / '));
       return this.withAuth(
         {
           kind: 'folder',
           name: folder.name,
           ...(folder.description !== undefined ? { description: folder.description } : {}),
+          ...(scripts !== undefined ? { scripts } : {}),
         },
         folder.auth,
         path.join(' / '),
@@ -324,6 +333,7 @@ class TreeBuilder {
       'sendCookies',
       'escapeProperties',
       'keepBodyOnRedirect',
+      'omitHeaders',
     ]);
     const { timeoutMs, followRedirects, maxRedirects, encodeUrl } = request.settings;
     return {
@@ -470,11 +480,13 @@ class TreeBuilder {
     const folders = byOrder(node.folders).map((folder): XFolder => {
       this.folders += 1;
       const path = [...trail, folder.name];
+      const scripts = this.levelScripts(folder.scripts, path.join(' / '));
       return this.withAuth(
         {
           kind: 'folder',
           name: folder.name,
           ...(folder.description !== undefined ? { description: folder.description } : {}),
+          ...(scripts !== undefined ? { scripts } : {}),
         },
         folder.auth,
         path.join(' / '),
@@ -638,6 +650,12 @@ class TreeBuilder {
       return value !== undefined && value !== false;
     });
     if (set.length > 0) this.ctx.report.warn(`${label}: the settings ${set.join(', ')} are not represented.`);
+  }
+
+  /** A container's or a folder's scripts, or nothing when it has none to export (#334). */
+  private levelScripts(scripts: RequestScripts | undefined, label: string): XScripts | undefined {
+    const out = this.scripts(scripts, label);
+    return out.pre === undefined && out.post === undefined ? undefined : out;
   }
 
   private scripts(scripts: RequestScripts | undefined, label: string): XScripts {

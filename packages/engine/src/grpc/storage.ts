@@ -23,6 +23,7 @@ import type { ProjectProblem } from '../project/load.js';
 import { apiManagedFiles } from '../project/managed-files.js';
 import {
   API_FILE,
+  API_SCRIPT_STEM,
   APIS_DIR,
   assertPathSegment,
   REQUEST_SUFFIX,
@@ -78,7 +79,7 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       dir,
       fileName.slice(0, -REQUEST_SUFFIX.length),
       parsed.scripts,
-      parsed.name,
+      `Request "${parsed.name}"`,
       problems,
       (name) => unclaimed.delete(name),
     );
@@ -162,6 +163,7 @@ function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
         tls: api.tls,
         metadata: api.metadata.length > 0 ? keyValueDocuments(api.metadata) : undefined,
         auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        scripts: scriptsDocument(api.scripts, API_SCRIPT_STEM).document,
         definition:
           api.definition === undefined
             ? undefined
@@ -176,6 +178,7 @@ function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
       }),
     ),
   );
+  writeScriptFiles(files, base, api.scripts, API_SCRIPT_STEM);
   addFolderFiles<GrpcRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeGrpcRequest);
 }
 
@@ -186,6 +189,16 @@ export const grpcStorage: ProtocolStorage<GrpcApi> = {
   async load(ctx, slug, document) {
     const { fs, root, problems } = ctx;
     const parsed = parseFile(grpcApiFileSchema, document, `${APIS_DIR}/${slug}/${API_FILE}`);
+    const scripts = await loadScripts(
+      fs,
+      root,
+      `${APIS_DIR}/${slug}`,
+      API_SCRIPT_STEM,
+      parsed.scripts,
+      `API "${parsed.name}"`,
+      problems,
+      () => undefined,
+    );
     const contents = await loadFolderContents(
       fs,
       root,
@@ -205,6 +218,7 @@ export const grpcStorage: ProtocolStorage<GrpcApi> = {
       tls: parsed.tls,
       metadata: keyValueEntries(parsed.metadata),
       ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
       ...(parsed.definition !== undefined
         ? {
             definition: {

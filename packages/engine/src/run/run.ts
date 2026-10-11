@@ -11,14 +11,21 @@ import type { CaptureSource } from '../assert/capture-source.js';
 import { checkRequestAssertions } from '../assert/check.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
-import type { ProtocolRun, SelectedBase } from '../protocol/module.js';
+import type { ProtocolRun, RunScope, SelectedBase } from '../protocol/module.js';
 import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
 import type { SelectedRequest, SentExchange } from '../protocols.js';
 import type { GoldenFile, GoldenRead, GoldenWrite } from '../snapshot/golden-file.js';
 import { scriptProperties } from '../script/props.js';
-import { activeScripts, type RequestScripting, type ScriptedRequest } from '../script/request-scripts.js';
+import {
+  activeLevels,
+  activeScripts,
+  scriptSecretNames,
+  type RequestScripting,
+  type ScriptedRequest,
+  type ScriptLevel,
+} from '../script/request-scripts.js';
 import type { RequestScripts } from '../script/model.js';
 import { SecretPlaceholders } from '../script/send.js';
 import type { TransferResult } from '../sequence/run.js';
@@ -143,8 +150,55 @@ const assertionsOf = (item: SelectedRequest): readonly Assertion[] =>
   ('assertions' in item.request ? item.request.assertions : undefined) ?? [];
 
 /** A request's scripts, as saved; a protocol without scripts has none. */
-const scriptsOf = (item: SelectedRequest): RequestScripts | undefined =>
+const scriptsOf = (item: SelectedBase): RequestScripts | undefined =>
   'scripts' in item.request ? item.request.scripts : undefined;
+
+/** The scripts that will run in a send of `item`: its own, and its levels', switched on (#334). */
+interface ItemScripts {
+  readonly own: RequestScripts | undefined;
+  readonly outer: readonly ScriptLevel[];
+  /** True when the request or a level above it has scripts, on or off. */
+  readonly any: boolean;
+}
+
+function itemScripts(item: SelectedBase, registry: ProtocolRegistry): ItemScripts {
+  const levels = registry.find(item.kind)?.run?.scriptLevels?.(item) ?? [];
+  const own = activeScripts(scriptsOf(item));
+  return { own, outer: activeLevels(levels), any: scriptsOf(item) !== undefined || levels.length > 0 };
+}
+
+/** True when a send of `item` runs any script, at any level. */
+const runsScripts = (scripts: ItemScripts): boolean => scripts.own !== undefined || scripts.outer.length > 0;
+
+/** True when a send of `item` runs a post-response script, at any level: its tests are assertions. */
+const runsPostScript = (scripts: ItemScripts): boolean =>
+  scripts.own?.post !== undefined || scripts.outer.some((level) => level.scripts.post !== undefined);
+
+/**
+ * True when a send of `item` runs a post-response script, its own or a level's (#334), so its
+ * tests count as the request's assertions. `registry` is where its levels are looked up.
+ */
+export function hasPostResponseScript(item: SelectedBase, registry: ProtocolRegistry = defaultRegistry()): boolean {
+  return runsPostScript(itemScripts(item, registry));
+}
+
+/** The request as its scripts run it: its own, its levels', and the types its module gives it. */
+async function scriptedOf(
+  item: SelectedBase,
+  scripts: ItemScripts,
+  run: ProtocolRun,
+  scope: RunScope,
+): Promise<ScriptedRequest> {
+  return {
+    protocol: item.kind,
+    path: item.path,
+    name: item.request.name,
+    slug: item.request.slug,
+    ...(scripts.own !== undefined ? { scripts: scripts.own } : {}),
+    ...(scripts.outer.length > 0 ? { outer: scripts.outer } : {}),
+    types: await run.scriptTypes(item, scope),
+  };
+}
 
 /** Enough of each exchange to keep for a report: a failing response can be megabytes. */
 const EXCHANGE_CAP_BYTES = 64 * 1024;
@@ -219,7 +273,7 @@ export function deferredSession(
 ): ScriptSession {
   let opening: Promise<ScriptSession> | undefined;
   const open = (): Promise<ScriptSession> => {
-    opening ??= listedSecrets(scripted.scripts.secrets, context.host.getSecret).then((secrets) =>
+    opening ??= listedSecrets(scriptSecretNames(scripted), context.host.getSecret).then((secrets) =>
       // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is
       // shown before that.
       scriptSession(
@@ -299,11 +353,11 @@ export function createRunSender(context: RunContext): RunRequestSender {
     const itemScope = scopeWith(scope, itemContext);
     const run = runOf(registry, item);
 
-    const scripts = activeScripts(scriptsOf(item));
-    if (scripts === undefined) {
+    const scripts = itemScripts(item, registry);
+    if (!runsScripts(scripts)) {
       const sent = await openExchange(item, itemContext.host, { scope: itemScope, interactive: false, run: true })
         .result;
-      return scriptsOf(item) !== undefined ? { ...sent, scriptsOff: true } : sent;
+      return scripts.any ? { ...sent, scriptsOff: true } : sent;
     }
 
     const refused = scriptsRefusal(item, registry);
@@ -315,14 +369,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
         details: { path: item.path },
       });
     }
-    const scripted: ScriptedRequest = {
-      protocol: item.kind,
-      path: item.path,
-      name: item.request.name,
-      slug: item.request.slug,
-      scripts,
-      types: await run.scriptTypes(item, itemScope),
-    };
+    const scripted = await scriptedOf(item, scripts, run, itemScope);
     await scripting.check(scripted);
     return openExchange(item, itemContext.host, {
       scope: itemScope,
@@ -348,22 +395,15 @@ export async function checkRunScripts(
   const registry = context.registry ?? defaultRegistry();
   const scope = createRunScope(context);
   for (const item of selected) {
-    const scripts = activeScripts(scriptsOf(item));
-    if (scripts === undefined) continue;
+    const scripts = itemScripts(item, registry);
+    if (!runsScripts(scripts)) continue;
     const refused = scriptsRefusal(item, registry);
     if (refused !== undefined) {
       errors.push(refused);
       continue;
     }
     try {
-      await scripting.check({
-        protocol: item.kind,
-        path: item.path,
-        name: item.request.name,
-        slug: item.request.slug,
-        scripts,
-        types: await runOf(registry, item).scriptTypes(item, scope),
-      });
+      await scripting.check(await scriptedOf(item, scripts, runOf(registry, item), scope));
     } catch (error) {
       errors.push(
         isWirebenchError(error)
@@ -523,6 +563,7 @@ export async function runRequests(
   const started = performance.now();
   const startedAt = new Date().toISOString();
   const send = createRunSender(context);
+  const registry = context.registry ?? defaultRegistry();
   const results: RequestResult[] = [];
   // Values scripts set, which later requests of the run read as `${#Sequence#name}` (#63).
   const runValues = new Map<string, string>(Object.entries(context.sequence ?? {}));
@@ -538,8 +579,8 @@ export async function runRequests(
       };
     } else if (
       assertionsOf(item).length === 0 &&
-      activeScripts(scriptsOf(item))?.post === undefined &&
-      options.requireAssertions === true
+      options.requireAssertions === true &&
+      !runsPostScript(itemScripts(item, registry))
     ) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {

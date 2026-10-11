@@ -143,6 +143,11 @@ export interface RestRequestSettings {
   readonly sendCookies?: boolean;
   /** JSON- or XML-escape every property value substituted into the body. Off by default. */
   readonly escapeProperties?: boolean;
+  /**
+   * Generated headers this request leaves out (`User-Agent`, `Authorization`, `Cookie`, …), by name,
+   * case-insensitive. A header typed on the request is never left out. Not inherited from the API.
+   */
+  readonly omitHeaders?: readonly string[];
 }
 
 /** A saved REST request: everything but a raw body lives in `<slug>.request.yaml`. */
@@ -231,6 +236,8 @@ export interface RestFolder {
   readonly description?: string;
   /** Default credentials for everything inside, unless a child says otherwise. */
   readonly auth?: AuthConfig;
+  /** Scripts run around every request inside, after the API's and outer folders' (#334). */
+  readonly scripts?: RequestScripts;
   readonly folders: readonly RestFolder[];
   readonly requests: readonly RestRequestDef[];
 }
@@ -268,6 +275,8 @@ export interface RestApi {
   readonly baseUrl: string;
   readonly servers: readonly RestServer[];
   readonly auth?: AuthConfig;
+  /** Scripts run around every request in the API, before its folders' and its own (#334). */
+  readonly scripts?: RequestScripts;
   readonly definition?: RestDefinitionRef;
   readonly folders: readonly RestFolder[];
   readonly requests: readonly RestRequestDef[];
@@ -281,6 +290,7 @@ export interface CreateApiInput extends CreateOptions {
   readonly servers?: readonly RestServer[];
   readonly auth?: AuthConfig;
   readonly definition?: RestDefinitionRef;
+  readonly scripts?: RequestScripts;
   readonly folders?: readonly RestFolder[];
   readonly requests?: readonly RestRequestDef[];
 }
@@ -302,6 +312,7 @@ export function createApi(name: string, input: CreateApiInput = {}): RestApi {
     servers: input.servers ?? [],
     ...(input.auth !== undefined ? { auth: input.auth } : {}),
     ...(input.definition !== undefined ? { definition: input.definition } : {}),
+    ...(input.scripts !== undefined ? { scripts: input.scripts } : {}),
     folders: input.folders ?? [],
     requests: input.requests ?? [],
   };
@@ -312,6 +323,7 @@ export interface CreateFolderInput extends CreateOptions {
   readonly slug?: string;
   readonly description?: string;
   readonly auth?: AuthConfig;
+  readonly scripts?: RequestScripts;
   readonly folders?: readonly RestFolder[];
   readonly requests?: readonly RestRequestDef[];
 }
@@ -325,6 +337,7 @@ export function createFolder(name: string, input: CreateFolderInput = {}): RestF
     order: input.order ?? 0,
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.auth !== undefined ? { auth: input.auth } : {}),
+    ...(input.scripts !== undefined ? { scripts: input.scripts } : {}),
     folders: input.folders ?? [],
     requests: input.requests ?? [],
   };

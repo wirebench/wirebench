@@ -9,6 +9,7 @@ import { headerPairSchema } from '../script/apply.js';
 import type { HeaderPair, ScriptFailure } from '../script/model.js';
 import { entriesOf, pairsOf } from '../script/send.js';
 import type { RawLanguage } from './model.js';
+import { restScriptTypes } from './script-types.js';
 import type { RestExchange, RestSendInput } from './send.js';
 import { composeUrl } from './url.js';
 
@@ -299,6 +300,7 @@ const requestSchema: z.ZodType<RestRequestSnapshot> = z.object({
 /** REST's scripting facet. */
 export const restScripting: ProtocolScripting<RestRequestSnapshot, RestResponseSnapshot> = {
   declarations: (phase) => [STATUS_TYPES, REST_REQUEST, phase === 'pre' ? REST_PRE : REST_POST].join('\n'),
+  levelTypes: () => restScriptTypes(undefined),
   reference: () => [
     { title: 'REST: shared by both phases', declarations: REST_REQUEST },
     { title: 'REST: pre-request', declarations: REST_PRE },

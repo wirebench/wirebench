@@ -1,5 +1,7 @@
 import { AREAS } from '@shared/area-module.js';
 import type { AreaId } from '@shared/area-module.js';
+import { CODE_TARGET_IDS, isCodeLanguage } from '@shared/code-targets.js';
+import type { CodeLanguage, CodeSettings, CodeTarget } from '@shared/code-targets.js';
 
 /** Which view the sidebar shows; mirrors the activity bar's icons. */
 export type SidebarView = AreaId;
@@ -79,6 +81,11 @@ export interface UiSnapshot {
     readonly size: number;
     /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
     readonly lastSize: number;
+    /**
+     * The width the *other* size group last had: the SSH area keeps its own (it holds a short menu),
+     * every other view shares one. Swapped with `size` when the view crosses groups; absent until then.
+     */
+    readonly parkedSize?: number;
   };
   readonly console: {
     readonly visible: boolean;
@@ -93,6 +100,10 @@ export interface UiSnapshot {
     readonly width: number;
     /** The Code panel's POSIX/PowerShell choice; carried here since the panel now lives in the slide-over. */
     readonly codeShell: CodeShell;
+    /** The language the Code panel shows, picked last; `curl` uses {@link codeShell}. */
+    readonly codeLanguage: CodeLanguage;
+    /** Each language's own layout choices; a language with none takes the request's values. */
+    readonly codeSettings: Readonly<Partial<Record<CodeTarget, CodeSettings>>>;
   };
   readonly theme: ThemePreference;
   /** Whether request/response Monaco editors show line numbers. */
@@ -129,7 +140,7 @@ const PRIOR_UI_STORAGE_VERSION = 3;
 export const DEFAULT_UI_STATE: UiSnapshot = {
   sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
   console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
-  slideOver: { open: false, width: 420, codeShell: 'posix' },
+  slideOver: { open: false, width: 294, codeShell: 'posix', codeLanguage: 'curl', codeSettings: {} },
   theme: 'dark',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -177,6 +188,9 @@ function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
  * `legacyCodeShell` — the v3 blob's `details.codeShell`, when there is one — before the default,
  * so a version-3 payload's shell preference survives the v3 → v4 migration.
  */
+/** The slide-over's default width before it was narrowed by 30%; a width still at it was never dragged. */
+const PREVIOUS_SLIDE_OVER_WIDTH = 420;
+
 function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['slideOver'] {
   const record = asRecord(stored);
   const open = record?.['open'];
@@ -184,9 +198,32 @@ function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['
   const codeShell = record?.['codeShell'] ?? legacyCodeShell;
   return {
     open: typeof open === 'boolean' ? open : DEFAULT_UI_STATE.slideOver.open,
-    width: typeof width === 'number' ? width : DEFAULT_UI_STATE.slideOver.width,
+    width: typeof width === 'number' && width !== PREVIOUS_SLIDE_OVER_WIDTH ? width : DEFAULT_UI_STATE.slideOver.width,
     codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.slideOver.codeShell,
+    codeLanguage: isCodeLanguage(record?.['codeLanguage'])
+      ? record['codeLanguage']
+      : DEFAULT_UI_STATE.slideOver.codeLanguage,
+    codeSettings: mergeCodeSettings(record?.['codeSettings']),
   };
+}
+
+/** The stored per-language settings, each field kept only when it is one the panel could have written. */
+function mergeCodeSettings(stored: unknown): UiSnapshot['slideOver']['codeSettings'] {
+  const record = asRecord(stored);
+  const out: Partial<Record<CodeTarget, CodeSettings>> = {};
+  for (const target of CODE_TARGET_IDS) {
+    const entry = asRecord(record?.[target]);
+    if (entry === undefined) continue;
+    const { indent, followRedirects, timeoutMs } = entry;
+    out[target] = {
+      ...(indent === 'tab' || (typeof indent === 'number' && Number.isInteger(indent) && indent >= 0 && indent <= 8)
+        ? { indent }
+        : {}),
+      ...(typeof followRedirects === 'boolean' ? { followRedirects } : {}),
+      ...(typeof timeoutMs === 'number' && Number.isInteger(timeoutMs) && timeoutMs >= 0 ? { timeoutMs } : {}),
+    };
+  }
+  return out;
 }
 
 /**
@@ -200,7 +237,22 @@ function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['
 function mergeSidebar(stored: unknown): UiSnapshot['sidebar'] {
   const merged = mergeSection(DEFAULT_UI_STATE.sidebar, stored);
   const lastSize = asRecord(stored)?.['lastSize'];
-  return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+  const parkedSize = asRecord(stored)?.['parkedSize'];
+  const sidebar = { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+  if (typeof parkedSize === 'number') return { ...sidebar, parkedSize };
+  // Saved before the SSH area had its own width while showing it: that width was the shared one.
+  if (sidebar.view === 'ssh') {
+    return { ...sidebar, size: SSH_SIDEBAR_SIZE, lastSize: SSH_SIDEBAR_SIZE, parkedSize: sidebar.lastSize };
+  }
+  return sidebar;
+}
+
+/** The SSH area's sidebar holds a short menu, so it opens narrower than the views that hold trees. */
+export const SSH_SIDEBAR_SIZE = 12;
+
+/** Which width a view uses: the SSH area keeps its own, every other view shares one. */
+export function sidebarSizeGroup(view: SidebarView): 'ssh' | 'shared' {
+  return view === 'ssh' ? 'ssh' : 'shared';
 }
 
 /** The console's equivalent of {@link mergeSidebar}. */

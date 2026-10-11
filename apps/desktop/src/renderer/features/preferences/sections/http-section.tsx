@@ -16,6 +16,7 @@ export function HttpSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Identity">
         <TextSetting
           label="User-Agent"
+          setting="http.userAgent"
           value={http.userAgent}
           onCommit={(userAgent) => update({ http: { userAgent } })}
           hint="Sent unless the request sets its own User-Agent header."
@@ -25,6 +26,7 @@ export function HttpSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Compression">
         <EnumSetting
           label="Request compression"
+          setting="http.requestCompression"
           value={http.requestCompression}
           options={[
             { value: 'none', label: 'None' },
@@ -34,6 +36,7 @@ export function HttpSection({ preferences, update }: SectionProps) {
         />
         <BooleanSetting
           label="Accept compressed responses"
+          setting="http.responseCompression"
           value={http.responseCompression}
           onChange={(responseCompression) => update({ http: { responseCompression } })}
           hint="Adds Accept-Encoding: gzip, deflate."
@@ -43,12 +46,14 @@ export function HttpSection({ preferences, update }: SectionProps) {
       <SettingsGroup title="Connections">
         <BooleanSetting
           label="Close connections"
+          setting="http.closeConnections"
           value={http.closeConnections}
           onChange={(closeConnections) => update({ http: { closeConnections } })}
           hint="Sends Connection: close instead of reusing the keep-alive pool."
         />
         <NumberSetting
           label="Socket timeout (ms)"
+          setting="http.socketTimeoutMs"
           value={http.socketTimeoutMs}
           min={0}
           onCommit={(socketTimeoutMs) => update({ http: { socketTimeoutMs: socketTimeoutMs ?? 60000 } })}
@@ -56,12 +61,14 @@ export function HttpSection({ preferences, update }: SectionProps) {
         />
         <NumberSetting
           label="Max connections"
+          setting="http.maxConnections"
           value={http.maxConnections}
           min={1}
           onCommit={(maxConnections) => update({ http: { maxConnections: maxConnections ?? 100 } })}
         />
         <BooleanSetting
           label="Offer HTTP/2"
+          setting="http.allowH2"
           value={http.allowH2}
           testId="http-allow-h2"
           onChange={(allowH2) => update({ http: { allowH2 } })}
@@ -69,6 +76,7 @@ export function HttpSection({ preferences, update }: SectionProps) {
         />
         <NumberSetting
           label="Chunking threshold (bytes)"
+          setting="http.chunkingThreshold"
           value={http.chunkingThreshold}
           min={0}
           onCommit={(chunkingThreshold) => update({ http: { chunkingThreshold: chunkingThreshold ?? 0 } })}

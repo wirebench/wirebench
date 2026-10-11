@@ -53,6 +53,8 @@ export const grpcApiFileSchema = z.looseObject({
   tls: z.boolean().default(false),
   metadata: z.array(keyValueEntrySchema).default([]),
   auth: authConfigSchema.optional(),
+  /** The API's scripts (format 9, #334), in `api.pre.ts` and `api.post.ts` beside `api.yaml`. */
+  scripts: scriptsSchema.optional(),
   definition: z
     .looseObject({
       // Absent in every project written before server reflection, which is an imported set.

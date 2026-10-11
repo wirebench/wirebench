@@ -40,6 +40,7 @@ import { applyValueEdit, type TextRange } from './views/xml-model.js';
 import { ScriptsTab } from '../scripts/scripts-tab.js';
 import { AssertionsTab } from '../assertions/assertions-tab.js';
 import { SOAP_REQUEST_KINDS } from '../assertions/assertion-table.js';
+import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
@@ -119,6 +120,8 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   }: RequestPaneProps,
   ref,
 ) {
+  // Variable help in the envelope (#340): completion, hover, unresolved marks.
+  const attachVariables = useEditorVariableAssist();
   const [local, setLocal] = useState(envelopeXml);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sendRef = useRef(onSend);
@@ -240,6 +243,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const handleMount = useCallback<OnMount>(
     (editor, monacoNS) => {
       const handle: RequestPaneHandle = { flush, formatAndCommit };
+      attachVariables(editor, monacoNS);
       editor.addCommand(SEND_KEYBINDING, () => {
         flush();
         sendRef.current();
@@ -305,7 +309,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         });
       }
     },
-    [flush, formatAndCommit, local],
+    [flush, formatAndCommit, local, attachVariables],
   );
 
   // The outline writes back through the very same path as typing: apply the edit to the current

@@ -434,6 +434,25 @@ describe('prepareFor — REST', () => {
     });
   });
 
+  it('sends one value per dynamic reference within a send, and a new one on the next send', async () => {
+    const project = makeProject({
+      restUrl: '/orders/${$guid}',
+      restBody: { kind: 'raw', language: 'json', text: '{"id":"${#Dynamic#uuid}","n":"${$randomInt(5,5)}"}' },
+    });
+    const send = async () => {
+      const prepared = await prepareFor(restOf(project), contextFor(project, { environmentId: 'env-test' }));
+      if (prepared.kind !== 'rest') throw new Error('expected rest');
+      const id = /\/orders\/([0-9a-f-]{36})$/.exec(prepared.input.request.url)?.[1];
+      const body = prepared.input.request.body;
+      if (body.kind !== 'raw') throw new Error('expected a raw body');
+      return { id, body: body.text };
+    };
+    const first = await send();
+    expect(first.id).toBeDefined();
+    expect(first.body).toBe(`{"id":"${first.id}","n":"5"}`);
+    expect((await send()).id).not.toBe(first.id);
+  });
+
   it('refuses the OAuth2 authorization-code grant, which needs a browser', async () => {
     const browser = makeProject({ restAuth: oauth('authorization-code') });
     await expect(prepareFor(restOf(browser), contextFor(browser, { environmentId: 'env-test' }))).rejects.toMatchObject(

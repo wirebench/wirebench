@@ -189,9 +189,10 @@ export const attachmentSourceSchema = z.union([
 ]);
 
 /**
- * A request's `scripts` key (format 6, #63). `pre` and `post` record the script file names for a
- * reader of the YAML; the loader never reads them, and always opens the name derived from the
- * request's slug (`scriptFileName`), so a hand-edited name cannot reach outside the directory.
+ * A request's `scripts` key (format 6, #63), and an API's, an interface's or a folder's (format 9,
+ * #334). `pre` and `post` record the script file names for a reader of the YAML; the loader never
+ * reads them, and always opens the name derived from the request's slug or the level's fixed stem
+ * (`scriptFileName`), so a hand-edited name cannot reach outside the directory.
  */
 export const scriptsSchema = z.looseObject({
   pre: nonEmpty.optional(),
@@ -251,6 +252,8 @@ export const restFolderFileSchema = z.looseObject({
   order: z.number().int(),
   description: z.string().optional(),
   auth: authConfigSchema.optional(),
+  /** The folder's scripts (format 9, #334), in `folder.pre.ts` and `folder.post.ts` beside it. */
+  scripts: scriptsSchema.optional(),
 });
 
 /** Every protocol this build can load. A `kind` outside this list is refused by name, never guessed at. */

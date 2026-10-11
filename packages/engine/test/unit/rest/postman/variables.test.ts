@@ -48,13 +48,14 @@ describe('parsePostmanVariablesText — environment', () => {
     expect(byName.get('emptySecret')).toEqual({ name: 'emptySecret', value: '', enabled: true, secret: true });
   });
 
-  it('reports what it skipped, kept as written, or noticed', () => {
+  it('reports what it skipped, kept as written, or noticed, and maps a dynamic variable', () => {
     expect(byName.has('nested')).toBe(false);
+    expect(byName.get('requestId')).toMatchObject({ value: '${$guid}' });
+    expect(plan.report.warnings.join('\n')).not.toContain('Dynamic variables');
     expect(plan.report.warnings).toEqual(
       expect.arrayContaining([
         'Staging: "nested" has a value that is not text, a number or true/false, so it was skipped.',
         'Staging: a variable with no name was skipped.',
-        'Dynamic variables are kept as written and not expanded: $guid',
         expect.stringContaining('sessionToken'),
       ]),
     );

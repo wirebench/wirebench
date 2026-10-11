@@ -6,8 +6,18 @@ import { grpcExplorer } from './explorer.js';
 
 // Split out like the REST editor: its message editor is Monaco.
 const GrpcEditor = lazy(async () => {
-  const module = await import('../../features/grpc-editor/grpc-editor.js');
-  return { default: ({ id }: { readonly id: string }) => <module.GrpcEditor requestId={id} /> };
+  // The request's variables, for completion, hover and the unresolved marks in every field (#340).
+  const [module, { VariableAssistProvider }] = await Promise.all([
+    import('../../features/grpc-editor/grpc-editor.js'),
+    import('../../features/environments/variable-assist-provider.js'),
+  ]);
+  return {
+    default: ({ id }: { readonly id: string }) => (
+      <VariableAssistProvider requestId={id}>
+        <module.GrpcEditor requestId={id} />
+      </VariableAssistProvider>
+    ),
+  };
 });
 
 const GrpcApiTab = lazy(async () => {

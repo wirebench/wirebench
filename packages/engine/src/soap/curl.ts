@@ -18,6 +18,23 @@ export function soapToCurl(
   input: SoapSendInput & { readonly contentType?: string; readonly negotiate?: CurlCommand['negotiate'] },
   options: ToCurlOptions = {},
 ): string {
+  return toCurl(
+    {
+      method: 'POST',
+      url: input.endpoint,
+      headers: soapWireHeaders(input),
+      body: { kind: 'raw', text: input.envelopeXml },
+      ...(input.negotiate !== undefined ? { negotiate: input.negotiate } : {}),
+    },
+    options,
+  );
+}
+
+/**
+ * The headers a SOAP send puts on the wire: its `Content-Type` (with the SOAP 1.2 action in it),
+ * a SOAP 1.1 `SOAPAction`, then the request's own. Shared by the `curl` export and code generation.
+ */
+export function soapWireHeaders(input: SoapSendInput & { readonly contentType?: string }): CurlHeader[] {
   const actionHeaders = soapActionHeaders(
     input.soapVersion,
     input.soapAction,
@@ -33,17 +50,7 @@ export function soapToCurl(
     if (name === 'Content-Type') continue;
     headers.push({ name, value });
   }
-
-  return toCurl(
-    {
-      method: 'POST',
-      url: input.endpoint,
-      headers,
-      body: { kind: 'raw', text: input.envelopeXml },
-      ...(input.negotiate !== undefined ? { negotiate: input.negotiate } : {}),
-    },
-    options,
-  );
+  return headers;
 }
 
 /** Result of {@link fromCurl}. */

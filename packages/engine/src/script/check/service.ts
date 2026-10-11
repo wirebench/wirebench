@@ -82,6 +82,12 @@ interface Entry {
 
 const models = new Map<string, Entry>();
 
+/**
+ * The last version handed out. Every model's two files have the same names, and the shared registry
+ * reuses a parsed file when its name and version match, so a version is never handed out twice.
+ */
+let lastVersion = 0;
+
 function scriptFile(model: ScriptModel): string {
   return model.api === 'postman' ? SCRIPT_JS : SCRIPT_TS;
 }
@@ -91,7 +97,9 @@ function createService(entry: () => Entry): ts.LanguageService {
   const host: ts.LanguageServiceHost = {
     getCompilationSettings: () => COMPILER_OPTIONS,
     getScriptFileNames: () => [DECLARATIONS, scriptFile(entry().model)],
-    getScriptVersion: () => String(entry().version),
+    // The standard library never changes; only the two virtual files carry the model's version.
+    getScriptVersion: (name) =>
+      name === DECLARATIONS || name === SCRIPT_TS || name === SCRIPT_JS ? String(entry().version) : '0',
     getScriptSnapshot: (name) => {
       const { model } = entry();
       if (name === DECLARATIONS) return ts.ScriptSnapshot.fromString(model.declarations);
@@ -122,12 +130,12 @@ export function updateModel(id: string, model: ScriptModel): void {
       existing.model.api === model.api;
     if (!same) {
       existing.model = model;
-      existing.version += 1;
+      existing.version = ++lastVersion;
     }
     models.set(id, existing);
     return;
   }
-  const entry: Entry = { model, version: 1, service: undefined as unknown as ts.LanguageService };
+  const entry: Entry = { model, version: ++lastVersion, service: undefined as unknown as ts.LanguageService };
   (entry as { service: ts.LanguageService }).service = createService(() => entry);
   models.set(id, entry);
   while (models.size > MAX_MODELS) {

@@ -11,7 +11,16 @@ import { join } from 'node:path';
 import { isScriptFileOf } from '../script/model.js';
 import type { FsLike } from './fs.js';
 import { readFileIfExists, readdirIfExists } from './fs.js';
-import { API_FILE, APIS_DIR, EXAMPLES_SUFFIX, FOLDER_FILE, REQUEST_SUFFIX, REQUESTS_DIR } from './paths.js';
+import {
+  API_FILE,
+  API_SCRIPT_STEM,
+  APIS_DIR,
+  EXAMPLES_SUFFIX,
+  FOLDER_FILE,
+  FOLDER_SCRIPT_STEM,
+  REQUEST_SUFFIX,
+  REQUESTS_DIR,
+} from './paths.js';
 
 /** The absolute path of a `/`-separated path relative to the project root. */
 export function toAbsolute(root: string, relative: string): string {
@@ -76,8 +85,13 @@ export async function listApiTreeFiles(fs: FsLike, root: string, dir: string): P
   const managed: string[] = [];
   const entries = await readdirIfExists(fs, toAbsolute(root, dir));
   const requestSlugs = new Set<string>();
+  const hasFolderFile = entries.some((entry) => entry.isFile && entry.name === FOLDER_FILE);
   for (const entry of entries) {
     if (!entry.isFile) {
+      continue;
+    }
+    if (hasFolderFile && isScriptFileOf(entry.name, FOLDER_SCRIPT_STEM)) {
+      managed.push(`${dir}/${entry.name}`);
       continue;
     }
     if (entry.name === FOLDER_FILE) {
@@ -96,6 +110,9 @@ export async function listApiTreeFiles(fs: FsLike, root: string, dir: string): P
     const body = /^(.*)\.body\.[A-Za-z0-9]+$/.exec(entry.name);
     if (body !== null && requestSlugs.has(body[1]!)) {
       managed.push(`${dir}/${entry.name}`);
+      continue;
+    }
+    if (hasFolderFile && isScriptFileOf(entry.name, FOLDER_SCRIPT_STEM)) {
       continue;
     }
     for (const slug of requestSlugs) {
@@ -132,6 +149,9 @@ export async function apiManagedFiles(fs: FsLike, root: string, slug: string): P
   const managed: string[] = [];
   if ((await readFileIfExists(fs, toAbsolute(root, `${base}/${API_FILE}`))) !== undefined) {
     managed.push(`${base}/${API_FILE}`);
+    for (const entry of await readdirIfExists(fs, toAbsolute(root, base))) {
+      if (entry.isFile && isScriptFileOf(entry.name, API_SCRIPT_STEM)) managed.push(`${base}/${entry.name}`);
+    }
   }
   managed.push(...(await listApiTreeFiles(fs, root, `${base}/${REQUESTS_DIR}`)));
   return managed;

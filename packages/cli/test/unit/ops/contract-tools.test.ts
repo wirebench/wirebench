@@ -84,7 +84,13 @@ describe('deriveContractTools', () => {
       container: 'CalculatorService',
       environmentKey: 'environment',
     });
-    expect(Object.keys(tool?.inputSchema['properties'] as object)).toEqual(['environment', 'a', 'b', 'note']);
+    expect(Object.keys(tool?.inputSchema['properties'] as object)).toEqual([
+      'environment',
+      'allowProtected',
+      'a',
+      'b',
+      'note',
+    ]);
     expect(tool?.inputSchema['required']).toEqual(['a', 'b']);
     expect(tool?.description).toContain('"CalculatorService"');
     expect(tool?.description).toContain('--allow-send');

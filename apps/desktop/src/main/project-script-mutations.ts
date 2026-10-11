@@ -1,7 +1,8 @@
 /**
  * The script project changes (#63): `update-request-scripts` edits one request's scripts, and
  * `enable-scripts` switches on the scripts of many at once. Both work the same on a SOAP, REST or
- * gRPC request, found by id wherever it sits.
+ * gRPC request, found by id wherever it sits, and on a level above requests (#334): a SOAP
+ * interface, a REST or gRPC API, or one of their folders.
  *
  * The file names are never part of an edit: the save derives them from the request's slug, so an
  * edit cannot point a script at a file outside the request's directory.
@@ -10,10 +11,10 @@
 import { ProjectError, SCRIPT_LIMITS } from '@wirebench/engine';
 import type { Project, RequestScripts, ScriptSource } from '@wirebench/engine';
 import type { RequestScriptsPatchWire } from '../shared/wire-base.js';
-import { mapRequests } from './project-request-map.js';
+import { mapRequests, mapScriptLevels } from './project-request-map.js';
 import type { Identified } from './project-request-map.js';
 
-/** A request of any protocol, as far as its scripts go. */
+/** A request of any protocol, or a level above requests, as far as its scripts go. */
 type Scripted = Identified & { readonly scripts?: RequestScripts };
 
 /** A script's source as edited: text over the size limit is kept, and refuses to send, as a loaded one does. */
@@ -56,38 +57,41 @@ function withScripts<R extends Scripted>(request: R, scripts: RequestScripts | u
 }
 
 /**
- * Applies an edit to one request's scripts; `null` removes them.
+ * Applies an edit to the scripts of one request, interface, API or folder; `null` removes them.
  *
- * @throws ProjectError `unknown-entity` when no SOAP, REST or gRPC request has that id
+ * @throws ProjectError `unknown-entity` when nothing that can carry scripts has that id
  */
 export function updateRequestScripts(
   project: Project,
-  requestId: string,
+  ownerId: string,
   patch: RequestScriptsPatchWire | null,
 ): { readonly project: Project } {
   let found = false;
-  const next = mapRequests<Scripted>(project, (request) => {
-    if (request.id !== requestId) return request;
+  const edit = <R extends Scripted>(owner: R): R => {
+    if (owner.id !== ownerId) return owner;
     found = true;
-    return withScripts(request, patch === null ? undefined : patchedScripts(request.scripts, patch));
-  });
+    return withScripts(owner, patch === null ? undefined : patchedScripts(owner.scripts, patch));
+  };
+  let next = mapRequests<Scripted>(project, edit);
+  if (!found) next = mapScriptLevels<Scripted>(project, edit);
   if (!found) {
-    throw new ProjectError('unknown-entity', `No request with id "${requestId}"`, { details: { requestId } });
+    throw new ProjectError('unknown-entity', `No request, API, interface or folder with id "${ownerId}"`, {
+      details: { requestId: ownerId },
+    });
   }
   return { project: next };
 }
 
 /**
- * Switches on the scripts of every listed request that has any. An id that names no request, or a
- * request without scripts, is passed over: the explorer sends every request under a folder.
+ * Switches on the scripts of every listed request, interface, API or folder that has any. An id
+ * that names nothing, or something without scripts, is passed over: the explorer sends every
+ * request and folder under the one it was asked on.
  */
-export function enableScripts(project: Project, requestIds: readonly string[]): { readonly project: Project } {
-  const ids = new Set(requestIds);
-  return {
-    project: mapRequests<Scripted>(project, (request) =>
-      ids.has(request.id) && request.scripts !== undefined && !request.scripts.enabled
-        ? { ...request, scripts: { ...request.scripts, enabled: true } }
-        : request,
-    ),
-  };
+export function enableScripts(project: Project, ids: readonly string[]): { readonly project: Project } {
+  const listed = new Set(ids);
+  const enable = <R extends Scripted>(owner: R): R =>
+    listed.has(owner.id) && owner.scripts !== undefined && !owner.scripts.enabled
+      ? { ...owner, scripts: { ...owner.scripts, enabled: true } }
+      : owner;
+  return { project: mapScriptLevels<Scripted>(mapRequests<Scripted>(project, enable), enable) };
 }

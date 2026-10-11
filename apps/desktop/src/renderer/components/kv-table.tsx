@@ -16,6 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { ClampedValueField } from './clamped-value-field.js';
+import { useVariableField } from './variable-field.js';
 import { IconButton } from './icon-button.js';
 import { useGridNavigation } from '../lib/grid-navigation.js';
 import type { KeyValueWire } from '../../shared/wire-base.js';
@@ -70,15 +71,23 @@ function defaultWidths(textColumns: readonly KvColumn[]): readonly number[] {
  * when the value actually changed, so a focus pass over an untouched row writes nothing. In a text
  * area Enter still saves rather than starting a new line: a key or value is one line.
  */
-export function useCommittedDraft(
-  value: string,
-  commit: (next: string) => void,
-): {
+export function useCommittedDraft(value: string, commit: (next: string) => void): CommittedDraftField {
+  return useDraft(value, commit).field;
+}
+
+/** The props {@link useCommittedDraft} puts on an `<input>` or a `<textarea>`. */
+export interface CommittedDraftField {
   readonly value: string;
   readonly onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   readonly onBlur: () => void;
   readonly onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
-} {
+}
+
+/** {@link useCommittedDraft}, plus the draft's setter: a completion writes the draft, not the row (#340). */
+function useDraft(
+  value: string,
+  commit: (next: string) => void,
+): { readonly field: CommittedDraftField; readonly setDraft: (next: string) => void } {
   const [draft, setDraft] = useState(value);
   useEffect(() => {
     setDraft(value);
@@ -90,7 +99,7 @@ export function useCommittedDraft(
     }
   };
 
-  return {
+  const field: CommittedDraftField = {
     value: draft,
     onChange: (event) => {
       setDraft(event.target.value);
@@ -112,6 +121,7 @@ export function useCommittedDraft(
       }
     },
   };
+  return { field, setDraft };
 }
 
 /** Which columns a table shows. `name` and `value` are always there; the other two are opt-in. */
@@ -458,16 +468,31 @@ interface KvRowProps {
 
 /** One editable row. */
 function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: KvRowProps) {
-  const name = useCommittedDraft(row.name, (next) => {
+  const name = useDraft(row.name, (next) => {
     onPatch({ name: next });
   });
-  const value = useCommittedDraft(row.value, (next) => {
+  const value = useDraft(row.value, (next) => {
     onPatch({ value: next });
   });
   const description = useCommittedDraft(row.description ?? '', (next) => {
     onPatch({ description: next });
   });
-  const fields = { name, value, description } as const;
+  // Inside a request editor a name and a value complete `${`, and a value marks and explains its
+  // references (#340); a description is prose, and gets none of it.
+  const nameAssist = useVariableField({
+    value: name.field.value,
+    onValueChange: name.setDraft,
+    onReplace: (next) => {
+      onPatch({ name: next });
+    },
+  });
+  const valueAssist = useVariableField({
+    value: value.field.value,
+    onValueChange: value.setDraft,
+    onReplace: (next) => {
+      onPatch({ value: next });
+    },
+  });
 
   return (
     <tr
@@ -499,16 +524,33 @@ function KvRow({ row, columns, testid, rowProps, lockName, onPatch, onRemove }: 
                 aria-label={`${HEADING[column]} of ${row.name}`}
                 data-testid={testid(column)}
                 className={KV_TEXTAREA_CLASS}
-                {...fields[column]}
+                variableField={valueAssist}
+                {...value.field}
               />
+            ) : column === 'name' ? (
+              <>
+                <textarea
+                  rows={1}
+                  aria-label={`${HEADING[column]} of ${row.name}`}
+                  data-testid={testid(column)}
+                  className={KV_TEXTAREA_CLASS}
+                  readOnly={lockName}
+                  value={name.field.value}
+                  onChange={name.field.onChange}
+                  {...nameAssist.fieldProps<HTMLTextAreaElement>({
+                    onKeyDown: name.field.onKeyDown,
+                    onBlur: name.field.onBlur,
+                  })}
+                />
+                {nameAssist.popups}
+              </>
             ) : (
               <textarea
                 rows={1}
                 aria-label={`${HEADING[column]} of ${row.name}`}
                 data-testid={testid(column)}
                 className={KV_TEXTAREA_CLASS}
-                readOnly={column === 'name' && lockName}
-                {...fields[column]}
+                {...description}
               />
             )}
           </td>

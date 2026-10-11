@@ -1,0 +1,166 @@
+=== query and headers
+import axios from 'axios';
+
+const response = await axios.request({
+  method: 'get',
+  url: 'https://api.example.com/v1/items?q=red%20shoes&page=2',
+  headers: {
+    'Accept': 'application/json',
+    'X-Trace': 'it\'s "quoted", second',
+  },
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== json body
+import axios from 'axios';
+
+const body = `{
+  "name": "Widget",
+  "price": 9.5
+}`;
+
+const response = await axios.request({
+  method: 'post',
+  url: 'https://api.example.com/v1/items',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  data: body,
+  timeout: 30000,
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== form body
+import axios from 'axios';
+
+const body = new URLSearchParams();
+body.append('user', 'ada lovelace');
+body.append('scope', 'read&write');
+
+const response = await axios.request({
+  method: 'post',
+  url: 'https://api.example.com/login',
+  data: body,
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== multipart body
+import axios from 'axios';
+import { readFile } from 'node:fs/promises';
+
+const body = new FormData();
+body.append('title', 'Report');
+body.append('file', new Blob([await readFile('/tmp/report.pdf')], { type: 'application/pdf' }), 'report.pdf');
+
+const response = await axios.request({
+  method: 'post',
+  url: 'https://api.example.com/upload',
+  data: body,
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== binary body
+import axios from 'axios';
+import { readFile } from 'node:fs/promises';
+
+const body = await readFile('/tmp/blob.bin');
+
+const response = await axios.request({
+  method: 'put',
+  url: 'https://api.example.com/blobs/1',
+  headers: {
+    'Content-Type': 'application/octet-stream',
+  },
+  data: body,
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== basic auth from the environment
+import axios from 'axios';
+
+const response = await axios.request({
+  method: 'get',
+  url: 'https://api.example.com/me',
+  auth: { username: 'ada', password: process.env.WIREBENCH_SECRET_PASSWORD },
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== bearer token and query key from the environment
+import axios from 'axios';
+
+const response = await axios.request({
+  method: 'delete',
+  url: 'https://api.example.com/items/7?api_key=' + process.env.WIREBENCH_SECRET_KEY,
+  headers: {
+    'Authorization': 'Bearer ' + process.env.WIREBENCH_SECRET_API_TOKEN,
+  },
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== insecure, no redirects, redirect limit ignored
+import axios from 'axios';
+import https from 'node:https';
+
+const response = await axios.request({
+  method: 'get',
+  url: 'https://self-signed.example.com/health',
+  maxRedirects: 0,
+  timeout: 1500,
+  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);
+
+=== soap envelope
+import axios from 'axios';
+
+const body = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>`;
+
+const response = await axios.request({
+  method: 'post',
+  url: 'http://soap.example.com/calculator',
+  headers: {
+    'Content-Type': 'text/xml;charset=UTF-8',
+    'SOAPAction': '"http://tempuri.org/Add"',
+  },
+  data: body,
+  maxRedirects: 0,
+  responseType: 'text',
+  validateStatus: () => true,
+});
+
+console.log(response.status);
+console.log(response.data);

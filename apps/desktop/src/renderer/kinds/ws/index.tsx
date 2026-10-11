@@ -6,8 +6,18 @@ import { wsExplorer } from './explorer.js';
 
 // Split out like the gRPC editor: its saved-message editor and frame viewer are Monaco.
 const WsEditor = lazy(async () => {
-  const module = await import('../../features/ws-editor/ws-editor.js');
-  return { default: ({ id }: { readonly id: string }) => <module.WsEditor requestId={id} /> };
+  // The request's variables, for completion, hover and the unresolved marks in every field (#340).
+  const [module, { VariableAssistProvider }] = await Promise.all([
+    import('../../features/ws-editor/ws-editor.js'),
+    import('../../features/environments/variable-assist-provider.js'),
+  ]);
+  return {
+    default: ({ id }: { readonly id: string }) => (
+      <VariableAssistProvider requestId={id}>
+        <module.WsEditor requestId={id} />
+      </VariableAssistProvider>
+    ),
+  };
 });
 
 const WsApiTab = lazy(async () => {

@@ -63,3 +63,31 @@ export function mapRequests<X extends Identified = Identified>(
     },
   };
 }
+
+/** A REST or gRPC API or folder, as far as walking its folders goes. */
+interface FolderTree extends Identified {
+  readonly folders: readonly FolderTree[];
+}
+
+/** A folder tree's folders with `update` applied to each, depth first; the same object when none changed. */
+function mapFolders<T extends FolderTree>(node: T, update: Update): T {
+  const folders = mapSame(node.folders, (folder) => mapFolders(update(folder), update));
+  return folders === node.folders ? node : { ...node, folders };
+}
+
+/**
+ * `project` with `update` applied to every level that can carry scripts (#334): each SOAP interface,
+ * each REST and gRPC API, and every folder in them.
+ */
+export function mapScriptLevels<X extends Identified = Identified>(project: Project, edit: Update<X>): Project {
+  const update = edit as Update;
+  return {
+    ...project,
+    containers: {
+      ...project.containers,
+      soap: mapSame(soapInterfacesOf(project), (iface) => update(iface)),
+      rest: mapSame(restApisOf(project), (api) => mapFolders(update(api), update)),
+      grpc: mapSame(grpcApisOf(project), (api) => mapFolders(update(api), update)),
+    },
+  };
+}

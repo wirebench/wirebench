@@ -1,9 +1,9 @@
 import {
-  activeScripts,
   cappedExchange,
   createRunSender,
   errorOf,
   findStepRequest,
+  hasPostResponseScript,
   runSequence,
   scopesFor,
   sequenceFilePath,
@@ -139,13 +139,12 @@ export async function runSequences(
     // Kept per step for the report: the raw exchange of a failed or errored step.
     const raw = new Map<string, SentRequest['raw']>();
     const sender: SequenceStepSender = async (step, sequenceScope) => {
-      // A post-response script's tests count as the step's assertions (#63).
-      // A WebSocket request has no scripts of its own.
+      // A post-response script's tests count as the step's assertions (#63), a level's too (#334).
       const { request } = step.selected;
       const declared =
         (step.step.requestAssertions && 'assertions' in request ? (request.assertions ?? []).length : 0) +
         step.step.assertions.length +
-        ('scripts' in request && activeScripts(request.scripts)?.post !== undefined ? 1 : 0);
+        (hasPostResponseScript(step.selected, context.registry) ? 1 : 0);
       if (options.requireAssertions && declared === 0) {
         return { error: { code: 'assertions-required', message: 'This step has no assertions.' } };
       }

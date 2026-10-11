@@ -1,8 +1,8 @@
 /**
  * "Get Data…" — the Form view's property picker. Lists every property in scope
- * (project, active environment, global) and inserts the matching `${#…#name}`
- * expansion into the field it was opened from, rather than making the user
- * remember the syntax.
+ * (project, active environment, global) and the dynamic value generators, and
+ * inserts the matching `${#…#name}` (or `${$name}`) expansion into the field it
+ * was opened from, rather than making the user remember the syntax.
  *
  * It only ever produces a reference: values are resolved at send time by the
  * engine's property expansion (Task 19), so a secret is never copied into the
@@ -12,17 +12,19 @@
 import { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { DYNAMIC_GENERATORS } from '@wirebench/engine/rest';
 import { Button } from '../../../components/button.js';
 import { useGlobalsStore } from '../../../state/globals.js';
 import { useProjectStore } from '../../../state/project.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 
 /** Where a property comes from, which decides the scope token in its reference. */
-type Scope = 'Env' | 'Project' | 'Workspace' | 'Global';
+type Scope = 'Env' | 'Project' | 'Workspace' | 'Global' | 'Dynamic';
 
 interface Entry {
   readonly scope: Scope;
   readonly name: string;
+  /** The property's value, or what a generator gives. */
   readonly value: string;
   /** The expansion to insert, e.g. `${#Project#endpoint}`. */
   readonly reference: string;
@@ -42,7 +44,8 @@ export interface GetDataDialogProps {
 /**
  * The flat, scope-ordered list of everything this request can expand: its own project's
  * properties, the workspace's active environment, the workspace itself, and the user's globals
- * — the engine's `Env -> Project -> Workspace -> Global` chain, in that order.
+ * — the engine's `Env -> Project -> Workspace -> Global` chain, in that order — then the
+ * Dynamic scope's generators, which are always there.
  */
 function useEntries(interfaceId: string): readonly Entry[] {
   const projectProperties = useProjectStore((state) => {
@@ -66,6 +69,14 @@ function useEntries(interfaceId: string): readonly Entry[] {
     }
     for (const [name, value] of Object.entries(globalProperties)) {
       out.push({ scope: 'Global', name, value, reference: `\${#Global#${name}}` });
+    }
+    for (const generator of DYNAMIC_GENERATORS) {
+      out.push({
+        scope: 'Dynamic',
+        name: generator.name,
+        value: generator.description,
+        reference: `\${$${generator.name}}`,
+      });
     }
     return out;
   }, [projectProperties, workspace, globalProperties]);
@@ -106,7 +117,8 @@ export function GetDataDialog({ open, onOpenChange, onInsert, fieldLabel, interf
 
           {visible.length === 0 ? (
             <p className="mt-4 text-sm text-fg-subtle">
-              No properties in scope. Add them in the Details panel, then reopen this dialog.
+              {/* The generators are always listed, so only a filter can leave the list empty. */}
+              Nothing matches the filter.
             </p>
           ) : (
             <ul className="mt-3 min-h-0 flex-1 overflow-auto" aria-label="Properties in scope">

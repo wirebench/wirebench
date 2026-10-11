@@ -7,7 +7,7 @@ import { parsePostmanCollectionText } from '../../../src/rest/postman/parse.js';
 import { parsePostmanVariablesText } from '../../../src/rest/postman/variables.js';
 import { joinBase } from '../../../src/rest/url.js';
 import { newId, sampleProject } from './fixture.js';
-import { restApisOf } from '../../../src/rest/model.js';
+import { restApisOf, withRestApis } from '../../../src/rest/model.js';
 
 const project = sampleProject();
 const restId = restApisOf(project)[0]!.id;
@@ -56,7 +56,7 @@ describe('Postman export: round trip through the Postman importer', () => {
     expect(imported.api.name).toBe('Pets');
     expect(imported.api.auth?.type).toBe('bearer');
     expect(flatten(imported.api.baseUrl, imported.api)).toEqual(flatten(original.baseUrl, original));
-    // Scripts come back with the importer's provenance comment around them, switched off.
+    // Scripts come back on the request they were on, switched off.
     const getUser = imported.api.folders[0]!.requests[0]!;
     expect(getUser.scripts?.pre?.text).toContain("pm.environment.set('a', '1');");
     expect(getUser.scripts?.api).toBe('postman');
@@ -146,5 +146,23 @@ describe('Postman export: errors', () => {
     expect(() => exportCollection('postman', { project: grpcOnly, target: { kind: 'project' } })).toThrow(
       /Nothing in it can be written/,
     );
+  });
+});
+
+describe('Postman export: API and folder scripts (#334)', () => {
+  it('writes them as collection and folder events, which the importer puts back on their level', () => {
+    const api = restApisOf(project)[0]!;
+    const off = { api: 'postman', enabled: true, secrets: [] } as const;
+    const levelled = withRestApis(project, [
+      {
+        ...api,
+        scripts: { pre: { text: 'pm.variables.set("api", "1");' }, ...off },
+        folders: [{ ...api.folders[0]!, scripts: { post: { text: 'pm.test("folder", () => {});' }, ...off } }],
+      },
+    ]);
+    const result = exportCollection('postman', { project: levelled, target: { kind: 'container', id: restId }, newId });
+    const imported = apiFromPostmanCollection(parsePostmanCollectionText(result.files[0]!.text), { newId });
+    expect(imported.api.scripts?.pre?.text).toBe('pm.variables.set("api", "1");\n');
+    expect(imported.api.folders[0]?.scripts?.post?.text).toBe('pm.test("folder", () => {});\n');
   });
 });

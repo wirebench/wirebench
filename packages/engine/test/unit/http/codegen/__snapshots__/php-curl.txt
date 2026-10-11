@@ -1,0 +1,224 @@
+=== query and headers
+<?php
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/v1/items?q=red%20shoes&page=2',
+    CURLOPT_CUSTOMREQUEST => 'GET',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTPHEADER => [
+        'Accept: application/json',
+        'X-Trace: it\'s "quoted"',
+        'X-Trace: second',
+    ],
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== json body
+<?php
+
+$body = '{
+  "name": "Widget",
+  "price": 9.5
+}';
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/v1/items',
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_TIMEOUT_MS => 30000,
+    CURLOPT_HTTPHEADER => [
+        'Content-Type: application/json',
+    ],
+    CURLOPT_POSTFIELDS => $body,
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== form body
+<?php
+
+$body = 'user=ada+lovelace&scope=read%26write';
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/login',
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_POSTFIELDS => $body,
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== multipart body
+<?php
+
+$body = [
+    'title' => 'Report',
+    'file' => new CURLFile('/tmp/report.pdf', 'application/pdf', 'report.pdf'),
+];
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/upload',
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_POSTFIELDS => $body,
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== binary body
+<?php
+
+$body = file_get_contents('/tmp/blob.bin');
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/blobs/1',
+    CURLOPT_CUSTOMREQUEST => 'PUT',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTPHEADER => [
+        'Content-Type: application/octet-stream',
+    ],
+    CURLOPT_POSTFIELDS => $body,
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== basic auth from the environment
+<?php
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/me',
+    CURLOPT_CUSTOMREQUEST => 'GET',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+    CURLOPT_USERPWD => 'ada:' . getenv('WIREBENCH_SECRET_PASSWORD'),
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== bearer token and query key from the environment
+<?php
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://api.example.com/items/7?api_key=' . getenv('WIREBENCH_SECRET_KEY'),
+    CURLOPT_CUSTOMREQUEST => 'DELETE',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTPHEADER => [
+        'Authorization: Bearer ' . getenv('WIREBENCH_SECRET_API_TOKEN'),
+    ],
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== insecure, no redirects, redirect limit ignored
+<?php
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'https://self-signed.example.com/health',
+    CURLOPT_CUSTOMREQUEST => 'GET',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT_MS => 1500,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_SSL_VERIFYHOST => 0,
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);
+
+=== soap envelope
+<?php
+
+$body = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>';
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_URL => 'http://soap.example.com/calculator',
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+        'Content-Type: text/xml;charset=UTF-8',
+        'SOAPAction: "http://tempuri.org/Add"',
+    ],
+    CURLOPT_POSTFIELDS => $body,
+]);
+
+$response = curl_exec($curl);
+if ($response === false) {
+    fwrite(STDERR, curl_error($curl) . PHP_EOL);
+    exit(1);
+}
+echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE) . PHP_EOL;
+echo $response . PHP_EOL;
+curl_close($curl);

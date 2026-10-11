@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { CODE_TARGET_IDS } from './code-targets.js';
 import { MAX_SEND_ENVIRONMENTS } from './multi-env-limits.js';
 import {
   authConfigWireSchema,
@@ -193,6 +194,27 @@ export const requestCurlRequestSchema = z.object({
   wsDraft: wsRequestPatchSchema.optional(),
 });
 export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
+
+/** A language's layout choices for `request.code`; an absent field takes the request's own value. */
+export const codeSettingsSchema = z.object({
+  indent: z.union([z.number().int().min(0).max(8), z.literal('tab')]).optional(),
+  followRedirects: z.boolean().optional(),
+  /** Milliseconds; 0 means no timeout. */
+  timeoutMs: z.number().int().min(0).optional(),
+});
+
+/**
+ * Request payload for `request.code`: one REST or SOAP request as code in `target`, or as the
+ * `wirebench run` line that sends it from a terminal. `draft` is the REST editor's unsaved edits, as
+ * for `request.curl`.
+ */
+export const requestCodeRequestSchema = z.object({
+  requestId: z.string(),
+  target: z.enum(CODE_TARGET_IDS),
+  settings: codeSettingsSchema.optional(),
+  draft: restRequestPatchSchema.optional(),
+});
+export type RequestCodeRequest = z.infer<typeof requestCodeRequestSchema>;
 
 /** One HTTP Log row as the renderer holds it — what `log.curl` (and later `log.exportHar`) receive. */
 export const logEntryWireSchema = z.discriminatedUnion('kind', [

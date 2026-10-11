@@ -4,6 +4,7 @@ import {
   UI_STORAGE_KEY,
   UI_STORAGE_VERSION,
   readUi,
+  SSH_SIDEBAR_SIZE,
   writeUi,
 } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -331,5 +332,65 @@ describe('import dialog format', () => {
     useUiStore.getState().setImportOpenApiDialogOpen(false);
 
     expect(useUiStore.getState().importDialogOpen).toBe(false);
+  });
+});
+
+describe('the SSH area keeps its own sidebar width', () => {
+  beforeEach(() => {
+    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+  });
+
+  it('opens narrower than the other views, and each width comes back as it was left', () => {
+    const store = (): ReturnType<typeof useUiStore.getState> => useUiStore.getState();
+    expect(store().sidebar.size).toBe(20);
+    store().showSidebarView('ssh');
+    expect(store().sidebar).toMatchObject({ view: 'ssh', size: SSH_SIDEBAR_SIZE, parkedSize: 20 });
+    store().setSidebarSize(15);
+    store().showSidebarView('history');
+    expect(store().sidebar).toMatchObject({ view: 'history', size: 20, parkedSize: 15 });
+    store().setSidebarSize(25);
+    store().showSidebarView('explorer');
+    expect(store().sidebar.size).toBe(25);
+    store().showSidebarView('ssh');
+    expect(store().sidebar.size).toBe(15);
+  });
+  it('a collapsed sidebar reopens at the width of the view it reopens on', () => {
+    const store = (): ReturnType<typeof useUiStore.getState> => useUiStore.getState();
+    store().collapseSidebar();
+    store().showSidebarView('ssh');
+    expect(store().sidebar).toMatchObject({ visible: true, size: SSH_SIDEBAR_SIZE });
+  });
+  it('a layout saved on the SSH area before it had its own width keeps that width for the others', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: UI_STORAGE_VERSION,
+        state: { ...DEFAULT_UI_STATE, sidebar: { visible: true, view: 'ssh', size: 24, lastSize: 24 } },
+      }),
+    );
+    expect(readUi(storage).sidebar).toMatchObject({ size: SSH_SIDEBAR_SIZE, parkedSize: 24 });
+  });
+});
+
+describe('the right slide-over width', () => {
+  const stored = (width: number): Storage => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: UI_STORAGE_VERSION,
+        state: { ...DEFAULT_UI_STATE, slideOver: { open: false, width, codeShell: 'posix' } },
+      }),
+    );
+    return storage;
+  };
+
+  it('defaults to 294px, and a width left at the old 420px default takes the new one', () => {
+    expect(DEFAULT_UI_STATE.slideOver.width).toBe(294);
+    expect(readUi(stored(420)).slideOver.width).toBe(294);
+  });
+  it('keeps a width the user dragged to', () => {
+    expect(readUi(stored(500)).slideOver.width).toBe(500);
   });
 });

@@ -185,8 +185,8 @@ describe('mapOpenCollection: gRPC, WebSocket and unsupported items', () => {
   it('reports a dynamic variable once across protocols', () => {
     const m = mapText(
       collection(
-        grpcItem('      message: \'{"a":"{{$guid}}"}\'\n') +
-          wsItem('      message: { type: text, data: "{{$guid}}" }\n'),
+        grpcItem('      message: \'{"a":"{{$randomJobTitle}}"}\'\n') +
+          wsItem('      message: { type: text, data: "{{$randomJobTitle}}" }\n'),
       ),
     );
     expect(m.report.warnings.filter((w) => w.startsWith('Dynamic variables'))).toHaveLength(1);

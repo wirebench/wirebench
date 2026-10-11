@@ -17,6 +17,7 @@ my-service/
   environments/dev.yaml       # endpoints + properties for one environment
   interfaces/<Interface>/
     interface.yaml            # definitionUrl, cache, soapVersion, endpoints, auth (refs only)
+    interface.pre.ts          # the interface's scripts, run for every request in it (format 9)
     definition/                # the fetched WSDL/XSD, byte-exact, plus manifest.yaml (url → file, sha256)
     operations/<Operation>/
       <Request>.request.yaml  # endpointRef, headers, attachments, auth, WS-Addressing, properties
@@ -24,6 +25,7 @@ my-service/
       <Request>.pre.ts        # a pre-request script, when the request has one (.post.ts after the response)
   apis/<Api>/
     api.yaml                  # kind: rest, baseUrl, auth (refs only), settings, definition ref
+    api.pre.ts                # the API's scripts, run for every request in it (format 9)
     definition/                # the imported OpenAPI document, byte-exact, plus manifest.yaml
     requests/
       <Request>.request.yaml  # kind: rest, method, url, path params, query, headers, body, auth
@@ -32,6 +34,7 @@ my-service/
       <Request>.pre.ts        # the request's scripts, as for SOAP (.js when imported from Postman)
       <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth
+      <Folder>/folder.pre.ts  # the folder's scripts, run for every request inside it (format 9)
   sequences/
     <Sequence>.sequence.yaml  # kind: sequence, version, steps (request ids), transfers, assertions
   mocks/<Mock>/
@@ -63,6 +66,7 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `apis/<Api>/api.yaml` | A REST API: its OpenAPI reference, base URL, settings and auth reference |
 | `<Request>.request.yaml` + `<Request>.xml` (SOAP) or `<Request>.body.json` (REST) | One saved request: metadata in YAML, the payload in a file of its own kind |
 | `<Request>.pre.ts`, `<Request>.post.ts` | A request's pre-request and post-response scripts, named by its `scripts` key. They are TypeScript, or JavaScript (`.pre.js`, `.post.js`) for scripts imported from Postman. Renaming or moving the request moves them |
+| `api.pre.ts`, `interface.pre.ts`, `folder.pre.ts` (and `.post.ts`) | The scripts of an API, a SOAP interface or a REST or gRPC folder, named by the `scripts` key of `api.yaml`, `interface.yaml` or `folder.yaml`. They run around every request inside: the API's or interface's first, then each folder's from the outermost in, then the request's own. A request slugged `folder` cannot have scripts in a folder that has them, since both would use `folder.pre.ts` |
 | `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/docs/guides/snapshot-regression/) |
 | `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/docs/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
 | `mocks/<Mock>/mock.yaml` | One mock service: the interface or API it implements (by id), for SOAP the binding it speaks, the port, the path and how it treats a request that breaks the contract (`reject`, `report` or `off`). It carries `kind: mock` and its own `version` (see below). The listening host is never in the file: it is chosen when the mock is started and defaults to loopback |
@@ -96,64 +100,64 @@ workspace's `.vscode/settings.json`:
 ```json
 {
   "yaml.schemas": {
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/manifest.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/manifest.schema.json": [
       "**/wirebench.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/environment.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/environment.schema.json": [
       "**/environments/*.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/interface.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/interface.schema.json": [
       "**/interfaces/*/interface.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/soap-request.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/soap-request.schema.json": [
       "**/interfaces/*/operations/*/*.request.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/interface-definition-manifest.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/interface-definition-manifest.schema.json": [
       "**/interfaces/*/definition/manifest.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/api.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/api.schema.json": [
       "**/apis/*/api.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/api-request.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/api-request.schema.json": [
       "**/apis/*/requests/**/*.request.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/folder.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/folder.schema.json": [
       "**/apis/*/requests/**/folder.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/api-definition-manifest.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/api-definition-manifest.schema.json": [
       "**/apis/*/definition/manifest.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/golden.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/golden.schema.json": [
       "**/*.golden.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/sequence.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/sequence.schema.json": [
       "**/sequences/*.sequence.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/mock.schema.json": [
       "**/mocks/*/mock.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-operation.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/mock-operation.schema.json": [
       "**/mocks/*/operations/*/operation.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/mock-response.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/mock-response.schema.json": [
       "**/mocks/*/operations/*/*.response.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/webhooks.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/webhooks.schema.json": [
       "**/webhooks/webhooks.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/webhook-request.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/webhook-request.schema.json": [
       "**/webhooks/requests/**/*.request.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/webhook-folder.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/webhook-folder.schema.json": [
       "**/webhooks/requests/**/folder.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/keystores.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/keystores.schema.json": [
       "**/wss/keystores.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/wss-outgoing.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/wss-outgoing.schema.json": [
       "**/wss/outgoing/*.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v8/wss-incoming.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v9/wss-incoming.schema.json": [
       "**/wss/incoming/*.yaml"
     ]
   }
@@ -195,7 +199,7 @@ guessing:
 
 > Project was created by a newer version of Wirebench (format N, this build supports M)
 
-The project format is currently **version 8**:
+The project format is currently **version 9**:
 
 1. **Version 1** — the original layout described above, without APIs or per-variable disabling.
 2. **Version 2** — every property scope gained a per-variable `disabled` list, so a variable can be
@@ -212,6 +216,9 @@ The project format is currently **version 8**:
 7. **Version 7** — a REST request can carry `examples`: saved responses, each with its body in a
    file beside the request, under `<slug>.examples/<id>.body.<ext>`.
 8. **Version 8** — auth can be Kerberos (`type: kerberos`), on a request or wherever auth is inherited from; a version-7 project migrates unchanged.
+9. **Version 9** — an API, a SOAP interface and a REST or gRPC folder can carry a `scripts` key, with
+   their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them; a version-8
+   project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it

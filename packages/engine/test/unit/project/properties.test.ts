@@ -6,6 +6,7 @@ import {
   secretNamesIn,
   type PropertyScopes,
 } from '../../../src/project/properties.js';
+import { DynamicValues } from '../../../src/project/dynamic.js';
 import { expandSendInput } from '../../../src/soap/expand.js';
 import type { SoapSendInput } from '../../../src/soap/types.js';
 
@@ -520,5 +521,56 @@ describe('secretNamesIn', () => {
   it('ignores an unresolvable property reference', () => {
     const scopes: PropertyScopes = { project: {}, global: {} };
     expect(secretNamesIn('${missing}', scopes)).toEqual([]);
+  });
+});
+
+describe('the Dynamic scope', () => {
+  const none: PropertyScopes = { project: {}, global: {} };
+
+  it('resolves the explicit and short forms, the same value for the same reference in one expansion', () => {
+    const result = expand('${$guid} ${#Dynamic#guid} ${$uuid}', none);
+    const [a, b, c] = result.text.split(' ');
+    expect(a).toMatch(/^[0-9a-f-]{36}$/);
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    expect(result.unresolved).toEqual([]);
+    expect(result.used).toEqual([
+      { scope: 'Dynamic', name: 'guid' },
+      { scope: 'Dynamic', name: 'uuid' },
+    ]);
+  });
+
+  it('shares one memo across expansions with the same scopes, and not across fresh scopes', () => {
+    const scopes: PropertyScopes = { ...none, dynamic: new DynamicValues() };
+    const first = expand('${$guid}', scopes).text;
+    expect(expand('${$guid}', { ...scopes }).text).toBe(first);
+    expect(expand('${$guid}', none).text).not.toBe(first);
+  });
+
+  it('expands references inside the arguments first', () => {
+    const scopes: PropertyScopes = { project: { lo: '7', hi: '7' }, global: {} };
+    expect(expand('${$randomInt(${lo},${#Project#hi})}', scopes).text).toBe('7');
+  });
+
+  it('reports an unknown generator as missing and refused arguments as bad-arguments', () => {
+    expect(expand('${$nope}', none).unresolved).toMatchObject([
+      { expr: '${$nope}', scope: 'Dynamic', code: 'missing' },
+    ]);
+    expect(expand('${#Dynamic#randomInt(9,1)}', none).unresolved).toMatchObject([
+      { expr: '${#Dynamic#randomInt(9,1)}', scope: 'Dynamic', code: 'bad-arguments' },
+    ]);
+    expect(expand('a ${$guid(1)} b', none).text).toBe('a ${$guid(1)} b');
+  });
+
+  it('never expands a generated value again, and entitizes it like any value', () => {
+    expect(expand('<a>${$lorem(words=2)}</a>', none, { entitize: true }).text).toMatch(/^<a>[a-z]+ [a-z]+<\/a>$/);
+  });
+
+  it('keeps a $${ escape literal', () => {
+    expect(expand('$${$guid}', none).text).toBe('${$guid}');
+  });
+
+  it('finds no secret behind a dynamic reference', () => {
+    expect(secretNamesIn('${$guid}', none)).toEqual([]);
   });
 });

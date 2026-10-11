@@ -11,6 +11,7 @@ export function MocksSection({ preferences, update, locked = () => false }: Sect
     <SettingsGroup title="Mock services">
       <BooleanSetting
         label="Listen on all interfaces"
+        setting="mocks.listenOnAllInterfaces"
         testId="preferences-mocks-all-interfaces"
         value={preferences.mocks.listenOnAllInterfaces}
         locked={locked('mocks.listenOnAllInterfaces')}

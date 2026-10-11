@@ -174,6 +174,8 @@ export interface Interface {
   readonly wsa: WsaConfig;
   /** Interface-level default credentials, overridable per endpoint and per request. */
   readonly auth?: SoapOwnerAuth;
+  /** Scripts run around every request of every operation, before the request's own (#334). */
+  readonly scripts?: RequestScripts;
   readonly operations: readonly OperationDef[];
 }
 

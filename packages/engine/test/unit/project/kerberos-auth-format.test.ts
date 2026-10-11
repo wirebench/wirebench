@@ -31,8 +31,8 @@ describe('kerberos auth in the project format', () => {
     }
   });
 
-  it('is format 8', () => {
-    expect(FORMAT_VERSION).toBe(8);
+  it('is format 9', () => {
+    expect(FORMAT_VERSION).toBe(9);
   });
 
   it('is a whole value under effectiveAuth: nothing merges into it', () => {

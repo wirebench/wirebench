@@ -24,6 +24,7 @@ import { useProjectStore } from '../../state/project.js';
 import { JsonFormView } from './json-form-view.js';
 import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
 import type { KeyValueWire } from '../../../shared/wire-base.js';
+import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 
 /** The body kinds, in the order the switch offers them. */
 const KINDS = [
@@ -153,6 +154,8 @@ export function BodyTab({
   onSave,
   schemaSource,
 }: BodyTabProps) {
+  // Variable help in the editor (#340): completion, hover, unresolved marks, Set as Variable.
+  const attachVariables = useEditorVariableAssist();
   // One remembered draft per kind, seeded with the saved body's own kind.
   const [drafts, setDrafts] = useState<Partial<Record<BodyKind, RestBodyWire>>>({ [body.kind]: body });
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
@@ -325,13 +328,14 @@ export function BodyTab({
             onChange={(text) => {
               set({ ...body, text });
             }}
-            onMount={(editor) => {
+            onMount={(editor, monacoNS) => {
               editor.addCommand(SEND_KEYBINDING, () => {
                 onSend?.();
               });
               editor.addCommand(SAVE_KEYBINDING, () => {
                 onSave?.();
               });
+              attachVariables(editor, monacoNS);
             }}
           />
         </div>

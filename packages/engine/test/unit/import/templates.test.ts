@@ -11,10 +11,26 @@ describe('rewriteMustache', () => {
     expect(rewriteMustache('cost: ${x} and {{y}}')).toBe('cost: $${x} and ${y}');
   });
 
-  it('leaves dynamic {{$…}} variables as written and records them', () => {
+  it('maps a known dynamic {{$…}} variable onto the Dynamic scope, aliases included', () => {
     const seen = new Set<string>();
-    expect(rewriteMustache('id={{$guid}}&t={{ $timestamp }}', seen)).toBe('id={{$guid}}&t={{ $timestamp }}');
-    expect([...seen]).toEqual(['$guid', '$timestamp']);
+    expect(rewriteMustache('id={{$guid}}&t={{ $timestamp }}&n={{$randomFirstName}}', seen)).toBe(
+      'id=${$guid}&t=${$timestamp}&n=${$randomFirstName}',
+    );
+    expect([...seen]).toEqual([]);
+  });
+
+  it('maps the argument forms request files use', () => {
+    expect(rewriteMustache('{{$randomInt 1 100}} {{$randomInt -5 5}} {{$datetime iso8601}}')).toBe(
+      '${$randomInt(1,100)} ${$randomInt(-5,5)} ${$isoTimestamp}',
+    );
+  });
+
+  it('leaves an unknown dynamic variable as written and records it', () => {
+    const seen = new Set<string>();
+    expect(rewriteMustache('{{$processEnv HOME}} {{$nope}} {{$datetime rfc1123}}', seen)).toBe(
+      '{{$processEnv HOME}} {{$nope}} {{$datetime rfc1123}}',
+    );
+    expect([...seen]).toEqual(['$processEnv HOME', '$nope', '$datetime rfc1123']);
   });
 
   it('leaves an empty {{}} alone', () => {

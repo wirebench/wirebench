@@ -7,6 +7,7 @@
  * fetching; a schema that does not load is remembered for the run), runs its pre-request script,
  * connects, then calls (spec §3.4).
  */
+import { containerScriptLevels } from '../script/levels.js';
 import type { AssertionSubject } from '../assert/model.js';
 import { GrpcError, HttpError, isWirebenchError, WirebenchError } from '../errors.js';
 import type { AuthConfig, Project } from '../project/model.js';
@@ -538,6 +539,10 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     return {
       generated: grpcScriptTypes(types === undefined ? undefined : protoSet, types?.input ?? '', types?.output ?? ''),
     };
+  },
+
+  scriptLevels(selected) {
+    return containerScriptLevels(selected.api, 'api', selected.chain);
   },
 
   secretNeeds(selected, project) {

@@ -5,6 +5,7 @@
  * secret, its credentials with an OAuth2 token, the proxy), then goes on the wire (spec §3.4). A
  * send that is not live reads an event stream to its end or the timeout (spec §5.2).
  */
+import { containerScriptLevels } from '../script/levels.js';
 import { readFile } from 'node:fs/promises';
 import type { AssertionSubject } from '../assert/model.js';
 import { readAttachment } from '../project/attachments-cache.js';
@@ -486,6 +487,10 @@ export const restRun: ProtocolRun<RestSelected> = {
       loadOpenApiDocument(scope.context.projectDir, api.slug),
     );
     return { generated: restScriptTypes(restOperationFor(openApi, selected.request.contract)) };
+  },
+
+  scriptLevels(selected) {
+    return containerScriptLevels(selected.api, 'api', selected.chain);
   },
 
   secretNeeds(selected, project) {

@@ -100,7 +100,7 @@ describe('parseHttpEnvFiles', () => {
 
   it('imports a credential-named public value as a secret unless it is made of references alone', () => {
     const plan = parseHttpEnvFiles(
-      '{"dev":{"password":"{{prefix}}hunter2","token":"{{other}}","apiKey":"{{login.response.body.k}}","sessionId":"{{$uuid}}"}}',
+      '{"dev":{"password":"{{prefix}}hunter2","token":"{{other}}","apiKey":"{{login.response.body.k}}","sessionId":"{{$uuid}}","jobTitle":"{{$randomJobTitle}}"}}',
       undefined,
       'project',
     );
@@ -114,7 +114,8 @@ describe('parseHttpEnvFiles', () => {
     });
     expect(dev.get('token')).toMatchObject({ value: '${other}', secret: false });
     expect(dev.get('apiKey')).toMatchObject({ value: '{{login.response.body.k}}', secret: false });
-    expect(dev.get('sessionId')).toMatchObject({ value: '{{$uuid}}', secret: false });
+    expect(dev.get('sessionId')).toMatchObject({ value: '${$uuid}', secret: false });
+    expect(dev.get('jobTitle')).toMatchObject({ value: '{{$randomJobTitle}}', secret: false });
     expect(JSON.stringify(plan.environments.map((e) => e.variables.filter((v) => !v.secret)))).not.toContain('hunter2');
   });
 
@@ -146,18 +147,19 @@ describe('parseHttpEnvFiles', () => {
 
   it('rewrites templates in public and private values as @variables are rewritten', () => {
     const plan = parseHttpEnvFiles(
-      '{"dev":{"url":"{{host}}/v1","home":"{{$processEnv HOME}}","id":"{{$uuid}}","next":"{{login.response.body.id}}"}}',
+      '{"dev":{"url":"{{host}}/v1","home":"{{$processEnv HOME}}","id":"{{$uuid}}","job":"{{$randomJobTitle}}","next":"{{login.response.body.id}}"}}',
       '{"dev":{"password":"{{$processEnv PW}}","user":"{{name}}","chain":"{{login.response.body.t}}"}}',
       'project',
     );
     const dev = new Map(plan.environments[0]!.variables.map((v) => [v.name, v]));
     expect(dev.get('url')?.value).toBe('${host}/v1');
     expect(dev.get('home')?.value).toBe('${#System#HOME}');
-    expect(dev.get('id')?.value).toBe('{{$uuid}}');
+    expect(dev.get('id')?.value).toBe('${$uuid}');
+    expect(dev.get('job')?.value).toBe('{{$randomJobTitle}}');
     expect(dev.get('next')?.value).toBe('{{login.response.body.id}}');
     expect(dev.get('password')?.secretValue).toBe('${#System#PW}');
     expect(dev.get('user')?.secretValue).toBe('${name}');
-    expect(plan.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $uuid');
+    expect(plan.report.warnings).toContain('Dynamic variables are kept as written and not expanded: $randomJobTitle');
     expect(plan.report.warnings.join('\n')).toContain('{{login.response.body.id}}');
     expect(plan.report.warnings.join('\n')).not.toContain('{{login.response.body.t}}');
     expect(plan.report.warnings).toContain(

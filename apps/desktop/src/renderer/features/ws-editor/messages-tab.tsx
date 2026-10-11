@@ -17,6 +17,7 @@ import { CodeEditor } from '../../editor/code-editor.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import type { WsSavedMessageWire } from '../../../shared/kinds/ws/wire.js';
 import { base64Problem } from './ws-format.js';
+import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 
 /** A file-name-safe slug for a message name, unique among `taken`. */
 export function uniqueMessageSlug(name: string, taken: readonly string[]): string {
@@ -71,6 +72,8 @@ export interface WsMessagesTabProps {
 
 /** The Messages tab. */
 export function WsMessagesTab({ messages, selectedId, onSelect, onChange, open, onSend, onSave }: WsMessagesTabProps) {
+  // Variable help in the editor (#340): completion, hover, unresolved marks, Set as Variable.
+  const attachVariables = useEditorVariableAssist();
   const [renaming, setRenaming] = useState<string | undefined>(undefined);
   const [renameText, setRenameText] = useState('');
   const selected = messages.find((message) => message.id === selectedId) ?? messages[0];
@@ -267,7 +270,8 @@ export function WsMessagesTab({ messages, selectedId, onSelect, onChange, open, 
               onChange={(content) => {
                 replace(selected.id, { content });
               }}
-              onMount={(editor) => {
+              onMount={(editor, monacoNS) => {
+                attachVariables(editor, monacoNS);
                 editor.addCommand(SEND_KEYBINDING, () => {
                   const now = latest.current;
                   if (now.open && now.selected !== undefined) now.onSend(now.selected);

@@ -21,6 +21,7 @@ import {
   EnumSetting,
   NumberSetting,
   SettingsGroup,
+  SettingsRow,
   TextSetting,
 } from '../../components/settings-grid.js';
 import { ipc } from '../../state/ipc-client.js';
@@ -38,6 +39,7 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
     >
       <EnumSetting
         label="Mode"
+        setting="proxy.mode"
         value={proxy.mode}
         testId="proxy-mode"
         locked={locked('proxy.mode')}
@@ -50,6 +52,7 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
       />
       <TextSetting
         label="Host"
+        setting="proxy.host"
         value={proxy.host ?? ''}
         readOnly={!manual}
         testId="proxy-host"
@@ -58,6 +61,7 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
       />
       <NumberSetting
         label="Port"
+        setting="proxy.port"
         value={proxy.port}
         min={1}
         testId="proxy-port"
@@ -66,23 +70,26 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
       />
       <TextSetting
         label="Username"
+        setting="proxy.username"
         value={proxy.username ?? ''}
         readOnly={!manual}
         testId="proxy-username"
         locked={locked('proxy.username')}
         onCommit={(username) => update({ proxy: { username } })}
       />
-      <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
-        <span className="text-sm text-fg-muted">Password</span>
-        <SecretField
-          label="Proxy password"
-          value={proxy.passwordRef}
-          disabled={!manual}
-          onChange={(passwordRef) => update({ proxy: { passwordRef: passwordRef ?? '' } })}
-        />
-      </div>
+      <SettingsRow label="Password" hint="Kept in the OS keychain, never in the preferences file.">
+        <div className="w-64">
+          <SecretField
+            label="Proxy password"
+            value={proxy.passwordRef}
+            disabled={!manual}
+            onChange={(passwordRef) => update({ proxy: { passwordRef: passwordRef ?? '' } })}
+          />
+        </div>
+      </SettingsRow>
       <TextSetting
         label="Excludes"
+        setting="proxy.excludes"
         value={proxy.excludes.join(', ')}
         testId="proxy-excludes"
         locked={locked('proxy.excludes')}
@@ -125,6 +132,7 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
     <SettingsGroup title="SSL / TLS">
       <EnumSetting
         label="Minimum version"
+        setting="ssl.minVersion"
         value={ssl.minVersion}
         testId="ssl-min-version"
         locked={locked('ssl.minVersion')}
@@ -136,6 +144,7 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
       />
       <TextSetting
         label="CA bundle"
+        setting="ssl.caBundlePath"
         value={ssl.caBundlePath ?? ''}
         monospace
         readOnly
@@ -144,8 +153,7 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
         hint="A PEM file of extra trust anchors, chosen with Browse…. Added to the system store; nothing is replaced."
         onCommit={() => undefined}
       />
-      <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
-        <span />
+      <SettingsRow label="Choose a CA bundle" locked={bundleLocked}>
         <div className="flex gap-2">
           <Button
             variant="secondary"
@@ -169,9 +177,11 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
             </Button>
           )}
         </div>
-      </div>
+      </SettingsRow>
       <EnumSetting
+        display="select"
         label="Client keystore"
+        setting="ssl.clientKeystoreRef"
         value={ssl.clientKeystoreRef ?? ''}
         testId="ssl-client-keystore"
         hint="Presented when a request selects no keystore of its own. The request always wins."
@@ -188,6 +198,7 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
       />
       <NumberSetting
         label="Expiry warning (days)"
+        setting="ssl.expiryWarningDays"
         value={ssl.expiryWarningDays}
         min={0}
         max={3650}

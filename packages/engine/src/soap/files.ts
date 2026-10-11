@@ -59,6 +59,8 @@ export const interfaceFileSchema = z.looseObject({
   defaultEndpointId: z.string().optional(),
   wsa: wsaSchema,
   auth: soapOwnerAuthSchema.optional(),
+  /** The interface's scripts (format 9, #334), in `interface.pre.ts` and `interface.post.ts` beside it. */
+  scripts: scriptsSchema.optional(),
   operations: z.array(operationEntrySchema),
 });
 

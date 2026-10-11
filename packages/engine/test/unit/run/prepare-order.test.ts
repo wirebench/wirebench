@@ -128,7 +128,7 @@ const tokens: RunTokenSource = {
   reject: () => undefined,
 };
 
-const NOTHING = { tests: [], values: [], log: { lines: [], truncated: false } } as const;
+const NOTHING = { tests: [], values: [], log: { lines: [], truncated: false }, levels: [] } as const;
 
 let snapshotSeenByScript: unknown;
 

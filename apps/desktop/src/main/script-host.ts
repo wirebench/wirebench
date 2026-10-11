@@ -16,7 +16,13 @@
 
 import {
   RequestScripting,
+  activeLevels,
   activeScripts,
+  containerScriptLevels,
+  grpcApisOf,
+  levelScriptTypes,
+  restApisOf,
+  soapInterfacesOf,
   createScriptChecker,
   createScriptSandbox,
   dispatchDeclarations,
@@ -44,6 +50,7 @@ import type {
   ScriptQuickInfo,
   ScriptSandbox,
   ScriptSignatureHelp,
+  ScriptLevel,
   ScriptValue,
   ScriptedRequest,
 } from '@wirebench/engine';
@@ -80,7 +87,10 @@ export interface SessionValueListing {
   readonly secret: boolean;
 }
 
-/** Which script an editor holds: one of a request's two, or a mock operation's `dispatch.ts`. */
+/**
+ * Which script an editor holds: one of a request's two — or an interface's, an API's or a folder's,
+ * whose id `requestId` then holds (#334) — or a mock operation's `dispatch.ts`.
+ */
 export type ScriptTarget =
   | { readonly requestId: string; readonly phase: ScriptPhase }
   | { readonly mockId: string; readonly operationId: string };
@@ -92,7 +102,42 @@ interface Located {
   readonly name: string;
   readonly slug: string;
   readonly scripts: RequestScripts | undefined;
+  /** The levels above it with scripts, on or off, outermost first (#334). */
+  readonly outer: readonly ScriptLevel[];
   readonly types: () => Promise<RequestScriptTypes>;
+}
+
+/** A REST or gRPC API or folder, as far as its scripts and finding a request in it go. */
+interface ScriptTree {
+  readonly folders: readonly ScriptFolder[];
+  readonly requests: readonly { readonly id: string }[];
+}
+
+interface ScriptFolder extends ScriptTree {
+  readonly id: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly scripts?: RequestScripts;
+}
+
+/** The folders from `node` down to the request with this id, outermost first; `undefined` when it is not inside. */
+function folderChain(node: ScriptTree, requestId: string): readonly ScriptFolder[] | undefined {
+  if (node.requests.some((request) => request.id === requestId)) return [];
+  for (const folder of node.folders) {
+    const deeper = folderChain(folder, requestId);
+    if (deeper !== undefined) return [folder, ...deeper];
+  }
+  return undefined;
+}
+
+/** A folder with this id, anywhere under `node`. */
+function findFolder(node: ScriptTree, folderId: string): ScriptFolder | undefined {
+  for (const folder of node.folders) {
+    if (folder.id === folderId) return folder;
+    const deeper = findFolder(folder, folderId);
+    if (deeper !== undefined) return deeper;
+  }
+  return undefined;
 }
 
 /** Types per loaded definition object, per operation in it. */
@@ -152,6 +197,7 @@ export class ScriptHost {
         name: request.name,
         slug: request.slug,
         scripts: request.scripts,
+        outer: containerScriptLevels(iface, 'interface'),
         types: () => {
           let loaded: WsdlImportResult | undefined;
           try {
@@ -186,6 +232,7 @@ export class ScriptHost {
         name: rest.name,
         slug: rest.slug,
         scripts: rest.scripts,
+        outer: containerScriptLevels(restApi, 'api', folderChain(restApi, requestId) ?? []),
         types: async () => {
           const document =
             rest.contract === undefined
@@ -208,6 +255,7 @@ export class ScriptHost {
         name: grpc.name,
         slug: grpc.slug,
         scripts: grpc.scripts,
+        outer: containerScriptLevels(grpcApi, 'api', folderChain(grpcApi, requestId) ?? []),
         types: async () => {
           const set = await this.deps.grpcProtoSetFor(grpcApi.id).catch(() => undefined);
           return memo(set, `${grpc.service}/${grpc.method}`, () => {
@@ -226,12 +274,41 @@ export class ScriptHost {
     return undefined;
   }
 
-  /** Whether a send of `requestId` runs scripts, and the request as the scripting runs it when it does. */
+  /**
+   * The scripts of an interface, an API or a folder with this id, and its protocol (#334); undefined
+   * when no level has that id.
+   */
+  private locateLevel(levelId: string): { readonly protocol: string; readonly scripts?: RequestScripts } | undefined {
+    const project = this.deps.modelOf(levelId);
+    if (project === undefined) return undefined;
+    const iface = soapInterfacesOf(project).find((candidate) => candidate.id === levelId);
+    if (iface !== undefined)
+      return { protocol: 'soap', ...(iface.scripts !== undefined ? { scripts: iface.scripts } : {}) };
+    for (const [protocol, apis] of [
+      ['rest', restApisOf(project)],
+      ['grpc', grpcApisOf(project)],
+    ] as const) {
+      for (const api of apis) {
+        const owner = api.id === levelId ? api : findFolder(api, levelId);
+        if (owner !== undefined)
+          return { protocol, ...(owner.scripts !== undefined ? { scripts: owner.scripts } : {}) };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Whether a send of `requestId` runs scripts, its own or its levels' (#334), and the request as the
+   * scripting runs it when it does.
+   */
   async lookup(requestId: string): Promise<ScriptLookup> {
     const located = this.locate(requestId);
-    if (located?.scripts === undefined) return { kind: 'none' };
+    if (located === undefined || (located.scripts === undefined && located.outer.length === 0)) {
+      return { kind: 'none' };
+    }
     const scripts = activeScripts(located.scripts);
-    if (scripts === undefined) return { kind: 'off' };
+    const outer = activeLevels(located.outer);
+    if (scripts === undefined && outer.length === 0) return { kind: 'off' };
     return {
       kind: 'on',
       request: {
@@ -239,7 +316,8 @@ export class ScriptHost {
         path: located.path,
         name: located.name,
         slug: located.slug,
-        scripts,
+        ...(scripts !== undefined ? { scripts } : {}),
+        ...(outer.length > 0 ? { outer } : {}),
         types: await located.types(),
       },
     };
@@ -247,11 +325,24 @@ export class ScriptHost {
 
   // --- The editor --------------------------------------------------------------------------------
 
-  /** The model an editor's script is checked as: its text, and its request's declarations. */
+  /**
+   * The model an editor's script is checked as: its text, and its request's declarations. An
+   * interface's, an API's or a folder's script gets its protocol's generic ones (#334).
+   */
   private async requestModel(requestId: string, phase: ScriptPhase, source: string): Promise<ScriptModel> {
     const located = this.locate(requestId);
     if (located === undefined) {
-      return { source, declarations: '', api: 'wirebench' };
+      const level = this.locateLevel(requestId);
+      if (level === undefined) return { source, declarations: '', api: 'wirebench' };
+      const api = level.scripts?.api ?? 'wirebench';
+      return {
+        source,
+        declarations:
+          api === 'postman'
+            ? ''
+            : scriptDeclarations(level.protocol, phase, level.scripts?.secrets ?? [], levelScriptTypes(level.protocol)),
+        api,
+      };
     }
     const api = located.scripts?.api ?? 'wirebench';
     if (api === 'postman') {

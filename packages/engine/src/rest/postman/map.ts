@@ -136,14 +136,23 @@ export function apiFromPostmanCollection(
   let folderCount = 0;
   let requestCount = 0;
 
-  let scriptedRequests = 0;
+  // Each level keeps its own scripts (#334): the collection's on the API, a folder's on the folder.
+  const scripted = { api: false, folders: 0, requests: 0 };
   const unsupported = new Map<string, Set<string>>();
-  const collectionParts = scriptParts(collection.event, `the collection "${name}"`);
+  const scriptsAt = (events: readonly PostmanEvent[] | undefined, path: string): RequestScripts | undefined => {
+    const scripts = importedScripts(events);
+    if (scripts !== undefined) {
+      const calls = unsupportedCalls([scripts.pre?.text ?? '', scripts.post?.text ?? ''].join('\n'));
+      if (calls.length > 0) unsupported.set(path, new Set(calls));
+    }
+    return scripts;
+  };
+  const apiScripts = scriptsAt(collection.event, name);
+  scripted.api = apiScripts !== undefined;
 
   const mapItems = (
     items: readonly PostmanItem[],
     depth: number,
-    inherited: ScriptParts,
     trail: readonly string[],
   ): { folders: RestFolder[]; requests: RestRequestDef[] } => {
     if (depth > MAX_POSTMAN_DEPTH) {
@@ -165,12 +174,9 @@ export function apiFromPostmanCollection(
         folderSlugs.add(slug);
         const folderAuth = mapPostmanAuth(item.auth, false, warnings);
         const folderTrail = [...trail, item.name];
-        const children = mapItems(
-          item.item,
-          depth + 1,
-          joinParts(inherited, scriptParts(item.event, `the folder "${folderTrail.join(' / ')}"`)),
-          folderTrail,
-        );
+        const folderScripts = scriptsAt(item.event, folderTrail.join(' / '));
+        if (folderScripts !== undefined) scripted.folders += 1;
+        const children = mapItems(item.item, depth + 1, folderTrail);
 
         folders.push(
           createFolder(item.name, {
@@ -179,6 +185,7 @@ export function apiFromPostmanCollection(
             order: folders.length,
             ...(item.description !== undefined ? { description: item.description } : {}),
             ...(folderAuth !== undefined ? { auth: folderAuth } : {}),
+            ...(folderScripts !== undefined ? { scripts: folderScripts } : {}),
             folders: children.folders,
             requests: children.requests,
           }),
@@ -190,13 +197,8 @@ export function apiFromPostmanCollection(
         requestSlugs.add(slug);
 
         const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl, warnings);
-        const parts = joinParts(inherited, scriptParts(item.event, 'the request'));
-        const scripts = importedScripts(parts);
-        if (scripts !== undefined) {
-          scriptedRequests += 1;
-          const calls = unsupportedCalls([...parts.pre, ...parts.post].map((part) => part.text).join('\n'));
-          if (calls.length > 0) unsupported.set([...trail, item.name].join(' / '), new Set(calls));
-        }
+        const scripts = scriptsAt(item.event, [...trail, item.name].join(' / '));
+        if (scripts !== undefined) scripted.requests += 1;
         const examples = mapExamples(item.response ?? [], item.responsesDropped ?? 0, item.name, newId, warnings);
         const behaviour = item.protocolProfileBehavior;
         requests.push({
@@ -211,11 +213,20 @@ export function apiFromPostmanCollection(
     return { folders, requests };
   };
 
-  const root = mapItems(collection.item, 1, collectionParts, []);
-  if (scriptedRequests > 0) {
-    warnings.push(
-      `Scripts on ${String(scriptedRequests)} ${scriptedRequests === 1 ? 'request was' : 'requests were'} imported switched off: read them on each request's Scripts tab, then switch them on`,
-    );
+  const root = mapItems(collection.item, 1, []);
+  const scriptedPlaces = [
+    ...(scripted.api ? ['the API'] : []),
+    ...(scripted.folders > 0 ? [`${String(scripted.folders)} ${scripted.folders === 1 ? 'folder' : 'folders'}`] : []),
+    ...(scripted.requests > 0
+      ? [`${String(scripted.requests)} ${scripted.requests === 1 ? 'request' : 'requests'}`]
+      : []),
+  ];
+  if (scriptedPlaces.length > 0) {
+    const listed =
+      scriptedPlaces.length === 1
+        ? scriptedPlaces[0]!
+        : `${scriptedPlaces.slice(0, -1).join(', ')} and ${scriptedPlaces[scriptedPlaces.length - 1]!}`;
+    warnings.push(`Scripts on ${listed} were imported switched off: read each on its Scripts tab, then switch them on`);
   }
   for (const [path, calls] of unsupported) {
     warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
@@ -241,6 +252,7 @@ export function apiFromPostmanCollection(
     servers,
     ...(collection.info.description !== undefined ? { description: collection.info.description } : {}),
     ...(apiAuth !== undefined ? { auth: apiAuth } : {}),
+    ...(apiScripts !== undefined ? { scripts: apiScripts } : {}),
     folders: root.folders,
     requests: root.requests,
   });
@@ -673,44 +685,25 @@ function inferBaseUrl(items: readonly PostmanItem[], depth: number): string {
   return '';
 }
 
-/** One piece of a request's script, and where in the collection it came from. */
-interface ScriptPart {
-  readonly from: string;
-  readonly text: string;
-}
-
-interface ScriptParts {
-  readonly pre: readonly ScriptPart[];
-  readonly post: readonly ScriptPart[];
-}
-
-function scriptParts(events: readonly PostmanEvent[] | undefined, from: string): ScriptParts {
-  const pre: ScriptPart[] = [];
-  const post: ScriptPart[] = [];
-  for (const event of events ?? []) {
-    (event.listen === 'prerequest' ? pre : post).push({ from, text: event.exec });
-  }
-  return { pre, post };
-}
-
-function joinParts(outer: ScriptParts, inner: ScriptParts): ScriptParts {
-  return { pre: [...outer.pre, ...inner.pre], post: [...outer.post, ...inner.post] };
-}
-
-/** The parts concatenated in the order Postman runs them, each under a comment saying where it came from. */
-function scriptText(parts: readonly ScriptPart[]): string {
-  return parts.map((part) => `// --- From ${part.from} ---\n${part.text.replace(/\s+$/, '')}\n`).join('\n');
+/** A level's scripts of one kind, in the order Postman runs them; two of one kind are joined. */
+function scriptText(texts: readonly string[]): string {
+  return texts.map((text) => `${text.replace(/\s+$/, '')}\n`).join('\n');
 }
 
 /**
- * A request's imported scripts: the collection's, then each enclosing folder's, then its own,
- * written against the Postman layer and switched off until someone has read them (#63).
+ * One level's imported scripts (a collection's, a folder's or a request's), written against the
+ * Postman layer and switched off until someone has read them (#63, #334).
  */
-function importedScripts(parts: ScriptParts): RequestScripts | undefined {
-  if (parts.pre.length === 0 && parts.post.length === 0) return undefined;
+function importedScripts(events: readonly PostmanEvent[] | undefined): RequestScripts | undefined {
+  const pre: string[] = [];
+  const post: string[] = [];
+  for (const event of events ?? []) {
+    (event.listen === 'prerequest' ? pre : post).push(event.exec);
+  }
+  if (pre.length === 0 && post.length === 0) return undefined;
   return {
-    ...(parts.pre.length > 0 ? { pre: { text: scriptText(parts.pre) } } : {}),
-    ...(parts.post.length > 0 ? { post: { text: scriptText(parts.post) } } : {}),
+    ...(pre.length > 0 ? { pre: { text: scriptText(pre) } } : {}),
+    ...(post.length > 0 ? { post: { text: scriptText(post) } } : {}),
     api: 'postman',
     enabled: false,
     secrets: [],

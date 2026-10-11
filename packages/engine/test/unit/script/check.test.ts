@@ -82,6 +82,21 @@ describe('the checker service', () => {
     expect(diagnosticsOf(`lru-${String(MAX_MODELS)}`)).toEqual([]);
     for (let i = 0; i <= MAX_MODELS; i++) removeModel(`lru-${String(i)}`);
   });
+
+  it('checks each open model against its own text, not another’s', () => {
+    // Every model's files have the same names; two kept at once must not read each other's.
+    updateModel('first', { source: 'log("fine");', declarations: DECLARATIONS, api: 'wirebench' });
+    expect(diagnosticsOf('first')).toEqual([]);
+    updateModel('second', {
+      source: 'log(response.statuss);',
+      declarations: scriptDeclarations('rest', 'pre', [], restScriptTypes(undefined)),
+      api: 'wirebench',
+    });
+    expect(diagnosticsOf('second').map((d) => d.code)).toEqual([2304]);
+    expect(diagnosticsOf('first')).toEqual([]);
+    removeModel('first');
+    removeModel('second');
+  });
 });
 
 describe('createScriptChecker', () => {

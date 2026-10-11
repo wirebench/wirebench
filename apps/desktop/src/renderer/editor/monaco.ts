@@ -10,6 +10,7 @@ import { monaco } from './monaco-core.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { MONACO_THEMES, THEME_DEFINITIONS } from './themes.js';
 import { registerJsonLanguage } from './json-language.js';
+import { registerDynamicCompletionOnce } from './dynamic-completion.js';
 
 export { MONACO_THEMES } from './themes.js';
 
@@ -39,6 +40,8 @@ export function configureMonaco(): typeof monaco {
   // that owns Monaco's global setup, and doing it before `loader.config` means no editor can mount
   // against a Monaco that has the language missing.
   registerJsonLanguage(monaco);
+  // `${$` lists the dynamic value generators in every body editor (#333).
+  registerDynamicCompletionOnce(monaco);
 
   loader.config({ monaco });
   for (const [name, definition] of Object.entries(THEME_DEFINITIONS)) {

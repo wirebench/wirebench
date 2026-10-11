@@ -12,6 +12,10 @@ import { WsApiTab } from '../../src/renderer/features/ws-api/ws-api-tab.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+
+// The API tab holds the Scripts editor (#334), so Monaco is stubbed as the request editors' tests do.
+vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { NO_REST, PROJECT_SETTINGS, wsApiWire } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';

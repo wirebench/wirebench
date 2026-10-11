@@ -17,7 +17,7 @@ import type { ScriptSession } from '../run/script-support.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import type { ScanTarget, SecretRewriter } from '../secrets/scan/support.js';
 import type { HeaderPair, RequestScripts, ScriptFailure, ScriptPhase } from '../script/model.js';
-import type { RequestScriptTypes } from '../script/request-scripts.js';
+import type { RequestScriptTypes, ScriptLevel } from '../script/request-scripts.js';
 import type { SecretPlaceholders } from '../script/send.js';
 import type { ApiReferenceSection } from '../script/types/api.js';
 import type { FeatureDescriptor } from './features.js';
@@ -208,6 +208,12 @@ export interface ProtocolRun<S extends SelectedBase = SelectedBase> {
   scriptTypes(selected: S, scope: RunScope): Promise<RequestScriptTypes>;
   /** The secrets this protocol's configuration needs: auth, keystores, signing, WS-Security. */
   secretNeeds(selected: S, project: Project): readonly SecretNeed[];
+  /**
+   * The levels above the request whose scripts run around its own (#334), outermost first: its
+   * API's or interface's, then each enclosing folder's. Only the levels with a `scripts` key, on or
+   * off. Absent: a protocol whose containers carry no scripts.
+   */
+  scriptLevels?(selected: S): readonly ScriptLevel[];
 }
 
 /**
@@ -257,6 +263,11 @@ export interface ProtocolScripting<
 > {
   /** The API's ambient declarations for one phase, after the common ones. */
   declarations(phase: ScriptPhase): string;
+  /**
+   * The generated half of the types an API's or a folder's script is checked against (#334): what a
+   * request gets when its operation is unknown, since a level runs for many operations.
+   */
+  levelTypes(): string;
   /** The docs site's reference sections for this protocol, in order. */
   reference(): readonly ApiReferenceSection[];
   /** Sandbox-side source that defines `request` and `response` from the input snapshot. */
@@ -359,6 +370,10 @@ export function defineProtocol<S extends SelectedBase>(module: {
             secretNeeds: (selected, project) => {
               assertKind(module.kind, selected);
               return run.secretNeeds(selected as S, project);
+            },
+            scriptLevels: (selected) => {
+              assertKind(module.kind, selected);
+              return run.scriptLevels?.(selected as S) ?? [];
             },
           },
         }

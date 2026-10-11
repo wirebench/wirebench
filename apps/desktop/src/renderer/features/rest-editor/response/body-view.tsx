@@ -24,6 +24,7 @@ import { useContractRevealStore } from './contract.js';
 import { HtmlPreview } from './html-preview.js';
 import type * as Monaco from 'monaco-editor';
 import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
+import { useEditorVariableAssist } from '../../environments/variable-assist-provider.js';
 
 /** Which of the three views is showing. */
 export type BodyViewMode = 'pretty' | 'raw' | 'preview';
@@ -103,6 +104,8 @@ export interface BodyViewProps {
 
 /** The body tab, with its own Pretty/Raw/Preview strip. */
 export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
+  // Variable help in the editor (#340): completion, hover, unresolved marks, Set as Variable.
+  const attachVariables = useEditorVariableAssist({ readOnly: true });
   const maxPretty = usePreferencesStore((state) => state.preferences.rest.prettyPrintMaxBytes);
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
   const tooLargeToPretty = exchange.text.length > maxPretty;
@@ -234,8 +237,9 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
             language={editorLanguage(exchange.language)}
             readOnly
             ariaLabel="Response body"
-            onMount={(mounted) => {
+            onMount={(mounted, monacoNS) => {
               setEditor(mounted);
+              attachVariables(mounted, monacoNS);
             }}
           />
         )}

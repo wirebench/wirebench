@@ -48,7 +48,7 @@ import { subscribeToWebhooks } from '../state/webhooks.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
-import { PreferencesDialog } from '../features/preferences/preferences-dialog.js';
+import { SettingsPage } from '../features/preferences/settings-page.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
@@ -73,6 +73,7 @@ import { ConsolePanel } from './console-panel.js';
 import { EditorArea } from './editor-area.js';
 import { ImportDialog } from '../features/explorer/import-dialog.js';
 import { FolderAuthDialog } from '../features/rest-api/folder-auth-dialog.js';
+import { FolderScriptsDialog } from '../features/scripts/folder-scripts-dialog.js';
 import { ImportCurlFromTarget } from '../features/request-editor/import-curl-from-target.js';
 import { PanelHandle } from './panel-handle.js';
 import { RightRail } from './right-rail.js';
@@ -135,6 +136,7 @@ export function AppShell() {
   const closeCode = useUiStore((state) => state.closeCode);
   // On the Hosts tab the slide-over holds the picked host instead of a request's code.
   const hostDetailsShown = useHostDetailsShown();
+  const settingsOpen = useUiStore((state) => state.preferences.open);
   const toggleHostDetails = useCallback(() => {
     const hosts = useHostsStore.getState();
     hosts.setDetailsOpen(!hosts.detailsOpen);
@@ -396,111 +398,117 @@ export function AppShell() {
           onToggleTheme={dispatch('view.toggleTheme')}
         />
 
-        {/* The title bar stays above the picker: it carries the window controls on every
+        {/* Settings takes the place of everything between the title bar and the status bar
+            while it is open. The workbench stays mounted underneath, only hidden, so editors,
+            terminals and scroll positions are exactly as they were when Settings closes. */}
+        {settingsOpen && <SettingsPage />}
+        <div className={settingsOpen ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
+          {/* The title bar stays above the picker: it carries the window controls on every
             platform, and losing them with no workspace open would trap the user. */}
-        {workspace === null && !workspaceReady ? (
-          // Main answers the first snapshot only once its launch-time reopen settled; until
-          // then neither the picker nor the IDE is known to be right, so neither is shown.
-          <div
-            data-testid="workspace-loading"
-            role="status"
-            aria-live="polite"
-            className="flex min-h-0 flex-1 items-center justify-center"
-          >
-            <Loader2 size={24} aria-hidden="true" className="animate-spin text-fg-muted" />
-            <span className="sr-only">Opening the last workspace…</span>
-          </div>
-        ) : workspace === null ? (
-          <div className="min-h-0 flex-1">
-            <WorkspacePicker />
-          </div>
-        ) : (
-          <div className="relative flex min-h-0 flex-1">
-            <ActivityBar platform={platform} />
+          {workspace === null && !workspaceReady ? (
+            // Main answers the first snapshot only once its launch-time reopen settled; until
+            // then neither the picker nor the IDE is known to be right, so neither is shown.
+            <div
+              data-testid="workspace-loading"
+              role="status"
+              aria-live="polite"
+              className="flex min-h-0 flex-1 items-center justify-center"
+            >
+              <Loader2 size={24} aria-hidden="true" className="animate-spin text-fg-muted" />
+              <span className="sr-only">Opening the last workspace…</span>
+            </div>
+          ) : workspace === null ? (
+            <div className="min-h-0 flex-1">
+              <WorkspacePicker />
+            </div>
+          ) : (
+            <div className="relative flex min-h-0 flex-1">
+              <ActivityBar platform={platform} />
 
-            <div ref={rowRef} className="flex min-w-0 flex-1">
-              {sidebar.visible && (
-                <div
-                  data-testid="sidebar-panel"
-                  style={{ width: `${String(sidebar.size)}%` }}
-                  className="min-w-0 shrink-0 border-r border-hairline"
-                >
-                  <Sidebar />
-                </div>
-              )}
-              {/* The handle stays mounted (and hit-testable) even while the sidebar is collapsed,
-                  so a double-click on it — expand or collapse — and a drag back out always have a
-                  target; only the panel's own content unmounts. */}
-              <PanelHandle
-                testId="panel-handle-sidebar"
-                label={sidebar.visible ? 'Resize Sidebar' : 'Show Sidebar'}
-                orientation="vertical"
-                valueNow={sidebar.visible ? sidebar.size : 0}
-                valueMin={SIDEBAR_MIN}
-                valueMax={SIDEBAR_MAX}
-                onDrag={dragSidebar}
-                onDragEnd={endSidebarDrag}
-                onStep={stepSidebar}
-                onDoubleClick={onDoubleClickSidebarHandle}
-              />
-
-              <div ref={columnRef} data-testid="main-panel" className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <div className="min-h-0 min-w-0 flex-1">
-                  <EditorArea />
-                </div>
-                {/* Same rationale as the sidebar's handle above: stays mounted while the console
-                    is collapsed. */}
-                <PanelHandle
-                  testId="panel-handle-console"
-                  label={consoleState.visible ? 'Resize Console' : 'Show Console'}
-                  orientation="horizontal"
-                  valueNow={consoleState.visible ? consoleState.size : 0}
-                  valueMin={CONSOLE_MIN}
-                  valueMax={CONSOLE_MAX}
-                  onDrag={dragConsole}
-                  onDragEnd={endConsoleDrag}
-                  onStep={stepConsole}
-                  onDoubleClick={onDoubleClickConsoleHandle}
-                />
-                {consoleState.visible && (
+              <div ref={rowRef} className="flex min-w-0 flex-1">
+                {sidebar.visible && (
                   <div
-                    data-testid="console-panel"
-                    style={{ height: `${String(consoleState.size)}%` }}
-                    className="min-h-0 shrink-0"
+                    data-testid="sidebar-panel"
+                    style={{ width: `${String(sidebar.size)}%` }}
+                    className="min-w-0 shrink-0 border-r border-hairline"
                   >
-                    <ConsolePanel />
+                    <Sidebar />
                   </div>
                 )}
-              </div>
-            </div>
+                {/* The handle stays mounted (and hit-testable) even while the sidebar is collapsed,
+                  so a double-click on it — expand or collapse — and a drag back out always have a
+                  target; only the panel's own content unmounts. */}
+                <PanelHandle
+                  testId="panel-handle-sidebar"
+                  label={sidebar.visible ? 'Resize Sidebar' : 'Show Sidebar'}
+                  orientation="vertical"
+                  valueNow={sidebar.visible ? sidebar.size : 0}
+                  valueMin={SIDEBAR_MIN}
+                  valueMax={SIDEBAR_MAX}
+                  onDrag={dragSidebar}
+                  onDragEnd={endSidebarDrag}
+                  onStep={stepSidebar}
+                  onDoubleClick={onDoubleClickSidebarHandle}
+                />
 
-            <RightRail platform={platform} />
-            {/* The slide-over is the exception to the two handles above: it overlays the editor
+                <div ref={columnRef} data-testid="main-panel" className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div className="min-h-0 min-w-0 flex-1">
+                    <EditorArea />
+                  </div>
+                  {/* Same rationale as the sidebar's handle above: stays mounted while the console
+                    is collapsed. */}
+                  <PanelHandle
+                    testId="panel-handle-console"
+                    label={consoleState.visible ? 'Resize Console' : 'Show Console'}
+                    orientation="horizontal"
+                    valueNow={consoleState.visible ? consoleState.size : 0}
+                    valueMin={CONSOLE_MIN}
+                    valueMax={CONSOLE_MAX}
+                    onDrag={dragConsole}
+                    onDragEnd={endConsoleDrag}
+                    onStep={stepConsole}
+                    onDoubleClick={onDoubleClickConsoleHandle}
+                  />
+                  {consoleState.visible && (
+                    <div
+                      data-testid="console-panel"
+                      style={{ height: `${String(consoleState.size)}%` }}
+                      className="min-h-0 shrink-0"
+                    >
+                      <ConsolePanel />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <RightRail platform={platform} />
+              {/* The slide-over is the exception to the two handles above: it overlays the editor
                 rather than sharing the row with it, so while closed it unmounts completely — a
                 handle left over the editor's right edge would swallow clicks and drag-selection
                 there. The rail's Code icon and `view.toggleCode` reopen it. */}
-            <SlideOver
-              label="Code"
-              open={slideOver.open && !hostDetailsShown}
-              width={slideOver.width}
-              onWidthChange={setSlideOverWidth}
-              onToggle={toggleCode}
-              onClose={closeCode}
-            >
-              <CodePanel />
-            </SlideOver>
-            <SlideOver
-              label="Host details"
-              open={hostDetailsShown}
-              width={slideOver.width}
-              onWidthChange={setSlideOverWidth}
-              onToggle={toggleHostDetails}
-              onClose={closeHostDetails}
-            >
-              <HostDetails />
-            </SlideOver>
-          </div>
-        )}
+              <SlideOver
+                label="Code"
+                open={slideOver.open && !hostDetailsShown && !settingsOpen}
+                width={slideOver.width}
+                onWidthChange={setSlideOverWidth}
+                onToggle={toggleCode}
+                onClose={closeCode}
+              >
+                <CodePanel />
+              </SlideOver>
+              <SlideOver
+                label="Host details"
+                open={hostDetailsShown && !settingsOpen}
+                width={slideOver.width}
+                onWidthChange={setSlideOverWidth}
+                onToggle={toggleHostDetails}
+                onClose={closeHostDetails}
+              >
+                <HostDetails />
+              </SlideOver>
+            </div>
+          )}
+        </div>
 
         <StatusBar />
       </div>
@@ -512,10 +520,10 @@ export function AppShell() {
       />
       <ImportCurlFromTarget />
       <FolderAuthDialog />
+      <FolderScriptsDialog />
       <NewProjectDialog />
       <CreateWorkspaceDialog />
       <WorkspaceManageDialog />
-      <PreferencesDialog />
       <RemoveProjectDialog />
       <ShareDialog />
       <JoinDialog />

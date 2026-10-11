@@ -1,11 +1,14 @@
 /**
- * The Code slide-over's body: the `curl` command that would send the request the user is
- * looking at, regenerated as they edit it. Main owns the generation (`request.curl`, the same
- * builder `request.send` uses), so what is shown is what would actually go on the wire — and
- * is redacted by main unless "Show secrets" is on.
+ * The Code slide-over's body: the request the user is looking at as a `curl` command, as code in
+ * another language, or as the `wirebench run` line that sends it — regenerated as they edit it.
+ * Main owns the generation (`request.curl` and `request.code`, both over the resolved send), so
+ * what is shown is what would actually go on the wire, and a credential is masked (`curl`) or read
+ * from the environment (every other language) unless "Show secrets" is on.
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { GENERATED_CODE_TARGETS } from '@shared/code-targets.js';
+import type { CodeLanguage, CodeSettings, CodeTarget, GeneratedCodeTarget } from '@shared/code-targets.js';
 import { Button } from '../components/button.js';
 import { showToast } from '../components/toast.js';
 import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.js';
@@ -43,10 +46,40 @@ const TOKEN_CLASS: Readonly<Record<CurlTokenKind, string>> = {
   plain: 'text-fg-subtle',
 };
 
-const SHELLS: readonly { readonly value: CodeShell; readonly label: string }[] = [
-  { value: 'posix', label: 'POSIX shell' },
-  { value: 'powershell', label: 'PowerShell' },
+const SELECT_CLASS =
+  'h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default';
+
+/** The prefix of the variables the CLI reads secrets from, and so the ones a snippet reads. */
+const SECRET_ENV_PREFIX = 'WIREBENCH_SECRET_';
+
+/** The picker's value for `curl` in one shell: the two share one language and differ by quoting. */
+type PickerValue = `curl:${CodeShell}` | CodeTarget;
+
+/** The picker's entries for a REST or SOAP request: `curl` in either shell, every language, then `wirebench run`. */
+const LANGUAGE_OPTIONS: readonly { readonly value: PickerValue; readonly label: string }[] = [
+  { value: 'curl:posix', label: 'cURL — POSIX shell' },
+  { value: 'curl:powershell', label: 'cURL — PowerShell' },
+  ...GENERATED_CODE_TARGETS.map((target) => ({ value: target.id, label: target.label })),
+  { value: 'wirebench-run', label: 'wirebench run' },
 ];
+
+/** A gRPC or WebSocket request has its own command only, in either shell. */
+const COMMAND_OPTIONS: readonly { readonly value: PickerValue; readonly label: string }[] = [
+  { value: 'curl:posix', label: 'Command — POSIX shell' },
+  { value: 'curl:powershell', label: 'Command — PowerShell' },
+];
+
+/** The language a generated target is, when the value names one; `wirebench run` has no layout to set. */
+function generatedTarget(language: CodeLanguage): GeneratedCodeTarget | undefined {
+  return GENERATED_CODE_TARGETS.find((target) => target.id === language)?.id;
+}
+
+/** What one language reads as in a toast. */
+function languageLabel(language: CodeLanguage, shell: CodeShell): string {
+  if (language === 'curl') return shell === 'powershell' ? 'cURL (PowerShell)' : 'cURL';
+  if (language === 'wirebench-run') return 'wirebench run';
+  return GENERATED_CODE_TARGETS.find((target) => target.id === language)?.label ?? language;
+}
 
 /**
  * Which request the panel describes: an explicit explorer selection wins, otherwise the active
@@ -107,6 +140,12 @@ export function CodePanel() {
   // choice is remembered there rather than in a per-tab slot.
   const shell = useUiStore((state) => state.slideOver.codeShell);
   const setShell = useUiStore((state) => state.setCodeShell);
+  // Remembered per user with the rest of the persisted layout, so the language picked last is
+  // the one the panel opens in next time.
+  const pickedLanguage = useUiStore((state) => state.slideOver.codeLanguage);
+  const setLanguage = useUiStore((state) => state.setCodeLanguage);
+  const allSettings = useUiStore((state) => state.slideOver.codeSettings);
+  const setCodeSettings = useUiStore((state) => state.setCodeSettings);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const draft = useProjectStore((state) => (requestId === undefined ? undefined : state.requests[requestId]));
   // Main builds the command by resolving the request through the engine, which resolves the
@@ -218,6 +257,12 @@ export function CodePanel() {
 
   // Whichever protocol's id the user is looking at: `request.curl` takes all four.
   const subject = requestId ?? restRequestId ?? grpcRequestId ?? wsRequestId;
+  // Every language is for an HTTP request; a gRPC or WebSocket request keeps its own command.
+  const codeable = requestId !== undefined || restRequestId !== undefined;
+  const language: CodeLanguage = codeable ? pickedLanguage : 'curl';
+  const target = generatedTarget(language);
+  const settings: CodeSettings | undefined = target === undefined ? undefined : allSettings[target];
+  const settingsKey = JSON.stringify(settings ?? null);
 
   useEffect(() => {
     if (subject === undefined) {
@@ -235,13 +280,21 @@ export function CodePanel() {
       const draft = restRequestId === undefined ? undefined : restDraftPatch(restRequestId);
       const grpcDraft = grpcRequestId === undefined ? undefined : grpcDraftPatch(grpcRequestId);
       const wsDraft = wsRequestId === undefined ? undefined : wsDraftPatch(wsRequestId);
-      const result = await ipc().request.curl({
-        requestId: subject,
-        shell,
-        ...(draft !== undefined ? { draft } : {}),
-        ...(grpcDraft !== undefined ? { grpcDraft } : {}),
-        ...(wsDraft !== undefined ? { wsDraft } : {}),
-      });
+      const result =
+        language === 'curl'
+          ? await ipc().request.curl({
+              requestId: subject,
+              shell,
+              ...(draft !== undefined ? { draft } : {}),
+              ...(grpcDraft !== undefined ? { grpcDraft } : {}),
+              ...(wsDraft !== undefined ? { wsDraft } : {}),
+            })
+          : await ipc().request.code({
+              requestId: subject,
+              target: language,
+              ...(settings !== undefined ? { settings } : {}),
+              ...(draft !== undefined ? { draft } : {}),
+            });
       if (token !== sequence.current) {
         return;
       }
@@ -265,7 +318,7 @@ export function CodePanel() {
     return () => {
       clearTimeout(timer);
     };
-  }, [subject, shell, draftKey, restDraftKey, grpcDraftKey, wsDraftKey, showSecrets]);
+  }, [subject, shell, language, settingsKey, draftKey, restDraftKey, grpcDraftKey, wsDraftKey, showSecrets]);
 
   if (subject === undefined) {
     return (
@@ -285,15 +338,7 @@ export function CodePanel() {
     }
     try {
       await navigator.clipboard.writeText(generated.command);
-      showToast(
-        (grpcRequestId !== undefined || wsRequestId !== undefined) &&
-          requestId === undefined &&
-          restRequestId === undefined
-          ? 'Copied as command'
-          : shell === 'powershell'
-            ? 'Copied as cURL (PowerShell)'
-            : 'Copied as cURL',
-      );
+      showToast(codeable ? `Copied as ${languageLabel(language, shell)}` : 'Copied as command');
     } catch (error: unknown) {
       showToast(error instanceof Error ? error.message : 'Could not copy to the clipboard');
     }
@@ -304,26 +349,42 @@ export function CodePanel() {
   return (
     <div data-testid="code-panel" className="flex min-h-0 flex-col gap-2">
       <div className="flex items-center gap-2">
-        <label className="text-sm text-fg-subtle" htmlFor="code-panel-shell">
-          Shell
+        <label className="text-sm text-fg-subtle" htmlFor="code-panel-language">
+          Language
         </label>
         <select
-          id="code-panel-shell"
-          aria-label="Shell"
-          data-testid="code-panel-shell"
-          value={shell}
+          id="code-panel-language"
+          aria-label="Language"
+          data-testid="code-panel-language"
+          value={language === 'curl' ? `curl:${shell}` : language}
           onChange={(event) => {
-            setShell(event.target.value as CodeShell);
+            const value = event.target.value as PickerValue;
+            if (value === 'curl:posix' || value === 'curl:powershell') {
+              setLanguage('curl');
+              setShell(value === 'curl:posix' ? 'posix' : 'powershell');
+            } else {
+              setLanguage(value);
+            }
           }}
-          className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
+          className={SELECT_CLASS}
         >
-          {SHELLS.map((option) => (
+          {(codeable ? LANGUAGE_OPTIONS : COMMAND_OPTIONS).map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </select>
       </div>
+
+      {target !== undefined && (
+        <CodeSettingsRow
+          target={target}
+          settings={settings}
+          onChange={(next) => {
+            setCodeSettings(target, next);
+          }}
+        />
+      )}
 
       <pre
         data-testid="code-panel-preview"
@@ -332,8 +393,8 @@ export function CodePanel() {
         }`}
       >
         {/* A failure is prose, not shell: highlighting it would dress an error message up as a
-            command. Only a real command is tokenised. */}
-        {generated?.error === true
+            command. Only a real `curl` command is tokenised; other languages are shown plain. */}
+        {generated?.error === true || language !== 'curl'
           ? command
           : highlightCurl(command).map((line, lineIndex) => (
               // Lines have no identity of their own — the command is regenerated whole on every
@@ -352,6 +413,11 @@ export function CodePanel() {
 
       {REDACTED_MARKERS.some((marker) => command.includes(marker)) && (
         <p className="text-xs text-fg-subtle">Secrets are masked unless Show secrets is on.</p>
+      )}
+      {language !== 'curl' && command.includes(SECRET_ENV_PREFIX) && (
+        <p className="text-xs text-fg-subtle">
+          Secrets are read from WIREBENCH_SECRET_* environment variables unless Show secrets is on.
+        </p>
       )}
 
       {generated !== undefined &&
@@ -411,6 +477,92 @@ export function CodePanel() {
           targetLabel={restApiName === undefined ? 'this API' : `the API “${restApiName}”`}
         />
       )}
+    </div>
+  );
+}
+
+/** One language's layout choices: indent, redirects and timeout. An unset choice takes the request's own. */
+function CodeSettingsRow(props: {
+  readonly target: GeneratedCodeTarget;
+  readonly settings: CodeSettings | undefined;
+  readonly onChange: (settings: CodeSettings | undefined) => void;
+}) {
+  const { target, settings, onChange } = props;
+  const conventional = GENERATED_CODE_TARGETS.find((entry) => entry.id === target)?.indent ?? 2;
+  const indent = settings?.indent ?? conventional;
+  // Kept as typed while the field has focus, so clearing it to type a new value does not snap back.
+  const [timeoutText, setTimeoutText] = useState<string | undefined>(undefined);
+  const timeout = timeoutText ?? (settings?.timeoutMs === undefined ? '' : String(settings.timeoutMs / 1000));
+
+  const change = (patch: Partial<Record<keyof CodeSettings, CodeSettings[keyof CodeSettings] | undefined>>): void => {
+    const next: Record<string, unknown> = { ...settings, ...patch };
+    for (const key of Object.keys(next)) {
+      if (next[key] === undefined) delete next[key];
+    }
+    onChange(Object.keys(next).length === 0 ? undefined : next);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="code-panel-settings">
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        Indent
+        <select
+          aria-label="Indent"
+          data-testid="code-panel-indent"
+          value={String(indent)}
+          onChange={(event) => {
+            const value = event.target.value === 'tab' ? 'tab' : Number(event.target.value);
+            change({ indent: value === conventional ? undefined : value });
+          }}
+          className="h-row rounded-md border border-hairline-strong bg-surface-raised px-1 text-xs text-fg-default"
+        >
+          <option value="2">2 spaces</option>
+          <option value="4">4 spaces</option>
+          <option value="tab">Tab</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        Redirects
+        <select
+          aria-label="Redirects"
+          data-testid="code-panel-redirects"
+          value={settings?.followRedirects === undefined ? 'request' : settings.followRedirects ? 'follow' : 'none'}
+          onChange={(event) => {
+            const value = event.target.value;
+            change({ followRedirects: value === 'request' ? undefined : value === 'follow' });
+          }}
+          className="h-row rounded-md border border-hairline-strong bg-surface-raised px-1 text-xs text-fg-default"
+        >
+          <option value="request">As the request</option>
+          <option value="follow">Follow</option>
+          <option value="none">Don’t follow</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        Timeout (s)
+        <input
+          aria-label="Timeout in seconds"
+          data-testid="code-panel-timeout"
+          type="number"
+          min={0}
+          step="any"
+          placeholder="As the request"
+          value={timeout}
+          onChange={(event) => {
+            setTimeoutText(event.target.value);
+            const seconds = Number(event.target.value);
+            if (event.target.value.trim() === '') {
+              change({ timeoutMs: undefined });
+            } else if (Number.isFinite(seconds) && seconds >= 0) {
+              change({ timeoutMs: Math.round(seconds * 1000) });
+            }
+          }}
+          onBlur={() => {
+            setTimeoutText(undefined);
+          }}
+          className="h-row w-24 rounded-md border border-hairline-strong bg-surface-raised px-1 text-xs text-fg-default"
+        />
+      </label>
     </div>
   );
 }

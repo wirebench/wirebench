@@ -5,6 +5,7 @@
  * script, connects (its TLS identity, the proxy, its credentials with an OAuth2 token), then goes
  * on the wire (spec §3.4).
  */
+import { containerScriptLevels } from '../script/levels.js';
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import type { AssertionSubject } from '../assert/model.js';
@@ -873,6 +874,10 @@ export const soapRun: ProtocolRun<SoapSelected> = {
         ...(elements.output !== undefined ? { output: elements.output } : {}),
       },
     };
+  },
+
+  scriptLevels(selected) {
+    return containerScriptLevels(selected.iface, 'interface');
   },
 
   secretNeeds(selected, project) {

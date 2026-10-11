@@ -28,6 +28,7 @@ import type { ProjectProblem } from '../project/load.js';
 import { apiManagedFiles } from '../project/managed-files.js';
 import {
   API_FILE,
+  API_SCRIPT_STEM,
   APIS_DIR,
   assertPathSegment,
   REQUEST_SUFFIX,
@@ -217,8 +218,15 @@ export function restRequestReader(fs: FsLike, root: string, problems: ProjectPro
       unclaimed.delete(parsed.body.file);
     }
     const slug = fileName.slice(0, -REQUEST_SUFFIX.length);
-    const scripts = await loadScripts(fs, root, dir, slug, parsed.scripts, parsed.name, problems, (name) =>
-      unclaimed.delete(name),
+    const scripts = await loadScripts(
+      fs,
+      root,
+      dir,
+      slug,
+      parsed.scripts,
+      `Request "${parsed.name}"`,
+      problems,
+      (name) => unclaimed.delete(name),
     );
     return {
       kind: 'rest',
@@ -395,10 +403,12 @@ function addApiFiles(files: Map<string, string>, api: RestApi): void {
         baseUrl: api.baseUrl,
         servers: api.servers.length > 0 ? api.servers.map((server) => compact({ ...server })) : undefined,
         auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        scripts: scriptsDocument(api.scripts, API_SCRIPT_STEM).document,
         definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
       }),
     ),
   );
+  writeScriptFiles(files, base, api.scripts, API_SCRIPT_STEM);
   addFolderFiles<RestRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeRestRequest);
 }
 
@@ -409,6 +419,16 @@ export const restStorage: ProtocolStorage<RestApi> = {
   async load(ctx, slug, document) {
     const { fs, root, problems } = ctx;
     const parsed = parseFile(apiFileSchema, document, `${APIS_DIR}/${slug}/${API_FILE}`);
+    const scripts = await loadScripts(
+      fs,
+      root,
+      `${APIS_DIR}/${slug}`,
+      API_SCRIPT_STEM,
+      parsed.scripts,
+      `API "${parsed.name}"`,
+      problems,
+      () => undefined,
+    );
     const contents = await loadFolderContents(
       fs,
       root,
@@ -427,6 +447,7 @@ export const restStorage: ProtocolStorage<RestApi> = {
       baseUrl: parsed.baseUrl,
       servers: parsed.servers.map((server) => exact<{ url: string; description?: string }>(server)),
       ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
       ...(parsed.definition !== undefined
         ? {
             definition: {

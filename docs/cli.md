@@ -118,6 +118,8 @@ run supplies:
   `--var k=v` is laid over them, so a `--var` always wins.
 - **Project** — `wirebench.yaml`'s `properties`, `${#Project#name}`.
 - **System** — the process environment, `${#System#name}`.
+- **Dynamic** — a value generated for each send, `${#Dynamic#guid}` or `${$guid}`: UUIDs, timestamps,
+  random numbers and fake data. Each reference is generated once per request, as in the desktop app.
 
 The `${name}` shorthand looks in the environment first, then the project, then the workspace.
 

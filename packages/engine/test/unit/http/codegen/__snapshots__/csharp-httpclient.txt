@@ -1,0 +1,137 @@
+=== query and headers
+using var client = new HttpClient();
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("GET"), "https://api.example.com/v1/items?q=red%20shoes&page=2");
+request.Headers.TryAddWithoutValidation("Accept", "application/json");
+request.Headers.TryAddWithoutValidation("X-Trace", "it's \"quoted\"");
+request.Headers.TryAddWithoutValidation("X-Trace", "second");
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== json body
+using System.Net.Http.Headers;
+
+using var client = new HttpClient();
+client.Timeout = TimeSpan.FromMilliseconds(30000);
+
+using var request = new HttpRequestMessage(new HttpMethod("POST"), "https://api.example.com/v1/items");
+request.Content = new StringContent(@"{
+  ""name"": ""Widget"",
+  ""price"": 9.5
+}");
+request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== form body
+using var client = new HttpClient();
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("POST"), "https://api.example.com/login");
+request.Content = new FormUrlEncodedContent(new[]
+{
+    new KeyValuePair<string, string>("user", "ada lovelace"),
+    new KeyValuePair<string, string>("scope", "read&write"),
+});
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== multipart body
+using System.Net.Http.Headers;
+
+using var client = new HttpClient();
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("POST"), "https://api.example.com/upload");
+var form = new MultipartFormDataContent();
+form.Add(new StringContent("Report"), "title");
+var file1 = new ByteArrayContent(File.ReadAllBytes("/tmp/report.pdf"));
+file1.Headers.ContentType = MediaTypeHeaderValue.Parse("application/pdf");
+form.Add(file1, "file", "report.pdf");
+request.Content = form;
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== binary body
+using System.Net.Http.Headers;
+
+using var client = new HttpClient();
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("PUT"), "https://api.example.com/blobs/1");
+request.Content = new ByteArrayContent(File.ReadAllBytes("/tmp/blob.bin"));
+request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== basic auth from the environment
+using System.Net.Http.Headers;
+using System.Text;
+
+using var client = new HttpClient();
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("GET"), "https://api.example.com/me");
+request.Headers.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("ada:" + Environment.GetEnvironmentVariable("WIREBENCH_SECRET_PASSWORD"))));
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== bearer token and query key from the environment
+using var client = new HttpClient();
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("DELETE"), "https://api.example.com/items/7?api_key=" + Environment.GetEnvironmentVariable("WIREBENCH_SECRET_KEY"));
+request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + Environment.GetEnvironmentVariable("WIREBENCH_SECRET_API_TOKEN"));
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== insecure, no redirects, redirect limit ignored
+var handler = new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+};
+using var client = new HttpClient(handler);
+client.Timeout = TimeSpan.FromMilliseconds(1500);
+
+using var request = new HttpRequestMessage(new HttpMethod("GET"), "https://self-signed.example.com/health");
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());
+
+=== soap envelope
+using System.Net.Http.Headers;
+
+var handler = new HttpClientHandler
+{
+    AllowAutoRedirect = false,
+};
+using var client = new HttpClient(handler);
+client.Timeout = Timeout.InfiniteTimeSpan;
+
+using var request = new HttpRequestMessage(new HttpMethod("POST"), "http://soap.example.com/calculator");
+request.Headers.TryAddWithoutValidation("SOAPAction", "\"http://tempuri.org/Add\"");
+request.Content = new StringContent(@"<soap:Envelope xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>");
+request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("text/xml;charset=UTF-8");
+
+using var response = await client.SendAsync(request);
+Console.WriteLine((int)response.StatusCode);
+Console.WriteLine(await response.Content.ReadAsStringAsync());

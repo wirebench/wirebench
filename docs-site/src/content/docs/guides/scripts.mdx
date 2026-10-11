@@ -48,6 +48,32 @@ request.headers.set('X-Signature', signature);
 
 The whole API, per protocol and phase, is in the [script API reference](/wirebench/docs/reference/script-api/).
 
+## Scripts on APIs, interfaces and folders
+
+An API, a SOAP interface and each REST or gRPC folder can have the same two scripts, for what every
+request inside it needs: fetch a token once, sign every call, check every response for an error field.
+When a request is sent, the scripts of each level above it run around its own:
+
+1. the API's (or interface's) script,
+2. each folder's, outermost first,
+3. the request's own.
+
+The order is the same for both phases. Each pre-request script works on the request the one before it
+handed on, so a folder sees the header its API set. A value a script sets with `vars.set` is there for
+every script after it in the same send.
+
+- **An API or interface:** the **Scripts** section of the API tab, or the **Scripts** tab of the
+  interface viewer.
+- **A folder:** **Scripts…** in the folder's menu in the explorer.
+
+A level's script is typed from its protocol's request and response, not from one operation's messages,
+because it runs for many operations. Each level lists its own **Secrets** and reads only those. Its
+files sit beside its own file: `api.pre.ts` beside `api.yaml`, `interface.pre.ts` beside
+`interface.yaml`, `folder.pre.ts` beside `folder.yaml`.
+
+The response's **Script** tab lists each script that ran, in order, under a heading such as
+`API "Shop" · pre-request`, with its tests, its log and its failure.
+
 ## What a pre-request script can change
 
 A pre-request script runs after `${…}` properties are expanded and before the configured auth,
@@ -115,29 +141,33 @@ no `setTimeout`, `fetch` or `require`.
 
 ## When a script fails
 
-- **The pre-request script** throws, times out or breaks a rule: the request is not sent, and the error
-  names the script's file, line and column.
-- **The post-response script** throws: the response is kept and shown, and the request is reported as
-  errored, with the error on the **Script** tab.
+- **A pre-request script** throws, times out or breaks a rule: the request is not sent, and the error
+  names the script's file, line and column. The scripts after it do not run.
+- **A post-response script** throws: the response is kept and shown, and the request is reported as
+  errored, with the error on the **Script** tab. The post-response scripts after it still run, and the
+  first failure is the one reported.
 - **A type error** stops the send before anything is resolved or sent (`script-type-error`).
 - **A missing script file** stops the send too (`script-file-missing`): the request says it has a script
-  that is not there.
+  that is not there. A missing API, interface or folder script stops every request inside it.
 
 ## Switch scripts off
 
 Clear **Run these scripts** to keep a request's scripts without running them. The request is sent as if
-it had none, isn't type-checked, and its result says its scripts were off.
+it had none, isn't type-checked, and its result says its scripts were off. An API's, an interface's and a
+folder's scripts are switched on and off on their own: switching off a request's scripts leaves its
+API's and folders' running.
 
 ## Postman scripts
 
-A Postman collection's `prerequest` and `test` scripts are imported with its requests: the collection's,
-then each folder's, then the request's own, in one file per phase. They are JavaScript, run through a
-`pm` layer, and are checked for syntax only.
+A Postman collection's `prerequest` and `test` scripts are imported where they were: the collection's on
+the API, each folder's on its folder, and each request's on the request. They run in the same order
+as they did in the collection. They are JavaScript, run through a `pm` layer, and are checked for syntax
+only.
 
 **Imported scripts are switched off.** A collection from elsewhere is code nobody on the team has read
 yet. A request with them shows a banner — "These scripts are off. Read them, then switch them on." — and
-**Switch on**. **Switch on scripts…** on an API, a folder or an interface switches on every request
-beneath it, after a confirmation that names them.
+**Switch on**. **Switch on scripts…** on an API, a folder or an interface switches on its own scripts and
+those of every folder and request beneath it, after a confirmation that names them.
 
 The layer covers what collections mostly use: `pm.test`, `pm.expect` with the common chai chains,
 `pm.response` (`code`, `status`, `headers.get`, `json()`, `text()`, `responseTime`,
@@ -145,11 +175,11 @@ The layer covers what collections mostly use: `pm.test`, `pm.expect` with the co
 and `pm.*.set` variable calls (all kept as the run's values), `CryptoJS` hashes, HMACs and Base64,
 `btoa` and `atob`. Anything else — `pm.sendRequest`, `pm.cookies.jar()`, `pm.visualizer`, `require`,
 `setNextRequest` — fails when it is called, with `script-unsupported` naming it. The import summary
-lists the requests that call one.
+lists the scripts that call one.
 
 ## In CI
 
-`wirebench run` runs every selected request's scripts, with and without `--sequence`. It type-checks
-them all before it sends anything, and a type error exits 2 with the file, line and column. Script tests
+`wirebench run` runs every selected request's scripts, and its API's, interface's and folders', with and
+without `--sequence`. It type-checks them all before it sends anything, and a type error exits 2 with the file, line and column. Script tests
 appear in every reporter as assertions, and the log goes to stderr with `--verbose` and into the JSON
 report as `scriptLog`.

@@ -1,4 +1,4 @@
-export { findStepRequest, selectRequests } from './select.js';
+export { findStepRequest, runSelectorOf, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
 export { scopesFor, withSystemValuesReported } from './context.js';
 export { overlayCurrent, withCurrentValues } from './current-values.js';
@@ -8,6 +8,7 @@ export type { RunContext, RunWorkspace } from './context.js';
 export {
   cappedExchange,
   checkRunScripts,
+  hasPostResponseScript,
   createRunSender,
   deferredSession,
   errorOf,
@@ -33,7 +34,7 @@ export type { LocatedSecretNeed } from './secret-needs.js';
 export { createRunTokenSource } from './oauth2-token.js';
 export type { RunTokenSource, RunTokenSourceOptions, TokenRequestContext } from './oauth2-token.js';
 export { mergeScriptValues, scriptAssertions, scriptSession, listedSecrets } from './script-support.js';
-export type { ScriptSession, ScriptSessionOptions, SentScripts } from './script-support.js';
+export type { ScriptSession, ScriptSessionOptions, SentScriptLevel, SentScripts } from './script-support.js';
 export { EventQueue } from './event-queue.js';
 export { exchangeController, notStreaming } from './exchange.js';
 export { openExchange, resolveExchange } from './open.js';

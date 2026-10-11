@@ -12,7 +12,7 @@ import { recordPairs } from '../script/send.js';
 import type { SoapExchange, SoapSendInput } from './types.js';
 import type { QName } from '../wsdl/qname.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
-import { projectSoapBody, replaceSoapBody } from './script-types.js';
+import { projectSoapBody, replaceSoapBody, soapScriptTypes } from './script-types.js';
 
 export interface SoapRequestSnapshot {
   readonly protocol: 'soap';
@@ -208,6 +208,7 @@ const requestSchema: z.ZodType<SoapRequestSnapshot> = z.object({
 /** SOAP's scripting facet. */
 export const soapScripting: ProtocolScripting<SoapRequestSnapshot, SoapResponseSnapshot> = {
   declarations: (phase) => (phase === 'pre' ? SOAP_PRE : SOAP_POST),
+  levelTypes: () => soapScriptTypes(undefined),
   reference: () => [
     { title: 'SOAP: pre-request', declarations: SOAP_PRE },
     { title: 'SOAP: post-response', declarations: SOAP_POST },

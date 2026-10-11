@@ -31,6 +31,7 @@ export function writeOpenCollection(tree: XCollection, ctx: ExportContext): Writ
   const rootRequest: Json = {
     ...optional('auth', tree.auth !== undefined ? writer.auth(tree.auth, tree.name) : undefined),
     ...optional('variables', tree.variables.map(variable)),
+    ...optional('scripts', levelScripts(tree.scripts)),
   };
   const doc: Json = {
     opencollection: '1.0.0',
@@ -151,9 +152,11 @@ class OcWriter {
   private folder(folder: XFolder, seq: number): Json {
     this.folders += 1;
     const auth = folder.auth !== undefined ? this.auth(folder.auth, folder.name) : undefined;
+    const scripts = levelScripts(folder.scripts);
+    const defaults = { ...optional('auth', auth), ...optional('scripts', scripts) };
     return {
       info: { name: folder.name, type: 'folder', seq, ...optional('description', folder.description) },
-      ...(auth !== undefined ? { request: { auth } } : {}),
+      ...(Object.keys(defaults).length > 0 ? { request: defaults } : {}),
       items: this.items(folder.items),
     };
   }
@@ -342,4 +345,13 @@ class OcWriter {
         };
     }
   }
+}
+
+/** A container's or a folder's scripts as the request defaults of a collection or folder carry them (#334). */
+function levelScripts(scripts: XScripts | undefined): Json[] | undefined {
+  if (scripts === undefined) return undefined;
+  return [
+    ...(scripts.pre !== undefined ? [{ type: 'before-request', code: scripts.pre }] : []),
+    ...(scripts.post !== undefined ? [{ type: 'after-response', code: scripts.post }] : []),
+  ];
 }

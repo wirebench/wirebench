@@ -26,6 +26,7 @@ import { FaultOverview, OutlineView, prefetchViews, QueryView, RawView, ViewFall
 import type { TextRange } from './views/xml-model.js';
 import { AssertionResults, assertionResultsBadge } from '../assertions/assertion-results.js';
 import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../scripts/script-results.js';
+import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 
 /** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column — mirrors `request-pane.tsx`'s
  * copy: the renderer may only import the browser-safe `xml` subpath, not the Node-only `LineIndex`. */
@@ -109,6 +110,8 @@ export interface ResponsePaneProps {
 
 /** The response half: status line, then the formatted envelope (or the raw body, or nothing yet). */
 export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProps) {
+  // Variable help in the editor (#340): completion, hover, unresolved marks, Set as Variable.
+  const attachVariables = useEditorVariableAssist({ readOnly: true });
   const exchange = state?.exchange;
   const response = exchange?.response;
   const fault = response?.fault;
@@ -166,9 +169,10 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
   );
 
   const handleMount = useCallback<OnMount>(
-    (editor) => {
+    (editor, monacoNS) => {
       editorRef.current = editor;
       setActiveResponseEditor(editor);
+      attachVariables(editor, monacoNS);
       // ⇧⇥ back to the request editor; see `FOCUS_OTHER_PANE_KEYBINDING` for why the binding
       // has to live on the editor and not only on the window.
       editor.addCommand(FOCUS_OTHER_PANE_KEYBINDING, () => {
@@ -189,7 +193,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
         editor.revealRangeInCenter(selection);
       }
     },
-    [body],
+    [body, attachVariables],
   );
 
   useEffect(

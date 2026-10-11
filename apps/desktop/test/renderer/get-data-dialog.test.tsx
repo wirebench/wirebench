@@ -62,6 +62,19 @@ describe('GetDataDialog', () => {
     expect(screen.getByText('Get Data — tem:intA')).toBeDefined();
   });
 
+  it('lists the dynamic generators and inserts the short form', async () => {
+    const onInsert = vi.fn();
+    render(<GetDataDialog open onOpenChange={vi.fn()} onInsert={onInsert} fieldLabel="f" interfaceId="if-1" />);
+
+    expect(screen.getByText('isoTimestamp')).toBeDefined();
+    await userEvent.type(screen.getByLabelText('Filter properties'), 'zzz');
+    expect(screen.getByText('Nothing matches the filter.')).toBeDefined();
+    await userEvent.clear(screen.getByLabelText('Filter properties'));
+    await userEvent.click(screen.getByText('guid'));
+
+    expect(onInsert).toHaveBeenCalledWith('${$guid}');
+  });
+
   it('inserts the chosen property as a scoped reference and closes', async () => {
     const onInsert = vi.fn();
     const onOpenChange = vi.fn();

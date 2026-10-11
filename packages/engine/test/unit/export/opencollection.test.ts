@@ -6,7 +6,7 @@ import { parseOpenCollection } from '../../../src/import/opencollection/parse.js
 import type { RestFolder, RestRequestDef } from '../../../src/rest/model.js';
 import { joinBase } from '../../../src/rest/url.js';
 import { newId, sampleProject } from './fixture.js';
-import { restApisOf } from '../../../src/rest/model.js';
+import { restApisOf, withRestApis } from '../../../src/rest/model.js';
 
 const project = sampleProject();
 
@@ -141,5 +141,24 @@ describe('ocAssertion', () => {
     expect(
       ocAssertion({ type: 'match', language: 'jsonpath', expression: '$.a', equals: 1, exists: true }),
     ).toBeUndefined();
+  });
+});
+
+describe('OpenCollection export: API and folder scripts (#334)', () => {
+  it('writes them as the collection’s and the folder’s request scripts', () => {
+    const api = restApisOf(project)[0]!;
+    const on = { api: 'postman', enabled: true, secrets: [] } as const;
+    const levelled = withRestApis(project, [
+      {
+        ...api,
+        scripts: { pre: { text: 'api();' }, ...on },
+        folders: [{ ...api.folders[0]!, scripts: { post: { text: 'folder();' }, ...on } }],
+      },
+    ]);
+    const text = exportCollection('opencollection', { project: levelled, target: { kind: 'container', id: api.id } })
+      .files[0]!.text;
+    const doc = parseOpenCollection(text);
+    expect(doc.request?.scripts).toEqual([{ type: 'before-request', code: 'api();' }]);
+    expect(doc.items[0]?.request?.scripts).toEqual([{ type: 'after-response', code: 'folder();' }]);
   });
 });

@@ -15,7 +15,7 @@ import type {
 import { ipc } from '../../state/ipc-client.js';
 
 /** Which tab of the Interface editor is showing. */
-export type InterfaceTabId = 'overview' | 'endpoints' | 'wsdl' | 'schema' | 'wsi';
+export type InterfaceTabId = 'overview' | 'endpoints' | 'wsdl' | 'schema' | 'wsi' | 'scripts';
 
 /**
  * One selected schema component. `document`/`line` are carried for a component that is not in

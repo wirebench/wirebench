@@ -6,8 +6,18 @@ import { restExplorer } from './explorer.js';
 
 // Split out for the same reason as the SOAP editor: its raw-body editor is Monaco.
 const RestEditor = lazy(async () => {
-  const module = await import('../../features/rest-editor/rest-editor.js');
-  return { default: ({ id }: { readonly id: string }) => <module.RestEditor requestId={id} /> };
+  // The request's variables, for completion, hover and the unresolved marks in every field (#340).
+  const [module, { VariableAssistProvider }] = await Promise.all([
+    import('../../features/rest-editor/rest-editor.js'),
+    import('../../features/environments/variable-assist-provider.js'),
+  ]);
+  return {
+    default: ({ id }: { readonly id: string }) => (
+      <VariableAssistProvider requestId={id}>
+        <module.RestEditor requestId={id} />
+      </VariableAssistProvider>
+    ),
+  };
 });
 
 const ApiTab = lazy(async () => {

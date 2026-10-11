@@ -1,0 +1,168 @@
+=== query and headers
+import requests
+
+headers = {
+    'Accept': 'application/json',
+    'X-Trace': 'it\'s "quoted", second',
+}
+
+response = requests.request(
+    'GET',
+    'https://api.example.com/v1/items?q=red%20shoes&page=2',
+    headers=headers,
+    allow_redirects=True,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== json body
+import requests
+
+body = '''\
+{
+  "name": "Widget",
+  "price": 9.5
+}'''
+
+headers = {
+    'Content-Type': 'application/json',
+}
+
+response = requests.request(
+    'POST',
+    'https://api.example.com/v1/items',
+    data=body.encode(),
+    headers=headers,
+    allow_redirects=True,
+    timeout=30,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== form body
+import requests
+
+body = [
+    ('user', 'ada lovelace'),
+    ('scope', 'read&write'),
+]
+
+response = requests.request(
+    'POST',
+    'https://api.example.com/login',
+    data=body,
+    allow_redirects=True,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== multipart body
+import requests
+
+files = [
+    ('title', (None, 'Report')),
+    ('file', ('report.pdf', open('/tmp/report.pdf', 'rb'), 'application/pdf')),
+]
+
+response = requests.request(
+    'POST',
+    'https://api.example.com/upload',
+    files=files,
+    allow_redirects=True,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== binary body
+import requests
+
+body = open('/tmp/blob.bin', 'rb')
+
+headers = {
+    'Content-Type': 'application/octet-stream',
+}
+
+response = requests.request(
+    'PUT',
+    'https://api.example.com/blobs/1',
+    data=body,
+    headers=headers,
+    allow_redirects=True,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== basic auth from the environment
+import os
+import requests
+
+response = requests.request(
+    'GET',
+    'https://api.example.com/me',
+    auth=('ada', os.environ['WIREBENCH_SECRET_PASSWORD']),
+    allow_redirects=True,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== bearer token and query key from the environment
+import os
+import requests
+
+headers = {
+    'Authorization': 'Bearer ' + os.environ['WIREBENCH_SECRET_API_TOKEN'],
+}
+
+response = requests.request(
+    'DELETE',
+    'https://api.example.com/items/7?api_key=' + os.environ['WIREBENCH_SECRET_KEY'],
+    headers=headers,
+    allow_redirects=True,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== insecure, no redirects, redirect limit ignored
+import requests
+
+response = requests.request(
+    'GET',
+    'https://self-signed.example.com/health',
+    allow_redirects=False,
+    timeout=1.5,
+    verify=False,
+)
+
+print(response.status_code)
+print(response.text)
+
+=== soap envelope
+import requests
+
+body = '''\
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body><Add><a>1</a><b>2</b></Add></soap:Body>
+</soap:Envelope>'''
+
+headers = {
+    'Content-Type': 'text/xml;charset=UTF-8',
+    'SOAPAction': '"http://tempuri.org/Add"',
+}
+
+response = requests.request(
+    'POST',
+    'http://soap.example.com/calculator',
+    data=body.encode(),
+    headers=headers,
+    allow_redirects=False,
+)
+
+print(response.status_code)
+print(response.text)

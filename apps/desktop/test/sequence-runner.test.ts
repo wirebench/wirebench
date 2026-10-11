@@ -230,6 +230,48 @@ const match = (expression: string, equals: string): Assertion => ({
 });
 
 describe('SequenceRunner', () => {
+  it('asks once before a run under a protected environment, and runs nothing when declined', async () => {
+    const { runner, deps } = await harness([LOGIN, ME], 'P-guard');
+    const model = deps.modelOf();
+    const guarded = {
+      ...model,
+      environments: [
+        {
+          id: 'prod',
+          name: 'Prod',
+          slug: 'prod',
+          order: 0,
+          endpoints: {},
+          properties: {},
+          disabledProperties: [],
+          protected: true,
+        },
+      ],
+    };
+    const confirm = vi.fn(() => Promise.resolve(false));
+    const requests = {
+      ...deps.requests,
+      project: {
+        ...deps.requests.project,
+        runContextFor: () => ({ project: guarded, projectDir: '/tmp/none', environmentId: 'prod' }),
+      },
+      confirmProtected: confirm,
+    } as unknown as RequestChannelDeps;
+    const guardedDeps = { ...deps, requests, modelOf: () => guarded };
+
+    await expect(runner.run({ sequenceId: 'S1', runId: 'R-declined' }, guardedDeps)).rejects.toMatchObject({
+      code: 'send-declined',
+    });
+    expect(meCalls).toEqual([]);
+
+    confirm.mockResolvedValue(true);
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R-confirmed' }, guardedDeps);
+    expect(result.outcome).toBe('passed');
+    // Once for the declined run, once for this one: never per step.
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm).toHaveBeenCalledWith(['Prod']);
+  });
+
   it('carries a secret from one step to the next and never lets it out of main', async () => {
     const { runner, deps, logged, events, historyLines } = await harness([LOGIN, ME], 'P-secret');
     const result = await runner.run({ sequenceId: 'S1', runId: 'R1' }, deps);

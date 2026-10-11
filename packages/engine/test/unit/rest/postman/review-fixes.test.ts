@@ -111,11 +111,14 @@ describe('Postman importer review fixes', () => {
     expect(translatePostmanVariables('{{my var}}')).toBe('${my var}');
   });
 
-  it('6: warns about dynamic variables', () => {
-    const { summary } = importDoc({
-      item: [{ name: 'R', request: { method: 'GET', url: '/x?id={{$guid}}' } }],
+  it('6: maps a known dynamic variable and warns about the rest', () => {
+    const { api, summary } = importDoc({
+      item: [{ name: 'R', request: { method: 'GET', url: '/x?id={{$guid}}&j={{$randomJobTitle}}' } }],
     });
-    expect(summary.warnings?.some((w) => w.includes('$guid'))).toBe(true);
+    expect(api.requests[0]?.url).toBe('/x');
+    expect(api.requests[0]?.query.map((q) => q.value)).toEqual(['${$guid}', '{{$randomJobTitle}}']);
+    expect(summary.warnings?.some((w) => w.includes('$guid'))).toBe(false);
+    expect(summary.warnings?.some((w) => w.includes('$randomJobTitle'))).toBe(true);
   });
 
   it('7: ignores a disabled Content-Type header when detecting the body language', () => {
@@ -186,7 +189,9 @@ describe('Postman importer review fixes', () => {
       auth: { type: 'bearer', bearer: [{ key: 'token', value: 'secret' }] },
       item: [{ name: 'R', event: [{ listen: 'test', script: { exec: ['2'] } }], request: '/x' }],
     });
-    expect(summary.warnings?.some((w) => /^Scripts on 1 request was imported switched off/.test(w))).toBe(true);
+    expect(summary.warnings?.some((w) => /^Scripts on the API and 1 request were imported switched off/.test(w))).toBe(
+      true,
+    );
     expect(summary.warnings?.some((w) => /re-enter/i.test(w))).toBe(true);
   });
 
@@ -198,12 +203,14 @@ describe('Postman importer review fixes', () => {
   it('6: reports dynamic names from requests, variables and the base URL in one warning', () => {
     const { summary } = importDoc({
       variable: [
-        { key: 'baseUrl', value: 'https://a/{{$randomInt}}' },
-        { key: 'stamp', value: '{{$timestamp}}' },
+        { key: 'baseUrl', value: 'https://a/{{$randomBankAccount}}' },
+        { key: 'stamp', value: '{{$randomJobTitle}}' },
       ],
-      item: [{ name: 'R', request: { method: 'GET', url: '/x/{{$guid}}' } }],
+      item: [{ name: 'R', request: { method: 'GET', url: '/x/{{$randomAbbreviation}}' } }],
     });
     const lines = (summary.warnings ?? []).filter((w) => w.startsWith('Dynamic variables'));
-    expect(lines).toEqual(['Dynamic variables are kept as written and not expanded: $guid, $randomInt, $timestamp']);
+    expect(lines).toEqual([
+      'Dynamic variables are kept as written and not expanded: $randomAbbreviation, $randomBankAccount, $randomJobTitle',
+    ]);
   });
 });

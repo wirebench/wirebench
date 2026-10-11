@@ -31,8 +31,8 @@ afterEach(() => {
 
 const OFF = { api: 'postman' as const, enabled: false, secrets: [], pre: 'pm.test("t", () => {});' };
 
-function tree(): ExplorerNode[] {
-  const api = restApiWire({ id: 'api-1', name: 'Shop' });
+function tree(levelsOff = false): ExplorerNode[] {
+  const api = restApiWire({ id: 'api-1', name: 'Shop', ...(levelsOff ? { scripts: OFF } : {}) });
   return buildExplorerTree(
     [{ id: 'p1', name: 'Demo', source: 'internal', dir: '/demo', status: 'ready' }],
     [{ projectId: 'p1', interfaceIds: [] }],
@@ -41,7 +41,16 @@ function tree(): ExplorerNode[] {
     {
       p1: {
         apis: [api],
-        folders: [{ id: 'f1', apiId: 'api-1', name: 'Carts', order: 0, auth: { type: 'inherit' } } as never],
+        folders: [
+          {
+            id: 'f1',
+            apiId: 'api-1',
+            name: 'Carts',
+            order: 0,
+            auth: { type: 'inherit' },
+            ...(levelsOff ? { scripts: OFF } : {}),
+          } as never,
+        ],
         requests: [
           restRequestWire({ id: 'r1', apiId: 'api-1', name: 'Log in', scripts: OFF }),
           restRequestWire({ id: 'r2', apiId: 'api-1', folderId: 'f1', name: 'Cart', scripts: OFF }),
@@ -78,6 +87,12 @@ describe('the explorer', () => {
     const nodes = tree();
     expect(find(nodes, 'api:api-1')?.scriptsOff).toEqual(['r2', 'r1']);
     expect(find(nodes, 'folder:f1')?.scriptsOff).toEqual(['r2']);
+  });
+
+  it('marks an API and a folder whose own scripts are off, with what is beneath them (#334)', () => {
+    const nodes = tree(true);
+    expect(find(nodes, 'api:api-1')?.scriptsOff).toEqual(['api-1', 'f1', 'r2', 'r1']);
+    expect(find(nodes, 'folder:f1')?.scriptsOff).toEqual(['f1', 'r2']);
   });
 
   it("lists a project's session values last, a secret one without its value", () => {
@@ -121,6 +136,24 @@ describe('the dialog', () => {
     );
     fireEvent.click(screen.getByTestId('enable-scripts-confirm'));
     expect(enableScripts).toHaveBeenCalledWith(['r1', 'r2']);
+  });
+
+  it('names an API and a folder among what will run (#334)', () => {
+    useProjectStore.setState({
+      restRequests: { r1: restRequestWire({ id: 'r1', name: 'Log in' }) },
+      apis: { 'api-1': restApiWire({ id: 'api-1', name: 'Shop' }) },
+      folders: { f1: { id: 'f1', apiId: 'api-1', name: 'Carts', order: 0, auth: { type: 'inherit' } } as never },
+    });
+    render(<EnableScriptsDialog />);
+    act(() => {
+      useEnableScriptsDialog.getState().open(['api-1', 'f1', 'r1']);
+    });
+
+    expect(screen.getByTestId('enable-scripts-dialog').textContent).toContain(
+      'The scripts of one request and 2 APIs, interfaces and folders will run on every send from now on: "Log in", "API Shop", "folder Carts".',
+    );
+    fireEvent.click(screen.getByTestId('enable-scripts-confirm'));
+    expect(enableScripts).toHaveBeenCalledWith(['api-1', 'f1', 'r1']);
   });
 
   it('shortens a long list', () => {

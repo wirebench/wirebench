@@ -76,6 +76,8 @@ export const grpcApiWireSchema = z.object({
   tls: z.boolean(),
   metadata: z.array(keyValueWireSchema),
   auth: authConfigWireSchema.optional(),
+  /** The API's scripts, run around every request in it (#334). */
+  scripts: requestScriptsWireSchema.optional(),
   definition: z
     .object({
       /** How the schema was obtained: imported `.proto` files, or a server that described itself. */

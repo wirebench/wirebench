@@ -18,7 +18,7 @@ import { readFileIfExists, readdirIfExists } from './fs.js';
 import type { ProjectProblem } from './load.js';
 import type { AuthConfig, DefinitionAuth } from './model.js';
 import { isExamplesDir } from './managed-files.js';
-import { FOLDER_FILE, MAX_FOLDER_DEPTH, REQUEST_SUFFIX } from './paths.js';
+import { FOLDER_FILE, FOLDER_SCRIPT_STEM, MAX_FOLDER_DEPTH, REQUEST_SUFFIX } from './paths.js';
 import { parseFile, restFolderFileSchema } from './schema-parts.js';
 import type { KeyValueEntryFile, scriptsSchema } from './schema-parts.js';
 import { parseYaml } from './yaml.js';
@@ -60,17 +60,19 @@ export function exact<T extends object>(value: { readonly [K in keyof T]: T[K] |
 }
 
 /**
- * A request's scripts and the text of each script file (#63). The file read is always the name
- * derived from the slug, never the one the request file records. A missing or oversized file is a
- * problem on the request; an oversized one keeps its text so a save writes it back untouched.
+ * A request's or a level's scripts and the text of each script file (#63, #334). The file read is
+ * always the name derived from `stem` (a request's slug, or a level's `api`, `interface` or
+ * `folder`), never the one the YAML records. A missing or oversized file is a problem on its owner;
+ * an oversized one keeps its text so a save writes it back untouched. `owner` names the owner in a
+ * problem's message: `Request "Checkout"`, `Folder "Orders"`.
  */
 export async function loadScripts(
   fs: FsLike,
   root: string,
   dir: string,
-  slug: string,
+  stem: string,
   document: z.infer<typeof scriptsSchema> | undefined,
-  requestName: string,
+  owner: string,
   problems: ProjectProblem[],
   claim: (fileName: string) => void,
 ): Promise<RequestScripts | undefined> {
@@ -81,14 +83,14 @@ export async function loadScripts(
     if ((phase === 'pre' ? document.pre : document.post) === undefined) {
       return undefined;
     }
-    const name = scriptFileName(slug, phase, document.api);
+    const name = scriptFileName(stem, phase, document.api);
     claim(name);
     const relative = `${dir}/${name}`;
     const buffer = await readFileIfExists(fs, abs(root, relative));
     if (buffer === undefined) {
       problems.push({
         code: 'script-file-missing',
-        message: `Request "${requestName}" names a ${phase === 'pre' ? 'pre-request' : 'post-response'} script whose file is missing`,
+        message: `${owner} names a ${phase === 'pre' ? 'pre-request' : 'post-response'} script whose file is missing`,
         file: relative,
       });
       return { text: '', problem: 'script-file-missing' };
@@ -97,7 +99,7 @@ export async function loadScripts(
     if (buffer.byteLength > SCRIPT_LIMITS.fileBytes) {
       problems.push({
         code: 'script-too-large',
-        message: `Request "${requestName}" has a script over ${String(SCRIPT_LIMITS.fileBytes / 1024)} KiB, which will not run`,
+        message: `${owner} has a script over ${String(SCRIPT_LIMITS.fileBytes / 1024)} KiB, which will not run`,
         file: relative,
       });
       return { text, problem: 'script-too-large' };
@@ -156,6 +158,7 @@ export interface FolderNode<R> {
   readonly order: number;
   readonly description?: string;
   readonly auth?: AuthConfig;
+  readonly scripts?: RequestScripts;
   readonly folders: readonly FolderNode<R>[];
   readonly requests: readonly R[];
 }
@@ -164,6 +167,49 @@ export interface FolderNode<R> {
 export interface FolderContents<R> {
   readonly folders: FolderNode<R>[];
   readonly requests: R[];
+}
+
+/** What the tree loader needs of a request of any protocol. */
+export interface TreeRequest {
+  readonly order: number;
+  readonly name: string;
+  readonly slug: string;
+  readonly scripts?: RequestScripts;
+}
+
+/**
+ * A scripted folder's requests with the one clash its files can have settled: a request slugged
+ * `folder` that has scripts too names the folder's own files, which the folder has claimed. That is
+ * a `script-file-clash` problem, and the request's scripts load as missing, so it refuses to send
+ * until it is renamed.
+ */
+function withoutFolderClash<R extends TreeRequest>(
+  contents: FolderContents<R>,
+  dir: string,
+  problems: ProjectProblem[],
+): FolderContents<R> {
+  const requests = contents.requests.map((request) => {
+    const scripts = request.scripts;
+    if (request.slug !== FOLDER_SCRIPT_STEM || scripts === undefined) return request;
+    const missing: ScriptSource = { text: '', problem: 'script-file-missing' };
+    for (const phase of ['pre', 'post'] as const) {
+      if (scripts[phase] === undefined) continue;
+      problems.push({
+        code: 'script-file-clash',
+        message: `Request "${request.name}" and its folder both name ${scriptFileName(FOLDER_SCRIPT_STEM, phase, scripts.api)}, which is the folder's; rename the request`,
+        file: `${dir}/${scriptFileName(FOLDER_SCRIPT_STEM, phase, scripts.api)}`,
+      });
+    }
+    return {
+      ...request,
+      scripts: {
+        ...scripts,
+        ...(scripts.pre !== undefined ? { pre: missing } : {}),
+        ...(scripts.post !== undefined ? { post: missing } : {}),
+      },
+    };
+  });
+  return { ...contents, requests };
 }
 
 /**
@@ -182,8 +228,12 @@ export type RequestReader<R> = (dir: string, fileName: string, unclaimed: Set<st
  * deeper than {@link MAX_FOLDER_DEPTH} becomes a problem and is skipped whole, so nothing is ever
  * written to a path that might not open on Windows. A request's `<slug>.examples/` directory is
  * not a folder ({@link isExamplesDir}): its request's reader reads the files in it.
+ *
+ * A folder's scripts (#334) are read before its requests, and their files are claimed out of the
+ * folder's directory (`claimed`), so the folder owns `folder.pre.ts` even when a request there is
+ * slugged `folder` ({@link withoutFolderClash}).
  */
-export async function loadFolderContents<R extends { readonly order: number; readonly name: string }>(
+export async function loadFolderContents<R extends TreeRequest>(
   fs: FsLike,
   root: string,
   dir: string,
@@ -191,9 +241,12 @@ export async function loadFolderContents<R extends { readonly order: number; rea
   problems: ProjectProblem[],
   readRequest: RequestReader<R>,
   folderExtra?: (document: unknown, relative: string) => Record<string, unknown>,
+  claimed: ReadonlySet<string> = new Set(),
 ): Promise<FolderContents<R>> {
   const entries = await readdirIfExists(fs, abs(root, dir));
-  const unclaimed = new Set(entries.filter((e) => e.isFile && e.name !== FOLDER_FILE).map((e) => e.name));
+  const unclaimed = new Set(
+    entries.filter((e) => e.isFile && e.name !== FOLDER_FILE && !claimed.has(e.name)).map((e) => e.name),
+  );
   const requestSlugs = new Set(
     entries
       .filter((e) => e.isFile && e.name.endsWith(REQUEST_SUFFIX))
@@ -219,17 +272,40 @@ export async function loadFolderContents<R extends { readonly order: number; rea
       });
       continue;
     }
-    const contents = await loadFolderContents(fs, root, childDir, depth + 1, problems, readRequest, folderExtra);
     const relative = `${childDir}/${FOLDER_FILE}`;
     const document = await readYaml(fs, root, relative);
     const parsed = document === undefined ? undefined : parseFile(restFolderFileSchema, document, relative);
+    const folderName = parsed?.name ?? entry.name;
+    const scriptFiles = new Set<string>();
+    const scripts = await loadScripts(
+      fs,
+      root,
+      childDir,
+      FOLDER_SCRIPT_STEM,
+      parsed?.scripts,
+      `Folder "${folderName}"`,
+      problems,
+      (name) => scriptFiles.add(name),
+    );
+    const loaded = await loadFolderContents(
+      fs,
+      root,
+      childDir,
+      depth + 1,
+      problems,
+      readRequest,
+      folderExtra,
+      scriptFiles,
+    );
+    const contents = scripts === undefined ? loaded : withoutFolderClash(loaded, childDir, problems);
     folders.push({
       id: parsed?.id ?? `folder:${entry.name}`,
-      name: parsed?.name ?? entry.name,
+      name: folderName,
       slug: entry.name,
       order: parsed?.order ?? Number.MAX_SAFE_INTEGER,
       ...optional('description', parsed?.description),
       ...(parsed?.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
       folders: contents.folders,
       requests: contents.requests,
       ...(folderExtra?.(document, relative) ?? {}),

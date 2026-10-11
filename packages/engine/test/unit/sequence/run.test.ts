@@ -304,6 +304,7 @@ describe('runSequence', () => {
               { name: 'plain', value: 'p', secret: false },
             ],
             log: { lines: ['hello'], truncated: false },
+            levels: [],
           },
         });
       }
@@ -315,6 +316,7 @@ describe('runSequence', () => {
           values: [],
           log: { lines: [], truncated: false },
           error: { code: 'script-error', message: 'Pay.post.ts:1:1: Error: late' },
+          levels: [],
         },
       });
     };

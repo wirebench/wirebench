@@ -6,6 +6,7 @@
 import { resolveScopes } from '../project/environments.js';
 import type { Project, PropertyMap } from '../project/model.js';
 import type { HeldSoapDefinition } from '../protocols.js';
+import { DynamicValues } from '../project/dynamic.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { MIN_SEEDED_SECRET_LENGTH } from '../redact/literal.js';
@@ -92,7 +93,10 @@ export interface RunContext {
   readonly registry?: ProtocolRegistry;
 }
 
-/** The property scopes a request of this run expands against, secrets not yet added. */
+/**
+ * The property scopes a request of this run expands against, secrets not yet added. Each call brings
+ * a fresh `${#Dynamic#…}` memo, so one send's references share their values and the next send's do not.
+ */
 export function scopesFor(context: RunContext): PropertyScopes {
   const { environmentId } = context;
   const { project, workspace, globals } = withCurrentValues(
@@ -117,6 +121,7 @@ export function scopesFor(context: RunContext): PropertyScopes {
   return {
     ...reported,
     env: { ...(scopes.env ?? {}), ...context.overrides },
+    dynamic: new DynamicValues(),
     // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
     ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
   };

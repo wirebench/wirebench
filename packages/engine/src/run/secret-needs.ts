@@ -12,7 +12,7 @@ import type { SelectedBase } from '../protocol/module.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
 import type { SelectedRequest } from '../protocols.js';
-import { activeScripts } from '../script/request-scripts.js';
+import { activeLevels, activeScripts } from '../script/request-scripts.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
@@ -27,12 +27,20 @@ export interface LocatedSecretNeed extends SecretNeed {
   readonly usedBy: readonly string[];
 }
 
-function tokenNeeds(selected: SelectedBase, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
+function tokenNeeds(
+  selected: SelectedBase,
+  scopeSets: readonly PropertyScopes[],
+  registry: ProtocolRegistry,
+): SecretNeed[] {
   // A script's own text is code, not a template: nothing in it is a reference. The secrets its
-  // request lists for `secrets.get` are needed instead (#63).
+  // request lists for `secrets.get` are needed instead (#63), and those its levels list (#334).
   const { scripts, ...request } = selected.request;
   const names = new Set(scopeSets.flatMap((scopes) => secretNamesInValue(request, scopes)));
-  for (const name of activeScripts(scripts)?.secrets ?? []) {
+  const levels = activeLevels(registry.find(selected.kind)?.run?.scriptLevels?.(selected) ?? []);
+  for (const name of [
+    ...levels.flatMap((level) => level.scripts.secrets),
+    ...(activeScripts(scripts)?.secrets ?? []),
+  ]) {
     names.add(name);
   }
   return [...names].map((name) => ({
@@ -50,7 +58,10 @@ function needsOf(
   registry: ProtocolRegistry,
 ): SecretNeed[] {
   const run = registry.find(selected.kind)?.run;
-  return [...tokenNeeds(selected, scopeSets), ...(run !== undefined ? run.secretNeeds(selected, project) : [])];
+  return [
+    ...tokenNeeds(selected, scopeSets, registry),
+    ...(run !== undefined ? run.secretNeeds(selected, project) : []),
+  ];
 }
 
 /** A workspace's scopes with no environment active, then under each of its environments in turn. */

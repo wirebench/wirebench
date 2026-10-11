@@ -9,6 +9,7 @@
  */
 import { useRef } from 'react';
 import { urlSegments } from '../../state/rest-url.js';
+import { referenceMark, useVariableField } from '../../components/variable-field.js';
 
 const FIELD_FONT = 'font-mono text-sm leading-[26px]';
 
@@ -34,31 +35,41 @@ export function PropertyHighlightInput({
   onKeyDown,
 }: PropertyHighlightInputProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
+  // Inside a request editor: `${` completes, a reference hovers, an unresolved one is underlined (#340).
+  const assist = useVariableField({ value, onValueChange: onChange });
+  const variables = assist.variables;
+  let offset = 0;
   return (
     // The mirror and the input share the same font, padding and box, and the input's own text is
     // transparent, so the coloured runs behind it line up with the caret exactly.
-    <div className="relative min-w-0 flex-1">
+    <div className="relative min-w-0 flex-1" {...assist.wrapperProps}>
       <div
         ref={mirrorRef}
         aria-hidden="true"
         data-testid={`${testId}-highlight`}
         className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 ${FIELD_FONT}`}
       >
-        {urlSegments(value).map((segment, index) => (
-          <span
-            key={index}
-            data-kind={segment.kind}
-            className={
-              segment.kind === 'property'
-                ? 'text-accent'
-                : segment.kind === 'param'
-                  ? 'text-status-info'
-                  : 'text-fg-default'
-            }
-          >
-            {segment.text}
-          </span>
-        ))}
+        {urlSegments(value).map((segment, index) => {
+          const start = offset;
+          offset += segment.text.length;
+          if (segment.kind === 'property') {
+            const mark = referenceMark(segment.text, start, variables);
+            return (
+              <span key={index} data-kind={segment.kind} className={mark.className} {...mark.props}>
+                {segment.text}
+              </span>
+            );
+          }
+          return (
+            <span
+              key={index}
+              data-kind={segment.kind}
+              className={segment.kind === 'param' ? 'text-status-info' : 'text-fg-default'}
+            >
+              {segment.text}
+            </span>
+          );
+        })}
       </div>
       <input
         id={id}
@@ -77,8 +88,9 @@ export function PropertyHighlightInput({
             mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft;
           }
         }}
-        onKeyDown={onKeyDown}
+        {...assist.fieldProps<HTMLInputElement>({ onKeyDown })}
       />
+      {assist.popups}
     </div>
   );
 }

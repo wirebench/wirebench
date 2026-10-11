@@ -8,6 +8,55 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Environment colour and a production guard.** An environment can have a colour: one of eight
+  palette swatches or a custom `#rrggbb`. The switcher shows it as a dot, and the active
+  environment's colour bands the editor tab strip. An environment can also be marked
+  **Protected**. Every send under it then asks first, with Cancel as the default: editor sends,
+  History re-sends and HTTP Log resends. A sequence run asks once, and **Send to environments…**
+  asks once per batch. `wirebench run` warns before sending under a protected environment, and
+  `--refuse-protected` exits 2 instead. `wirebench mcp` refuses one unless the call passes
+  `allowProtected: true`. Both settings are new optional keys in the environment file (`color`,
+  `protected`), which older builds still read (#345).
+- **The REST Headers tab lists the headers a send adds, before you send.** Under your own rows it
+  shows each generated header with its source: `User-Agent`, `Accept`, `Accept-Encoding` and
+  `Connection` from the preferences, the auth header, the body's `Content-Type`, the cookie jar's
+  `Cookie`, and the connection's `Host` and `Content-Length`. It is worked out the way the send works
+  it out, from the unsaved edits and the active environment. A checkbox leaves a header out through
+  the request's new `settings.omitHeaders`, which the CLI and runs honour too, as do the cURL export
+  and code generation. **Override** adds a typed header of the same name. Credentials and cookies stay
+  masked, and unread, unless Show secrets is on (#346).
+- **Scripts on APIs, interfaces and folders.** An API, a SOAP interface and each REST or gRPC folder
+  can have a pre-request and a post-response script, which run around every request inside it: the
+  API's, then each folder's outermost first, then the request's own, in both phases. A pre-request
+  failure stops the send; a post-response failure lets the later scripts run and reports the first.
+  Each level lists its own secrets, is typed from its protocol's request and response, and is
+  type-checked by `wirebench run` before anything is sent. The API tab has a **Scripts** section, the
+  interface viewer a **Scripts** tab, and a folder **Scripts…** in its explorer menu; the response's
+  **Script** tab lists each script that ran under its level. The Postman importer puts a collection's
+  and its folders' scripts on the API and folders instead of copying them into each request. Project
+  format 9 (#334).
+- **Dynamic values.** `${$guid}` (or `${#Dynamic#guid}`) sends a fresh value with every request: UUIDs,
+  Unix and ISO timestamps with offsets (`${$isoTimestamp(+1d)}`), random numbers
+  (`${$randomInt(1,100)}`), and fake names, emails, addresses, phone numbers, companies, lorem text,
+  dates, IP and MAC addresses, URLs, colours, currencies, file names and MIME types. Each reference is
+  generated once per send, so a value used twice matches, and the HTTP Log and History show what was
+  sent. The desktop app, `wirebench run` and the MCP `send` resolve them alike. Imported `{{$guid}}`,
+  `{{$timestamp}}`, `{{$randomInt}}` and the other common names now map onto them; a name with no
+  generator keeps the import warning. Type `${$` in a body editor, or use **Get Data…**, to list them
+  (#333).
+- **Variables in the editor.** Typing `${` in a request's URL, parameters, headers, auth fields or
+  body completes the names in scope, with each one's scope, and `${$` completes the dynamic values.
+  Hovering a reference shows its value (masked when it reads a secret) and scope, with a link to
+  edit it. A name that resolves to nothing is underlined where it is written. **Set as Variable…**
+  on text selected in a request or a response creates a variable in the scope you pick; in a
+  request, the selection becomes the reference (#340).
+- **The Code panel writes a request as code.** Besides `curl`, a SOAP or REST request can be shown
+  as JavaScript fetch, Node.js axios, Python requests, Go net/http, Java HttpClient, Java OkHttp,
+  C# HttpClient, PHP cURL, Ruby Net::HTTP, PowerShell Invoke-RestMethod or HTTPie, or as the
+  `wirebench run` line that sends the saved request. Each snippet is built from the resolved send, so
+  it matches the wire. A credential is read from the `WIREBENCH_SECRET_*` variable the CLI reads,
+  never written out, unless Show secrets is on. Indent, redirects and timeout are set per language,
+  and the language picked last is remembered (#337).
 - **Postman Collection v3 folders import.** In **Import…**, pick a collection's folder with the new
   **Folder…** button, or its `.resources/definition.yaml`; a workspace folder (`collections/`,
   `environments/`, `globals/`) imports every collection with its environments and globals.
@@ -32,6 +81,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
+- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`; a project
+  saved by this version cannot be opened by an older one, which would drop them and send without
+  them (#334).
+- **`@wirebench/engine`: a protocol's scripting facet has `levelTypes()`,** the generic types an API's,
+  interface's or folder's script is checked against. `ScriptedRequest` gains `outer` (its levels'
+  scripts, outermost first) and its own `scripts` is optional; `SentScripts` gains `levels` (#334).
 - **`@wirebench/engine`: `SendHost.issuedTokens` is `SendHost.protocols.soap.issuedTokens`.** A host
   lends each protocol what only it reads under its kind; `soapHostOf` and `withSoapHost` read and
   set SOAP's entry. History's WebSocket frames, event-stream rows and contract results are typed with

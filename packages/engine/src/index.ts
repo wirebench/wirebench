@@ -349,8 +349,27 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
-export { toCurl } from './http/curl.js';
+export { quoteForShell, toCurl } from './http/curl.js';
 export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from './http/curl.js';
+export {
+  CODE_TARGETS,
+  defaultIndent,
+  envMarker,
+  generateCode,
+  secretTokensToEnv,
+  splitEnv,
+} from './http/codegen/index.js';
+export { restCodeRequest } from './rest/codegen.js';
+export { soapCodeRequest } from './soap/codegen.js';
+export type {
+  CodeBody,
+  CodeHeader,
+  CodeOptions,
+  CodeRequest,
+  CodeTargetId,
+  GeneratedCode,
+  TextPart,
+} from './http/codegen/index.js';
 export { fromCurl, soapToCurl } from './soap/curl.js';
 export type { FromCurlResult } from './soap/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
@@ -642,6 +661,9 @@ export { expandRestSendInput } from './rest/expand.js';
 export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export { previewRestHeaders } from './rest/header-preview.js';
+export { headersOfRows, isOmitted, restHeaderRows } from './rest/request-headers.js';
+export type { RestHeaderLayers, RestHeaderRow, RestHeaderSource, RestHeaderState } from './rest/request-headers.js';
 export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
 export type { SseParser, SseRow } from './rest/sse.js';
 export {
@@ -1148,10 +1170,14 @@ export {
   secretNamesIn,
   unescapeExpansions,
 } from './project/properties.js';
+export { propertyReferences } from './project/references.js';
+export type { PropertyReference, PropertyReferenceForm } from './project/references.js';
 export { contractPorts, endpointsFromContract, endpointUrlFromContract } from './wsdl/contract-endpoints.js';
 export type { ContractPort } from './wsdl/contract-endpoints.js';
 export { expandSendInput } from './soap/expand.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
+export { DYNAMIC_GENERATORS, DynamicValues, generateDynamic, isDynamicName } from './project/dynamic.js';
+export type { DynamicGeneratorInfo, DynamicResult } from './project/dynamic.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
 export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './wss/configs.js';
@@ -1330,6 +1356,7 @@ export {
   createWorkspaceEnvironment,
   deleteShare,
   describeTreePath,
+  isProtectedEnvironment,
   linkedEnvironment,
   loadLocalState,
   loadShare,

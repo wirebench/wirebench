@@ -14,8 +14,10 @@ import {
   createRestRequest,
   grpcApisOf,
   isWirebenchError,
+  restApisOf,
   SCRIPT_LIMITS,
   soapInterfacesOf,
+  withRestApis,
 } from '@wirebench/engine';
 import type { Project, RequestScripts } from '@wirebench/engine';
 import { findGrpcRequest } from '../src/main/kinds/grpc/mutations.js';
@@ -208,5 +210,43 @@ describe('other edits keep scripts', () => {
     ({ project } = await applyChange(project, { kind: 'clone-grpc-request', requestId: 'grpc-1' }, deps));
     const copies = grpcApisOf(project)[0]!.requests.filter((request) => request.id !== 'grpc-1');
     expect(copies[0]?.scripts?.post?.text).toBe('log(1);');
+  });
+});
+
+describe('level scripts (#334)', () => {
+  it('update-request-scripts edits an API’s, a folder’s, an interface’s and a gRPC API’s scripts by id', async () => {
+    let project = build();
+    for (const id of ['api-1', 'f-1', 'iface-1', 'g-1']) {
+      ({ project } = await applyChange(
+        project,
+        { kind: 'update-request-scripts', requestId: id, scripts: { pre: `log("${id}");` } },
+        deps,
+      ));
+    }
+    const on = (id: string) => ({ pre: { text: `log("${id}");` }, api: 'wirebench', enabled: true, secrets: [] });
+    const api = restApisOf(project)[0]!;
+    expect(api.scripts).toEqual(on('api-1'));
+    expect(api.folders[0]?.scripts).toEqual(on('f-1'));
+    expect(soapInterfacesOf(project)[0]?.scripts).toEqual(on('iface-1'));
+    expect(grpcApisOf(project)[0]?.scripts).toEqual(on('g-1'));
+
+    ({ project } = await applyChange(
+      project,
+      { kind: 'update-request-scripts', requestId: 'f-1', scripts: null },
+      deps,
+    ));
+    expect(restApisOf(project)[0]?.folders[0]).not.toHaveProperty('scripts');
+  });
+
+  it('enable-scripts switches on a listed API’s and folder’s scripts', async () => {
+    const before = build();
+    const api = restApisOf(before)[0]!;
+    const levelled = withRestApis(before, [{ ...api, scripts: OFF, folders: [{ ...api.folders[0]!, scripts: OFF }] }]);
+    const { project } = await applyChange(levelled, { kind: 'enable-scripts', requestIds: ['api-1', 'f-1'] }, deps);
+    const after = restApisOf(project)[0]!;
+    expect(after.scripts?.enabled).toBe(true);
+    expect(after.folders[0]?.scripts?.enabled).toBe(true);
+    // The requests were not listed, so theirs stay off.
+    expect(after.requests[0]?.scripts?.enabled).toBe(false);
   });
 });

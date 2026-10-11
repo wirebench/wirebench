@@ -56,6 +56,9 @@ function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]
   return [...menu.slice(0, 1), [item], ...menu.slice(1)];
 }
 
+/** The kinds whose folders carry scripts (#334). */
+const SCRIPTED_FOLDER_KINDS: ReadonlySet<string> = new Set(['rest', 'grpc']);
+
 function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   // A node a protocol kind owns gets that kind's menu.
   const role = explorerRole(node.kind);
@@ -143,8 +146,12 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       ],
       [
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
-        // A folder has no editor tab, so its one other field gets a dialog of its own.
+        // A folder has no editor tab, so its other fields get dialogs of their own.
         { key: 'auth', label: 'Auth…', run: () => explorerActions.editFolderAuth(folderId) },
+        // Scripts run around a REST or gRPC request (#334); a WebSocket folder has none.
+        ...(SCRIPTED_FOLDER_KINDS.has(node.ownerKind ?? 'rest')
+          ? [{ key: 'scripts', label: 'Scripts…', run: () => explorerActions.editFolderScripts(folderId) }]
+          : []),
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],
     );
