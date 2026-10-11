@@ -8,6 +8,7 @@ export function TerminalSection({ preferences, update }: SectionProps) {
     <SettingsGroup title="Clipboard">
       <BooleanSetting
         label="Confirm multi-line paste"
+        setting="terminal.confirmMultilinePaste"
         value={terminal.confirmMultilinePaste}
         onChange={(confirmMultilinePaste) => {
           update({ terminal: { confirmMultilinePaste } });
@@ -16,6 +17,7 @@ export function TerminalSection({ preferences, update }: SectionProps) {
       />
       <BooleanSetting
         label="Copy on select"
+        setting="terminal.copyOnSelect"
         value={terminal.copyOnSelect}
         onChange={(copyOnSelect) => {
           update({ terminal: { copyOnSelect } });

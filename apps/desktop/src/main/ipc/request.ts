@@ -84,6 +84,7 @@ import type {
   RequestVariablesResponse,
 } from '../../shared/wire-base.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
+import { toRestSettingsWire } from '../project-wire.js';
 import { requestVariables } from '../request-variables.js';
 import { registerHandler } from './register.js';
 
@@ -329,7 +330,7 @@ function kerberosNames(auth: { readonly username?: string | undefined; readonly 
  * Every arm carries the marker rather than a secret, so the command shows *which* credential a
  * request sends and where it goes without the keychain being touched.
  */
-function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
+export function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
   switch (auth.type) {
     case 'basic':
       return {
@@ -937,7 +938,7 @@ async function importCurlAsRest(
       ...(query !== undefined ? { query: [...query] } : {}),
       ...(headers !== undefined ? { headers: [...headers] } : {}),
       ...(body !== undefined ? { body: bodyToWire(body) } : {}),
-      ...(settings !== undefined ? { settings } : {}),
+      ...(settings !== undefined ? { settings: toRestSettingsWire(settings) } : {}),
       ...(auth !== undefined ? { auth } : {}),
     },
   });
@@ -954,7 +955,7 @@ async function importCurlAsRest(
  * The access token already cached for `config`, if one is still valid — never a new one. An export
  * must not open a browser or call a token endpoint behind the user's back.
  */
-function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string | undefined {
+export function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string | undefined {
   const status = deps.oauth2?.status?.(config, { showSecrets: true });
   return status?.state === 'valid' ? status.token : undefined;
 }

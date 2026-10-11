@@ -73,11 +73,11 @@ test.describe('ws-trust issued token', () => {
     // --- trust the token service's CA through Preferences → SSL -----------------------------
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId('preferences-editor').getByRole('button', { name: 'SSL', exact: true }).click();
+    await page.getByTestId('preferences-editor').getByRole('button', { name: 'SSL / TLS', exact: true }).click();
     await page.getByTestId('ssl-ca-bundle-browse').click();
     await expect(page.getByTestId('ssl-ca-bundle')).toHaveValue(bundlePath);
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('settings-page')).toHaveCount(0);
     await page.getByRole('tab', { name: 'Request 1' }).click();
     await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
 

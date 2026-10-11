@@ -8,7 +8,7 @@ import { Aside } from '@astrojs/starlight/components';
 On a machine IT manages, a **policy file** sets preferences the user cannot change: the proxy every
 send goes through, the CA bundle that adds your organization's trust anchors, the minimum TLS version,
 and whether Wirebench checks for updates. Every setting the file names is shown in
-**Preferences** as **Locked by policy**, and a note at the top of Preferences names the file.
+**Settings** as **Managed**, and a note at the top of each Settings section names the file.
 
 ## Where the file goes
 
@@ -56,7 +56,7 @@ These are the keys a policy can lock:
 | `updates.checkOnLaunch` | `true` or `false` |
 
 The proxy password is never part of a policy: it's kept in each user's OS keychain, so users with a
-locked manual proxy still enter their own password in **Preferences → Proxy**.
+locked manual proxy still enter their own password in **Settings → Proxy**.
 
 A CA bundle named by the policy is trusted without the user picking it, because the policy file sits
 where only an administrator can write. The bundle adds to the system's trust store; it never replaces
@@ -64,22 +64,23 @@ it.
 
 ## What users see
 
-- Each locked setting is read-only and marked **Locked by policy**. The CA bundle's **Browse…** and
+- Each locked setting is read-only and marked **Managed**. The CA bundle's **Browse…** and
   **Clear** buttons are unavailable while it is locked.
-- **Reset section** restores the user's own values; locked values stay in force.
+- A locked row offers no **Reset**, and **Reset … to defaults** in a section's **•••** menu leaves locked
+  values in force.
 - The user's own preferences file keeps only their own values. If the policy is removed, their
   previous settings come back at the next start.
 
 ## When something is wrong
 
 - **A key that can't be locked**, or a value that isn't valid (a relative CA bundle path, a proxy mode
-  that isn't one of the three), is ignored. The note in Preferences lists every ignored key, so you can
+  that isn't one of the three), is ignored. The note in Settings lists every ignored key, so you can
   see which ones had no effect; the rest of the policy still applies.
-- **A file that can't be read or isn't valid YAML** locks nothing. Preferences shows an error naming the
+- **A file that can't be read or isn't valid YAML** locks nothing. Settings shows an error naming the
   file and the reason.
 
 <Aside type="tip" title="Testing a policy">
 Try a policy on one machine before rolling it out: deploy the file, restart Wirebench, and check that
-**Preferences → Proxy**, **SSL** and **Updates** show the settings you expect as locked, and that the
+**Settings → Proxy**, **SSL / TLS** and **Updates** show the settings you expect as locked, and that the
 note at the top lists no ignored keys.
 </Aside>

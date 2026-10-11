@@ -49,7 +49,7 @@ export function renderCommandReference(entries: readonly CommandCatalogEntry[]):
     '',
     'Every command can be run from the command palette (<kbd>⌘K</kbd> on macOS, <kbd>Ctrl+K</kbd> on',
     'Windows and Linux). The first shortcut listed for a command can be changed in',
-    '**Preferences → Shortcuts**; this page shows the defaults.',
+    '**Settings → Keyboard shortcuts**; this page shows the defaults.',
   ];
   for (const [category, group] of groups) {
     lines.push('', `## ${category}`, '', '| Command | macOS | Windows and Linux |', '| --- | --- | --- |');

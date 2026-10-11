@@ -6,7 +6,7 @@ export interface ShortcutsSectionProps {
 }
 
 /**
- * Preferences → Shortcuts. A thin wrapper so the section list stays a flat list of sections;
+ * Settings → Keyboard shortcuts. A thin wrapper so the section list stays a flat list of sections;
  * the table, the chord recorder and the reset buttons all live in {@link ShortcutsEditor}.
  */
 export function ShortcutsSection({ context }: ShortcutsSectionProps) {

@@ -1,14 +1,15 @@
 /**
- * The headers the request sends: the ones typed here, and — greyed under them — the ones the
- * request computes for itself.
+ * The headers the request sends: the ones typed here, and under them the ones the send adds on the
+ * request's behalf.
  *
- * The computed rows are shown because their absence is confusing: a user who has not set a content
- * type still sends one, and a user reading the tab should see everything that goes on the wire.
- * They are not editable, because editing them means editing the thing that produced them (the body's
- * kind, the API's credentials).
+ * The generated rows are shown because their absence is confusing: a user who has not set a content
+ * type still sends one, and a user reading the tab should see everything that goes on the wire. For a
+ * REST request main lists them (`GeneratedHeaders`), each of which can be switched off or overridden;
+ * the WebSocket editor, which has no such list, shows the body's content type greyed in the table.
  */
 import { KvTable } from '../../components/kv-table.js';
-import type { RestBodyWire, RestRequestPatchWire } from '../../../shared/kinds/rest/wire.js';
+import { GeneratedHeaders } from './generated-headers.js';
+import type { RestBodyWire, RestRequestPatchWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
 import type { KeyValueWire } from '../../../shared/wire-base.js';
 
 export interface HeadersTabProps {
@@ -16,6 +17,8 @@ export interface HeadersTabProps {
   /** The body, which is what decides the computed content type. */
   readonly body: RestBodyWire;
   readonly onChange: (patch: RestRequestPatchWire) => void;
+  /** A REST request, whose generated headers main lists under the table. */
+  readonly request?: RestRequestWire;
 }
 
 /** The content type a body implies, or `undefined` when the request sends none. */
@@ -44,8 +47,9 @@ const RAW_CONTENT_TYPE: Readonly<Record<string, string>> = {
 };
 
 /** The Headers tab. */
-export function HeadersTab({ headers, body, onChange }: HeadersTabProps) {
-  const contentType = computedContentType(body);
+export function HeadersTab({ headers, body, onChange, request }: HeadersTabProps) {
+  // With main's list below, the table shows only what was typed: the list already has the content type.
+  const contentType = request === undefined ? computedContentType(body) : undefined;
   // Only when the user has not set one: a typed `Content-Type` wins, and showing both would
   // suggest two are sent.
   const typed = headers.some((header) => header.name.toLowerCase() === 'content-type' && header.enabled);
@@ -68,6 +72,7 @@ export function HeadersTab({ headers, body, onChange }: HeadersTabProps) {
           onChange({ headers: [...rows] });
         }}
       />
+      {request !== undefined && <GeneratedHeaders request={request} onChange={onChange} />}
     </div>
   );
 }

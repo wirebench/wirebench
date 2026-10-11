@@ -33,6 +33,25 @@ function input(overrides: {
 }
 
 describe('restCodeRequest', () => {
+  it('leaves out the generated headers the request switched off, as the send does', () => {
+    const request = restCodeRequest(
+      input({
+        method: 'POST',
+        body: { kind: 'raw', language: 'json', text: '{}' },
+        auth: { type: 'bearer', token: 't' },
+        settings: { omitHeaders: ['Content-Type', 'authorization'] },
+      }),
+    );
+    expect(request.headers).toEqual([]);
+    const basic = restCodeRequest(
+      input({
+        auth: { type: 'basic', username: 'u', password: 'p', preemptive: true },
+        settings: { omitHeaders: ['Authorization'] },
+      }),
+    );
+    expect(basic.basic).toBeUndefined();
+  });
+
   it('composes the URL, drops disabled rows and declares the body type as the send does', () => {
     const request = restCodeRequest(
       input({

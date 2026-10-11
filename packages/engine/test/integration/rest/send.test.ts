@@ -231,6 +231,37 @@ describe('headers', () => {
     const exchange = await sendRest(input({ request: { headers: [entry('X-Off', '1', { enabled: false })] } }));
     expect(echo(exchange.text).headers['x-off']).toBeUndefined();
   });
+
+  it('leaves out the generated headers the request omits, but never a typed one', async () => {
+    const exchange = await sendRest(
+      input({
+        defaultHeaders: { 'User-Agent': 'wirebench-test', Accept: 'application/json' },
+        auth: { type: 'bearer', token: 't0k' },
+        request: {
+          method: 'POST',
+          headers: [entry('Accept', 'text/plain')],
+          body: { kind: 'raw', language: 'json', text: '{}' },
+        },
+        settings: { omitHeaders: ['user-agent', 'Authorization', 'content-type', 'Accept'] },
+      }),
+    );
+
+    const received = echo(exchange.text).headers;
+    expect(received['user-agent']).toBeUndefined();
+    expect(received.authorization).toBeUndefined();
+    expect(received['content-type']).toBeUndefined();
+    expect(received.accept).toBe('text/plain');
+  });
+
+  it('drops a preemptive Basic credential when Authorization is omitted', async () => {
+    const exchange = await sendRest(
+      input({
+        auth: { type: 'basic', username: 'u', password: 'p', preemptive: true },
+        settings: { omitHeaders: ['Authorization'] },
+      }),
+    );
+    expect(echo(exchange.text).headers.authorization).toBeUndefined();
+  });
 });
 
 describe('responses', () => {
@@ -346,5 +377,18 @@ describe('the legacy cookie list beside a jar', () => {
       );
       expect(JSON.parse(sent.text)).toEqual({ cookie });
     }
+  });
+
+  it('does not read the jar when the request omits its Cookie, and still stores into it', async () => {
+    const jar = new CookieJar();
+    jar.store(`${server.url}/`, [{ name: 'jar', value: '2' }], Date.now());
+    const sent = await sendRest(
+      input({
+        request: { url: '/cookies/read' },
+        jar: { host: jarCookieHost(jar), send: true },
+        settings: { omitHeaders: ['cookie'] },
+      }),
+    );
+    expect(JSON.parse(sent.text)).toEqual({ cookie: null });
   });
 });

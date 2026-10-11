@@ -1,5 +1,5 @@
 import { Button } from '../../../components/button.js';
-import { BooleanSetting, SettingsGroup } from '../../../components/settings-grid.js';
+import { BooleanSetting, SettingsGroup, SettingsItem } from '../../../components/settings-grid.js';
 import { useAccountStore } from '../../../state/account.js';
 import { useUiStore } from '../../../state/ui.js';
 import { LicenseBanner } from '../../team/license-banner.js';
@@ -28,81 +28,84 @@ export function AccountsSection({ preferences, update }: SectionProps) {
   return (
     <div data-testid="accounts-section">
       <SettingsGroup title="Servers" hint="Where you are signed in. Removing a server also signs out of it.">
-        {servers.length === 0 ? (
-          <p className="text-sm text-fg-subtle">No servers yet.</p>
-        ) : (
-          <ul className="divide-y divide-hairline">
-            {servers.map((server) => (
-              <li
-                key={server.url}
-                data-testid={`account-row-${hostOf(server.url)}`}
-                className="flex items-center gap-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm text-fg-default">{server.url}</div>
-                  <div className="truncate text-xs text-fg-subtle">
-                    {server.email} · {server.displayName} · {server.signedOut ? 'Signed out' : 'Signed in'} ·{' '}
-                    {server.deviceName}
+        <SettingsItem>
+          {servers.length === 0 ? (
+            <p className="text-sm text-fg-subtle">No servers yet.</p>
+          ) : (
+            <ul className="divide-y divide-hairline">
+              {servers.map((server) => (
+                <li
+                  key={server.url}
+                  data-testid={`account-row-${hostOf(server.url)}`}
+                  className="flex items-center gap-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-fg-default">{server.url}</div>
+                    <div className="truncate text-xs text-fg-subtle">
+                      {server.email} · {server.displayName} · {server.signedOut ? 'Signed out' : 'Signed in'} ·{' '}
+                      {server.deviceName}
+                    </div>
+                    {!server.signedOut && <LicenseBanner url={server.url} />}
                   </div>
-                  {!server.signedOut && <LicenseBanner url={server.url} />}
-                </div>
-                {server.signedOut ? (
+                  {server.signedOut ? (
+                    <Button
+                      data-testid="account-row-sign-in"
+                      onClick={() => {
+                        openSignInDialog(server.url);
+                      }}
+                    >
+                      Sign in
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        data-testid="account-row-manage-teams"
+                        onClick={() => {
+                          openTeamDialog(server.url);
+                        }}
+                      >
+                        Manage teams…
+                      </Button>
+                      <Button
+                        data-testid="account-row-sign-out"
+                        onClick={() => {
+                          void signOut(server.url);
+                        }}
+                      >
+                        Sign out
+                      </Button>
+                    </>
+                  )}
                   <Button
-                    data-testid="account-row-sign-in"
+                    variant="ghost"
+                    data-testid="account-row-remove"
                     onClick={() => {
-                      openSignInDialog(server.url);
+                      void remove(server.url);
                     }}
                   >
-                    Sign in
+                    Remove
                   </Button>
-                ) : (
-                  <>
-                    <Button
-                      data-testid="account-row-manage-teams"
-                      onClick={() => {
-                        openTeamDialog(server.url);
-                      }}
-                    >
-                      Manage teams…
-                    </Button>
-                    <Button
-                      data-testid="account-row-sign-out"
-                      onClick={() => {
-                        void signOut(server.url);
-                      }}
-                    >
-                      Sign out
-                    </Button>
-                  </>
-                )}
-                <Button
-                  variant="ghost"
-                  data-testid="account-row-remove"
-                  onClick={() => {
-                    void remove(server.url);
-                  }}
-                >
-                  Remove
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="mt-2">
-          <Button
-            variant="primary"
-            data-testid="accounts-add-server"
-            onClick={() => {
-              openSignInDialog();
-            }}
-          >
-            Add server…
-          </Button>
-        </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2">
+            <Button
+              variant="primary"
+              data-testid="accounts-add-server"
+              onClick={() => {
+                openSignInDialog();
+              }}
+            >
+              Add server…
+            </Button>
+          </div>
+        </SettingsItem>
       </SettingsGroup>
       <SettingsGroup title="Status bar">
         <BooleanSetting
           label="Show sign-in in the status bar"
+          setting="accounts.showInStatusBar"
           value={preferences.accounts.showInStatusBar}
           testId="accounts-show-in-status-bar"
           onChange={(showInStatusBar) => {

@@ -7,6 +7,7 @@ export function SecretsSection({ preferences, update }: SectionProps) {
     <SettingsGroup title="Secret sources">
       <NumberSetting
         label="Secret source cache (seconds)"
+        setting="secrets.sourceCacheSeconds"
         value={preferences.secrets.sourceCacheSeconds}
         min={0}
         max={3600}
