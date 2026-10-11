@@ -97,6 +97,15 @@ declare const iteration: {
 declare const props: { get(name: string): string | undefined };
 /** The secrets this request's `scripts.secrets` lists, and no others. */
 declare const secrets: { get(name: WbSecretName): string };
+/**
+ * Steers an API or folder run. A single send and a sequence step ignore it, and log that they did.
+ */
+declare const execution: {
+  /** After this request the run goes on at the first selected request of this name; `null` ends the run. The last call wins. */
+  setNextRequest(name: string | null): void;
+  /** Pre-request scripts only: this request is not sent, and is reported as skipped. */
+  skipRequest(): void;
+};
 /** Records a test; a failed `expect` inside it fails the test, and the script goes on. */
 declare function test(name: string, check: () => void): void;
 declare function expect<T>(actual: T): WbExpectation<T>;

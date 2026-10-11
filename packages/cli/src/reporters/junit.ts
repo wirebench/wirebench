@@ -1,5 +1,6 @@
 import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engine';
 import { escapeXml } from './escape.js';
+import { controlLine } from './run-control.js';
 
 const attr = (name: string, value: string): string => ` ${name}="${escapeXml(value)}"`;
 const seconds = (durationMs: number | undefined): string => ((durationMs ?? 0) / 1000).toFixed(3);
@@ -23,7 +24,8 @@ function baselineNote(result: RequestResult): string | undefined {
 }
 
 function renderSystemOut(result: RequestResult): string {
-  const notes = baselineNote(result);
+  const lines = [baselineNote(result), controlLine(result)].filter((line) => line !== undefined);
+  const notes = lines.length > 0 ? lines.join('\n') : undefined;
   if (result.exchange === undefined) {
     return notes === undefined ? '' : `<system-out>${escapeXml(notes)}</system-out>`;
   }

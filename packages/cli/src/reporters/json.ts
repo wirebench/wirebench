@@ -25,6 +25,7 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *   - For a request with scripts (#63), two more optional fields, also added without a version change:
  *     - `scriptLog[]`: what its scripts logged, masked like every other string.
  *     - `scriptsOff`: `true` when its scripts are switched off and none ran.
+ *     - `control`: what its scripts asked of the run (#335), `{ skipped?: true, next?: string | null }`.
  *   - A script's tests appear in `assertions[]` with `type: "script"`.
  *   - For a data-driven run (#336), `iteration`: `{ index, count, row? }` (0-based; `row` is the data file's
  *     row), and `summary.iterations`: `{ planned, run }`. Both added without a version change, and absent
@@ -69,13 +70,14 @@ export interface JsonReportRequest {
   readonly origin?: string;
   readonly scriptLog?: readonly string[];
   readonly scriptsOff?: true;
+  readonly control?: RequestResult['control'];
   readonly baseline?: RequestResult['baseline'];
   readonly iteration?: RequestResult['iteration'];
 }
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
   const { path, group, name, protocol, outcome, status, durationMs, unasserted, assertions, error, exchange } = result;
-  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline, iteration } = result;
+  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline, iteration, control } = result;
   return {
     path,
     group,
@@ -95,6 +97,7 @@ function toReportRequest(result: RequestResult): JsonReportRequest {
     ...(scriptLog !== undefined ? { scriptLog } : {}),
     ...(scriptsOff === true ? { scriptsOff: true as const } : {}),
     ...(iteration !== undefined ? { iteration } : {}),
+    ...(control !== undefined ? { control } : {}),
   };
 }
 

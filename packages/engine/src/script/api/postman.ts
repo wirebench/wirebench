@@ -4,12 +4,13 @@
  * same API a typed script uses — `vars`, `props`, `test`, `request`, `response`, `crypto`,
  * `encoding` — so it can do nothing a typed script cannot.
  *
- * It covers what imported collections mostly use. Anything else throws `ScriptUnsupported` naming
+ * `setNextRequest` and `skipRequest` are built on `execution` (#335): run control an API or folder
+ * run obeys. It covers what imported collections mostly use. Anything else throws `ScriptUnsupported` naming
  * the call, which the host reports as `script-unsupported`.
  */
 export const POSTMAN_LAYER = String.raw`
 const unsupported = (name) => () => {
-  throw new ScriptUnsupported(name + ' is not supported: a script cannot send requests, keep cookies or control the run');
+  throw new ScriptUnsupported(name + ' is not supported: a script cannot send requests or keep cookies');
 };
 
 const asValue = (value) => (value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : value);
@@ -239,7 +240,7 @@ const pmObject = {
   sendRequest: unsupported('pm.sendRequest'),
   cookies: Object.freeze({ get: () => undefined, has: () => false, toObject: () => ({}), jar: unsupported('pm.cookies.jar') }),
   visualizer: Object.freeze({ set: unsupported('pm.visualizer') }),
-  execution: Object.freeze({ setNextRequest: unsupported('pm.execution.setNextRequest'), skipRequest: unsupported('pm.execution.skipRequest') }),
+  execution: Object.freeze({ setNextRequest: (name) => execution.setNextRequest(name), skipRequest: () => execution.skipRequest() }),
   iterationData: Object.freeze({
     get: (name) => iteration.data.get(name),
     has: (name) => iteration.data.get(name) !== undefined,
@@ -252,7 +253,7 @@ const pmResponseValue = pmResponse();
 if (pmResponseValue !== undefined) pmObject.response = pmResponseValue;
 define('pm', Object.freeze(pmObject));
 define('postman', Object.freeze({
-  setNextRequest: unsupported('postman.setNextRequest'),
+  setNextRequest: (name) => execution.setNextRequest(name),
   setEnvironmentVariable: (name, value) => variables.set(name, value),
   getEnvironmentVariable: (name) => variables.get(name),
   setGlobalVariable: (name, value) => variables.set(name, value),

@@ -48,11 +48,28 @@ export interface ScriptLog {
   readonly truncated: boolean;
 }
 
+/**
+ * Run control a script handed back (#335): the request a run sends next (`null` ends the run), and,
+ * from a pre-request script, that this request is skipped. Only an API or folder run obeys it.
+ */
+export interface ScriptControl {
+  readonly next?: string | null;
+  readonly skip?: true;
+}
+
+/** Caps on run control (spec 2026-10-11-script-run-control). */
+export const SCRIPT_CONTROL_LIMITS = {
+  /** The longest request name `execution.setNextRequest` takes. */
+  nameLength: 256,
+} as const;
+
 /** What running one script produced. `request` is set only for a pre-request script that succeeded. */
 export type ScriptOutcome =
   | {
       readonly ok: true;
       readonly request?: RequestSnapshotBase;
+      /** Set when the script steered the run. */
+      readonly control?: ScriptControl;
       readonly tests: readonly ScriptTest[];
       readonly values: readonly ScriptValue[];
       readonly log: ScriptLog;

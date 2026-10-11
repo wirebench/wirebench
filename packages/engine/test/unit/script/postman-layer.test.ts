@@ -146,9 +146,8 @@ describe('the Postman layer', () => {
     for (const [source, name] of [
       ['pm.sendRequest("https://x.test", () => {});', 'pm.sendRequest'],
       ['pm.cookies.jar();', 'pm.cookies.jar'],
-      ['postman.setNextRequest("x");', 'postman.setNextRequest'],
       ['require("lodash");', 'require'],
-      ['pm.execution.setNextRequest(null);', 'pm.execution.setNextRequest'],
+      ['pm.visualizer.set("<p/>");', 'pm.visualizer'],
     ] as const) {
       expect(await run('post', source)).toMatchObject({
         ok: false,
