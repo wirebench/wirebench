@@ -16,12 +16,14 @@ import { expand, secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { urlOrigin } from '../project/sequence-guards.js';
 import type { SecretPlaceholders } from '../script/send.js';
+import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
 import { resolveWorkspaceApiBaseUrl, withActiveEnvironment } from '../workspace/environments.js';
 import { loadKeystore, toTlsClientIdentity } from '../keystore/index.js';
+import type { ClientIdentity } from './host.js';
 import type { Keystore } from '../keystore/index.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
@@ -180,6 +182,17 @@ export async function tlsFor(
   };
 }
 
+/** The keystore identity an OAuth2 key-based client authenticates with: the host's loader, else the project's. */
+async function oauth2IdentityFor(context: RunContext, keystoreId: string): Promise<ClientIdentity | undefined> {
+  const identity =
+    context.host.tls?.identityFor !== undefined
+      ? await context.host.tls.identityFor(keystoreId)
+      : await clientIdentityFor(context, keystoreId);
+  return identity?.cert !== undefined && identity.key !== undefined
+    ? { cert: identity.cert, key: identity.key }
+    : undefined;
+}
+
 /** The run's shared token source, or a fresh one for a send outside a run. */
 export function tokenSourceOf(context: RunContext): RunTokenSource {
   return (
@@ -213,6 +226,7 @@ export async function authFor(
   }
   const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
     scopes: scopesFor(context),
+    identityFor: (keystoreId) => oauth2IdentityFor(context, keystoreId),
     ...(tls !== undefined ? { tls } : {}),
     ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
@@ -319,6 +333,16 @@ export function originOf(url: string): { readonly origin?: string } {
 
 /** True for a reference that is set: neither absent nor empty. */
 export const present = (id: string | undefined): id is string => id !== undefined && id.length > 0;
+
+/**
+ * What an effective auth needs from a run: its own secrets, and the keystore password behind an
+ * OAuth2 key-based client authentication (`private-key-jwt`, `tls-client-auth`).
+ */
+export function authSecretNeeds(project: Project, auth: AuthConfig | undefined): SecretNeed[] {
+  const keyBased =
+    auth?.type === 'oauth2' && (auth.clientAuth === 'private-key-jwt' || auth.clientAuth === 'tls-client-auth');
+  return [...secretNeedsOfAuth(auth), ...(keyBased ? keystoreNeeds(project, auth.clientKeystoreId) : [])];
+}
 
 /** A keystore's password, when the registry entry has one; an unreadable entry needs nothing here. */
 export function keystoreNeeds(project: Project, keystoreId: string | undefined): SecretNeed[] {

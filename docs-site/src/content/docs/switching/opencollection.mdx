@@ -73,7 +73,7 @@ importers guide. It takes a picked or dropped file, or pasted YAML.
 | `body` of type `multipart-form` | A multipart body. A file part points at its file, resolved against the collection's folder; when a part lists several files, only the first is kept, with a note | |
 | `body` of type `file` | A binary body pointing at the selected file (else the first), resolved against the collection's folder. The file is not copied | |
 | A body given as a list of variants | The selected variant, else the first. A note names the others | |
-| `auth` | The request's auth: `inherit`, `none`, Basic (user name only), Bearer, API key (name and placement), NTLM (user name and domain) and OAuth 2 with the client credentials or authorization code grant. See [Credentials](#credentials) for what happens to the secrets | [Auth](/wirebench/docs/guides/auth/) |
+| `auth` | The request's auth: `inherit`, `none`, Basic (user name only), Bearer, API key (name and placement), NTLM (user name and domain) and OAuth 2 with the client credentials, authorization code or resource owner password grant (user name only). See [Credentials](#credentials) for what happens to the secrets | [Auth](/wirebench/docs/guides/auth/) |
 | `settings.timeout`, `followRedirects`, `maxRedirects`, `encodeUrl` | The matching request settings. Any other setting is ignored, with a note | |
 | `examples` with a numeric response status | [Response examples](/wirebench/docs/guides/rest-client/#examples) on the request, masked as every import masks a recorded response: credential-named headers, JSON and form body fields, and XML elements and attributes are masked, and cookies are dropped. A binary example body is left out, and a body over 256 KB is cut | |
 | `runtime.assertions` | Request assertions, when they fit the table under [Assertions](#assertions) | [Assertions](/wirebench/docs/guides/assertions/) |
@@ -186,7 +186,7 @@ No literal credential is written into a project or workspace file.
 | Object values of variables | Skipped, with a note | Set them by hand |
 | `extends`, `externalSecrets`, `dotEnvFilePath` and `clientCertificates` on an environment | Not imported, with a warning | Set the equivalent up by hand |
 | `config.proxy` and `config.clientCertificates` | Not imported, with a warning | Set the equivalent up by hand |
-| OAuth 2 with a grant other than client credentials or authorization code | Imported as auth **none**, with a warning | Choose an auth type on the **Auth** tab |
+| OAuth 2 with a grant other than client credentials, authorization code or password | Imported as auth **none**, with a warning | Choose an auth type on the **Auth** tab |
 | Any other auth type | Imported as auth **none**, with a warning | |
 | A body of another type | Left out, with a note | |
 | WebSocket `keepAliveInterval` | Ignored, with a note | |

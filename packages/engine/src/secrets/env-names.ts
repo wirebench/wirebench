@@ -48,7 +48,19 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
     case 'api-key':
       return need(auth.valueRef, auth.valueEnv, `API key "${auth.name}"`);
     case 'oauth2':
-      return need(auth.clientSecretRef, auth.clientSecretEnv, `OAuth2 client secret for "${auth.clientId}"`);
+      return [
+        // A key-based client never sends its secret, so a leftover reference is not a need.
+        ...(auth.clientAuth === 'private-key-jwt' || auth.clientAuth === 'tls-client-auth'
+          ? []
+          : need(auth.clientSecretRef, auth.clientSecretEnv, `OAuth2 client secret for "${auth.clientId}"`)),
+        ...(auth.grant === 'password'
+          ? need(auth.passwordRef, auth.passwordEnv, `OAuth2 password for "${auth.username ?? ''}"`)
+          : []),
+        // A browser grant runs headless only from a refresh token, so for those it is required.
+        ...(auth.grant === 'authorization-code' || auth.grant === 'device-code'
+          ? need(auth.refreshTokenRef, auth.refreshTokenEnv, `OAuth2 refresh token for "${auth.clientId}"`)
+          : []),
+      ];
     case 'kerberos':
       return auth.username !== undefined
         ? need(auth.passwordRef, auth.passwordEnv, `kerberos password for "${auth.username}"`)

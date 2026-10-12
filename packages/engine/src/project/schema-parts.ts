@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { ProjectError } from '../errors.js';
 import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
+import { JWT_ALGS } from '../http/auth/jwt-algs.js';
 import { signatureSchemeSchema } from '../http/webhook-signature.js';
 
 /** A string with at least one character: an id, a slug, a file name. */
@@ -110,17 +111,24 @@ const apiKeyAuthSchema = refuseSecretValues(
 const oauth2AuthSchema = refuseSecretValues(
   z.looseObject({
     type: z.literal('oauth2'),
-    grant: z.enum(['client-credentials', 'authorization-code']),
+    grant: z.enum(['client-credentials', 'authorization-code', 'password', 'device-code']),
     tokenUrl: z.string(),
     authorizationUrl: z.string().optional(),
+    deviceAuthorizationUrl: z.string().optional(),
+    username: z.string().optional(),
+    passwordRef: z.string().optional(),
+    passwordEnv: envName,
     clientId: z.string(),
     clientSecretRef: z.string().optional(),
     clientSecretEnv: envName,
     scopes: z.array(z.string()).default([]),
     audience: z.string().optional(),
-    clientAuth: z.enum(['basic', 'body']).default('basic'),
+    clientAuth: z.enum(['basic', 'body', 'client-secret-jwt', 'private-key-jwt', 'tls-client-auth']).default('basic'),
+    clientKeystoreId: z.string().optional(),
+    assertionAlg: z.enum(JWT_ALGS).optional(),
     pkce: z.boolean().default(true),
     refreshTokenRef: z.string().optional(),
+    refreshTokenEnv: envName,
   }),
 );
 

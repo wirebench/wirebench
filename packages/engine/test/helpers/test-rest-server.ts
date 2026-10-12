@@ -8,7 +8,8 @@
  * the desktop app's e2e suite through `@wirebench/engine/test-helpers`.
  */
 
-import { createHash } from 'node:crypto';
+import { X509Certificate, createHash, createHmac, verify as verifySignature } from 'node:crypto';
+import type { TLSSocket } from 'node:tls';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { createGzip, gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
@@ -89,8 +90,23 @@ export interface TestRestServerOptions {
   readonly bearerToken?: string;
   /** Key `/auth/apikey` accepts, in the `X-Api-Key` header or the `api_key` query. Default `good-key`. */
   readonly apiKey?: string;
-  /** Client credentials the stub `/oauth2/token` accepts. Default `app` / `s3cret`. */
-  readonly oauthClient?: { readonly id: string; readonly secret: string };
+  /**
+   * The client the stub `/oauth2/token` and `/oauth2/device` accept. Default `app` / `s3cret`. With
+   * `certPem`, a `private_key_jwt` assertion is verified against that certificate's key and, on a
+   * TLS server that requests client certificates, `tls_client_auth` accepts that certificate.
+   */
+  readonly oauthClient?: { readonly id: string; readonly secret: string; readonly certPem?: string };
+  /** Resource owners the password grant accepts. Default `alice` / `pa55`. */
+  readonly oauthUsers?: Readonly<Record<string, string>>;
+  /** `expires_in` of every token the stub issues. Default 3600. */
+  readonly oauthExpiresIn?: number;
+}
+
+/** What the stub token endpoint saw for one request: how the client authenticated, and the grant. */
+export interface OAuthTokenCall {
+  readonly grant: string;
+  readonly clientAuth: 'basic' | 'body' | 'client-secret-jwt' | 'private-key-jwt' | 'tls-client-auth' | 'none';
+  readonly form: Readonly<Record<string, string>>;
 }
 
 /** A running {@link startTestRestServer}. */
@@ -101,6 +117,10 @@ export interface TestRestServer {
   readonly issuedTokens: string[];
   /** Refresh tokens it has issued, newest last. */
   readonly issuedRefreshTokens: string[];
+  /** Every token request the stub answered, oldest first. */
+  readonly oauthCalls: OAuthTokenCall[];
+  /** Approves a pending device authorization by its user code, as the user would in a browser. */
+  approveDevice(userCode: string): void;
   close(): Promise<void>;
 }
 
@@ -169,6 +189,10 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
   const bearerToken = options.bearerToken ?? 'good-token';
   const apiKey = options.apiKey ?? 'good-key';
   const oauthClient = options.oauthClient ?? { id: 'app', secret: 's3cret' };
+  const oauthUsers = options.oauthUsers ?? { alice: 'pa55' };
+  const oauthCalls: OAuthTokenCall[] = [];
+  const devices = new Map<string, { readonly userCode: string; approved: boolean }>();
+  const seenJtis = new Set<string>();
 
   const sockets = new Set<Socket>();
   let counter = 0;
@@ -447,6 +471,26 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
         return;
       }
 
+      if (path === '/oauth2/device') {
+        const form = new URLSearchParams(body.toString('utf8'));
+        const auth = authenticateOAuthClient(request, form, oauthClient, `${selfOrigin}/oauth2/token`, seenJtis);
+        if (auth === undefined) {
+          sendJson(response, 401, { error: 'invalid_client', error_description: 'Client authentication failed' });
+          return;
+        }
+        const n = (counter += 1);
+        devices.set(`device-${String(n)}`, { userCode: `USER-${String(n)}`, approved: false });
+        sendJson(response, 200, {
+          device_code: `device-${String(n)}`,
+          user_code: `USER-${String(n)}`,
+          verification_uri: `${selfOrigin}/device`,
+          verification_uri_complete: `${selfOrigin}/device?user_code=USER-${String(n)}`,
+          expires_in: 600,
+          interval: 1,
+        });
+        return;
+      }
+
       if (path === '/oauth2/token') {
         handleToken({
           request,
@@ -457,6 +501,12 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
           issuedTokens,
           issuedRefreshTokens,
           client: oauthClient,
+          users: oauthUsers,
+          devices,
+          calls: oauthCalls,
+          tokenUrl: `${selfOrigin}/oauth2/token`,
+          seenJtis,
+          expiresIn: options.oauthExpiresIn ?? 3600,
           next: () => (counter += 1),
         });
         return;
@@ -497,6 +547,12 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
     requests,
     issuedTokens,
     issuedRefreshTokens,
+    oauthCalls,
+    approveDevice: (userCode) => {
+      for (const device of devices.values()) {
+        if (device.userCode === userCode) device.approved = true;
+      }
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) {
@@ -507,7 +563,95 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
   };
 }
 
-/** The stub token endpoint: enough of RFC 6749 §4.1.3, §4.4 and §6 to exercise a real client. */
+/**
+ * How the client authenticated to the stub, or undefined when it failed: the secret in a Basic
+ * header or the body, a client assertion verified like a provider would (signature, `iss`/`sub`,
+ * `aud`, expiry, a `jti` never seen before), or the client certificate on the connection.
+ */
+function authenticateOAuthClient(
+  request: IncomingMessage,
+  form: URLSearchParams,
+  client: { readonly id: string; readonly secret: string; readonly certPem?: string },
+  tokenUrl: string,
+  seenJtis: Set<string>,
+): OAuthTokenCall['clientAuth'] | undefined {
+  const header = request.headers.authorization;
+  if (typeof header === 'string' && header.startsWith('Basic ')) {
+    const [id, secret] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
+    return decodeURIComponent(id ?? '') === client.id && decodeURIComponent(secret ?? '') === client.secret
+      ? 'basic'
+      : undefined;
+  }
+  const assertion = form.get('client_assertion');
+  if (assertion !== null) {
+    if (form.get('client_assertion_type') !== 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer') {
+      return undefined;
+    }
+    return verifyAssertion(assertion, client, tokenUrl, seenJtis);
+  }
+  if (form.get('client_id') !== client.id) {
+    return undefined;
+  }
+  const secret = form.get('client_secret');
+  if (secret !== null) {
+    return secret === client.secret ? 'body' : undefined;
+  }
+  const peer = (request.socket as Partial<TLSSocket>).getPeerCertificate?.();
+  if (peer?.fingerprint256 !== undefined && client.certPem !== undefined) {
+    return peer.fingerprint256 === new X509Certificate(client.certPem).fingerprint256 ? 'tls-client-auth' : undefined;
+  }
+  return undefined;
+}
+
+function verifyAssertion(
+  jwt: string,
+  client: { readonly id: string; readonly secret: string; readonly certPem?: string },
+  tokenUrl: string,
+  seenJtis: Set<string>,
+): 'client-secret-jwt' | 'private-key-jwt' | undefined {
+  const [h = '', c = '', sig = ''] = jwt.split('.');
+  const header = JSON.parse(Buffer.from(h, 'base64url').toString('utf8')) as { alg?: string };
+  const claims = JSON.parse(Buffer.from(c, 'base64url').toString('utf8')) as Record<string, unknown>;
+  const input = Buffer.from(`${h}.${c}`);
+  const signature = Buffer.from(sig, 'base64url');
+  const alg = header.alg ?? '';
+  const hash = `sha${alg.slice(2)}`;
+  let method: 'client-secret-jwt' | 'private-key-jwt';
+  if (alg.startsWith('HS')) {
+    if (!createHmac(hash, client.secret).update(input).digest().equals(signature)) return undefined;
+    method = 'client-secret-jwt';
+  } else {
+    if (client.certPem === undefined) return undefined;
+    const key = new X509Certificate(client.certPem).publicKey;
+    const options = alg.startsWith('ES')
+      ? { key, dsaEncoding: 'ieee-p1363' as const }
+      : alg.startsWith('PS')
+        ? { key, padding: 6, saltLength: -1 }
+        : key;
+    if (!verifySignature(hash, input, options, signature)) return undefined;
+    method = 'private-key-jwt';
+  }
+  const jti = claims['jti'];
+  const exp = claims['exp'];
+  if (
+    claims['iss'] !== client.id ||
+    claims['sub'] !== client.id ||
+    claims['aud'] !== tokenUrl ||
+    typeof exp !== 'number' ||
+    exp * 1000 < Date.now() ||
+    typeof jti !== 'string' ||
+    seenJtis.has(jti)
+  ) {
+    return undefined;
+  }
+  seenJtis.add(jti);
+  return method;
+}
+
+/**
+ * The stub token endpoint: enough of RFC 6749 §4.1.3, §4.3, §4.4 and §6 and RFC 8628 §3.4 to
+ * exercise a real client, with any of the client authentication methods above.
+ */
 function handleToken(input: {
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
@@ -516,21 +660,21 @@ function handleToken(input: {
   readonly refreshTokens: Set<string>;
   readonly issuedTokens: string[];
   readonly issuedRefreshTokens: string[];
-  readonly client: { readonly id: string; readonly secret: string };
+  readonly client: { readonly id: string; readonly secret: string; readonly certPem?: string };
+  readonly users: Readonly<Record<string, string>>;
+  readonly devices: Map<string, { readonly userCode: string; approved: boolean }>;
+  readonly calls: OAuthTokenCall[];
+  readonly tokenUrl: string;
+  readonly seenJtis: Set<string>;
+  readonly expiresIn: number;
   readonly next: () => number;
 }): void {
   const { request, response, codes, refreshTokens, issuedTokens, issuedRefreshTokens, client } = input;
   const form = new URLSearchParams(input.body.toString('utf8'));
-
-  const header = request.headers.authorization;
-  let clientId = form.get('client_id');
-  let clientSecret = form.get('client_secret');
-  if (typeof header === 'string' && header.startsWith('Basic ')) {
-    const [id, secret] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
-    clientId = decodeURIComponent(id ?? '');
-    clientSecret = decodeURIComponent(secret ?? '');
-  }
-  if (clientId !== client.id || clientSecret !== client.secret) {
+  const grant = form.get('grant_type') ?? '';
+  const clientAuth = authenticateOAuthClient(request, form, client, input.tokenUrl, input.seenJtis);
+  input.calls.push({ grant, clientAuth: clientAuth ?? 'none', form: Object.fromEntries(form) });
+  if (clientAuth === undefined) {
     sendJson(response, 401, { error: 'invalid_client', error_description: 'Client authentication failed' });
     return;
   }
@@ -547,7 +691,7 @@ function handleToken(input: {
     sendJson(response, 200, {
       access_token: accessToken,
       token_type: 'Bearer',
-      expires_in: 3600,
+      expires_in: input.expiresIn,
       scope: form.get('scope') ?? 'read',
       ...(withRefresh ? { refresh_token: refreshToken } : {}),
     });
@@ -586,6 +730,29 @@ function handleToken(input: {
         return;
       }
       refreshTokens.delete(token);
+      issue(true);
+      return;
+    }
+    case 'password': {
+      const username = form.get('username') ?? '';
+      if (input.users[username] === undefined || input.users[username] !== form.get('password')) {
+        sendJson(response, 400, { error: 'invalid_grant', error_description: 'Bad resource owner credentials' });
+        return;
+      }
+      issue(true);
+      return;
+    }
+    case 'urn:ietf:params:oauth:grant-type:device_code': {
+      const device = input.devices.get(form.get('device_code') ?? '');
+      if (device === undefined) {
+        sendJson(response, 400, { error: 'expired_token' });
+        return;
+      }
+      if (!device.approved) {
+        sendJson(response, 400, { error: 'authorization_pending' });
+        return;
+      }
+      input.devices.delete(form.get('device_code') ?? '');
       issue(true);
       return;
     }

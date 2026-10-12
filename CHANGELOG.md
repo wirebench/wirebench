@@ -41,6 +41,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **More OAuth 2 grants and client authentication.** The password grant (a username and a password
+  from the secret store) and the device-code grant (RFC 8628: **Get token** shows the code and opens
+  the verification page) join client credentials and authorization code. The client can now
+  authenticate with a signed assertion, `client_secret_jwt` (HMAC) or `private_key_jwt` (a keystore's
+  key, RS, PS or ES, the algorithm following the key unless chosen), or with the keystore's
+  certificate (`tls_client_auth`). `wirebench run` runs the password grant and refreshes tokens
+  headless, and starts an authorization-code or device-code configuration from a refresh token in
+  `WIREBENCH_SECRET_<refreshTokenEnv>`. OpenAPI, Postman and OpenCollection imports map the password
+  flow, OpenAPI 3.2's device flow maps to device code, and exports write the password grant (#338).
 - **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
   Each column is read as `${#Data#column}`, substituted literally, and scripts read the row with
   `iteration.data.get()`. `--iterations` sets the count (`--data-overrun stop|wrap|repeat-last` when it

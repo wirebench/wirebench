@@ -33,7 +33,7 @@ export interface MappedOcAuth {
 }
 
 /**
- * The OAuth 2 grants Wirebench runs (client credentials, authorization code); any other flow is
+ * The OAuth 2 grants Wirebench runs (client credentials, authorization code, resource owner password); any other flow is
  * `none` with a warning. The client secret and the resource owner's password are never carried,
  * and neither is literal user info or a literal credential in the query of the token or
  * authorization URL. A refresh URL has no Wirebench field, so it is never written.
@@ -45,7 +45,8 @@ export function mapOcOAuth2(a: Rec, where: string, report: ReportBuilder, dynami
   if (text(credentials, 'clientSecret') !== '' || text(owner, 'password') !== '') {
     report.warn(`${where}: the oauth2 credential was not imported; set it on the request or API.`);
   }
-  if (flow !== 'client_credentials' && flow !== 'authorization_code') {
+  const password = flow === 'resource_owner_password_credentials';
+  if (flow !== 'client_credentials' && flow !== 'authorization_code' && !password) {
     const named = flow === '' ? 'an unnamed' : `the "${flow}"`;
     report.warn(`${where}: OAuth 2 with ${named} flow is not supported and was imported as none.`);
     return { type: 'none' };
@@ -63,10 +64,11 @@ export function mapOcOAuth2(a: Rec, where: string, report: ReportBuilder, dynami
   const pkce = isRecord(a['pkce']) ? a['pkce'] : undefined;
   const auth: OAuth2Auth = {
     type: 'oauth2',
-    grant: authCode ? 'authorization-code' : 'client-credentials',
+    grant: authCode ? 'authorization-code' : password ? 'password' : 'client-credentials',
     tokenUrl: endpoint(text(a, 'accessTokenUrl')),
     ...(authCode && authorizationUrl !== '' ? { authorizationUrl: endpoint(authorizationUrl) } : {}),
     clientId: rewrite(text(credentials, 'clientId')),
+    ...(password && text(owner, 'username') !== '' ? { username: rewrite(text(owner, 'username')) } : {}),
     scopes: text(a, 'scope').split(/\s+/).filter(Boolean),
     clientAuth: text(credentials, 'placement') === 'body' ? 'body' : 'basic',
     pkce: authCode && pkce?.['disabled'] !== true,

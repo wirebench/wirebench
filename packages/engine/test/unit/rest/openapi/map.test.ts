@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
-import { apiFromDocument } from '../../../../src/rest/openapi/map.js';
+import { apiFromDocument, mapScheme } from '../../../../src/rest/openapi/map.js';
 import type { MapApiOptions, MappedApi } from '../../../../src/rest/openapi/map.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
 
@@ -310,5 +310,45 @@ describe('apiFromDocument', () => {
     const { summary } = await mapped('security');
 
     expect(summary.skipped.filter((entry) => entry.kind === 'security-scheme')).toEqual([]);
+  });
+});
+
+describe('mapScheme — OAuth 2 flows', () => {
+  it('maps the password flow, and the device authorization flow with its endpoint', () => {
+    expect(
+      mapScheme({
+        name: 'pw',
+        type: 'oauth2',
+        flows: { password: { tokenUrl: 'https://id.test/token', scopes: { read: '' } } },
+      }).auth,
+    ).toMatchObject({
+      type: 'oauth2',
+      grant: 'password',
+      tokenUrl: 'https://id.test/token',
+      scopes: ['read'],
+      pkce: false,
+    });
+    expect(
+      mapScheme({
+        name: 'dev',
+        type: 'oauth2',
+        flows: {
+          deviceAuthorization: { tokenUrl: 'https://id.test/token', deviceAuthorizationUrl: 'https://id.test/device' },
+        },
+      }).auth,
+    ).toMatchObject({ type: 'oauth2', grant: 'device-code', deviceAuthorizationUrl: 'https://id.test/device' });
+  });
+
+  it('still prefers client credentials, then the code flow, when a scheme offers several', () => {
+    expect(
+      mapScheme({
+        name: 'many',
+        type: 'oauth2',
+        flows: {
+          password: { tokenUrl: 'https://p' },
+          authorizationCode: { tokenUrl: 'https://c', authorizationUrl: 'https://a' },
+        },
+      }).auth,
+    ).toMatchObject({ grant: 'authorization-code' });
   });
 });

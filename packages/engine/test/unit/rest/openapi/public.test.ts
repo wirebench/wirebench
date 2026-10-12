@@ -151,7 +151,7 @@ describe('Swagger Petstore (3.0)', () => {
       {
         kind: 'security-scheme',
         where: 'petstore_auth',
-        reason: 'Only the client-credentials and authorization-code flows are supported',
+        reason: 'Only the client-credentials, authorization-code, password and device flows are supported',
       },
     ]);
   });
@@ -203,6 +203,15 @@ describe('Support for different security types (3.1)', () => {
       clientAuth: 'basic',
       pkce: false,
     });
+    expect(routes.get('DELETE /anything/oauth2')?.auth).toEqual({
+      type: 'oauth2',
+      grant: 'password',
+      tokenUrl: 'http://alt.example.com/oauth/token',
+      clientId: '',
+      scopes: ['write:things'],
+      clientAuth: 'basic',
+      pkce: false,
+    });
     // A scheme offering every flow: client credentials is the one a desktop client can always run.
     expect(routes.get('POST /anything/oauth2')?.auth).toMatchObject({ type: 'oauth2', grant: 'client-credentials' });
   });
@@ -215,7 +224,6 @@ describe('Support for different security types (3.1)', () => {
       'POST /anything/apiKey',
       'POST /anything/mutualTLS',
       'PATCH /anything/oauth2',
-      'DELETE /anything/oauth2',
       'POST /anything/openIdConnect',
     ]) {
       expect(routes.get(route)?.auth, route).toEqual({ type: 'inherit' });
@@ -233,12 +241,7 @@ describe('Support for different security types (3.1)', () => {
       {
         kind: 'security-scheme',
         where: 'oauth2_implicit',
-        reason: 'Only the client-credentials and authorization-code flows are supported',
-      },
-      {
-        kind: 'security-scheme',
-        where: 'oauth2_password',
-        reason: 'Only the client-credentials and authorization-code flows are supported',
+        reason: 'Only the client-credentials, authorization-code, password and device flows are supported',
       },
       {
         kind: 'security-scheme',

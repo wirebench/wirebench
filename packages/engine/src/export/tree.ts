@@ -715,24 +715,39 @@ class TreeBuilder {
       case 'api-key':
         credential(auth.valueRef, auth.valueEnv);
         return { type: 'api-key', name: m(auth.name), in: auth.in };
-      case 'oauth2':
-        credential(auth.clientSecretRef, auth.clientSecretEnv, auth.refreshTokenRef);
+      case 'oauth2': {
+        credential(auth.clientSecretRef, auth.clientSecretEnv, auth.refreshTokenRef, auth.passwordRef);
         if (auth.audience !== undefined && auth.audience !== '') {
           this.ctx.report.warn(`${label}: the OAuth 2 audience is not represented.`);
         }
+        // Neither target format has a device-code grant or a key-based client authentication, so
+        // each is written as its nearest form — still needing a person, still a confidential client.
+        if (auth.grant === 'device-code') {
+          this.ctx.report.warn(
+            `${label}: the OAuth 2 device-code grant is not represented and was written as authorization code.`,
+          );
+        }
+        const clientAuth = auth.clientAuth === 'body' ? 'body' : 'basic';
+        if (auth.clientAuth !== 'basic' && auth.clientAuth !== 'body') {
+          this.ctx.report.warn(
+            `${label}: the OAuth 2 client authentication "${auth.clientAuth}" is not represented; the Basic header is written.`,
+          );
+        }
         return {
           type: 'oauth2',
-          grant: auth.grant,
+          grant: auth.grant === 'device-code' ? 'authorization-code' : auth.grant,
           tokenUrl: m(this.url(auth.tokenUrl, label)),
           ...opt(
             'authorizationUrl',
             auth.authorizationUrl !== undefined ? this.url(auth.authorizationUrl, label) : undefined,
           ),
           clientId: m(auth.clientId),
+          ...(auth.grant === 'password' ? opt('username', auth.username) : {}),
           scopes: auth.scopes,
-          clientAuth: auth.clientAuth,
+          clientAuth,
           pkce: auth.pkce,
         };
+      }
       case 'kerberos':
         this.ctx.report.warn(`${label}: Kerberos authentication is not represented and was written as no auth.`);
         return { type: 'none' };

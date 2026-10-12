@@ -270,9 +270,11 @@ class PostmanWriter {
         const grant =
           auth.grant === 'client-credentials'
             ? 'client_credentials'
-            : auth.pkce
-              ? 'authorization_code_with_pkce'
-              : 'authorization_code';
+            : auth.grant === 'password'
+              ? 'password_credentials'
+              : auth.pkce
+                ? 'authorization_code_with_pkce'
+                : 'authorization_code';
         return {
           type: 'oauth2',
           oauth2: attrs({
@@ -281,6 +283,7 @@ class PostmanWriter {
             authUrl: auth.authorizationUrl,
             clientId: auth.clientId,
             clientSecret: '',
+            ...(auth.grant === 'password' ? { username: auth.username ?? '', password: '' } : {}),
             scope: auth.scopes.join(' '),
             client_authentication: auth.clientAuth === 'body' ? 'body' : 'header',
             addTokenTo: 'header',
