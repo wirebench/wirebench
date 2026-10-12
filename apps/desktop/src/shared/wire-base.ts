@@ -2622,7 +2622,7 @@ export const workspaceEnvironmentWireSchema = z.object({
    * The project ids this environment applies to, as the file holds them (#468); absent means every
    * project. `[]` applies to none. Ids this machine does not know are kept.
    */
-  projects: z.array(z.string()).optional(),
+  projects: z.array(z.string().min(1)).optional(),
 });
 export type WorkspaceEnvironmentWire = z.infer<typeof workspaceEnvironmentWireSchema>;
 
@@ -2665,7 +2665,7 @@ export const workspaceEnvironmentPatchSchema = z.object({
   color: z.string().refine(isEnvironmentColor, 'not a palette name or #rrggbb').nullable().optional(),
   protected: z.boolean().optional(),
   /** Replaces the scope (#468); `null` applies the environment to every project again. */
-  projects: z.array(z.string()).nullable().optional(),
+  projects: z.array(z.string().min(1)).nullable().optional(),
 });
 export type WorkspaceEnvironmentPatchWire = z.infer<typeof workspaceEnvironmentPatchSchema>;
 

@@ -45,5 +45,8 @@ describe('workspace environment patch scope (#468)', () => {
     expect(workspaceEnvironmentPatchSchema.parse({ projects: [] })).toEqual({ projects: [] });
     expect(workspaceEnvironmentPatchSchema.parse({ projects: null })).toEqual({ projects: null });
     expect(workspaceEnvironmentPatchSchema.safeParse({ projects: 'p1' }).success).toBe(false);
+    // The environment file refuses an empty id, so the wire does too: it would not load again.
+    expect(workspaceEnvironmentPatchSchema.safeParse({ projects: [''] }).success).toBe(false);
+    expect(workspaceEnvironmentPatchSchema.safeParse({ projects: ['p1', ''] }).success).toBe(false);
   });
 });

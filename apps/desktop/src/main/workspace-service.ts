@@ -602,10 +602,13 @@ function withResolutionSlot(workspace: Workspace, projectId: string | undefined)
   return projectId === undefined ? withoutActiveEnvironment(workspace) : workspaceForProject(workspace, projectId);
 }
 
-/** `environment` with `projects` as its scope; `null` drops the field, so it applies to every project. */
+/**
+ * `environment` with `projects` as its scope, each id once in first-seen order; `null` drops the
+ * field, so it applies to every project.
+ */
 function withScope(environment: WorkspaceEnvironment, projects: readonly string[] | null): WorkspaceEnvironment {
   if (projects !== null) {
-    return { ...environment, projects: [...projects] };
+    return { ...environment, projects: [...new Set(projects)] };
   }
   const copy: { -readonly [K in keyof WorkspaceEnvironment]: WorkspaceEnvironment[K] } = { ...environment };
   delete copy.projects;

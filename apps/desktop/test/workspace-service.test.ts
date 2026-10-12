@@ -1323,6 +1323,24 @@ describe('active environment per project (#468)', () => {
     expect(onDisk.environments[0]?.projects).toEqual([crm, '01JTEAMMATESPROJECTNOTHERE']);
   });
 
+  it('a scope patch stores each project id once, in first-seen order', async () => {
+    const { id, dir, billing, crm } = await twoProjectWorkspace();
+    const service = newService();
+    await service.open(id);
+    const dev = await addEnvironment(service, 'dev');
+
+    const { workspace } = await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId: dev,
+      patch: { projects: [crm, billing, crm, billing] },
+    });
+    expect(workspace.environments[0]?.projects).toEqual([crm, billing]);
+    await service.close();
+
+    const { workspace: onDisk } = await loadWorkspace(dir);
+    expect(onDisk.environments[0]?.projects).toEqual([crm, billing]);
+  });
+
   it('a patch that leaves out projects keeps the scope', async () => {
     const { id, crm } = await twoProjectWorkspace();
     const service = newService();

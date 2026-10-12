@@ -532,6 +532,13 @@ describe('workspace.* channels', () => {
     expect(service.mutate).toHaveBeenCalledWith(change);
   });
 
+  it('refuses a scope patch holding an empty project id before the service sees it', async () => {
+    const change = { kind: 'update-workspace-environment', environmentId: 'e1', patch: { projects: ['p1', ''] } };
+    const reply = await invoke('workspace.mutate', { change });
+    expect(reply.ok).toBe(false);
+    expect(service.mutate).not.toHaveBeenCalled();
+  });
+
   it('refuses a malformed change before the service sees it', async () => {
     const result = await invoke('workspace.mutate', { change: { kind: 'rm-rf', path: '/' } });
     expect(result.ok).toBe(false);
