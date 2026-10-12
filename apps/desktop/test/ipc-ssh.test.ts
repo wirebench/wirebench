@@ -36,6 +36,8 @@ const NO_SSH = {
   trust: vi.fn(),
   knownHosts: vi.fn(),
   forgetHostKey: vi.fn(),
+  hostOs: vi.fn(),
+  setHostOs: vi.fn(),
 };
 const NO_HOSTS = { list: vi.fn(), save: vi.fn() };
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
@@ -153,6 +155,8 @@ describe('ssh channels', () => {
         trust: vi.fn().mockResolvedValue(undefined),
         knownHosts: vi.fn(),
         forgetHostKey: vi.fn(),
+        hostOs: vi.fn(),
+        setHostOs: vi.fn(),
       };
       registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT });
       return ssh;
@@ -219,6 +223,32 @@ describe('known hosts channels', () => {
       await invoke('ssh.forgetHostKey', { host: 'box:22', keyType: 'ssh-ed25519', fingerprint: 'x' }),
     ).toMatchObject({ ok: false });
     expect(ssh.forgetHostKey).not.toHaveBeenCalled();
+  });
+});
+
+describe('host OS channels', () => {
+  const window = { id: 7 };
+  it('list the entries and forward a choice with the calling window', async () => {
+    const entries = { 'box:22': { detected: { id: 'ubuntu', name: 'Ubuntu' }, chosen: 'debian' } };
+    const ssh = {
+      ...NO_SSH,
+      hostOs: vi.fn().mockResolvedValue(entries),
+      setHostOs: vi.fn().mockResolvedValue(undefined),
+    };
+    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT });
+    expect(await invoke('ssh.hostOs', undefined)).toEqual({ ok: true, value: { entries } });
+    expect(await invokeAs(window, 'ssh.setHostOs', { host: 'box:22', os: 'alpine' })).toEqual({ ok: true, value: {} });
+    expect(await invokeAs(window, 'ssh.setHostOs', { host: 'box:22', os: null })).toEqual({ ok: true, value: {} });
+    expect(ssh.setHostOs).toHaveBeenNthCalledWith(1, window, { host: 'box:22', os: 'alpine' });
+    expect(ssh.setHostOs).toHaveBeenNthCalledWith(2, window, { host: 'box:22', os: null });
+  });
+
+  it('refuse an unknown OS id and extra fields', async () => {
+    const ssh = { ...NO_SSH, setHostOs: vi.fn() };
+    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT });
+    expect(await invoke('ssh.setHostOs', { host: 'box:22', os: 'beos' })).toMatchObject({ ok: false });
+    expect(await invoke('ssh.setHostOs', { host: 'box:22', os: null, extra: 1 })).toMatchObject({ ok: false });
+    expect(ssh.setHostOs).not.toHaveBeenCalled();
   });
 });
 

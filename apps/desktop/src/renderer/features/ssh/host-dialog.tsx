@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
-import type { GroupEntryWire, HostsFileWire, SshSettingsWire } from '../../../shared/ssh-wire.js';
+import type { GroupEntryWire, HostsFileWire, SshOsId, SshSettingsWire } from '../../../shared/ssh-wire.js';
+import { ipc } from '../../state/ipc-client.js';
+import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
-import { SSH_DEFAULTS } from '../../../shared/ssh-defaults.js';
+import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
 import { ancestorsOf, findGroup, findHost, freeId, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
 import { INPUT_CLASS, InheritedField, type Provenance } from './inherited-field.js';
 
@@ -77,6 +79,12 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const [tags, setTags] = useState((existing?.tags ?? []).join(', '));
   const [ssh, setSsh] = useState<SshSettingsWire>(existing?.ssh ?? {});
   const [failed, setFailed] = useState(false);
+  // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
+  const osKey = (): string =>
+    `${address.trim()}:${String(ssh.port ?? inheritedFrom(chain, 'port').value ?? SSH_DEFAULTS.port)}`;
+  const [savedOsKey] = useState(osKey);
+  const savedOs = useHostsStore((s) => s.osByHost[savedOsKey]);
+  const [os, setOs] = useState<SshOsId | ''>(savedOs?.chosen ?? '');
 
   const set = (key: Inheritable | 'auth') => (value: unknown) => {
     setSsh((prev) => withField(prev, key, value));
@@ -97,8 +105,17 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     const next = isHost
       ? upsertHost(file, { id, name: name.trim(), address: address.trim(), tags: tagList, ssh: clean }, parent)
       : upsertGroup(file, { id, name: name.trim(), tags: tagList, ssh: clean, groups: [], hosts: [] }, parent);
-    if (await save(next)) closeDialog();
-    else setFailed(true);
+    if (!(await save(next))) {
+      setFailed(true);
+      return;
+    }
+    const chosen = os === '' ? null : os;
+    const key = osKey();
+    // A choice moves with the host when its address or port changes; Auto on a new host is nothing to store.
+    if (isHost && (chosen !== (savedOs?.chosen ?? null) || (key !== savedOsKey && chosen !== null))) {
+      await ipc().ssh.setHostOs({ host: key, os: chosen });
+    }
+    closeDialog();
   };
 
   const label = `${editing ? 'Edit' : 'New'} ${isHost ? 'host' : 'group'}`;
@@ -138,6 +155,26 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               setAddress(e.target.value);
             }}
           />
+        </label>
+      )}
+      {isHost && (
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-fg-subtle">OS</span>
+          <select
+            aria-label="OS"
+            className={INPUT_CLASS}
+            value={os}
+            onChange={(e) => {
+              setOs(e.target.value as SshOsId | '');
+            }}
+          >
+            <option value="">{`Auto${savedOs?.detected === undefined ? '' : ` (${savedOs.detected.name})`}`}</option>
+            {SSH_OS_IDS.map((id) => (
+              <option key={id} value={id}>
+                {OS_LABELS[id]}
+              </option>
+            ))}
+          </select>
         </label>
       )}
       <label className="flex flex-col gap-1 text-xs">

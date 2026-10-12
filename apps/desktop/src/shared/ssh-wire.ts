@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SSH_OS_IDS } from './ssh-defaults.js';
 
 /**
  * Wire shapes of the SSH area. A credential is its secret NAME only: never a `${secret:NAME}` token, never a
@@ -154,6 +155,30 @@ export const sshKnownHostsResponseSchema = z.object({ entries: z.array(sshKnownH
 /** Forgets one trusted key: the next connection to that host asks again. */
 export const sshForgetHostKeyRequestSchema = z.strictObject({ host: z.string(), keyType: z.string() });
 export type SshKnownHostWire = z.infer<typeof sshKnownHostSchema>;
+
+export const sshOsIdSchema = z.enum(SSH_OS_IDS);
+export type SshOsId = z.infer<typeof sshOsIdSchema>;
+export { SSH_OS_IDS };
+
+/** What a connect found the host to run: the id the icon uses, and its own name and version for text. */
+export const sshDetectedOsSchema = z.object({
+  id: sshOsIdSchema,
+  name: z.string(),
+  version: z.string().optional(),
+});
+/**
+ * What is known of one server's OS on this machine, keyed like the known hosts (`address:port` of the
+ * host connected to): `detected` by the last connect, `chosen` by the user, which wins.
+ */
+export const sshHostOsSchema = z.object({
+  detected: sshDetectedOsSchema.optional(),
+  chosen: sshOsIdSchema.optional(),
+});
+export const sshHostOsResponseSchema = z.object({ entries: z.record(z.string(), sshHostOsSchema) });
+/** `os: null` drops the choice, going back to what was detected. */
+export const sshSetHostOsRequestSchema = z.strictObject({ host: z.string(), os: sshOsIdSchema.nullable() });
+export type SshDetectedOsWire = z.infer<typeof sshDetectedOsSchema>;
+export type SshHostOsWire = z.infer<typeof sshHostOsSchema>;
 
 /**
  * Importing hosts from an OpenSSH client config. The renderer never sends a path: `user-config` is

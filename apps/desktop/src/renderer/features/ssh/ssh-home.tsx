@@ -20,12 +20,18 @@ import {
 } from 'lucide-react';
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
-import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
+import type {
+  GroupEntryWire,
+  HostsFileWire,
+  ResolvedHostWire,
+  SshKnownHostWire,
+  SshSecretNameWire,
+} from '../../../shared/ssh-wire.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
-import { useHostsStore } from './hosts-store.js';
+import { flattenGroups, useHostsStore } from './hosts-store.js';
 
 const INPUT_CLASS =
   'w-full rounded-md border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -48,6 +54,67 @@ const SORT_LABELS: Readonly<Record<HostsSort, string>> = {
 const MENU_CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 const MENU_ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
+
+/** Every group from the top, named by its path, with how many hosts it holds counting the groups inside it. */
+function groupChipsOf(file: HostsFileWire): { id: string; title: string; count: number }[] {
+  const out: { id: string; title: string; count: number }[] = [];
+  const walk = (groups: readonly GroupEntryWire[], prefix: string): number => {
+    let total = 0;
+    for (const group of groups) {
+      const title = prefix === '' ? group.name : `${prefix} / ${group.name}`;
+      const at = out.push({ id: group.id, title, count: 0 }) - 1;
+      const count = group.hosts.length + walk(group.groups, title);
+      const chip = out[at];
+      if (chip !== undefined) chip.count = count;
+      total += count;
+    }
+    return total;
+  };
+  walk(file.groups, '');
+  return out;
+}
+
+const CHIP_CLASS = 'rounded-full border px-2 py-0.5 text-xs';
+const chipState = (on: boolean): string =>
+  on ? 'border-accent bg-accent-muted text-fg-default' : 'border-hairline text-fg-subtle hover:bg-surface-raised';
+
+/** The groups as filters: picking one shows only its hosts; picking it again, or All, shows every host. */
+function GroupChips() {
+  const file = useHostsStore((s) => s.file);
+  const groupFilter = useHostsStore((s) => s.groupFilter);
+  const setGroupFilter = useHostsStore((s) => s.setGroupFilter);
+  const chips = groupChipsOf(file);
+  if (chips.length === 0) return null;
+  const active = chips.some((c) => c.id === groupFilter) ? groupFilter : undefined;
+  const total = file.hosts.length + flattenGroups(file).reduce((sum, { group }) => sum + group.hosts.length, 0);
+  return (
+    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by group">
+      <button
+        type="button"
+        aria-pressed={active === undefined}
+        onClick={() => {
+          setGroupFilter(undefined);
+        }}
+        className={`${CHIP_CLASS} ${chipState(active === undefined)}`}
+      >
+        All <span className="opacity-70">{total}</span>
+      </button>
+      {chips.map((chip) => (
+        <button
+          key={chip.id}
+          type="button"
+          aria-pressed={active === chip.id}
+          onClick={() => {
+            setGroupFilter(active === chip.id ? undefined : chip.id);
+          }}
+          className={`${CHIP_CLASS} ${chipState(active === chip.id)}`}
+        >
+          {chip.title} <span className="opacity-70">{chip.count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function HostsPanel() {
   const resolved = useHostsStore((s) => s.resolved);
@@ -210,6 +277,7 @@ function HostsPanel() {
           </div>
         </div>
       </div>
+      <GroupChips />
       {tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by tag">
           {tags.map((tag) => (
@@ -220,11 +288,7 @@ function HostsPanel() {
               onClick={() => {
                 toggleTag(tag);
               }}
-              className={`rounded-full border px-2 py-0.5 text-xs ${
-                selectedTags.includes(tag)
-                  ? 'border-accent bg-accent-muted text-fg-default'
-                  : 'border-hairline text-fg-subtle hover:bg-surface-raised'
-              }`}
+              className={`${CHIP_CLASS} ${chipState(selectedTags.includes(tag))}`}
             >
               {tag}
             </button>

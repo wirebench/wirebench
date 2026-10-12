@@ -2,7 +2,7 @@
   "name": "@wirebench/desktop",
   "version": "5.0.0",
   "private": true,
-  "description": "Wirebench \u2014 a desktop workbench for SOAP and WSDL",
+  "description": "Wirebench — a desktop workbench for SOAP and WSDL",
   "author": {
     "name": "Wirebench contributors"
   },
@@ -29,6 +29,7 @@
     "@wirebench/engine": "workspace:*",
     "@wirebench/ssh": "workspace:*",
     "electron-updater": "^6.8.9",
+    "simple-icons": "^16.35.0",
     "yaml": "^2.9",
     "zod": "^4.6.1"
   },

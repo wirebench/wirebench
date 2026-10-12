@@ -508,6 +508,7 @@ const sshService = new SshService({
   hosts: (sender) => sshScopeOf(scopes, sender).hosts,
   secretsFor: (sender) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
+  hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
   emit: emitEvent,
 });

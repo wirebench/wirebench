@@ -12,7 +12,8 @@ import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } f
 import { openTerminalFor } from './connect.js';
 import { GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
-import { useHostsStore, type HostSession } from './hosts-store.js';
+import { flattenGroups, osKeyOf, useHostsStore, type HostSession } from './hosts-store.js';
+import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { sessionStatus } from './session-status.js';
 
 interface Section {
@@ -23,17 +24,21 @@ interface Section {
   readonly hosts: readonly HostEntryWire[];
 }
 
-/** The file's hosts in sections: the top level first, then every group in tree order. */
-function sectionsOf(file: HostsFileWire): Section[] {
-  const out: Section[] = [{ title: 'Ungrouped', hosts: file.hosts }];
-  const walk = (groups: readonly GroupEntryWire[], prefix: string): void => {
+/**
+ * The file's hosts in sections: the top level first, then every group in tree order. With `only`,
+ * just that group and the groups inside it.
+ */
+function sectionsOf(file: HostsFileWire, only?: string): Section[] {
+  const out: Section[] = only === undefined ? [{ title: 'Ungrouped', hosts: file.hosts }] : [];
+  const walk = (groups: readonly GroupEntryWire[], prefix: string, inside: boolean): void => {
     for (const group of groups) {
       const title = prefix === '' ? group.name : `${prefix} / ${group.name}`;
-      out.push({ group, title, hosts: group.hosts });
-      walk(group.groups, title);
+      const keep = inside || only === undefined || group.id === only;
+      if (keep) out.push({ group, title, hosts: group.hosts });
+      walk(group.groups, title, keep);
     }
   };
-  walk(file.groups, '');
+  walk(file.groups, '', false);
   return out;
 }
 
@@ -73,8 +78,8 @@ const MAX_TAGS = 3;
 interface CardProps {
   readonly host: HostEntryWire;
   readonly resolved: ResolvedHostWire | undefined;
-  /** What the avatar shows and is tinted by: the group, or the host itself outside any group. */
-  readonly avatar: { readonly letter: string; readonly hue: number };
+  /** The tint of a host whose OS is not known: its group's, or its own outside any group. */
+  readonly hue: number;
   readonly layout: HostsLayout;
   readonly selected: boolean;
   readonly tabbable: boolean;
@@ -94,8 +99,11 @@ const DOUBLE_CLICK_PX = 6;
 /** Until when the click that follows a connecting press is swallowed, so it presses nothing it lands on. */
 let swallowClickUntil = 0;
 
-function HostCard({ host, resolved, avatar, layout, selected, tabbable, onSelect }: CardProps) {
+function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }: CardProps) {
   const status = sessionStatus(useHostsStore((s) => s.sessions[host.id]));
+  const osEntry = useHostsStore((s) => (resolved === undefined ? undefined : s.osByHost[osKeyOf(resolved)]));
+  const os = osOf(osEntry);
+  const osText = osTextOf(osEntry);
   // Whether this card's details were already showing when the press began: a click on it then
   // hides them, rather than the focus the press brings picking it again.
   const pressedWhileShown = useRef(false);
@@ -139,7 +147,7 @@ function HostCard({ host, resolved, avatar, layout, selected, tabbable, onSelect
         title={`${host.name} — double-click to connect`}
         className={`group flex min-w-0 cursor-default border bg-surface-raised hover:border-hairline-strong hover:bg-surface-hover focus-visible:outline-none ${
           selected ? 'border-accent ring-1 ring-accent' : 'border-hairline'
-        } ${grid ? 'flex-col gap-2 rounded-lg p-3' : 'items-center gap-3 rounded-md px-3 py-1.5'}`}
+        } ${grid ? 'items-center gap-2.5 rounded-md p-2' : 'items-center gap-3 rounded-md px-3 py-1'}`}
         onMouseDown={(e) => {
           pressedWhileShown.current = selected && useHostsStore.getState().detailsOpen;
           if (e.button === 0 && e.detail === 1) {
@@ -159,33 +167,39 @@ function HostCard({ host, resolved, avatar, layout, selected, tabbable, onSelect
           if (e.key === 'Enter' && e.target === e.currentTarget) connect();
         }}
       >
-        <span className={`flex min-w-0 items-center gap-3 ${grid ? '' : 'flex-1'}`}>
+        <span className="flex min-w-0 flex-1 items-center gap-2.5">
           <span
-            className={`relative flex shrink-0 items-center justify-center rounded-md font-medium ${grid ? 'size-9 text-sm' : 'size-6 text-xs'}`}
-            style={{
-              backgroundColor: `hsl(${String(avatar.hue)} 65% 50% / 0.2)`,
-              color: `hsl(${String(avatar.hue)} 70% 60%)`,
-            }}
+            title={osText}
+            className={`relative flex shrink-0 items-center justify-center rounded-md ${grid ? 'size-7' : 'size-6'} ${
+              os === undefined ? '' : 'bg-surface-sunken text-fg-default'
+            }`}
+            style={
+              os === undefined
+                ? { backgroundColor: `hsl(${String(hue)} 65% 50% / 0.2)`, color: `hsl(${String(hue)} 70% 60%)` }
+                : undefined
+            }
           >
-            <span aria-hidden="true">{avatar.letter}</span>
+            <OsIcon os={os} size={grid ? 16 : 14} />
             <span
               aria-label={status.label}
               className={`absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-surface-raised bg-current ${status.color}`}
             />
           </span>
           <span className={`flex min-w-0 flex-1 ${grid ? 'flex-col' : 'items-baseline gap-3'}`}>
-            <span className="truncate text-sm font-medium text-fg-default">{host.name}</span>
-            <span className="truncate font-mono text-xs text-fg-subtle">{targetOf(host, resolved)}</span>
+            <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+            <span className="truncate text-xs leading-4 text-fg-subtle">
+              {osText !== undefined && <span>{osText} · </span>}
+              <span className="font-mono">{targetOf(host, resolved)}</span>
+            </span>
           </span>
           {warning !== undefined && (
-            <span className="shrink-0 self-start rounded-full border border-status-warning px-1.5 text-xs text-status-warning">
+            <span className="shrink-0 self-start rounded-full border border-status-warning px-1.5 text-xs leading-4 text-status-warning">
               {warning}
             </span>
           )}
           {!grid && tags}
           {actions}
         </span>
-        {grid && tags}
       </li>
     </HostMenu>
   );
@@ -229,6 +243,7 @@ export function HostCards({
   const sessions = useHostsStore((s) => s.sessions);
   const filter = useHostsStore((s) => s.filter);
   const selectedTags = useHostsStore((s) => s.selectedTags);
+  const groupFilter = useHostsStore((s) => s.groupFilter);
   const visibleHosts = useHostsStore((s) => s.visibleHosts);
   const openDialog = useHostsStore((s) => s.openDialog);
   const selected = useHostsStore((s) => s.selectedHostId);
@@ -300,7 +315,12 @@ export function HostCards({
   const visible = new Set(visibleHosts().map((h) => h.id));
   const shown = (host: HostEntryWire): boolean => !narrowed || visible.has(host.id);
 
-  const sections = sectionsOf(file)
+  // A group that is gone (deleted, or another workspace's) filters nothing.
+  const only =
+    groupFilter !== undefined && flattenGroups(file).some(({ group }) => group.id === groupFilter)
+      ? groupFilter
+      : undefined;
+  const sections = sectionsOf(file, only)
     .map((section) => ({ ...section, hosts: sortHosts(section.hosts.filter(shown), prefs.sort, sessions) }))
     // The top level needs no heading when it is all there is; an empty group keeps its heading
     // (its menu is how a host gets into it) unless a filter is narrowing.
@@ -339,10 +359,7 @@ export function HostCards({
       {sections.map((section) => {
         const key = section.group?.id ?? TOP_LEVEL;
         const isFolded = folded(key);
-        const avatarOf = (host: HostEntryWire) =>
-          section.group === undefined
-            ? { letter: host.name.charAt(0).toUpperCase(), hue: hueOf(host.id) }
-            : { letter: section.group.name.charAt(0).toUpperCase(), hue: hueOf(section.group.id) };
+        const hueFor = (host: HostEntryWire): number => hueOf(section.group?.id ?? host.id);
         const heading = (
           <div className="group/section flex items-center gap-2">
             <h3>
@@ -387,7 +404,7 @@ export function HostCards({
                 aria-label={`Hosts in ${section.title}`}
                 className={
                   prefs.layout === 'grid'
-                    ? 'grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-2'
+                    ? 'grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2'
                     : 'flex flex-col gap-1'
                 }
               >
@@ -396,7 +413,7 @@ export function HostCards({
                     key={host.id}
                     host={host}
                     resolved={hostsById.get(host.id)}
-                    avatar={avatarOf(host)}
+                    hue={hueFor(host)}
                     layout={prefs.layout}
                     selected={selected === host.id}
                     tabbable={tabbableId === host.id}

@@ -36,11 +36,13 @@ function fakeSession(id = 's1') {
   const write = vi.fn();
   const resize = vi.fn();
   const close = vi.fn();
+  const exec = vi.fn<SshSession['exec']>(() => Promise.resolve(''));
   const session: SshSession = {
     id,
     write,
     resize,
     close,
+    exec,
     onData: (listener) => {
       data.add(listener);
       return () => data.delete(listener);
@@ -55,6 +57,7 @@ function fakeSession(id = 's1') {
     write,
     resize,
     close,
+    exec,
     pushData: (b: Buffer) => {
       for (const l of data) l(b);
     },
@@ -81,6 +84,7 @@ function make(
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
+  const hostOsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-os-')), 'ssh-host-os.json');
   if (opts.known) writeFileSync(knownHostsFile, JSON.stringify(opts.known));
   const fake = fakeSession();
   // Behaves as the real openSession does: hops in order, a refused key is ssh-host-key-new with that key.
@@ -107,16 +111,83 @@ function make(
       opts.secretsFor ??
       (() => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined)),
     knownHostsFile,
+    hostOsFile,
     agentSocket: () => opts.agent,
     emit,
     open,
     ...(opts.now ? { now: opts.now } : {}),
   });
-  return { service, open, emit, fake, knownHostsFile, list };
+  return { service, open, emit, fake, knownHostsFile, hostOsFile, list };
 }
 
 const as = (s: FakeSender) => s as never;
 const CONNECT = { hostId: 'a', cols: 80, rows: 24 };
+
+const UBUNTU = 'NAME="Ubuntu"\nID=ubuntu\nVERSION_ID="22.04"\n';
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50));
+
+describe('SshService host OS', () => {
+  it('stores what the probe detected under the target address:port and tells the window', async () => {
+    const { service, fake, emit, hostOsFile } = make({ known: [KEY] });
+    fake.exec.mockResolvedValue(UBUNTU);
+    const s = sender(1);
+    await service.connect(as(s), CONNECT);
+    await vi.waitFor(() =>
+      expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.hostOsChanged' }), {}),
+    );
+    expect(fake.exec).toHaveBeenCalledWith('cat /etc/os-release 2>/dev/null || uname -s 2>/dev/null || ver', 5000);
+    const detected = { id: 'ubuntu', name: 'Ubuntu', version: '22.04' };
+    expect(JSON.parse(readFileSync(hostOsFile, 'utf8'))).toEqual({ '10.0.0.1:22': { detected } });
+    expect(await service.hostOs()).toEqual({ '10.0.0.1:22': { detected } });
+    expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.hostOsChanged' }), {});
+  });
+
+  it('does not wait for the probe, and a failing or silent probe changes nothing', async () => {
+    const { service, fake, emit, hostOsFile } = make({ known: [KEY] });
+    fake.exec.mockReturnValue(new Promise<string>(() => undefined));
+    await expect(service.connect(as(sender(1)), CONNECT)).resolves.toEqual({ sessionId: 's1' });
+    fake.exec.mockRejectedValue(new Error('boom'));
+    await expect(service.connect(as(sender(1)), CONNECT)).resolves.toEqual({ sessionId: 's1' });
+    fake.exec.mockResolvedValue('SunOS');
+    await expect(service.connect(as(sender(1)), CONNECT)).resolves.toEqual({ sessionId: 's1' });
+    await flush();
+    expect(() => readFileSync(hostOsFile)).toThrow();
+    expect(emit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'ssh.hostOsChanged' }),
+      {},
+    );
+  });
+
+  it('sets and clears the choice, keeping the detection, and drops an entry left empty', async () => {
+    const { service, fake, emit, hostOsFile } = make({ known: [KEY] });
+    fake.exec.mockResolvedValue(UBUNTU);
+    const s = sender(1);
+    await service.connect(as(s), CONNECT);
+    await vi.waitFor(async () => expect(Object.keys(await service.hostOs())).toHaveLength(1));
+    await service.setHostOs(as(s), { host: '10.0.0.1:22', os: 'debian' });
+    expect((await service.hostOs())['10.0.0.1:22']).toMatchObject({ chosen: 'debian', detected: { id: 'ubuntu' } });
+    await service.setHostOs(as(s), { host: '10.0.0.1:22', os: null });
+    const left = (await service.hostOs())['10.0.0.1:22'];
+    expect(left).toEqual({ detected: { id: 'ubuntu', name: 'Ubuntu', version: '22.04' } });
+    await service.setHostOs(as(s), { host: 'other:22', os: 'alpine' });
+    await service.setHostOs(as(s), { host: 'other:22', os: null });
+    expect(Object.keys(JSON.parse(readFileSync(hostOsFile, 'utf8')) as object)).toEqual(['10.0.0.1:22']);
+    expect(
+      emit.mock.calls.filter(([, event]) => (event as { name: string }).name === 'ssh.hostOsChanged'),
+    ).toHaveLength(5);
+  });
+
+  it('reads a broken or malformed file as empty and recovers on the next write', async () => {
+    const { service, hostOsFile } = make();
+    writeFileSync(hostOsFile, '{not json');
+    expect(await service.hostOs()).toEqual({});
+    writeFileSync(hostOsFile, JSON.stringify({ 'a:22': { chosen: 'beos' } }));
+    expect(await service.hostOs()).toEqual({});
+    await service.setHostOs(as(sender(1)), { host: 'a:22', os: 'arch' });
+    expect(JSON.parse(readFileSync(hostOsFile, 'utf8'))).toEqual({ 'a:22': { chosen: 'arch' } });
+  });
+});
 
 describe('SshService', () => {
   it('a known-hosts file that cannot be read is a WirebenchError naming the errno, not an internal error', async () => {

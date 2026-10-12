@@ -5,6 +5,7 @@ import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wireb
 import type { GetSecret } from '@wirebench/engine';
 import {
   checkKnownHost,
+  detectOs,
   jumpChain,
   openSession,
   parseKnownHosts,
@@ -15,9 +16,13 @@ import {
 import type { HopCredentials, HostsFile, KnownHostEntry, ResolvedHost, SshSession } from '@wirebench/ssh';
 import { events } from '../shared/ipc.js';
 import type { IpcEvent } from '../shared/ipc.js';
+import { sshHostOsResponseSchema } from '../shared/ssh-wire.js';
 import type {
   SshCloseRequest,
   SshConnectRequest,
+  SshDetectedOsWire,
+  SshHostOsWire,
+  SshOsId,
   SshResizeRequest,
   SshTrustRequest,
   SshWriteRequest,
@@ -38,6 +43,8 @@ export interface SshServiceDeps {
   readonly secretsFor: (sender: WebContents) => GetSecret;
   /** `userData/ssh-known-hosts.json`: per machine, never in the workspace tree. */
   readonly knownHostsFile: string;
+  /** `userData/ssh-host-os.json`: per machine, the OS each server was found or chosen to run. */
+  readonly hostOsFile: string;
   /** `SSH_AUTH_SOCK` (or `'pageant'` on Windows); undefined when no agent runs. */
   readonly agentSocket: () => string | undefined;
   readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
@@ -54,6 +61,11 @@ interface Refusal extends KnownHostEntry {
   readonly previous?: string;
   readonly at: number;
 }
+
+/** The command the OS probe runs: `os-release` on Linux, `uname -s` on the BSDs and macOS, `ver` on Windows. */
+const OS_PROBE = 'cat /etc/os-release 2>/dev/null || uname -s 2>/dev/null || ver';
+/** Milliseconds the probe may take before the host is left unlabelled. */
+const OS_PROBE_TIMEOUT_MS = 5000;
 
 /** The same host and key type: the slot a known-hosts entry fills. */
 const sameSlot = (a: KnownHostEntry, b: KnownHostEntry): boolean => a.host === b.host && a.keyType === b.keyType;
@@ -107,6 +119,7 @@ export class SshService {
   private readonly refused = new Map<number, Refusal[]>();
   /** `trust` reads, changes and writes the file; one at a time, so no entry is lost. */
   private trustQueue: Promise<void> = Promise.resolve();
+  private hostOsQueue: Promise<void> = Promise.resolve();
   /** Bumped by {@link disposeAll}; a connect that straddles it closes what it opened. */
   private epoch = 0;
   /**
@@ -231,7 +244,66 @@ export class SshService {
     });
     this.watch(sender);
     this.deps.emit(sender, events.ssh.state, { sessionId, state: 'open' });
+    const target = hops[hops.length - 1];
+    if (target) void this.probeOs(sender, session, `${target.address}:${target.port}`);
     return { sessionId };
+  }
+
+  /**
+   * Asks the connected host what it runs and keeps the answer. Runs beside the connect, which never waits
+   * for it: any failure leaves the host unlabelled and nothing else changes.
+   */
+  private async probeOs(sender: WebContents, session: SshSession, host: string): Promise<void> {
+    try {
+      const detected = detectOs(await session.exec(OS_PROBE, OS_PROBE_TIMEOUT_MS));
+      if (!detected) return;
+      await this.updateHostOs(host, (entry) => ({ ...entry, detected: detected satisfies SshDetectedOsWire }));
+      if (!sender.isDestroyed()) this.deps.emit(sender, events.ssh.hostOsChanged, {});
+    } catch {
+      // Only a label: a probe that failed (or a store that cannot be written) is not worth a message.
+    }
+  }
+
+  /** The OS found or chosen for each server on this machine, keyed `address:port`. */
+  hostOs(): Promise<Record<string, SshHostOsWire>> {
+    return this.readHostOs();
+  }
+
+  /**
+   * Sets (`os`) or clears (`null`) the OS the user chose for `host`; a cleared choice falls back to what
+   * was detected. Tells the calling window.
+   */
+  async setHostOs(sender: WebContents, request: { readonly host: string; readonly os: SshOsId | null }): Promise<void> {
+    await this.updateHostOs(request.host, (entry) => {
+      const rest: SshHostOsWire = entry.detected ? { detected: entry.detected } : {};
+      return request.os === null ? rest : { ...rest, chosen: request.os };
+    });
+    if (!sender.isDestroyed()) this.deps.emit(sender, events.ssh.hostOsChanged, {});
+  }
+
+  /** Serialised, so concurrent probes and choices all land. An entry left empty is dropped. */
+  private updateHostOs(host: string, change: (entry: SshHostOsWire) => SshHostOsWire): Promise<void> {
+    const run = this.hostOsQueue.then(async () => {
+      const all = await this.readHostOs();
+      const next = change(all[host] ?? {});
+      const written = { ...all };
+      if (next.detected || next.chosen) written[host] = next;
+      else delete written[host];
+      await writeFileAtomic(nodeFs, this.deps.hostOsFile, `${JSON.stringify(written, null, 2)}\n`);
+    });
+    this.hostOsQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** A missing or broken file reads as empty: it only ever holds labels. */
+  private async readHostOs(): Promise<Record<string, SshHostOsWire>> {
+    try {
+      const raw: unknown = JSON.parse(await readFile(this.deps.hostOsFile, 'utf8'));
+      const parsed = sshHostOsResponseSchema.safeParse({ entries: raw });
+      return parsed.success ? parsed.data.entries : {};
+    } catch {
+      return {};
+    }
   }
 
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */

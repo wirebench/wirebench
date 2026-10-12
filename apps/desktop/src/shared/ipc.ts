@@ -19,6 +19,8 @@ import {
   sshTrustRequestSchema,
   sshKnownHostsResponseSchema,
   sshForgetHostKeyRequestSchema,
+  sshHostOsResponseSchema,
+  sshSetHostOsRequestSchema,
   sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
@@ -879,6 +881,8 @@ export const channels = {
     trustHostKey: defineChannel('ssh.trustHostKey', sshTrustRequestSchema, z.object({})),
     knownHosts: defineChannel('ssh.knownHosts', z.undefined(), sshKnownHostsResponseSchema),
     forgetHostKey: defineChannel('ssh.forgetHostKey', sshForgetHostKeyRequestSchema, z.object({})),
+    hostOs: defineChannel('ssh.hostOs', z.undefined(), sshHostOsResponseSchema),
+    setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
   },
@@ -894,6 +898,8 @@ export const events = {
   ssh: {
     /** `hosts.yaml` was written: a view re-lists. */
     hostsChanged: defineEvent('ssh.hostsChanged', z.object({})),
+    /** A connect detected a host's OS, or a choice changed: read `ssh.hostOs` again. */
+    hostOsChanged: defineEvent('ssh.hostOsChanged', z.object({})),
     /** Terminal output (stdout and stderr), base64, to the window that opened the session only. */
     data: defineEvent('ssh.data', sshDataEventSchema),
     /** The remote shell ended; the session id is gone. */

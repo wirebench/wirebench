@@ -8,8 +8,9 @@ const secretNames = vi.fn();
 const setSecret = vi.fn();
 const knownHosts = vi.fn();
 const forgetHostKey = vi.fn();
+const setHostOs = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey } }),
+  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey, setHostOs } }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
@@ -81,10 +82,14 @@ beforeEach(() => {
     value: { entries: [{ host: '10.0.0.1:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' }] },
   });
   forgetHostKey.mockResolvedValue({ ok: true, value: {} });
+  setHostOs.mockReset();
+  setHostOs.mockResolvedValue({ ok: true, value: {} });
   useHostsStore.setState({
     ...STATE,
     filter: '',
     selectedTags: [],
+    groupFilter: undefined,
+    osByHost: {},
     dialog: null,
     sessions: {},
     homeView: 'hosts',
@@ -199,7 +204,7 @@ describe('Known hosts', () => {
 describe('Hosts tab', () => {
   it('renders groups, hosts, the needs-badge and the problem banner', () => {
     render(<SshArea />);
-    expect(screen.getByText('Production')).toBeDefined();
+    expect(screen.getByRole('region', { name: 'Production' })).toBeDefined();
     expect(screen.getByText('alpha')).toBeDefined();
     expect(screen.getByText('beta')).toBeDefined();
     expect(screen.getByText('needs user')).toBeDefined();
@@ -209,7 +214,7 @@ describe('Hosts tab', () => {
     render(<SshArea />);
     await userEvent.type(screen.getByLabelText('Filter hosts'), 'beta');
     expect(screen.queryByText('alpha')).toBeNull();
-    expect(screen.queryByText('Production')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Production' })).toBeNull();
     expect(screen.getByText('beta')).toBeDefined();
   });
   it('editing a host inside a group shows the inherited user with its group', async () => {
@@ -319,13 +324,19 @@ describe('Hosts tab view', () => {
 
   it('folding a group hides its hosts and is remembered for the workspace', async () => {
     render(<SshHome />);
-    await userEvent.click(screen.getByRole('button', { name: /^Production/ }));
+    await userEvent.click(
+      within(screen.getByRole('region', { name: 'Production' })).getByRole('button', { name: /^Production/ }),
+    );
     expect(screen.queryByText('alpha')).toBeNull();
     expect(readHostsPrefs('w1').collapsed).toEqual(['g']);
     cleanup();
     render(<SshHome />);
     expect(screen.queryByText('alpha')).toBeNull();
-    expect(screen.getByRole('button', { name: /^Production/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(
+      within(screen.getByRole('region', { name: 'Production' }))
+        .getByRole('button', { name: /^Production/ })
+        .getAttribute('aria-expanded'),
+    ).toBe('false');
   });
   it('a search opens folded groups to show what matches', async () => {
     writeHostsPrefs('w1', { ...DEFAULT_HOSTS_PREFS, collapsed: ['g'] });
@@ -533,5 +544,95 @@ describe('Clicking the picked card', () => {
     expect(within(screen.getByTestId('host-row-b')).queryByRole('button', { name: 'Connect' })).toBeNull();
     await userEvent.dblClick(screen.getByTestId('host-row-b'));
     expect(useEditorsStore.getState().activeId).toBe('ssh:b');
+  });
+});
+
+describe('Group chips', () => {
+  it('show every group with its count; picking one filters, picking it again clears', async () => {
+    render(<SshHome />);
+    const chips = screen.getByRole('group', { name: 'Filter by group' });
+    const all = within(chips).getByRole('button', { name: /^All/ });
+    const production = within(chips).getByRole('button', { name: /^Production/ });
+    expect(all.textContent).toBe('All 2');
+    expect(production.textContent).toBe('Production 1');
+    expect(all.getAttribute('aria-pressed')).toBe('true');
+
+    await userEvent.click(production);
+    expect(production.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('alpha')).toBeDefined();
+    expect(screen.queryByText('beta')).toBeNull();
+
+    await userEvent.click(production);
+    expect(all.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('beta')).toBeDefined();
+  });
+  it('a nested group is named by its path and counts the hosts inside it', () => {
+    const file = {
+      ...STATE.file,
+      groups: [
+        {
+          ...STATE.file.groups[0]!,
+          groups: [
+            {
+              id: 'eu',
+              name: 'EU',
+              tags: [],
+              ssh: {},
+              groups: [],
+              hosts: [{ id: 'c', name: 'gamma', address: '10.0.0.3', tags: [], ssh: {} }],
+            },
+          ],
+        },
+      ],
+    };
+    useHostsStore.setState({ file });
+    render(<SshHome />);
+    const chips = screen.getByRole('group', { name: 'Filter by group' });
+    expect(within(chips).getByRole('button', { name: /^Production \/ EU/ }).textContent).toBe('Production / EU 1');
+    expect(within(chips).getByRole('button', { name: /^Production 2/ })).toBeDefined();
+    expect(within(chips).getByRole('button', { name: /^All/ }).textContent).toBe('All 3');
+  });
+  it('no groups, no chips', () => {
+    useHostsStore.setState({ file: { ...STATE.file, groups: [] } });
+    render(<SshHome />);
+    expect(screen.queryByRole('group', { name: 'Filter by group' })).toBeNull();
+  });
+});
+
+describe('Host OS', () => {
+  const ubuntu = { detected: { id: 'ubuntu' as const, name: 'Ubuntu', version: '22.04' } };
+
+  it('the card shows what the last connection found', () => {
+    useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu } });
+    render(<SshHome />);
+    expect(screen.getByTestId('host-row-a').textContent).toContain('Ubuntu 22.04');
+    expect(screen.getByTestId('host-row-b').textContent).not.toContain('Ubuntu');
+  });
+  it('the details say whether it was detected or chosen', () => {
+    useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu }, selectedHostId: 'a' });
+    const { unmount } = render(<HostDetails />);
+    expect(screen.getByTestId('host-details').textContent).toContain('Ubuntu 22.04detected');
+    unmount();
+    useHostsStore.setState({ osByHost: { '10.0.0.1:22': { ...ubuntu, chosen: 'debian' } } });
+    render(<HostDetails />);
+    expect(screen.getByTestId('host-details').textContent).toContain('Debianset by you');
+  });
+  it('choosing an OS in Edit stores it for the host on this machine', async () => {
+    useHostsStore.setState({ osByHost: { '10.0.0.1:22': ubuntu }, selectedHostId: 'a' });
+    useHostsStore.setState({ dialog: { mode: 'edit-host', id: 'a' } });
+    render(<HostDetails />);
+    const select = screen.getByLabelText<HTMLSelectElement>('OS');
+    expect(select.value).toBe('');
+    expect(select.options[0]?.textContent).toBe('Auto (Ubuntu)');
+    await userEvent.selectOptions(select, 'debian');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(setHostOs).toHaveBeenCalledWith({ host: '10.0.0.1:22', os: 'debian' });
+  });
+  it('saving without touching the OS stores nothing', async () => {
+    useHostsStore.setState({ selectedHostId: 'a', dialog: { mode: 'edit-host', id: 'a' } });
+    render(<HostDetails />);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(saveHosts).toHaveBeenCalled();
+    expect(setHostOs).not.toHaveBeenCalled();
   });
 });

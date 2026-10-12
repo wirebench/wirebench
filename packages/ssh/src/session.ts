@@ -42,6 +42,11 @@ export interface SshSession {
   write(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   close(): void;
+  /**
+   * Runs one command on the same connection (a separate channel from the shell) and resolves with its
+   * stdout. Never rejects: a failure or the timeout resolves to ''.
+   */
+  exec(command: string, timeoutMs: number): Promise<string>;
   onData(listener: (data: Uint8Array) => void): () => void;
   onExit(listener: (exit: { code: number | null; signal?: string }) => void): () => void;
 }
@@ -172,14 +177,14 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
           : resolve(ch),
       ),
     );
-    return wrap(channel, endAll);
+    return wrap(channel, target, endAll);
   } catch (error) {
     endAll();
     throw error;
   }
 }
 
-function wrap(channel: ClientChannel, endAll: () => void): SshSession {
+function wrap(channel: ClientChannel, client: Client, endAll: () => void): SshSession {
   const dataListeners = new Set<(data: Uint8Array) => void>();
   const exitListeners = new Set<(exit: { code: number | null; signal?: string }) => void>();
   let exited = false;
@@ -213,6 +218,41 @@ function wrap(channel: ClientChannel, endAll: () => void): SshSession {
       channel.end();
       endAll();
     },
+    exec: (command, timeoutMs) =>
+      new Promise<string>((resolve) => {
+        let out = '';
+        let settled = false;
+        let stream: ClientChannel | undefined;
+        const done = (): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          stream?.close();
+          resolve(out);
+        };
+        const timer = setTimeout(() => {
+          out = '';
+          done();
+        }, timeoutMs);
+        if (closed) return done();
+        try {
+          client.exec(command, (error, ch) => {
+            if (error) return done();
+            stream = ch;
+            if (settled) return ch.close();
+            ch.on('data', (data: Buffer) => {
+              out += data.toString('utf8');
+            });
+            ch.on('close', done);
+            ch.on('error', () => {
+              out = '';
+              done();
+            });
+          });
+        } catch {
+          done();
+        }
+      }),
     onData: (listener) => {
       dataListeners.add(listener);
       return () => {

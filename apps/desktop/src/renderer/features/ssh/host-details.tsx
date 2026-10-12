@@ -13,7 +13,8 @@ import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
 import { HostForm } from './host-dialog.js';
 import { HostActionsButton } from './host-menus.js';
-import { findHost, flattenGroups, useHostsStore } from './hosts-store.js';
+import { findHost, flattenGroups, osKeyOf, useHostsStore } from './hosts-store.js';
+import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { sessionStatus } from './session-status.js';
 
 /** Whether the details slide-over is in front: the Hosts tab is showing, a host is picked, and it was not put away. */
@@ -80,6 +81,7 @@ export function HostDetails() {
   const resolved = useHostsStore((s) => s.resolved);
   const dialog = useHostsStore((s) => s.dialog);
   const session = useHostsStore((s) => (selectedHostId === undefined ? undefined : s.sessions[selectedHostId]));
+  const osByHost = useHostsStore((s) => s.osByHost);
   const [knownHosts, setKnownHosts] = useState<readonly SshKnownHostWire[]>([]);
   const [secrets, setSecrets] = useState<readonly SshSecretNameWire[]>([]);
 
@@ -171,6 +173,8 @@ export function HostDetails() {
   const keys = knownHosts.filter((k) => k.host === hostKey);
   const command = sshCommandOf(host, jumpAddress);
   const muted = (text: string): ReactNode => <span className="truncate text-xs text-fg-subtle">{text}</span>;
+  const osEntry = osByHost[osKeyOf(host)];
+  const os = osOf(osEntry);
 
   return (
     <div data-testid="host-details" className="flex flex-col">
@@ -201,6 +205,19 @@ export function HostDetails() {
         <Row label="User">
           <span className="truncate font-mono">{host.ssh.user.value ?? '—'}</span>
           {host.ssh.user.value !== undefined && muted(provenance(host.ssh.user.from))}
+        </Row>
+        <Row label="OS">
+          {os === undefined ? (
+            <span className="text-fg-subtle">found on the first connection</span>
+          ) : (
+            <>
+              <span className="flex min-w-0 items-center gap-1.5 self-center">
+                <OsIcon os={os} size={14} />
+                <span className="truncate">{osTextOf(osEntry)}</span>
+              </span>
+              {muted(osEntry?.chosen === undefined ? 'detected' : 'set by you')}
+            </>
+          )}
         </Row>
         <Row label="Jump host">
           <span className="truncate">{jump === undefined ? '—' : (jumpHost?.name ?? jump)}</span>

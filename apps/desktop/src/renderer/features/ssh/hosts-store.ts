@@ -5,6 +5,7 @@ import type {
   HostEntryWire,
   HostsFileWire,
   ResolvedHostWire,
+  SshHostOsWire,
   SshListHostsResponse,
   SshProblemWire,
 } from '../../../shared/ssh-wire.js';
@@ -45,6 +46,12 @@ interface HostsState {
   selectedHostId: string | undefined;
   /** Whether the details slide-over is wanted; picking a host asks for it, Escape or its close icon put it away. */
   detailsOpen: boolean;
+  /** What is known of each server's OS on this machine, by `address:port` (see {@link osKeyOf}). */
+  osByHost: Readonly<Record<string, SshHostOsWire>>;
+  refreshOs: () => Promise<void>;
+  /** The group the Hosts tab is narrowed to (its subgroups included), if any. */
+  groupFilter: string | undefined;
+  setGroupFilter: (groupId: string | undefined) => void;
   /** Picks a host (or none) and opens its details. */
   selectHost: (id: string | undefined) => void;
   setDetailsOpen: (open: boolean) => void;
@@ -109,6 +116,7 @@ const WORKSPACE_STATE = {
   reconnectNonce: {},
   connectFailed: {},
   selectedHostId: undefined,
+  groupFilter: undefined,
 } satisfies Partial<HostsState>;
 
 export const useHostsStore = create<HostsState>()((set, get) => ({
@@ -118,6 +126,20 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     set({ homeView });
   },
   detailsOpen: false,
+  // Per machine, not per workspace: what a server runs does not change with the workspace open.
+  osByHost: {},
+  async refreshOs() {
+    // Only labels: a read that fails keeps the ones shown rather than surfacing an error.
+    try {
+      const result = await ipc().ssh.hostOs(undefined);
+      if (result.ok) set({ osByHost: result.value.entries });
+    } catch {
+      // Nothing to do.
+    }
+  },
+  setGroupFilter: (groupFilter) => {
+    set({ groupFilter });
+  },
   selectHost: (selectedHostId) => {
     // Picking another host leaves the one being edited: its form lives in the details panel.
     const { dialog } = get();
@@ -226,9 +248,17 @@ function apply(result: IpcResult<SshListHostsResponse>): boolean {
 
 /** Keeps the tree current when main saves or `hosts.yaml` is edited outside; called once from the shell. */
 export function subscribeToHosts(): () => void {
-  return window.wirebench.on('ssh.hostsChanged', () => {
+  const offHosts = window.wirebench.on('ssh.hostsChanged', () => {
     void useHostsStore.getState().refresh();
   });
+  const offOs = window.wirebench.on('ssh.hostOsChanged', () => {
+    void useHostsStore.getState().refreshOs();
+  });
+  void useHostsStore.getState().refreshOs();
+  return () => {
+    offHosts();
+    offOs();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -383,4 +413,9 @@ export function flattenGroups(file: HostsFileWire): { group: GroupEntryWire; dep
   };
   walk(file.groups, 0);
   return out;
+}
+
+/** The key a host's OS is kept under: the server it connects to, as the known hosts name it. */
+export function osKeyOf(host: Pick<ResolvedHostWire, 'address' | 'ssh'>): string {
+  return `${host.address}:${String(host.ssh.port.value)}`;
 }

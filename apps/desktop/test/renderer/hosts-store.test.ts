@@ -156,3 +156,13 @@ describe('hosts store', () => {
     expect(moved.hosts.map((h) => h.id)).toEqual(['b', 'a']);
   });
 });
+
+describe('host OS labels', () => {
+  it('a read that fails keeps the labels shown and does not reject', async () => {
+    const shown = { '10.0.0.1:22': { detected: { id: 'ubuntu' as const, name: 'Ubuntu' } } };
+    useHostsStore.setState({ osByHost: shown });
+    // This file's ipc mock has no `hostOs`: the call throws.
+    await expect(useHostsStore.getState().refreshOs()).resolves.toBeUndefined();
+    expect(useHostsStore.getState().osByHost).toEqual(shown);
+  });
+});

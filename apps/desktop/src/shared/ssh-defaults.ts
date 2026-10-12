@@ -8,3 +8,25 @@
 export const SSH_DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
 
 export const SSH_SECRET_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * The operating systems a host's icon can show. `linux` is a Linux the list does not name; a host
+ * with nothing detected or chosen has no entry at all.
+ */
+export const SSH_OS_IDS = [
+  'ubuntu',
+  'debian',
+  'rhel',
+  'centos',
+  'fedora',
+  'rocky',
+  'alma',
+  'suse',
+  'alpine',
+  'arch',
+  'amazon',
+  'linux',
+  'macos',
+  'freebsd',
+  'windows',
+] as const;
