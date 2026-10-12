@@ -1,8 +1,28 @@
 import { SshModelError } from './errors.js';
+import { defaultBind, isOffForm, parseTarget } from './forward-rules.js';
 import { walk } from './tree.js';
+import type { ForwardEntry, ForwardType } from './forward-rules.js';
 import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshSettings } from './model.js';
 
 export type Provenance<T> = { readonly value: T; readonly from: 'host' | 'default' | { readonly group: string } };
+
+export interface ForwardRule {
+  readonly id: string;
+  readonly type: ForwardType;
+  readonly port: number;
+  /** The default filled in. */
+  readonly bind: string;
+  readonly target?: { readonly host: string; readonly port: number };
+  readonly autoStart: boolean;
+}
+export type ForwardFrom = 'host' | { readonly group: string };
+export interface ResolvedForward {
+  readonly rule: ForwardRule;
+  readonly from: ForwardFrom;
+  readonly enabled: boolean;
+  /** The level whose off form (or `enabled: false`) switched it off. */
+  readonly offBy?: ForwardFrom;
+}
 
 export interface ResolvedHost {
   readonly id: string;
@@ -22,6 +42,8 @@ export interface ResolvedHost {
     readonly connectTimeout: Provenance<number>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
+  /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
+  readonly forwards: readonly ResolvedForward[];
 }
 
 const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
@@ -67,6 +89,35 @@ function pickProtected(located: Located): Provenance<boolean> {
   return { value: false, from: 'default' };
 }
 
+/** Walks root to leaf; a re-set id keeps its first position, so new ids append. */
+function resolveForwards(located: Located): ResolvedForward[] {
+  const levels: Array<{ entries: readonly ForwardEntry[]; from: ForwardFrom }> = [
+    ...located.chain.map((g) => ({ entries: g.forwards ?? [], from: { group: g.id } })),
+    { entries: located.host.forwards ?? [], from: 'host' as const },
+  ];
+  const out = new Map<string, ResolvedForward>();
+  for (const { entries, from } of levels) {
+    for (const entry of entries) {
+      if (isOffForm(entry)) {
+        const above = out.get(entry.id);
+        if (above) out.set(entry.id, { rule: above.rule, from: above.from, enabled: false, offBy: from });
+        continue;
+      }
+      const rule: ForwardRule = {
+        id: entry.id,
+        type: entry.type,
+        port: entry.port,
+        bind: entry.bind ?? defaultBind(entry.type),
+        ...(entry.target === undefined ? {} : { target: parseTarget(entry.target) }),
+        autoStart: entry.autoStart === true,
+      };
+      const enabled = entry.enabled !== false;
+      out.set(entry.id, { rule, from, enabled, ...(enabled ? {} : { offBy: from }) });
+    }
+  }
+  return [...out.values()];
+}
+
 /** Merged values, nearest wins; `auth` is replaced whole, never merged. No defaults, no provenance. */
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
@@ -107,6 +158,7 @@ function resolveLocated(located: Located): ResolvedHost {
     protected: pickProtected(located),
     ssh,
     ...(incomplete ? { incomplete } : {}),
+    forwards: resolveForwards(located),
   };
 }
 

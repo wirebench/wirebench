@@ -1,6 +1,8 @@
 import { parse as parseYaml, stringify as stringifyYaml, YAMLParseError } from 'yaml';
 import { z } from 'zod';
 import { SshModelError } from './errors.js';
+import { forwardsSchema, isOffForm, serializeForward } from './forward-rules.js';
+import type { ForwardEntry } from './forward-rules.js';
 import { resolveSettings } from './resolve.js';
 import { walk } from './tree.js';
 
@@ -54,6 +56,7 @@ const hostSchema = z.strictObject({
   tags: z.array(z.string().min(1)).default([]),
   protected: z.boolean().optional(),
   ssh: settingsSchema,
+  forwards: forwardsSchema,
 });
 
 export type SshAuth = z.infer<typeof authSchema>;
@@ -66,6 +69,7 @@ export interface GroupEntry {
   /** Runs touching a protected host always confirm; inherited, a nearer `false` lifts it. */
   protected?: boolean | undefined;
   ssh: SshSettings;
+  forwards?: ForwardEntry[] | undefined;
   groups: GroupEntry[];
   hosts: HostEntry[];
 }
@@ -77,6 +81,7 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
     tags: z.array(z.string().min(1)).default([]),
     protected: z.boolean().optional(),
     ssh: settingsSchema,
+    forwards: forwardsSchema,
     groups: z.array(groupSchema).default([]),
     hosts: z.array(hostSchema).default([]),
   }),
@@ -97,7 +102,25 @@ export const pathString = (path: readonly PropertyKey[]): string =>
 interface IssueLike {
   readonly path: readonly PropertyKey[];
   readonly params?: Record<string, unknown> | undefined;
+  readonly message?: string;
   readonly errors?: readonly (readonly IssueLike[])[];
+}
+
+/** A refused forwarding rule (see `forwardEntrySchema`): its path, field and rule id. */
+function findForwardInvalid(
+  issues: readonly IssueLike[],
+): { path: string; field: string; id?: string; message: string } | undefined {
+  for (const issue of issues) {
+    if (issue.params?.['forwardInvalid'] !== true) continue;
+    const id = issue.params['id'];
+    return {
+      path: pathString(issue.path),
+      field: String(issue.params['field']),
+      ...(typeof id === 'string' ? { id } : {}),
+      message: issue.message ?? 'is invalid',
+    };
+  }
+  return undefined;
 }
 
 /** The literal-secret issue may sit inside the branches of the `auth` union, whose paths are relative to it. */
@@ -141,6 +164,15 @@ export function parseHostsFile(text: string): HostsFile {
     if (literal !== undefined) {
       throw new SshModelError('ssh-literal-secret', `${literal} must be a \${secret:NAME} token`, { path: literal });
     }
+    const forward = findForwardInvalid(parsed.error.issues);
+    if (forward !== undefined) {
+      const rule = forward.id === undefined ? 'a forwarding rule' : `forwarding rule "${forward.id}"`;
+      throw new SshModelError('ssh-forward-invalid', `hosts.yaml: ${rule}: ${forward.field} ${forward.message}`, {
+        path: forward.path,
+        field: forward.field,
+        ...(forward.id === undefined ? {} : { id: forward.id }),
+      });
+    }
     const first = parsed.error.issues[0];
     throw new SshModelError(
       'ssh-hosts-invalid',
@@ -153,6 +185,7 @@ export function parseHostsFile(text: string): HostsFile {
   }
   checkIds(parsed.data);
   checkJumps(parsed.data);
+  checkForwards(parsed.data);
   return parsed.data;
 }
 
@@ -197,6 +230,35 @@ function checkJumps(file: HostsFile): void {
   }
 }
 
+/** One id per level's list; an off form must name a rule defined on a group above it. */
+function checkForwards(file: HostsFile): void {
+  const items = walk(file);
+  const groups = new Map<string, GroupEntry>();
+  for (const item of items) if (item.kind === 'group') groups.set(item.entry.id, item.entry as GroupEntry);
+  for (const { entry, kind, path } of items) {
+    const seen = new Set<string>();
+    for (const rule of entry.forwards ?? []) {
+      if (seen.has(rule.id)) {
+        throw new SshModelError('ssh-forward-duplicate-id', `${kind} "${entry.id}" lists forward "${rule.id}" twice`, {
+          id: rule.id,
+          level: entry.id,
+        });
+      }
+      seen.add(rule.id);
+      if (!isOffForm(rule)) continue;
+      const above = path.some((gid) => groups.get(gid)?.forwards?.some((r) => r.id === rule.id && !isOffForm(r)));
+      if (!above) {
+        const where = path.length === 0 ? 'it has no group above it' : `no rule "${rule.id}" in ${path.join(', ')}`;
+        throw new SshModelError(
+          'ssh-forward-unknown',
+          `${kind} "${entry.id}" switches off forward "${rule.id}", but ${where}`,
+          { id: rule.id, level: entry.id, lookedIn: [...path] },
+        );
+      }
+    }
+  }
+}
+
 function settings(ssh: SshSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (ssh.user !== undefined) out['user'] = ssh.user;
@@ -223,6 +285,7 @@ function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   if (entry.protected !== undefined) out['protected'] = entry.protected;
   const ssh = settings(entry.ssh);
   if (Object.keys(ssh).length > 0) out['ssh'] = ssh;
+  if (entry.forwards !== undefined && entry.forwards.length > 0) out['forwards'] = entry.forwards.map(serializeForward);
   return out;
 }
 

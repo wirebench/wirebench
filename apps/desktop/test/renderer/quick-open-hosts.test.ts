@@ -11,6 +11,7 @@ it('matches on name, address, path and tags', () => {
       path: ['prod', 'eu'],
       protected: { value: false, from: 'default' as const },
       ssh: {} as never,
+      forwards: [],
     },
   ]);
   expect(entry).toMatchObject({

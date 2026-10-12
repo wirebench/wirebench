@@ -40,7 +40,9 @@ describe('ssh commands', () => {
     useEditorsStore.getState().reset();
     useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
     await runCommand('ssh.connect', {} as never, 'a');
-    expect(useEditorsStore.getState().tabs).toEqual([{ id: 'ssh:a', kind: 'ssh-terminal', title: 'a', hostId: 'a' }]);
+    expect(useEditorsStore.getState().tabs).toMatchObject([
+      { kind: 'ssh-terminal', title: 'a', panes: { kind: 'pane', hostId: 'a' } },
+    ]);
     expect(connect).not.toHaveBeenCalled();
   });
 });

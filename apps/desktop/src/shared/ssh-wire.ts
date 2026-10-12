@@ -24,6 +24,22 @@ export const sshSettingsWireSchema = z.strictObject({
   connectTimeout: z.number().optional(),
 });
 
+const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
+
+/** A forwarding rule as written in hosts.yaml (it holds no credential), or its off form `{ id, enabled: false }`. */
+export const forwardEntryWireSchema = z.union([
+  z.strictObject({ id: z.string(), enabled: z.literal(false) }),
+  z.strictObject({
+    id: z.string(),
+    type: forwardTypeWireSchema,
+    port: z.number(),
+    bind: z.string().optional(),
+    target: z.string().optional(),
+    autoStart: z.boolean().optional(),
+    enabled: z.boolean().optional(),
+  }),
+]);
+
 export const hostEntryWireSchema = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -31,6 +47,7 @@ export const hostEntryWireSchema = z.strictObject({
   tags: z.array(z.string()),
   protected: z.boolean().optional(),
   ssh: sshSettingsWireSchema,
+  forwards: z.array(forwardEntryWireSchema).optional(),
 });
 
 export interface HostEntryWire {
@@ -40,6 +57,7 @@ export interface HostEntryWire {
   tags: string[];
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
+  forwards?: ForwardEntryWire[] | undefined;
 }
 export interface GroupEntryWire {
   id: string;
@@ -47,6 +65,7 @@ export interface GroupEntryWire {
   tags: string[];
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
+  forwards?: ForwardEntryWire[] | undefined;
   groups: GroupEntryWire[];
   hosts: HostEntryWire[];
 }
@@ -58,6 +77,7 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
     tags: z.array(z.string()),
     protected: z.boolean().optional(),
     ssh: sshSettingsWireSchema,
+    forwards: z.array(forwardEntryWireSchema).optional(),
     groups: z.array(groupEntryWireSchema),
     hosts: z.array(hostEntryWireSchema),
   }),
@@ -71,6 +91,23 @@ export const hostsFileWireSchema = z.strictObject({
 
 const prov = <T extends z.ZodType>(value: T) =>
   z.object({ value, from: z.union([z.literal('host'), z.literal('default'), z.object({ group: z.string() })]) });
+
+const forwardFromWireSchema = z.union([z.literal('host'), z.object({ group: z.string() })]);
+
+/** A rule after inheritance: defaults filled, where it came from, and which level switched it off. */
+export const resolvedForwardWireSchema = z.object({
+  rule: z.object({
+    id: z.string(),
+    type: forwardTypeWireSchema,
+    port: z.number(),
+    bind: z.string(),
+    target: z.object({ host: z.string(), port: z.number() }).optional(),
+    autoStart: z.boolean(),
+  }),
+  from: forwardFromWireSchema,
+  enabled: z.boolean(),
+  offBy: forwardFromWireSchema.optional(),
+});
 
 export const resolvedHostWireSchema = z.object({
   id: z.string(),
@@ -88,6 +125,7 @@ export const resolvedHostWireSchema = z.object({
     connectTimeout: prov(z.number()),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
+  forwards: z.array(resolvedForwardWireSchema),
 });
 
 export const sshListHostsResponseSchema = z.object({
@@ -102,6 +140,8 @@ export type SshAuthWire = z.infer<typeof sshAuthWireSchema>;
 export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
 export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
+export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
+export type ResolvedForwardWire = z.infer<typeof resolvedForwardWireSchema>;
 export type SshProblemWire = z.infer<typeof sshProblemSchema>;
 export type SshListHostsResponse = z.infer<typeof sshListHostsResponseSchema>;
 

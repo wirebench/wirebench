@@ -3,7 +3,8 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
-import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
+import { leaves, titleOf } from '../features/ssh/panes/pane-tree.js';
 import { sessionStatus } from '../features/ssh/session-status.js';
 import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useShallow } from 'zustand/react/shallow';
@@ -135,10 +136,10 @@ export function EditorArea() {
       }),
     ),
   );
-  const hostSessions = useHostsStore((state) => state.sessions);
+  const paneSessions = useHostsStore((state) => state.panes);
   const resolvedHosts = useHostsStore((state) => state.resolved);
   // Every terminal, whichever set is shown: they stay mounted so leaving Hosts never ends a session.
-  const terminalTabs = allTabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.hostId !== undefined);
+  const terminalTabs = allTabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.panes !== undefined);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -234,7 +235,9 @@ export function EditorArea() {
   /** A tab's live name, or the title it was opened with. */
   const labelFor = (tab: (typeof tabs)[number]): string =>
     liveTitles[tabs.indexOf(tab)] ??
-    (tab.kind === 'ssh-terminal' ? resolvedHosts.find((host) => host.id === tab.hostId)?.name : undefined) ??
+    (tab.kind === 'ssh-terminal' && tab.panes !== undefined
+      ? titleOf(tab.panes, (hostId) => resolvedHosts.find((host) => host.id === hostId)?.name)
+      : undefined) ??
     tab.title;
   // Only the request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean => dirtyTabs[tabs.indexOf(tab)] === true;
@@ -322,8 +325,13 @@ export function EditorArea() {
             const label = labelFor(tab);
             const dirty = isDirty(tab);
             const status =
-              tab.kind === 'ssh-terminal' && tab.hostId !== undefined
-                ? sessionStatus(hostSessions[tab.hostId])
+              tab.kind === 'ssh-terminal' && tab.panes !== undefined
+                ? sessionStatus(
+                    statusOf(
+                      paneSessions,
+                      leaves(tab.panes).map((leaf) => leaf.paneId),
+                    ),
+                  )
                 : undefined;
             return (
               // One focusable control per tab. A nested close *button* would be interactive
@@ -545,7 +553,7 @@ export function EditorArea() {
         {terminalTabs.map((tab) => (
           <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
             <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
-              <TerminalTab hostId={tab.hostId ?? ''} active={tab.id === activeId} />
+              {tab.panes !== undefined && <TerminalTab tabId={tab.id} panes={tab.panes} active={tab.id === activeId} />}
             </Suspense>
           </div>
         ))}

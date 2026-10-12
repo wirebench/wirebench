@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { WorkspaceError } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
 import { HostsService, windowHosts } from '../src/main/hosts-service.js';
+import { sshListHostsResponseSchema } from '../src/shared/ssh-wire.js';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'wb-hosts-'));
 
@@ -99,6 +100,96 @@ describe('HostsService', () => {
     expect(changed).toBe(1);
     expect(service.current()?.hosts).toHaveLength(1);
   });
+  describe('forwarding rules', () => {
+    const RULES = `version: 1
+groups:
+  - id: prod
+    name: Production
+    forwards:
+      - id: grafana
+        type: local
+        port: 3000
+        target: localhost:3000
+      - id: socks
+        type: dynamic
+        port: 1080
+        bind: 0.0.0.0
+    hosts:
+      - id: db-1
+        name: db-1
+        address: 10.0.1.7
+        forwards:
+          - id: hook
+            type: remote
+            port: 8080
+            target: "[::1]:3000"
+            autoStart: true
+          - id: socks
+            enabled: false
+`;
+
+    it('list carries the resolved rules of each type through the channel schema', async () => {
+      const d = dir();
+      writeFileSync(join(d, 'hosts.yaml'), RULES);
+      const listed = sshListHostsResponseSchema.parse(await new HostsService({ treeDir: () => d }).list());
+      expect(listed.problems).toEqual([]);
+      expect(listed.resolved[0]?.forwards).toEqual([
+        {
+          rule: {
+            id: 'grafana',
+            type: 'local',
+            port: 3000,
+            bind: '127.0.0.1',
+            target: { host: 'localhost', port: 3000 },
+            autoStart: false,
+          },
+          from: { group: 'prod' },
+          enabled: true,
+        },
+        {
+          rule: { id: 'socks', type: 'dynamic', port: 1080, bind: '0.0.0.0', autoStart: false },
+          from: { group: 'prod' },
+          enabled: false,
+          offBy: 'host',
+        },
+        {
+          rule: {
+            id: 'hook',
+            type: 'remote',
+            port: 8080,
+            bind: 'localhost',
+            target: { host: '::1', port: 3000 },
+            autoStart: true,
+          },
+          from: 'host',
+          enabled: true,
+        },
+      ]);
+    });
+
+    it('saving the listed file writes the rules back unchanged', async () => {
+      const d = dir();
+      writeFileSync(join(d, 'hosts.yaml'), RULES);
+      const service = new HostsService({ treeDir: () => d });
+      const { file } = sshListHostsResponseSchema.parse(await service.list());
+      await service.save(file);
+      expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toBe(RULES);
+    });
+
+    it('save refuses an invalid rule as ssh-forward-invalid', async () => {
+      const service = new HostsService({ treeDir: () => dir() });
+      await expect(
+        service.save({
+          version: 1,
+          groups: [],
+          hosts: [
+            { id: 'a', name: 'a', address: 'a', tags: [], ssh: {}, forwards: [{ id: 'x', type: 'local', port: 1 }] },
+          ],
+        }),
+      ).rejects.toMatchObject({ name: 'WirebenchError', code: 'ssh-forward-invalid', details: { field: 'target' } });
+    });
+  });
+
   it('save refuses a secret name that is not a NAME', async () => {
     await expect(
       new HostsService({ treeDir: () => dir() }).save({
