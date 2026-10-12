@@ -91,6 +91,12 @@ export async function startSshFixture(options: {
           fixture.lastResize = { cols: info.cols, rows: info.rows };
           accept?.();
         });
+        // Runs nothing: stdout stays empty, as a refused exec channel's would, and the exit status is 0.
+        session.on('exec', (accept) => {
+          const stream = accept();
+          stream.exit(0);
+          stream.end();
+        });
         session.on('shell', (accept) => {
           const stream = accept();
           let line = '';
