@@ -12,7 +12,7 @@ import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } f
 import { openTerminalFor } from './connect.js';
 import { GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
-import { flattenGroups, osKeyOf, useHostsStore, type HostSession } from './hosts-store.js';
+import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { sessionStatus } from './session-status.js';
 
@@ -42,19 +42,17 @@ function sectionsOf(file: HostsFileWire, only?: string): Section[] {
   return out;
 }
 
-const live = (session: HostSession | undefined): boolean =>
-  session?.state === 'open' || session?.state === 'connecting';
-
 function sortHosts(
   hosts: readonly HostEntryWire[],
   sort: HostsSort,
-  sessions: Readonly<Record<string, HostSession>>,
+  panes: Readonly<Record<string, PaneSession>>,
 ): HostEntryWire[] {
+  const live = (hostId: string): boolean => hostStatusOf(panes, hostId) !== 'idle';
   const byName = (a: HostEntryWire, b: HostEntryWire): number =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
   return [...hosts].sort((a, b) => {
     if (sort === 'address') return a.address.localeCompare(b.address, undefined, { numeric: true }) || byName(a, b);
-    if (sort === 'connected') return Number(live(sessions[b.id])) - Number(live(sessions[a.id])) || byName(a, b);
+    if (sort === 'connected') return Number(live(b.id)) - Number(live(a.id)) || byName(a, b);
     return byName(a, b);
   });
 }
@@ -100,7 +98,7 @@ const DOUBLE_CLICK_PX = 6;
 let swallowClickUntil = 0;
 
 function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }: CardProps) {
-  const status = sessionStatus(useHostsStore((s) => s.sessions[host.id]));
+  const status = sessionStatus(useHostsStore((s) => hostStatusOf(s.panes, host.id)));
   const osEntry = useHostsStore((s) => (resolved === undefined ? undefined : s.osByHost[osKeyOf(resolved)]));
   const os = osOf(osEntry);
   const osText = osTextOf(osEntry);
@@ -240,7 +238,7 @@ export function HostCards({
 }) {
   const file = useHostsStore((s) => s.file);
   const resolved = useHostsStore((s) => s.resolved);
-  const sessions = useHostsStore((s) => s.sessions);
+  const panes = useHostsStore((s) => s.panes);
   const filter = useHostsStore((s) => s.filter);
   const selectedTags = useHostsStore((s) => s.selectedTags);
   const groupFilter = useHostsStore((s) => s.groupFilter);
@@ -321,7 +319,7 @@ export function HostCards({
       ? groupFilter
       : undefined;
   const sections = sectionsOf(file, only)
-    .map((section) => ({ ...section, hosts: sortHosts(section.hosts.filter(shown), prefs.sort, sessions) }))
+    .map((section) => ({ ...section, hosts: sortHosts(section.hosts.filter(shown), prefs.sort, panes) }))
     // The top level needs no heading when it is all there is; an empty group keeps its heading
     // (its menu is how a host gets into it) unless a filter is narrowing.
     .filter((section) =>

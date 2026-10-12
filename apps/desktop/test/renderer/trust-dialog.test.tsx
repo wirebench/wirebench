@@ -9,6 +9,7 @@ import { TrustDialog } from '../../src/renderer/features/ssh/trust-dialog.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 
 const BASE = {
+  paneId: 'p1',
   hostId: 'a',
   size: { cols: 80, rows: 24 },
   host: 'h:22',
@@ -19,7 +20,7 @@ const BASE = {
 beforeEach(() => {
   connect.mockReset().mockResolvedValue({ ok: true, value: { sessionId: 's1' } });
   trustHostKey.mockReset().mockResolvedValue({ ok: true, value: {} });
-  useHostsStore.setState({ sessions: {}, trustPrompt: null, connectFailed: {} });
+  useHostsStore.setState({ panes: {}, trustPrompt: null, connectFailed: {} });
 });
 afterEach(cleanup);
 
@@ -63,7 +64,7 @@ it('Cancel dismisses the prompt without trusting', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(useHostsStore.getState().trustPrompt).toBeNull();
   expect(trustHostKey).not.toHaveBeenCalled();
-  expect(useHostsStore.getState().connectFailed).toEqual({ a: true });
+  expect(useHostsStore.getState().connectFailed).toEqual({ p1: true });
 });
 
 it('a new key has no checkbox and confirms with replace false', async () => {

@@ -13,7 +13,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
 import { HostForm } from './host-dialog.js';
 import { HostActionsButton } from './host-menus.js';
-import { findHost, flattenGroups, osKeyOf, useHostsStore } from './hosts-store.js';
+import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { sessionStatus } from './session-status.js';
 
@@ -80,7 +80,9 @@ export function HostDetails() {
   const file = useHostsStore((s) => s.file);
   const resolved = useHostsStore((s) => s.resolved);
   const dialog = useHostsStore((s) => s.dialog);
-  const session = useHostsStore((s) => (selectedHostId === undefined ? undefined : s.sessions[selectedHostId]));
+  const hostStatus = useHostsStore((s) =>
+    selectedHostId === undefined ? undefined : hostStatusOf(s.panes, selectedHostId),
+  );
   const osByHost = useHostsStore((s) => s.osByHost);
   const [knownHosts, setKnownHosts] = useState<readonly SshKnownHostWire[]>([]);
   const [secrets, setSecrets] = useState<readonly SshSecretNameWire[]>([]);
@@ -92,7 +94,7 @@ export function HostDetails() {
       setKnownHosts(known.ok ? known.value.entries : []);
       setSecrets(names.ok ? names.value.names : []);
     })();
-  }, [selectedHostId, session?.state]);
+  }, [selectedHostId, hostStatus]);
 
   const entry = selectedHostId === undefined ? undefined : findHost(file, selectedHostId);
   if (entry === undefined) return null;
@@ -106,7 +108,7 @@ export function HostDetails() {
   const host = resolved.find((h) => h.id === entry.id);
   const groups = flattenGroups(file);
   const groupName = (id: string): string => groups.find(({ group }) => group.id === id)?.group.name ?? id;
-  const status = sessionStatus(session);
+  const status = sessionStatus(hostStatus);
   const provenance = (from: Provenance): string =>
     from === 'host' ? 'set on host' : from === 'default' ? 'default' : `from ${groupName(from.group)}`;
   const path = host?.path.map(groupName).join(' / ');

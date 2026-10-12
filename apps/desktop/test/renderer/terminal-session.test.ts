@@ -11,7 +11,7 @@ import { onReconnectNow } from '../../src/renderer/features/ssh/reconnect.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 beforeEach(() => {
-  useHostsStore.setState({ sessions: {} });
+  useHostsStore.setState({ panes: {} });
 });
 
 it('buffers data before attach, streams after, and forwards exit', () => {
@@ -98,13 +98,15 @@ it('base64 round-trips UTF-8 input', () => {
   expect(bytesToBase64(bytes)).toBe(Buffer.from(bytes).toString('base64'));
 });
 
-it('a closed session marks its host closed and leaves other hosts alone', () => {
+it('a closed session marks its pane closed and leaves other panes alone', () => {
   useHostsStore.setState({
-    sessions: { a: { sessionId: 's1', state: 'open' }, b: { sessionId: 's2', state: 'open' } },
+    panes: { p1: { hostId: 'a', sessionId: 's1', state: 'open' }, p2: { hostId: 'a', sessionId: 's2', state: 'open' } },
   });
   useHostsStore.getState().noteSessionState('s1', 'closed');
-  expect(useHostsStore.getState().sessions).toEqual({
-    a: { sessionId: 's1', state: 'closed' },
-    b: { sessionId: 's2', state: 'open' },
+  expect(useHostsStore.getState().panes).toEqual({
+    p1: { hostId: 'a', sessionId: 's1', state: 'closed' },
+    p2: { hostId: 'a', sessionId: 's2', state: 'open' },
   });
+  // Another pane on the host is still open, so the host is.
+  expect(useHostsStore.getState().hostStatus('a')).toBe('open');
 });

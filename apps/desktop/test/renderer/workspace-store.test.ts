@@ -148,7 +148,7 @@ describe('useWorkspaceStore', () => {
     useInterfaceEditorStore.getState().setTab('i1', 'schema');
     useHostsStore.setState({
       file: { version: 1, groups: [], hosts: [{ id: 'h', name: 'h', address: 'h.example', tags: [], ssh: {} }] },
-      sessions: { h: { sessionId: 's1', state: 'open' } },
+      panes: { p1: { hostId: 'h', sessionId: 's1', state: 'open' } },
     });
 
     useWorkspaceStore.getState().applySnapshot(null);
@@ -160,7 +160,7 @@ describe('useWorkspaceStore', () => {
     expect(useExchangesStore.getState().byRequest).toEqual({});
     expect(useInterfaceEditorStore.getState().tabs).toEqual({});
     expect(useHostsStore.getState().file.hosts).toEqual([]);
-    expect(useHostsStore.getState().sessions).toEqual({});
+    expect(useHostsStore.getState().panes).toEqual({});
   });
 
   it('applySnapshot(workspace) leaves the other stores alone', () => {
