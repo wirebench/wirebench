@@ -22,6 +22,8 @@ export type HostsDialog =
 
 /** A host key main refused until the user decides; `previous` is set when the stored key differs. */
 export interface TrustPrompt {
+  /** The pane whose connect the key stopped; confirming connects it again. */
+  paneId: string;
   hostId: string;
   size: { cols: number; rows: number };
   host: string;
@@ -30,9 +32,33 @@ export interface TrustPrompt {
   previous?: string;
 }
 
-export interface HostSession {
+/** One terminal pane's session to its host. */
+export interface PaneSession {
+  hostId: string;
   sessionId?: string;
   state: 'connecting' | 'open' | 'closed';
+}
+
+/** How a host (or a tab) stands, from its panes: open over connecting over idle. */
+export type HostStatus = 'open' | 'connecting' | 'idle';
+
+/** The best state of the given panes; a pane with no entry, or a closed session, counts as idle. */
+export function statusOf(panes: Readonly<Record<string, PaneSession>>, paneIds: Iterable<string>): HostStatus {
+  let status: HostStatus = 'idle';
+  for (const id of paneIds) {
+    const state = panes[id]?.state;
+    if (state === 'open') return 'open';
+    if (state === 'connecting') status = 'connecting';
+  }
+  return status;
+}
+
+/** A host's status: the best of every pane on it, in any tab. */
+export function hostStatusOf(panes: Readonly<Record<string, PaneSession>>, hostId: string): HostStatus {
+  return statusOf(
+    panes,
+    Object.keys(panes).filter((id) => panes[id]?.hostId === hostId),
+  );
 }
 
 /** What the SSH area's fixed first tab shows, picked from the area's menu. */
@@ -64,16 +90,21 @@ interface HostsState {
   dialog: HostsDialog;
   /** Whether the "Import from SSH config" dialog is open. */
   importOpen: boolean;
-  /** The session state per host id; a host absent from the record is idle. */
-  sessions: Readonly<Record<string, HostSession>>;
+  /** The session per terminal pane id; a pane absent from the record is idle. */
+  panes: Readonly<Record<string, PaneSession>>;
+  /** A host's status, derived from its panes. */
+  hostStatus: (hostId: string) => HostStatus;
   trustPrompt: TrustPrompt | null;
   /**
-   * Hosts whose last connect ended without a session: refused, failed, or the trust prompt cancelled.
-   * Cleared when the host's next connect starts; the terminal tab shows it with a Reconnect.
+   * Panes whose last connect ended without a session: refused, failed, or the trust prompt cancelled.
+   * Cleared when the pane's next connect starts; the pane shows it with a Reconnect.
    */
   connectFailed: Readonly<Record<string, true>>;
-  /** Bumped by a terminal tab's Reconnect; the tab keyed on it tears down and connects afresh. */
+  /** Bumped by a pane's Reconnect, per pane id; the pane keyed on it tears down and connects afresh. */
   reconnectNonce: Readonly<Record<string, number>>;
+  /** When each terminal tab was last in front (a counter, higher is later): Connect picks the latest. */
+  terminalTabUse: Readonly<Record<string, number>>;
+  noteTerminalTabUsed: (tabId: string) => void;
   refresh: () => Promise<void>;
   /** Sends the whole file; `false` when main refused it (the old state stays, the refusal is a problem). */
   save: (file: HostsFileWire) => Promise<boolean>;
@@ -84,13 +115,13 @@ interface HostsState {
   setImportOpen: (open: boolean) => void;
   /** Takes main's answer to an import's apply: the reloaded file, as after a save. */
   applyImported: (result: SshListHostsResponse) => void;
-  /** `undefined` removes the host's entry (idle). */
-  setSession: (hostId: string, session: HostSession | undefined) => void;
+  /** `undefined` removes the pane's entry (idle). */
+  setPane: (paneId: string, session: PaneSession | undefined) => void;
   setTrustPrompt: (prompt: TrustPrompt | null) => void;
-  /** Main's `ssh.state`: a session that closed marks its host `closed` (the id stays, for the tab to see). */
+  /** Main's `ssh.state`: a session that closed marks its pane `closed` (the id stays, for the pane to see). */
   noteSessionState: (sessionId: string, state: 'open' | 'closed') => void;
-  bumpReconnect: (hostId: string) => void;
-  noteConnectFailed: (hostId: string) => void;
+  bumpReconnect: (paneId: string) => void;
+  noteConnectFailed: (paneId: string) => void;
   /** The user dismissed the trust prompt: no session, so the host's connect failed. */
   cancelTrust: () => void;
   visibleHosts: () => readonly ResolvedHostWire[];
@@ -111,9 +142,10 @@ const WORKSPACE_STATE = {
   loaded: false,
   dialog: null,
   importOpen: false,
-  sessions: {},
+  panes: {},
   trustPrompt: null,
   reconnectNonce: {},
+  terminalTabUse: {},
   connectFailed: {},
   selectedHostId: undefined,
   groupFilter: undefined,
@@ -180,38 +212,48 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   applyImported: (result) => {
     apply({ ok: true, value: result });
   },
-  setSession: (hostId, session) => {
-    const sessions = { ...get().sessions };
+  hostStatus: (hostId) => hostStatusOf(get().panes, hostId),
+  setPane: (paneId, session) => {
+    const panes = { ...get().panes };
     if (session === undefined) {
-      delete sessions[hostId];
-      set({ sessions });
+      delete panes[paneId];
+      set({ panes });
       return;
     }
-    sessions[hostId] = session;
+    panes[paneId] = session;
     const connectFailed = { ...get().connectFailed };
-    delete connectFailed[hostId];
-    set({ sessions, connectFailed });
+    delete connectFailed[paneId];
+    set({ panes, connectFailed });
   },
   setTrustPrompt: (trustPrompt) => {
     set({ trustPrompt });
   },
   noteSessionState: (sessionId, state) => {
     if (state !== 'closed') return;
-    const { sessions } = get();
-    const hostId = Object.keys(sessions).find((id) => sessions[id]?.sessionId === sessionId);
-    if (hostId !== undefined) set({ sessions: { ...sessions, [hostId]: { sessionId, state: 'closed' } } });
+    const { panes } = get();
+    const paneId = Object.keys(panes).find((id) => panes[id]?.sessionId === sessionId);
+    const pane = paneId === undefined ? undefined : panes[paneId];
+    if (paneId !== undefined && pane !== undefined) {
+      set({ panes: { ...panes, [paneId]: { hostId: pane.hostId, sessionId, state: 'closed' } } });
+    }
   },
-  noteConnectFailed: (hostId) => {
-    set({ connectFailed: { ...get().connectFailed, [hostId]: true } });
+  noteConnectFailed: (paneId) => {
+    set({ connectFailed: { ...get().connectFailed, [paneId]: true } });
   },
   cancelTrust: () => {
     const prompt = get().trustPrompt;
     if (prompt === null) return;
-    set({ trustPrompt: null, connectFailed: { ...get().connectFailed, [prompt.hostId]: true } });
+    set({ trustPrompt: null, connectFailed: { ...get().connectFailed, [prompt.paneId]: true } });
   },
-  bumpReconnect: (hostId) => {
+  bumpReconnect: (paneId) => {
     const { reconnectNonce } = get();
-    set({ reconnectNonce: { ...reconnectNonce, [hostId]: (reconnectNonce[hostId] ?? 0) + 1 } });
+    set({ reconnectNonce: { ...reconnectNonce, [paneId]: (reconnectNonce[paneId] ?? 0) + 1 } });
+  },
+  noteTerminalTabUsed: (tabId) => {
+    const { terminalTabUse } = get();
+    const latest = Math.max(0, ...Object.values(terminalTabUse));
+    if (terminalTabUse[tabId] === latest && latest > 0) return;
+    set({ terminalTabUse: { ...terminalTabUse, [tabId]: latest + 1 } });
   },
   visibleHosts() {
     const { resolved, filter, selectedTags } = get();

@@ -124,11 +124,13 @@ describe('hosts store', () => {
   it('reset drops the workspace-bound state: the file, its problems, sessions, failures and prompts', async () => {
     await useHostsStore.getState().refresh();
     useHostsStore.setState({ problems: [{ code: 'ssh-hosts-invalid', message: 'bad' }], filter: 'al' });
-    useHostsStore.getState().setSession('a', { sessionId: 's1', state: 'open' });
-    useHostsStore.getState().noteConnectFailed('b');
-    useHostsStore.getState().bumpReconnect('a');
+    useHostsStore.getState().setPane('p1', { hostId: 'a', sessionId: 's1', state: 'open' });
+    useHostsStore.getState().noteConnectFailed('p2');
+    useHostsStore.getState().bumpReconnect('p1');
+    useHostsStore.getState().noteTerminalTabUsed('ssh-terminal:t1');
     useHostsStore.getState().openDialog({ mode: 'edit-host', id: 'a' });
     useHostsStore.getState().setTrustPrompt({
+      paneId: 'p1',
       hostId: 'a',
       size: { cols: 80, rows: 24 },
       host: '10.0.0.1',
@@ -143,7 +145,8 @@ describe('hosts store', () => {
     expect(state.resolved).toEqual([]);
     expect(state.problems).toEqual([]);
     expect(state.loaded).toBe(false);
-    expect(state.sessions).toEqual({});
+    expect(state.panes).toEqual({});
+    expect(state.terminalTabUse).toEqual({});
     expect(state.connectFailed).toEqual({});
     expect(state.reconnectNonce).toEqual({});
     expect(state.trustPrompt).toBeNull();
