@@ -161,10 +161,28 @@ describe('AppShell', () => {
     expect(screen.queryByTestId('console')).toBeNull();
   });
 
+  it('has no console in the SSH area, and finds it as it was on coming back', () => {
+    useUiStore.setState({ enabledAreas: AREAS.map((area) => area.id) });
+    render(<App />);
+    expect(screen.getByTestId('console-panel')).toBeTruthy();
+
+    // The sidebar stays collapsed: the SSH area's own views would read the hosts, which this file
+    // does not mock; only the console is under test here.
+    act(() => {
+      useUiStore.setState((s) => ({ sidebar: { ...s.sidebar, view: 'ssh', visible: false } }));
+    });
+    expect(screen.queryByTestId('console-panel')).toBeNull();
+    expect(screen.queryByTestId('panel-handle-console')).toBeNull();
+    expect(useUiStore.getState().console.visible).toBe(true);
+
+    act(() => {
+      useUiStore.setState((s) => ({ sidebar: { ...s.sidebar, view: 'explorer' } }));
+    });
+    expect(screen.getByTestId('console-panel')).toBeTruthy();
+  });
+
   it('opens the Code slide-over on Mod+Alt+B and closes it again', () => {
-    // Unlike the sidebar and the console, the slide-over unmounts completely while closed: it
-    // overlays the editor, so a handle left behind would sit over the editor's right edge and
-    // swallow clicks there.
+    // Unlike the sidebar and the console, the slide-over unmounts completely while closed.
     render(<App />);
 
     expect(screen.queryByTestId('slide-over')).toBeNull();

@@ -266,7 +266,7 @@ test.describe('layout: collapsible, resizable panels', () => {
     expect(reopened!).toBeGreaterThan(0);
   });
 
-  test('opening the Code slide-over does not shift the editor area', async () => {
+  test('opening the Code slide-over narrows the editor area instead of covering it', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createWorkspace(page);
@@ -289,7 +289,9 @@ test.describe('layout: collapsible, resizable panels', () => {
 
     const after = await editor.boundingBox();
     expect(after).not.toBeNull();
-    expect(after).toEqual(before);
+    // The editor gives up the room the panel takes, and ends where the panel begins.
+    expect(after!.width).toBeLessThan(before!.width - 200);
+    expect(after!.x + after!.width).toBeLessThanOrEqual(panel!.x + 1);
   });
 
   test('Escape closes the Code slide-over', async () => {
