@@ -14,6 +14,7 @@ import { GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
+import { ProtectedMark } from './protected-mark.js';
 import { sessionStatus } from './session-status.js';
 
 interface Section {
@@ -184,7 +185,10 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
             />
           </span>
           <span className={`flex min-w-0 flex-1 ${grid ? 'flex-col' : 'items-baseline gap-3'}`}>
-            <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+              {resolved?.protected.value === true && <ProtectedMark />}
+            </span>
             <span className="truncate text-xs leading-4 text-fg-subtle">
               {osText !== undefined && <span>{osText} · </span>}
               <span className="font-mono">{targetOf(host, resolved)}</span>

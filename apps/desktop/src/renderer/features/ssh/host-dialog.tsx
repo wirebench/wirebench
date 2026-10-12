@@ -7,7 +7,7 @@ import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
 import { ancestorsOf, findGroup, findHost, freeId, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
-import { INPUT_CLASS, InheritedField, type Provenance } from './inherited-field.js';
+import { INPUT_CLASS, InheritedField, InheritedSwitch, type Provenance } from './inherited-field.js';
 
 type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout';
 
@@ -22,6 +22,14 @@ function inheritedFrom<K extends keyof SshSettingsWire>(
   }
   const fallback = (SSH_DEFAULTS as Record<string, number>)[field];
   return { value: fallback as NonNullable<SshSettingsWire[K]> | undefined, from: 'default' };
+}
+
+/** Whether the enclosing groups make an entry protected: the nearest group that says, else off by default. */
+function inheritedProtected(chain: readonly GroupEntryWire[]): Provenance<boolean> {
+  for (const g of [...chain].reverse()) {
+    if (g.protected !== undefined) return { value: g.protected, from: { group: g.name } };
+  }
+  return { value: false, from: 'default' };
 }
 
 function slug(name: string): string {
@@ -78,6 +86,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const [address, setAddress] = useState(existing !== undefined && 'address' in existing ? existing.address : '');
   const [tags, setTags] = useState((existing?.tags ?? []).join(', '));
   const [ssh, setSsh] = useState<SshSettingsWire>(existing?.ssh ?? {});
+  const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
   const [failed, setFailed] = useState(false);
   // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
   const osKey = (): string =>
@@ -102,14 +111,27 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const submit = async (): Promise<void> => {
     const id = existing?.id ?? freeId(file, slug(name));
     const clean = dropEmpty(ssh);
+    const guard = protectedHere === undefined ? {} : { protected: protectedHere };
     const next = isHost
       ? upsertHost(
           file,
           // The form does not edit forwarding rules; an edited host keeps its own.
-          { id, name: name.trim(), address: address.trim(), tags: tagList, ssh: clean, forwards: existing?.forwards },
+          {
+            id,
+            name: name.trim(),
+            address: address.trim(),
+            tags: tagList,
+            ...guard,
+            ssh: clean,
+            forwards: existing?.forwards,
+          },
           parent,
         )
-      : upsertGroup(file, { id, name: name.trim(), tags: tagList, ssh: clean, groups: [], hosts: [] }, parent);
+      : upsertGroup(
+          file,
+          { id, name: name.trim(), tags: tagList, ...guard, ssh: clean, groups: [], hosts: [] },
+          parent,
+        );
     if (!(await save(next))) {
       setFailed(true);
       return;
@@ -192,6 +214,12 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           }}
         />
       </label>
+      <InheritedSwitch
+        label="Protected"
+        provenance={inheritedProtected(chain)}
+        override={protectedHere}
+        onChange={setProtectedHere}
+      />
       <InheritedField
         label="User"
         provenance={inheritedFrom(chain, 'user')}

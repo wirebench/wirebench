@@ -407,9 +407,18 @@ export function upsertGroup(file: HostsFileWire, group: GroupEntryWire, parentGr
   if (findGroup(file, group.id) !== undefined) {
     return {
       ...file,
-      groups: mapGroups(file.groups, (g) =>
-        g.id === group.id ? { ...g, name: group.name, tags: group.tags, ssh: group.ssh } : g,
-      ),
+      groups: mapGroups(file.groups, (g) => {
+        if (g.id !== group.id) return g;
+        const { protected: dropped, ...rest } = g;
+        void dropped;
+        return {
+          ...rest,
+          name: group.name,
+          tags: group.tags,
+          ...(group.protected === undefined ? {} : { protected: group.protected }),
+          ssh: group.ssh,
+        };
+      }),
     };
   }
   if (parentGroupId === undefined) return { ...file, groups: [...file.groups, group] };
