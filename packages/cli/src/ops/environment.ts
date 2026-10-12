@@ -27,7 +27,9 @@ export function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
       if (environments.some(matches)) {
         throw outOfScope(wanted, []);
       }
-      throw new OpsError('environment-not-found', `unknown environment "${wanted}": this ${owner} defines none`, {
+      // Scoped to a project, an empty list may only mean none applies to it, not that none exists.
+      const none = projectId === undefined ? `this ${owner} defines none` : 'no environment applies to this project';
+      throw new OpsError('environment-not-found', `unknown environment "${wanted}": ${none}`, {
         environment: wanted,
       });
     }

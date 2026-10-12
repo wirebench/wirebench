@@ -97,7 +97,7 @@ const input = z.object({
     .string()
     .min(1)
     .optional()
-    .describe('The environment to send under, by name; required when the project defines any'),
+    .describe('The environment to send under, by name; required when any environment applies to the project'),
   allowProtected: z
     .boolean()
     .optional()

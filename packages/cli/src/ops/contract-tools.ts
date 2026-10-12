@@ -200,7 +200,7 @@ export interface ToolSchema {
 const ENVIRONMENT_PROPERTY: JsonSchemaObject = {
   type: 'string',
   minLength: 1,
-  description: 'The environment to send under, by name; required when the project defines any',
+  description: 'The environment to send under, by name; required when any environment applies to the project',
 };
 
 const ALLOW_PROTECTED_PROPERTY: JsonSchemaObject = {
@@ -273,13 +273,16 @@ export function describeTool(
     parts.push(`Through the binding ${entry.binding}.`);
   }
   const where = `${resolved.kind === 'soap' ? 'the interface' : 'the API'} "${entry.container.name}"`;
+  const gateNames = gates.environments !== undefined ? gateNamesInScope(gates.environments, workspace) : undefined;
   const environments =
-    gates.environments !== undefined
-      ? `, and one of the environments ${gateNamesInScope(gates.environments, workspace).join(', ')}`
-      : '';
+    gateNames === undefined
+      ? '.'
+      : gateNames.length === 0
+        ? '. No environment this server allows (--env) applies to this project.'
+        : `, and one of the environments ${gateNames.join(', ')}.`;
   parts.push(
     `Sends a real ${resolved.kind === 'soap' ? 'SOAP' : 'REST'} request through ${where}, with its endpoint, ` +
-      `auth and secrets, and records it in History. Needs --allow-send${environments}.`,
+      `auth and secrets, and records it in History. Needs --allow-send${environments}`,
   );
   if (cookies.length > 0) {
     parts.push(`The operation needs the cookie parameter(s) ${cookies.join(', ')}, which this tool cannot set.`);

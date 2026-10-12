@@ -62,6 +62,18 @@ describe('pickEnvironment with a project id', () => {
     expect(codeOf(() => pickEnvironment(all, 'workspace', 'nope', 'p1'))).toBe('environment-not-found');
   });
 
+  it('says no environment applies to the project, not that the workspace defines none, when none is in scope', () => {
+    let error: OpsError | undefined;
+    try {
+      pickEnvironment([env('Prod', ['p2'])], 'workspace', 'nope', 'p1');
+    } catch (caught) {
+      error = caught as OpsError;
+    }
+    expect(error?.code).toBe('environment-not-found');
+    expect(error?.message).toBe('unknown environment "nope": no environment applies to this project');
+    expect(codeOf(() => pickEnvironment([], 'workspace', 'nope'))).toBe('environment-not-found');
+  });
+
   it('requires one only while one is in scope', () => {
     expect(codeOf(() => pickEnvironment(all, 'workspace', undefined, 'p1'))).toBe('environment-required');
     const scoped = [env('Prod', ['p2'])];
@@ -138,6 +150,28 @@ describe('gateNamesInScope', () => {
       ...(workspace !== undefined ? { workspace } : {}),
     });
     expect(set.tools[0]?.description).toContain('one of the environments staging.');
+  });
+
+  it('says no environment applies when every gate name is out of scope', async () => {
+    const fixture = await soapProject();
+    const { dir } = await linkedWorkspace(fixture, ['p2']);
+    const base = fixture.base({ projectDir: dir, gates: { write: false, send: true, environments: ['QA'] } });
+    const { project, workspace } = await openProject(base);
+    const set = await deriveContractTools(project, {
+      projectDir: dir,
+      gates: base.gates,
+      ...(workspace !== undefined ? { workspace } : {}),
+    });
+    const description = set.tools[0]?.description ?? '';
+    expect(description).not.toContain('one of the environments');
+    expect(description).toContain(
+      'Needs --allow-send. No environment this server allows (--env) applies to this project.',
+    );
+    const environment = (set.tools[0]?.inputSchema as { properties: Record<string, { description?: string }> })
+      .properties['environment'];
+    expect(environment?.description).toBe(
+      'The environment to send under, by name; required when any environment applies to the project',
+    );
   });
 });
 
