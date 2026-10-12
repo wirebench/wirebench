@@ -339,6 +339,30 @@ export function registerRestApiChannels(deps: ApiChannelDeps): void {
       ...(warning !== undefined ? { warning } : {}),
     };
   });
+  registerHandler(channels.api.restLint, async (request) => {
+    try {
+      const report = await router.restLint(request.apiId);
+      return { findings: report.findings.map((finding) => ({ ...finding })) };
+    } catch (error) {
+      // A rule set that is not valid is the project's problem to fix, so it shows in Problems
+      // with the file it is in, rather than as a failed call.
+      if (error instanceof WirebenchError && error.code === 'lint-ruleset-invalid') {
+        const file = typeof error.details?.['file'] === 'string' ? error.details['file'] : 'lint/';
+        return {
+          findings: [
+            {
+              rule: 'lint-ruleset-invalid',
+              severity: 'error' as const,
+              message: error.message,
+              path: '',
+              source: file,
+            },
+          ],
+        };
+      }
+      throw error;
+    }
+  });
   registerHandler(channels.api.webhookItems, async (request) => {
     const { items, imported } = await router.webhookItems(request.apiId);
     return { items: items.map(toWebhookItemWire), imported: [...imported] };

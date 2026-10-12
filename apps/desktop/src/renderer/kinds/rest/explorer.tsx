@@ -1,3 +1,4 @@
+import { lintRestDefinition } from '../../features/rest-api/lint-actions.js';
 import { Globe } from 'lucide-react';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
@@ -50,6 +51,11 @@ export const restExplorer: KindExplorer = {
                 },
                 { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
                 { key: 'new-mock', label: 'New Mock', run: () => explorerActions.newMock(apiId) },
+                {
+                  key: 'lint-definition',
+                  label: 'Lint Definition',
+                  run: () => void lintRestDefinition(apiId, { reveal: true }),
+                },
               ]
             : [],
           exportItems({ containerId: apiId }),

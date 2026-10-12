@@ -1,0 +1,53 @@
+openapi: 3.1.0
+info:
+  title: Noisy
+  version: '1.0'
+servers:
+  - url: http://api.noisy.test
+paths:
+  /things:
+    get:
+      responses:
+        '404': { description: Not found. }
+    post:
+      operationId: makeThing
+      parameters:
+        - name: dryRun
+          in: query
+          schema: { type: boolean }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        '201': { description: Made. }
+  /things/{id}:
+    get:
+      operationId: makeThing
+      summary: Read a thing.
+      security:
+        - missing: []
+        - keyAuth: []
+        - oauth: [things:admin]
+      responses:
+        '200': { description: The thing. }
+components:
+  schemas:
+    Thing:
+      type: object
+  securitySchemes:
+    keyAuth:
+      type: apiKey
+      in: header
+      name: X-Key
+    oauth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: http://auth.noisy.test/authorize
+          tokenUrl: https://auth.noisy.test/token
+          scopes:
+            things:read: Read things.

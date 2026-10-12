@@ -12,6 +12,16 @@ All notable changes to this project are documented here. The format follows
   find bar over the output: next and previous match, match case, whole word and regular expression, and a
   match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
   to the terminal. The shortcut never reaches the remote shell, and other tabs keep their own ⌘F (#406).
+- **`wirebench lint` checks an OpenAPI 2.0, 3.0, 3.1 or 3.2 document.** A built-in hygiene rule set
+  checks descriptions, examples, `operationId`s and reusable schemas. A built-in OWASP API Top 10 rule
+  set checks for no security scheme, credentials or OAuth endpoints over plain HTTP, and undefined
+  security schemes and OAuth scopes. A project's `lint/` folder (and `--ruleset <file>`) switches
+  rules off, changes their severity, or adds rules as a target and a check. Findings print as
+  `file:line:column`; `--reporter json=<file>` and `--reporter sarif=<file>` (SARIF 2.1.0, for code
+  scanning) write reports, and `--fail-severity` sets the exit code. `$ref`s stay inside the document's
+  folder, and a local document reaches the network only with `--allow-remote-refs`. In the desktop
+  app, **Lint Definition** on a REST API puts the same findings in Problems, and so does an OpenAPI
+  import or a definition update (#342).
 
 ## [6.0.0] - 2026-10-12
 

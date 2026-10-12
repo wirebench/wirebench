@@ -15,6 +15,8 @@ import { DATA_OPTIONS, parseRunData, refuseRunDataOnly } from './args-data.js';
 import type { RunDataArgs } from './args-data.js';
 import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
 import type { DiffContractArgs } from './args-diff-contract.js';
+import { LINT_HELP, LINT_OPTIONS, LINT_USAGE, parseLint, refuseLintOnly } from './args-lint.js';
+import type { LintArgs } from './args-lint.js';
 import { MOCK_CHECK_HELP, MOCK_HELP, parseMockCheck, parseMockServe } from './args-mock.js';
 import type { MockArgs, MockCheckArgs } from './args-mock.js';
 import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
@@ -25,6 +27,7 @@ import { UsageError } from './usage-error.js';
 export { UsageError };
 export type { CallArgs, ExportArgs, McpArgs, OpArgs, OpName } from './args-ops.js';
 export type { DiffContractArgs } from './args-diff-contract.js';
+export type { LintArgs } from './args-lint.js';
 export type { MockArgs, MockCheckArgs } from './args-mock.js';
 export type { MockRecordArgs } from './args-mock-record.js';
 
@@ -32,6 +35,7 @@ export type { MockRecordArgs } from './args-mock-record.js';
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
   ...VERB_HELP,
   'diff-contract': DIFF_CONTRACT_HELP,
+  lint: LINT_HELP,
   mock: `${MOCK_HELP}\n\n${MOCK_CHECK_HELP}\n\n${MOCK_RECORD_HELP}`,
 };
 
@@ -92,6 +96,11 @@ ${DIFF_CONTRACT_USAGE}
                        project:<name>) and classifies each change breaking or compatible. Exit 1
                        when the --fail-on gate fails (default: any breaking change).
 
+${LINT_USAGE}
+                       Checks an OpenAPI 2.0-3.2 document against the built-in hygiene and OWASP
+                       rule sets and the project's lint/ rule sets. Exit 1 when a finding is at the
+                       --fail-severity level or worse (default: error).
+
 wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
                        Serves the project's mocks until stopped (see wirebench mock --help).
 
@@ -151,6 +160,7 @@ export type ParsedArgs =
   | CallArgs
   | ExportArgs
   | DiffContractArgs
+  | LintArgs
   | MockArgs
   | MockCheckArgs
   | MockRecordArgs
@@ -245,6 +255,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         ...DATA_OPTIONS,
         ...OP_OPTIONS,
         ...MOCK_RECORD_OPTIONS,
+        ...LINT_OPTIONS,
       },
     });
   } catch (error) {
@@ -279,6 +290,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word !== 'run') {
     refuseRunDataOnly(values, `wirebench ${word === 'secrets' ? 'secrets list' : word}`);
+  }
+
+  if (word !== 'lint') {
+    refuseLintOnly(values, `wirebench ${word === 'secrets' ? 'secrets list' : word}`);
   }
 
   if (word === 'mock') {
@@ -370,6 +385,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word === 'diff-contract') {
     return parseDiffContract(rest, values);
+  }
+
+  if (word === 'lint') {
+    return parseLint(rest, values);
   }
 
   if (word === 'mcp') {

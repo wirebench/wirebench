@@ -2134,3 +2134,20 @@ export { forwardWorkerOutput, routeWorkerOutput, workerOutputOptions } from './w
 export * from './contract-diff/index.js';
 export { diffWsdlContracts, wsdlOperationLabel } from './wsdl/contract-diff.js';
 export { diffOpenApiContracts, openApiOperationLabel } from './rest/openapi/contract-diff.js';
+export { lintOpenApi } from './rest/openapi/lint/run.js';
+export type { LintInput, LintOpenApiOptions, LintOptions } from './rest/openapi/lint/run.js';
+export { LINT_BUILTIN_RULESETS, LINT_SEVERITIES, countFindings, failsAt } from './rest/openapi/lint/model.js';
+export type {
+  LintBuiltinRuleset,
+  LintCounts,
+  LintFinding,
+  LintPosition,
+  LintReport,
+  LintRuleInfo,
+  LintRulesetFile,
+  LintSeverity,
+} from './rest/openapi/lint/model.js';
+export { LINT_CHECKS, LINT_TARGETS } from './rest/openapi/lint/ruleset.js';
+export { LINT_FOLDER, readProjectLintRulesets } from './rest/openapi/lint/project.js';
+export { lintReportJson, lintReportSarif } from './rest/openapi/lint/report.js';
+export type { LintJsonReport, LintReportOptions, LintTool } from './rest/openapi/lint/report.js';

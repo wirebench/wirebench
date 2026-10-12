@@ -26,20 +26,25 @@ function key(item: Problem, index: number): string {
 /**
  * `<project> › <interface>`, or just `<interface>`, or nothing — whichever segments the store
  * can resolve. A request-scoped problem resolves its project/interface through the request;
- * an import problem's `groupId` is the interface id itself, so it resolves directly.
+ * an import problem's `groupId` is the interface id itself, so it resolves directly; a lint
+ * problem's group names the REST API it was found in.
  */
 function breadcrumbOf(
   item: Problem,
   requests: Readonly<Record<string, { readonly interfaceId: string; readonly name: string }>>,
   interfaces: Readonly<Record<string, { readonly name: string }>>,
+  apis: Readonly<Record<string, { readonly name: string }>>,
   projects: Readonly<Record<string, { readonly name: string }>>,
   projectOf: Readonly<Record<string, string>>,
 ): string | undefined {
+  const apiId = item.source === 'lint' ? item.groupId.slice('lint:'.length) : undefined;
   const interfaceId = item.requestId === undefined ? item.groupId : requests[item.requestId]?.interfaceId;
-  const interfaceName = interfaceId === undefined ? undefined : interfaces[interfaceId]?.name;
-  const projectId = item.requestId === undefined ? projectOf[item.groupId] : projectOf[item.requestId];
+  const containerName =
+    apiId !== undefined ? apis[apiId]?.name : interfaceId === undefined ? undefined : interfaces[interfaceId]?.name;
+  const owner = apiId ?? item.requestId ?? item.groupId;
+  const projectId = projectOf[owner];
   const projectName = projectId === undefined ? undefined : projects[projectId]?.name;
-  const segments = [projectName, interfaceName].filter((segment): segment is string => segment !== undefined);
+  const segments = [projectName, containerName].filter((segment): segment is string => segment !== undefined);
   return segments.length === 0 ? undefined : segments.join(' › ');
 }
 
@@ -63,6 +68,7 @@ export function ProblemsView() {
   const items = useProblemsStore((state) => state.items);
   const requests = useProjectStore((state) => state.requests);
   const interfaces = useProjectStore((state) => state.interfaces);
+  const apis = useProjectStore((state) => state.apis);
   const projects = useProjectStore((state) => state.projects);
   const projectOf = useProjectStore((state) => state.projectOf);
   const [filter, setFilter] = useState<Filter>('all');
@@ -114,7 +120,7 @@ export function ProblemsView() {
           const Icon = severity === 'warning' ? AlertTriangle : XCircle;
           const location = locationLabel(problem);
           const requestName = requestId === undefined ? undefined : requests[requestId]?.name;
-          const breadcrumb = breadcrumbOf(item, requests, interfaces, projects, projectOf);
+          const breadcrumb = breadcrumbOf(item, requests, interfaces, apis, projects, projectOf);
           const body = (
             <>
               <Icon

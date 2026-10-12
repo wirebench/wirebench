@@ -204,7 +204,7 @@ describe('explorerMenuItems on a REST row', () => {
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
       ['Open', 'New folder', 'New request', 'Import cURL…'],
       ['Run…'],
-      ['Update Definition…', 'Import webhooks…', 'New Mock'],
+      ['Update Definition…', 'Import webhooks…', 'New Mock', 'Lint Definition'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
       ['Rename…'],
       ['Delete'],
@@ -212,6 +212,7 @@ describe('explorerMenuItems on a REST row', () => {
     const byHand = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
     expect(byHand.map((item) => item.label)).not.toContain('Update Definition…');
     expect(byHand.map((item) => item.label)).not.toContain('Import webhooks…');
+    expect(byHand.map((item) => item.label)).not.toContain('Lint Definition');
   });
 
   it('offers Import webhooks… right after Update Definition…', () => {

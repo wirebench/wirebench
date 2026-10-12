@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { EvaluateOptions, QueryResult } from './evaluate.js';
-import type { RegexWorkerResult } from './worker.js';
+import type { RegexManyWorkerResult, RegexWorkerResult } from './worker.js';
 import { forwardWorkerOutput, workerOutputOptions } from '../worker-output.js';
 
 /** Default time budget for one evaluation, matching the brief's 5s ceiling for the scratchpad. */
@@ -111,6 +111,36 @@ export function matchRegexWithTimeout(
       'error' in posted
         ? { kind: 'error', code: 'regex-invalid', message: posted.error }
         : { kind: 'matched', matched: posted.matched },
+  );
+}
+
+/** The outcome of {@link matchRegexManyWithTimeout}: one verdict per text, in order. */
+export type RegexManyMatchResult =
+  | { readonly kind: 'matched'; readonly matches: readonly boolean[] }
+  | { readonly kind: 'error'; readonly code: 'regex-timeout' | 'regex-invalid'; readonly message: string };
+
+/**
+ * Tests one `pattern` against every one of `texts` in a single worker, under one time budget for the
+ * lot. A lint's project pattern runs this way: one worker per pattern rather than per value checked.
+ * Never throws or rejects, as {@link matchRegexWithTimeout}.
+ */
+export function matchRegexManyWithTimeout(
+  pattern: string,
+  texts: readonly string[],
+  timeoutOptions?: Pick<EvaluateWithTimeoutOptions, 'timeoutMs'>,
+): Promise<RegexManyMatchResult> {
+  const timeoutMs = timeoutOptions?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return runOnWorker<RegexManyWorkerResult, RegexManyMatchResult>(
+    { job: 'regex-many', pattern, texts },
+    timeoutMs,
+    (failure) =>
+      failure.kind === 'timeout'
+        ? { kind: 'error', code: 'regex-timeout', message: `Regular expression timed out after ${timeoutMs}ms` }
+        : { kind: 'error', code: 'regex-invalid', message: failure.message },
+    (posted) =>
+      'error' in posted
+        ? { kind: 'error', code: 'regex-invalid', message: posted.error }
+        : { kind: 'matched', matches: posted.matches },
   );
 }
 

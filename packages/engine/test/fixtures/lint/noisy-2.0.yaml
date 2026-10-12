@@ -1,0 +1,18 @@
+swagger: '2.0'
+info:
+  title: Noisy
+  version: '1.0'
+host: api.noisy.test
+schemes: [http, https]
+paths:
+  /things:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              name: { type: string }
+      responses:
+        '201': { description: Made. }
