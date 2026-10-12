@@ -1260,7 +1260,7 @@ walkthrough.
 ### GitHub Actions
 
 ```yaml
-- uses: wirebench/wirebench/action@v5.0.0
+- uses: wirebench/wirebench/action@v6.0.0
   with:
     project: ./api-tests
     env: staging
@@ -1278,12 +1278,12 @@ output. Every input arrives through `env:`, never interpolated into the step's s
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v5.0.0/templates/gitlab/wirebench.gitlab-ci.yml
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v6.0.0/templates/gitlab/wirebench.gitlab-ci.yml
 
 api-tests:
   extends: .wirebench-run
   variables:
-    WIREBENCH_VERSION: '5.0.0'
+    WIREBENCH_VERSION: '6.0.0'
     WIREBENCH_PROJECT: api-tests
     WIREBENCH_ENV: staging
 ```
@@ -1300,7 +1300,7 @@ rather than relying on the `latest` default. Map a CI/CD variable to
 ```bash
 docker run --rm -v "$PWD:/work" \
   -e WIREBENCH_SECRET_BILLING_PASSWORD \
-  ghcr.io/wirebench/wirebench-cli:5.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  ghcr.io/wirebench/wirebench-cli:6.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 The image (`linux/amd64` and `linux/arm64`) runs as the non-root `node` user with `WORKDIR /work`
@@ -1312,7 +1312,7 @@ secrets with `-e`.
 
 ```bash
 WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  npx --yes @wirebench/cli@5.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  npx --yes @wirebench/cli@6.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 Works on any CI runner with Node 24 already available and no other setup — the same package the
@@ -1327,10 +1327,10 @@ Start the mocks in the background, wait for the listening line, run the tests ag
 them. On a runner with Node 24:
 
 ```bash
-npx --yes @wirebench/cli@5.0.0 mock ./project orders --port 8089 > mock.log &
+npx --yes @wirebench/cli@6.0.0 mock ./project orders --port 8089 > mock.log &
 MOCK=$!
 until grep -q '^listening ' mock.log; do sleep 0.2; done
-npx --yes @wirebench/cli@5.0.0 run ./api-tests --env mocked
+npx --yes @wirebench/cli@6.0.0 run ./api-tests --env mocked
 kill -TERM "$MOCK"; wait "$MOCK"
 ```
 
@@ -1340,7 +1340,7 @@ with exit 0:
 
 ```bash
 docker run -d --name orders-mock -p 8089:8089 -v "$PWD:/work" \
-  ghcr.io/wirebench/wirebench-cli:5.0.0 mock ./project orders --port 8089
+  ghcr.io/wirebench/wirebench-cli:6.0.0 mock ./project orders --port 8089
 ```
 
 A CI system's service containers start before the repository is checked out, so they cannot see the
