@@ -161,6 +161,8 @@ export function openForwardConnection(options: DialOptions & ForwardConnectionOp
     forwardOut(client, socket, target.host, target.port).then(
       (channel) => join(socket, channel),
       (error: Error) => {
+        // Uncounted now, so the status that carries lastError already reads the socket as gone.
+        running.sockets.delete(socket);
         socket.destroy();
         recordError(running, error.message);
       },
