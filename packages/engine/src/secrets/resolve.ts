@@ -173,6 +173,26 @@ export async function resolveAuthConfig(
         ...(password !== undefined ? { password } : {}),
       };
     }
+    case 'aws-sigv4': {
+      const accessKeyId = await requireSecret(auth.accessKeyIdRef, getSecret);
+      const secretAccessKey = await requireSecret(auth.secretAccessKeyRef, getSecret);
+      if (accessKeyId === undefined || secretAccessKey === undefined) return undefined;
+      const sessionToken = await requireSecret(auth.sessionTokenRef, getSecret);
+      return {
+        type: 'aws-sigv4',
+        region: auth.region,
+        service: auth.service,
+        accessKeyId,
+        secretAccessKey,
+        ...(sessionToken !== undefined && sessionToken !== '' ? { sessionToken } : {}),
+        placement: auth.placement ?? 'header',
+        ...(auth.expiresSeconds !== undefined ? { expiresSeconds: auth.expiresSeconds } : {}),
+      };
+    }
+    case 'digest': {
+      const password = await requireSecret(auth.passwordRef, getSecret);
+      return { type: 'digest', username: auth.username ?? '', password: password ?? '' };
+    }
     default:
       return undefined;
   }

@@ -736,6 +736,17 @@ class TreeBuilder {
       case 'kerberos':
         this.ctx.report.warn(`${label}: Kerberos authentication is not represented and was written as no auth.`);
         return { type: 'none' };
+      case 'digest':
+        credential(auth.passwordRef, auth.passwordEnv);
+        return { type: 'digest', ...opt('username', auth.username) };
+      case 'aws-sigv4':
+        credential(auth.accessKeyIdRef, auth.secretAccessKeyRef, auth.sessionTokenRef);
+        if (auth.placement === 'query') {
+          this.ctx.report.warn(
+            `${label}: the presigned-URL form of AWS Signature v4 is not represented; a header signature is written.`,
+          );
+        }
+        return { type: 'aws-sigv4', region: m(auth.region), service: m(auth.service) };
     }
   }
 }

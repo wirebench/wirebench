@@ -257,7 +257,7 @@ export type UnresolvedRefWire = z.infer<typeof unresolvedRefWireSchema>;
 export const requestAuthSourceSchema = z.object({
   /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
   source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -309,10 +309,12 @@ export const requestPreflightRequestSchema = z.object({ requestId: z.string() })
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   spn: z.string().optional(),
+  /** What an AWS Signature v4 signed, masked as the headers are; the HTTP Log shows it. */
+  signature: z.object({ canonicalRequest: z.string(), stringToSign: z.string() }).optional(),
 });
 export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
 
@@ -418,12 +420,12 @@ export const headerEntrySchema = z.object({
 export type HeaderEntryWire = z.infer<typeof headerEntrySchema>;
 
 /**
- * Authentication as it crosses the bridge: the same eight schemes the engine models, with every
+ * Authentication as it crosses the bridge: the same ten schemes the engine models, with every
  * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
  * renderer can configure a token it can never read back.
  */
 export const authConfigWireSchema = z.object({
-  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest']),
   /** Kerberos: the service principal, and the ticket-cache principal to pick. */
   spn: z.string().optional(),
   principal: z.string().optional(),
@@ -452,6 +454,17 @@ export const authConfigWireSchema = z.object({
   clientAuth: z.enum(['basic', 'body']).optional(),
   pkce: z.boolean().optional(),
   refreshTokenRef: z.string().optional(),
+  /** AWS Signature v4: where it signs, and with which three secrets. */
+  region: z.string().optional(),
+  service: z.string().optional(),
+  accessKeyIdRef: z.string().optional(),
+  accessKeyIdEnv: z.string().optional(),
+  secretAccessKeyRef: z.string().optional(),
+  secretAccessKeyEnv: z.string().optional(),
+  sessionTokenRef: z.string().optional(),
+  sessionTokenEnv: z.string().optional(),
+  placement: z.enum(['header', 'query']).optional(),
+  expiresSeconds: z.number().int().min(1).max(604_800).optional(),
 });
 export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
 

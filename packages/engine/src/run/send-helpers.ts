@@ -12,7 +12,7 @@ import { resolveApiBaseUrl } from '../project/environments.js';
 import type { BaseUrlSource } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
 import type { AuthConfig, Project } from '../project/model.js';
-import { secretNamesIn } from '../project/properties.js';
+import { expand, secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { urlOrigin } from '../project/sequence-guards.js';
 import type { SecretPlaceholders } from '../script/send.js';
@@ -205,6 +205,9 @@ export async function authFor(
   context: RunContext,
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
+  if (configured.type === 'aws-sigv4') {
+    return reportedAuth(await resolveAuthConfig(expandSigV4(configured, context), context.host.getSecret), context);
+  }
   if (configured.type !== 'oauth2') {
     return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret), context);
   }
@@ -219,10 +222,32 @@ export async function authFor(
 }
 
 /**
+ * A SigV4 configuration with `${…}` expanded in its region and service, so an environment can pick
+ * them; a reference nothing resolves refuses the send rather than signing for a literal `${region}`.
+ *
+ * @throws WirebenchError `unresolved-properties`
+ */
+function expandSigV4(config: Extract<AuthConfig, { type: 'aws-sigv4' }>, context: RunContext): AuthConfig {
+  const scopes = scopesFor(context);
+  const region = expand(config.region, scopes);
+  const service = expand(config.service, scopes);
+  const unresolved = [...region.unresolved, ...service.unresolved].map((ref) => ref.expr);
+  if (unresolved.length > 0) {
+    throw new WirebenchError(
+      'unresolved-properties',
+      `The AWS Signature v4 region or service has property references nothing resolves: ${unresolved.join(', ')}`,
+      { details: { unresolved } },
+    );
+  }
+  return { ...config, region: region.text.trim(), service: service.text.trim() };
+}
+
+/**
  * Tells the host each credential a resolved auth puts on the wire, in the form it travels there,
  * so a server that echoes one back has it masked: an API key's value, a bearer or OAuth2 access
- * token, and Basic's `base64(user:password)`. A password is never reported bare — people choose
- * them, so one is often ordinary text — and the NTLM and Kerberos passwords never travel at all.
+ * token, Basic's `base64(user:password)`, and an AWS access key id and session token. A password is
+ * never reported bare — people choose them, so one is often ordinary text — and the NTLM, Kerberos
+ * and Digest passwords and the AWS secret key never travel at all.
  */
 export function reportedAuth(auth: SendAuth | undefined, context: RunContext): SendAuth | undefined {
   const report = context.host.onSecretValue;
@@ -239,6 +264,11 @@ export function reportedAuth(auth: SendAuth | undefined, context: RunContext): S
       break;
     case 'basic':
       report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
+      break;
+    case 'aws-sigv4':
+      // The secret key never travels; the key id and a session token do, in a header or the URL.
+      report(auth.accessKeyId);
+      if (auth.sessionToken !== undefined) report(auth.sessionToken);
       break;
     default:
       break;

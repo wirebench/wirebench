@@ -28,7 +28,7 @@ import type { ContainerBase } from '../protocol/module.js';
  * 6 shipped in 3.1.0. 7 added `examples` on a REST request: recorded responses kept beside it (#64).
  * 8 added Kerberos auth (`type: kerberos`), so an older build refuses such a project as too new.
  * 9 added `scripts` on an API, a SOAP interface and a REST or gRPC folder (#334), which an older
- * build would drop and send without.
+ * build would drop and send without, and the `aws-sigv4` and `digest` auth types (#339).
  * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
  * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.
  */
@@ -44,7 +44,8 @@ export type PropertyMap = Readonly<Record<string, string>>;
  * which walks its folder chain up to its API. A SOAP interface, endpoint or request uses
  * {@link EndpointAuth}, the subset without it.
  */
-export type AuthType = 'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2' | 'kerberos';
+export type AuthType =
+  'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2' | 'kerberos' | 'aws-sigv4' | 'digest';
 
 /** How a request or endpoint authenticates. Passwords are always `secretRef`s, never values. */
 export interface EndpointAuth {
@@ -137,12 +138,44 @@ export interface KerberosAuth {
 }
 
 /**
+ * AWS Signature Version 4 (#339): every request signed with an access key, in an `Authorization`
+ * header or as a presigned query string. All three credentials are secret references; `region` and
+ * `service` take property expansion.
+ */
+export interface AwsSigV4Auth {
+  readonly type: 'aws-sigv4';
+  readonly region: string;
+  /** The signing name of the service: `execute-api`, `s3`, `lambda`… */
+  readonly service: string;
+  readonly accessKeyIdRef?: string;
+  readonly accessKeyIdEnv?: string;
+  readonly secretAccessKeyRef?: string;
+  readonly secretAccessKeyEnv?: string;
+  /** Temporary credentials' session token; optional. */
+  readonly sessionTokenRef?: string;
+  readonly sessionTokenEnv?: string;
+  /** `header` (the default) or `query`, a presigned URL. */
+  readonly placement?: 'header' | 'query';
+  /** How long a presigned URL is valid, in seconds (1–604800); default 900. */
+  readonly expiresSeconds?: number;
+}
+
+/** HTTP Digest (RFC 7616, #339): answered after the server's 401 challenge. The password is a reference. */
+export interface DigestAuth {
+  readonly type: 'digest';
+  readonly username?: string;
+  readonly passwordRef?: string;
+  readonly passwordEnv?: string;
+}
+
+/**
  * Authentication as configured anywhere in a project. A discriminated union on `type`, of which
  * {@link EndpointAuth} — the `none`/`basic`/`ntlm` member SOAP has always had — is one arm, so a
  * SOAP endpoint's credentials are already an `AuthConfig` and the same editor serves both
  * protocols.
  */
-export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth | KerberosAuth;
+export type AuthConfig =
+  InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth | KerberosAuth | AwsSigV4Auth | DigestAuth;
 
 /**
  * What a SOAP interface, endpoint or request may hold: every {@link AuthConfig} arm except
