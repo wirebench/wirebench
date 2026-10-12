@@ -2679,7 +2679,12 @@ export const workspaceChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('set-workspace-property'), name: z.string(), value: z.string() }),
   z.object({ kind: z.literal('remove-workspace-property'), name: z.string() }),
   z.object({ kind: z.literal('set-workspace-property-enabled'), name: z.string(), enabled: z.boolean() }),
-  z.object({ kind: z.literal('add-workspace-environment'), name: z.string() }),
+  z.object({
+    kind: z.literal('add-workspace-environment'),
+    name: z.string(),
+    /** The new environment's scope (#468): project ids it applies to. Absent = every project. */
+    projects: z.array(z.string().min(1)).optional(),
+  }),
   z.object({
     kind: z.literal('update-workspace-environment'),
     environmentId: z.string(),

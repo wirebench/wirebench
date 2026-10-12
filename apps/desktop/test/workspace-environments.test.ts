@@ -374,10 +374,12 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
 
 describe('WorkspaceService.ensureEnvironments', () => {
   it('adds only the environments the workspace lacks, matching names by slug and ignoring case', async () => {
-    const { service } = await workspaceWithCalculator();
+    const { service, projectId } = await workspaceWithCalculator();
     await service.mutate({ kind: 'add-workspace-environment', name: 'Staging' });
 
-    await expect(service.ensureEnvironments(['staging', 'Default', 'Default'])).resolves.toEqual(['Default']);
+    await expect(service.ensureEnvironments(['staging', 'Default', 'Default'], projectId)).resolves.toEqual([
+      'Default',
+    ]);
     expect(
       service
         .snapshot()

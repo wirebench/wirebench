@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { applyColorAndProtection } from '../src/main/environment-flags.js';
-import { environmentPatchSchema, workspaceEnvironmentPatchSchema } from '../src/shared/wire-base.js';
+import {
+  environmentPatchSchema,
+  workspaceChangeSchema,
+  workspaceEnvironmentPatchSchema,
+} from '../src/shared/wire-base.js';
 
 interface Env {
   readonly id: string;
@@ -48,5 +52,16 @@ describe('workspace environment patch scope (#468)', () => {
     // The environment file refuses an empty id, so the wire does too: it would not load again.
     expect(workspaceEnvironmentPatchSchema.safeParse({ projects: [''] }).success).toBe(false);
     expect(workspaceEnvironmentPatchSchema.safeParse({ projects: ['p1', ''] }).success).toBe(false);
+  });
+});
+
+describe('workspace environment creation scope (#468)', () => {
+  it('accepts a new environment with or without a project list, and refuses an empty id', () => {
+    const add = (extra: object) =>
+      workspaceChangeSchema.safeParse({ kind: 'add-workspace-environment', name: 'QA', ...extra });
+    expect(add({}).success).toBe(true);
+    expect(add({ projects: ['p1'] }).data).toEqual({ kind: 'add-workspace-environment', name: 'QA', projects: ['p1'] });
+    expect(add({ projects: [''] }).success).toBe(false);
+    expect(add({ projects: null }).success).toBe(false);
   });
 });

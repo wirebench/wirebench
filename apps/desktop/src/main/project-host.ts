@@ -23,10 +23,13 @@ import { resolveProxy, resolveTrustAnchors } from './network-options.js';
 import { endpointCandidates, resolveEndpointTargets } from './certificate-expiry.js';
 import type { KeystoreCertificates, ProjectCertificateSources } from './certificate-expiry.js';
 import {
+  appliesToProject,
+  assertEnvironmentInScope,
   createProject,
   DEFAULT_PREFERENCES,
   DynamicValues,
   enabledProperties,
+  environmentsForProject,
   generateMock,
   IMPORTED_SCRIPTS_DIR,
   isProtectedEnvironment,
@@ -47,6 +50,7 @@ import {
   WirebenchError,
   withCurrentValues,
   withSystemValuesReported,
+  workspaceForProject,
 } from '@wirebench/engine';
 import type { ProtocolRegistry } from '@wirebench/engine';
 import type {
@@ -166,8 +170,15 @@ async function isEmptyDir(dir: string): Promise<boolean> {
  *
  * A function rather than a value because the workspace is replaced on every edit — a host that
  * held a snapshot would keep routing to the environment that was active when it opened.
+ *
+ * `projectId` is the id the manifest references the project by: the key of its entry in
+ * `Workspace.activeEnvironments` and of its place in an environment's scope (#468).
  */
-export type WorkspaceContext = () => { readonly workspace: Workspace; readonly projectSlug: string } | undefined;
+export type WorkspaceContext = () =>
+  { readonly workspace: Workspace; readonly projectSlug: string; readonly projectId: string } | undefined;
+
+/** What a {@link WorkspaceContext} answers, when the project is open inside a workspace. */
+type WorkspaceContextValue = NonNullable<ReturnType<WorkspaceContext>>;
 
 /** Owns the open project: its model, its folder, its autosave timer and its watcher. */
 export class ProjectHost {
@@ -277,7 +288,7 @@ export class ProjectHost {
 
   /**
    * The URL a send of `request` would go to, resolved the way the project is actually open:
-   * through the workspace's active environment when there is a workspace context (spec §3.3 —
+   * through the project's active workspace environment when there is a workspace context (spec §3.3 —
    * a linked project's own environment wins, then the workspace environment's override for
    * `<projectSlug>/<interfaceSlug>`, then the project's own resolution), and through the
    * project's own active environment when there is not.
@@ -319,19 +330,25 @@ export class ProjectHost {
   }
 
   /**
-   * The workspace context resolution reads under `envId`. With no `envId` it is the context as
-   * it stands, so every existing caller is untouched. Inside a workspace the environments that
-   * apply are the *workspace's*, so a named `envId` is a workspace environment id: the returned
-   * context is a copy of the workspace with that environment active — the real workspace, and
-   * its active environment, are never changed. `undefined` outside a workspace.
+   * The workspace context resolution reads under `envId`, for this host's project (#468). With no
+   * `envId` the workspace's resolution slot holds the project's own active environment (or nothing),
+   * never another project's. Inside a workspace the environments that apply are the *workspace's*,
+   * so a named `envId` is a workspace environment id: it must apply to the project, and the returned
+   * context is a copy of the workspace with that environment active — the real workspace, and the
+   * project's active environment, are never changed. `undefined` outside a workspace.
+   *
+   * @throws WorkspaceError `environment-out-of-scope` when `envId` does not apply to the project,
+   * `environment-not-found` when it names no workspace environment.
    */
-  private workspaceContextFor(
-    envId: string | undefined,
-  ): { readonly workspace: Workspace; readonly projectSlug: string } | undefined {
+  private workspaceContextFor(envId: string | undefined): WorkspaceContextValue | undefined {
     const context = this.workspaceContext?.();
-    if (context === undefined || envId === undefined) {
-      return context;
+    if (context === undefined) {
+      return undefined;
     }
+    if (envId === undefined) {
+      return { ...context, workspace: workspaceForProject(context.workspace, context.projectId) };
+    }
+    assertEnvironmentInScope(context.workspace, envId, context.projectId);
     return { ...context, workspace: { ...context.workspace, activeEnvironmentId: envId } };
   }
 
@@ -394,11 +411,15 @@ export class ProjectHost {
       return { environments: [], activeId: undefined };
     }
     const { project } = this.open;
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(undefined);
+    // Inside a workspace only the environments that apply to this project count (#468).
     const source =
       context === undefined
         ? { environments: this.open.project.environments, activeId: this.open.project.activeEnvironmentId }
-        : { environments: context.workspace.environments, activeId: context.workspace.activeEnvironmentId };
+        : {
+            environments: environmentsForProject(context.workspace, context.projectId),
+            activeId: context.workspace.activeEnvironmentId,
+          };
     return {
       environments: [...source.environments]
         .sort((a, b) => a.order - b.order)
@@ -449,7 +470,7 @@ export class ProjectHost {
       current,
     );
     if (context !== undefined) {
-      // Inside a workspace the active environment is the *workspace's*, and the project
+      // Inside a workspace the active environment is the workspace's entry for this project, and the project
       // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`
       // names a workspace environment here, resolved without changing the active one.
       return resolveWorkspaceScopes({
@@ -1084,15 +1105,18 @@ export class ProjectHost {
     const open = this.require();
     const context = this.workspaceContext?.();
     // Inside a workspace its environments override this project's endpoints under
-    // `<projectSlug>/<slug>`; those overrides are this project's endpoints too.
+    // `<projectSlug>/<slug>`; those overrides are this project's endpoints too — of the
+    // environments that apply to the project only, as a send could never reach the others (#468).
     const overrides =
       context === undefined
         ? []
-        : context.workspace.environments.flatMap((environment) =>
-            Object.entries(environment.endpoints)
-              .filter(([key]) => key.startsWith(`${context.projectSlug}/`))
-              .map(([, url]) => url),
-          );
+        : context.workspace.environments
+            .filter((environment) => appliesToProject(environment, context.projectId))
+            .flatMap((environment) =>
+              Object.entries(environment.endpoints)
+                .filter(([key]) => key.startsWith(`${context.projectSlug}/`))
+                .map(([, url]) => url),
+            );
     const envIds = [undefined, ...this.sendEnvironments().environments.map((environment) => environment.id)];
     const endpoints = resolveEndpointTargets(
       endpointCandidates(open.project, overrides),

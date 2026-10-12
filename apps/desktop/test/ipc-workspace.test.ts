@@ -723,7 +723,7 @@ describe('project.* channels', () => {
         target: { projectId: 'p1' },
         source: { kind: 'file', path: fixture },
       });
-      expect(ensureWorkspaceEnvironments).toHaveBeenCalledWith(['Default', 'Staging']);
+      expect(ensureWorkspaceEnvironments).toHaveBeenCalledWith(['Default', 'Staging'], 'p1');
       expect(result).toMatchObject({
         ok: true,
         value: {
