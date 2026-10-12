@@ -86,6 +86,11 @@ All notable changes to this project are documented here. The format follows
 - **A sequence run inside a workspace names its environment in the report.** `wirebench run
   --sequence -e <environment>` looked the name up only among the project's environments, so the
   json, html and console reports left it out when the environment was the workspace's (#476).
+- **Renaming an API keeps its environment endpoint overrides.** Overrides are keyed by the API's
+  slug (`<projectSlug>/<apiSlug>` in a workspace environment), and a rename re-derives the slug, so
+  the override stopped applying and sends went to the API's own base URL. A rename of a REST,
+  WebSocket or gRPC API now moves its keys in the project's environments and in every workspace
+  environment (#477).
 
 ## [6.0.0] - 2026-10-12
 
