@@ -250,6 +250,39 @@ describe('wirebench run --sequence', () => {
     expect(mixed.stderr).toContain('--sequence cannot be combined with request selectors');
   });
 
+  it('names the workspace environment it ran under in the report (#476)', async () => {
+    const shop = await shopProject({ checkout: CHECKOUT });
+    const root = await mkdtemp(join(tmpdir(), 'wirebench-cli-seq-ws-'));
+    temps.push(root);
+    const dir = join(root, 'projects', 'shop');
+    await cp(shop, dir, { recursive: true });
+    await writeFile(
+      join(root, 'workspace.yaml'),
+      [
+        'formatVersion: 3',
+        'id: WS1',
+        'name: Team',
+        'createdAt: 2026-09-18T00:00:00.000Z',
+        'properties: {}',
+        'projects:',
+        '  - id: SHOPPROJ01',
+        '    slug: shop',
+        '    source: internal',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(join(root, 'environments'));
+    await writeFile(
+      join(root, 'environments', 'ci.yaml'),
+      ['id: WSENV1', 'name: CI', 'order: 0', 'endpoints: {}', 'properties:', `  baseUrl: ${demo.url}`, ''].join('\n'),
+    );
+    const report = join(root, 'report.json');
+    const { code } = await runCli(['run', dir, '-e', 'CI', '--sequence', 'checkout', '--reporter', `json=${report}`]);
+    expect(code).toBe(0);
+    const json = JSON.parse(await readFile(report, 'utf8')) as { environment?: string };
+    expect(json.environment).toBe('CI');
+  });
+
   it('lists the secrets a sequence needs', async () => {
     const dir = await shopProject({ checkout: CHECKOUT });
     const { code, stdout } = await runCli(['secrets', 'list', dir, '--sequence', 'checkout', '-e', 'local']);

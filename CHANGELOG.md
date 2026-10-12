@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   (#450).
 - **Protected hosts.** A host or a group can be marked **Protected** in its form, inherited like the other
   settings; a protected host shows a shield on its card and in its details (#450).
+- **Recent SSH connections.** The Hosts tab shows the hosts you connected to lately in a **Recent** strip
+  (when, and whether the last connect failed) with a connect button and **Clear**, and gains a
+  **Recently connected** sort; **Connect to Host…** and quick-open list recent hosts first. The list is
+  kept on this machine per workspace with only the host id, time and outcome; deleted hosts drop out and
+  renamed ones show by their new name (#408).
 - **Generate an SSH key and install it on a host.** The Keychain's **Generate key…** makes an Ed25519
   (default), ECDSA (P-256, P-384, P-521) or RSA (4096, 3072, 2048 bits) key with an optional passphrase,
   and stores the private key as a workspace secret (the passphrase as `NAME_passphrase`); the private key
@@ -93,6 +98,9 @@ All notable changes to this project are documented here. The format follows
   workspace a project environment applies through the workspace environment with the same slug; a
   rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped
   applying. A rename now keeps the slug, as a workspace environment's rename already did (#475).
+- **A sequence run inside a workspace names its environment in the report.** `wirebench run
+  --sequence -e <environment>` looked the name up only among the project's environments, so the
+  json, html and console reports left it out when the environment was the workspace's (#476).
 
 ## [6.0.0] - 2026-10-12
 

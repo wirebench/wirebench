@@ -33,6 +33,7 @@ import { HostCards } from './host-cards.js';
 import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
+import { RecentSection } from './recent-section.js';
 import {
   CopyPublicKeyButton,
   GenerateKeyDialog,
@@ -67,6 +68,7 @@ const SORT_LABELS: Readonly<Record<HostsSort, string>> = {
   name: 'Name',
   address: 'Address',
   connected: 'Connected first',
+  recent: 'Recently connected',
 };
 
 const MENU_CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
@@ -326,6 +328,8 @@ function HostsPanel() {
           ))}
         </ul>
       )}
+      {/* A search is after a host by name: the recent strip would only push the matches down. */}
+      {filter.trim() === '' && selectedTags.length === 0 && <RecentSection />}
       <HostCards prefs={prefs} onPrefs={setPrefs} />
     </div>
   );
