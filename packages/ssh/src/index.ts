@@ -4,5 +4,6 @@ export * from './resolve.js';
 export * from './known-hosts.js';
 export * from './dial.js';
 export * from './session.js';
+export * from './sftp.js';
 export * from './openssh-config/index.js';
 export * from './os-release.js';
