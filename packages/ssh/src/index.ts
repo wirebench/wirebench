@@ -10,3 +10,5 @@ export * from './openssh-config/index.js';
 export * from './os-release.js';
 export * from './keygen.js';
 export * from './install.js';
+export * from './snippets.js';
+export * from './stream-masker.js';
