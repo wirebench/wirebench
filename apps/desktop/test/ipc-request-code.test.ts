@@ -216,6 +216,19 @@ describe('request.code for a REST request', () => {
     expect(getSecret).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [{ type: 'digest', username: 'admin', passwordRef: 'sec_pw' }, 'Digest is not included'],
+    [
+      { type: 'aws-sigv4', region: 'eu-west-1', service: 'execute-api', accessKeyIdRef: 'a', secretAccessKeyRef: 'b' },
+      'AWS Signature v4 is not included',
+    ],
+  ] as const)('notes %o as not carried', async (auth, note) => {
+    register(restProject(auth));
+    const { command, notes } = await code({ requestId: 'rest-1', target: 'python-requests' });
+    expect(command).not.toContain('Authorization');
+    expect(notes?.join(' ')).toContain(note);
+  });
+
   it('describes the unsaved draft, as the curl export does', async () => {
     register(restProject());
     const { command } = await code({ requestId: 'rest-1', target: 'node-axios', draft: { method: 'PUT' } });

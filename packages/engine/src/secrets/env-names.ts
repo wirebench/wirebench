@@ -71,6 +71,14 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
       return auth.username !== undefined
         ? need(auth.passwordRef, auth.passwordEnv, `kerberos password for "${auth.username}"`)
         : [];
+    case 'aws-sigv4':
+      return [
+        ...need(auth.accessKeyIdRef, auth.accessKeyIdEnv, 'AWS access key id'),
+        ...need(auth.secretAccessKeyRef, auth.secretAccessKeyEnv, 'AWS secret access key'),
+        ...need(auth.sessionTokenRef, auth.sessionTokenEnv, 'AWS session token'),
+      ];
+    case 'digest':
+      return need(auth.passwordRef, auth.passwordEnv, `digest password for "${auth.username ?? ''}"`);
     default:
       return [];
   }

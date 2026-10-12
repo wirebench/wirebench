@@ -320,6 +320,12 @@ class OcWriter {
       case 'kerberos':
       case 'jwt':
         return 'none';
+      case 'digest':
+      case 'aws-sigv4':
+        this.ctx.report.warn(
+          `${label}: ${auth.type === 'digest' ? 'Digest' : 'AWS Signature v4'} authentication is not represented and was written as no auth.`,
+        );
+        return 'none';
       case 'basic':
         return { type: 'basic', ...optional('username', auth.username) };
       case 'ntlm':

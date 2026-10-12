@@ -342,6 +342,35 @@
               },
               "required": ["type", "algorithm"],
               "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "aws-sigv4" },
+                "region": { "type": "string" },
+                "service": { "type": "string" },
+                "accessKeyIdRef": { "type": "string" },
+                "accessKeyIdEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "secretAccessKeyRef": { "type": "string" },
+                "secretAccessKeyEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "sessionTokenRef": { "type": "string" },
+                "sessionTokenEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "placement": { "type": "string", "enum": ["header", "query"] },
+                "expiresSeconds": { "type": "integer", "minimum": 1, "maximum": 604800 }
+              },
+              "required": ["type", "region", "service"],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "digest" },
+                "username": { "type": "string" },
+                "passwordRef": { "type": "string" },
+                "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+              },
+              "required": ["type"],
+              "additionalProperties": {}
             }
           ]
         },
@@ -901,6 +930,35 @@
               },
               "required": ["type", "algorithm"],
               "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "aws-sigv4" },
+                "region": { "type": "string" },
+                "service": { "type": "string" },
+                "accessKeyIdRef": { "type": "string" },
+                "accessKeyIdEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "secretAccessKeyRef": { "type": "string" },
+                "secretAccessKeyEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "sessionTokenRef": { "type": "string" },
+                "sessionTokenEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "placement": { "type": "string", "enum": ["header", "query"] },
+                "expiresSeconds": { "type": "integer", "minimum": 1, "maximum": 604800 }
+              },
+              "required": ["type", "region", "service"],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "digest" },
+                "username": { "type": "string" },
+                "passwordRef": { "type": "string" },
+                "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+              },
+              "required": ["type"],
+              "additionalProperties": {}
             }
           ]
         },
@@ -1336,6 +1394,35 @@
                 "prefix": { "type": "string" }
               },
               "required": ["type", "algorithm"],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "aws-sigv4" },
+                "region": { "type": "string" },
+                "service": { "type": "string" },
+                "accessKeyIdRef": { "type": "string" },
+                "accessKeyIdEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "secretAccessKeyRef": { "type": "string" },
+                "secretAccessKeyEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "sessionTokenRef": { "type": "string" },
+                "sessionTokenEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "placement": { "type": "string", "enum": ["header", "query"] },
+                "expiresSeconds": { "type": "integer", "minimum": 1, "maximum": 604800 }
+              },
+              "required": ["type", "region", "service"],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "digest" },
+                "username": { "type": "string" },
+                "passwordRef": { "type": "string" },
+                "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+              },
+              "required": ["type"],
               "additionalProperties": {}
             }
           ]

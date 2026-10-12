@@ -533,6 +533,8 @@ export type {
   InheritAuth,
   JwtAuth,
   KerberosAuth,
+  AwsSigV4Auth,
+  DigestAuth,
   OAuth2Auth,
   Project,
   ProjectSettings,

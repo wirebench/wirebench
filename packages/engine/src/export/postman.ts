@@ -260,6 +260,13 @@ class PostmanWriter {
         return { type: 'bearer', bearer: attrs({ token: '' }) };
       case 'api-key':
         return { type: 'apikey', apikey: attrs({ key: auth.name, value: '', in: auth.in }) };
+      case 'digest':
+        return { type: 'digest', digest: attrs({ username: auth.username ?? '', password: '' }) };
+      case 'aws-sigv4':
+        return {
+          type: 'awsv4',
+          awsv4: attrs({ accessKey: '', secretKey: '', sessionToken: '', region: auth.region, service: auth.service }),
+        };
       case 'oauth2': {
         const grant =
           auth.grant === 'client-credentials'

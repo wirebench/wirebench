@@ -67,6 +67,9 @@ const PLAINTEXT_SECRET_KEYS = [
   'client_secret',
   'apiKey',
   'refreshToken',
+  'accessKeyId',
+  'secretAccessKey',
+  'sessionToken',
 ];
 
 /** Adds the {@link PLAINTEXT_SECRET_KEYS} rejection to one authentication schema. */
@@ -165,6 +168,33 @@ const jwtAuthSchema = refuseSecretValues(
   }),
 );
 
+/** AWS Signature Version 4 (#339): every credential a reference. */
+const awsSigV4AuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('aws-sigv4'),
+    region: z.string(),
+    service: z.string(),
+    accessKeyIdRef: z.string().optional(),
+    accessKeyIdEnv: envName,
+    secretAccessKeyRef: z.string().optional(),
+    secretAccessKeyEnv: envName,
+    sessionTokenRef: z.string().optional(),
+    sessionTokenEnv: envName,
+    placement: z.enum(['header', 'query']).optional(),
+    expiresSeconds: z.number().int().min(1).max(604_800).optional(),
+  }),
+);
+
+/** HTTP Digest (#339): the password only ever a reference. */
+const digestAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('digest'),
+    username: z.string().optional(),
+    passwordRef: z.string().optional(),
+    passwordEnv: envName,
+  }),
+);
+
 /**
  * Authentication as persisted anywhere a project configures it. `endpointAuthSchema` is one arm,
  * so a file written before the REST client — which only ever held `none`/`basic`/`ntlm` — parses
@@ -179,6 +209,8 @@ export const authConfigSchema = z.union([
   oauth2AuthSchema,
   kerberosAuthSchema,
   jwtAuthSchema,
+  awsSigV4AuthSchema,
+  digestAuthSchema,
 ]);
 
 /**
@@ -195,6 +227,8 @@ export const soapOwnerAuthSchema = z.union([
   apiKeyAuthSchema,
   oauth2AuthSchema,
   kerberosAuthSchema,
+  awsSigV4AuthSchema,
+  digestAuthSchema,
 ]);
 
 /**

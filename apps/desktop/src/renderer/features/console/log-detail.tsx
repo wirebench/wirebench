@@ -103,16 +103,46 @@ function RawPane({ label, base64 }: { readonly label: string; readonly base64: s
   );
 }
 
-function ExchangeHeaders({ http }: { readonly http: HttpExchangeWire }) {
+/** What an AWS Signature v4 signed (#339), masked in main as the headers are. */
+interface SignatureWire {
+  readonly canonicalRequest: string;
+  readonly stringToSign: string;
+}
+
+function ExchangeHeaders({
+  http,
+  signature,
+}: {
+  readonly http: HttpExchangeWire;
+  readonly signature?: SignatureWire | undefined;
+}) {
   return (
-    <div className="grid grid-cols-2 gap-3 p-2">
-      <HeaderTable
-        label="Request headers"
-        testId="log-detail-request-headers"
-        rows={Object.entries(http.request.headers)}
-      />
-      <HeaderTable label="Response headers" testId="log-detail-response-headers" rows={http.rawHeaders} />
-    </div>
+    <>
+      <div className="grid grid-cols-2 gap-3 p-2">
+        <HeaderTable
+          label="Request headers"
+          testId="log-detail-request-headers"
+          rows={Object.entries(http.request.headers)}
+        />
+        <HeaderTable label="Response headers" testId="log-detail-response-headers" rows={http.rawHeaders} />
+      </div>
+      {signature !== undefined && (
+        <div data-testid="log-detail-signature" className="grid grid-cols-2 gap-3 p-2">
+          <section aria-label="Canonical request">
+            <h3 className="mb-1 text-xs tracking-wider text-fg-subtle uppercase">Canonical request</h3>
+            <pre className="max-h-64 overflow-auto rounded bg-surface-raised p-2 font-mono text-xs whitespace-pre-wrap text-fg-default">
+              {signature.canonicalRequest}
+            </pre>
+          </section>
+          <section aria-label="String to sign">
+            <h3 className="mb-1 text-xs tracking-wider text-fg-subtle uppercase">String to sign</h3>
+            <pre className="max-h-64 overflow-auto rounded bg-surface-raised p-2 font-mono text-xs whitespace-pre-wrap text-fg-default">
+              {signature.stringToSign}
+            </pre>
+          </section>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -285,7 +315,9 @@ function ExchangeDetailTabs({
   }
   return (
     <>
-      {tab === 'headers' && <ExchangeHeaders http={exchange.http} />}
+      {tab === 'headers' && (
+        <ExchangeHeaders http={exchange.http} signature={'auth' in exchange ? exchange.auth?.signature : undefined} />
+      )}
       {tab === 'request' && <RawPane label="Raw request" base64={exchange.http.rawRequestBase64} />}
       {tab === 'response' && <RawPane label="Raw response" base64={exchange.http.rawResponseBase64} />}
       {tab === 'timing' && <ExchangeTiming http={exchange.http} />}

@@ -49,7 +49,20 @@ export type SendAuth =
       readonly prefix: string;
     }
   /** Kerberos over Negotiate (#40): the OS ticket, or on Windows an explicit account. */
-  | KerberosSendAuth;
+  | KerberosSendAuth
+  /** AWS Signature Version 4 (#339): the transport signs the request as it goes out. */
+  | {
+      readonly type: 'aws-sigv4';
+      readonly region: string;
+      readonly service: string;
+      readonly accessKeyId: string;
+      readonly secretAccessKey: string;
+      readonly sessionToken?: string;
+      readonly placement: 'header' | 'query';
+      readonly expiresSeconds?: number;
+    }
+  /** HTTP Digest (#339): answered after the server's challenge, or straight away with a remembered nonce. */
+  | { readonly type: 'digest'; readonly username: string; readonly password: string };
 
 /** What authentication actually did during one send, for the UI to explain the exchange. */
 export interface AuthSummary {
@@ -57,10 +70,12 @@ export interface AuthSummary {
   /** True when the server answered the first attempt with a 401 challenge. */
   readonly challenged: boolean;
   /**
-   * How many HTTP attempts the send made: 1 preemptive/unchallenged, 2 after a Basic
+   * How many HTTP attempts the send made: 1 preemptive/unchallenged, 2 after a Basic or Digest
    * challenge or for the Kerberos two-leg exchange, 3 for a full NTLM handshake (bare, Type 1, Type 3).
    */
   readonly attempts: 1 | 2 | 3;
   /** The service principal Kerberos asked for, in the platform's form. Not a secret. */
   readonly spn?: string;
+  /** What an AWS Signature v4 signed, for the HTTP Log. Holds no secret but a session token. */
+  readonly signature?: { readonly canonicalRequest: string; readonly stringToSign: string };
 }

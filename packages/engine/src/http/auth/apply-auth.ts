@@ -6,8 +6,9 @@
  * {@link applyAuth} takes credentials the host has already resolved (values, not `secretRef`s) and
  * says what to add to the headers or the query string.
  *
- * Basic, NTLM and Kerberos are deliberately *not* applied here: they may need a challenge round trip, which
- * is the transport's job (`http/auth/*`), and this module never touches the network.
+ * Basic, NTLM, Kerberos and Digest are deliberately *not* applied here: they may need a challenge round
+ * trip, which is the transport's job (`http/auth/*`), and this module never touches the network. Nor is
+ * AWS Signature v4: it signs the request exactly as it goes out, so the transport applies it last.
  */
 
 import type { AuthConfig } from '../../project/model.js';
@@ -47,8 +48,8 @@ export interface AppliedAuth {
   /** Query rows to append, for an API key or a JWT that travels in the query string. */
   readonly query: readonly KeyValueEntry[];
   /**
-   * Credentials the transport has to handle itself, because they may need a challenge round trip:
-   * Basic, NTLM and Kerberos. Passed through to `sendHttp` untouched.
+   * Credentials the transport has to handle itself, because they may need a challenge round trip
+   * (Basic, NTLM, Kerberos, Digest) or sign the final request (AWS Signature v4).
    */
   readonly transportAuth?: SendAuth;
 }
@@ -91,7 +92,7 @@ export function applyAuth(auth: SendAuth | undefined): AppliedAuth {
  */
 export function missingSecretRef(
   auth: AuthConfig,
-): 'tokenRef' | 'valueRef' | 'clientSecretRef' | 'secretRef' | 'keystoreRef' | undefined {
+): 'tokenRef' | 'valueRef' | 'clientSecretRef' | 'accessKeyIdRef' | 'secretAccessKeyRef' | 'secretRef' | 'keystoreRef' | undefined {
   switch (auth.type) {
     case 'bearer':
       return auth.tokenRef === undefined || auth.tokenRef === '' ? 'tokenRef' : undefined;
@@ -108,6 +109,12 @@ export function missingSecretRef(
         return auth.secretRef === undefined || auth.secretRef === '' ? 'secretRef' : undefined;
       }
       return auth.keystoreRef === undefined || auth.keystoreRef === '' ? 'keystoreRef' : undefined;
+    case 'aws-sigv4':
+      return auth.accessKeyIdRef === undefined || auth.accessKeyIdRef === ''
+        ? 'accessKeyIdRef'
+        : auth.secretAccessKeyRef === undefined || auth.secretAccessKeyRef === ''
+          ? 'secretAccessKeyRef'
+          : undefined;
     default:
       return undefined;
   }
