@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { isEnvironmentColor } from './environment-colors.js';
+import { JWT_ALGORITHM_NAMES } from './jwt-algorithms.js';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
@@ -266,7 +267,7 @@ export type UnresolvedRefWire = z.infer<typeof unresolvedRefWireSchema>;
 export const requestAuthSourceSchema = z.object({
   /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
   source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest', 'jwt']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -318,7 +319,7 @@ export const requestPreflightRequestSchema = z.object({ requestId: z.string() })
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest', 'jwt']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   spn: z.string().optional(),
@@ -429,12 +430,24 @@ export const headerEntrySchema = z.object({
 export type HeaderEntryWire = z.infer<typeof headerEntrySchema>;
 
 /**
- * Authentication as it crosses the bridge: the same ten schemes the engine models, with every
+ * Authentication as it crosses the bridge: the same eleven schemes the engine models, with every
  * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
  * renderer can configure a token it can never read back.
  */
 export const authConfigWireSchema = z.object({
-  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest']),
+  type: z.enum([
+    'inherit',
+    'none',
+    'basic',
+    'ntlm',
+    'bearer',
+    'api-key',
+    'oauth2',
+    'kerberos',
+    'aws-sigv4',
+    'digest',
+    'jwt',
+  ]),
   /** Kerberos: the service principal, and the ticket-cache principal to pick. */
   spn: z.string().optional(),
   principal: z.string().optional(),
@@ -463,13 +476,22 @@ export const authConfigWireSchema = z.object({
   audience: z.string().optional(),
   clientAuth: z.enum(['basic', 'body', 'client-secret-jwt', 'private-key-jwt', 'tls-client-auth']).optional(),
   clientKeystoreId: z.string().optional(),
-  /** The engine's `JWT_ALGS`, spelled out: shared code here must not import the engine's values. */
-  assertionAlg: z
-    .enum(['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512'])
-    .optional(),
+  assertionAlg: z.enum(JWT_ALGORITHM_NAMES).optional(),
   pkce: z.boolean().optional(),
   refreshTokenRef: z.string().optional(),
   refreshTokenEnv: z.string().optional(),
+  /** JWT (#348): `name` and `in` above are its placement; the secret and the key are references. */
+  algorithm: z.enum(JWT_ALGORITHM_NAMES).optional(),
+  secretRef: z.string().optional(),
+  secretEnv: z.string().optional(),
+  keystoreRef: z.string().optional(),
+  alias: z.string().optional(),
+  header: z.string().optional(),
+  claims: z.string().optional(),
+  issuedAt: z.boolean().optional(),
+  expiresInSeconds: z.number().int().nonnegative().optional(),
+  jwtId: z.boolean().optional(),
+  prefix: z.string().optional(),
   /** AWS Signature v4: where it signs, and with which three secrets. */
   region: z.string().optional(),
   service: z.string().optional(),
@@ -1861,6 +1883,8 @@ export const keystoreAliasWireSchema = z.object({
   notAfter: z.string(),
   fingerprintSha256: z.string(),
   hasPrivateKey: z.boolean(),
+  /** A PEM file holding only a private key (#348): something to sign a JWT with, no certificate. */
+  keyOnly: z.boolean().optional(),
 });
 export type KeystoreAliasWire = z.infer<typeof keystoreAliasWireSchema>;
 export const keystoresInspectResponseSchema = z.object({

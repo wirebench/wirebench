@@ -133,11 +133,14 @@ export function loadPem(bytes: Uint8Array, password?: string): Keystore {
   const certificates = messages
     .filter((message) => message.type === 'CERTIFICATE')
     .map((message) => forge.pki.certificateFromPem(toPem(message)));
-  if (certificates.length === 0) {
-    throw invalid('The PEM bundle holds no certificate.');
-  }
   const keyMessage = messages.find((message) => KEY_TYPES.has(message.type));
   const keyPem = keyMessage === undefined ? undefined : keyPemOf(keyMessage, password);
+  if (certificates.length === 0) {
+    if (keyPem === undefined) {
+      throw invalid('The PEM bundle holds no certificate and no private key.');
+    }
+    return { type: 'pem', aliases: [keyOnlyAlias(keyPem)] };
+  }
 
   const leaf =
     (keyPem === undefined ? undefined : certificates.find((cert) => keyPemMatchesCertificate(keyPem, cert))) ??
@@ -156,4 +159,22 @@ export function loadPem(bytes: Uint8Array, password?: string): Keystore {
     hasPrivateKey: keyPem !== undefined,
   };
   return { type: 'pem', aliases: [alias] };
+}
+
+/** A bundle that is just a private key: something to sign with, with no certificate to present. */
+function keyOnlyAlias(keyPem: string): KeystoreAlias {
+  return {
+    alias: 'key-0',
+    certPem: '',
+    keyPem,
+    chainPem: [],
+    subject: '',
+    issuer: '',
+    notBefore: '',
+    notAfter: '',
+    serial: '',
+    fingerprintSha256: '',
+    hasPrivateKey: true,
+    keyOnly: true,
+  };
 }

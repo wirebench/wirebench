@@ -682,7 +682,7 @@ class TreeBuilder {
     return out;
   }
 
-  /** `auth` with every credential field dropped and its text rewritten; Kerberos becomes no auth. */
+  /** `auth` with every credential field dropped and its text rewritten; Kerberos and a JWT become no auth. */
   private auth(auth: AuthConfig, label: string): AuthConfig {
     const m = (text: string): string => this.ctx.mustache(text);
     const opt = <K extends string>(key: K, value: string | undefined): Partial<Record<K, string>> =>
@@ -750,6 +750,9 @@ class TreeBuilder {
       }
       case 'kerberos':
         this.ctx.report.warn(`${label}: Kerberos authentication is not represented and was written as no auth.`);
+        return { type: 'none' };
+      case 'jwt':
+        this.ctx.report.warn(`${label}: the client-signed JWT is not represented and was written as no auth.`);
         return { type: 'none' };
       case 'digest':
         credential(auth.passwordRef, auth.passwordEnv);

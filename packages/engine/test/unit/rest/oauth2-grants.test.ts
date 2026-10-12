@@ -123,8 +123,8 @@ describe('client authentication', () => {
 });
 
 describe('clientAssertion', () => {
-  it('signs client_secret_jwt with HS256 by default and the RFC 7523 claims', () => {
-    const jwt = clientAssertion({
+  it('signs client_secret_jwt with HS256 by default and the RFC 7523 claims', async () => {
+    const jwt = await clientAssertion({
       config: { ...base, clientAuth: 'client-secret-jwt' },
       secret: 'shh',
       now: NOW,
@@ -143,24 +143,24 @@ describe('clientAssertion', () => {
     expect(signature.equals(createHmac('sha256', 'shh').update(input).digest())).toBe(true);
   });
 
-  it('honours an HS override and refuses an asymmetric one for a secret', () => {
-    const jwt = clientAssertion({
+  it('honours an HS override and refuses an asymmetric one for a secret', async () => {
+    const jwt = await clientAssertion({
       config: { ...base, clientAuth: 'client-secret-jwt', assertionAlg: 'HS512' },
       secret: 'shh',
       now: NOW,
     });
     expect(jwtParts(jwt).header['alg']).toBe('HS512');
-    expect(() =>
+    await expect(
       clientAssertion({ config: { ...base, clientAuth: 'client-secret-jwt', assertionAlg: 'RS256' }, secret: 's' }),
-    ).toThrow(code('oauth2-assertion-alg'));
-    expect(() => clientAssertion({ config: { ...base, clientAuth: 'client-secret-jwt' } })).toThrow(
+    ).rejects.toThrow(code('oauth2-assertion-alg'));
+    await expect(clientAssertion({ config: { ...base, clientAuth: 'client-secret-jwt' } })).rejects.toThrow(
       code('oauth2-client-secret-missing'),
     );
   });
 
-  it('signs private_key_jwt with the key, picks the algorithm from it, and names the certificate as kid', () => {
+  it('signs private_key_jwt with the key, picks the algorithm from it, and names the certificate as kid', async () => {
     const id = identity();
-    const jwt = clientAssertion({ config: { ...base, clientAuth: 'private-key-jwt' }, identity: id, now: NOW });
+    const jwt = await clientAssertion({ config: { ...base, clientAuth: 'private-key-jwt' }, identity: id, now: NOW });
     const { header, input, signature } = jwtParts(jwt);
     const certificate = new X509Certificate(id.cert);
     expect(header).toEqual({
@@ -171,28 +171,28 @@ describe('clientAssertion', () => {
     expect(verify('sha256', Buffer.from(input), certificate.publicKey, signature)).toBe(true);
   });
 
-  it('refuses an HS override for a private key, and a missing identity', () => {
-    expect(() =>
+  it('refuses an HS override for a private key, and a missing identity', async () => {
+    await expect(
       clientAssertion({
         config: { ...base, clientAuth: 'private-key-jwt', assertionAlg: 'HS256' },
         identity: identity(),
       }),
-    ).toThrow(code('oauth2-assertion-alg'));
-    expect(() => clientAssertion({ config: { ...base, clientAuth: 'private-key-jwt' } })).toThrow(
+    ).rejects.toThrow(code('oauth2-assertion-alg'));
+    await expect(clientAssertion({ config: { ...base, clientAuth: 'private-key-jwt' } })).rejects.toThrow(
       code('oauth2-client-key-missing'),
     );
   });
 });
 
 describe('clientAuthSecrets', () => {
-  it('passes the secret through for basic and body, and makes a fresh assertion for the JWT methods', () => {
-    expect(clientAuthSecrets(base, { clientSecret: 's' })).toEqual({ clientSecret: 's' });
+  it('passes the secret through for basic and body, and makes a fresh assertion for the JWT methods', async () => {
+    expect(await clientAuthSecrets(base, { clientSecret: 's' })).toEqual({ clientSecret: 's' });
     const config: OAuth2Auth = { ...base, clientAuth: 'client-secret-jwt' };
-    const first = clientAuthSecrets(config, { clientSecret: 's', now: NOW });
-    const second = clientAuthSecrets(config, { clientSecret: 's', now: NOW });
+    const first = await clientAuthSecrets(config, { clientSecret: 's', now: NOW });
+    const second = await clientAuthSecrets(config, { clientSecret: 's', now: NOW });
     expect(first.clientAssertion).toBeDefined();
     expect(first.clientAssertion).not.toBe(second.clientAssertion);
-    expect(clientAuthSecrets({ ...base, clientAuth: 'tls-client-auth' }, { clientSecret: 's' })).toEqual({});
+    expect(await clientAuthSecrets({ ...base, clientAuth: 'tls-client-auth' }, { clientSecret: 's' })).toEqual({});
   });
 });
 

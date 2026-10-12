@@ -71,6 +71,18 @@ describe('applyAuth', () => {
     });
   });
 
+  it('puts a JWT in its header with its prefix, bare, or in the query', () => {
+    const jwt = { type: 'jwt', token: 'j.w.t' } as const;
+    expect(applyAuth({ ...jwt, in: 'header', name: 'Authorization', prefix: 'Bearer' }).headers).toEqual({
+      Authorization: 'Bearer j.w.t',
+    });
+    expect(applyAuth({ ...jwt, in: 'header', name: 'X-Jwt', prefix: '' }).headers).toEqual({ 'X-Jwt': 'j.w.t' });
+    expect(applyAuth({ ...jwt, in: 'query', name: 'access_token', prefix: '' })).toEqual({
+      headers: {},
+      query: [{ name: 'access_token', value: 'j.w.t', enabled: true }],
+    });
+  });
+
   it('hands Basic and NTLM to the transport, which owns the challenge flow', () => {
     const basic = { type: 'basic', username: 'u', password: 'p', preemptive: true } as const;
     expect(applyAuth(basic)).toEqual({ headers: {}, query: [], transportAuth: basic });
@@ -94,6 +106,14 @@ describe('missingSecretRef', () => {
         pkce: true,
       }),
     ).toBe('clientSecretRef');
+  });
+
+  it('reports the HMAC secret or the keystore a JWT still needs', () => {
+    const jwt = { type: 'jwt', claims: '{}', issuedAt: true, jwtId: false, in: 'header' } as const;
+    expect(missingSecretRef({ ...jwt, algorithm: 'HS256' })).toBe('secretRef');
+    expect(missingSecretRef({ ...jwt, algorithm: 'HS256', secretRef: 'sec_1' })).toBeUndefined();
+    expect(missingSecretRef({ ...jwt, algorithm: 'PS256', secretRef: 'sec_1' })).toBe('keystoreRef');
+    expect(missingSecretRef({ ...jwt, algorithm: 'PS256', keystoreRef: 'ks' })).toBeUndefined();
   });
 
   it('accepts a public OAuth2 client, which has no secret to give', () => {

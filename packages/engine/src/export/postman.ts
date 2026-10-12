@@ -242,6 +242,7 @@ class PostmanWriter {
       case 'inherit':
       case 'none':
       case 'kerberos':
+      case 'jwt':
         return { type: 'noauth' };
       case 'basic':
         return { type: 'basic', basic: attrs({ username: auth.username ?? '', password: '' }) };

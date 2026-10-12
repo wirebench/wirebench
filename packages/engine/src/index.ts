@@ -531,6 +531,7 @@ export type {
   HeaderEntry,
   IdGenerator,
   InheritAuth,
+  JwtAuth,
   KerberosAuth,
   AwsSigV4Auth,
   DigestAuth,
@@ -668,8 +669,35 @@ export type {
   TokenResponseInput,
   TokenSet,
 } from './http/auth/oauth2.js';
-export { JWT_ALGS, defaultAlgFor, signJwt } from './http/auth/jwt-sign.js';
-export type { JwtAlg, SignJwtInput } from './http/auth/jwt-sign.js';
+export {
+  JWT_ALGORITHMS,
+  JWT_REUSE_MARGIN_SECONDS,
+  createJwtSource,
+  defaultAlgFor,
+  isHmacAlgorithm,
+  privateKeyOf,
+  signJwt,
+  templateJwtJson,
+} from './http/auth/jwt.js';
+export {
+  JWT_DEFAULT_HEADER,
+  JWT_DEFAULT_PREFIX,
+  JWT_DEFAULT_QUERY,
+  jwtSendAuth,
+  jwtTokenRequest,
+  signConfiguredJwt,
+} from './http/auth/jwt-auth.js';
+export type { JwtAuthDeps, JwtSendAuth } from './http/auth/jwt-auth.js';
+export type {
+  JwtAlgorithm,
+  JwtObject,
+  JwtSigningKey,
+  JwtSource,
+  JwtSourceOptions,
+  JwtTokenRequest,
+  SignJwtInput,
+  TemplatedJwtJson,
+} from './http/auth/jwt.js';
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
@@ -1332,6 +1360,7 @@ export {
   loadPem,
   loadPkcs12,
   selectAlias,
+  signingKeyOf,
   toTlsClientIdentity,
 } from './keystore/index.js';
 export type {

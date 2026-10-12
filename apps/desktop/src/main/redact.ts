@@ -67,6 +67,9 @@ export function recordAuthValues(auth: SendAuth | undefined): void {
     case 'oauth2':
       recordSecretValue(auth.accessToken);
       return;
+    case 'jwt':
+      recordSecretValue(auth.token);
+      return;
     case 'basic':
       recordSecretValue(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
       return;

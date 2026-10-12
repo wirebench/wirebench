@@ -58,6 +58,7 @@ describe('AuthFields', () => {
       'Kerberos',
       'Digest',
       'AWS Signature v4',
+      'JWT (signed here)',
     ]);
 
     rerender(<AuthFields scope="Request" inheritable auth={undefined} onChange={vi.fn()} />);

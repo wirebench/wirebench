@@ -56,6 +56,16 @@ function headerRows(
           enabled: true,
         });
         break;
+      case 'jwt':
+        if (input.auth.in === 'header') {
+          const token = redact ? GRPC_COMMAND_REDACTED : input.auth.token;
+          rows.push({
+            name: input.auth.name.toLowerCase(),
+            value: input.auth.prefix === '' ? token : `${input.auth.prefix} ${token}`,
+            enabled: true,
+          });
+        }
+        break;
       case 'basic':
         rows.push({
           name: 'authorization',

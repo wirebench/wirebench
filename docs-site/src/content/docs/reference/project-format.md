@@ -199,7 +199,7 @@ guessing:
 
 > Project was created by a newer version of Wirebench (format N, this build supports M)
 
-The project format is currently **version 9**:
+The project format is currently **version 10**:
 
 1. **Version 1** — the original layout described above, without APIs or per-variable disabling.
 2. **Version 2** — every property scope gained a per-variable `disabled` list, so a variable can be
@@ -220,7 +220,8 @@ The project format is currently **version 9**:
    their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them; a version-8
    project migrates unchanged.
 10. **Version 10** — REST and SOAP auth can be Digest (`type: digest`) or AWS Signature v4
-    (`type: aws-sigv4`); a version-9 project migrates unchanged.
+    (`type: aws-sigv4`), and REST, gRPC and WebSocket auth can be a client-signed JWT (`type: jwt`);
+    a version-9 project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it
