@@ -125,6 +125,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Hosts',
     shortcut: 'Mod+Shift+H',
   },
+  'ssh.openFiles': {
+    id: 'ssh.openFiles',
+    label: 'Open Files on Host…',
+    category: 'Hosts',
+  },
   'view.showCookies': {
     id: 'view.showCookies',
     label: 'Show Cookies',

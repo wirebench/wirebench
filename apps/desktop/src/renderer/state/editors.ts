@@ -76,7 +76,8 @@ export interface EditorTab {
     | 'mock'
     | 'runner'
     | 'cookies'
-    | 'ssh-terminal';
+    | 'ssh-terminal'
+    | 'ssh-files';
   readonly title: string;
   /**
    * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):
@@ -108,8 +109,8 @@ export interface EditorTab {
    */
   readonly hookId?: string;
   /**
-   * Set when `kind` is `'ssh-terminal'`: the host this terminal is connected to. Session only: a
-   * session is a moment, so the tab is never persisted.
+   * Set when `kind` is `'ssh-terminal'` or `'ssh-files'`: the host this terminal or Files tab is connected
+   * to. Session only: a session is a moment, so the tab is never persisted.
    */
   readonly hostId?: string;
   /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */

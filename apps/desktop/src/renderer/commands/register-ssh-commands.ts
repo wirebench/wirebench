@@ -1,5 +1,6 @@
 import { catalogEntry } from '@shared/command-catalog.js';
 import { editHost, openTerminalFor } from '../features/ssh/connect.js';
+import { openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { registerCommand } from '../lib/commands.js';
 import type { PaletteMode } from '../shell/command-palette.js';
@@ -12,7 +13,7 @@ function revealHosts(): void {
 }
 
 /**
- * Registers the `ssh.*` commands of the Hosts area: the host / group dialog, and a host's terminal.
+ * Registers the `ssh.*` commands of the Hosts area: the host / group dialog, and a host's terminal and Files tab.
  *
  * @param openPalette - Opens the command palette in the given mode; owned by the shell.
  */
@@ -58,6 +59,14 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     ...catalogEntry('ssh.connectPalette'),
     run: () => {
       openPalette('hosts');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.openFiles'),
+    run: (_context, arg) => {
+      // From the palette there is no host to name yet, so it asks which one.
+      if (typeof arg === 'string') openFiles(arg);
+      else openPalette('files-hosts');
     },
   });
 }

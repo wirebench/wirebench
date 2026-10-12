@@ -10,6 +10,7 @@ import { MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
 import { editHost, openTerminalFor } from './connect.js';
+import { openFiles } from './files/open-files.js';
 import {
   ancestorsOf,
   findHost,
@@ -44,7 +45,7 @@ interface MenuKit {
 const CONTEXT_KIT: MenuKit = ContextMenu;
 const DROPDOWN_KIT: MenuKit = DropdownMenu;
 
-/** Connect, Edit, Duplicate, Move to…, Copy address and Delete for `host`. */
+/** Connect, Open files, Edit, Duplicate, Move to…, Copy address and Delete for `host`. */
 function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly kit: MenuKit }) {
   const { file, save } = useHostsStore();
   const parent = ancestorsOf(file, 'host', host.id).at(-1);
@@ -65,6 +66,14 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
         }}
       >
         Connect
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          openFiles(host.id);
+        }}
+      >
+        Open files
       </M.Item>
       <M.Item
         className={ITEM_CLASS}

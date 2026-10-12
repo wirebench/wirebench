@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
+import { FolderOpen } from 'lucide-react';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { detectPlatform } from '../../lib/platform.js';
@@ -9,6 +10,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { connectToHost, reconnectToHost, terminalTabId } from './connect.js';
+import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
@@ -60,7 +62,8 @@ function settleAfterTeardown(hostId: string, sessionId: string | undefined): voi
   if (useEditorsStore.getState().tabs.some((t) => t.id === terminalTabId(hostId))) return;
   if (sessionId !== undefined) endSession(hostId, sessionId);
   const hosts = useHostsStore.getState();
-  if (hosts.trustPrompt?.hostId === hostId) hosts.setTrustPrompt(null);
+  // A Files tab's prompt for the same host is not this terminal's to drop.
+  if (hosts.trustPrompt?.hostId === hostId && hosts.trustPrompt.retry === undefined) hosts.setTrustPrompt(null);
 }
 
 /** The line a reconnect leaves in the scrollback, dimmed, between the old session's output and the new one's. */
@@ -329,6 +332,17 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
           closePaste();
         }}
       />
+      <div className="flex items-center justify-end border-b border-hairline px-2 py-0.5">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-sm text-fg-muted hover:bg-surface-hover hover:text-fg-default"
+          onClick={() => {
+            openFiles(hostId);
+          }}
+        >
+          <FolderOpen size={13} aria-hidden="true" /> Files
+        </button>
+      </div>
       <div className="relative min-h-0 flex-1">
         <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
         <TerminalFindBar

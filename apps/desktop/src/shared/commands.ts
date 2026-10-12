@@ -27,6 +27,7 @@ export const COMMAND_IDS = [
   'ssh.importConfig',
   'ssh.connect',
   'ssh.connectPalette',
+  'ssh.openFiles',
   'view.showCookies',
   'view.showSettings',
   'view.toggleTheme',

@@ -1,3 +1,4 @@
+import type { PaneState } from './files/files-store.js';
 import type { HostSession } from './hosts-store.js';
 
 /** How a host's session state is drawn: the dot's colour and its spoken label (tree rows, terminal tabs). */
@@ -10,4 +11,12 @@ export const SESSION_STATUS = {
 
 export function sessionStatus(session: HostSession | undefined): (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS] {
   return SESSION_STATUS[session?.state ?? 'idle'];
+}
+
+/** A Files tab's dot: connected while its SFTP session is open. */
+export function filesSessionStatus(
+  pane: Pick<PaneState, 'place' | 'status'> | undefined,
+): (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS] {
+  if (pane?.place.sessionId !== undefined) return SESSION_STATUS.open;
+  return pane?.status === 'connecting' || pane?.status === 'loading' ? SESSION_STATUS.connecting : SESSION_STATUS.idle;
 }

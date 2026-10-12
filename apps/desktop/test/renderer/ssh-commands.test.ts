@@ -66,8 +66,29 @@ describe('ssh.connectPalette', () => {
     useUiStore.setState({ enabledAreas: ['explorer', 'ssh'] } as never);
     registerShellCommands(vi.fn());
     expect(getCommand('ssh.connectPalette')).toBeDefined();
+    expect(getCommand('ssh.openFiles')).toBeDefined();
     useUiStore.setState({ enabledAreas: ['explorer'] } as never);
     registerShellCommands(vi.fn());
     expect(getCommand('ssh.connectPalette')).toBeUndefined();
+    expect(getCommand('ssh.openFiles')).toBeUndefined();
+  });
+
+  it('ssh.openFiles with no host id asks which host, in the Files picker', async () => {
+    const openPalette = vi.fn();
+    resetCommands();
+    registerSshCommands(openPalette);
+    await runCommand('ssh.openFiles', {} as never);
+    expect(openPalette).toHaveBeenCalledWith('files-hosts');
+  });
+
+  it('ssh.openFiles with a host id opens its Files tab', async () => {
+    resetCommands();
+    registerSshCommands(vi.fn());
+    useEditorsStore.getState().reset();
+    useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
+    await runCommand('ssh.openFiles', {} as never, 'a');
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'ssh-files:a', kind: 'ssh-files', title: 'a · Files', hostId: 'a' },
+    ]);
   });
 });
