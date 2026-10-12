@@ -99,7 +99,8 @@ the same way any other Kerberos client on the machine does.
 
 How the token is sent depends on where it goes:
 
-- **REST and SOAP requests** use two legs on one connection. Wirebench sends the request, and only
+- **REST and SOAP requests** use two legs on one connection, always over HTTP/1.1 (Kerberos and
+  NTLM authenticate the connection, which HTTP/2 does not allow), even with **Offer HTTP/2** on. Wirebench sends the request, and only
   after the server answers with a `Negotiate` challenge does it send the token. When the server's
   answer carries a reply token, Wirebench verifies it (mutual authentication). There is no
   preemptive mode for these requests. Once a challenge succeeded, a SOAP response line reads
