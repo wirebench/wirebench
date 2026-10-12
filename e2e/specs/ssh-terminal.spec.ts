@@ -131,7 +131,8 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   fixture.drop();
   await expect(page.getByTestId('ssh-terminal-notice')).toContainText('Reconnecting', { timeout: 30_000 });
   await expect(terminal).toContainText('reconnected', { timeout: 30_000 });
-  await expect(terminal).toContainText('echo hi');
+  // The find step's line is the last one typed before the drop (it overwrote `echo hi`).
+  await expect(terminal).toContainText('find needle and needle');
   await expect(page.getByTestId('ssh-terminal-notice')).toBeHidden();
   await expect(connected).toBeVisible();
   await terminal.click();
