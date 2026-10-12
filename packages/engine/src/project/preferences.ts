@@ -222,6 +222,10 @@ export interface TerminalPreferences {
   readonly confirmMultilinePaste: boolean;
   /** Copy the selection to the clipboard as soon as it is made. */
   readonly copyOnSelect: boolean;
+  /** Reconnect, with backoff, a session the network dropped (never one that exited or failed to sign in). */
+  readonly autoReconnect: boolean;
+  /** How many reconnect attempts a dropped session gets before the tab gives up. */
+  readonly reconnectAttempts: number;
 }
 
 /** The whole preferences document. */
@@ -301,7 +305,12 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   accounts: Object.freeze({ showInStatusBar: true }),
   secrets: Object.freeze({ sourceCacheSeconds: 300 }),
   mocks: Object.freeze({ listenOnAllInterfaces: false }),
-  terminal: Object.freeze({ confirmMultilinePaste: true, copyOnSelect: false }),
+  terminal: Object.freeze({
+    confirmMultilinePaste: true,
+    copyOnSelect: false,
+    autoReconnect: true,
+    reconnectAttempts: 10,
+  }),
   shortcuts: Object.freeze({}),
 });
 
@@ -337,6 +346,7 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'ui.historyCap': { min: 1, max: 100_000, integer: true },
   'ui.logSize': { min: LOG_SIZE_MIN, max: LOG_SIZE_MAX, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
+  'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceNumberLimit>>;
 
 /** A dotted key with an entry in {@link PREFERENCE_NUMBER_LIMITS}. */
@@ -491,7 +501,12 @@ export const preferencesSchema = z.object({
   secrets: z.object({ sourceCacheSeconds: limited('secrets.sourceCacheSeconds').optional() }).optional(),
   mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
   terminal: z
-    .object({ confirmMultilinePaste: z.boolean().optional(), copyOnSelect: z.boolean().optional() })
+    .object({
+      confirmMultilinePaste: z.boolean().optional(),
+      copyOnSelect: z.boolean().optional(),
+      autoReconnect: z.boolean().optional(),
+      reconnectAttempts: limited('terminal.reconnectAttempts').optional(),
+    })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });

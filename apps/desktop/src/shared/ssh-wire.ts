@@ -135,6 +135,8 @@ export const sshExitEventSchema = z.object({
   sessionId: z.string(),
   code: z.number().nullable(),
   signal: z.string().optional(),
+  /** `lost`: the network took the connection (the renderer may reconnect); `exit`: the shell ended; `closed`: closed here. */
+  reason: z.enum(['exit', 'lost', 'closed']),
 });
 export const sshStateEventSchema = z.object({ sessionId: z.string(), state: z.enum(['open', 'closed']) });
 

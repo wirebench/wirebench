@@ -942,6 +942,8 @@ export const events = {
     /** The remote shell ended; the session id is gone. */
     exit: defineEvent('ssh.exit', sshExitEventSchema),
     state: defineEvent('ssh.state', sshStateEventSchema),
+    /** The machine woke from sleep: a terminal waiting to reconnect tries at once. To every window. */
+    resumed: defineEvent('ssh.resumed', z.object({})),
   },
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),

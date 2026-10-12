@@ -100,6 +100,14 @@ export function sshSessionsEndOnSwitch(
   });
 }
 
+/** Tells every window when the machine wakes from sleep, so a dropped terminal reconnects at once. */
+export function forwardResume(
+  powerMonitor: { on(event: 'resume', listener: () => void): unknown },
+  broadcast: () => void,
+): void {
+  powerMonitor.on('resume', broadcast);
+}
+
 interface Live {
   readonly session: SshSession;
   readonly sender: WebContents;
@@ -231,6 +239,7 @@ export class SshService {
         sessionId,
         code: exit.code,
         ...(exit.signal ? { signal: exit.signal } : {}),
+        reason: exit.reason,
       });
       this.drop(sessionId);
     });

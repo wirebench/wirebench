@@ -144,6 +144,32 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('sets auto-reconnect and its attempt limit from the Terminal section, refusing a limit out of range', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+    const attempts = screen.getByLabelText<HTMLInputElement>('Reconnect attempts');
+    expect(attempts.value).toBe('10');
+    fireEvent.change(attempts, { target: { value: '101' } });
+    fireEvent.keyDown(attempts, { key: 'Enter' });
+    expect(screen.getByText('Enter a whole number from 1 to 100')).toBeTruthy();
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.change(attempts, { target: { value: '25' } });
+    fireEvent.keyDown(attempts, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { reconnectAttempts: 25 } } });
+    });
+
+    const reconnect = screen.getByRole('switch', { name: 'Reconnect dropped sessions' });
+    expect(reconnect.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(reconnect);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { autoReconnect: false } } });
+    });
+  });
+
   it('refuses a secret source cache lifetime above 3600 seconds, saying why, until it is fixed', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });

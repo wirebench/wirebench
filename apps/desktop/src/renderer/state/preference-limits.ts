@@ -29,4 +29,5 @@ export const PREFERENCE_LIMITS = {
   'ui.historyCap': { min: 1, max: 100_000, integer: true },
   'ui.logSize': { min: 100, max: 5000, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
+  'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceLimit>>;

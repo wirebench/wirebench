@@ -95,19 +95,40 @@ describe('secrets preferences', () => {
 });
 
 describe('terminal preferences', () => {
-  it('defaults to asking before a multi-line paste and not copying on select', () => {
-    expect(DEFAULT_PREFERENCES.terminal).toEqual({ confirmMultilinePaste: true, copyOnSelect: false });
+  it('defaults to asking before a multi-line paste, not copying on select and reconnecting 10 times', () => {
+    expect(DEFAULT_PREFERENCES.terminal).toEqual({
+      confirmMultilinePaste: true,
+      copyOnSelect: false,
+      autoReconnect: true,
+      reconnectAttempts: 10,
+    });
   });
 
-  it('reads both booleans and ignores a value of the wrong type', () => {
-    const merged = mergePreferences({ terminal: { confirmMultilinePaste: false, copyOnSelect: true } });
-    expect(merged.terminal).toEqual({ confirmMultilinePaste: false, copyOnSelect: true });
+  it('reads the booleans and ignores a value of the wrong type', () => {
+    const merged = mergePreferences({
+      terminal: { confirmMultilinePaste: false, copyOnSelect: true, autoReconnect: false },
+    });
+    expect(merged.terminal).toEqual({
+      confirmMultilinePaste: false,
+      copyOnSelect: true,
+      autoReconnect: false,
+      reconnectAttempts: 10,
+    });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
   });
 
   it('a patch of one field leaves the other alone', () => {
     const merged = mergePreferences({ terminal: { copyOnSelect: true } });
     expect(merged.terminal.confirmMultilinePaste).toBe(true);
+  });
+
+  it('reads and clamps terminal.reconnectAttempts', () => {
+    const read = (value: number) =>
+      mergePreferences({ terminal: { reconnectAttempts: value } }).terminal.reconnectAttempts;
+    expect(read(25)).toBe(25);
+    expect(read(0)).toBe(1);
+    expect(read(500)).toBe(100);
+    expect(read(2.4)).toBe(2);
   });
 });
 
@@ -247,6 +268,8 @@ describe('numeric preference limits', () => {
     ],
     [{ secrets: { sourceCacheSeconds: 3601 } }, 'secrets.sourceCacheSeconds must be a whole number from 0 to 3600'],
     [{ ssl: { expiryWarningDays: 3651 } }, 'ssl.expiryWarningDays must be a whole number from 0 to 3650'],
+    [{ terminal: { reconnectAttempts: 0 } }, 'terminal.reconnectAttempts must be a whole number from 1 to 100'],
+    [{ terminal: { reconnectAttempts: 101 } }, 'terminal.reconnectAttempts must be a whole number from 1 to 100'],
   ])('refuses %j in a patch, naming the rule', (patch, message) => {
     expect(preferencesPatchProblems(patch)).toEqual([message]);
   });

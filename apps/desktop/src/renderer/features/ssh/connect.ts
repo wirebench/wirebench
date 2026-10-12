@@ -2,6 +2,8 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { findHost, useHostsStore } from './hosts-store.js';
+import { isRetryableConnectError } from './reconnect.js';
+import type { AttemptOutcome } from './reconnect.js';
 
 interface Size {
   cols: number;
@@ -27,15 +29,23 @@ function openTrustPrompt(hostId: string, size: Size, details: Readonly<Record<st
   });
 }
 
-/**
- * Opens a shell on a host. An unknown or changed host key is not an error: it opens the trust prompt and the
- * connect resumes from {@link confirmTrust}. Any other failure becomes a Problems entry.
- */
-export async function connectToHost(hostId: string, size: Size): Promise<{ sessionId: string } | undefined> {
+/** What one connect came to. */
+type ConnectOutcome =
+  | { readonly kind: 'open'; readonly sessionId: string }
+  /** Another connect for the host is already running. */
+  | { readonly kind: 'busy' }
+  /** The host key is new or changed: the trust prompt is open. */
+  | { readonly kind: 'trust' }
+  /** Recorded in Problems. */
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string };
+
+async function connectOutcome(hostId: string, size: Size): Promise<ConnectOutcome> {
   const store = useHostsStore.getState();
   const existing = store.sessions[hostId];
-  if (existing?.state === 'connecting') return undefined;
-  if (existing?.state === 'open' && existing.sessionId !== undefined) return { sessionId: existing.sessionId };
+  if (existing?.state === 'connecting') return { kind: 'busy' };
+  if (existing?.state === 'open' && existing.sessionId !== undefined) {
+    return { kind: 'open', sessionId: existing.sessionId };
+  }
   useProblemsStore.getState().clear(`ssh:${hostId}`);
   store.setSession(hostId, { state: 'connecting' });
   let result;
@@ -44,25 +54,47 @@ export async function connectToHost(hostId: string, size: Size): Promise<{ sessi
   } catch (error) {
     store.setSession(hostId, undefined);
     const shaped = error as { code?: unknown; message?: unknown } | null;
-    recordProblem(
-      hostId,
-      typeof shaped?.code === 'string' ? shaped.code : 'ssh-connect-failed',
-      typeof shaped?.message === 'string' ? shaped.message : 'The connection could not be started',
-    );
-    return undefined;
+    const code = typeof shaped?.code === 'string' ? shaped.code : 'ssh-connect-failed';
+    const message = typeof shaped?.message === 'string' ? shaped.message : 'The connection could not be started';
+    recordProblem(hostId, code, message);
+    return { kind: 'failed', code, message };
   }
   if (result.ok) {
     store.setSession(hostId, { sessionId: result.value.sessionId, state: 'open' });
-    return result.value;
+    return { kind: 'open', sessionId: result.value.sessionId };
   }
   store.setSession(hostId, undefined);
   const { code, message, details } = result.error;
   if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
     openTrustPrompt(hostId, size, details);
-    return undefined;
+    return { kind: 'trust' };
   }
   recordProblem(hostId, code, message);
-  return undefined;
+  return { kind: 'failed', code, message };
+}
+
+/**
+ * Opens a shell on a host. An unknown or changed host key is not an error: it opens the trust prompt and the
+ * connect resumes from {@link confirmTrust}. Any other failure becomes a Problems entry.
+ */
+export async function connectToHost(hostId: string, size: Size): Promise<{ sessionId: string } | undefined> {
+  const outcome = await connectOutcome(hostId, size);
+  return outcome.kind === 'open' ? { sessionId: outcome.sessionId } : undefined;
+}
+
+/**
+ * One reconnect attempt for a dropped session. Only a failure to reach the host is retried; a host key
+ * (the trust prompt opens, as for any connect), a sign-in failure or anything else stops the loop with its
+ * reason in Problems. A connect already running elsewhere stops it too: that connect's session lands in
+ * the tab.
+ */
+export async function reconnectToHost(hostId: string, size: Size): Promise<AttemptOutcome> {
+  const outcome = await connectOutcome(hostId, size);
+  if (outcome.kind === 'open') return { kind: 'open' };
+  if (outcome.kind === 'failed' && isRetryableConnectError(outcome.code)) {
+    return { kind: 'retry', message: outcome.message };
+  }
+  return { kind: 'stop' };
 }
 
 /** Records the key the prompt showed (after the user's click), then connects again. */

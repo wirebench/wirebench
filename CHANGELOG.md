@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A terminal session the network drops reconnects on its own.** After a reset, a timeout or a jump
+  host's connection ending, the tab keeps its scrollback and tries again after 1, 2, 4, 8 and 16
+  seconds, then every 30 seconds, showing "Reconnecting… attempt 2 of 10" with a countdown, **Retry
+  now** and **Cancel**. Waking from sleep or the network coming back tries every waiting tab at once. A
+  shell that exited, a sign-in failure or a changed host key never reconnects. Preferences → Terminal
+  turns it off (`terminal.autoReconnect`) and sets the attempt limit (`terminal.reconnectAttempts`, 1 to
+  100, default 10) (#407).
+
 ## [6.0.0] - 2026-10-12
 
 ### Added

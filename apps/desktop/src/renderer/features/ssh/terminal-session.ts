@@ -1,15 +1,17 @@
 import { useHostsStore } from './hosts-store.js';
+import { reconnectNow } from './reconnect.js';
+import type { SessionEndReason } from './reconnect.js';
 
 /** What a terminal tab hands over to receive one session's output and its end. */
 export interface TerminalHandlers {
   write(data: Uint8Array): void;
-  exit(code: number | null): void;
+  exit(code: number | null, reason: SessionEndReason): void;
 }
 
 interface Pending {
   chunks: Uint8Array[];
   bytes: number;
-  exit?: number | null;
+  exit?: { code: number | null; reason: SessionEndReason };
 }
 
 /** Output kept for a session no tab has attached to yet; beyond this the oldest chunks go. */
@@ -58,14 +60,14 @@ function onData(sessionId: string, data: Uint8Array): void {
   }
 }
 
-function onExit(sessionId: string, code: number | null): void {
+function onExit(sessionId: string, code: number | null, reason: SessionEndReason): void {
   if (ended.has(sessionId)) return;
   const handlers = attached.get(sessionId);
   if (handlers) {
-    handlers.exit(code);
+    handlers.exit(code, reason);
     return;
   }
-  pendingFor(sessionId).exit = code;
+  pendingFor(sessionId).exit = { code, reason };
 }
 
 /** Routes a session's output to a terminal, first replaying what arrived before it attached. */
@@ -76,7 +78,7 @@ export function attachTerminal(sessionId: string, handlers: TerminalHandlers): v
   if (entry === undefined) return;
   pending.delete(sessionId);
   for (const chunk of entry.chunks) handlers.write(chunk);
-  if (entry.exit !== undefined) handlers.exit(entry.exit);
+  if (entry.exit !== undefined) handlers.exit(entry.exit.code, entry.exit.reason);
 }
 
 /**
@@ -95,9 +97,9 @@ export function detachTerminal(sessionId: string): void {
 
 /** Feeds an event as main would send it; tests only. */
 export function __dispatchForTest(name: 'ssh.data' | 'ssh.exit', payload: unknown): void {
-  const event = payload as { sessionId: string; data?: string; code?: number | null };
+  const event = payload as { sessionId: string; data?: string; code?: number | null; reason?: SessionEndReason };
   if (name === 'ssh.data') onData(event.sessionId, base64ToBytes(event.data ?? ''));
-  else onExit(event.sessionId, event.code ?? null);
+  else onExit(event.sessionId, event.code ?? null, event.reason ?? 'exit');
 }
 
 type Listener = (payload: unknown) => void;
@@ -108,13 +110,14 @@ interface DataEvent {
 interface ExitEvent {
   sessionId: string;
   code: number | null;
+  reason: SessionEndReason;
 }
 interface StateEvent {
   sessionId: string;
   state: 'open' | 'closed';
 }
 
-/** Listens for every session's output, end and state; called once from the shell. */
+/** Listens for every session's output, end and state, and for the moments to reconnect at once; called once from the shell. */
 export function subscribeToSshEvents(): () => void {
   // `defineEvent` types every event's `name` as `string`, so the event map cannot narrow a payload
   // by channel; the casts are the ones the other mirrors use.
@@ -123,13 +126,16 @@ export function subscribeToSshEvents(): () => void {
       onData(event.sessionId, base64ToBytes(event.data));
     }) as Listener),
     window.wirebench.on('ssh.exit', ((event: ExitEvent) => {
-      onExit(event.sessionId, event.code);
+      onExit(event.sessionId, event.code, event.reason);
     }) as Listener),
+    window.wirebench.on('ssh.resumed', reconnectNow),
     window.wirebench.on('ssh.state', ((event: StateEvent) => {
       useHostsStore.getState().noteSessionState(event.sessionId, event.state);
     }) as Listener),
   ];
+  window.addEventListener('online', reconnectNow);
   return () => {
     for (const off of offs) off();
+    window.removeEventListener('online', reconnectNow);
   };
 }

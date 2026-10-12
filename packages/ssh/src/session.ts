@@ -48,7 +48,20 @@ export interface SshSession {
    */
   exec(command: string, timeoutMs: number): Promise<string>;
   onData(listener: (data: Uint8Array) => void): () => void;
-  onExit(listener: (exit: { code: number | null; signal?: string }) => void): () => void;
+  onExit(listener: (exit: SessionExit) => void): () => void;
+}
+
+/**
+ * Why a session ended. `exit`: the shell reported an exit status or signal, or the server closed the
+ * channel with the connection still up. `lost`: a hop's connection failed or went away first (reset,
+ * timeout, keep-alive, a jump host's connection ending). `closed`: {@link SshSession.close}.
+ */
+export type SessionEndReason = 'exit' | 'lost' | 'closed';
+
+export interface SessionExit {
+  readonly code: number | null;
+  readonly signal?: string;
+  readonly reason: SessionEndReason;
 }
 
 /** ssh-host-key-new {host,keyType,fingerprint} · ssh-auth-failed {host,method} · ssh-connect-failed {host,hop} */
@@ -115,8 +128,11 @@ function connectHop(
     };
     client.once('ready', () => {
       client.removeListener('error', onConnectError);
-      // Any later error (reset, rekey failure) ends the whole chain; the session then exits via its channel.
+      // Any later error (reset, rekey failure, keep-alive timeout), or the connection going away, ends the
+      // whole chain; the session then exits via its channel.
       client.on('error', onLost);
+      client.on('end', onLost);
+      client.on('close', onLost);
       resolve(client);
     });
     client.once('error', onConnectError);
@@ -154,10 +170,17 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
   const endAll = (): void => {
     for (const client of clients) client.end();
   };
+  // ssh2 emits a hop's connection error, end and close before the socket's close tears the shell channel
+  // down, so the channel's close can tell a lost connection from a channel the server closed.
+  const link = { lost: false };
+  const onLost = (): void => {
+    link.lost = true;
+    endAll();
+  };
   try {
     let sock: Duplex | undefined;
     for (const [index, hop] of options.hops.entries()) {
-      const client = await connectHop(hop, index, options, sock, endAll);
+      const client = await connectHop(hop, index, options, sock, onLost);
       clients.push(client);
       const next = options.hops[index + 1];
       if (next) sock = await forwardOut(client, next, index + 1);
@@ -177,34 +200,42 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
           : resolve(ch),
       ),
     );
-    return wrap(channel, target, endAll);
+    return wrap(channel, target, endAll, link);
   } catch (error) {
     endAll();
     throw error;
   }
 }
 
-function wrap(channel: ClientChannel, client: Client, endAll: () => void): SshSession {
+function wrap(
+  channel: ClientChannel,
+  client: Client,
+  endAll: () => void,
+  link: { readonly lost: boolean },
+): SshSession {
   const dataListeners = new Set<(data: Uint8Array) => void>();
-  const exitListeners = new Set<(exit: { code: number | null; signal?: string }) => void>();
+  const exitListeners = new Set<(exit: SessionExit) => void>();
   let exited = false;
   let closed = false;
-  const exit = (code: number | null, signal?: string): void => {
+  let closedHere = false;
+  const exit = (code: number | null, reason: SessionEndReason, signal?: string): void => {
     if (exited) return;
     exited = true;
     closed = true;
-    for (const listener of exitListeners) listener({ code, ...(signal ? { signal } : {}) });
+    const why: SessionEndReason = closedHere ? 'closed' : reason;
+    for (const listener of exitListeners) listener({ code, ...(signal ? { signal } : {}), reason: why });
     endAll();
   };
+  const ended = (): SessionEndReason => (link.lost ? 'lost' : 'exit');
   channel.on('data', (data: Buffer) => {
     for (const listener of dataListeners) listener(data);
   });
   channel.stderr.on('data', (data: Buffer) => {
     for (const listener of dataListeners) listener(data);
   });
-  channel.on('exit', (code: number | null, signal?: string) => exit(code, signal));
-  channel.on('close', () => exit(null));
-  channel.on('error', () => exit(null));
+  channel.on('exit', (code: number | null, signal?: string) => exit(code, 'exit', signal));
+  channel.on('close', () => exit(null, ended()));
+  channel.on('error', () => exit(null, 'lost'));
   return {
     id: randomUUID(),
     write: (data) => {
@@ -215,6 +246,7 @@ function wrap(channel: ClientChannel, client: Client, endAll: () => void): SshSe
     },
     close: () => {
       closed = true;
+      closedHere = true;
       channel.end();
       endAll();
     },
