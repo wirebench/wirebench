@@ -113,8 +113,8 @@ function flagsOf(environment: { readonly color?: string | undefined; readonly pr
 
 /**
  * Copies an environment: a new one named `<name> (copy)`, then a patch carrying the original's
- * endpoints, properties (both maps replace wholesale), colour and protection. Returns the new
- * environment's id.
+ * endpoints, properties (both maps replace wholesale), colour and protection, and a workspace
+ * environment's scope (#468). Returns the new environment's id.
  */
 export async function duplicateEnvironment(environmentId: string): Promise<string | undefined> {
   const workspace = useWorkspaceStore.getState();
@@ -134,6 +134,7 @@ export async function duplicateEnvironment(environmentId: string): Promise<strin
         endpoints: { ...fromWorkspace.endpoints },
         properties: { ...fromWorkspace.properties },
         ...flagsOf(fromWorkspace),
+        ...(fromWorkspace.projects !== undefined ? { projects: [...fromWorkspace.projects] } : {}),
       },
     });
     return createdEnvironmentId;

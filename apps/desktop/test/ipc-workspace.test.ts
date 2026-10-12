@@ -50,6 +50,7 @@ const WORKSPACE: WorkspaceWire = {
   properties: {},
   disabled: [],
   environments: [],
+  activeEnvironments: {},
   projects: [
     {
       id: 'p1',
@@ -511,10 +512,15 @@ describe('workspace.* channels', () => {
     expect(service.locateProject).toHaveBeenCalledWith('p1', SENDER);
   });
 
-  it('setActiveEnvironment accepts an id or null', async () => {
+  it('setActiveEnvironment accepts an id or null, for a project or (transitionally) for all', async () => {
+    await invoke('workspace.setActiveEnvironment', { projectId: 'p1', environmentId: 'e1' });
+    await invoke('workspace.setActiveEnvironment', { projectId: 'p1', environmentId: null });
     await invoke('workspace.setActiveEnvironment', { environmentId: 'e1' });
-    await invoke('workspace.setActiveEnvironment', { environmentId: null });
-    expect(service.setActiveEnvironment.mock.calls).toEqual([['e1'], [null]]);
+    expect(service.setActiveEnvironment.mock.calls).toEqual([
+      [{ projectId: 'p1', environmentId: 'e1' }],
+      [{ projectId: 'p1', environmentId: null }],
+      [{ environmentId: 'e1' }],
+    ]);
   });
 
   it('mutate forwards the change and passes the created id through', async () => {

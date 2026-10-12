@@ -22,6 +22,7 @@ import { existsSync } from 'node:fs';
 import { cp as nodeCp, mkdir, readdir, readFile, realpath, rename as nodeRename, rm as nodeRm } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import {
+  appliesToProject,
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
   deleteShare,
@@ -63,6 +64,7 @@ import type {
   SyncSnapshotResponse,
   TeamWorkspace,
   Workspace,
+  WorkspaceLocalState,
   WorkspaceShare,
 } from '@wirebench/engine';
 import type { WebContents } from 'electron';
@@ -1187,10 +1189,51 @@ export async function openableTeamWorkspaces(
 // ——— move project to workspace ——————————————————————————————————————————————————————————
 
 /**
+ * A legacy (v1/v2) single active environment as per-project entries (#468): `environmentId` for
+ * every project of `workspace` its scope applies to. Empty when it names no environment, or the
+ * workspace has no project in its scope.
+ */
+export function legacyActiveEnvironments(workspace: Workspace, environmentId: string): Record<string, string> {
+  const environment = workspace.environments.find((candidate) => candidate.id === environmentId);
+  if (environment === undefined) {
+    return {};
+  }
+  return Object.fromEntries(
+    workspace.projects.filter((ref) => appliesToProject(environment, ref.id)).map((ref) => [ref.id, environmentId]),
+  );
+}
+
+/**
+ * `local` with a legacy active environment moved into v3 per-project entries. A v1/v2
+ * `local.yaml` id wins; the manifest's `manifestLegacyId` is adopted only when `local.yaml` holds no
+ * choice after that. Returns `local` itself when there is nothing to migrate, so the caller writes
+ * only when this returns something else (a stale v2 file is then rewritten at v3, or removed).
+ */
+export function migrateLegacyActiveEnvironment(
+  local: WorkspaceLocalState,
+  workspace: Workspace,
+  manifestLegacyId: string | undefined,
+): WorkspaceLocalState {
+  let next = local;
+  if (local.legacyActiveEnvironmentId !== undefined) {
+    const { legacyActiveEnvironmentId, ...rest } = local;
+    const entries = legacyActiveEnvironments(workspace, legacyActiveEnvironmentId);
+    next =
+      Object.keys(entries).length > 0 ? { ...rest, version: 3, activeEnvironments: entries } : { ...rest, version: 3 };
+  }
+  if (manifestLegacyId !== undefined && next.activeEnvironments === undefined) {
+    const entries = legacyActiveEnvironments(workspace, manifestLegacyId);
+    if (Object.keys(entries).length > 0) {
+      next = { ...next, version: 3, activeEnvironments: entries };
+    }
+  }
+  return next;
+}
+
+/**
  * Rewriting a v1/v2 manifest drops the active environment it still carries (`loadWorkspace` has
- * already moved it into `legacy`); this keeps it in `<dir>/local.yaml`, as `open` does — only
- * when there is no local choice yet and it still names one of the workspace's environments.
- * Call it before the rewrite, for a workspace that is not open.
+ * already moved it into `legacy`); this keeps it in `<dir>/local.yaml`, as `open` does (see
+ * {@link migrateLegacyActiveEnvironment}). Call it before the rewrite, for a workspace that is not open.
  */
 export async function keepLegacyActiveEnvironment(
   dir: string,
@@ -1198,17 +1241,10 @@ export async function keepLegacyActiveEnvironment(
   legacy: { readonly activeEnvironmentId?: string | undefined },
   fsOption: ShareDeps['fsOption'],
 ): Promise<void> {
-  const legacyId = legacy.activeEnvironmentId;
-  if (legacyId === undefined || !workspace.environments.some((environment) => environment.id === legacyId)) {
-    return;
-  }
   const local = await loadLocalState(dir, fsOption);
-  if (local.activeEnvironments === undefined) {
-    // Transitional: the one legacy active environment is recorded for every project of the workspace.
-    const activeEnvironments = Object.fromEntries(
-      (workspace.projects.length > 0 ? workspace.projects.map((ref) => ref.id) : ['']).map((id) => [id, legacyId]),
-    );
-    await saveLocalState(dir, { ...local, version: 3, activeEnvironments }, fsOption);
+  const migrated = migrateLegacyActiveEnvironment(local, workspace, legacy.activeEnvironmentId);
+  if (migrated !== local) {
+    await saveLocalState(dir, migrated, fsOption);
   }
 }
 

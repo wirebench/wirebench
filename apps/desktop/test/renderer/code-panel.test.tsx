@@ -238,6 +238,7 @@ describe('CodePanel', () => {
           { id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
         ],
         activeEnvironmentId: 'env-1',
+        activeEnvironments: {},
         projects: [],
       },
     });

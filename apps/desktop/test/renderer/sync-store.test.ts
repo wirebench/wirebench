@@ -34,6 +34,7 @@ function openWorkspace(id: string, shared = true): void {
     properties: {},
     disabled: [],
     environments: [],
+    activeEnvironments: {},
     projects: [],
     ...(shared ? { share: { kind: 'git' as const, managed: true } } : {}),
   };
@@ -290,6 +291,7 @@ describe('useSyncStore', () => {
       properties: {},
       disabled: [],
       environments: [],
+      activeEnvironments: {},
       projects: [],
       share: { kind: 'git', managed: true },
     };
@@ -323,6 +325,7 @@ describe('useSyncStore', () => {
       properties: {},
       disabled: [],
       environments: [],
+      activeEnvironments: {},
       projects: [],
       share: { kind: 'git', managed: true },
     };

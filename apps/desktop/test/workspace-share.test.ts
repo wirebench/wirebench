@@ -114,7 +114,7 @@ async function gitLog(tree: string, cwdGit = git): Promise<string> {
 /** Adds a workspace environment and makes it the active one; returns its id. */
 async function activateEnvironment(service: WorkspaceService): Promise<string> {
   const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
-  await service.setActiveEnvironment(createdEnvironmentId as string);
+  await service.setActiveEnvironment({ environmentId: createdEnvironmentId as string });
   return createdEnvironmentId as string;
 }
 
@@ -195,6 +195,24 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
     await vi.waitFor(async () => expect(await gitLog(join(dir, 'tree'))).toMatch(/Share workspace Team/), WAIT);
   });
 
+  it('commits a change to an environment’s scope alone under a scope message naming the projects', async () => {
+    const { root, service } = await newService('a');
+    const { dir, projectId } = await seedLocal(service, root);
+    await service.share({});
+    const tree = join(dir, 'tree');
+    await vi.waitFor(async () => expect(await gitLog(tree)).toMatch(/Share workspace Team/), WAIT);
+
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await vi.waitFor(async () => expect(await gitLog(tree)).toMatch(/^Add environment dev$/m), WAIT);
+
+    const environmentId = createdEnvironmentId as string;
+    await service.mutate({ kind: 'update-workspace-environment', environmentId, patch: { projects: [projectId] } });
+    await vi.waitFor(async () => expect(await gitLog(tree)).toMatch(/^Scope environment dev to Calc$/m), WAIT);
+
+    await service.mutate({ kind: 'update-workspace-environment', environmentId, patch: { projects: null } });
+    await vi.waitFor(async () => expect(await gitLog(tree)).toMatch(/^Apply environment dev to all projects$/m), WAIT);
+  });
+
   it('refuses a bad URL or branch, and a missing git, leaving the workspace local, open and unchanged', async () => {
     const { root, service } = await newService('a');
     const { dir } = await seedLocal(service, root);
@@ -229,7 +247,7 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
     expect(existsSync(join(dir, '.git'))).toBe(false);
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
     expect(service.snapshot()?.projects.map((project) => project.id)).toEqual([projectId]);
-    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [projectId]: environmentId });
     expect(service.sync()).toBeUndefined();
   });
 
@@ -253,12 +271,12 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
     expect(existsSync(join(dir, 'tree'))).toBe(false);
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
     expect(service.snapshot()?.projects.map((project) => project.id)).toEqual([projectId]);
-    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [projectId]: environmentId });
   });
 
   it('rolls back when adding the remote fails', async () => {
     const { root, service } = await newService('a', { git: () => Promise.resolve(gitFailingOn('remote')) });
-    const { dir } = await seedLocal(service, root);
+    const { dir, projectId } = await seedLocal(service, root);
     const environmentId = await activateEnvironment(service);
     const before = await snapshotFiles(dir);
 
@@ -267,7 +285,7 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
     expect(await snapshotFiles(dir)).toEqual(before);
     expect(existsSync(join(dir, 'tree'))).toBe(false);
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
-    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [projectId]: environmentId });
   });
 
   it('refuses to share again over the git folder a stopped share left behind', async () => {
@@ -435,7 +453,7 @@ describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
           to === join(target, 'projects') ? Promise.reject(errnoError('EACCES')) : nodeFileOps.rename(from, to),
       },
     });
-    const { dir } = await seedLocal(service, root);
+    const { dir, projectId } = await seedLocal(service, root);
     const environmentId = await activateEnvironment(service);
     const before = await snapshotFiles(dir);
 
@@ -444,7 +462,7 @@ describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
     expect(await snapshotFiles(dir)).toEqual(before);
     expect(await readdir(target)).toEqual([]);
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
-    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [projectId]: environmentId });
   });
 
   it('restores complete projects when an EXDEV move copied but could not remove its source', async () => {
@@ -469,7 +487,7 @@ describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
         },
       },
     });
-    const { dir } = await seedLocal(service, root);
+    const { dir, projectId } = await seedLocal(service, root);
     const environmentId = await activateEnvironment(service);
     sourceProjects = join(dir, 'projects');
     const before = await snapshotFiles(dir);
@@ -484,7 +502,7 @@ describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
     expect(await readdir(target)).toEqual([]);
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
     expect(service.snapshot()?.projects).toHaveLength(1);
-    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [projectId]: environmentId });
   });
 });
 

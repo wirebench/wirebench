@@ -202,7 +202,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   }));
 
   registerHandler(channels.workspace.setActiveEnvironment, async (request) => ({
-    workspace: await service.setActiveEnvironment(request.environmentId),
+    workspace: await service.setActiveEnvironment(request),
   }));
 
   registerHandler(channels.workspace.mutate, async (request) => await service.mutate(request.change));

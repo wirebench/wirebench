@@ -38,3 +38,12 @@ describe('environment patch colours', () => {
     }
   });
 });
+
+describe('workspace environment patch scope (#468)', () => {
+  it('accepts a project list, an empty one, and null for every project', () => {
+    expect(workspaceEnvironmentPatchSchema.parse({ projects: ['p1', 'p2'] })).toEqual({ projects: ['p1', 'p2'] });
+    expect(workspaceEnvironmentPatchSchema.parse({ projects: [] })).toEqual({ projects: [] });
+    expect(workspaceEnvironmentPatchSchema.parse({ projects: null })).toEqual({ projects: null });
+    expect(workspaceEnvironmentPatchSchema.safeParse({ projects: 'p1' }).success).toBe(false);
+  });
+});

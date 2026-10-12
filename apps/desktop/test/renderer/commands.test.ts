@@ -20,6 +20,7 @@ function workspace(environments: readonly WorkspaceEnvironmentWire[]): Workspace
     properties: {},
     disabled: [],
     environments: [...environments],
+    activeEnvironments: {},
     projects: [],
   };
 }
