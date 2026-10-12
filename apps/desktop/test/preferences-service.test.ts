@@ -82,6 +82,58 @@ describe('PreferencesService', () => {
     expect(seen).toEqual(['One/1']);
   });
 
+  it('refuses an out-of-range update whole, naming the rule, and writes nothing', async () => {
+    const service = new PreferencesService(dir);
+    await service.update({ proxy: { mode: 'manual', host: 'proxy', port: 3128 } });
+    const before = readFileSync(file(), 'utf8');
+
+    await expect(service.update({ proxy: { port: 80.5 }, http: { userAgent: 'Never/1' } })).rejects.toMatchObject({
+      code: 'preference-invalid',
+      message: 'proxy.port must be a whole number from 1 to 65535',
+    });
+    expect(readFileSync(file(), 'utf8')).toBe(before);
+    expect(service.get().proxy.port).toBe(3128);
+    expect(service.get().http.userAgent).toBe(DEFAULT_PREFERENCES.http.userAgent);
+    // …and the queue is not wedged by the refusal.
+    await service.update({ proxy: { port: 8080 } });
+    expect(service.get().proxy.port).toBe(8080);
+  });
+
+  it('clears an optional port when the update sets it to null', async () => {
+    const service = new PreferencesService(dir);
+    await service.update({ proxy: { mode: 'manual', port: 3128 }, rest: { oauth2CallbackPort: 8765 } });
+    await service.update({ proxy: { port: null }, rest: { oauth2CallbackPort: null } });
+    const reloaded = await new PreferencesService(dir).ready();
+    expect(reloaded.proxy).not.toHaveProperty('port');
+    expect(reloaded.rest).not.toHaveProperty('oauth2CallbackPort');
+  });
+
+  it('loads a file with values outside the current limits by clamping them, keeping the rest', async () => {
+    writeFileSync(
+      file(),
+      [
+        'version: 1',
+        'proxy:',
+        '  mode: manual',
+        '  host: proxy.internal',
+        '  port: 99999',
+        'editor:',
+        '  fontFamily: Fira Code',
+        '  fontSize: 200',
+        '  tabSize: 2',
+        'rest:',
+        '  oauth2CallbackPort: 80',
+        '  defaultAccept: application/json',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const preferences = await new PreferencesService(dir).ready();
+    expect(preferences.proxy).toMatchObject({ mode: 'manual', host: 'proxy.internal', port: 65_535 });
+    expect(preferences.editor).toMatchObject({ fontFamily: 'Fira Code', fontSize: 72, tabSize: 2 });
+    expect(preferences.rest).toMatchObject({ oauth2CallbackPort: 1024, defaultAccept: 'application/json' });
+  });
+
   it('exposes the current document synchronously once loaded', async () => {
     const service = new PreferencesService(dir);
     await service.update({ ui: { historyCap: 25 } });

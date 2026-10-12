@@ -7,6 +7,7 @@ import type {
   PreferencesStoredSectionWire,
   PreferencesWire,
 } from '../../shared/wire-base.js';
+import { showToast } from '../components/toast.js';
 import { setKeybindingOverrides } from '../lib/keybindings.js';
 import { ipc } from './ipc-client.js';
 import { useExchangesStore } from './exchanges.js';
@@ -26,8 +27,14 @@ export interface PreferencesStore {
   /** False until the first document has arrived from main. */
   readonly loaded: boolean;
   readonly load: () => Promise<void>;
-  /** Deep-merges `patch` into the document. */
-  readonly update: (patch: PreferencesPatchWire) => Promise<void>;
+  /**
+   * Deep-merges `patch` into the document. Shown at once (optimistically); when main refuses the
+   * patch the last document main confirmed is put back and a toast says why, so the screen never
+   * keeps a value that was not saved.
+   *
+   * @returns the refusal's message, or `undefined` once main has saved the patch
+   */
+  readonly update: (patch: PreferencesPatchWire) => Promise<string | undefined>;
   readonly reset: (section?: PreferencesStoredSectionWire) => Promise<void>;
   /** Replaces the mirror wholesale; used by the `preferences.changed` subscription. */
   readonly applyPreferences: (preferences: PreferencesWire) => void;
@@ -45,6 +52,12 @@ export function isLockedByPolicy(policy: PreferencesPolicyResponse | undefined, 
 }
 
 export const usePreferencesStore = create<PreferencesStore>((set, get) => {
+  /**
+   * The last document main sent, as opposed to an optimistic one. A refused update rolls back to
+   * it; it starts as the defaults, which is also what the mirror shows before the first load.
+   */
+  let confirmed: PreferencesWire = DEFAULT_PREFERENCES_WIRE;
+
   const apply = (preferences: PreferencesWire): void => {
     set({ preferences, loaded: true });
     // Rebindings are read straight off the document, so a change made in one window (or in the
@@ -62,7 +75,10 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
     loaded: false,
     policy: undefined,
 
-    applyPreferences: apply,
+    applyPreferences: (preferences) => {
+      confirmed = preferences;
+      apply(preferences);
+    },
 
     loadPolicy: async () => {
       const result = await ipc().preferences.policy(undefined);
@@ -74,7 +90,7 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
     load: async () => {
       const result = await ipc().preferences.get(undefined);
       if (result.ok) {
-        apply(result.value.preferences);
+        get().applyPreferences(result.value.preferences);
       }
     },
 
@@ -92,14 +108,20 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
       apply(optimistic);
       const result = await ipc().preferences.update({ patch });
       if (result.ok) {
-        apply(result.value.preferences);
+        get().applyPreferences(result.value.preferences);
+        return undefined;
       }
+      // Main kept the document it had; so must the screen. A field showing the refused value
+      // would claim a save that never happened.
+      apply(confirmed);
+      showToast(`Setting not saved: ${result.error.message}`);
+      return result.error.message;
     },
 
     reset: async (section) => {
       const result = await ipc().preferences.reset(section === undefined ? {} : { section });
       if (result.ok) {
-        apply(result.value.preferences);
+        get().applyPreferences(result.value.preferences);
       }
     },
   };

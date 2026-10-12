@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
+
+import { showToast } from '../../src/renderer/components/toast.js';
 import { isLockedByPolicy, usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -7,6 +11,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 describe('preferences store', () => {
   beforeEach(() => {
     installWirebenchApi();
+    vi.mocked(showToast).mockClear();
     usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE, loaded: false });
   });
 
@@ -56,14 +61,43 @@ describe('preferences store', () => {
     expect(usePreferencesStore.getState().preferences.editor.tabSize).toBe(7);
   });
 
-  it('keeps the previous document when an update fails', async () => {
+  it('puts back the last confirmed document and says why when main refuses an update', async () => {
+    const confirmed = { ...DEFAULT_PREFERENCES_WIRE, proxy: { mode: 'manual' as const, port: 3128, excludes: [] } };
+    usePreferencesStore.getState().applyPreferences(confirmed);
+    type Refusal = { ok: false; error: { code: string; message: string } };
+    let refuse: (value: Refusal) => void = () => undefined;
     installWirebenchApi({
-      preferences: { update: vi.fn().mockResolvedValue({ ok: false, error: { code: 'boom', message: 'no' } }) },
+      preferences: {
+        update: vi.fn(
+          () =>
+            new Promise<Refusal>((resolve) => {
+              refuse = resolve;
+            }),
+        ),
+      },
     });
-    await usePreferencesStore.getState().update({ editor: { tabSize: 2 } });
-    // The optimistic value stands: nothing came back to correct it, and the next `load`
-    // (or `preferences.changed`) will.
-    expect(usePreferencesStore.getState().preferences.editor.tabSize).toBe(2);
+
+    const pending = usePreferencesStore.getState().update({ proxy: { port: 80 } });
+    // Optimistic first…
+    expect(usePreferencesStore.getState().preferences.proxy.port).toBe(80);
+    refuse({
+      ok: false,
+      error: { code: 'preference-invalid', message: 'proxy.port must be a whole number from 1 to 65535' },
+    });
+    // …then rolled back, with the refusal surfaced.
+    await expect(pending).resolves.toBe('proxy.port must be a whole number from 1 to 65535');
+    expect(usePreferencesStore.getState().preferences.proxy.port).toBe(3128);
+    expect(showToast).toHaveBeenCalledWith('Setting not saved: proxy.port must be a whole number from 1 to 65535');
+  });
+
+  it('answers undefined once main has saved an update', async () => {
+    installWirebenchApi({
+      preferences: {
+        update: vi.fn().mockResolvedValue({ ok: true, value: { preferences: DEFAULT_PREFERENCES_WIRE } }),
+      },
+    });
+    await expect(usePreferencesStore.getState().update({ editor: { tabSize: 3 } })).resolves.toBeUndefined();
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('resets a section through main', async () => {

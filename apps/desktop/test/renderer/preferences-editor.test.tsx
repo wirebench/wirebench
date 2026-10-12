@@ -91,13 +91,31 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('puts a field back to the saved value when main refuses the change', async () => {
+    const update = vi.fn().mockResolvedValue({
+      ok: false,
+      error: { code: 'preference-locked', message: 'Locked by the managed-preferences policy: editor.tabSize' },
+    });
+    installWirebenchApi({ preferences: { update } });
+    usePreferencesStore.getState().applyPreferences(DEFAULTS);
+    render(<PreferencesEditor initialSection="appearance" />);
+
+    const tabSize = screen.getByLabelText<HTMLInputElement>('Tab size');
+    fireEvent.change(tabSize, { target: { value: '8' } });
+    fireEvent.keyDown(tabSize, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(tabSize.value).toBe(String(DEFAULTS.editor.tabSize));
+    });
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
   it('sets the secret source cache lifetime from the Secrets section', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
     render(<PreferencesEditor />);
     fireEvent.click(screen.getByRole('button', { name: 'Secrets' }));
 
-    const field = screen.getByLabelText('Secret source cache (seconds)');
+    const field = screen.getByLabelText('Secret source cache');
     fireEvent.change(field, { target: { value: '60' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await vi.waitFor(() => {
@@ -126,16 +144,19 @@ describe('PreferencesEditor', () => {
     });
   });
 
-  it('refuses a secret source cache lifetime above 3600 seconds and snaps the field back', async () => {
+  it('refuses a secret source cache lifetime above 3600 seconds, saying why, until it is fixed', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
     render(<PreferencesEditor />);
     fireEvent.click(screen.getByRole('button', { name: 'Secrets' }));
 
-    const field = screen.getByLabelText<HTMLInputElement>('Secret source cache (seconds)');
+    const field = screen.getByLabelText<HTMLInputElement>('Secret source cache');
     fireEvent.change(field, { target: { value: '3601' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(field.value).toBe('300');
+    // The draft stays, marked invalid with the rule, and nothing is sent.
+    expect(field.value).toBe('3601');
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText('Enter a whole number from 0 to 3600')).toBeTruthy();
     expect(update).not.toHaveBeenCalled();
 
     fireEvent.change(field, { target: { value: '3600' } });
@@ -145,7 +166,7 @@ describe('PreferencesEditor', () => {
     });
   });
 
-  it('sets HTTP Log rows kept, clamped to 100–5000', async () => {
+  it('sets HTTP Log rows kept, refusing a value outside 100–5000', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
     render(<PreferencesEditor initialSection="behaviour" />);
@@ -159,9 +180,8 @@ describe('PreferencesEditor', () => {
 
     fireEvent.change(field, { target: { value: '99999' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    await vi.waitFor(() => {
-      expect(update).toHaveBeenCalledWith({ patch: { ui: { logSize: 5000 } } });
-    });
+    expect(screen.getByText('Enter a whole number from 100 to 5000')).toBeTruthy();
+    expect(update).toHaveBeenCalledTimes(1);
   });
 
   it('pushes a theme change into the ui store, which is what the shell renders from', async () => {
@@ -282,6 +302,39 @@ describe('PreferencesEditor — REST', () => {
     expect(update).toHaveBeenCalledWith({ patch: { rest: { prettyPrintMaxBytes: 2 * 1024 * 1024 } } });
   });
 
+  it('takes a fractional MiB threshold and refuses zero', () => {
+    const update = openRest();
+    const field = screen.getByTestId<HTMLInputElement>('rest-pref-pretty-max');
+    fireEvent.change(field, { target: { value: '0.5' } });
+    fireEvent.blur(field);
+    expect(update).toHaveBeenCalledWith({ patch: { rest: { prettyPrintMaxBytes: 512 * 1024 } } });
+
+    fireEvent.change(field, { target: { value: '0' } });
+    fireEvent.blur(field);
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText('Enter a number from 0.01 to 1024')).toBeTruthy();
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows units beside the field rather than in the label', () => {
+    openRest();
+    const field = screen.getByLabelText('Pretty-print up to');
+    expect(field.closest('[data-setting-row]')?.querySelector('[data-testid="setting-unit"]')?.textContent).toBe('MiB');
+  });
+
+  it('refuses control characters in the default Accept header and trims it', () => {
+    const update = openRest();
+    const accept = screen.getByTestId('rest-pref-default-accept');
+    fireEvent.change(accept, { target: { value: 'application/json\u0007' } });
+    fireEvent.blur(accept);
+    expect(screen.getByText('Control characters and line breaks are not allowed in a header value')).toBeTruthy();
+    expect(update).not.toHaveBeenCalled();
+
+    fireEvent.change(accept, { target: { value: '  application/xml  ' } });
+    fireEvent.blur(accept);
+    expect(update).toHaveBeenCalledWith({ patch: { rest: { defaultAccept: 'application/xml' } } });
+  });
+
   it('sends one field per edit', () => {
     const update = openRest();
 
@@ -294,7 +347,7 @@ describe('PreferencesEditor — REST', () => {
     expect(update).toHaveBeenLastCalledWith({ patch: { rest: { defaultAccept: 'application/json' } } });
   });
 
-  it('treats an empty or zero OAuth2 port as "take a free one"', () => {
+  it('treats an empty OAuth2 port as "take a free one" and refuses one below 1024', () => {
     const update = openRest();
 
     const port = screen.getByTestId('rest-pref-oauth2-port');
@@ -304,12 +357,85 @@ describe('PreferencesEditor — REST', () => {
 
     fireEvent.change(port, { target: { value: '' } });
     fireEvent.blur(port);
-    expect(update).toHaveBeenLastCalledWith({ patch: { rest: { oauth2CallbackPort: undefined } } });
+    // `null`, not `undefined`: main clears a key only on `null`.
+    expect(update).toHaveBeenLastCalledWith({ patch: { rest: { oauth2CallbackPort: null } } });
+
+    fireEvent.change(port, { target: { value: '80' } });
+    fireEvent.blur(port);
+    expect(screen.getByText('Enter a whole number from 1024 to 65535')).toBeTruthy();
+    expect(update).toHaveBeenCalledTimes(2);
   });
 
   it('says the loopback listener is the only thing the port changes', () => {
     openRest();
     expect(screen.getByText(/The loopback listener only ever binds 127\.0\.0\.1/)).toBeTruthy();
+  });
+});
+
+describe('PreferencesEditor — Proxy', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  function openProxy(mode: 'none' | 'system' | 'manual', update = stubUpdate()): ReturnType<typeof stubUpdate> {
+    usePreferencesStore.setState({
+      preferences: { ...DEFAULTS, proxy: { mode, host: 'proxy.internal', port: 3128, excludes: [] } },
+      loaded: true,
+    });
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor initialSection="proxy" />);
+    return update;
+  }
+
+  it.each(['none', 'system'] as const)(
+    'makes every manual-only field read-only in %s mode, but not Excludes',
+    (mode) => {
+      openProxy(mode);
+      for (const testId of ['proxy-host', 'proxy-port', 'proxy-username']) {
+        expect(screen.getByTestId(testId).hasAttribute('readonly'), testId).toBe(true);
+      }
+      expect(screen.getByTestId('proxy-excludes').hasAttribute('readonly')).toBe(false);
+    },
+  );
+
+  it('refuses a port that is not a whole number from 1 to 65535', () => {
+    const update = openProxy('manual');
+    const port = screen.getByTestId<HTMLInputElement>('proxy-port');
+    fireEvent.change(port, { target: { value: '99999' } });
+    fireEvent.blur(port);
+    expect(screen.getByText('Enter a whole number from 1 to 65535')).toBeTruthy();
+    // A letter or a dot cannot be typed at all.
+    fireEvent.change(port, { target: { value: '80.5' } });
+    expect(port.value).toBe('99999');
+    expect(update).not.toHaveBeenCalled();
+
+    fireEvent.change(port, { target: { value: '' } });
+    fireEvent.blur(port);
+    expect(update).toHaveBeenCalledWith({ patch: { proxy: { port: null } } });
+  });
+
+  it.each(['http://proxy.internal', 'proxy.internal:3128', 'proxy/internal', 'proxy internal'])(
+    'refuses the host %s',
+    (host) => {
+      const update = openProxy('manual');
+      const field = screen.getByTestId('proxy-host');
+      fireEvent.change(field, { target: { value: host } });
+      fireEvent.blur(field);
+      expect(screen.getByText('Host name or IP only — set the port below')).toBeTruthy();
+      expect(field.getAttribute('aria-invalid')).toBe('true');
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['10.0.0.1', 'proxy-2.corp.example', '::1', '[fe80::1]'])('accepts the host %s', (host) => {
+    const update = openProxy('manual');
+    const field = screen.getByTestId('proxy-host');
+    fireEvent.change(field, { target: { value: ` ${host} ` } });
+    fireEvent.blur(field);
+    expect(update).toHaveBeenCalledWith({ patch: { proxy: { host } } });
   });
 });
 
@@ -432,7 +558,7 @@ describe('PreferencesEditor — search', () => {
     search('timeout');
 
     const results = screen.getByTestId('settings-search-results');
-    expect(within(results).getByLabelText('Socket timeout (ms)')).toBeTruthy();
+    expect(within(results).getByLabelText('Socket timeout')).toBeTruthy();
     expect(
       within(results)
         .getAllByTestId('setting-crumb')
@@ -453,7 +579,7 @@ describe('PreferencesEditor — search', () => {
     expect(screen.getByLabelText('Sample values')).toBeTruthy();
 
     search('ssl / tls');
-    expect(screen.getByLabelText('Expiry warning (days)')).toBeTruthy();
+    expect(screen.getByLabelText('Expiry warning')).toBeTruthy();
   });
 
   it('leaves the matching controls fully working', async () => {

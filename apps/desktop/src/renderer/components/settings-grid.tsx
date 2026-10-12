@@ -14,7 +14,9 @@ import { createContext, useContext, useEffect, useId, useState } from 'react';
  *
  * Text and number fields commit on blur or Enter (Escape reverts), so a keystroke is never a
  * mutation; switches, checkboxes, segmented controls and selects commit immediately, because
- * there is nothing to revert to. Every row's label is a real `<label>` bound to its control,
+ * there is nothing to revert to. A field whose draft breaks its rule says so under the row as it
+ * is typed (`aria-invalid`, a danger border, the rule in words) and is never committed — nor
+ * silently snapped back: the draft stays for the user to fix, until Escape reverts it. Every row's label is a real `<label>` bound to its control,
  * which is what makes the rows keyboard- and screen-reader-navigable without extra ARIA.
  *
  * A row that names its preference (`setting`, a dotted key such as `proxy.mode`) can also show
@@ -124,6 +126,9 @@ const COMPACT_CONTROL =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60';
 const CARD_CONTROL =
   'h-7 min-w-0 rounded-md border border-hairline-strong bg-surface-overlay px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60';
+
+/** The border a control whose draft breaks its rule gets, on top of {@link controlClass}. */
+const INVALID_CONTROL = ' border-status-danger focus:ring-status-danger';
 
 function controlClass(variant: SettingsVariant, width: 'text' | 'number' | 'select'): string {
   if (variant === 'compact') {
@@ -247,7 +252,19 @@ interface RowProps {
   readonly locked?: boolean;
   readonly modified?: boolean;
   readonly onReset?: (() => void) | undefined;
+  /** Why the control's draft is refused, shown under the row; the control points at it by `errorId`. */
+  readonly error?: string | undefined;
+  readonly errorId?: string;
   readonly children: React.ReactNode;
+}
+
+/** The inline message under a row whose draft breaks its rule. */
+function RowError({ id, message }: { readonly id: string | undefined; readonly message: string }) {
+  return (
+    <p id={id} data-testid="setting-error" className="mt-0.5 text-xs text-status-danger">
+      {message}
+    </p>
+  );
 }
 
 function LockedPill() {
@@ -261,7 +278,18 @@ function LockedPill() {
   );
 }
 
-function Row({ label, htmlFor, labelId, hint, locked = false, modified = false, onReset, children }: RowProps) {
+function Row({
+  label,
+  htmlFor,
+  labelId,
+  hint,
+  locked = false,
+  modified = false,
+  onReset,
+  error,
+  errorId,
+  children,
+}: RowProps) {
   const variant = useContext(VariantContext);
   const search = useSearchHides(label, hint);
   if (search === false) {
@@ -270,21 +298,24 @@ function Row({ label, htmlFor, labelId, hint, locked = false, modified = false, 
 
   if (variant === 'compact') {
     return (
-      <div
-        data-setting-row=""
-        className="flex items-center gap-2 py-0.5"
-        {...(locked ? { 'data-locked': 'true' } : {})}
-      >
-        <label
-          htmlFor={htmlFor}
-          id={labelId}
-          className="w-44 shrink-0 truncate text-sm text-fg-muted"
-          title={hint ?? label}
-        >
-          {label}
-        </label>
-        <div className="min-w-0 flex-1">{children}</div>
-        {locked && <LockedPill />}
+      <div data-setting-row="" className="py-0.5" {...(locked ? { 'data-locked': 'true' } : {})}>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={htmlFor}
+            id={labelId}
+            className="w-44 shrink-0 truncate text-sm text-fg-muted"
+            title={hint ?? label}
+          >
+            {label}
+          </label>
+          <div className="min-w-0 flex-1">{children}</div>
+          {locked && <LockedPill />}
+        </div>
+        {error !== undefined && (
+          <div className="pl-46">
+            <RowError id={errorId} message={error} />
+          </div>
+        )}
       </div>
     );
   }
@@ -329,6 +360,7 @@ function Row({ label, htmlFor, labelId, hint, locked = false, modified = false, 
           )}
         </div>
         {hint !== undefined && <p className="mt-0.5 text-xs text-fg-subtle">{hint}</p>}
+        {error !== undefined && <RowError id={errorId} message={error} />}
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
@@ -374,9 +406,19 @@ export interface TextSettingProps {
   readonly locked?: boolean;
   /** The dotted preference key this row edits, for the modified dot and per-row Reset. */
   readonly setting?: string;
+  /** Strip surrounding whitespace before validating and committing. */
+  readonly trim?: boolean;
+  /**
+   * Why a draft is refused, or `undefined` when it is fine. Checked on every keystroke and again
+   * on commit; a refused draft shows the message under the row and is not committed.
+   */
+  readonly validate?: (value: string) => string | undefined;
 }
 
-/** A free-text row. Commits on blur or Enter; Escape restores the last committed value. */
+/**
+ * A free-text row. Commits on blur or Enter; Escape restores the last committed value. With
+ * `validate`, a draft that breaks the rule is shown as invalid and kept, never committed.
+ */
 export function TextSetting({
   label,
   value,
@@ -388,8 +430,11 @@ export function TextSetting({
   testId,
   locked: lockedProp = false,
   setting,
+  trim = false,
+  validate,
 }: TextSettingProps) {
   const id = useId();
+  const errorId = useId();
   const variant = useContext(VariantContext);
   const row = useRowState(setting, lockedProp);
   const readOnly = readOnlyProp || row.locked;
@@ -398,6 +443,22 @@ export function TextSetting({
     setDraft(value);
   }, [value]);
 
+  const prepared = trim ? draft.trim() : draft;
+  // A read-only field is not being edited, so there is nothing of the user's to refuse.
+  const error = readOnly || validate === undefined ? undefined : validate(prepared);
+
+  const commit = (force: boolean): void => {
+    if (readOnly || error !== undefined) {
+      return;
+    }
+    if (prepared !== draft) {
+      setDraft(prepared);
+    }
+    if (force || prepared !== value) {
+      onCommit(prepared);
+    }
+  };
+
   return (
     <Row
       label={label}
@@ -405,27 +466,28 @@ export function TextSetting({
       locked={row.locked}
       modified={row.modified}
       onReset={row.reset}
+      error={error}
+      errorId={errorId}
       {...(hint !== undefined ? { hint } : {})}
     >
       <input
         id={id}
         aria-label={label}
         {...(testId !== undefined ? { 'data-testid': testId } : {})}
+        {...(error !== undefined ? { 'aria-invalid': true, 'aria-describedby': errorId } : {})}
         readOnly={readOnly}
-        className={`${controlClass(variant, 'text')}${monospace ? ' font-mono' : ''}${readOnly ? ' text-fg-muted' : ''}`}
+        className={`${controlClass(variant, 'text')}${monospace ? ' font-mono' : ''}${readOnly ? ' text-fg-muted' : ''}${error !== undefined ? INVALID_CONTROL : ''}`}
         value={draft}
         placeholder={placeholder ?? ''}
         onChange={(event) => {
           setDraft(event.target.value);
         }}
         onBlur={() => {
-          if (!readOnly && draft !== value) {
-            onCommit(draft);
-          }
+          commit(false);
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !readOnly) {
-            onCommit(draft);
+          if (event.key === 'Enter') {
+            commit(true);
           }
           if (event.key === 'Escape' && draft !== value) {
             // Reverting a half-typed value is this key's whole job here; it must not also
@@ -439,17 +501,71 @@ export function TextSetting({
   );
 }
 
+/** The rule a numeric field enforces; see {@link numberRule}. */
+export interface NumberRule {
+  readonly min?: number | undefined;
+  readonly max?: number | undefined;
+  readonly integer: boolean;
+}
+
+/** "Enter a whole number from 1 to 65535" — the rule, as the inline message says it. */
+export function numberRule({ min, max, integer }: NumberRule): string {
+  const kind = integer ? 'a whole number' : 'a number';
+  if (min !== undefined && max !== undefined) {
+    return `Enter ${kind} from ${min} to ${max}`;
+  }
+  if (min !== undefined) {
+    return `Enter ${kind} of ${min} or more`;
+  }
+  if (max !== undefined) {
+    return `Enter ${kind} of ${max} or less`;
+  }
+  return `Enter ${kind}`;
+}
+
+/**
+ * The characters a numeric draft may consist of: digits, a `.` only for a decimal field and a
+ * leading `-` only when the rule allows a negative value. Checked against the *whole* draft, so a
+ * paste that brings any other character is refused outright rather than partly kept.
+ */
+function draftPattern({ min, integer }: NumberRule): RegExp {
+  const sign = min !== undefined && min < 0 ? '-?' : '';
+  return new RegExp(integer ? `^${sign}\\d*$` : `^${sign}\\d*\\.?\\d*$`);
+}
+
+/**
+ * Parses a (non-empty, pattern-conforming) numeric draft against its rule: the number, or the
+ * message to show. `Number()` alone is not enough — it would take `1e3`, `0x10` or ` 80.5`.
+ */
+export function parseNumberDraft(draft: string, rule: NumberRule): number | { readonly error: string } {
+  const parsed = draftPattern(rule).test(draft) ? Number(draft) : Number.NaN;
+  const ok =
+    /\d/.test(draft) &&
+    Number.isFinite(parsed) &&
+    (!rule.integer || Number.isSafeInteger(parsed)) &&
+    (rule.min === undefined || parsed >= rule.min) &&
+    (rule.max === undefined || parsed <= rule.max);
+  return ok ? parsed : { error: numberRule(rule) };
+}
+
 export interface NumberSettingProps {
   readonly label: string;
   readonly value: number | undefined;
   /** `undefined` means "cleared" — the field was emptied, so the setting falls back to its default. */
   readonly onCommit: (value: number | undefined) => void;
+  /** Shown while the field is empty; say what empty means — usually the default value. */
   readonly placeholder?: string;
   readonly min?: number;
-  /** The largest value accepted; a larger one is refused like an unparsable one. */
+  /** The largest value accepted. */
   readonly max?: number;
+  /** Whole numbers only (the default — nearly every setting is one). `false` also accepts a `.`. */
+  readonly integer?: boolean;
+  /** A short unit shown right after the field ("ms", "MiB", "days"), so the label need not carry it. */
+  readonly unit?: string;
   readonly hint?: string;
   readonly testId?: string;
+  /** Not editable right now (the setting does not apply in the current mode); the value still shows. */
+  readonly readOnly?: boolean;
   /** Locked by a managed-preferences policy: disabled, and the row says so. */
   readonly locked?: boolean;
   /** The dotted preference key this row edits, for the modified dot and per-row Reset. */
@@ -457,9 +573,9 @@ export interface NumberSettingProps {
 }
 
 /**
- * A numeric row. An empty field commits `undefined` (inherit / no value); anything that does
- * not parse as a finite number is rejected and the field snaps back, rather than persisting a
- * `NaN` that would silently disable a timeout.
+ * A numeric row. Only digits can be typed (plus `.` for a decimal field and `-` when the minimum is
+ * negative); a pasted value with anything else is refused whole. A draft outside the rule says so
+ * under the row and is not committed. An empty field commits `undefined` (inherit / no value).
  */
 export function NumberSetting({
   label,
@@ -468,37 +584,80 @@ export function NumberSetting({
   placeholder,
   min,
   max,
+  integer = true,
+  unit,
   hint,
   testId,
+  readOnly = false,
   locked: lockedProp = false,
   setting,
 }: NumberSettingProps) {
   const id = useId();
+  const errorId = useId();
+  const unitId = useId();
   const variant = useContext(VariantContext);
   const row = useRowState(setting, lockedProp);
+  const rule: NumberRule = { min, max, integer };
   const asText = value === undefined ? '' : String(value);
   const [draft, setDraft] = useState(asText);
   useEffect(() => {
     setDraft(asText);
   }, [asText]);
 
+  const parsed = draft.length === 0 ? undefined : parseNumberDraft(draft, rule);
+  const error = !readOnly && typeof parsed === 'object' ? parsed.error : undefined;
+
   const commit = (): void => {
-    const trimmed = draft.trim();
-    if (trimmed.length === 0) {
+    if (readOnly || typeof parsed === 'object') {
+      // An invalid draft stays, with its message, for the user to fix or Escape away.
+      return;
+    }
+    if (parsed === undefined) {
       if (value !== undefined) {
         onCommit(undefined);
       }
-      return;
-    }
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || (min !== undefined && parsed < min) || (max !== undefined && parsed > max)) {
-      setDraft(asText);
       return;
     }
     if (parsed !== value) {
       onCommit(parsed);
     }
   };
+
+  const describedBy = [...(error !== undefined ? [errorId] : []), ...(unit !== undefined ? [unitId] : [])];
+
+  const input = (
+    <input
+      id={id}
+      aria-label={label}
+      {...(testId !== undefined ? { 'data-testid': testId } : {})}
+      {...(error !== undefined ? { 'aria-invalid': true } : {})}
+      {...(describedBy.length > 0 ? { 'aria-describedby': describedBy.join(' ') } : {})}
+      disabled={row.locked}
+      readOnly={readOnly}
+      inputMode={integer ? 'numeric' : 'decimal'}
+      className={`${controlClass(variant, 'number')}${readOnly ? ' text-fg-muted' : ''}${error !== undefined ? INVALID_CONTROL : ''}`}
+      value={draft}
+      placeholder={placeholder ?? ''}
+      onChange={(event) => {
+        // Surrounding whitespace (a copied value's trailing space) is dropped; anything else that
+        // is not part of a number leaves the draft as it was, so letters cannot be typed at all.
+        const next = event.target.value.trim();
+        if (draftPattern(rule).test(next)) {
+          setDraft(next);
+        }
+      }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          commit();
+        }
+        if (event.key === 'Escape' && draft !== asText) {
+          event.preventDefault();
+          setDraft(asText);
+        }
+      }}
+    />
+  );
 
   return (
     <Row
@@ -507,31 +666,20 @@ export function NumberSetting({
       locked={row.locked}
       modified={row.modified}
       onReset={row.reset}
+      error={error}
+      errorId={errorId}
       {...(hint !== undefined ? { hint } : {})}
     >
-      <input
-        id={id}
-        aria-label={label}
-        {...(testId !== undefined ? { 'data-testid': testId } : {})}
-        disabled={row.locked}
-        inputMode="numeric"
-        className={controlClass(variant, 'number')}
-        value={draft}
-        placeholder={placeholder ?? ''}
-        onChange={(event) => {
-          setDraft(event.target.value);
-        }}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            commit();
-          }
-          if (event.key === 'Escape' && draft !== asText) {
-            event.preventDefault();
-            setDraft(asText);
-          }
-        }}
-      />
+      {unit === undefined ? (
+        input
+      ) : (
+        <span className="flex min-w-0 items-center gap-1.5">
+          {input}
+          <span id={unitId} data-testid="setting-unit" className="shrink-0 text-xs text-fg-subtle">
+            {unit}
+          </span>
+        </span>
+      )}
     </Row>
   );
 }

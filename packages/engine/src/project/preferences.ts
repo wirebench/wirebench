@@ -183,10 +183,6 @@ export const LOG_SIZE_MIN = 100;
 /** The largest HTTP Log row limit a user can set. */
 export const LOG_SIZE_MAX = 5000;
 
-function clampLogSize(value: number): number {
-  return Math.min(LOG_SIZE_MAX, Math.max(LOG_SIZE_MIN, Math.round(value)));
-}
-
 /**
  * Software-update preferences. `checkOnLaunch` is off by default and stays off until the user
  * turns it on: Wirebench contacts the release feed when asked, not when started.
@@ -206,11 +202,6 @@ export interface AccountPreferences {
 export interface SecretsPreferences {
   /** How long a value fetched from a secret manager stays in memory, in seconds; 0 fetches it on every send. */
   readonly sourceCacheSeconds: number;
-}
-
-/** `secrets.sourceCacheSeconds`, kept to whole seconds between 0 and an hour. */
-function clampSourceCacheSeconds(value: number): number {
-  return Math.min(3600, Math.max(0, Math.round(value)));
 }
 
 /** Mock services (#59). */
@@ -311,10 +302,101 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   shortcuts: Object.freeze({}),
 });
 
+/** The range a numeric preference accepts. `max` absent means no upper bound beyond a safe integer. */
+export interface PreferenceNumberLimit {
+  readonly min: number;
+  readonly max?: number;
+  /** Whole numbers only. */
+  readonly integer: boolean;
+}
+
 /**
- * The persisted document shape. Deliberately loose: every section and every field is optional
- * and unknown keys are stripped, so a file written by a newer build (or hand-edited badly)
- * still loads — {@link mergePreferences} fills the gaps from {@link DEFAULT_PREFERENCES}.
+ * Every numeric preference's accepted range, keyed by dotted preference key.
+ *
+ * One table serves three readers: {@link preferencesSchema} refuses anything outside it (so
+ * `preferences.update` rejects an out-of-range patch rather than storing it), {@link mergePreferences}
+ * clamps a finite out-of-range number *read from disk* into it (so a file written before these
+ * limits existed loads instead of losing its whole section), and the desktop renderer restates it
+ * to validate a field as it is typed.
+ */
+export const PREFERENCE_NUMBER_LIMITS = {
+  'http.chunkingThreshold': { min: 0, integer: true },
+  'http.socketTimeoutMs': { min: 0, max: 3_600_000, integer: true },
+  'http.maxConnections': { min: 1, max: 1000, integer: true },
+  'proxy.port': { min: 1, max: 65_535, integer: true },
+  'ssl.expiryWarningDays': { min: 0, max: 3650, integer: true },
+  'rest.maxRedirects': { min: 0, max: 50, integer: true },
+  /** Bytes; the Settings page edits it in MiB (0.01–1024). */
+  'rest.prettyPrintMaxBytes': { min: 1, max: 1024 * 1024 * 1024, integer: true },
+  'rest.oauth2CallbackPort': { min: 1024, max: 65_535, integer: true },
+  'editor.fontSize': { min: 6, max: 72, integer: true },
+  'editor.tabSize': { min: 1, max: 16, integer: true },
+  'ui.historyCap': { min: 1, max: 100_000, integer: true },
+  'ui.logSize': { min: LOG_SIZE_MIN, max: LOG_SIZE_MAX, integer: true },
+  'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
+} as const satisfies Readonly<Record<string, PreferenceNumberLimit>>;
+
+/** A dotted key with an entry in {@link PREFERENCE_NUMBER_LIMITS}. */
+export type LimitedPreferenceKey = keyof typeof PREFERENCE_NUMBER_LIMITS;
+
+function limitOf(key: string): PreferenceNumberLimit | undefined {
+  return Object.hasOwn(PREFERENCE_NUMBER_LIMITS, key)
+    ? (PREFERENCE_NUMBER_LIMITS as Record<string, PreferenceNumberLimit>)[key]
+    : undefined;
+}
+
+/** "a whole number from 1 to 65535", "a number of 0 or more" — the rule, in words. */
+export function describePreferenceLimit(limit: PreferenceNumberLimit): string {
+  const kind = limit.integer ? 'a whole number' : 'a number';
+  return limit.max === undefined ? `${kind} of ${limit.min} or more` : `${kind} from ${limit.min} to ${limit.max}`;
+}
+
+/** The schema for one limited numeric field; the message names the rule, not zod's wording. */
+function limited(key: LimitedPreferenceKey) {
+  const limit: PreferenceNumberLimit = PREFERENCE_NUMBER_LIMITS[key];
+  const message = `${key} must be ${describePreferenceLimit(limit)}`;
+  let schema = z.number(message).finite(message).min(limit.min, message);
+  if (limit.max !== undefined) {
+    schema = schema.max(limit.max, message);
+  }
+  return limit.integer ? schema.int(message) : schema;
+}
+
+/**
+ * Pulls a finite number read from disk into its limit: rounded when the field is whole-number,
+ * then clamped. Anything that is not a finite number is left for the schema to refuse.
+ */
+function clampToLimit(limit: PreferenceNumberLimit, value: unknown): unknown {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return value;
+  }
+  const rounded = limit.integer ? Math.round(value) : value;
+  const floored = Math.max(limit.min, rounded);
+  return Math.min(limit.max ?? Number.MAX_SAFE_INTEGER, floored);
+}
+
+/** {@link clampToLimit} over every limited field of one raw section. */
+function clampSection(section: string, raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return raw;
+  }
+  const out: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(out)) {
+    const limit = limitOf(`${section}.${key}`);
+    if (limit !== undefined) {
+      out[key] = clampToLimit(limit, value);
+    }
+  }
+  return out;
+}
+
+/**
+ * The persisted document shape. Deliberately loose in shape: every section and every field is
+ * optional and unknown keys are stripped, so a file written by a newer build (or hand-edited
+ * badly) still loads — {@link mergePreferences} fills the gaps from {@link DEFAULT_PREFERENCES}.
+ * Strict in range: a numeric field outside {@link PREFERENCE_NUMBER_LIMITS} does not parse, which
+ * is what lets {@link preferencesPatchProblems} refuse it; `mergePreferences` clamps such a value
+ * before parsing, so an old file is pulled into range rather than losing the section.
  */
 export const preferencesSchema = z.object({
   version: z.literal(1).optional(),
@@ -325,9 +407,9 @@ export const preferencesSchema = z.object({
       requestCompression: z.enum(['none', 'gzip']).optional(),
       responseCompression: z.boolean().optional(),
       closeConnections: z.boolean().optional(),
-      chunkingThreshold: z.number().optional(),
-      socketTimeoutMs: z.number().optional(),
-      maxConnections: z.number().optional(),
+      chunkingThreshold: limited('http.chunkingThreshold').optional(),
+      socketTimeoutMs: limited('http.socketTimeoutMs').optional(),
+      maxConnections: limited('http.maxConnections').optional(),
       allowH2: z.boolean().optional(),
     })
     .optional(),
@@ -335,7 +417,8 @@ export const preferencesSchema = z.object({
     .object({
       mode: z.enum(['none', 'system', 'manual']).optional(),
       host: z.string().optional(),
-      port: z.number().optional(),
+      // `null` in a patch clears the port (an emptied field); it is never stored.
+      port: limited('proxy.port').nullable().optional(),
       username: z.string().optional(),
       passwordRef: z.string().optional(),
       excludes: z.array(z.string()).optional(),
@@ -347,7 +430,7 @@ export const preferencesSchema = z.object({
       caBundlePath: z.string().optional(),
       caBundlePickedByMain: z.boolean().optional(),
       clientKeystoreRef: z.string().optional(),
-      expiryWarningDays: z.number().int().min(0).max(3650).optional(),
+      expiryWarningDays: limited('ssl.expiryWarningDays').optional(),
     })
     .optional(),
   git: z.object({ path: z.string().optional(), pathPickedByMain: z.boolean().optional() }).optional(),
@@ -367,17 +450,18 @@ export const preferencesSchema = z.object({
   rest: z
     .object({
       followRedirects: z.boolean().optional(),
-      maxRedirects: z.number().int().nonnegative().optional(),
-      prettyPrintMaxBytes: z.number().int().positive().optional(),
+      maxRedirects: limited('rest.maxRedirects').optional(),
+      prettyPrintMaxBytes: limited('rest.prettyPrintMaxBytes').optional(),
       defaultAccept: z.string().optional(),
-      oauth2CallbackPort: z.number().int().min(1024).max(65_535).optional(),
+      // `null` in a patch clears the pinned port (back to a free one per sign-in); never stored.
+      oauth2CallbackPort: limited('rest.oauth2CallbackPort').nullable().optional(),
     })
     .optional(),
   editor: z
     .object({
       fontFamily: z.string().optional(),
-      fontSize: z.number().optional(),
-      tabSize: z.number().optional(),
+      fontSize: limited('editor.fontSize').optional(),
+      tabSize: limited('editor.tabSize').optional(),
       lineNumbers: z.boolean().optional(),
       wordWrap: z.boolean().optional(),
       autoValidateOnSend: z.boolean().optional(),
@@ -395,13 +479,13 @@ export const preferencesSchema = z.object({
         })
         .optional(),
       confirmOnDelete: z.boolean().optional(),
-      historyCap: z.number().optional(),
-      logSize: z.number().finite().optional(),
+      historyCap: limited('ui.historyCap').optional(),
+      logSize: limited('ui.logSize').optional(),
     })
     .optional(),
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
-  secrets: z.object({ sourceCacheSeconds: z.number().finite().optional() }).optional(),
+  secrets: z.object({ sourceCacheSeconds: limited('secrets.sourceCacheSeconds').optional() }).optional(),
   mocks: z.object({ listenOnAllInterfaces: z.boolean().optional() }).optional(),
   terminal: z
     .object({ confirmMultilinePaste: z.boolean().optional(), copyOnSelect: z.boolean().optional() })
@@ -412,30 +496,63 @@ export const preferencesSchema = z.object({
 /** A partial preferences document, as accepted by {@link mergePreferences}. */
 export type PreferencesPatch = z.infer<typeof preferencesSchema>;
 
-/** Drops every `undefined` value so a patch never overwrites a default with nothing. */
-function defined(value: object | undefined): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value ?? {})) {
-    if (entry !== undefined) {
+/**
+ * Overlays the defined fields of `patch` onto `base`. An `undefined` value leaves the base value
+ * alone, so a patch never overwrites a default with nothing; a `null` value (allowed only where
+ * the schema says so — an optional port the user emptied) removes the key. The cast is sound
+ * because the schema has already validated every value it let through, and TypeScript cannot
+ * express "the same keys, each optional but never `undefined`" for a spread under
+ * `exactOptionalPropertyTypes`.
+ */
+function mergeSection<T extends object>(base: T, patch: object | undefined): T {
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [key, entry] of Object.entries(patch ?? {})) {
+    if (entry === null) {
+      delete out[key];
+    } else if (entry !== undefined) {
       out[key] = entry;
     }
   }
-  return out;
+  return out as T;
 }
 
 /**
- * Overlays the defined fields of `patch` onto `base`. The cast is sound because the schema has
- * already validated every value it let through, and TypeScript cannot express "the same keys,
- * each optional but never `undefined`" for a spread under `exactOptionalPropertyTypes`.
+ * Parses one top-level section's raw value against its own schema; `undefined` on any failure.
+ * Limited numeric fields are clamped first, so only a value of the wrong *type* loses the section.
  */
-function mergeSection<T extends object>(base: T, patch: object | undefined): T {
-  return { ...base, ...defined(patch) };
+function parseSection<T>(name: string, schema: z.ZodType<T>, raw: unknown): T | undefined {
+  const parsed = schema.safeParse(clampSection(name, raw));
+  return parsed.success ? parsed.data : undefined;
 }
 
-/** Parses one top-level section's raw value against its own schema; `undefined` on any failure. */
-function parseSection<T>(schema: z.ZodType<T>, raw: unknown): T | undefined {
-  const parsed = schema.safeParse(raw);
-  return parsed.success ? parsed.data : undefined;
+/**
+ * Checks a patch strictly, the way `preferences.update` must: every problem in every known
+ * section, worded for a person ("proxy.port must be a whole number from 1 to 65535"). Unknown
+ * sections and keys are not problems — they are ignored, as {@link mergePreferences} ignores them.
+ * Nothing is clamped here: a value typed by the user that is out of range is refused, not changed.
+ *
+ * @returns an empty array when the patch is acceptable
+ */
+export function preferencesPatchProblems(patch: unknown): string[] {
+  if (typeof patch !== 'object' || patch === null) {
+    return [];
+  }
+  const shape: Record<string, z.ZodType> = preferencesSchema.shape;
+  const problems: string[] = [];
+  for (const [section, raw] of Object.entries(patch)) {
+    const schema = Object.hasOwn(shape, section) ? shape[section] : undefined;
+    if (schema === undefined || raw === undefined) {
+      continue;
+    }
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const path = [section, ...issue.path.map(String)].join('.');
+        problems.push(issue.message.startsWith(path) ? issue.message : `${path}: ${issue.message}`);
+      }
+    }
+  }
+  return problems;
 }
 
 /**
@@ -448,6 +565,12 @@ function parseSection<T>(schema: z.ZodType<T>, raw: unknown): T | undefined {
  * one shot would instead discard the entire patch the moment any single field anywhere in it
  * failed to validate, which is worse than doing nothing with the parts that were fine.
  *
+ * A finite number outside its {@link PREFERENCE_NUMBER_LIMITS} entry is clamped into range (and
+ * rounded, for a whole-number field) rather than failing its section: a preferences file written
+ * before a limit was tightened — a font size of 100, a fractional port — still loads, with that
+ * one value pulled to the nearest acceptable one. `preferences.update` never relies on this; it
+ * refuses an out-of-range patch with {@link preferencesPatchProblems} first.
+ *
  * @param patch a parsed (or raw) partial preferences document
  * @param base the preferences to merge onto; defaults to the built-in defaults
  */
@@ -455,21 +578,21 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
   const root: Record<string, unknown> = typeof patch === 'object' && patch !== null ? (patch as never) : {};
   const shape = preferencesSchema.shape;
   const value: PreferencesPatch = {
-    http: parseSection(shape.http, root['http']),
-    proxy: parseSection(shape.proxy, root['proxy']),
-    ssl: parseSection(shape.ssl, root['ssl']),
-    git: parseSection(shape.git, root['git']),
-    wsdl: parseSection(shape.wsdl, root['wsdl']),
-    wsi: parseSection(shape.wsi, root['wsi']),
-    rest: parseSection(shape.rest, root['rest']),
-    editor: parseSection(shape.editor, root['editor']),
-    ui: parseSection(shape.ui, root['ui']),
-    updates: parseSection(shape.updates, root['updates']),
-    accounts: parseSection(shape.accounts, root['accounts']),
-    secrets: parseSection(shape.secrets, root['secrets']),
-    mocks: parseSection(shape.mocks, root['mocks']),
-    terminal: parseSection(shape.terminal, root['terminal']),
-    shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
+    http: parseSection('http', shape.http, root['http']),
+    proxy: parseSection('proxy', shape.proxy, root['proxy']),
+    ssl: parseSection('ssl', shape.ssl, root['ssl']),
+    git: parseSection('git', shape.git, root['git']),
+    wsdl: parseSection('wsdl', shape.wsdl, root['wsdl']),
+    wsi: parseSection('wsi', shape.wsi, root['wsi']),
+    rest: parseSection('rest', shape.rest, root['rest']),
+    editor: parseSection('editor', shape.editor, root['editor']),
+    ui: parseSection('ui', shape.ui, root['ui']),
+    updates: parseSection('updates', shape.updates, root['updates']),
+    accounts: parseSection('accounts', shape.accounts, root['accounts']),
+    secrets: parseSection('secrets', shape.secrets, root['secrets']),
+    mocks: parseSection('mocks', shape.mocks, root['mocks']),
+    terminal: parseSection('terminal', shape.terminal, root['terminal']),
+    shortcuts: parseSection('shortcuts', shape.shortcuts, root['shortcuts']),
   };
   return {
     http: mergeSection(base.http, value.http),
@@ -482,14 +605,11 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     editor: mergeSection(base.editor, value.editor),
     ui: {
       ...mergeSection(base.ui, value.ui),
-      logSize: clampLogSize(value.ui?.logSize ?? base.ui.logSize),
       defaultLayout: mergeSection(base.ui.defaultLayout, value.ui?.defaultLayout),
     },
     updates: mergeSection(base.updates, value.updates),
     accounts: mergeSection(base.accounts, value.accounts),
-    secrets: {
-      sourceCacheSeconds: clampSourceCacheSeconds(value.secrets?.sourceCacheSeconds ?? base.secrets.sourceCacheSeconds),
-    },
+    secrets: mergeSection(base.secrets, value.secrets),
     mocks: mergeSection(base.mocks, value.mocks),
     terminal: mergeSection(base.terminal, value.terminal),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },

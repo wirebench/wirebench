@@ -6,6 +6,9 @@ import {
   TextSetting,
 } from '../../../components/settings-grid.js';
 import type { PreferencesWire } from '../../../../shared/wire-base.js';
+import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
+import { headerValueProblem } from '../validators.js';
 import type { SectionProps } from './section-props.js';
 
 /** HTTP transport defaults: identity, compression, connection reuse and the socket timeout. */
@@ -18,6 +21,8 @@ export function HttpSection({ preferences, update }: SectionProps) {
           label="User-Agent"
           setting="http.userAgent"
           value={http.userAgent}
+          trim
+          validate={headerValueProblem}
           onCommit={(userAgent) => update({ http: { userAgent } })}
           hint="Sent unless the request sets its own User-Agent header."
         />
@@ -52,19 +57,26 @@ export function HttpSection({ preferences, update }: SectionProps) {
           hint="Sends Connection: close instead of reusing the keep-alive pool."
         />
         <NumberSetting
-          label="Socket timeout (ms)"
+          label="Socket timeout"
           setting="http.socketTimeoutMs"
           value={http.socketTimeoutMs}
-          min={0}
-          onCommit={(socketTimeoutMs) => update({ http: { socketTimeoutMs: socketTimeoutMs ?? 60000 } })}
+          {...PREFERENCE_LIMITS['http.socketTimeoutMs']}
+          unit="ms"
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.http.socketTimeoutMs)}
+          onCommit={(socketTimeoutMs) =>
+            update({ http: { socketTimeoutMs: socketTimeoutMs ?? DEFAULT_PREFERENCES_WIRE.http.socketTimeoutMs } })
+          }
           hint="Used when neither the request nor the project sets a timeout."
         />
         <NumberSetting
           label="Max connections"
           setting="http.maxConnections"
           value={http.maxConnections}
-          min={1}
-          onCommit={(maxConnections) => update({ http: { maxConnections: maxConnections ?? 100 } })}
+          {...PREFERENCE_LIMITS['http.maxConnections']}
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.http.maxConnections)}
+          onCommit={(maxConnections) =>
+            update({ http: { maxConnections: maxConnections ?? DEFAULT_PREFERENCES_WIRE.http.maxConnections } })
+          }
         />
         <BooleanSetting
           label="Offer HTTP/2"
@@ -75,10 +87,12 @@ export function HttpSection({ preferences, update }: SectionProps) {
           hint="Advertises h2 in the TLS handshake. Off by default; most SOAP stacks speak HTTP/1.1 only."
         />
         <NumberSetting
-          label="Chunking threshold (bytes)"
+          label="Chunking threshold"
           setting="http.chunkingThreshold"
           value={http.chunkingThreshold}
-          min={0}
+          {...PREFERENCE_LIMITS['http.chunkingThreshold']}
+          unit="bytes"
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.http.chunkingThreshold)}
           onCommit={(chunkingThreshold) => update({ http: { chunkingThreshold: chunkingThreshold ?? 0 } })}
         />
       </SettingsGroup>

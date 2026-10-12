@@ -16,7 +16,13 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { DEFAULT_PREFERENCES, mergePreferences, resetPreferences, WirebenchError } from '@wirebench/engine';
+import {
+  DEFAULT_PREFERENCES,
+  mergePreferences,
+  preferencesPatchProblems,
+  resetPreferences,
+  WirebenchError,
+} from '@wirebench/engine';
 import type { findGit, Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
 
 import { applyPolicy, loadPolicy, lockedKeysIn, noPolicy } from './policy.js';
@@ -255,10 +261,17 @@ export class PreferencesService {
   /**
    * Deep-merges `patch` into the user's preferences and persists the result. A patch that sets
    * any key the policy locks is refused whole (`preference-locked`), so a caller that still
-   * tries fails loudly rather than appearing to succeed with the value unchanged.
+   * tries fails loudly rather than appearing to succeed with the value unchanged. So is a patch
+   * with a value the schema refuses — a port of 80.5, a font size of 500 (`preference-invalid`):
+   * merging it would silently drop its whole section and answer with the old values, which the
+   * renderer could not tell apart from success.
    */
   update(patch: PreferencesPatch): Promise<Preferences> {
     return this.enqueue(() => {
+      const problems = preferencesPatchProblems(patch);
+      if (problems.length > 0) {
+        throw new WirebenchError('preference-invalid', problems.join('; '), { details: { problems } });
+      }
       const locked = lockedKeysIn(patch, this.policyValue);
       if (locked.length > 0) {
         throw new WirebenchError(

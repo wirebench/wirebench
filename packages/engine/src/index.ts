@@ -1083,15 +1083,20 @@ export type {
 } from './project/schema.js';
 export {
   DEFAULT_PREFERENCES,
+  describePreferenceLimit,
   LOG_SIZE_MAX,
   LOG_SIZE_MIN,
   mergePreferences,
+  PREFERENCE_NUMBER_LIMITS,
+  preferencesPatchProblems,
   preferencesSchema,
   resetPreferences,
 } from './project/preferences.js';
 export type {
   EditorPreferences,
   HttpPreferences,
+  LimitedPreferenceKey,
+  PreferenceNumberLimit,
   LayoutPreference,
   MockPreferences,
   Preferences,

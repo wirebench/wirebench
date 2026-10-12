@@ -27,6 +27,9 @@ import {
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import type { SectionProps } from './sections/section-props.js';
+import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../../state/preferences-defaults.js';
+import { proxyHostProblem } from './validators.js';
 
 /** Proxy preferences, applied to every send. */
 export function ProxySection({ preferences, update, locked = () => false }: SectionProps) {
@@ -55,6 +58,8 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
         setting="proxy.host"
         value={proxy.host ?? ''}
         readOnly={!manual}
+        trim
+        validate={proxyHostProblem}
         testId="proxy-host"
         locked={locked('proxy.host')}
         onCommit={(host) => update({ proxy: { host } })}
@@ -63,16 +68,19 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
         label="Port"
         setting="proxy.port"
         value={proxy.port}
-        min={1}
+        {...PREFERENCE_LIMITS['proxy.port']}
+        readOnly={!manual}
         testId="proxy-port"
         locked={locked('proxy.port')}
-        onCommit={(port) => update({ proxy: { port: port ?? undefined } })}
+        // `null` clears the port in main; `undefined` would leave it as it was.
+        onCommit={(port) => update({ proxy: { port: port ?? null } })}
       />
       <TextSetting
         label="Username"
         setting="proxy.username"
         value={proxy.username ?? ''}
         readOnly={!manual}
+        trim
         testId="proxy-username"
         locked={locked('proxy.username')}
         onCommit={(username) => update({ proxy: { username } })}
@@ -87,9 +95,15 @@ export function ProxySection({ preferences, update, locked = () => false }: Sect
           />
         </div>
       </SettingsRow>
+      {/*
+        Excludes stay editable in every mode, unlike the fields above: `resolveProxyFor` checks
+        them before it consults the system proxy too, so they matter under "System proxy" as much
+        as under "Manual" (the group hint says so).
+      */}
       <TextSetting
         label="Excludes"
         setting="proxy.excludes"
+        trim
         value={proxy.excludes.join(', ')}
         testId="proxy-excludes"
         locked={locked('proxy.excludes')}
@@ -197,14 +211,17 @@ export function SslSection({ preferences, update, locked = () => false }: Sectio
         onChange={(clientKeystoreRef) => update({ ssl: { clientKeystoreRef } })}
       />
       <NumberSetting
-        label="Expiry warning (days)"
+        label="Expiry warning"
         setting="ssl.expiryWarningDays"
         value={ssl.expiryWarningDays}
-        min={0}
-        max={3650}
+        {...PREFERENCE_LIMITS['ssl.expiryWarningDays']}
+        unit="days"
+        placeholder={String(DEFAULT_PREFERENCES_WIRE.ssl.expiryWarningDays)}
         testId="ssl-expiry-warning-days"
         hint="Warn in Problems this many days before a keystore, CA bundle or endpoint certificate expires. 0 warns only once expired."
-        onCommit={(expiryWarningDays) => update({ ssl: { expiryWarningDays: expiryWarningDays ?? 30 } })}
+        onCommit={(expiryWarningDays) =>
+          update({ ssl: { expiryWarningDays: expiryWarningDays ?? DEFAULT_PREFERENCES_WIRE.ssl.expiryWarningDays } })
+        }
       />
       <BooleanSetting
         label="Trust all certificates"

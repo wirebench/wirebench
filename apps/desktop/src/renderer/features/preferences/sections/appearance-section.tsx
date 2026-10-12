@@ -6,6 +6,8 @@ import {
   TextSetting,
 } from '../../../components/settings-grid.js';
 import type { SectionProps } from './section-props.js';
+import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 
 /**
  * Settings → Appearance: how things look. The theme, Monaco's font, indent and wrapping, and the
@@ -39,6 +41,7 @@ export function AppearanceSection({ preferences, update }: SectionProps) {
           value={editor.fontFamily ?? ''}
           placeholder="JetBrains Mono, SF Mono, Menlo, monospace"
           monospace
+          trim
           setting="editor.fontFamily"
           hint="Used in body editors and responses."
           onCommit={(fontFamily) => update({ editor: { fontFamily } })}
@@ -46,17 +49,22 @@ export function AppearanceSection({ preferences, update }: SectionProps) {
         <NumberSetting
           label="Font size"
           value={editor.fontSize}
-          min={6}
+          {...PREFERENCE_LIMITS['editor.fontSize']}
+          unit="px"
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.editor.fontSize)}
           setting="editor.fontSize"
-          onCommit={(fontSize) => update({ editor: { fontSize: fontSize ?? 12 } })}
+          onCommit={(fontSize) =>
+            update({ editor: { fontSize: fontSize ?? DEFAULT_PREFERENCES_WIRE.editor.fontSize } })
+          }
         />
         <NumberSetting
           label="Tab size"
           value={editor.tabSize}
-          min={1}
+          {...PREFERENCE_LIMITS['editor.tabSize']}
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.editor.tabSize)}
           testId="preferences-tab-size"
           setting="editor.tabSize"
-          onCommit={(tabSize) => update({ editor: { tabSize: tabSize ?? 3 } })}
+          onCommit={(tabSize) => update({ editor: { tabSize: tabSize ?? DEFAULT_PREFERENCES_WIRE.editor.tabSize } })}
           hint="Also the indent used when formatting or recreating an envelope."
         />
         <BooleanSetting

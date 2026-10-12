@@ -182,3 +182,158 @@ describe('settings grid, compact variant', () => {
     expect(screen.queryByRole('switch')).toBeNull();
   });
 });
+
+describe('NumberSetting validation', () => {
+  function port(props: Partial<React.ComponentProps<typeof NumberSetting>> = {}) {
+    const onCommit = vi.fn();
+    inCard(<NumberSetting label="Port" value={8080} min={1} max={65_535} onCommit={onCommit} {...props} />);
+    return { onCommit, input: screen.getByLabelText<HTMLInputElement>('Port') };
+  }
+
+  it('cannot take a letter, a dot or a minus sign in a whole-number field', () => {
+    const { input } = port();
+    for (const value of ['8080a', '80.5', '-1', '1e3', '0x10']) {
+      fireEvent.change(input, { target: { value } });
+      expect(input.value, value).toBe('8080');
+    }
+    fireEvent.change(input, { target: { value: '3128' } });
+    expect(input.value).toBe('3128');
+  });
+
+  it('refuses a pasted value with any other character whole, but drops surrounding whitespace', () => {
+    const { input } = port();
+    fireEvent.change(input, { target: { value: '31 28' } });
+    expect(input.value).toBe('8080');
+    fireEvent.change(input, { target: { value: 'port: 3128' } });
+    expect(input.value).toBe('8080');
+    fireEvent.change(input, { target: { value: ' 3128\t' } });
+    expect(input.value).toBe('3128');
+  });
+
+  it('accepts a minus sign only when the minimum is negative', () => {
+    const { input } = port({ min: -10, max: 10 });
+    fireEvent.change(input, { target: { value: '-5' } });
+    expect(input.value).toBe('-5');
+  });
+
+  it('says what is wrong as it is typed, marks the field invalid and never commits', () => {
+    const { input, onCommit } = port();
+    fireEvent.change(input, { target: { value: '99999' } });
+    const message = screen.getByText('Enter a whole number from 1 to 65535');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toBe(message.id);
+    expect(input.className).toContain('border-status-danger');
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    // Blur keeps the draft and the message, for the user to fix.
+    expect(input.value).toBe('99999');
+    expect(screen.getByText('Enter a whole number from 1 to 65535')).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: '0' } });
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    fireEvent.change(input, { target: { value: '65535' } });
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    expect(screen.queryByTestId('setting-error')).toBeNull();
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith(65_535);
+  });
+
+  it('reverts an invalid draft on Escape', () => {
+    const { input, onCommit } = port();
+    fireEvent.change(input, { target: { value: '0' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('8080');
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    expect(screen.queryByTestId('setting-error')).toBeNull();
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('takes decimals only when integer is false', () => {
+    const { input, onCommit } = port({ integer: false, min: 0.01, max: 1024, value: 5 });
+    fireEvent.change(input, { target: { value: '0.5' } });
+    expect(input.value).toBe('0.5');
+    expect(input.getAttribute('inputmode')).toBe('decimal');
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith(0.5);
+
+    fireEvent.change(input, { target: { value: '.' } });
+    expect(screen.getByText('Enter a number from 0.01 to 1024')).toBeTruthy();
+    fireEvent.change(input, { target: { value: '1.2.3' } });
+    expect(input.value).toBe('.');
+  });
+
+  it('commits undefined for an empty field and shows the placeholder', () => {
+    const { input, onCommit } = port({ placeholder: '3128' });
+    expect(input.placeholder).toBe('3128');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith(undefined);
+  });
+
+  it('shows a unit after the field and describes the field with it', () => {
+    inCard(<NumberSetting label="Socket timeout" value={60_000} unit="ms" onCommit={() => undefined} />);
+    const input = screen.getByLabelText('Socket timeout');
+    const unit = screen.getByTestId('setting-unit');
+    expect(unit.textContent).toBe('ms');
+    expect(input.getAttribute('aria-describedby')).toBe(unit.id);
+  });
+
+  it('describes the rule when only a minimum is set', () => {
+    inCard(<NumberSetting label="Threshold" value={0} min={0} onCommit={() => undefined} />);
+    const input = screen.getByLabelText('Threshold');
+    fireEvent.change(input, { target: { value: '99999999999999999999' } });
+    expect(screen.getByText('Enter a whole number of 0 or more')).toBeTruthy();
+  });
+
+  it('does not commit or validate a read-only field', () => {
+    const { input, onCommit } = port({ readOnly: true });
+    expect(input.hasAttribute('readonly')).toBe(true);
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+});
+
+describe('TextSetting validation', () => {
+  const noSpaces = (value: string): string | undefined => (value.includes(' ') ? 'No spaces' : undefined);
+
+  it('shows the rule inline, keeps the draft and does not commit an invalid value', () => {
+    const onCommit = vi.fn();
+    inCard(<TextSetting label="Host" value="a" validate={noSpaces} trim onCommit={onCommit} />);
+    const input = screen.getByLabelText<HTMLInputElement>('Host');
+    fireEvent.change(input, { target: { value: 'a b' } });
+    const message = screen.getByText('No spaces');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toBe(message.id);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(input.value).toBe('a b');
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('a');
+    expect(screen.queryByText('No spaces')).toBeNull();
+  });
+
+  it('trims surrounding whitespace before validating and committing', () => {
+    const onCommit = vi.fn();
+    inCard(<TextSetting label="Host" value="a" validate={noSpaces} trim onCommit={onCommit} />);
+    const input = screen.getByLabelText<HTMLInputElement>('Host');
+    fireEvent.change(input, { target: { value: '  proxy  ' } });
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith('proxy');
+    expect(input.value).toBe('proxy');
+  });
+
+  it('leaves whitespace alone without trim', () => {
+    const onCommit = vi.fn();
+    inCard(<TextSetting label="Value" value="" onCommit={onCommit} />);
+    const input = screen.getByLabelText('Value');
+    fireEvent.change(input, { target: { value: ' x ' } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith(' x ');
+  });
+});

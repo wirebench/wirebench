@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PREFERENCES,
+  describePreferenceLimit,
   mergePreferences,
+  PREFERENCE_NUMBER_LIMITS,
+  preferencesPatchProblems,
   preferencesSchema,
   resetPreferences,
 } from '../../../src/project/preferences.js';
@@ -128,11 +131,13 @@ describe('network preference defaults', () => {
     expect(DEFAULT_PREFERENCES.http.allowH2).toBe(false);
   });
 
-  it('keeps a certificate expiry warning window in range, and falls back to 30 days otherwise', () => {
+  it('keeps a certificate expiry warning window in range, clamping one read from disk', () => {
     expect(mergePreferences({ ssl: { expiryWarningDays: 7 } }).ssl.expiryWarningDays).toBe(7);
     expect(mergePreferences({ ssl: { expiryWarningDays: 0 } }).ssl.expiryWarningDays).toBe(0);
-    expect(mergePreferences({ ssl: { expiryWarningDays: -1 } }).ssl.expiryWarningDays).toBe(30);
-    expect(mergePreferences({ ssl: { expiryWarningDays: 2.5 } }).ssl.expiryWarningDays).toBe(30);
+    expect(mergePreferences({ ssl: { expiryWarningDays: -1 } }).ssl.expiryWarningDays).toBe(0);
+    expect(mergePreferences({ ssl: { expiryWarningDays: 2.5 } }).ssl.expiryWarningDays).toBe(3);
+    expect(mergePreferences({ ssl: { expiryWarningDays: 99_999 } }).ssl.expiryWarningDays).toBe(3650);
+    expect(mergePreferences({ ssl: { expiryWarningDays: 'soon' } }).ssl.expiryWarningDays).toBe(30);
   });
 
   it('keeps the manual proxy fields, including the passwordRef, across a merge', () => {
@@ -188,5 +193,130 @@ describe('ui.logSize', () => {
     expect(mergePreferences({ ui: { logSize: 20 } }).ui.logSize).toBe(100);
     expect(mergePreferences({ ui: { logSize: 99999 } }).ui.logSize).toBe(5000);
     expect(mergePreferences({ ui: {} }).ui.logSize).toBe(500);
+  });
+});
+
+describe('numeric preference limits', () => {
+  it('every default sits inside its own limit', () => {
+    for (const [key, limit] of Object.entries(PREFERENCE_NUMBER_LIMITS)) {
+      const [section, field] = key.split('.') as [keyof typeof DEFAULT_PREFERENCES, string];
+      const value = (DEFAULT_PREFERENCES[section] as unknown as Record<string, number | undefined>)[field];
+      if (value === undefined) {
+        continue; // an optional field with no default (proxy.port, rest.oauth2CallbackPort)
+      }
+      expect(value, key).toBeGreaterThanOrEqual(limit.min);
+      if ('max' in limit) {
+        expect(value, key).toBeLessThanOrEqual(limit.max);
+      }
+    }
+  });
+
+  it('describes a rule in words', () => {
+    expect(describePreferenceLimit({ min: 1, max: 65_535, integer: true })).toBe('a whole number from 1 to 65535');
+    expect(describePreferenceLimit({ min: 0, integer: true })).toBe('a whole number of 0 or more');
+    expect(describePreferenceLimit({ min: 0.5, max: 2, integer: false })).toBe('a number from 0.5 to 2');
+  });
+
+  it.each([
+    [{ proxy: { port: 80.5 } }, 'proxy.port must be a whole number from 1 to 65535'],
+    [{ proxy: { port: 99_999 } }, 'proxy.port must be a whole number from 1 to 65535'],
+    [{ proxy: { port: 0 } }, 'proxy.port must be a whole number from 1 to 65535'],
+    [{ rest: { oauth2CallbackPort: 80 } }, 'rest.oauth2CallbackPort must be a whole number from 1024 to 65535'],
+    [{ rest: { prettyPrintMaxBytes: 0 } }, 'rest.prettyPrintMaxBytes must be a whole number from 1 to 1073741824'],
+    [{ rest: { maxRedirects: 51 } }, 'rest.maxRedirects must be a whole number from 0 to 50'],
+    [{ editor: { fontSize: 100 } }, 'editor.fontSize must be a whole number from 6 to 72'],
+    [{ editor: { tabSize: 0 } }, 'editor.tabSize must be a whole number from 1 to 16'],
+    [{ ui: { historyCap: 1.5 } }, 'ui.historyCap must be a whole number from 1 to 100000'],
+    [{ ui: { logSize: 6000 } }, 'ui.logSize must be a whole number from 100 to 5000'],
+    [{ http: { socketTimeoutMs: -1 } }, 'http.socketTimeoutMs must be a whole number from 0 to 3600000'],
+    [{ http: { maxConnections: 0 } }, 'http.maxConnections must be a whole number from 1 to 1000'],
+    [
+      { http: { chunkingThreshold: Number.POSITIVE_INFINITY } },
+      'http.chunkingThreshold must be a whole number of 0 or more',
+    ],
+    [{ secrets: { sourceCacheSeconds: 3601 } }, 'secrets.sourceCacheSeconds must be a whole number from 0 to 3600'],
+    [{ ssl: { expiryWarningDays: 3651 } }, 'ssl.expiryWarningDays must be a whole number from 0 to 3650'],
+  ])('refuses %j in a patch, naming the rule', (patch, message) => {
+    expect(preferencesPatchProblems(patch)).toEqual([message]);
+  });
+
+  it('accepts in-range values, null for a clearable port, and ignores unknown sections', () => {
+    expect(
+      preferencesPatchProblems({
+        proxy: { port: 8080 },
+        rest: { oauth2CallbackPort: null, prettyPrintMaxBytes: 10_486 },
+        editor: { fontSize: 72, tabSize: 16 },
+        ui: { historyCap: 100_000, logSize: 100 },
+        nonsense: { anything: 1 },
+      }),
+    ).toEqual([]);
+    expect(preferencesPatchProblems(undefined)).toEqual([]);
+  });
+
+  it('reports a value of the wrong type with its path', () => {
+    expect(preferencesPatchProblems({ wsdl: { sampleValues: 'yes' } })).toEqual([
+      expect.stringMatching(/^wsdl\.sampleValues: /) as unknown as string,
+    ]);
+  });
+
+  it('clears an optional port when a patch sets it to null', () => {
+    const base = mergePreferences({
+      proxy: { mode: 'manual', host: 'proxy', port: 3128 },
+      rest: { oauth2CallbackPort: 8765 },
+    });
+    const cleared = mergePreferences({ proxy: { port: null }, rest: { oauth2CallbackPort: null } }, base);
+    expect(cleared.proxy).not.toHaveProperty('port');
+    expect(cleared.proxy.host).toBe('proxy');
+    expect(cleared.rest).not.toHaveProperty('oauth2CallbackPort');
+    // `undefined` still means "leave it alone".
+    expect(mergePreferences({ proxy: { port: undefined } }, base).proxy.port).toBe(3128);
+  });
+});
+
+describe('loading a file written before the limits were tightened', () => {
+  /** What an older build could have written: every value now out of range, siblings valid. */
+  const OLD_FILE = {
+    version: 1,
+    http: { userAgent: 'Old/1', socketTimeoutMs: 10_000_000, maxConnections: 5000, chunkingThreshold: -4 },
+    proxy: { mode: 'manual', host: 'proxy.internal', port: 99_999, excludes: ['localhost'] },
+    rest: { defaultAccept: 'application/json', oauth2CallbackPort: 80, prettyPrintMaxBytes: 0, maxRedirects: 500 },
+    editor: { fontFamily: 'Fira Code', fontSize: 200, tabSize: 2.4, wordWrap: true },
+    ui: { theme: 'light', historyCap: 0, logSize: 20 },
+  };
+
+  it('clamps each out-of-range value and keeps every sibling field', () => {
+    const merged = mergePreferences(OLD_FILE);
+    expect(merged.http).toMatchObject({
+      userAgent: 'Old/1',
+      socketTimeoutMs: 3_600_000,
+      maxConnections: 1000,
+      chunkingThreshold: 0,
+    });
+    expect(merged.proxy).toMatchObject({
+      mode: 'manual',
+      host: 'proxy.internal',
+      port: 65_535,
+      excludes: ['localhost'],
+    });
+    expect(merged.rest).toMatchObject({
+      defaultAccept: 'application/json',
+      oauth2CallbackPort: 1024,
+      prettyPrintMaxBytes: 1,
+      maxRedirects: 50,
+    });
+    expect(merged.editor).toMatchObject({ fontFamily: 'Fira Code', fontSize: 72, tabSize: 2, wordWrap: true });
+    expect(merged.ui).toMatchObject({ theme: 'light', historyCap: 1, logSize: 100 });
+  });
+
+  it('produces a document the strict schema accepts', () => {
+    const merged = mergePreferences(OLD_FILE);
+    expect(preferencesPatchProblems(merged)).toEqual([]);
+    expect(preferencesSchema.safeParse({ version: 1, ...merged }).success).toBe(true);
+  });
+
+  it('still loses only the section holding a value of the wrong type', () => {
+    const merged = mergePreferences({ ...OLD_FILE, editor: { fontSize: 'big', tabSize: 2 } });
+    expect(merged.editor).toEqual(DEFAULT_PREFERENCES.editor);
+    expect(merged.proxy.port).toBe(65_535);
   });
 });
