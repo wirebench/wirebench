@@ -23,6 +23,7 @@ import type { GetSecret } from '../secrets/resolve.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
 import { resolveWorkspaceApiBaseUrl, withActiveEnvironment } from '../workspace/environments.js';
 import { loadKeystore, toTlsClientIdentity } from '../keystore/index.js';
+import type { ClientIdentity } from './host.js';
 import type { Keystore } from '../keystore/index.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
@@ -181,6 +182,17 @@ export async function tlsFor(
   };
 }
 
+/** The keystore identity an OAuth2 key-based client authenticates with: the host's loader, else the project's. */
+async function oauth2IdentityFor(context: RunContext, keystoreId: string): Promise<ClientIdentity | undefined> {
+  const identity =
+    context.host.tls?.identityFor !== undefined
+      ? await context.host.tls.identityFor(keystoreId)
+      : await clientIdentityFor(context, keystoreId);
+  return identity?.cert !== undefined && identity.key !== undefined
+    ? { cert: identity.cert, key: identity.key }
+    : undefined;
+}
+
 /** The run's shared token source, or a fresh one for a send outside a run. */
 export function tokenSourceOf(context: RunContext): RunTokenSource {
   return (
@@ -211,6 +223,7 @@ export async function authFor(
   }
   const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
     scopes: scopesFor(context),
+    identityFor: (keystoreId) => oauth2IdentityFor(context, keystoreId),
     ...(tls !== undefined ? { tls } : {}),
     ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
