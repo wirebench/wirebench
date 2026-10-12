@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Client-signed JWT auth.** A REST, gRPC or WebSocket request, folder or API can send a JWT that
+  Wirebench signs itself, with HS, RS, ES or PS at 256, 384 or 512 bits. The claims and extra header
+  fields are JSON whose strings take `${…}` properties, and `iat`, `exp` and `jti` can be generated.
+  The HMAC secret is a secret-store reference and the private key comes from a keystore, never from
+  the project file; a PEM keystore may now hold just a private key. The token goes in a header with a
+  configurable name and prefix, or in a query parameter, and is reused until 30 seconds before it
+  expires. It works in the app, `wirebench run` and MCP `send`; the headers preview, **Copy as** and
+  generated code show a freshly signed token while secrets are shown (#348).
 - **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
   Each column is read as `${#Data#column}`, substituted literally, and scripts read the row with
   `iteration.data.get()`. `--iterations` sets the count (`--data-overrun stop|wrap|repeat-last` when it
@@ -109,9 +117,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
-- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`; a project
-  saved by this version cannot be opened by an older one, which would drop them and send without
-  them (#334).
+- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`, and auth can
+  be a client-signed JWT (`type: jwt`); a project saved by this version cannot be opened by an older
+  one, which would drop them and send without them (#334, #348).
 - **`@wirebench/engine`: a protocol's scripting facet has `levelTypes()`,** the generic types an API's,
   interface's or folder's script is checked against. `ScriptedRequest` gains `outer` (its levels'
   scripts, outermost first) and its own `scripts` is optional; `SentScripts` gains `levels` (#334).

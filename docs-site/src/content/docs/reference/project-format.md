@@ -217,8 +217,8 @@ The project format is currently **version 9**:
    file beside the request, under `<slug>.examples/<id>.body.<ext>`.
 8. **Version 8** — auth can be Kerberos (`type: kerberos`), on a request or wherever auth is inherited from; a version-7 project migrates unchanged.
 9. **Version 9** — an API, a SOAP interface and a REST or gRPC folder can carry a `scripts` key, with
-   their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them; a version-8
-   project migrates unchanged.
+   their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them, and REST, gRPC
+   and WebSocket auth can be a client-signed JWT (`type: jwt`); a version-8 project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it
