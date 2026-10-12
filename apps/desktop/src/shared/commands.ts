@@ -33,6 +33,7 @@ export const COMMAND_IDS = [
   'sftp.rename',
   'sftp.delete',
   'sftp.permissions',
+  'sftp.copyToOtherPane',
   'sftp.toggleHidden',
   'sftp.focusPathBar',
   'view.showCookies',

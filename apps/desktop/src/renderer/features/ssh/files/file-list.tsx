@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ChevronUp, File, FileSymlink, Folder } from 'lucide-react';
 import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
@@ -37,6 +37,8 @@ export interface FileListProps {
   readonly renderName?: (entry: SftpEntryWire) => ReactNode | undefined;
   /** Bumped to focus the list (after a rename, or from the other pane). */
   readonly focusRequest?: number;
+  /** A row dragged: rows are draggable when this is given. A row not in the selection is selected first. */
+  readonly onRowDragStart?: (entry: SftpEntryWire, event: DragEvent<HTMLDivElement>) => void;
 }
 
 function EntryIcon({ entry }: { readonly entry: SftpEntryWire }) {
@@ -72,6 +74,7 @@ export function FileList({
   onRowContextMenu,
   renderName,
   focusRequest = 0,
+  onRowDragStart,
 }: FileListProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState(0);
@@ -194,7 +197,12 @@ export function FileList({
                 aria-selected={isSelected}
                 data-testid="files-row"
                 data-name={entry.name}
+                data-folder={isFolderLike(entry) ? 'true' : undefined}
                 data-cursor={item.index === at ? 'true' : undefined}
+                draggable={onRowDragStart !== undefined}
+                onDragStart={(event) => {
+                  onRowDragStart?.(entry, event);
+                }}
                 onClick={(e) => {
                   onClick(e, item.index);
                 }}

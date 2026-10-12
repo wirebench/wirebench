@@ -262,6 +262,18 @@ const EMPTY_EDITORS = {
   selectedAttachments: {},
 } as const;
 
+/** Asked before a tab closes, by tab id; see {@link setCloseGuard}. */
+const closeGuards = new Map<string, () => boolean>();
+
+/**
+ * Lets a tab hold its own close (a Files tab with copies running asks first): the guard returns `true` to
+ * keep the tab open, and closes it later itself once the user agrees. `undefined` removes the guard.
+ */
+export function setCloseGuard(id: string, guard: (() => boolean) | undefined): void {
+  if (guard === undefined) closeGuards.delete(id);
+  else closeGuards.set(id, guard);
+}
+
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
   ...EMPTY_EDITORS,
   tabs: [],
@@ -315,7 +327,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   close: (id) => {
     const { tabs, activeId, activeBySet, displayedSet } = get();
     const tab = tabs.find((t) => t.id === id);
-    if (tab === undefined) {
+    if (tab === undefined || closeGuards.get(id)?.() === true) {
       return;
     }
     const tabSet = tabSetOf(tab);
