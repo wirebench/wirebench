@@ -14,7 +14,7 @@ import {
   type ConnectOptions,
   type GetSecret,
 } from '@wirebench/engine';
-import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, powerMonitor, protocol, safeStorage, session, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
@@ -55,7 +55,7 @@ import {
 import { SshImportService } from './ssh-import.js';
 import { sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
-import { SshService, sshSessionsEndOnSwitch } from './ssh-service.js';
+import { SshService, forwardResume, sshSessionsEndOnSwitch } from './ssh-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
 import { enabledKindsFromEnv, kindRegistry } from './kinds/enabled-kinds.js';
@@ -799,6 +799,10 @@ void app.whenReady().then(() => {
 
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window);
+  });
+
+  forwardResume(powerMonitor, () => {
+    broadcast(events.ssh.resumed, {});
   });
 
   // Created once, up front, so it exists before any sync operation can start (see `hooksDir`).

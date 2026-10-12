@@ -4,8 +4,11 @@ import {
   attachTerminal,
   bytesToBase64,
   detachTerminal,
+  subscribeToSshEvents,
 } from '../../src/renderer/features/ssh/terminal-session.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { onReconnectNow } from '../../src/renderer/features/ssh/reconnect.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 beforeEach(() => {
   useHostsStore.setState({ sessions: {} });
@@ -20,7 +23,7 @@ it('buffers data before attach, streams after, and forwards exit', () => {
   dispatch('ssh.data', { sessionId: 's', data: bytesToBase64(new Uint8Array([99])) });
   expect(write).toHaveBeenLastCalledWith(new Uint8Array([99]));
   dispatch('ssh.exit', { sessionId: 's', code: 0 });
-  expect(exit).toHaveBeenCalledWith(0);
+  expect(exit).toHaveBeenCalledWith(0, 'exit');
   detachTerminal('s');
   expect(() => {
     dispatch('ssh.data', { sessionId: 's', data: 'ZA==' });
@@ -28,11 +31,38 @@ it('buffers data before attach, streams after, and forwards exit', () => {
   detachTerminal('s');
 });
 
+it('forwards why a session ended, so a tab can tell a drop from an exit', () => {
+  const exit = vi.fn();
+  attachTerminal('r', { write: vi.fn(), exit });
+  dispatch('ssh.exit', { sessionId: 'r', code: null, reason: 'lost' });
+  expect(exit).toHaveBeenCalledWith(null, 'lost');
+  detachTerminal('r');
+});
+
+it('waking from sleep (ssh.resumed) and the network coming back tell every tab to reconnect now', () => {
+  installWirebenchApi({});
+  const on = vi.fn<(name: string, listener: (payload: unknown) => void) => () => void>(() => () => undefined);
+  window.wirebench.on = on as unknown as typeof window.wirebench.on;
+  const off = subscribeToSshEvents();
+  const listener = vi.fn();
+  const unlisten = onReconnectNow(listener);
+  const resumed = on.mock.calls.find(([name]) => name === 'ssh.resumed')?.[1];
+  expect(resumed).toBeDefined();
+  resumed?.({});
+  expect(listener).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(new Event('online'));
+  expect(listener).toHaveBeenCalledTimes(2);
+  off();
+  window.dispatchEvent(new Event('online'));
+  expect(listener).toHaveBeenCalledTimes(2);
+  unlisten();
+});
+
 it('replays an exit that arrived before attach', () => {
   dispatch('ssh.exit', { sessionId: 't', code: null });
   const exit = vi.fn();
   attachTerminal('t', { write: vi.fn(), exit });
-  expect(exit).toHaveBeenCalledWith(null);
+  expect(exit).toHaveBeenCalledWith(null, 'exit');
   detachTerminal('t');
 });
 

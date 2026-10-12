@@ -2044,7 +2044,12 @@ export const preferencesWireSchema = z.object({
   accounts: z.object({ showInStatusBar: z.boolean() }),
   secrets: z.object({ sourceCacheSeconds: z.number() }),
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
-  terminal: z.object({ confirmMultilinePaste: z.boolean(), copyOnSelect: z.boolean() }),
+  terminal: z.object({
+    confirmMultilinePaste: z.boolean(),
+    copyOnSelect: z.boolean(),
+    autoReconnect: z.boolean(),
+    reconnectAttempts: z.number(),
+  }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;

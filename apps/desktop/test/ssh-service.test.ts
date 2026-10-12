@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
 import type { HostsFile, KnownHostEntry, OpenSessionOptions, SshSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
-import { SshService, sshSessionsEndOnSwitch, whenWorkspaceSwitches } from '../src/main/ssh-service.js';
+import { SshService, forwardResume, sshSessionsEndOnSwitch, whenWorkspaceSwitches } from '../src/main/ssh-service.js';
 import type { SshServiceDeps } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
 
@@ -32,7 +32,7 @@ type FakeSender = ReturnType<typeof sender>;
 
 function fakeSession(id = 's1') {
   const data = new Set<(d: Uint8Array) => void>();
-  const exit = new Set<(e: { code: number | null; signal?: string }) => void>();
+  const exit = new Set<Parameters<SshSession['onExit']>[0]>();
   const write = vi.fn();
   const resize = vi.fn();
   const close = vi.fn();
@@ -61,8 +61,8 @@ function fakeSession(id = 's1') {
     pushData: (b: Buffer) => {
       for (const l of data) l(b);
     },
-    pushExit: (code: number | null, signal?: string) => {
-      for (const l of exit) l({ code, ...(signal ? { signal } : {}) });
+    pushExit: (code: number | null, signal?: string, reason: 'exit' | 'lost' | 'closed' = 'exit') => {
+      for (const l of exit) l({ code, ...(signal ? { signal } : {}), reason });
     },
   };
 }
@@ -575,7 +575,11 @@ describe('SshService', () => {
     service.resize(as(s), { sessionId, cols: 100, rows: 30 });
     expect(fake.resize).toHaveBeenCalledWith(100, 30);
     fake.pushExit(0);
-    expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.exit' }), { sessionId, code: 0 });
+    expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.exit' }), {
+      sessionId,
+      code: 0,
+      reason: 'exit',
+    });
     expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.state' }), {
       sessionId,
       state: 'closed',
@@ -584,6 +588,27 @@ describe('SshService', () => {
       expect.objectContaining({ code: 'ssh-session-unknown' }),
     );
     service.close(as(s), { sessionId }); // idempotent after exit
+  });
+
+  it('a lost connection reaches the window as ssh.exit with reason lost', async () => {
+    const { service, fake, emit } = make({ known: [KEY] });
+    const s = sender(1);
+    const { sessionId } = await service.connect(as(s), CONNECT);
+    fake.pushExit(null, undefined, 'lost');
+    expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.exit' }), {
+      sessionId,
+      code: null,
+      reason: 'lost',
+    });
+  });
+
+  it('forwardResume broadcasts on every wake from sleep', () => {
+    const listeners: (() => void)[] = [];
+    const broadcast = vi.fn();
+    forwardResume({ on: (_event, listener) => listeners.push(listener) }, broadcast);
+    for (const listener of listeners) listener();
+    for (const listener of listeners) listener();
+    expect(broadcast).toHaveBeenCalledTimes(2);
   });
 
   it('close closes the session once and stops its events', async () => {

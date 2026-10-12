@@ -14,6 +14,8 @@ export interface SshFixture {
   readonly port: number;
   readonly hostKey: KnownHostEntry;
   lastResize?: { cols: number; rows: number };
+  /** Resets every client's TCP connection, as a network that went away would: no exit status, no disconnect. */
+  drop(): void;
   close(): Promise<void>;
 }
 
@@ -42,6 +44,9 @@ export async function startSshFixture(options: {
   const fixture: SshFixture = {
     port: 0,
     hostKey: { host: '', keyType: keyTypeOf(publicBlob), fingerprint: fingerprintOf(publicBlob) },
+    drop: () => {
+      for (const client of clients) (client as unknown as { _sock: net.Socket })._sock.resetAndDestroy();
+    },
     close: async () => {
       for (const client of clients) client.end();
       for (const socket of sockets) socket.destroy();

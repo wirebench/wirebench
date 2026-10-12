@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A terminal session the network drops reconnects on its own.** After a reset, a timeout or a jump
+  host's connection ending, the tab keeps its scrollback and tries again after 1, 2, 4, 8 and 16
+  seconds, then every 30 seconds, showing "Reconnecting… attempt 2 of 10" with a countdown, **Retry
+  now** and **Cancel**. Waking from sleep or the network coming back tries every waiting tab at once. A
+  shell that exited, a sign-in failure or a changed host key never reconnects. Preferences → Terminal
+  turns it off (`terminal.autoReconnect`) and sets the attempt limit (`terminal.reconnectAttempts`, 1 to
+  100, default 10) (#407).
+
 - **Client-signed JWT auth.** A REST, gRPC or WebSocket request, folder or API can send a JWT that
   Wirebench signs itself, with HS, RS, ES or PS at 256, 384 or 512 bits. The claims and extra header
   fields are JSON whose strings take `${…}` properties, and `iat`, `exp` and `jti` can be generated.
@@ -28,6 +36,7 @@ All notable changes to this project are documented here. The format follows
   answered once. cURL import reads `--digest` and `--aws-sigv4`, storing every value as a secret, and
   the cURL export writes them. `wirebench run` and the MCP `send` read the credentials from
   `WIREBENCH_SECRET_*`. gRPC and WebSocket refuse both schemes by name (#339).
+
 - **`wirebench lint` checks an OpenAPI 2.0, 3.0, 3.1 or 3.2 document.** A built-in hygiene rule set
   checks descriptions, examples, `operationId`s and reusable schemas. A built-in OWASP API Top 10 rule
   set checks for no security scheme, credentials or OAuth endpoints over plain HTTP, and undefined

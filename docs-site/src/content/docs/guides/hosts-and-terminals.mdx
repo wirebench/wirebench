@@ -130,6 +130,12 @@ pagers, resize), and a host that is reached through a jump host is dialled hop b
 - When the remote shell exits, the tab stays and shows **Session ended (code N)** with **Reconnect**.
   If the connection could not be made, it shows **Could not connect** with **Reconnect**, and the
   reason is in the Problems tab.
+- When the network drops the connection (Wi-Fi changes, a VPN drops, the laptop sleeps), the tab
+  keeps its scrollback and reconnects on its own: it shows **Reconnecting… attempt N of 10** with a
+  countdown, **Retry now** and **Cancel**, and tries at once when the machine wakes or the network
+  comes back. A shell that exited, a sign-in failure or a changed host key never reconnects. After the
+  last attempt the tab shows the reason with **Reconnect**. **Preferences → Terminal** turns this off
+  and sets the number of attempts.
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.

@@ -48,7 +48,21 @@ describe('openSession', () => {
     expect(f.lastResize).toEqual({ cols: 132, rows: 40 });
     const exit = new Promise<{ code: number | null }>((r) => session!.onExit(r));
     session.write(Buffer.from('exit 3\n'));
-    expect((await exit).code).toBe(3);
+    expect(await exit).toEqual({ code: 3, reason: 'exit' });
+  });
+  it('a connection reset ends the session as lost, not as an exit', async () => {
+    const f = await fixture('pw');
+    session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+    const exit = new Promise<{ code: number | null; reason: string }>((r) => session!.onExit(r));
+    f.drop();
+    expect(await exit).toEqual({ code: null, reason: 'lost' });
+  });
+  it('close() ends the session as closed', async () => {
+    const f = await fixture('pw');
+    session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+    const exit = new Promise<{ code: number | null; reason: string }>((r) => session!.onExit(r));
+    session.close();
+    expect(await exit).toEqual({ code: null, reason: 'closed' });
   });
   it('reports the host key to verifyHostKey and refuses when rejected', async () => {
     const f = await fixture('pw');
@@ -141,9 +155,9 @@ describe('openSession', () => {
       rows: 24,
       verifyHostKey: accept,
     });
-    const exited = new Promise<{ code: number | null }>((r) => session!.onExit(r));
+    const exited = new Promise<{ code: number | null; reason: string }>((r) => session!.onExit(r));
     await outer.close();
-    expect((await exited).code).toBeNull();
+    expect(await exited).toEqual({ code: null, reason: 'lost' });
   });
   it('a host key rejected on a jump hop names that hop', async () => {
     const inner = await fixture('in');
