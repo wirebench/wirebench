@@ -18,7 +18,7 @@ import { OpenApiImportService } from '../src/main/openapi-import.js';
 import { createDefaultFetchDocument, parseOpenApi, writeApiDefinitionCache } from '@wirebench/engine';
 import type { DocumentFetchOptions, FetchDocument } from '@wirebench/engine';
 import { apiRestApplyUpdateResponseSchema, type ProjectWire } from '../src/shared/wire-types.js';
-import { apiRestPlanUpdateResponseSchema } from '../src/shared/kinds/rest/wire.js';
+import { apiRestLintResponseSchema, apiRestPlanUpdateResponseSchema } from '../src/shared/kinds/rest/wire.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -188,6 +188,7 @@ beforeEach(async () => {
       restSource: (apiId) => host.kind('rest').restSource(apiId),
       restPlanUpdate: (apiId, next) => host.kind('rest').planRestUpdate(apiId, next),
       restApplyUpdate: (apiId, next, options) => host.kind('rest').applyRestUpdate(apiId, next, options),
+      restLint: (apiId) => host.kind('rest').lintApi(apiId),
       webhookItems: (apiId) => host.kind('rest').webhookItems(apiId),
       importWebhooks: (apiId, keys) => host.kind('rest').importWebhooks(apiId, keys),
       apiDefinitionDocuments: unused,
@@ -613,5 +614,49 @@ describe('a webhook group linked to the API is updated in the same change as the
       await value('api.restApplyUpdate', { apiId: imported.apiId, fingerprint: plan.fingerprint }),
     );
     expect(applied.applied.webhooks).toEqual({ added: 0, orphaned: 0, restored: 0, rewritten: 0 });
+  });
+});
+
+describe('api.restLint', () => {
+  const lintDir = (): string => join(projectDir, 'project', 'lint');
+
+  it("lints the API's cached definition with the built-in rule sets", async () => {
+    const apiId = await importPets();
+    // The source changing afterwards does not matter: the lint reads the cache, never the source.
+    await writeFile(docPath, V2);
+    const { findings } = apiRestLintResponseSchema.parse(await value('api.restLint', { apiId }));
+    const rules = findings.map((finding) => finding.rule);
+    expect(rules).toContain('owasp-security-defined');
+    expect(rules).toContain('info-description');
+    expect(rules).toContain('operation-description');
+    expect(findings.find((finding) => finding.rule === 'info-description')).toMatchObject({
+      severity: 'warning',
+      path: '/info',
+      range: { start: { line: 2 } },
+    });
+    expect(findings.every((finding) => finding.source.endsWith('/openapi.yaml'))).toBe(true);
+  });
+
+  it("applies the project's lint/ folder", async () => {
+    const apiId = await importPets();
+    await mkdir(lintDir(), { recursive: true });
+    await writeFile(join(lintDir(), 'team.yaml'), 'builtin: [owasp]\nrules: { owasp-security-defined: info }\n');
+    const { findings } = apiRestLintResponseSchema.parse(await value('api.restLint', { apiId }));
+    expect(findings.map((finding) => [finding.rule, finding.severity])).toEqual([['owasp-security-defined', 'info']]);
+  });
+
+  it('shows a rule set that is not valid as one finding naming its file', async () => {
+    const apiId = await importPets();
+    await mkdir(lintDir(), { recursive: true });
+    await writeFile(join(lintDir(), 'bad.yaml'), 'rules: { nope: off }\n');
+    const { findings } = apiRestLintResponseSchema.parse(await value('api.restLint', { apiId }));
+    expect(findings).toEqual([
+      expect.objectContaining({ rule: 'lint-ruleset-invalid', severity: 'error', source: 'lint/bad.yaml' }),
+    ]);
+  });
+
+  it('refuses an API that did not cache its definition', async () => {
+    const apiId = await importPets(false);
+    expect((await failure('api.restLint', { apiId })).code).toBe('definition-not-cached');
   });
 });

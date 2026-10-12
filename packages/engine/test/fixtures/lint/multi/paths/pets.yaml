@@ -1,0 +1,4 @@
+get:
+  summary: List pets.
+  responses:
+    '200': { description: The pets. }

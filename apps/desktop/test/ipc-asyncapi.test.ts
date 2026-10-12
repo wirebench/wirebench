@@ -154,6 +154,7 @@ beforeEach(async () => {
       restSource: unused,
       restPlanUpdate: unused,
       restApplyUpdate: unused,
+      restLint: unused,
       webhookItems: unused,
       importWebhooks: unused,
       apiDefinitionDocuments: unused,

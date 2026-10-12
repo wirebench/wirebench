@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { LintFindingWire } from '../../shared/kinds/rest/wire.js';
 import type { ImportProblemWire, ValidationProblemWire } from '../../shared/kinds/soap/wire.js';
 
 /**
@@ -8,11 +9,12 @@ import type { ImportProblemWire, ValidationProblemWire } from '../../shared/kind
  * against its OpenAPI contract (`contract`, whose `location` is a JSON Pointer), a certificate
  * the workspace relies on nearing or past its expiry (`certificate`, whose `location` names the
  * endpoint or keystore; see `certificate-expiry.ts`), reading `hosts.yaml` (`hosts`, whose
- * `location` is the path of the offending key), or a mock stub the contract does not allow (`mock`,
- * whose `location` says whether the status, a header or the body is at fault).
+ * `location` is the path of the offending key), a mock stub the contract does not allow (`mock`,
+ * whose `location` says whether the status, a header or the body is at fault), or linting a REST
+ * API's cached definition (`lint`, whose `location` is a JSON Pointer into the document).
  */
 export type ProblemSource =
-  'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts' | 'mock';
+  'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts' | 'mock' | 'lint';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';
@@ -65,10 +67,20 @@ export interface ProblemsStore {
     direction: ProblemDirection,
     items: readonly ValidationProblemWire[],
   ) => void;
+  /**
+   * Replaces the lint findings of one REST API (group `lint:<apiId>`). An error stays an error;
+   * warnings, infos and hints all show as warnings, the only other severity Problems has.
+   */
+  readonly setLint: (apiId: string, findings: readonly LintFindingWire[]) => void;
   /** Drops every problem of one group, whatever its source. */
   readonly clear: (groupId: string) => void;
   /** Drops every problem of one source, optionally narrowed to a single request. */
   readonly clearSource: (source: ProblemSource, requestId?: string) => void;
+}
+
+/** The Problems group a REST API's lint findings are filed under. */
+export function lintGroupId(apiId: string): string {
+  return `lint:${apiId}`;
 }
 
 export const useProblemsStore = create<ProblemsStore>((set, get) => ({
@@ -96,6 +108,30 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => ({
           requestId,
           direction,
           problem,
+        })),
+      ],
+    });
+  },
+
+  setLint: (apiId, findings) => {
+    const groupId = lintGroupId(apiId);
+    const rest = get().items.filter((item) => item.groupId !== groupId);
+    set({
+      items: [
+        ...rest,
+        ...findings.map((finding) => ({
+          groupId,
+          source: 'lint' as const,
+          severity: finding.severity === 'error' ? ('error' as const) : ('warning' as const),
+          problem: {
+            code: finding.rule,
+            message: `${finding.rule}: ${finding.message}`,
+            source: 'lint',
+            location: finding.path === '' ? '/' : finding.path,
+            ...(finding.range !== undefined
+              ? { line: finding.range.start.line, column: finding.range.start.column }
+              : {}),
+          },
         })),
       ],
     });

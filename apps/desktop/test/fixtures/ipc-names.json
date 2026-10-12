@@ -34,6 +34,7 @@
     "api.importWebhooks",
     "api.inspectHttpFile",
     "api.restApplyUpdate",
+    "api.restLint",
     "api.restPlanUpdate",
     "api.webhookItems",
     "app.areas",

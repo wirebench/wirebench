@@ -25,6 +25,8 @@ export const restRoutes = {
   restSource: { method: 'restSource', by: 'entity' },
   restPlanUpdate: { method: 'planRestUpdate', by: 'entity' },
   restApplyUpdate: { method: 'applyRestUpdate', by: 'entity' },
+  /** Lints the API's cached definition with the built-in and the project's own rule sets. */
+  restLint: { method: 'lintApi', by: 'entity' },
   /** An API's webhooks and callbacks, and which of their keys the group linked to it already holds. */
   webhookItems: { method: 'webhookItems', by: 'entity' },
   /** Places the chosen webhooks/callbacks into the API's linked webhook group, creating it if needed. */
