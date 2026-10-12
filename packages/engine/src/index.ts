@@ -655,6 +655,24 @@ export type {
   TokenResponseInput,
   TokenSet,
 } from './http/auth/oauth2.js';
+export {
+  JWT_ALGORITHMS,
+  JWT_REUSE_MARGIN_SECONDS,
+  createJwtSource,
+  isHmacAlgorithm,
+  signJwt,
+  templateJwtJson,
+} from './http/auth/jwt.js';
+export type {
+  JwtAlgorithm,
+  JwtObject,
+  JwtSigningKey,
+  JwtSource,
+  JwtSourceOptions,
+  JwtTokenRequest,
+  SignJwtInput,
+  TemplatedJwtJson,
+} from './http/auth/jwt.js';
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';

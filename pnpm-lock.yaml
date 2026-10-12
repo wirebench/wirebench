@@ -230,6 +230,9 @@ importers:
       fontoxpath:
         specifier: ^3.34.0
         version: 3.34.0
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
       jsonpath-plus:
         specifier: ^10.4.0
         version: 10.4.0
