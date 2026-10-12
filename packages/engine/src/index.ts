@@ -1335,6 +1335,7 @@ export {
   loadPem,
   loadPkcs12,
   selectAlias,
+  signingKeyOf,
   toTlsClientIdentity,
 } from './keystore/index.js';
 export type {

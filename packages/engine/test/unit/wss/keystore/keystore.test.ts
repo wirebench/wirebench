@@ -2,7 +2,13 @@ import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import forge from 'node-forge';
 import { WssError } from '../../../../src/errors.js';
-import { keystoreTypeForPath, loadKeystore, selectAlias, toTlsClientIdentity } from '../../../../src/keystore/index.js';
+import {
+  keystoreTypeForPath,
+  loadKeystore,
+  selectAlias,
+  signingKeyOf,
+  toTlsClientIdentity,
+} from '../../../../src/keystore/index.js';
 import { toKeystoreDef, toKeystoreRef } from '../../../../src/project/keystores.js';
 import { generateClientCert, generateTestCa } from '../../../helpers/test-certs.js';
 import type { Keystore, KeystoreAlias } from '../../../../src/keystore/index.js';
@@ -214,8 +220,22 @@ describe('loadKeystore (pem)', () => {
     expect(error.message).toMatch(/only encrypted RSA keys/i);
   });
 
-  it('reports keystore-invalid when the bundle holds no certificate', () => {
-    expect(errorOf(() => loadKeystore(bytesOf(client.keyPem), { type: 'pem' })).code).toBe('keystore-invalid');
+  it('reads a bundle holding only a private key as a key-only entry', () => {
+    const keystore = loadKeystore(bytesOf(client.keyPem), { type: 'pem' });
+    expect(keystore.aliases).toHaveLength(1);
+    expect(keystore.aliases[0]).toMatchObject({ alias: 'key-0', keyOnly: true, hasPrivateKey: true, certPem: '' });
+    expect(keystore.aliases[0]?.keyPem).toContain('PRIVATE KEY');
+  });
+
+  it('reads a key-only EC key', () => {
+    const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({
+      type: 'pkcs8',
+      format: 'pem',
+    }) as string;
+    expect(loadKeystore(bytesOf(ec), { type: 'pem' }).aliases[0]?.keyOnly).toBe(true);
+  });
+
+  it('reports keystore-invalid when the bundle holds neither a certificate nor a key', () => {
     expect(errorOf(() => loadKeystore(bytesOf('garbage'), { type: 'pem' })).code).toBe('keystore-invalid');
   });
 });
@@ -259,8 +279,35 @@ describe('selectAlias', () => {
     expect(errorOf(() => selectAlias({ type: 'pem', aliases: [] })).code).toBe('keystore-alias-missing');
   });
 
+  it('refuses a key-only entry where a certificate is needed', () => {
+    const keyOnly: Keystore = { type: 'pem', aliases: [{ ...entry('key-0', true), certPem: '', keyOnly: true }] };
+    expect(errorOf(() => selectAlias(keyOnly)).code).toBe('keystore-invalid');
+    expect(errorOf(() => selectAlias(keyOnly, 'key-0')).code).toBe('keystore-invalid');
+    expect(selectAlias(keyOnly, undefined, { allowKeyOnly: true }).alias).toBe('key-0');
+  });
+
   it('falls back to a certificate-only entry when it is the only one', () => {
     expect(selectAlias({ type: 'pem', aliases: [entry('ca', false)] }).alias).toBe('ca');
+  });
+});
+
+describe('signingKeyOf', () => {
+  it('opens the private key of a key-only keystore', () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+    const key = signingKeyOf(loadKeystore(bytesOf(pem), { type: 'pem' }));
+    expect(key.type).toBe('private');
+    expect(key.asymmetricKeyType).toBe('rsa');
+  });
+
+  it('opens the key of a client identity', () => {
+    const keystore = loadKeystore(buildPkcs12(), { type: 'pkcs12', password: PASSWORD });
+    expect(signingKeyOf(keystore, 'client').type).toBe('private');
+  });
+
+  it('refuses an alias with no private key', () => {
+    const keystore = loadKeystore(bytesOf(generateTestCa().certPem), { type: 'pem' });
+    expect(errorOf(() => signingKeyOf(keystore)).code).toBe('keystore-invalid');
   });
 });
 
