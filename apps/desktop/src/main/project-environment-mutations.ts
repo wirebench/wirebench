@@ -48,21 +48,18 @@ export function addEnvironment(project: Project, name: string): { project: Proje
 }
 
 /**
- * Applies a patch to one environment. A rename re-derives the slug (kept unique among the
- * other environments); `endpoints` and `properties` REPLACE the whole map rather than merging,
- * so the renderer can delete a key by sending the map without it.
+ * Applies a patch to one environment. A rename keeps the slug, as a workspace environment's
+ * does: inside a workspace the slug is what links this environment to the workspace one, and a
+ * re-derived slug would break that link without a word (#475). `endpoints` and `properties`
+ * REPLACE the whole map rather than merging, so the renderer can delete a key by sending the
+ * map without it.
  */
 export function updateEnvironment(project: Project, environmentId: string, patch: EnvironmentPatchWire): Project {
   const existing = requireEnvironment(project, environmentId);
-  const taken = new Set(
-    project.environments.filter((candidate) => candidate.id !== environmentId).map((candidate) => candidate.slug),
-  );
-  const name = patch.name ?? existing.name;
-  const slug = patch.name === undefined || patch.name === existing.name ? existing.slug : uniqueSlug(name, taken);
   const next: Environment = {
     id: existing.id,
-    name,
-    slug,
+    name: patch.name ?? existing.name,
+    slug: existing.slug,
     order: existing.order,
     endpoints: patch.endpoints === undefined ? existing.endpoints : { ...patch.endpoints },
     properties: patch.properties === undefined ? existing.properties : { ...patch.properties },
