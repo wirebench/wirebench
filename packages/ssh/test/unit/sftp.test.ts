@@ -22,6 +22,10 @@ describe('parentRemote', () => {
   });
   it('the parent of / is /', () => {
     expect(parentRemote('/')).toBe('/');
+    expect(parentRemote('//')).toBe('/');
+  });
+  it('trims a long run of trailing slashes in linear time', () => {
+    expect(parentRemote(`/a/b${'/'.repeat(100_000)}`)).toBe('/a');
   });
 });
 

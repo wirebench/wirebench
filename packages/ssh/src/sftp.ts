@@ -75,7 +75,12 @@ export function joinRemote(dir: string, name: string): string {
   return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`;
 }
 
-const trimSlashes = (path: string): string => (path.length > 1 ? path.replace(/\/+$/, '') || '/' : path);
+/** Drops trailing slashes, keeping a lone '/'; a loop, since a regex over a server's path can backtrack. */
+const trimSlashes = (path: string): string => {
+  let end = path.length;
+  while (end > 1 && path[end - 1] === '/') end -= 1;
+  return path.slice(0, end);
+};
 
 /** The parent of a POSIX path; the parent of '/' is '/'. */
 export function parentRemote(path: string): string {
