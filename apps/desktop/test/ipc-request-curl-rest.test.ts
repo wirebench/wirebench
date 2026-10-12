@@ -419,3 +419,45 @@ describe('request.importCurl into an API', () => {
     expect(result.problems).toContain('Ignored --retry');
   });
 });
+
+describe('request.curl — Digest and AWS Signature v4', () => {
+  function register(auth: AuthConfig, shown: boolean, getSecret = vi.fn().mockResolvedValue('live-value')) {
+    handlers.clear();
+    registerRequestChannelsWithKinds(new EngineService(), {
+      project: project({ rest: resolution({ auth }) }),
+      adHocScopes: () => ({ project: {}, global: {}, system: {} }),
+      showSecrets: { get: () => shown },
+      getSecret,
+    });
+    return getSecret;
+  }
+
+  it('exports Digest with a stand-in password, reading no secret', async () => {
+    const getSecret = register({ type: 'digest', username: 'admin', passwordRef: 'sec_pw' }, false);
+    const result = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }));
+    expect(result.command).toContain("--digest --user 'admin:<redacted>'");
+    expect(getSecret).not.toHaveBeenCalled();
+  });
+
+  it('exports a SigV4 header signature as --aws-sigv4, and notes a presigned one', async () => {
+    const auth = {
+      type: 'aws-sigv4',
+      region: 'eu-west-1',
+      service: 'execute-api',
+      accessKeyIdRef: 'a',
+      secretAccessKeyRef: 'b',
+    } as const;
+    register(auth, false);
+    const header = unwrap<{ command: string; notes?: string[] }>(
+      await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }),
+    );
+    expect(header.command).toContain("--aws-sigv4 'aws:amz:eu-west-1:execute-api' --user '<redacted>:<redacted>'");
+
+    register({ ...auth, placement: 'query' }, false);
+    const query = unwrap<{ command: string; notes?: string[] }>(
+      await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }),
+    );
+    expect(query.command).not.toContain('--aws-sigv4');
+    expect(query.notes?.join(' ')).toContain('presigned');
+  });
+});

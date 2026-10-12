@@ -131,6 +131,23 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
         }
       : undefined;
 
+  const secret = (value: string): string => (redact ? CURL_REDACTED : value);
+  const digest =
+    transport?.type === 'digest' ? { username: transport.username, password: secret(transport.password) } : undefined;
+  // A presigned URL is not something curl makes: only the header form is exported (the caller notes it).
+  const awsSigV4 =
+    transport?.type === 'aws-sigv4' && transport.placement === 'header'
+      ? {
+          region: transport.region,
+          service: transport.service,
+          accessKeyId: secret(transport.accessKeyId),
+          secretAccessKey: secret(transport.secretAccessKey),
+        }
+      : undefined;
+  if (awsSigV4 !== undefined && transport?.type === 'aws-sigv4' && transport.sessionToken !== undefined) {
+    headers.push({ name: 'X-Amz-Security-Token', value: secret(transport.sessionToken) });
+  }
+
   const command: CurlCommand = {
     method: input.request.method,
     url,
@@ -138,6 +155,8 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
     body: curlBody(input.request.body),
     ...(basic !== undefined ? { basic } : {}),
     ...(negotiate !== undefined ? { negotiate } : {}),
+    ...(digest !== undefined ? { digest } : {}),
+    ...(awsSigV4 !== undefined ? { awsSigV4 } : {}),
     ...(input.tls?.rejectUnauthorized === false ? { insecure: true } : {}),
     ...(input.settings.followRedirects ? { followRedirects: true } : {}),
     ...(input.settings.followRedirects && input.settings.maxRedirects !== undefined

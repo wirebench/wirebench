@@ -313,6 +313,10 @@ export function unknownRequest(requestId: string): ProjectError {
 }
 
 /** The note under a Kerberos export: the ticket is the OS's to supply, so none is in the command. */
+/** curl signs a request's headers itself (`--aws-sigv4`) but cannot presign a URL. */
+const SIGV4_PRESIGN_NOTE =
+  "A presigned AWS Signature v4 URL is made at send time, so the command carries no signature; switch the placement to Header to export curl's --aws-sigv4 form.";
+
 const KERBEROS_CURL_NOTE =
   'Kerberos: curl asks the operating system for the ticket (--negotiate); no password is in the command.';
 
@@ -354,6 +358,19 @@ export function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
       return { type: 'bearer', token: CURL_REDACTED, ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}) };
     case 'api-key':
       return { type: 'api-key', name: auth.name, value: CURL_REDACTED, in: auth.in };
+    case 'digest':
+      return { type: 'digest', username: auth.username ?? '', password: CURL_REDACTED };
+    case 'aws-sigv4':
+      return {
+        type: 'aws-sigv4',
+        region: auth.region,
+        service: auth.service,
+        accessKeyId: CURL_REDACTED,
+        secretAccessKey: CURL_REDACTED,
+        ...(auth.sessionTokenRef !== undefined && auth.sessionTokenRef !== '' ? { sessionToken: CURL_REDACTED } : {}),
+        placement: auth.placement ?? 'header',
+        ...(auth.expiresSeconds !== undefined ? { expiresSeconds: auth.expiresSeconds } : {}),
+      };
     default:
       // `none`, `inherit` and `oauth2`: nothing to put on the command (the last is noted instead).
       return undefined;
@@ -405,6 +422,9 @@ async function restCurl(
   }
   if (kerberos) {
     notes.push(KERBEROS_CURL_NOTE);
+  }
+  if (resolved.auth.type === 'aws-sigv4' && resolved.auth.placement === 'query') {
+    notes.push(SIGV4_PRESIGN_NOTE);
   }
   if (resolved.auth.type === 'oauth2') {
     // The access token lives in main's memory for the session and is never written into a command:
@@ -485,6 +505,11 @@ async function curl(
   if (kerberos) {
     notes.push(KERBEROS_CURL_NOTE);
   }
+  if (auth?.type === 'digest' || auth?.type === 'aws-sigv4') {
+    notes.push(
+      `${auth.type === 'digest' ? 'Digest' : 'AWS Signature v4'} is not included in the cURL command for a SOAP request.`,
+    );
+  }
   if (auth?.type === 'oauth2' && accessToken === undefined) {
     notes.push('No OAuth2 access token is cached, so the Authorization header is not included; press Get new token.');
   }
@@ -531,6 +556,10 @@ function uncarriedAuthNote(type: AuthConfig['type'], tokenIncluded: boolean): st
       return 'NTLM is not included: it needs a challenge round trip the snippet does not make.';
     case 'kerberos':
       return 'Kerberos is not included: the snippet does not ask the operating system for a ticket.';
+    case 'digest':
+      return 'Digest is not included: it answers a challenge round trip the snippet does not make.';
+    case 'aws-sigv4':
+      return 'AWS Signature v4 is not included: the snippet does not sign the request.';
     case 'oauth2':
       return tokenIncluded
         ? undefined
