@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import * as RadixTooltip from '@radix-ui/react-tooltip';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FilesTab } from '../../src/renderer/features/ssh/files/files-tab.js';
 import { useFilesStore } from '../../src/renderer/features/ssh/files/files-store.js';
@@ -10,6 +11,14 @@ const open = vi.fn();
 const list = vi.fn();
 const close = vi.fn();
 const TAB = 'ssh-files:a';
+
+function Tab() {
+  return (
+    <RadixTooltip.Provider>
+      <FilesTab tabId={TAB} hostId="a" />
+    </RadixTooltip.Provider>
+  );
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -36,7 +45,7 @@ afterEach(() => {
 });
 
 it('connects on mount and lists the host’s home folder', async () => {
-  render(<FilesTab tabId={TAB} hostId="a" />);
+  render(<Tab />);
   await waitFor(() => {
     expect(screen.getByText('notes.txt')).toBeDefined();
   });
@@ -44,7 +53,7 @@ it('connects on mount and lists the host’s home folder', async () => {
 });
 
 it('Open terminal opens or focuses the host’s terminal tab', async () => {
-  render(<FilesTab tabId={TAB} hostId="a" />);
+  render(<Tab />);
   fireEvent.click(screen.getByRole('button', { name: /Open terminal/ }));
   expect(useEditorsStore.getState().activeId).toBe('ssh:a');
   expect(useEditorsStore.getState().tabs.map((t) => t.id)).toEqual([TAB, 'ssh:a']);
@@ -54,17 +63,62 @@ it('Open terminal opens or focuses the host’s terminal tab', async () => {
 });
 
 it('closing the tab closes its session; a remount while the tab is open keeps it', async () => {
-  const first = render(<FilesTab tabId={TAB} hostId="a" />);
+  const first = render(<Tab />);
   await waitFor(() => {
     expect(screen.getByText('notes.txt')).toBeDefined();
   });
   first.unmount();
   expect(close).not.toHaveBeenCalled();
-  const second = render(<FilesTab tabId={TAB} hostId="a" />);
+  const second = render(<Tab />);
   expect(open).toHaveBeenCalledTimes(1);
   act(() => {
     useEditorsStore.getState().close(TAB);
   });
   second.unmount();
   expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
+});
+
+it('a path that does not exist shows the error under the bar and keeps the listing', async () => {
+  render(<Tab />);
+  await waitFor(() => {
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  list.mockResolvedValueOnce({ ok: false, error: { code: 'sftp-not-found', message: '/nope does not exist' } });
+  fireEvent.click(screen.getByTestId('files-path-bar'));
+  const input = screen.getByTestId('files-path-input');
+  fireEvent.change(input, { target: { value: '/nope' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => {
+    expect(screen.getByTestId('files-path-error').textContent).toBe('/nope does not exist');
+  });
+  expect(screen.getByText('notes.txt')).toBeDefined();
+});
+
+it('⌘L turns the path bar into a field', async () => {
+  render(<Tab />);
+  await waitFor(() => {
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  fireEvent.keyDown(screen.getByTestId('files-list'), { key: 'l', metaKey: true });
+  expect(document.activeElement).toBe(screen.getByTestId('files-path-input'));
+});
+
+it('the hidden toggle shows names starting with a dot', async () => {
+  list.mockResolvedValue({
+    ok: true,
+    value: {
+      path: '/home/me',
+      entries: [
+        { name: 'notes.txt', type: 'file', size: 12, mtime: 0, mode: 0o644 },
+        { name: '.bashrc', type: 'file', size: 1, mtime: 0, mode: 0o644 },
+      ],
+    },
+  });
+  render(<Tab />);
+  await waitFor(() => {
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  expect(screen.queryByText('.bashrc')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Show hidden files' }));
+  expect(screen.getByText('.bashrc')).toBeDefined();
 });

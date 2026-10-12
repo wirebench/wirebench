@@ -51,6 +51,9 @@ interface FilesState {
   readonly panes: Readonly<Record<string, PaneState>>;
   /** Whether names starting with `.` show; one setting for every pane, remembered on this machine. */
   readonly showHidden: boolean;
+  /** Bumped per tab to turn its path bar into a text field (⌘L). */
+  readonly pathEditRequests: Readonly<Record<string, number>>;
+  requestPathEdit: (tabId: string) => void;
   setShowHidden: (show: boolean) => void;
   /** Opens the tab's SFTP session (again, after a failure) and lists the host's last folder or its home. */
   connect: (tabId: string, hostId: string) => Promise<void>;
@@ -143,6 +146,11 @@ export const useFilesStore = create<FilesState>()((set, get) => {
   return {
     panes: {},
     showHidden: readFilesPrefs().showHidden,
+    pathEditRequests: {},
+    requestPathEdit: (tabId) => {
+      const { pathEditRequests } = get();
+      set({ pathEditRequests: { ...pathEditRequests, [tabId]: (pathEditRequests[tabId] ?? 0) + 1 } });
+    },
     setShowHidden: (showHidden) => {
       set({ showHidden });
       updateFilesPrefs((prefs) => ({ ...prefs, showHidden }));

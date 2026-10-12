@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { SquareTerminal } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { useEditorsStore } from '../../../state/editors.js';
+import { FilePane } from './file-pane.js';
 import { useFilesStore } from './files-store.js';
 import { openTerminal } from './open-files.js';
 
@@ -11,8 +12,6 @@ import { openTerminal } from './open-files.js';
  * the folder and the session.
  */
 export function FilesTab({ tabId, hostId }: { readonly tabId: string; readonly hostId: string }) {
-  const pane = useFilesStore((s) => s.panes[tabId]);
-
   useEffect(() => {
     if (useFilesStore.getState().panes[tabId] === undefined) void useFilesStore.getState().connect(tabId, hostId);
     const off = window.wirebench.on('sftp.closed', ((event: { sessionId: string }) => {
@@ -38,27 +37,8 @@ export function FilesTab({ tabId, hostId }: { readonly tabId: string; readonly h
           <SquareTerminal size={14} aria-hidden="true" /> Open terminal
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        {pane?.status === 'connecting' && <p className="p-4 text-sm text-fg-subtle">Connecting…</p>}
-        {pane?.status === 'error' && (
-          <div className="flex items-center gap-3 p-4 text-sm text-fg-default" role="alert">
-            <span className="min-w-0 flex-1">{pane.error?.message ?? 'Could not connect.'}</span>
-            <Button
-              onClick={() => {
-                void useFilesStore.getState().connect(tabId, hostId);
-              }}
-            >
-              Connect again
-            </Button>
-          </div>
-        )}
-        {pane !== undefined && pane.path !== '' && pane.status !== 'error' && (
-          <ul className="p-2 text-sm text-fg-default">
-            {pane.entries.map((entry) => (
-              <li key={entry.name}>{entry.name}</li>
-            ))}
-          </ul>
-        )}
+      <div className="min-h-0 flex-1">
+        <FilePane tabId={tabId} />
       </div>
     </div>
   );
