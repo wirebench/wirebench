@@ -1,5 +1,6 @@
 import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
+import { openRunnerTab, runnerTargetOf } from '../features/runner/runner-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useScriptValuesStore } from '../state/script-values.js';
@@ -22,6 +23,15 @@ export function registerExplorerCommands(): void {
     whenScope: 'selection.project',
     run: (ctx) => {
       explorerActions.newSequence(ctx.selection?.id);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('runner.open'),
+    when: (ctx) => runnerTargetOf(ctx.selection) !== undefined,
+    whenScope: 'selection.runnable',
+    run: (ctx) => {
+      const targetId = runnerTargetOf(ctx.selection);
+      if (targetId !== undefined) openRunnerTab(targetId);
     },
   });
 }

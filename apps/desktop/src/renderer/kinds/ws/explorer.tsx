@@ -19,6 +19,7 @@ export const wsExplorer: KindExplorer = {
       click: 'open-and-fold',
       dropTarget: true,
       open: (node) => explorerActions.openWsApi(node.apiId),
+      runTarget: (node) => node.apiId,
       rename: (node, name) => {
         if (node.apiId !== undefined) {
           void useProjectStore.getState().updateWsApi(node.apiId, { name }).catch(reportRenameFailure);

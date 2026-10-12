@@ -80,6 +80,11 @@ All notable changes to this project are documented here. The format follows
   it matches the wire. A credential is read from the `WIREBENCH_SECRET_*` variable the CLI reads,
   never written out, unless Show secrets is on. Indent, redirects and timeout are set per language,
   and the language picked last is remembered (#337).
+- **The Runner: Run… on a folder, an API, a project or a sequence.** A Runner tab sets the iterations,
+  a delay between requests, the order (reorder, leave out), a CSV or JSON data file, what happens past
+  the last row, and stop on first failure. Results fill in per request, grouped by iteration, and the
+  last 20 runs of each target are kept with the app, outside the project. The data file's path never
+  leaves the main process (#336).
 - **Postman Collection v3 folders import.** In **Import…**, pick a collection's folder with the new
   **Folder…** button, or its `.resources/definition.yaml`; a workspace folder (`collections/`,
   `environments/`, `globals/`) imports every collection with its environments and globals.

@@ -304,6 +304,21 @@ import {
   workspaceRestoredResponseSchema,
   workspaceStashDraftsRequestSchema,
 } from './wire-types.js';
+import {
+  runnerCancelRequestSchema,
+  runnerCancelResponseSchema,
+  runnerDataChooseResponseSchema,
+  runnerHistoryGetRequestSchema,
+  runnerHistoryGetResponseSchema,
+  runnerHistoryListResponseSchema,
+  runnerOkSchema,
+  runnerProgressEventSchema,
+  runnerRunRequestSchema,
+  runnerRunResultSchema,
+  runnerSettingsSetSchema,
+  runnerStateSchema,
+  runnerTargetRequestSchema,
+} from './runner-wire.js';
 import { soapChannels } from './kinds/soap/channels.js';
 import { restChannels, restEvents } from './kinds/rest/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
@@ -816,6 +831,28 @@ export const channels = {
     /** Stops a run: the step in flight is cancelled and the rest are skipped. */
     cancel: defineChannel('sequence.cancel', sequenceCancelRequestSchema, sequenceCancelResponseSchema),
   },
+  // The Runner (#336): a folder, an API, the project or a sequence run per data row. Its settings and
+  // runs are kept under user data, never in the project; the data file's path never leaves main.
+  runner: {
+    /** The target, its requests in run order, its settings and its data file's name and columns. */
+    state: defineChannel('runner.state', runnerTargetRequestSchema, runnerStateSchema),
+    settings: {
+      set: defineChannel('runner.settings.set', runnerSettingsSetSchema, runnerOkSchema),
+    },
+    data: {
+      /** Opens a picker for a CSV or JSON file and keeps it for the target; answers its name only. */
+      choose: defineChannel('runner.data.choose', runnerTargetRequestSchema, runnerDataChooseResponseSchema),
+      clear: defineChannel('runner.data.clear', runnerTargetRequestSchema, runnerOkSchema),
+    },
+    /** Runs the target; resolves when it ends. `runner.progress` reports each request as it ends. */
+    run: defineChannel('runner.run', runnerRunRequestSchema, runnerRunResultSchema),
+    /** Stops a run: the request in flight is cancelled and nothing after it runs. */
+    cancel: defineChannel('runner.cancel', runnerCancelRequestSchema, runnerCancelResponseSchema),
+    history: {
+      list: defineChannel('runner.history.list', runnerTargetRequestSchema, runnerHistoryListResponseSchema),
+      get: defineChannel('runner.history.get', runnerHistoryGetRequestSchema, runnerHistoryGetResponseSchema),
+    },
+  },
   // A mock service (#59) served from this machine; edits go through `project.mutate`.
   mock: {
     /** Starts a mock, or restarts it when it runs; resolves with where it listens. */
@@ -960,6 +997,10 @@ export const events = {
     progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
     /** A step of a running sequence has sent and waits for its callback assertions. */
     waiting: defineEvent('sequence.waiting', sequenceWaitingEventSchema),
+  },
+  runner: {
+    /** One request of a running Runner run has ended, keyed by the run's id. */
+    progress: defineEvent('runner.progress', runnerProgressEventSchema),
   },
   mock: {
     /** A mock started, stopped, restarted after an edit, or failed to start. */

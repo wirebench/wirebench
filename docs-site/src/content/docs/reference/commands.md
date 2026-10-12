@@ -119,6 +119,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | WebSocket: New API | — | — |
 | WebSocket: New Request | — | — |
 | Sequence: New Sequence | — | — |
+| Runner: Run Selection… | — | — |
 | Scripts: Clear Session Values | — | — |
 
 ## Request

@@ -3,6 +3,8 @@ import { explorerMenuGroups, explorerMenuItems } from '../../src/renderer/featur
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { runnerTargetOf } from '../../src/renderer/features/runner/runner-actions.js';
 
 function node(patch: Partial<ExplorerNode> & Pick<ExplorerNode, 'kind'>): ExplorerNode {
   return { id: 'n1', label: 'Node', ...patch };
@@ -37,6 +39,7 @@ describe('explorerMenuItems', () => {
       'New WebSocket API…',
       'New Webhook',
       'New Sequence',
+      'Run…',
       'Settings…',
       REVEAL,
       'Export project…',
@@ -68,6 +71,7 @@ describe('explorerMenuItems', () => {
       'New WebSocket API…',
       'New Webhook',
       'New Sequence',
+      'Run…',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
@@ -99,6 +103,7 @@ describe('explorerMenuItems', () => {
   it('keeps the interface, operation, request and endpoint menus', () => {
     expect(explorerMenuItems(node({ kind: 'interface', interfaceId: 'i1' })).map((item) => item.label)).toEqual([
       'Show Interface Viewer',
+      'Run…',
       'Update Definition…',
       'Export Definition…',
       'Export as Postman Collection…',
@@ -146,13 +151,14 @@ describe('explorerMenuItems', () => {
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
       ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-webhook', 'new-sequence'],
+      ['runner'],
       ['settings'],
       ['reveal', 'export', 'export-postman', 'export-opencollection'],
       ['move-to-workspace'],
       ['rename', 'remove'],
     ]);
-    // Only the second group differs — the linked project's own environments join Settings.
-    expect(linked[1]?.map((i) => i.key)).toEqual(['settings', 'project-environments']);
+    // Only the third group differs — the linked project's own environments join Settings.
+    expect(linked[2]?.map((i) => i.key)).toEqual(['settings', 'project-environments']);
   });
 
   it('Import… selects the project first, so the dialog opens on it', () => {
@@ -185,6 +191,7 @@ describe('explorerMenuItems on a REST row', () => {
       'New folder',
       'New request',
       'Import cURL…',
+      'Run…',
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Rename…',
@@ -196,6 +203,7 @@ describe('explorerMenuItems on a REST row', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
       ['Open', 'New folder', 'New request', 'Import cURL…'],
+      ['Run…'],
       ['Update Definition…', 'Import webhooks…', 'New Mock'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
       ['Rename…'],
@@ -220,6 +228,7 @@ describe('explorerMenuItems on a REST row', () => {
       'New folder',
       'New request',
       'Import cURL…',
+      'Run…',
       'Rename…',
       'Auth…',
       'Scripts…',
@@ -287,6 +296,7 @@ describe('explorerMenuItems on a gRPC row', () => {
       'Open',
       'New folder',
       'New request',
+      'Run…',
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Rename…',
@@ -302,6 +312,7 @@ describe('explorerMenuItems on a gRPC row', () => {
     expect(items.map((item) => item.label)).toEqual([
       'New folder',
       'New request',
+      'Run…',
       'Rename…',
       'Auth…',
       'Scripts…',
@@ -332,6 +343,7 @@ describe('explorerMenuItems on a WebSocket row', () => {
       'Open',
       'New folder',
       'New request',
+      'Run…',
       'Export as Postman Collection…',
       'Export as OpenCollection…',
       'Rename…',
@@ -344,7 +356,14 @@ describe('explorerMenuItems on a WebSocket row', () => {
       node({ kind: 'folder', id: 'folder:f1', apiId: 'w1', folderId: 'f1', ownerKind: 'websocket' }),
     );
 
-    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Auth…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual([
+      'New folder',
+      'New request',
+      'Run…',
+      'Rename…',
+      'Auth…',
+      'Delete',
+    ]);
   });
 
   it('offers a WebSocket request duplicate, rename and delete, and no Open', () => {
@@ -442,5 +461,40 @@ describe('explorerMenuItems on a mock row (#59)', () => {
     expect(explorerMenuItems(node({ kind: 'mock', id: 'mock:m1', mockId: 'm1' })).map((i) => i.label)).toContain(
       'Stop',
     );
+  });
+});
+
+/** Run… (#336): every Runner target's row opens its own Runner tab. */
+describe('Run… in the explorer', () => {
+  beforeEach(() => useEditorsStore.getState().reset());
+
+  const runFrom = (row: ExplorerNode): void => {
+    explorerMenuItems(row)
+      .find((item) => item.label === 'Run…')
+      ?.run();
+  };
+
+  it('opens one Runner tab per target, named after the row', () => {
+    runFrom(node({ kind: 'folder', id: 'folder:f1', label: 'Users', apiId: 'a1', folderId: 'f1' }));
+    runFrom(node({ kind: 'grpc-api', id: 'grpc:g1', label: 'Greeter', apiId: 'g1' }));
+    runFrom(node({ kind: 'interface', id: 'iface:i1', label: 'Billing', interfaceId: 'i1' }));
+    runFrom(node({ kind: 'sequence', id: 'sequence:s1', label: 'Checkout', sequenceId: 's1' }));
+    runFrom(node({ kind: 'folder', id: 'folder:f1', label: 'Users', apiId: 'a1', folderId: 'f1' }));
+
+    expect(useEditorsStore.getState().tabs.map((tab) => [tab.id, tab.kind, tab.title, tab.runnerTargetId])).toEqual([
+      ['runner:f1', 'runner', 'Run Users', 'f1'],
+      ['runner:g1', 'runner', 'Run Greeter', 'g1'],
+      ['runner:i1', 'runner', 'Run Billing', 'i1'],
+      ['runner:s1', 'runner', 'Run Checkout', 's1'],
+    ]);
+  });
+
+  it('runs the selected row from the palette, and nothing a request row would mean', () => {
+    expect(runnerTargetOf({ kind: 'project', id: 'p1' })).toBe('p1');
+    expect(runnerTargetOf({ kind: 'ws-api', id: 'ws:w1', apiId: 'w1' })).toBe('w1');
+    expect(runnerTargetOf({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' })).toBe('f1');
+    expect(runnerTargetOf({ kind: 'sequence', id: 'sequence:s1' })).toBe('s1');
+    expect(runnerTargetOf({ kind: 'rest-request', id: 'req:r1', apiId: 'a1', requestId: 'r1' })).toBeUndefined();
+    expect(runnerTargetOf(undefined)).toBeUndefined();
   });
 });

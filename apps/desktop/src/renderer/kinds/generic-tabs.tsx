@@ -21,6 +21,11 @@ const MockTab = lazy(async () => {
   return { default: ({ id }: { readonly id: string }) => <module.MockTab mockId={id} /> };
 });
 
+const RunnerTab = lazy(async () => {
+  const module = await import('../features/runner/runner-tab.js');
+  return { default: ({ id }: { readonly id: string }) => <module.RunnerTab targetId={id} /> };
+});
+
 const HistoryEntryView = lazy(async () => {
   const module = await import('../features/history/history-entry-view.js');
   return { default: ({ id }: { readonly id: string }) => <module.HistoryEntryView historyId={id} /> };
@@ -83,6 +88,17 @@ export const GENERIC_TABS: readonly TabContribution[] = [
     persisted: true,
     Component: MockTab,
     title: (id, { project }) => project.mocks[id]?.name,
+  },
+  {
+    kind: 'runner',
+    idField: 'runnerTargetId',
+    prefix: 'runner:',
+    persisted: false,
+    Component: RunnerTab,
+    loading: 'Loading…',
+    keyed: true,
+    // A Runner tab keeps the title it opened with: `Run <name>`.
+    title: () => undefined,
   },
   {
     kind: 'history',

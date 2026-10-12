@@ -74,6 +74,7 @@ export interface EditorTab {
     | 'catch-url'
     | 'sequence'
     | 'mock'
+    | 'runner'
     | 'cookies'
     | 'ssh-terminal';
   readonly title: string;
@@ -115,6 +116,8 @@ export interface EditorTab {
   readonly sequenceId?: string;
   /** Set when `kind` is `'mock'`: the mock this tab edits and runs. */
   readonly mockId?: string;
+  /** Set when `kind` is `'runner'`: the folder, API, project or sequence this Runner tab runs. Session only. */
+  readonly runnerTargetId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */

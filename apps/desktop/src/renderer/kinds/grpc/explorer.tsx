@@ -20,6 +20,7 @@ export const grpcExplorer: KindExplorer = {
       click: 'open-and-fold',
       dropTarget: true,
       open: (node) => explorerActions.openGrpcApi(node.apiId),
+      runTarget: (node) => node.apiId,
       rename: (node, name) => {
         if (node.apiId !== undefined) {
           void useProjectStore.getState().updateGrpcApi(node.apiId, { name }).catch(reportRenameFailure);

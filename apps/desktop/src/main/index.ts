@@ -77,8 +77,11 @@ import { registerApiChannels, type ApiChannelDeps } from './ipc/api.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
 import { registerMockChannels } from './ipc/mock.js';
+import { registerRunnerChannels } from './ipc/runner.js';
 import { registerSequenceChannels } from './ipc/sequence.js';
 import { MOCK_ALL_INTERFACES_HOST, MOCK_LOOPBACK_HOST, MockRunner } from './mock-runner.js';
+import { RunnerService } from './runner/runner-service.js';
+import { RunnerHistoryStore, RunnerSettingsStore } from './runner/stores.js';
 import { SequenceRunner } from './sequence-runner.js';
 import { ScriptHost } from './script-host.js';
 import { registerScriptChannels } from './ipc/script.js';
@@ -919,6 +922,25 @@ void app.whenReady().then(() => {
         linkedServerOf(workspaceService.snapshot()),
       ),
   });
+  // The Runner sends as a sequence does; its settings and runs live under user data, not the project.
+  registerRunnerChannels(
+    new RunnerService({
+      service: engineService,
+      requests: requestDeps,
+      modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
+      settings: new RunnerSettingsStore(app.getPath('userData')),
+      history: new RunnerHistoryStore(app.getPath('userData')),
+      emit: (event) => {
+        emitToCaller(events.runner.progress, event);
+      },
+      captures: () =>
+        desktopCaptureSource(
+          { client: serverClient, accounts: accountService },
+          linkedServerOf(workspaceService.snapshot()),
+        ),
+    }),
+    dialogPicks,
+  );
   registerOAuth2Channels({
     oauth2: oauth2Service,
     project: workspaceService,

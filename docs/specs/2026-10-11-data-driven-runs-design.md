@@ -71,8 +71,8 @@ values } }` (0-based indexes; `count` is the plan's length).
   (a column may be named `__proto__`). The value is substituted literally (as `Sequence`), still XML-escaped when the
   expansion entitizes. `secretNamesIn` does not follow it.
 - `RunContext.data?: PropertyMap` and `RunContext.iteration?: { index; count }`; `scopesFor` passes `data` on.
-- `${#Data#x}` outside a data-driven run is `missing`, as `${#Sequence#x}` is outside a sequence. The desktop's
-  unresolved-reference warning leaves `Data` references alone, as it does `Sequence` ones.
+- `${#Data#x}` outside a data-driven run is `missing`, as `${#Sequence#x}` is outside a sequence. A single send's
+  unresolved-reference warning names it like any other: outside a run there is no row, so the warning is true.
 
 ## 4. Scripts
 
@@ -141,7 +141,7 @@ Shell code (it spans every protocol): `main/runner/`, `shared/runner-wire.ts`, `
 - **Results.** A summary line (passed / failed / errored / skipped, iterations run of planned, time) and a list
   grouped by iteration, each request with its outcome, status, time, then on expand its assertions (failed and
   errored apart), its error, and its script log. **Show in History** searches the run's tag.
-- **History.** The last 20 runs of each target, kept masked in `runner-history/<targetId>.json` under user data,
+- **History.** The last 20 runs of each target, kept masked in `runner-history/<hash of targetId>.json` under user data,
   never in the project. A past run opens read-only in the same results view.
 - Every string crossing to the renderer is masked first, as a sequence run's are.
 

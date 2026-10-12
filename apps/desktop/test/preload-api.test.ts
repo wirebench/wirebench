@@ -71,6 +71,7 @@ describe('buildApi', () => {
       'preferences',
       'project',
       'request',
+      'runner',
       'script',
       'search',
       'secretScan',

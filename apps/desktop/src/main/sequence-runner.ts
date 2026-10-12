@@ -83,7 +83,7 @@ interface ActiveRun {
 }
 
 /** A step's request as its send sends it: the saved request as it is, no draft over it. */
-function draftFor(kind: SelectedRequest['kind']): DraftOf {
+export function draftFor(kind: SelectedRequest['kind']): DraftOf {
   switch (kind) {
     case 'soap':
       return { kind, override: {} };

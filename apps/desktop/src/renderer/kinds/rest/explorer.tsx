@@ -22,6 +22,7 @@ export const restExplorer: KindExplorer = {
       click: 'open-and-fold',
       dropTarget: true,
       open: (node) => explorerActions.openApi(node.apiId),
+      runTarget: (node) => node.apiId,
       rename: (node, name) => {
         if (node.apiId !== undefined) {
           void useProjectStore.getState().updateApi(node.apiId, { name }).catch(reportRenameFailure);

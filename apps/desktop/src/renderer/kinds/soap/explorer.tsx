@@ -96,6 +96,7 @@ export const soapExplorer: KindExplorer = {
       // The interface viewer answers to a double-click, as it always has, so a single click only
       // folds it.
       open: (node) => explorerActions.showInterface(node.interfaceId),
+      runTarget: (node) => node.interfaceId,
       remove: (node) => useUiStore.getState().requestRemoveInterface(node.interfaceId),
       menu: interfaceMenu,
     },

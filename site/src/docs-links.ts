@@ -18,6 +18,7 @@ export const DOCS_LINKS = {
   copyAsCommand: 'guides/copy-as-command',
   assertions: 'guides/assertions',
   sequences: 'guides/sequences',
+  runner: 'guides/runner',
   mockServices: 'guides/mock-services',
   scripts: 'guides/scripts',
   scriptApi: 'reference/script-api',

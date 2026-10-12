@@ -51,11 +51,11 @@
     data file, plan, run through `runIterations` with a sender over `sendThroughEngine` (`data`, `iteration`, run
     tags), mask, emit progress, save history, cancel. `SendOptions.data`/`iteration` in `send/exchange.ts`. Tests
     with a fake send.
-13. **IPC.** Channels `runner.settings.get/set`, `runner.data.choose/clear`, `runner.run`, `runner.cancel`,
+13. **IPC.** Channels `runner.state`, `runner.settings.set`, `runner.data.choose/clear`, `runner.run`, `runner.cancel`,
     `runner.history.list/get`, event `runner.progress`; preload and handlers. Tests in the IPC suites.
 14. **Renderer store and tab.** `state/runner.ts`, `features/runner/runner-tab.tsx` (configure, order list,
     results grouped by iteration, history), a `runner` tab kind. Renderer tests.
 15. **Run… everywhere.** Explorer context menu on folder, API, project and sequence rows; command `runner.open` in
-    `COMMAND_CATALOG`; `pnpm docs:commands`. Unexpanded-reference warning skips `Data`. Tests.
+    `COMMAND_CATALOG`; `pnpm docs:commands`. Tests.
 16. **e2e and docs.** One e2e: run a folder against the test server with a CSV, two iterations visible, history
     entry kept. User docs for the runner; changelog line.

@@ -51,6 +51,7 @@ export default defineConfig({
             { label: 'Copy as a command or code', slug: 'guides/copy-as-command' },
             { label: 'Assertions', slug: 'guides/assertions' },
             { label: 'Sequences', slug: 'guides/sequences' },
+            { label: 'Runner', slug: 'guides/runner' },
             { label: 'Mock services', slug: 'guides/mock-services' },
             { label: 'Scripts', slug: 'guides/scripts' },
             { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },

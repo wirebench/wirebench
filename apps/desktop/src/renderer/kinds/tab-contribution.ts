@@ -25,7 +25,8 @@ export type TabIdField =
   | 'sequenceId'
   | 'mockId'
   | 'historyId'
-  | 'hookId';
+  | 'hookId'
+  | 'runnerTargetId';
 
 /** What a tab's title is read from. */
 export interface TabTitleContext {

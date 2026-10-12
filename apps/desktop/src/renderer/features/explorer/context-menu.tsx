@@ -7,6 +7,7 @@ import { explorerRole, kindExplorer } from '../../kinds/index.js';
 import { projectRowActions } from './project-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
 import { webhooksActions } from '../webhooks/webhooks-actions.js';
+import { openRunnerTab } from '../runner/runner-actions.js';
 
 /**
  * The OS file manager's own name for itself, so the menu reads the way the platform does.
@@ -56,14 +57,21 @@ function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]
   return [...menu.slice(0, 1), [item], ...menu.slice(1)];
 }
 
+/** **Run…**: opens the Runner tab for `targetId` (#336). */
+function runItem(targetId: string, label: string): ExplorerMenuItem {
+  return { key: 'runner', label: 'Run…', run: () => openRunnerTab(targetId, label) };
+}
+
 /** The kinds whose folders carry scripts (#334). */
 const SCRIPTED_FOLDER_KINDS: ReadonlySet<string> = new Set(['rest', 'grpc']);
 
 function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
-  // A node a protocol kind owns gets that kind's menu.
+  // A node a protocol kind owns gets that kind's menu, and Run… when the kind names it a Runner target.
   const role = explorerRole(node.kind);
   if (role !== undefined) {
-    return role.menu?.(node) ?? [];
+    const menu = role.menu?.(node) ?? [];
+    const target = role.runTarget?.(node);
+    return target === undefined ? menu : [...menu.slice(0, 1), [runItem(target, node.label)], ...menu.slice(1)];
   }
 
   if (node.kind === 'project' && node.projectId !== undefined) {
@@ -79,6 +87,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
         { key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) },
       ],
+      [runItem(projectId, node.label)],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
         // Only a linked project has environments of its own; an internal project's environments
@@ -144,6 +153,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
           ? []
           : [{ key: 'import-curl', label: 'Import cURL…', run: () => importCurlIn(apiId, folderId) }]),
       ],
+      [runItem(folderId, node.label)],
       [
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
         // A folder has no editor tab, so its other fields get dialogs of their own.
@@ -229,6 +239,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
       [
         { key: 'open', label: 'Open', run: () => explorerActions.openSequence(sequenceId) },
         { key: 'run', label: 'Run', run: () => explorerActions.runSequence(sequenceId) },
+        runItem(sequenceId, node.label),
         { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateSequence(sequenceId) },
       ],
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('sequence', sequenceId) }],
@@ -287,6 +298,9 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
       <ContextMenu.Portal>
         <ContextMenu.Content
           className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          // Portalled, yet React bubbles its clicks through the component tree to the tree's row
+          // wrapper, which would select and open the row over the tab an item just opened.
+          onClick={(event) => event.stopPropagation()}
           onCloseAutoFocus={(event) => {
             if (isRenamingRef.current) {
               event.preventDefault();

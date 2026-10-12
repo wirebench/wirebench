@@ -1,0 +1,65 @@
+---
+title: Runner
+description: Run a folder, an API, a project or a sequence many times over, one row of a CSV or JSON data file per iteration, and keep each run's results.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+The Runner sends every request of a folder, an API, a whole project or a sequence, in order, as many
+times as you ask. Give it a data file and each iteration reads one row of it: a column named `user` is
+`${#Data#user}` in the request. A login tried with ten accounts is one request and a ten-row CSV.
+
+## Run something
+
+<Steps>
+
+1. Right-click a folder, an API (REST, gRPC, WebSocket or a SOAP interface), a project or a sequence in
+   the explorer and choose **Run…**. Its Runner tab opens; each target has one. **Runner: Run
+   Selection…** in the command palette does the same for the selected row.
+2. Set what the run does:
+   - **Iterations**: how many times to run. Empty, it runs once per data row, or once without data.
+   - **Delay between requests**: milliseconds to wait before each send after the first.
+   - **Data file**: **Choose…** picks a `.csv` or `.json` file; **Clear** forgets it.
+   - **More iterations than rows**: stop after the last row, wrap round to the first, or repeat the last.
+   - **Stop on first failure**: no request, and no iteration, runs after one fails.
+3. Untick a request to leave it out, and use the arrows to change the order. A sequence's steps run in
+   the sequence's own order: edit the sequence to change it.
+4. Choose **Run**. **Stop** cancels the request in flight and ends the run.
+
+</Steps>
+
+The run uses the active environment. Under a protected environment it asks once, before the first send, and sends nothing if you cancel. Every request is sent exactly as it would be on its own: with its
+auth, TLS and proxy settings, scripts, a row in the HTTP Log and an entry in History. Every History
+entry of the run is tagged with it, so **Show in History** lists them.
+
+## Data files
+
+- **CSV**: the first line names the columns. Quote a value that holds a comma, a quote (doubled) or a
+  line break.
+- **JSON**: an array of objects. A number or boolean becomes its text, `null` an empty value, and a
+  nested object or array its JSON.
+
+A cell is used as it is: `${#Data#column}` is replaced by the cell's text, and a `${…}` inside the cell
+is never expanded, so a data file can never reach a secret. A column the file does not have stays
+unresolved, as any missing property does. Scripts read the row with `iteration.data.get('column')`, and
+`iteration.index` and `iteration.count` say where the run is.
+
+The file stays where it is: the app remembers it for the target, outside the project, and shows only its
+name, columns and row count. A file that no longer reads says why, and the run will not start until it is
+fixed or cleared.
+
+## Results and past runs
+
+The results fill in as each request ends, grouped by iteration (`Iteration 2/3 (row 2)`), with the
+summary above them: passed, failed, errored, iterations run and time. Expand a request for its
+assertions, failed ones first, its error and its script log.
+
+Each target keeps its last 20 runs under **Past runs**, stored with the app rather than in the project,
+so they are never committed. Choose one to see its results again.
+
+Settings are kept per target with the app too: a request added later joins the end of the order.
+
+## From the command line
+
+`wirebench run --data <file> --iterations <n>` runs the same way, with the same data rules, and every
+report names each request's iteration. See [Run in CI](/wirebench/docs/guides/run-in-ci/).

@@ -44,6 +44,11 @@ export interface ExplorerNodeRole {
   remove?(node: ExplorerNode): void;
   /** The row's right-click menu. */
   menu?(node: ExplorerNode): readonly ExplorerMenuGroup[];
+  /**
+   * The id the Runner runs a container row as (an API, an interface); its menu then gains **Run…**.
+   * Unset, the row is not a Runner target.
+   */
+  runTarget?(node: ExplorerNode): string | undefined;
 }
 
 /** A deletion the explorer's confirm dialog carries out, by the pending deletion's kind. */

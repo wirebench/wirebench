@@ -354,6 +354,14 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       run: fail('sequence.run'),
       cancel: fail('sequence.cancel'),
     },
+    runner: {
+      state: fail('runner.state'),
+      settings: { set: fail('runner.settings.set') },
+      data: { choose: fail('runner.data.choose'), clear: fail('runner.data.clear') },
+      run: fail('runner.run'),
+      cancel: fail('runner.cancel'),
+      history: { list: fail('runner.history.list'), get: fail('runner.history.get') },
+    },
     mock: {
       start: fail('mock.start'),
       stop: fail('mock.stop'),

@@ -94,6 +94,10 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
   readonly envId?: string;
   /** `${#Sequence#…}` values for a sequence step (`RunContext.sequence`). */
   readonly sequence?: PropertyMap;
+  /** A Runner iteration's data row, `${#Data#…}` (`RunContext.data`, #336). */
+  readonly data?: PropertyMap;
+  /** Which Runner iteration this send belongs to, for its scripts (`RunContext.iteration`). */
+  readonly iteration?: { readonly index: number; readonly count: number };
   readonly timeoutMs?: number;
   readonly interactive?: boolean;
   /**
@@ -491,6 +495,8 @@ async function sendReserved(
   const context: RunContext = {
     ...runContextOf(located, host),
     ...(sequence !== undefined ? { sequence } : {}),
+    ...(options.data !== undefined ? { data: options.data } : {}),
+    ...(options.iteration !== undefined ? { iteration: options.iteration } : {}),
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     ...(deps.scripts !== undefined ? { scripting: deps.scripts.scripting } : {}),
     containsKnownSecret: containsRecordedSecret,

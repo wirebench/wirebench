@@ -423,6 +423,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Sequence: Cancel Run',
     category: 'Request',
   },
+  // The Runner (#336): the selected row run once per iteration, with a data file.
+  'runner.open': {
+    id: 'runner.open',
+    label: 'Runner: Run Selection…',
+    category: 'Explorer',
+  },
   // A mock tab's server (#59): served from this machine until it is stopped or its project closes.
   'mock.start': {
     id: 'mock.start',

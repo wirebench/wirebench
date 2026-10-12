@@ -14,6 +14,7 @@ import { apiTabId } from '../../src/renderer/features/rest-api/api-actions.js';
 import { wsApiTabId } from '../../src/renderer/features/ws-api/ws-api-actions.js';
 import { sequenceTabId } from '../../src/renderer/features/sequence/sequence-actions.js';
 import { wsTabId } from '../../src/renderer/features/ws-editor/ws-actions.js';
+import { runnerTabId } from '../../src/renderer/features/runner/runner-actions.js';
 
 describe('renderer kinds (kind modules spec §6)', () => {
   it('has one renderer half per shared kind, in the same order', () => {
@@ -50,6 +51,7 @@ describe('renderer kinds (kind modules spec §6)', () => {
       mock: mockTabId,
       history: (id) => `history:${id}`,
       'catch-url': catchUrlTabId,
+      runner: runnerTabId,
     };
     expect(Object.keys(TAB_KINDS).sort()).toEqual(Object.keys(openers).sort());
     for (const [kind, opener] of Object.entries(openers)) {
