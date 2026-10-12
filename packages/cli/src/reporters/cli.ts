@@ -1,5 +1,7 @@
 import { seconds } from '@wirebench/engine';
 import type { RequestOutcome, RequestResult, RunResult } from '@wirebench/engine';
+import { branchText } from './branch-text.js';
+import { controlLine } from './run-control.js';
 import type { Reporter } from './types.js';
 
 export interface CliReporterOptions {
@@ -65,6 +67,11 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
         lines.push(`→ ${transfer.name} = ${transfer.secret ? '(secret)' : (transfer.value ?? '')}`);
       }
     }
+    // Where the request's scripts sent the run (#335) always shows: it is the path the run took.
+    const control = controlLine(result);
+    if (control !== undefined) {
+      lines.push(control);
+    }
     // A script's log shows when verbose, or always for a request that did not pass (#63).
     if (options.verbose || result.outcome !== 'passed') {
       for (const line of result.scriptLog ?? []) {
@@ -96,6 +103,14 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       }
       if (result.unasserted && result.outcome !== 'skipped') {
         parts.push('(no assertions)');
+      }
+      // The path a sequence step took (#347), and whether a later run of it superseded this one.
+      const path = branchText(result);
+      if (path !== undefined) {
+        parts.push(path);
+      }
+      if (result.retried === true) {
+        parts.push('(retried)');
       }
       if (result.baseline?.status === 'matched') {
         parts.push('baseline: matches');

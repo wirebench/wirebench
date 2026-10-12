@@ -97,7 +97,8 @@ export function runFinishedEvent(
   const counts: Record<SequenceOutcome, number> = { passed: 0, failed: 0, errored: 0, skipped: 0 };
   const hosts = new Set<string>();
   for (const step of result.steps) {
-    counts[step.outcome]++;
+    // A run of a step that a later run superseded (#347) does not count, so it counts as skipped.
+    counts[step.retried === true ? 'skipped' : step.outcome]++;
     if (step.origin !== undefined) hosts.add(maskAuditUrl(step.origin));
   }
   return {

@@ -5,6 +5,7 @@ import {
   UI_STORAGE_VERSION,
   readUi,
   SSH_SIDEBAR_SIZE,
+  slideOverWidthOf,
   writeUi,
 } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -234,7 +235,7 @@ describe('useUiStore', () => {
 
     expect(useUiStore.getState().sidebar.size).toBe(31);
     expect(useUiStore.getState().console.size).toBe(42);
-    expect(useUiStore.getState().slideOver.width).toBe(500);
+    expect(slideOverWidthOf(useUiStore.getState())).toBe(500);
   });
 
   it('selects a console tab and reveals the console', () => {
@@ -335,41 +336,66 @@ describe('import dialog format', () => {
   });
 });
 
-describe('the SSH area keeps its own sidebar width', () => {
+describe('each area keeps its own sidebar width', () => {
   beforeEach(() => {
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
   });
+  const store = (): ReturnType<typeof useUiStore.getState> => useUiStore.getState();
 
-  it('opens narrower than the other views, and each width comes back as it was left', () => {
-    const store = (): ReturnType<typeof useUiStore.getState> => useUiStore.getState();
+  it('opens an area at its default, then brings each back as it was left', () => {
     expect(store().sidebar.size).toBe(20);
     store().showSidebarView('ssh');
-    expect(store().sidebar).toMatchObject({ view: 'ssh', size: SSH_SIDEBAR_SIZE, parkedSize: 20 });
+    expect(store().sidebar.size).toBe(SSH_SIDEBAR_SIZE);
     store().setSidebarSize(15);
     store().showSidebarView('history');
-    expect(store().sidebar).toMatchObject({ view: 'history', size: 20, parkedSize: 15 });
-    store().setSidebarSize(25);
+    expect(store().sidebar.size).toBe(20);
+    store().setSidebarSize(30);
     store().showSidebarView('explorer');
-    expect(store().sidebar.size).toBe(25);
+    expect(store().sidebar.size).toBe(20);
+    store().setSidebarSize(25);
     store().showSidebarView('ssh');
     expect(store().sidebar.size).toBe(15);
+    store().showSidebarView('history');
+    expect(store().sidebar.size).toBe(30);
+    store().showSidebarView('explorer');
+    expect(store().sidebar.size).toBe(25);
   });
-  it('a collapsed sidebar reopens at the width of the view it reopens on', () => {
-    const store = (): ReturnType<typeof useUiStore.getState> => useUiStore.getState();
+  it('a collapsed sidebar reopens at the width of the area it reopens on', () => {
     store().collapseSidebar();
     store().showSidebarView('ssh');
     expect(store().sidebar).toMatchObject({ visible: true, size: SSH_SIDEBAR_SIZE });
   });
-  it('a layout saved on the SSH area before it had its own width keeps that width for the others', () => {
+  it('a layout saved on SSH before areas had their own widths opens SSH at its default', () => {
     const storage = fakeStorage();
-    storage.setItem(
-      UI_STORAGE_KEY,
-      JSON.stringify({
-        version: UI_STORAGE_VERSION,
-        state: { ...DEFAULT_UI_STATE, sidebar: { visible: true, view: 'ssh', size: 24, lastSize: 24 } },
-      }),
-    );
-    expect(readUi(storage).sidebar).toMatchObject({ size: SSH_SIDEBAR_SIZE, parkedSize: 24 });
+    const save = (sidebar: object): void => {
+      storage.setItem(
+        UI_STORAGE_KEY,
+        JSON.stringify({ version: UI_STORAGE_VERSION, state: { ...DEFAULT_UI_STATE, sidebar } }),
+      );
+    };
+    save({ visible: true, view: 'ssh', size: 24, lastSize: 24 });
+    expect(readUi(storage).sidebar.size).toBe(SSH_SIDEBAR_SIZE);
+    save({ visible: true, view: 'explorer', size: 26, lastSize: 26, parkedSize: 14 });
+    expect(readUi(storage).sidebar).toMatchObject({ size: 26, sizeByView: { ssh: 14 } });
+  });
+});
+
+describe('each area keeps its own slide-over width', () => {
+  beforeEach(() => {
+    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+  });
+
+  it('a width dragged in one area does not move the others', () => {
+    const store = (): ReturnType<typeof useUiStore.getState> => useUiStore.getState();
+    store().setSlideOverWidth(500);
+    expect(slideOverWidthOf(store())).toBe(500);
+    store().showSidebarView('ssh');
+    expect(slideOverWidthOf(store())).toBe(294);
+    store().setSlideOverWidth(320);
+    store().showSidebarView('explorer');
+    expect(slideOverWidthOf(store())).toBe(500);
+    store().showSidebarView('ssh');
+    expect(slideOverWidthOf(store())).toBe(320);
   });
 });
 

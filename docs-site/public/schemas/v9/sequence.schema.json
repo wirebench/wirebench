@@ -6,7 +6,12 @@
   "type": "object",
   "properties": {
     "kind": { "type": "string", "const": "sequence" },
-    "version": { "type": "number", "const": 1 },
+    "version": {
+      "anyOf": [
+        { "type": "number", "const": 1 },
+        { "type": "number", "const": 2 }
+      ]
+    },
     "id": { "type": "string", "minLength": 1 },
     "name": { "type": "string" },
     "order": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
@@ -317,6 +322,477 @@
                     "name": { "type": "string", "minLength": 1 }
                   },
                   "required": ["type", "catchUrl"],
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "branches": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "when": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "status" },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "anyOf": [
+                                    { "type": "integer", "minimum": 100, "maximum": 599 },
+                                    { "type": "integer", "minimum": 0, "maximum": 16 },
+                                    { "type": "string", "pattern": "^[1-5]xx$" },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "OK",
+                                        "CANCELLED",
+                                        "UNKNOWN",
+                                        "INVALID_ARGUMENT",
+                                        "DEADLINE_EXCEEDED",
+                                        "NOT_FOUND",
+                                        "ALREADY_EXISTS",
+                                        "PERMISSION_DENIED",
+                                        "RESOURCE_EXHAUSTED",
+                                        "FAILED_PRECONDITION",
+                                        "ABORTED",
+                                        "OUT_OF_RANGE",
+                                        "UNIMPLEMENTED",
+                                        "INTERNAL",
+                                        "UNAVAILABLE",
+                                        "DATA_LOSS",
+                                        "UNAUTHENTICATED"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      { "type": "integer", "minimum": 100, "maximum": 599 },
+                                      { "type": "integer", "minimum": 0, "maximum": 16 },
+                                      { "type": "string", "pattern": "^[1-5]xx$" },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "OK",
+                                          "CANCELLED",
+                                          "UNKNOWN",
+                                          "INVALID_ARGUMENT",
+                                          "DEADLINE_EXCEEDED",
+                                          "NOT_FOUND",
+                                          "ALREADY_EXISTS",
+                                          "PERMISSION_DENIED",
+                                          "RESOURCE_EXHAUSTED",
+                                          "FAILED_PRECONDITION",
+                                          "ABORTED",
+                                          "OUT_OF_RANGE",
+                                          "UNIMPLEMENTED",
+                                          "INTERNAL",
+                                          "UNAVAILABLE",
+                                          "DATA_LOSS",
+                                          "UNAUTHENTICATED"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "equals"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "soap-fault" },
+                            "expect": { "default": "none", "type": "string", "enum": ["none", "present"] },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "match" },
+                            "language": { "type": "string", "enum": ["xpath", "xquery", "jsonpath"] },
+                            "expression": { "type": "string", "minLength": 1 },
+                            "namespaces": {
+                              "type": "object",
+                              "propertyNames": { "type": "string" },
+                              "additionalProperties": { "type": "string" }
+                            },
+                            "equals": { "type": ["string", "number", "boolean"] },
+                            "matches": { "type": "string" },
+                            "exists": { "type": "boolean" },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "language", "expression"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "header" },
+                            "header": { "type": "string", "minLength": 1 },
+                            "equals": { "type": "string" },
+                            "matches": { "type": "string" },
+                            "exists": { "type": "boolean" },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "header"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "outcome" },
+                            "equals": {
+                              "anyOf": [
+                                { "type": "string", "enum": ["passed", "failed", "errored"] },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": { "type": "string", "enum": ["passed", "failed", "errored"] }
+                                }
+                              ]
+                            },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "equals"],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "then": { "type": "string", "const": "goto" },
+                    "step": { "type": "string", "minLength": 1 },
+                    "max": { "type": "integer", "minimum": 1, "maximum": 100 },
+                    "delayMs": { "type": "integer", "minimum": 0, "maximum": 60000 }
+                  },
+                  "required": ["when", "then", "step", "max"],
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "when": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "status" },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "anyOf": [
+                                    { "type": "integer", "minimum": 100, "maximum": 599 },
+                                    { "type": "integer", "minimum": 0, "maximum": 16 },
+                                    { "type": "string", "pattern": "^[1-5]xx$" },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "OK",
+                                        "CANCELLED",
+                                        "UNKNOWN",
+                                        "INVALID_ARGUMENT",
+                                        "DEADLINE_EXCEEDED",
+                                        "NOT_FOUND",
+                                        "ALREADY_EXISTS",
+                                        "PERMISSION_DENIED",
+                                        "RESOURCE_EXHAUSTED",
+                                        "FAILED_PRECONDITION",
+                                        "ABORTED",
+                                        "OUT_OF_RANGE",
+                                        "UNIMPLEMENTED",
+                                        "INTERNAL",
+                                        "UNAVAILABLE",
+                                        "DATA_LOSS",
+                                        "UNAUTHENTICATED"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      { "type": "integer", "minimum": 100, "maximum": 599 },
+                                      { "type": "integer", "minimum": 0, "maximum": 16 },
+                                      { "type": "string", "pattern": "^[1-5]xx$" },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "OK",
+                                          "CANCELLED",
+                                          "UNKNOWN",
+                                          "INVALID_ARGUMENT",
+                                          "DEADLINE_EXCEEDED",
+                                          "NOT_FOUND",
+                                          "ALREADY_EXISTS",
+                                          "PERMISSION_DENIED",
+                                          "RESOURCE_EXHAUSTED",
+                                          "FAILED_PRECONDITION",
+                                          "ABORTED",
+                                          "OUT_OF_RANGE",
+                                          "UNIMPLEMENTED",
+                                          "INTERNAL",
+                                          "UNAVAILABLE",
+                                          "DATA_LOSS",
+                                          "UNAUTHENTICATED"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "equals"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "soap-fault" },
+                            "expect": { "default": "none", "type": "string", "enum": ["none", "present"] },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "match" },
+                            "language": { "type": "string", "enum": ["xpath", "xquery", "jsonpath"] },
+                            "expression": { "type": "string", "minLength": 1 },
+                            "namespaces": {
+                              "type": "object",
+                              "propertyNames": { "type": "string" },
+                              "additionalProperties": { "type": "string" }
+                            },
+                            "equals": { "type": ["string", "number", "boolean"] },
+                            "matches": { "type": "string" },
+                            "exists": { "type": "boolean" },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "language", "expression"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "header" },
+                            "header": { "type": "string", "minLength": 1 },
+                            "equals": { "type": "string" },
+                            "matches": { "type": "string" },
+                            "exists": { "type": "boolean" },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "header"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "outcome" },
+                            "equals": {
+                              "anyOf": [
+                                { "type": "string", "enum": ["passed", "failed", "errored"] },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": { "type": "string", "enum": ["passed", "failed", "errored"] }
+                                }
+                              ]
+                            },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "equals"],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "then": { "type": "string", "const": "repeat" },
+                    "max": { "type": "integer", "minimum": 1, "maximum": 100 },
+                    "delayMs": { "type": "integer", "minimum": 0, "maximum": 60000 }
+                  },
+                  "required": ["when", "then", "max"],
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "when": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "status" },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "anyOf": [
+                                    { "type": "integer", "minimum": 100, "maximum": 599 },
+                                    { "type": "integer", "minimum": 0, "maximum": 16 },
+                                    { "type": "string", "pattern": "^[1-5]xx$" },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "OK",
+                                        "CANCELLED",
+                                        "UNKNOWN",
+                                        "INVALID_ARGUMENT",
+                                        "DEADLINE_EXCEEDED",
+                                        "NOT_FOUND",
+                                        "ALREADY_EXISTS",
+                                        "PERMISSION_DENIED",
+                                        "RESOURCE_EXHAUSTED",
+                                        "FAILED_PRECONDITION",
+                                        "ABORTED",
+                                        "OUT_OF_RANGE",
+                                        "UNIMPLEMENTED",
+                                        "INTERNAL",
+                                        "UNAVAILABLE",
+                                        "DATA_LOSS",
+                                        "UNAUTHENTICATED"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      { "type": "integer", "minimum": 100, "maximum": 599 },
+                                      { "type": "integer", "minimum": 0, "maximum": 16 },
+                                      { "type": "string", "pattern": "^[1-5]xx$" },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "OK",
+                                          "CANCELLED",
+                                          "UNKNOWN",
+                                          "INVALID_ARGUMENT",
+                                          "DEADLINE_EXCEEDED",
+                                          "NOT_FOUND",
+                                          "ALREADY_EXISTS",
+                                          "PERMISSION_DENIED",
+                                          "RESOURCE_EXHAUSTED",
+                                          "FAILED_PRECONDITION",
+                                          "ABORTED",
+                                          "OUT_OF_RANGE",
+                                          "UNIMPLEMENTED",
+                                          "INTERNAL",
+                                          "UNAVAILABLE",
+                                          "DATA_LOSS",
+                                          "UNAUTHENTICATED"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "equals"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "soap-fault" },
+                            "expect": { "default": "none", "type": "string", "enum": ["none", "present"] },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "match" },
+                            "language": { "type": "string", "enum": ["xpath", "xquery", "jsonpath"] },
+                            "expression": { "type": "string", "minLength": 1 },
+                            "namespaces": {
+                              "type": "object",
+                              "propertyNames": { "type": "string" },
+                              "additionalProperties": { "type": "string" }
+                            },
+                            "equals": { "type": ["string", "number", "boolean"] },
+                            "matches": { "type": "string" },
+                            "exists": { "type": "boolean" },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "language", "expression"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "header" },
+                            "header": { "type": "string", "minLength": 1 },
+                            "equals": { "type": "string" },
+                            "matches": { "type": "string" },
+                            "exists": { "type": "boolean" },
+                            "name": { "type": "string", "minLength": 1 },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "header"],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": { "type": "string", "const": "outcome" },
+                            "equals": {
+                              "anyOf": [
+                                { "type": "string", "enum": ["passed", "failed", "errored"] },
+                                {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": { "type": "string", "enum": ["passed", "failed", "errored"] }
+                                }
+                              ]
+                            },
+                            "not": { "type": "boolean" }
+                          },
+                          "required": ["type", "equals"],
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "then": { "type": "string", "const": "skip-next" },
+                    "max": { "not": {} },
+                    "delayMs": { "not": {} }
+                  },
+                  "required": ["when", "then"],
                   "additionalProperties": {}
                 }
               ]

@@ -5,7 +5,7 @@
  * move, double-click or Enter connects; clicking the picked card again hides its details. The ⋯
  * menu shows on hover, right-click has the same items.
  */
-import { useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
@@ -86,6 +86,19 @@ interface CardProps {
   readonly onSelect: () => void;
 }
 
+/**
+ * The card the last single press landed on, and where. The press picks the host (its focus does), the
+ * details open, and the right panel narrowing the content can move the card out from under the pointer
+ * before the release, let alone the second press of a double-click: so the press is what is remembered,
+ * and the second press connects that host wherever it lands.
+ */
+let lastPress: { readonly id: string; readonly x: number; readonly y: number; readonly at: number } | undefined;
+/** How far apart, in time and in pixels, the two presses of a double-click may be. */
+const DOUBLE_CLICK_MS = 600;
+const DOUBLE_CLICK_PX = 6;
+/** Until when the click that follows a connecting press is swallowed, so it presses nothing it lands on. */
+let swallowClickUntil = 0;
+
 function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }: CardProps) {
   const status = sessionStatus(useHostsStore((s) => s.sessions[host.id]));
   const osEntry = useHostsStore((s) => (resolved === undefined ? undefined : s.osByHost[osKeyOf(resolved)]));
@@ -135,11 +148,14 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
         className={`group flex min-w-0 cursor-default border bg-surface-raised hover:border-hairline-strong hover:bg-surface-hover focus-visible:outline-none ${
           selected ? 'border-accent ring-1 ring-accent' : 'border-hairline'
         } ${grid ? 'items-center gap-2.5 rounded-md p-2' : 'items-center gap-3 rounded-md px-3 py-1'}`}
-        onMouseDown={() => {
+        onMouseDown={(e) => {
           pressedWhileShown.current = selected && useHostsStore.getState().detailsOpen;
+          if (e.button === 0 && e.detail === 1) {
+            lastPress = { id: host.id, x: e.clientX, y: e.clientY, at: performance.now() };
+          }
         }}
         onClick={(e) => {
-          // The second click of a double-click belongs to connecting.
+          // The second click of a double-click belongs to connecting (see `lastPress`).
           if (e.detail > 1) return;
           if (pressedWhileShown.current) useHostsStore.getState().setDetailsOpen(false);
           else onSelect();
@@ -147,7 +163,6 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
         onFocus={(e) => {
           if (e.target === e.currentTarget) onSelect();
         }}
-        onDoubleClick={connect}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && e.target === e.currentTarget) connect();
         }}
@@ -234,6 +249,34 @@ export function HostCards({
   const selected = useHostsStore((s) => s.selectedHostId);
   const selectHost = useHostsStore((s) => s.selectHost);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Taken before anything under the pointer sees it: the second press may land on another card, a gap
+  // or the details panel the first one opened, and connecting is all it should do.
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent): void => {
+      const first = lastPress;
+      if (e.button !== 0 || e.detail !== 2 || first === undefined) return;
+      lastPress = undefined;
+      const near = Math.abs(e.clientX - first.x) <= DOUBLE_CLICK_PX && Math.abs(e.clientY - first.y) <= DOUBLE_CLICK_PX;
+      if (!near || performance.now() - first.at > DOUBLE_CLICK_MS) return;
+      e.preventDefault();
+      e.stopPropagation();
+      swallowClickUntil = performance.now() + DOUBLE_CLICK_MS;
+      openTerminalFor(first.id);
+    };
+    const onClick = (e: MouseEvent): void => {
+      if (e.detail < 2 || performance.now() > swallowClickUntil) return;
+      swallowClickUntil = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('click', onClick, true);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('click', onClick, true);
+    };
+  }, []);
 
   if (file.groups.length === 0 && file.hosts.length === 0) {
     return (

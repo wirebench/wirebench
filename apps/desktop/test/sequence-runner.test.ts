@@ -300,6 +300,27 @@ describe('SequenceRunner', () => {
     expect(JSON.stringify(result)).not.toContain(JWT);
   });
 
+  it('gives each run of a repeated step its own send, log row and wire fields', async () => {
+    const again = createSequenceStep('login', {
+      id: 'T1',
+      transfers: LOGIN.transfers,
+      branches: [{ when: { type: 'status', equals: 200 }, then: 'repeat', max: 1 }],
+    });
+    const { runner, deps, rows, events } = await harness([again, ME], 'P-branch');
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R9' }, deps);
+
+    expect(result.outcome).toBe('passed');
+    expect(result.steps.map((step) => [step.stepId, step.attempt, step.retried, step.branch?.action])).toEqual([
+      ['T1', undefined, true, 'repeat'],
+      ['T1', 2, undefined, 'repeat'],
+      ['T2', undefined, undefined, undefined],
+    ]);
+    expect(result.steps[1]?.branch).toMatchObject({ limitReached: true, to: { index: 0, stepId: 'T1' } });
+    expect(new Set(result.steps.map((step) => step.sendId)).size).toBe(3);
+    expect(rows).toHaveLength(3);
+    expect(events.map((event) => event.step.attempt ?? 1)).toEqual([1, 2, 1]);
+  });
+
   it('refuses a second run of the same sequence while one is running, and cancels the step in flight', async () => {
     const hang = createSequenceStep('hang', { id: 'T3' });
     const { runner, deps, appended } = await harness([hang, ME], 'P-cancel');

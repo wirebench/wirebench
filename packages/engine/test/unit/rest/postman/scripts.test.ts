@@ -5,7 +5,7 @@
  * run.
  */
 import { describe, expect, it } from 'vitest';
-import { apiFromPostmanCollection, unsupportedCalls } from '../../../../src/rest/postman/map.js';
+import { apiFromPostmanCollection, runControlCalls, unsupportedCalls } from '../../../../src/rest/postman/map.js';
 import { parsePostmanCollection } from '../../../../src/rest/postman/parse.js';
 
 const info = { name: 'Shop', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' };
@@ -24,7 +24,13 @@ const collection = {
       item: [
         {
           name: 'Log in',
-          event: [script('test', ['const t = pm.response.json().token;', "pm.environment.set('token', t);"])],
+          event: [
+            script('test', [
+              'const t = pm.response.json().token;',
+              "pm.environment.set('token', t);",
+              'if (!t) pm.execution.setNextRequest(null);',
+            ]),
+          ],
           request: { method: 'POST', url: '/login' },
         },
       ],
@@ -58,7 +64,9 @@ describe('imported Postman scripts', () => {
   it("puts a folder's scripts on the folder, and a request's on the request", () => {
     expect(auth?.scripts).toEqual({ pre: { text: 'pm.sendRequest("https://x.test", () => {});\n' }, ...off });
     expect(login?.scripts).toEqual({
-      post: { text: "const t = pm.response.json().token;\npm.environment.set('token', t);\n" },
+      post: {
+        text: "const t = pm.response.json().token;\npm.environment.set('token', t);\nif (!t) pm.execution.setNextRequest(null);\n",
+      },
       ...off,
     });
   });
@@ -75,7 +83,8 @@ describe('imported Postman scripts', () => {
     expect(summary.warnings).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/^Scripts on the API, 1 folder and 1 request were imported switched off/),
-        'The scripts of "Auth" call what Wirebench does not run: pm.sendRequest',
+        'The scripts of "Auth" call pm.sendRequest, which a script cannot do: send that request as a sequence step, or use OAuth2 auth for a token',
+        'The scripts of "Auth / Log in" steer the run (pm.execution.setNextRequest): obeyed in API and folder runs only',
       ]),
     );
     expect(summary.warnings?.some((w) => w.includes('were not imported'))).toBe(false);
@@ -108,14 +117,39 @@ describe('unsupportedCalls', () => {
       unsupportedCalls(
         "pm.sendRequest(x); pm.cookies.jar(); postman.setNextRequest('a'); require('lodash'); pm.visualizer.set(t); pm.execution.setNextRequest(null)",
       ).sort(),
-    ).toEqual([
-      'pm.cookies.jar',
-      'pm.execution.setNextRequest',
-      'pm.sendRequest',
-      'pm.visualizer',
-      'postman.setNextRequest',
-      'require',
-    ]);
+    ).toEqual(['pm.cookies.jar', 'pm.sendRequest', 'pm.visualizer', 'require']);
     expect(unsupportedCalls('pm.test("a", () => pm.expect(1).to.equal(1));')).toEqual([]);
+  });
+
+  it('names other unsupported calls in their own warning beside pm.sendRequest', () => {
+    const both = apiFromPostmanCollection(
+      parsePostmanCollection({
+        info,
+        item: [
+          {
+            name: 'R',
+            event: [script('prerequest', 'pm.sendRequest("u", () => {}); pm.cookies.jar();')],
+            request: { method: 'GET', url: '/r' },
+          },
+        ],
+      }),
+    );
+    expect(both.summary.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^The scripts of "R" call pm\.sendRequest, which a script cannot do/),
+        'The scripts of "R" call what Wirebench does not run: pm.cookies.jar',
+      ]),
+    );
+  });
+});
+
+describe('runControlCalls', () => {
+  it('finds the calls that steer a run', () => {
+    expect(
+      runControlCalls(
+        "pm.execution.setNextRequest('a'); postman.setNextRequest(null); pm.execution.skipRequest(); pm.test('x', () => {});",
+      ).sort(),
+    ).toEqual(['pm.execution.setNextRequest', 'pm.execution.skipRequest', 'postman.setNextRequest']);
+    expect(runControlCalls('pm.sendRequest(x);')).toEqual([]);
   });
 });

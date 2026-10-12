@@ -13,6 +13,7 @@ import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../..
 import { useProjectStore } from '../../state/project.js';
 import { useSequenceRunsStore } from '../../state/sequence-runs.js';
 import type {
+  BranchRuleWire,
   SequencePatch,
   SequenceStepWire,
   SequenceWire,
@@ -20,6 +21,7 @@ import type {
   StepAssertionWire,
 } from '../../../shared/wire-base.js';
 import { AddStepDialog } from './add-step-dialog.js';
+import { BranchList } from './branch-list.js';
 import { AssertionTable } from '../assertions/assertion-table.js';
 import { RunPanel } from './run-panel.js';
 import { stepRequestInfo } from './step-requests.js';
@@ -123,7 +125,7 @@ function StepList({
               type="button"
               aria-label={`Remove step ${index + 1}`}
               className="rounded px-1 text-fg-subtle hover:text-fg-default"
-              onClick={() => onSteps(sequence.steps.filter((s) => s.id !== step.id))}
+              onClick={() => onSteps(withoutStep(sequence.steps, step.id))}
             >
               ×
             </button>
@@ -132,6 +134,23 @@ function StepList({
       })}
     </ol>
   );
+}
+
+/**
+ * `steps` without the step `removedId`, and without every go-to that pointed at it: a go-to naming
+ * no step would be refused, and the whole edit with it.
+ */
+function withoutStep(steps: readonly SequenceStepWire[], removedId: string): SequenceStepWire[] {
+  return steps
+    .filter((step) => step.id !== removedId)
+    .map((step) => {
+      if (step.branches === undefined) return step;
+      const branches = step.branches.filter((rule) => rule.then !== 'goto' || rule.step !== removedId);
+      if (branches.length === step.branches.length) return step;
+      const copy: SequenceStepWire = { ...step };
+      delete copy.branches;
+      return branches.length > 0 ? { ...copy, branches } : copy;
+    });
 }
 
 /** `step` named `name`, or with no name of its own (the request's shows) when `name` is empty. */
@@ -146,6 +165,7 @@ export function SequenceTab({ sequenceId }: SequenceTabProps) {
   const sequence = useProjectStore((state) => state.sequences[sequenceId]);
   const projectId = useProjectStore((state) => state.projectOf[sequenceId]);
   const updateSequence = useProjectStore((state) => state.updateSequence);
+  const projectState = useProjectStore();
   const run = useSequenceRunsStore((state) => state.runs[sequenceId]);
   const start = useSequenceRunsStore((state) => state.start);
   const cancel = useSequenceRunsStore((state) => state.cancel);
@@ -264,7 +284,7 @@ export function SequenceTab({ sequenceId }: SequenceTabProps) {
       {selected !== undefined && (
         <SettingsGroup
           title={`Step ${sequence.steps.indexOf(selected) + 1}`}
-          hint="What this step lifts from its response, and what it checks about it."
+          hint="What this step lifts from its response, what it checks about it, and where the run goes next."
         >
           <div className="flex flex-wrap items-center gap-3 py-1">
             <CommitInput
@@ -293,6 +313,22 @@ export function SequenceTab({ sequenceId }: SequenceTabProps) {
           <AssertionTable
             assertions={selected.assertions}
             onChange={(assertions: StepAssertionWire[]) => updateStep({ assertions })}
+          />
+          <h3 className="mt-2 text-sm font-medium text-fg-default">Branches</h3>
+          <BranchList
+            branches={selected.branches ?? []}
+            steps={sequence.steps}
+            stepId={selected.id}
+            labelOf={(step) => step.name ?? stepRequestInfo(projectState, step.requestId)?.name ?? step.requestId}
+            onChange={(branches: BranchRuleWire[]) => {
+              const copy: SequenceStepWire = { ...selected };
+              delete copy.branches;
+              setSteps(
+                sequence.steps.map((step) =>
+                  step.id === selected.id ? (branches.length > 0 ? { ...copy, branches } : copy) : step,
+                ),
+              );
+            }}
           />
         </SettingsGroup>
       )}

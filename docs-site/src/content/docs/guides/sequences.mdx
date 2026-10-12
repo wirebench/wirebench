@@ -69,10 +69,35 @@ absent, response time, a SOAP fault, or the schema.
 
 A step can also wait for the webhook its request causes: see [Callback assertions](/wirebench/docs/guides/callback-assertions/).
 
+## Branch, repeat or skip
+
+A step's **Branches** decide where the run goes after it, from its response. Each branch is a condition
+and an action, and the first whose condition holds is taken:
+
+- The condition is one check: the status, a header, a body expression (equals, matches, is present or
+  is absent), a SOAP fault, or the step's own outcome (passed, failed or errored), so a send that
+  fails can branch too. **not** inverts it.
+- The action is **Repeat this step**, **Go to step** (any step, earlier or later), or **Skip the next
+  step**.
+- A repeat and a go-to have a maximum, **At most … times**, and can wait before they jump. Once a
+  branch has fired that many times in the run, it is passed over and the run goes on.
+
+To poll until a job is done, give the poll step a branch *if not* `$.state` equals `done` *then*
+repeat, at most 10 times, waiting 2000 ms, and an assertion that `$.state` equals `done`. Only the
+last run of a step counts towards the result, so a poll that is done on its third try passes.
+
+A branch that fires goes where it says even after a failure, so **Stop on first failure** stops the
+run only when no branch of the failing step fires. A sequence that has branches is saved as version 2
+of the file; a Wirebench from before branches lists it as written by a newer version and leaves it
+untouched.
+
 ## Read a run
 
 The run panel fills in as each step ends: its outcome, status, time and where it was sent, then its
-assertions and transfers. A step that fails or errors stops the run, and the rest are skipped, unless
+assertions and transfers. A step a branch ran again shows each run, marked *attempt 2*, *attempt 3*,
+and each row says where its branches went: `→ repeat (2 of 10)`, `→ 4. Fallback`, `→ skip next`, or
+that a branch reached its limit. A run that a later run of the same step replaced is dimmed and
+marked *retried*, and a step a branch passed over is skipped. A step that fails or errors stops the run, and the rest are skipped, unless
 you turn off **Stop on first failure**. **Show in History** lists every entry the run wrote; they are
 tagged `run:<id>` and `sequence:<id>`, so you can also search for them yourself.
 
@@ -105,5 +130,7 @@ for the details.
 - A step sends its request as it is saved. Text you are still editing in a request tab is not used.
 - A **Schema** assertion is evaluated by `wirebench run`; in the app it reports that no schema is at
   hand.
-- A sequence file holds up to 100 steps, each with up to 50 transfers and 50 assertions, and a
-  transferred value is at most 64 KB.
+- A sequence file holds up to 100 steps, each with up to 50 transfers, 50 assertions and 20 branches,
+  and a transferred value is at most 64 KB.
+- A repeat or go-to runs at most 100 times and waits at most 60 seconds before it jumps. A run stops
+  after 1000 step runs, whatever its branches say.

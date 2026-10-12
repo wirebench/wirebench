@@ -100,6 +100,36 @@ describe('sequence mutations', () => {
     expect(renamed.project.sequences[1]?.slug).toBe('checkout-3');
   });
 
+  it('round-trips branches, keeps go-to targets on a duplicate, and refuses one that names no step', () => {
+    const { project, createdId } = addSequence(empty(), 'Poll');
+    const id = createdId ?? '';
+    const steps = [
+      step({ id: 'T1' }),
+      step({
+        id: 'T2',
+        branches: [
+          { when: { type: 'status', equals: 503 }, then: 'repeat', max: 5, delayMs: 1000 },
+          { when: { type: 'outcome', equals: 'errored', not: true }, then: 'goto', step: 'T1', max: 2 },
+          { when: { type: 'header', header: 'X-Skip', exists: true }, then: 'skip-next' },
+        ],
+      }),
+      step({ id: 'T3' }),
+    ];
+    const updated = updateSequence(project, id, { steps });
+    expect(toSequenceWire(updated.project.sequences[0]!).steps).toEqual(steps);
+
+    const copy = duplicateSequence(updated.project, id).project.sequences[1]!;
+    const goto = copy.steps[1]?.branches?.[1];
+    expect(goto?.then === 'goto' ? goto.step : undefined).toBe(copy.steps[0]?.id);
+    expect(copy.steps[0]?.id).not.toBe('T1');
+
+    expect(() =>
+      updateSequence(project, id, {
+        steps: [step({ branches: [{ when: { type: 'status', equals: 503 }, then: 'goto', step: 'T9', max: 1 }] })],
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'sequence-invalid' }));
+  });
+
   it('refuses an unknown sequence', () => {
     expect(() => removeSequence(empty(), 'nope')).toThrowError(expect.objectContaining({ code: 'unknown-entity' }));
   });

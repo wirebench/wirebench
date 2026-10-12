@@ -153,6 +153,39 @@ describe('SequenceTab', () => {
     expect(lastPatch().steps?.[0]?.assertions).toEqual([{ type: 'status', equals: 200 }]);
   });
 
+  it('adds a branch, turns it into a go-to, and drops go-tos to a step that is removed', () => {
+    mount();
+    fireEvent.click(screen.getByTestId('sequence-add-branch'));
+    expect(lastPatch().steps?.[0]?.branches).toEqual([
+      { when: { type: 'status', equals: 503 }, then: 'repeat', max: 5 },
+    ]);
+
+    // The store echoes each patch, as main would.
+    const withRepeat = sequenceWire({
+      steps: [{ ...LOGIN, branches: lastPatch().steps?.[0]?.branches ?? [] }, ...SEQUENCE.steps.slice(1)],
+    });
+    cleanup();
+    mount(withRepeat);
+    fireEvent.change(screen.getByTestId('sequence-branch-action'), { target: { value: 'goto' } });
+    expect(lastPatch().steps?.[0]?.branches).toEqual([
+      { when: { type: 'status', equals: 503 }, then: 'goto', step: 'step-ws', max: 5 },
+    ]);
+
+    const withGoto = sequenceWire({
+      steps: [{ ...LOGIN, branches: lastPatch().steps?.[0]?.branches ?? [] }, ...SEQUENCE.steps.slice(1)],
+    });
+    cleanup();
+    mount(withGoto);
+    fireEvent.change(screen.getByTestId('sequence-branch-condition'), { target: { value: 'outcome' } });
+    expect(lastPatch().steps?.[0]?.branches?.[0]?.when).toEqual({ type: 'outcome', equals: 'errored' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove step 2' }));
+    expect(lastPatch().steps?.map((step) => [step.id, step.branches])).toEqual([
+      ['step-login', undefined],
+      ['step-gone', undefined],
+    ]);
+  });
+
   it('renames the sequence', () => {
     mount();
     const name = screen.getByTestId('sequence-name');
@@ -199,6 +232,91 @@ describe('SequenceTab', () => {
     expect(screen.getByTestId('sequence-run-status').textContent).toBe('Run passed');
     expect(screen.getByTestId('sequence-run')).toBeTruthy();
     unsubscribe();
+  });
+});
+
+describe('a branching run in the run panel (#347)', () => {
+  const base: SequenceStepResultWire = {
+    index: 0,
+    stepId: 'step-login',
+    requestId: 'rest-login',
+    name: 'Log in',
+    protocol: 'rest',
+    outcome: 'failed',
+    status: 503,
+    assertions: [],
+    transfers: [],
+  };
+  const to = { index: 0, stepId: 'step-login', name: 'Log in' };
+
+  it('shows every run of a step in order, the path each took, and which ones were retried', async () => {
+    const unsubscribe = subscribeToSequenceProgress();
+    mount();
+    fireEvent.click(screen.getByTestId('sequence-run'));
+    const { runId } = run.mock.calls[0]?.[0] as { runId: string };
+    const first: SequenceStepResultWire = {
+      ...base,
+      retried: true,
+      branch: { rule: 0, action: 'repeat', to, count: 1, max: 3 },
+    };
+    const second: SequenceStepResultWire = {
+      ...base,
+      outcome: 'passed',
+      status: 200,
+      attempt: 2,
+      branch: { rule: 1, action: 'goto', to: { index: 2, stepId: 'step-gone', name: 'gone' }, count: 1, max: 1 },
+    };
+    const passed: SequenceStepResultWire = {
+      ...base,
+      index: 1,
+      stepId: 'step-ws',
+      requestId: 'ws-1',
+      name: 'Live feed',
+      outcome: 'skipped',
+      skipped: 'branch',
+    };
+    for (const step of [first, second, passed]) {
+      act(() => listeners.get('sequence.progress')?.({ runId, sequenceId: 'seq-1', step }));
+    }
+    const rows = screen.getAllByTestId('sequence-run-step');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.dataset['retried']).toBe('true');
+    expect(within(rows[0]!).getByTestId('sequence-run-branch').textContent).toBe('→ repeat (1 of 3)');
+    expect(within(rows[1]!).getByText('1. Log in (attempt 2)')).toBeTruthy();
+    expect(within(rows[1]!).getByTestId('sequence-run-branch').textContent).toBe('→ 3. gone (1 of 1)');
+    expect(rows[2]!.textContent).toContain('skipped (passed over by a branch)');
+    // Two of the three steps have reported, whatever the number of runs.
+    expect(screen.getByTestId('sequence-run-status').textContent).toBe('Running… 2 of 3');
+
+    await act(async () => {
+      resolveRun?.({
+        runId,
+        sequenceId: 'seq-1',
+        name: 'Checkout',
+        startedAt: '',
+        outcome: 'passed',
+        steps: [first, second, passed],
+      });
+      await Promise.resolve();
+    });
+    expect(screen.getAllByTestId('sequence-run-step')).toHaveLength(3);
+    unsubscribe();
+  });
+
+  it('drops a progress event that arrives after the run has ended', () => {
+    useSequenceRunsStore.setState({ runs: { 'seq-1': { runId: 'R', status: 'done', steps: [base] } } });
+    useSequenceRunsStore.getState().applyProgress({ runId: 'R', sequenceId: 'seq-1', step: base });
+    expect(useSequenceRunsStore.getState().runs['seq-1']!.steps).toHaveLength(1);
+  });
+
+  it('marks the earlier run of a step retried as soon as a later one reports', () => {
+    useSequenceRunsStore.setState({ runs: { 'seq-1': { runId: 'R', status: 'running', steps: [] } } });
+    const apply = useSequenceRunsStore.getState().applyProgress;
+    apply({ runId: 'R', sequenceId: 'seq-1', step: base });
+    apply({ runId: 'R', sequenceId: 'seq-1', step: { ...base, index: 1, stepId: 'step-ws' } });
+    apply({ runId: 'R', sequenceId: 'seq-1', step: { ...base, attempt: 2 } });
+    const steps = useSequenceRunsStore.getState().runs['seq-1']!.steps;
+    expect(steps.map((step) => step.retried)).toEqual([true, undefined, undefined]);
   });
 });
 
