@@ -37,10 +37,9 @@ describe('createDispatcher', () => {
 });
 
 /**
- * The tunnelled origin handshake is built from `requestTls`, and undici's connector defaults
- * `allowH2` to *true* when the option is absent — so leaving it out offered `h2` in the ALPN of
- * every proxied HTTPS request, including the ones whose client speaks HTTP/1.1 only. The flag
- * has to be stated, both ways.
+ * The tunnelled origin handshake is built from `requestTls`, and undici's connector applies its
+ * own default when `allowH2` is absent — so turning HTTP/2 off, or the NTLM/Kerberos pin to
+ * HTTP/1.1, would not reach the tunnelled handshake. The flag has to be stated, both ways.
  */
 describe('proxyAgentOptionsFor', () => {
   it('carries allowH2 into the tunnelled requestTls, not just the agent', () => {
@@ -52,7 +51,7 @@ describe('proxyAgentOptionsFor', () => {
   it('pins the tunnelled handshake to HTTP/1.1 when h2 is off', () => {
     const options = proxyAgentOptionsFor({ url: 'http://proxy.test:8080' }, { tls: { minVersion: 'TLSv1.2' } }, false);
     expect(options.requestTls).toMatchObject({ allowH2: false });
-    expect(options.allowH2).toBeUndefined();
+    expect(options.allowH2).toBe(false);
   });
 
   it('states allowH2 even when the send carries no TLS options of its own', () => {

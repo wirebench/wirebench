@@ -51,10 +51,14 @@ function statusText(status: number): string {
   return REASON_PHRASES[status] ?? '';
 }
 
-/** A lazily-created, shared keep-alive Agent for requests with no custom TLS/proxy options. */
+/**
+ * A lazily-created, shared keep-alive Agent for requests with no custom TLS/proxy options. It
+ * offers HTTP/2 (ADR-0024), and says so: undici's own default for an unstated `allowH2` has
+ * changed between majors, and the transport's behaviour should not ride on it.
+ */
 let defaultAgent: Agent | undefined;
 function getDefaultAgent(): Agent {
-  defaultAgent ??= new Agent({ keepAliveTimeout: 4000, keepAliveMaxTimeout: 10000 });
+  defaultAgent ??= new Agent({ keepAliveTimeout: 4000, keepAliveMaxTimeout: 10000, allowH2: true });
   return defaultAgent;
 }
 
@@ -70,16 +74,16 @@ export function createDispatcher(opts: {
   readonly keepAlive?: boolean;
   /** Local interface address to bind outgoing sockets to; undici's `connect.localAddress`. */
   readonly localAddress?: string;
-  /** Offer HTTP/2 in the ALPN handshake. Off by default; see `HttpRequest.allowH2`. */
+  /** Offer HTTP/2 in the ALPN handshake. On unless `false`; see `HttpRequest.allowH2`. */
   readonly allowH2?: boolean;
 }): Dispatcher {
   const connect = connectOptions(opts);
-  const h2 = opts.allowH2 === true ? { allowH2: true } : {};
+  const allowH2 = opts.allowH2 !== false;
   if (opts.proxy !== undefined) {
-    return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, opts.allowH2 === true));
+    return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, allowH2));
   }
-  if (connect !== undefined || opts.allowH2 === true) {
-    return new Agent({ ...(connect !== undefined ? { connect } : {}), ...h2 });
+  if (connect !== undefined || !allowH2) {
+    return new Agent({ ...(connect !== undefined ? { connect } : {}), allowH2 });
   }
   return getDefaultAgent();
 }
@@ -94,11 +98,11 @@ export function createDispatcher(opts: {
  * is the tunnelled origin handshake (where those belong) and `proxyTls` carries only what
  * describes the hop to the proxy itself, i.e. the bind address.
  *
- * `allowH2` is stated on `requestTls` rather than left to the agent, because undici builds the
- * tunnelled connector from `requestTls` alone and its `allowH2` *defaults to true* — so an
- * unstated flag offered `h2` in the ALPN of every proxied HTTPS handshake, including the ones
- * whose client only speaks HTTP/1.1. Exported for the unit test that pins exactly that; not
- * part of the package's public API (`index.ts` does not re-export it).
+ * `allowH2` is stated on `requestTls` as well as on the agent, because undici builds the
+ * tunnelled connector from `requestTls` alone and applies its own default to an unstated flag —
+ * so turning HTTP/2 off (and the NTLM/Kerberos pin to HTTP/1.1) would not reach the tunnelled
+ * handshake. Exported for the unit test that pins exactly that; not part of the package's
+ * public API (`index.ts` does not re-export it).
  *
  * @param proxy the resolved proxy to dial
  * @param opts the send's TLS options and bind address
@@ -123,7 +127,7 @@ export function proxyAgentOptionsFor(
     ...(opts.localAddress !== undefined
       ? { proxyTls: { localAddress: opts.localAddress } as buildConnector.BuildOptions }
       : {}),
-    ...(allowH2 ? { allowH2: true } : {}),
+    allowH2,
     ...extra,
   };
 }
@@ -142,11 +146,13 @@ export function createSingleConnectionDispatcher(opts: {
 }): Dispatcher {
   const connect = connectOptions(opts);
   const base = { connections: 1, pipelining: 1, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 };
-  const shared = { ...base, ...(connect !== undefined ? { connect } : {}) };
+  // NTLM and Kerberos authenticate the connection, which HTTP/2 has no room for (an IIS server
+  // answers `HTTP_1_1_REQUIRED`, and undici does not retry): both paths are pinned to HTTP/1.1,
+  // whatever the send's own HTTP/2 setting says.
+  const shared = { ...base, allowH2: false, ...(connect !== undefined ? { connect } : {}) };
   if (opts.proxy !== undefined) {
     // `base` (connections: 1, keep-alive) still applies: it reaches the per-origin client
-    // inside the tunnel, which is exactly the connection NTLM authenticates. NTLM is an
-    // HTTP/1.1 authentication scheme, so the tunnelled handshake stays pinned to HTTP/1.1.
+    // inside the tunnel, which is exactly the connection NTLM authenticates.
     return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, false, base));
   }
   return new Agent(shared);
@@ -423,12 +429,12 @@ export async function sendHttp(
 
   const ownDispatcher =
     options?.dispatcher === undefined &&
-    (req.tls !== undefined || req.proxy !== undefined || req.localAddress !== undefined || req.allowH2 === true)
+    (req.tls !== undefined || req.proxy !== undefined || req.localAddress !== undefined || req.allowH2 === false)
       ? createDispatcher({
           ...(req.tls !== undefined ? { tls: req.tls } : {}),
           ...(req.proxy !== undefined ? { proxy: req.proxy } : {}),
           ...(req.localAddress !== undefined ? { localAddress: req.localAddress } : {}),
-          ...(req.allowH2 === true ? { allowH2: true } : {}),
+          ...(req.allowH2 !== undefined ? { allowH2: req.allowH2 } : {}),
         })
       : undefined;
   const dispatcher = options?.dispatcher ?? ownDispatcher ?? getDefaultAgent();

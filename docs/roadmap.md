@@ -217,7 +217,7 @@ enabled checkbox, and the `disabled` list format bump
   Wirebench's own project files, so any editor validates them. Switching cost is the moat the cloud
   platforms rely on; every client that displaced one began as an importer.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
-- **HTTP/2.** Evaluate making it the default once enough servers negotiate it cleanly.
+- **HTTP/2.** Done (#80, ADR-0024): offered by default with ALPN fallback; NTLM and Kerberos stay on HTTP/1.1.
 - **Same-host `http://` → `https://` 301 on a POST** (shipped, #71). Wirebench still does not follow
   redirects on a SOAP send by default, because a redirected POST becomes a GET and loses the envelope. The
   exact upgrade shape (same host, path and query, default ports, 301/302/307/308) is followed anyway, with
