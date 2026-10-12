@@ -39,11 +39,31 @@ function hash(algorithm: string, text: string): string {
     .digest('hex');
 }
 
+/** The `name=value` pairs of a Digest header, unquoted; a linear scan, since the header is the client's. */
 function params(header: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const match of header.matchAll(/(\w+)=("(?:[^"\\]|\\.)*"|[^,\s]*)/g)) {
-    const [, name, raw] = match;
-    if (name !== undefined && raw !== undefined) out[name] = raw.startsWith('"') ? raw.slice(1, -1) : raw;
+  let at = 0;
+  while (at < header.length) {
+    while (header[at] === ' ' || header[at] === ',') at += 1;
+    const equals = header.indexOf('=', at);
+    if (equals === -1) break;
+    const name = header.slice(at, equals).trim();
+    at = equals + 1;
+    let value = '';
+    if (header[at] === '"') {
+      at += 1;
+      while (at < header.length && header[at] !== '"') {
+        if (header[at] === '\\') at += 1;
+        value += header[at] ?? '';
+        at += 1;
+      }
+      at += 1;
+    } else {
+      const end = header.indexOf(',', at);
+      value = header.slice(at, end === -1 ? header.length : end).trim();
+      at = end === -1 ? header.length : end;
+    }
+    out[name] = value;
   }
   return out;
 }

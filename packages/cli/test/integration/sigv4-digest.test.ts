@@ -17,6 +17,8 @@ import { runCli, spawnCli } from './helpers.js';
 const PASSWORD = 'digest-password-long-339';
 const KEY_ID = 'AKIDCLI339EXAMPLE';
 const SECRET_KEY = 'secret-access-key-long-339';
+/** MD5 of `admin:wb:<PASSWORD>`, Digest's HA1, written out so the test server never hashes the password. */
+const HA1 = 'b9a72a78e21a40db6833a5a8504c990f';
 const ENV = {
   WIREBENCH_SECRET_DIGEST_PW: PASSWORD,
   WIREBENCH_SECRET_AWS_KEY: KEY_ID,
@@ -40,7 +42,7 @@ beforeAll(async () => {
       const response_ = /response="([0-9a-f]+)"/.exec(authorization)?.[1];
       const nc = /nc=([0-9a-f]+)/.exec(authorization)?.[1] ?? '';
       const cnonce = /cnonce="([^"]+)"/.exec(authorization)?.[1] ?? '';
-      const expected = md5(`${md5(`admin:wb:${PASSWORD}`)}:n339:${nc}:${cnonce}:auth:${md5('GET:/digest')}`);
+      const expected = md5(`${HA1}:n339:${nc}:${cnonce}:auth:${md5('GET:/digest')}`);
       if (response_ === expected) {
         response.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
       } else {
