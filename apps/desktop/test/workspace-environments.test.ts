@@ -147,6 +147,36 @@ describe('workspace environment routing', () => {
     await service.close();
   }, 60_000);
 
+  it("preflights under the project's active workspace environment, whatever the project manifest names (#468)", async () => {
+    const { service, projectId, requestId, interfaceSlug } = await workspaceWithCalculator();
+    // A project brought in with its own active environment: an id resolution never reads in a workspace.
+    const host = service.hostFor(projectId);
+    const added = await host.mutate({ kind: 'add-environment', name: 'own' });
+    const ownId = added.project.environments.find((environment) => environment.name === 'own')?.id as string;
+    await host.mutate({ kind: 'set-active-environment', environmentId: ownId });
+    expect(host.model()?.activeEnvironmentId).toBe(ownId);
+
+    expect(host.preflight(requestId)).toMatchObject({
+      endpoint: `${primary.url}/soap`,
+      endpointSource: 'request-endpoint',
+    });
+
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    const environmentId = createdEnvironmentId as string;
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId,
+      patch: { endpoints: { [`Calc/${interfaceSlug}`]: `${secondary.url}/soap` } },
+    });
+    await service.setActiveEnvironment({ projectId, environmentId });
+    expect(host.preflight(requestId)).toMatchObject({
+      endpoint: `${secondary.url}/soap`,
+      endpointSource: 'workspace-environment',
+    });
+
+    await service.close();
+  }, 60_000);
+
   it("lets a linked project's own dev environment win over the workspace's for the same property", async () => {
     const { service, requestId } = await workspaceWithCalculator();
     folderPick = await seedLinkedProject('Linked', { region: 'us-east' });

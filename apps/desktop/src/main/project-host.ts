@@ -358,6 +358,9 @@ export class ProjectHost {
    * with that environment active, and the enabled global properties. `undefined` when no project
    * is open or the environment is unknown. The request itself is
    * not looked up: the caller selects it from `project`.
+   *
+   * @throws WorkspaceError `environment-out-of-scope` when, inside a workspace, `envId` names a
+   * workspace environment that does not apply to this project (#468).
    */
   runContextFor(
     _requestId: string,
@@ -495,11 +498,16 @@ export class ProjectHost {
    */
   preflight(requestId: string, envId?: string): PreflightResult {
     const open = this.require();
-    const activeId = envId ?? open.project.activeEnvironmentId;
+    // Inside a workspace the project manifest's own `activeEnvironmentId` names a project environment,
+    // never one resolution reads (spec §3.3): `envId` goes through as asked, absent meaning the
+    // project's active workspace environment (#468).
+    const context = this.workspaceContextFor(envId);
+    const activeId =
+      context === undefined ? (envId ?? open.project.activeEnvironmentId) : context.workspace.activeEnvironmentId;
     return preflightRequest(
       open.project,
       requestId,
-      this.scopesFor(activeId),
+      this.scopesFor(context === undefined ? activeId : envId),
       activeId,
       this.kind('soap').defaultWsaActionFor(requestId),
       this.workspaceContext?.() === undefined

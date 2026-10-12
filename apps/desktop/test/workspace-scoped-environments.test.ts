@@ -201,10 +201,16 @@ describe('an environment out of the project’s scope', () => {
     const response = await sendToEnvironments(sendDeps(service), deps, {
       batchId: 'scoped',
       requestId: billing.requestId,
-      environmentIds: [crmOnly],
+      environmentIds: [crmOnly, 'no-such-env'],
     });
     expect(response.results).toEqual([
-      expect.objectContaining({ outcome: 'error', environmentId: crmOnly, code: 'unknown-environment' }),
+      expect.objectContaining({
+        outcome: 'error',
+        environmentId: crmOnly,
+        environmentName: 'crmonly',
+        code: 'environment-out-of-scope',
+      }),
+      expect.objectContaining({ outcome: 'error', environmentId: 'no-such-env', code: 'unknown-environment' }),
     ]);
     await service.close();
   });
