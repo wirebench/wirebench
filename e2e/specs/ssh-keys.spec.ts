@@ -59,7 +59,8 @@ test('generate a key in the keychain, install it on a host and switch the host t
   await expect(generate).toBeHidden({ timeout: 30_000 });
   const row = page.getByTestId('secret-row-box_key');
   await expect(row).toContainText(/ed25519 · SHA256:/, { timeout: 30_000 });
-  await expect(page.getByText('PRIVATE KEY')).toHaveCount(0);
+  // The PEM armour, not the words: the panel's own description mentions private keys.
+  expect(await page.content()).not.toContain('PRIVATE KEY-----');
 
   // Install it over the password sign-in; the host key is new, so it is trusted from the dialog first.
   await row.getByRole('button', { name: 'Install on host…' }).click();
