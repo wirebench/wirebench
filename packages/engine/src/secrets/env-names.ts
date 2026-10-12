@@ -7,6 +7,7 @@
  * that name and the ref both turn into the environment variables a headless run is allowed to read.
  */
 
+import { isHmacAlgorithm } from '../http/auth/jwt-algorithms.js';
 import type { AuthConfig, EndpointAuth } from '../project/model.js';
 import { parseSecretPseudoRef, secretEnvName } from './secret-token.js';
 
@@ -49,6 +50,11 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
       return need(auth.valueRef, auth.valueEnv, `API key "${auth.name}"`);
     case 'oauth2':
       return need(auth.clientSecretRef, auth.clientSecretEnv, `OAuth2 client secret for "${auth.clientId}"`);
+    case 'jwt':
+      // The private key's keystore password is the keystore's need, added where the project is known.
+      return isHmacAlgorithm(auth.algorithm)
+        ? need(auth.secretRef, auth.secretEnv, `JWT ${auth.algorithm} secret`)
+        : [];
     case 'kerberos':
       return auth.username !== undefined
         ? need(auth.passwordRef, auth.passwordEnv, `kerberos password for "${auth.username}"`)

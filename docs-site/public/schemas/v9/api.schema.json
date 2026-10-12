@@ -100,6 +100,43 @@
               },
               "required": ["type"],
               "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "jwt" },
+                "algorithm": {
+                  "type": "string",
+                  "enum": [
+                    "HS256",
+                    "HS384",
+                    "HS512",
+                    "RS256",
+                    "RS384",
+                    "RS512",
+                    "ES256",
+                    "ES384",
+                    "ES512",
+                    "PS256",
+                    "PS384",
+                    "PS512"
+                  ]
+                },
+                "secretRef": { "type": "string" },
+                "secretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "keystoreRef": { "type": "string" },
+                "alias": { "type": "string" },
+                "header": { "type": "string" },
+                "claims": { "default": "{}", "type": "string" },
+                "issuedAt": { "default": true, "type": "boolean" },
+                "expiresInSeconds": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "jwtId": { "default": false, "type": "boolean" },
+                "in": { "default": "header", "type": "string", "enum": ["header", "query"] },
+                "name": { "type": "string" },
+                "prefix": { "type": "string" }
+              },
+              "required": ["type", "algorithm"],
+              "additionalProperties": {}
             }
           ]
         },
@@ -290,6 +327,43 @@
               },
               "required": ["type"],
               "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "jwt" },
+                "algorithm": {
+                  "type": "string",
+                  "enum": [
+                    "HS256",
+                    "HS384",
+                    "HS512",
+                    "RS256",
+                    "RS384",
+                    "RS512",
+                    "ES256",
+                    "ES384",
+                    "ES512",
+                    "PS256",
+                    "PS384",
+                    "PS512"
+                  ]
+                },
+                "secretRef": { "type": "string" },
+                "secretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "keystoreRef": { "type": "string" },
+                "alias": { "type": "string" },
+                "header": { "type": "string" },
+                "claims": { "default": "{}", "type": "string" },
+                "issuedAt": { "default": true, "type": "boolean" },
+                "expiresInSeconds": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "jwtId": { "default": false, "type": "boolean" },
+                "in": { "default": "header", "type": "string", "enum": ["header", "query"] },
+                "name": { "type": "string" },
+                "prefix": { "type": "string" }
+              },
+              "required": ["type", "algorithm"],
+              "additionalProperties": {}
             }
           ]
         },
@@ -426,6 +500,43 @@
                 "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
               },
               "required": ["type"],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "jwt" },
+                "algorithm": {
+                  "type": "string",
+                  "enum": [
+                    "HS256",
+                    "HS384",
+                    "HS512",
+                    "RS256",
+                    "RS384",
+                    "RS512",
+                    "ES256",
+                    "ES384",
+                    "ES512",
+                    "PS256",
+                    "PS384",
+                    "PS512"
+                  ]
+                },
+                "secretRef": { "type": "string" },
+                "secretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                "keystoreRef": { "type": "string" },
+                "alias": { "type": "string" },
+                "header": { "type": "string" },
+                "claims": { "default": "{}", "type": "string" },
+                "issuedAt": { "default": true, "type": "boolean" },
+                "expiresInSeconds": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                "jwtId": { "default": false, "type": "boolean" },
+                "in": { "default": "header", "type": "string", "enum": ["header", "query"] },
+                "name": { "type": "string" },
+                "prefix": { "type": "string" }
+              },
+              "required": ["type", "algorithm"],
               "additionalProperties": {}
             }
           ]

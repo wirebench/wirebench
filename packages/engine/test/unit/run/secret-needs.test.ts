@@ -320,4 +320,30 @@ describe('secretNeedsOf — gRPC', () => {
       expect.objectContaining({ ref: 'sec_api', usedBy: ['Greeter/Top'] }),
     ]);
   });
+
+  it("lists a JWT's HMAC secret, or the keystore password of its private key", () => {
+    const keystores = [
+      {
+        id: 'ks-jwt',
+        name: 'jwt key',
+        document: { id: 'ks-jwt', name: 'jwt key', path: 'k.pem', type: 'pem', passwordSecretRef: 'sec_ks' },
+      } satisfies WssRef,
+    ];
+    const jwt = { type: 'jwt', claims: '{}', issuedAt: true, jwtId: false, in: 'header' } as const;
+    const api = createGrpcApi('Signed', {
+      id: 'api-s',
+      target: 'localhost:1',
+      requests: [
+        createGrpcRequest('Hmac', {
+          id: 'g-h',
+          auth: { ...jwt, algorithm: 'HS256', secretRef: 'sec_hmac', secretEnv: 'JWT_SECRET' },
+        }),
+        createGrpcRequest('Rsa', { id: 'g-r', order: 1, auth: { ...jwt, algorithm: 'RS256', keystoreRef: 'ks-jwt' } }),
+      ],
+    });
+    expect(needsOf(withGrpcApis(project({ wss: { keystores } }), [api]))).toEqual([
+      expect.objectContaining({ ref: 'sec_hmac', envName: 'JWT_SECRET', usedBy: ['Signed/Hmac'] }),
+      expect.objectContaining({ ref: 'sec_ks', usedBy: ['Signed/Rsa'] }),
+    ]);
+  });
 });

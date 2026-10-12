@@ -27,6 +27,7 @@ import {
   authFor,
   baseUrlFor,
   dropRefusedToken,
+  authNeeds,
   keystoreNeeds,
   originOf,
   tlsFor,
@@ -35,7 +36,6 @@ import {
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, findInTree, walkTree } from '../run/tree.js';
-import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import { toWsSessionOptions } from './call.js';
 import type { WsLiveEvent } from './events.js';
 import { expandWsInput, expandWsMessage } from './expand.js';
@@ -624,7 +624,7 @@ export const wsRun: ProtocolRun<WsSelected> = {
 
   secretNeeds(selected, project) {
     return [
-      ...secretNeedsOfAuth(wsEffectiveAuth(selected)),
+      ...authNeeds(project, wsEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   },

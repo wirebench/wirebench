@@ -318,6 +318,7 @@ class OcWriter {
         return undefined;
       case 'none':
       case 'kerberos':
+      case 'jwt':
         return 'none';
       case 'basic':
         return { type: 'basic', ...optional('username', auth.username) };

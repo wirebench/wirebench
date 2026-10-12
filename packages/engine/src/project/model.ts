@@ -16,6 +16,7 @@ import { ulid } from 'ulidx';
 import type { MockDef } from '../mock/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { ContainerBase } from '../protocol/module.js';
+import type { JwtAlgorithm } from '../http/auth/jwt-algorithms.js';
 
 /**
  * The on-disk format version written to (and required by) `wirebench.yaml`.
@@ -44,7 +45,7 @@ export type PropertyMap = Readonly<Record<string, string>>;
  * which walks its folder chain up to its API. A SOAP interface, endpoint or request uses
  * {@link EndpointAuth}, the subset without it.
  */
-export type AuthType = 'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2' | 'kerberos';
+export type AuthType = 'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2' | 'kerberos' | 'jwt';
 
 /** How a request or endpoint authenticates. Passwords are always `secretRef`s, never values. */
 export interface EndpointAuth {
@@ -137,19 +138,52 @@ export interface KerberosAuth {
 }
 
 /**
+ * A JWT the client signs itself (#348), sent as a header or a query parameter. The HMAC secret is a
+ * `secretRef`; a private key is a keystore entry and alias. Neither is ever a value in the file.
+ */
+export interface JwtAuth {
+  readonly type: 'jwt';
+  readonly algorithm: JwtAlgorithm;
+  /** HS256/384/512: opaque reference into the OS-keychain-backed secret store. Never a secret value. */
+  readonly secretRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly secretEnv?: string;
+  /** RS, ES and PS: the id of a `wss/keystores.yaml` entry holding the private key. */
+  readonly keystoreRef?: string;
+  /** The keystore alias; absent, the entry's default alias, else its only key. */
+  readonly alias?: string;
+  /** Extra protected-header fields as a JSON object (`kid`, …). Property expansion applies to its strings. */
+  readonly header?: string;
+  /** The payload as a JSON object. Property expansion applies to its strings. */
+  readonly claims: string;
+  /** Generate `iat`. */
+  readonly issuedAt: boolean;
+  /** Generate `exp` this many seconds after `iat`; absent or 0 generates none. */
+  readonly expiresInSeconds?: number;
+  /** Generate a random `jti`. */
+  readonly jwtId: boolean;
+  readonly in: 'header' | 'query';
+  /** The header (default `Authorization`) or query parameter (default `access_token`). */
+  readonly name?: string;
+  /** Header only: the text before the token, `Bearer` by default; empty sends the bare token. */
+  readonly prefix?: string;
+}
+
+/**
  * Authentication as configured anywhere in a project. A discriminated union on `type`, of which
  * {@link EndpointAuth} — the `none`/`basic`/`ntlm` member SOAP has always had — is one arm, so a
  * SOAP endpoint's credentials are already an `AuthConfig` and the same editor serves both
  * protocols.
  */
-export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth | KerberosAuth;
+export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth | KerberosAuth | JwtAuth;
 
 /**
  * What a SOAP interface, endpoint or request may hold: every {@link AuthConfig} arm except
  * {@link InheritAuth} — a SOAP owner has no interface-like ancestor to inherit from, so the SOAP
- * chain stays request → endpoint (override/complement) → interface.
+ * chain stays request → endpoint (override/complement) → interface — and {@link JwtAuth}, which
+ * SOAP services do not ask for.
  */
-export type SoapOwnerAuth = Exclude<AuthConfig, InheritAuth>;
+export type SoapOwnerAuth = Exclude<AuthConfig, InheritAuth | JwtAuth>;
 
 /**
  * How a definition document is fetched: Basic, a bearer token, an API key or Kerberos. Secrets are keychain

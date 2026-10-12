@@ -4,7 +4,7 @@
  * schemas are a `$ref`-inlined, possibly cyclic, graph; a node reached more than once becomes one
  * `$defs` entry, so the published schema is a tree.
  */
-import { createRestRequest, entry, escapeExpansions, lexical, NO_BODY } from '@wirebench/engine';
+import { createRestRequest, entry, escapeExpansions, jwtSendAuth, lexical, NO_BODY } from '@wirebench/engine';
 import type {
   JsonSchema,
   JsonSchemaObject,
@@ -29,6 +29,9 @@ export function authHeaderNames(api: RestApi): ReadonlySet<string> {
   const names = new Set(['accept', 'content-type', 'authorization']);
   if (api.auth?.type === 'api-key' && api.auth.in === 'header') {
     names.add(api.auth.name.toLowerCase());
+  }
+  if (api.auth?.type === 'jwt' && api.auth.in === 'header') {
+    names.add(jwtSendAuth(api.auth, '').name.toLowerCase());
   }
   return names;
 }
@@ -149,8 +152,13 @@ export function restToolSchema(api: RestApi, operation: OpenApiOperation): RestT
       path.push({ name, in: 'path', required: true, schema: { type: 'string' } });
     }
   }
-  // A query API key is set by auth; query names are case-sensitive, so it is matched exactly.
-  const queryKey = api.auth?.type === 'api-key' && api.auth.in === 'query' ? api.auth.name : undefined;
+  // A query API key or JWT is set by auth; query names are case-sensitive, so it is matched exactly.
+  const queryKey =
+    api.auth?.type === 'api-key' && api.auth.in === 'query'
+      ? api.auth.name
+      : api.auth?.type === 'jwt' && api.auth.in === 'query'
+        ? jwtSendAuth(api.auth, '').name
+        : undefined;
   const query = parametersIn(operation, 'query').filter((parameter) => parameter.name !== queryKey);
   const headers = parametersIn(operation, 'header').filter((parameter) => !excluded.has(parameter.name.toLowerCase()));
   const cookies = parametersIn(operation, 'cookie')

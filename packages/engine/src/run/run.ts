@@ -38,6 +38,7 @@ import type { SendHost } from './host.js';
 import type { Pacer } from './iterate.js';
 import { openExchange } from './open.js';
 import { createRunTokenSource } from './oauth2-token.js';
+import { createJwtSource } from '../http/auth/jwt.js';
 import { createRunScope, scopeWith } from './scope.js';
 import {
   listedSecrets,
@@ -373,7 +374,8 @@ function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): Wireben
  */
 export function createRunSender(context: RunContext): RunRequestSender {
   const registry = context.registry ?? defaultRegistry();
-  // One token source for the whole run: requests behind the same OAuth2 configuration share a token.
+  // One token source for the whole run: requests behind the same OAuth2 configuration share a token,
+  // and requests behind the same JWT configuration share a signed JWT while it is fresh.
   const host: SendHost = {
     ...context.host,
     tokens:
@@ -382,6 +384,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
         getSecret: context.host.getSecret,
         ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
       }),
+    jwts: context.host.jwts ?? createJwtSource(),
   };
   const scope = createRunScope({ ...context, host });
 

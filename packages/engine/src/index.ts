@@ -531,6 +531,7 @@ export type {
   HeaderEntry,
   IdGenerator,
   InheritAuth,
+  JwtAuth,
   KerberosAuth,
   OAuth2Auth,
   Project,
@@ -663,6 +664,15 @@ export {
   signJwt,
   templateJwtJson,
 } from './http/auth/jwt.js';
+export {
+  JWT_DEFAULT_HEADER,
+  JWT_DEFAULT_PREFIX,
+  JWT_DEFAULT_QUERY,
+  jwtSendAuth,
+  jwtTokenRequest,
+  signConfiguredJwt,
+} from './http/auth/jwt-auth.js';
+export type { JwtAuthDeps, JwtSendAuth } from './http/auth/jwt-auth.js';
 export type {
   JwtAlgorithm,
   JwtObject,

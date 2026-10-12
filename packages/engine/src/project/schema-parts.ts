@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { ProjectError } from '../errors.js';
 import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import { signatureSchemeSchema } from '../http/webhook-signature.js';
+import { JWT_ALGORITHMS } from '../http/auth/jwt-algorithms.js';
 
 /** A string with at least one character: an id, a slug, a file name. */
 export const nonEmpty = z.string().min(1);
@@ -137,6 +138,26 @@ export const kerberosAuthSchema = refuseSecretValues(
   }),
 );
 
+/** A client-signed JWT (#348): the secret and the private key are only ever references. */
+const jwtAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('jwt'),
+    algorithm: z.enum(JWT_ALGORITHMS),
+    secretRef: z.string().optional(),
+    secretEnv: envName,
+    keystoreRef: z.string().optional(),
+    alias: z.string().optional(),
+    header: z.string().optional(),
+    claims: z.string().default('{}'),
+    issuedAt: z.boolean().default(true),
+    expiresInSeconds: z.number().int().nonnegative().optional(),
+    jwtId: z.boolean().default(false),
+    in: z.enum(['header', 'query']).default('header'),
+    name: z.string().optional(),
+    prefix: z.string().optional(),
+  }),
+);
+
 /**
  * Authentication as persisted anywhere a project configures it. `endpointAuthSchema` is one arm,
  * so a file written before the REST client — which only ever held `none`/`basic`/`ntlm` — parses
@@ -150,11 +171,12 @@ export const authConfigSchema = z.union([
   apiKeyAuthSchema,
   oauth2AuthSchema,
   kerberosAuthSchema,
+  jwtAuthSchema,
 ]);
 
 /**
  * What a SOAP interface, endpoint or request may hold: every {@link authConfigSchema} arm except
- * `inherit` — a SOAP owner has no interface-like ancestor above it to inherit from. The REST
+ * `inherit` and `jwt` — a SOAP owner has no interface-like ancestor above it to inherit from. The REST
  * schemas are reused, not copied, so the plaintext-secret rejection applies to SOAP files too.
  * `endpointAuthSchema` is deliberately not widened in place: it is itself an arm of this union,
  * and widening its enum would let its looser object shape swallow token configs before the

@@ -10,32 +10,13 @@
 import { randomUUID } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import { SignJWT } from 'jose';
+import type { JwtAlgorithm } from './jwt-algorithms.js';
 import { WirebenchError } from '../../errors.js';
 import { expand } from '../../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../../project/properties.js';
 
-/** Every algorithm a JWT can be signed with: HMAC, RSA PKCS#1 v1.5, ECDSA and RSA-PSS. */
-export const JWT_ALGORITHMS = [
-  'HS256',
-  'HS384',
-  'HS512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'ES256',
-  'ES384',
-  'ES512',
-  'PS256',
-  'PS384',
-  'PS512',
-] as const;
-
-export type JwtAlgorithm = (typeof JWT_ALGORITHMS)[number];
-
-/** True for the HMAC algorithms, which sign with a shared secret rather than a private key. */
-export function isHmacAlgorithm(algorithm: JwtAlgorithm): boolean {
-  return algorithm.startsWith('HS');
-}
+export { JWT_ALGORITHMS, isHmacAlgorithm } from './jwt-algorithms.js';
+export type { JwtAlgorithm } from './jwt-algorithms.js';
 
 /** A private key, or an HMAC secret's bytes. */
 export type JwtSigningKey = KeyObject | Uint8Array;

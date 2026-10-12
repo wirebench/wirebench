@@ -7,6 +7,7 @@
 import {
   buildWsHistoryEntry,
   generateHistoryId,
+  jwtSendAuth,
   redactHeaderPairs,
   redactHeaders,
   redactUrl,
@@ -68,9 +69,10 @@ export interface HistoryEntryInput {
 
 type WsItem = Extract<SendableItem, { kind: 'websocket' }>;
 
-/** The query parameter a WebSocket request's API key travels in, masked whatever it is called, as the desktop's. */
+/** The query parameter a WebSocket request's API key or JWT travels in, masked whatever it is called, as the desktop's. */
 function wsKeyParams(item: WsItem): readonly string[] {
   const auth = wsEffectiveAuth(item);
+  if (auth.type === 'jwt' && auth.in === 'query') return [jwtSendAuth(auth, '').name];
   return auth.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
 }
 

@@ -37,6 +37,17 @@ export type SendAuth =
    * the browser is never opened behind it. On the wire it is a Bearer token.
    */
   | { readonly type: 'oauth2'; readonly accessToken: string }
+  /**
+   * A JWT the host already signed (#348), with where it goes: a header named `name`, its value
+   * `prefix token` (the bare token when `prefix` is empty), or a query parameter named `name`.
+   */
+  | {
+      readonly type: 'jwt';
+      readonly token: string;
+      readonly in: 'header' | 'query';
+      readonly name: string;
+      readonly prefix: string;
+    }
   /** Kerberos over Negotiate (#40): the OS ticket, or on Windows an explicit account. */
   | KerberosSendAuth;
 

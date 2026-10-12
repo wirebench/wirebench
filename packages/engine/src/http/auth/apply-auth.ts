@@ -13,6 +13,7 @@
 import type { AuthConfig } from '../../project/model.js';
 import type { SendAuth } from './send-auth.js';
 import type { KeyValueEntry } from '../entries.js';
+import { isHmacAlgorithm } from './jwt-algorithms.js';
 
 /** Nothing configured anywhere in a chain means no credentials at all. */
 const NO_AUTH: AuthConfig = { type: 'none' };
@@ -43,7 +44,7 @@ export function resolveAuthChainIndex(chain: readonly (AuthConfig | undefined)[]
 export interface AppliedAuth {
   /** Headers to merge in. A header the request set itself wins over these (see `rest/send.ts`). */
   readonly headers: Readonly<Record<string, string>>;
-  /** Query rows to append, for an API key that travels in the query string. */
+  /** Query rows to append, for an API key or a JWT that travels in the query string. */
   readonly query: readonly KeyValueEntry[];
   /**
    * Credentials the transport has to handle itself, because they may need a challenge round trip:
@@ -71,6 +72,10 @@ export function applyAuth(auth: SendAuth | undefined): AppliedAuth {
       return auth.in === 'header'
         ? { headers: { [auth.name]: auth.value }, query: [] }
         : { headers: {}, query: [{ name: auth.name, value: auth.value, enabled: true }] };
+    case 'jwt':
+      return auth.in === 'header'
+        ? { headers: { [auth.name]: auth.prefix === '' ? auth.token : `${auth.prefix} ${auth.token}` }, query: [] }
+        : { headers: {}, query: [{ name: auth.name, value: auth.token, enabled: true }] };
     default:
       return { headers: {}, query: [], transportAuth: auth };
   }
@@ -84,7 +89,9 @@ export function applyAuth(auth: SendAuth | undefined): AppliedAuth {
  * reference whose secret is gone, e.g. a project opened on another machine), which are different
  * problems with different fixes.
  */
-export function missingSecretRef(auth: AuthConfig): 'tokenRef' | 'valueRef' | 'clientSecretRef' | undefined {
+export function missingSecretRef(
+  auth: AuthConfig,
+): 'tokenRef' | 'valueRef' | 'clientSecretRef' | 'secretRef' | 'keystoreRef' | undefined {
   switch (auth.type) {
     case 'bearer':
       return auth.tokenRef === undefined || auth.tokenRef === '' ? 'tokenRef' : undefined;
@@ -96,6 +103,11 @@ export function missingSecretRef(auth: AuthConfig): 'tokenRef' | 'valueRef' | 'c
       return auth.clientAuth === 'basic' && (auth.clientSecretRef === undefined || auth.clientSecretRef === '')
         ? 'clientSecretRef'
         : undefined;
+    case 'jwt':
+      if (isHmacAlgorithm(auth.algorithm)) {
+        return auth.secretRef === undefined || auth.secretRef === '' ? 'secretRef' : undefined;
+      }
+      return auth.keystoreRef === undefined || auth.keystoreRef === '' ? 'keystoreRef' : undefined;
     default:
       return undefined;
   }

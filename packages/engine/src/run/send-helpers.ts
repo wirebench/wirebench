@@ -11,15 +11,19 @@ import type { TlsOptions } from '../http/types.js';
 import { resolveApiBaseUrl } from '../project/environments.js';
 import type { BaseUrlSource } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
-import type { AuthConfig, Project } from '../project/model.js';
+import type { AuthConfig, JwtAuth, Project } from '../project/model.js';
 import { secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { urlOrigin } from '../project/sequence-guards.js';
 import type { SecretPlaceholders } from '../script/send.js';
+import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
+import { signConfiguredJwt } from '../http/auth/jwt-auth.js';
+import { createJwtSource } from '../http/auth/jwt.js';
+import type { JwtSource } from '../http/auth/jwt.js';
 import { resolveWorkspaceApiBaseUrl, withActiveEnvironment } from '../workspace/environments.js';
 import { loadKeystore, toTlsClientIdentity } from '../keystore/index.js';
 import type { Keystore } from '../keystore/index.js';
@@ -205,6 +209,9 @@ export async function authFor(
   context: RunContext,
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
+  if (configured.type === 'jwt') {
+    return reportedAuth(await jwtFor(configured, context), context);
+  }
   if (configured.type !== 'oauth2') {
     return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret), context);
   }
@@ -218,10 +225,39 @@ export async function authFor(
   return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret, { accessToken }), context);
 }
 
+/** The run's shared JWT source, or a fresh one for a send outside a run. */
+export function jwtSourceOf(context: RunContext): JwtSource {
+  return context.host.jwts ?? createJwtSource();
+}
+
+/**
+ * A JWT signed (or reused) for `configured`, its claims expanded against the request's scopes and
+ * its private key read from the project's keystore entry.
+ *
+ * @throws WirebenchError from `signConfiguredJwt`, or the keystore's own load errors
+ */
+async function jwtFor(configured: JwtAuth, context: RunContext): Promise<SendAuth> {
+  return signConfiguredJwt(
+    configured,
+    {
+      scopes: scopesFor(context),
+      getSecret: context.host.getSecret,
+      keystore: async (id) => {
+        const keystore = await keystoreFor(context, id);
+        if (keystore === undefined) return undefined;
+        const ref = context.project.keystores.find((candidate) => candidate.id === id);
+        const defaultAlias = ref === undefined ? undefined : toKeystoreDef(ref).defaultAlias;
+        return { keystore, ...(defaultAlias !== undefined ? { defaultAlias } : {}) };
+      },
+    },
+    jwtSourceOf(context),
+  );
+}
+
 /**
  * Tells the host each credential a resolved auth puts on the wire, in the form it travels there,
  * so a server that echoes one back has it masked: an API key's value, a bearer or OAuth2 access
- * token, and Basic's `base64(user:password)`. A password is never reported bare — people choose
+ * token, a signed JWT, and Basic's `base64(user:password)`. A password is never reported bare — people choose
  * them, so one is often ordinary text — and the NTLM and Kerberos passwords never travel at all.
  */
 export function reportedAuth(auth: SendAuth | undefined, context: RunContext): SendAuth | undefined {
@@ -236,6 +272,9 @@ export function reportedAuth(auth: SendAuth | undefined, context: RunContext): S
       break;
     case 'oauth2':
       report(auth.accessToken);
+      break;
+    case 'jwt':
+      report(auth.token);
       break;
     case 'basic':
       report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
@@ -271,13 +310,16 @@ export function baseUrlFor(context: RunContext, api: { readonly slug: string; re
 }
 
 /**
- * After a server refused the credentials a send carried, drops the run's OAuth2 token among them,
+ * After a server refused the credentials a send carried, drops the run's OAuth2 token or JWT among them,
  * so the next request behind that configuration fetches a new one instead of repeating the refusal.
  * The refused request itself is never sent again.
  */
 export function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
   if (refused && auth?.type === 'oauth2') {
     context.host.tokens?.reject(auth.accessToken);
+  }
+  if (refused && auth?.type === 'jwt') {
+    context.host.jwts?.reject(auth.token);
   }
 }
 
@@ -289,6 +331,11 @@ export function originOf(url: string): { readonly origin?: string } {
 
 /** True for a reference that is set: neither absent nor empty. */
 export const present = (id: string | undefined): id is string => id !== undefined && id.length > 0;
+
+/** Every secret a request's effective auth needs, a JWT's keystore password among them. */
+export function authNeeds(project: Project, auth: AuthConfig): SecretNeed[] {
+  return [...secretNeedsOfAuth(auth), ...(auth.type === 'jwt' ? keystoreNeeds(project, auth.keystoreRef) : [])];
+}
 
 /** A keystore's password, when the registry entry has one; an unreadable entry needs nothing here. */
 export function keystoreNeeds(project: Project, keystoreId: string | undefined): SecretNeed[] {

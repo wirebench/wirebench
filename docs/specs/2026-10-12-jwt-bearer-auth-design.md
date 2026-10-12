@@ -51,7 +51,7 @@ the same name in `claims`, because the toggle is the more explicit statement.
 ## 3. Templating
 
 `claims` and `header` are parsed as JSON first, then every **string value** is expanded against
-the request's property scopes (`${env.x}`, `${$randomUUID}`, `${secret:x}`…). Expanding values
+the request's property scopes (`${env.x}`, `${$randomUUID}`…). Expanding values
 after parsing means a value holding a quote cannot break the JSON. One exception keeps
 NumericDate claims usable: a string that is exactly one `${…}` reference, under `exp`, `nbf` or
 `iat`, becomes a number when it expands to an integer. An unresolved reference refuses the send
