@@ -9,6 +9,7 @@ it('matches on name, address, path and tags', () => {
       address: '10.0.1.5',
       tags: ['prod'],
       path: ['prod', 'eu'],
+      protected: { value: false, from: 'default' as const },
       ssh: {} as never,
       forwards: [],
     },

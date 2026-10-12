@@ -33,6 +33,7 @@ const HOST = {
   address: '10.0.1.5',
   tags: ['prod'],
   path: ['prod', 'eu'],
+  protected: { value: false, from: 'default' as const },
   ssh: {} as never,
   forwards: [],
 };

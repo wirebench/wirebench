@@ -20,7 +20,13 @@ export type SshErrorCode =
   | 'sftp-not-found'
   | 'sftp-permission-denied'
   | 'sftp-exists'
-  | 'sftp-failed';
+  | 'sftp-failed'
+  | 'snippets-invalid'
+  | 'snippet-duplicate-id'
+  | 'snippet-variable-invalid'
+  | 'snippet-secret-invalid'
+  | 'snippet-variable-missing'
+  | 'snippet-value-invalid';
 
 /** Mirrors the engine's WirebenchError shape (code, message, details) without importing it. */
 export class SshModelError extends Error {

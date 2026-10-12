@@ -8,8 +8,12 @@ import { walk } from './tree.js';
 
 export { walk };
 
-export const SECRET_TOKEN = /^\$\{secret:([A-Za-z_][A-Za-z0-9_]*)\}$/;
+/** The name grammar of `${secret:NAME}`, shared with snippet variables (`snippets.ts`). */
+export const SECRET_NAME = /[A-Za-z_][A-Za-z0-9_]*/;
+export const SECRET_TOKEN = new RegExp(`^\\$\\{secret:(${SECRET_NAME.source})\\}$`);
 const ID = /^[a-z0-9][a-z0-9-]*$/;
+/** The workspace id grammar, shared with `snippets.yaml`. */
+export const ENTRY_ID = ID;
 
 export function secretNameOf(token: string): string {
   const match = SECRET_TOKEN.exec(token);
@@ -50,6 +54,7 @@ const hostSchema = z.strictObject({
   name: z.string().min(1),
   address: z.string().min(1),
   tags: z.array(z.string().min(1)).default([]),
+  protected: z.boolean().optional(),
   ssh: settingsSchema,
   forwards: forwardsSchema,
 });
@@ -61,6 +66,8 @@ export interface GroupEntry {
   id: string;
   name: string;
   tags: string[];
+  /** Runs touching a protected host always confirm; inherited, a nearer `false` lifts it. */
+  protected?: boolean | undefined;
   ssh: SshSettings;
   forwards?: ForwardEntry[] | undefined;
   groups: GroupEntry[];
@@ -72,6 +79,7 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
     id: z.string().regex(ID),
     name: z.string().min(1),
     tags: z.array(z.string().min(1)).default([]),
+    protected: z.boolean().optional(),
     ssh: settingsSchema,
     forwards: forwardsSchema,
     groups: z.array(groupSchema).default([]),
@@ -88,7 +96,7 @@ const fileSchema = z.strictObject({
 export type HostsFile = z.infer<typeof fileSchema>;
 export const EMPTY_HOSTS_FILE: HostsFile = { version: 1, groups: [], hosts: [] };
 
-const pathString = (path: readonly PropertyKey[]): string =>
+export const pathString = (path: readonly PropertyKey[]): string =>
   path.map((p, i) => (typeof p === 'number' ? `[${p}]` : i === 0 ? String(p) : `.${String(p)}`)).join('');
 
 interface IssueLike {
@@ -129,7 +137,11 @@ function findLiteralSecret(issues: readonly IssueLike[], prefix: readonly Proper
 }
 
 /** Never forwards the library's message: it quotes the offending source line, which may hold a credential. */
-function readYaml(text: string): unknown {
+export function readYaml(
+  text: string,
+  file = 'hosts.yaml',
+  code: 'ssh-hosts-invalid' | 'snippets-invalid' = 'ssh-hosts-invalid',
+): unknown {
   try {
     return parseYaml(text);
   } catch (error) {
@@ -137,7 +149,7 @@ function readYaml(text: string): unknown {
     const line = error.linePos?.[0]?.line;
     const column = error.linePos?.[0]?.col;
     const where = line === undefined ? '' : ` at line ${line}, column ${column ?? 1}`;
-    throw new SshModelError('ssh-hosts-invalid', `hosts.yaml: YAML syntax error${where}`, {
+    throw new SshModelError(code, `${file}: YAML syntax error${where}`, {
       ...(line === undefined ? {} : { line, column: column ?? 1 }),
     });
   }
@@ -270,6 +282,7 @@ function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   const out: Record<string, unknown> = { id: entry.id, name: entry.name };
   if ('address' in entry) out['address'] = entry.address;
   if (entry.tags.length > 0) out['tags'] = entry.tags;
+  if (entry.protected !== undefined) out['protected'] = entry.protected;
   const ssh = settings(entry.ssh);
   if (Object.keys(ssh).length > 0) out['ssh'] = ssh;
   if (entry.forwards !== undefined && entry.forwards.length > 0) out['forwards'] = entry.forwards.map(serializeForward);

@@ -181,3 +181,36 @@ hosts:
     expect(resolveHost(FILE, 'api-1').forwards).toEqual([]);
   });
 });
+
+describe('protected', () => {
+  const file = parseHostsFile(`
+version: 1
+groups:
+  - id: prod
+    name: Production
+    protected: true
+    groups:
+      - id: lab
+        name: Lab
+        protected: false
+        hosts:
+          - { id: lab-1, name: lab-1, address: a }
+    hosts:
+      - { id: api-1, name: api-1, address: a }
+      - { id: api-2, name: api-2, address: a, protected: false }
+hosts:
+  - { id: bare, name: bare, address: a }
+  - { id: own, name: own, address: a, protected: true }
+`);
+  it('is inherited from the nearest group, with provenance', () => {
+    expect(resolveHost(file, 'api-1').protected).toEqual({ value: true, from: { group: 'prod' } });
+  });
+  it('a nearer group or the host with false lifts it', () => {
+    expect(resolveHost(file, 'lab-1').protected).toEqual({ value: false, from: { group: 'lab' } });
+    expect(resolveHost(file, 'api-2').protected).toEqual({ value: false, from: 'host' });
+  });
+  it('defaults to false, and a host can set it alone', () => {
+    expect(resolveHost(file, 'bare').protected).toEqual({ value: false, from: 'default' });
+    expect(resolveHost(file, 'own').protected).toEqual({ value: true, from: 'host' });
+  });
+});
