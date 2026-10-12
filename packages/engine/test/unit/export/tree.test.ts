@@ -79,6 +79,47 @@ describe('auth', () => {
     expect(oc.files[0]!.text).not.toContain('clientSecret');
   });
 
+  it('keeps an OAuth 2 password configuration with its username, never its password', () => {
+    const expected: AuthConfig = {
+      type: 'oauth2',
+      grant: 'password',
+      tokenUrl: 'https://id/token',
+      clientId: 'c',
+      username: 'alice',
+      scopes: ['a'],
+      clientAuth: 'basic',
+      pkce: false,
+    };
+    const { viaPostman, viaOc } = both(oneRequest({ auth: { ...expected, passwordRef: 'r' } }));
+    expect(viaOc.auth).toEqual(expected);
+    expect(viaPostman.auth).toMatchObject({ grant: 'password', username: 'alice', tokenUrl: 'https://id/token' });
+  });
+
+  it('writes the device-code grant and key-based client auth as their nearest forms, and says so', () => {
+    const { viaOc, postman } = both(
+      oneRequest({
+        auth: {
+          type: 'oauth2',
+          grant: 'device-code',
+          tokenUrl: 'https://id/token',
+          deviceAuthorizationUrl: 'https://id/device',
+          clientId: 'c',
+          scopes: [],
+          clientAuth: 'private-key-jwt',
+          clientKeystoreId: 'ks',
+          pkce: true,
+        },
+      }),
+    );
+    expect(viaOc.auth).toMatchObject({ grant: 'authorization-code', clientAuth: 'basic' });
+    expect(postman.report.warnings).toEqual(
+      expect.arrayContaining([
+        'A / R: the OAuth 2 device-code grant is not represented and was written as authorization code.',
+        'A / R: the OAuth 2 client authentication "private-key-jwt" is not represented; the Basic header is written.',
+      ]),
+    );
+  });
+
   it('writes Kerberos as no auth and says so', () => {
     const { viaOc, postman } = both(oneRequest({ auth: { type: 'kerberos' } }));
     expect(viaOc.auth).toEqual({ type: 'none' });

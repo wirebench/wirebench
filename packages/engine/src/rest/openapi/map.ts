@@ -369,26 +369,38 @@ export function mapScheme(scheme: OpenApiSecurityScheme): { auth?: AuthConfig; r
       }
       return { reason: 'An API key in a cookie is sent as a Cookie header on each request instead' };
     case 'oauth2': {
-      const clientCredentials = scheme.flows?.clientCredentials;
-      const authorizationCode = scheme.flows?.authorizationCode;
-      const flow = clientCredentials ?? authorizationCode;
-      if (flow === undefined) {
-        return { reason: 'Only the client-credentials and authorization-code flows are supported' };
+      // The first flow Wirebench runs, in the order a request is most likely meant to use it.
+      const flows = scheme.flows ?? {};
+      const picked = (
+        [
+          ['clientCredentials', 'client-credentials'],
+          ['authorizationCode', 'authorization-code'],
+          ['password', 'password'],
+          ['deviceAuthorization', 'device-code'],
+        ] as const
+      ).find(([name]) => flows[name] !== undefined);
+      if (picked === undefined) {
+        return { reason: 'Only the client-credentials, authorization-code, password and device flows are supported' };
       }
+      const [name, grant] = picked;
+      const flow = flows[name] ?? {};
       return {
         auth: {
           type: 'oauth2',
-          grant: clientCredentials !== undefined ? 'client-credentials' : 'authorization-code',
+          grant,
           // The document's URLs and scopes, `${` escaped: the token fetch expands them, and a crafted
           // token URL must not carry a property or an environment variable off with it (#223).
           tokenUrl: escapeExpansions(flow.tokenUrl ?? ''),
           ...(flow.authorizationUrl !== undefined ? { authorizationUrl: escapeExpansions(flow.authorizationUrl) } : {}),
+          ...(grant === 'device-code' && flow.deviceAuthorizationUrl !== undefined
+            ? { deviceAuthorizationUrl: escapeExpansions(flow.deviceAuthorizationUrl) }
+            : {}),
           clientId: '',
           scopes: Object.keys(flow.scopes ?? {}).map(escapeExpansions),
           clientAuth: 'basic',
-          // PKCE is what makes an authorization-code flow safe in a public client; a
-          // client-credentials flow has no authorization request to protect.
-          pkce: clientCredentials === undefined,
+          // PKCE is what makes an authorization-code flow safe in a public client; the other flows
+          // have no authorization request to protect.
+          pkce: grant === 'authorization-code',
         },
       };
     }

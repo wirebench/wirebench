@@ -226,15 +226,19 @@ describe('mapOcAuth', () => {
     });
     expect(
       mapOcAuth(
-        { type: 'oauth2', flow: 'resource_owner_password_credentials', resourceOwner: { password: 'p' } },
+        {
+          type: 'oauth2',
+          flow: 'resource_owner_password_credentials',
+          accessTokenUrl: 'https://id.test/token',
+          resourceOwner: { username: 'alice', password: 'p' },
+        },
         'P',
         report,
       ).auth,
-    ).toEqual({ type: 'none' });
+    ).toMatchObject({ type: 'oauth2', grant: 'password', username: 'alice', tokenUrl: 'https://id.test/token' });
     expect(report.build().warnings).toEqual([
       'O: the oauth2 credential was not imported; set it on the request or API.',
       'P: the oauth2 credential was not imported; set it on the request or API.',
-      'P: OAuth 2 with the "resource_owner_password_credentials" flow is not supported and was imported as none.',
     ]);
     expect(JSON.stringify(report.build())).not.toContain('s3cret');
   });
