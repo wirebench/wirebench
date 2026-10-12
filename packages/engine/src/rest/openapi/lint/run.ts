@@ -10,10 +10,9 @@ import { OpenApiError } from '../../../errors.js';
 import type { FetchDocument } from '../../../http/fetch-document.js';
 import { parseDocumentText } from '../../../json/schema/parse-text.js';
 import { versionOf } from '../parse.js';
-import { HYGIENE_RULES } from './hygiene.js';
-import { OWASP_RULES } from './owasp.js';
-import type { LintFinding, LintReport, LintRuleInfo, LintSeverity } from './model.js';
+import type { LintFinding, LintReport, LintRuleInfo, LintRulesetFile, LintSeverity } from './model.js';
 import { lintResolver, referenceLocation, runnerSource } from './resolver.js';
+import { planLintRules } from './ruleset.js';
 import type { LintRule } from './rules.js';
 import { openapi2, openapi3 } from './rules.js';
 
@@ -29,6 +28,12 @@ export interface LintOptions {
   /** Let a local document reference remote ones. */
   readonly allowRemoteRefs?: boolean;
   readonly signal?: AbortSignal;
+}
+
+/** Options for {@link lintOpenApi}: how to read references, and the project's rule sets. */
+export interface LintOpenApiOptions extends LintOptions {
+  /** Project rule-set files, applied in order after the built-ins (spec §5). */
+  readonly rulesets?: readonly LintRulesetFile[];
 }
 
 const RUNNER_SEVERITY: Readonly<Record<LintSeverity, 'error' | 'warn' | 'info' | 'hint'>> = {
@@ -77,7 +82,13 @@ function compare(a: LintFinding, b: LintFinding): number {
 function rulesetOf(rules: readonly LintRule[]): RulesetDefinition {
   const definitions: Record<string, RuleDefinition> = {};
   for (const rule of rules) {
-    definitions[rule.id] = { ...rule.body, severity: RUNNER_SEVERITY[rule.severity], description: rule.description };
+    // `{{error}}` is the function's own message: without it the runner shows the description.
+    definitions[rule.id] = {
+      ...rule.body,
+      severity: RUNNER_SEVERITY[rule.severity],
+      description: rule.description,
+      message: '{{error}}',
+    };
   }
   return { formats: [openapi2, openapi3], rules: definitions };
 }
@@ -141,14 +152,12 @@ export async function lintWithRules(
   };
 }
 
-/** The built-in rules. */
-export const BUILTIN_RULES: readonly LintRule[] = [...HYGIENE_RULES, ...OWASP_RULES];
-
 /**
- * Lints one OpenAPI 2.0, 3.0, 3.1 or 3.2 document with the built-in rule sets.
+ * Lints one OpenAPI 2.0, 3.0, 3.1 or 3.2 document with the built-in rule sets and `rulesets`.
  *
- * @throws OpenApiError see {@link lintWithRules}
+ * @throws WirebenchError `lint-ruleset-invalid` for a rule-set file that is not valid; the
+ * OpenApiError codes of {@link lintWithRules}
  */
-export function lintOpenApi(input: LintInput, options: LintOptions): Promise<LintReport> {
-  return lintWithRules(input, BUILTIN_RULES, options);
+export async function lintOpenApi(input: LintInput, options: LintOpenApiOptions): Promise<LintReport> {
+  return await lintWithRules(input, planLintRules(options.rulesets ?? []), options);
 }
