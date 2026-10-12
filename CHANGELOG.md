@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Find in a terminal's scrollback.** ⌘F (Ctrl+F on Windows and Linux) in a focused SSH terminal opens a
+  find bar over the output: next and previous match, match case, whole word and regular expression, and a
+  match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
+  to the terminal. The shortcut never reaches the remote shell, and other tabs keep their own ⌘F (#406).
 - **A terminal session the network drops reconnects on its own.** After a reset, a timeout or a jump
   host's connection ending, the tab keeps its scrollback and tries again after 1, 2, 4, 8 and 16
   seconds, then every 30 seconds, showing "Reconnecting… attempt 2 of 10" with a countdown, **Retry

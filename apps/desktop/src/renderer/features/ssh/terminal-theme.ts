@@ -1,4 +1,7 @@
+import type { ISearchOptions } from '@xterm/addon-search';
 import type { ITheme } from '@xterm/xterm';
+
+type ISearchDecorationOptions = NonNullable<ISearchOptions['decorations']>;
 
 /** One design token's current value, or `undefined` when the stylesheet does not define it. */
 function token(styles: CSSStyleDeclaration, name: string): string | undefined {
@@ -33,6 +36,27 @@ export function themeFromCss(): ITheme {
     brightWhite: token(styles, '--wb-fg-default'),
   };
   return Object.fromEntries(Object.entries(theme).filter(([, value]) => value !== undefined));
+}
+
+/** A colour the search addon takes, which must be `#RRGGBB`; anything else is left to its default. */
+function hex(value: string | undefined): string | undefined {
+  return value !== undefined && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
+}
+
+/**
+ * How find-in-scrollback marks its matches, from the app's tokens: every match on the selection colour,
+ * the current one ringed in the accent colour. Read per search, so a theme switch shows on the next one.
+ */
+export function searchDecorationsFromCss(): ISearchDecorationOptions {
+  const styles = getComputedStyle(document.documentElement);
+  const selected = hex(token(styles, '--wb-bg-selected'));
+  const accent = hex(token(styles, '--wb-accent-default')) ?? '#888888';
+  return {
+    ...(selected === undefined ? {} : { matchBackground: selected, activeMatchBackground: selected }),
+    activeMatchBorder: accent,
+    matchOverviewRuler: accent,
+    activeMatchColorOverviewRuler: accent,
+  };
 }
 
 /** The app's mono font stack; a canvas cannot resolve `var(...)`, so the value is read here. */
