@@ -21,6 +21,7 @@ import {
   upsertHost,
   useHostsStore,
 } from './hosts-store.js';
+import { useKeyInstall } from './ssh-keys.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
@@ -113,6 +114,14 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
         }}
       >
         Copy address
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          useKeyInstall.getState().open({ hostId: host.id });
+        }}
+      >
+        Install public key…
       </M.Item>
       <M.Separator className="my-1 h-px bg-hairline" />
       <M.Item

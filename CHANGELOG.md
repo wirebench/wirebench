@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Generate an SSH key and install it on a host.** The Keychain's **Generate key…** makes an Ed25519
+  (default), ECDSA (P-256, P-384, P-521) or RSA (4096, 3072, 2048 bits) key with an optional passphrase,
+  and stores the private key as a workspace secret (the passphrase as `NAME_passphrase`); the private key
+  never leaves the main process. A key's row shows its type and fingerprint, copies its public key in
+  OpenSSH format, and **Install on host…** (also on a host's menu as **Install public key…**) signs in as the
+  host does now and appends the key to `~/.ssh/authorized_keys`, creating `~/.ssh` (700) and the file (600)
+  when missing and skipping a key already there. It then offers to switch the host's sign-in to the key
+  (#409).
 - **Find in a terminal's scrollback.** ⌘F (Ctrl+F on Windows and Linux) in a focused SSH terminal opens a
   find bar over the output: next and previous match, match case, whole word and regular expression, and a
   match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
