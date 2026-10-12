@@ -7,7 +7,7 @@ import type { PaneLeaf } from './panes/pane-tree.js';
 import { isRetryableConnectError } from './reconnect.js';
 import type { AttemptOutcome } from './reconnect.js';
 
-interface Size {
+export interface Size {
   cols: number;
   rows: number;
 }
@@ -20,11 +20,19 @@ function recordProblem({ paneId, hostId }: PaneLeaf, code: string, message: stri
     .add([{ groupId: `ssh:${hostId}`, source: 'hosts', severity: 'error', problem: { code, message } }]);
 }
 
-function openTrustPrompt({ paneId, hostId }: PaneLeaf, size: Size, details: Readonly<Record<string, unknown>>): void {
+/** How a trust prompt resumes: a terminal pane's connect at its size, or another caller's own retry. */
+export type TrustResume = { readonly size: Size } | { readonly retry: () => void; readonly cancel: () => void };
+
+/** Shows the trust prompt for a refused host key (`details` from `ssh-host-key-new` / `-changed`). */
+export function openTrustPrompt(
+  { paneId, hostId }: PaneLeaf,
+  resume: TrustResume,
+  details: Readonly<Record<string, unknown>>,
+): void {
   useHostsStore.getState().setTrustPrompt({
     paneId,
     hostId,
-    size,
+    ...resume,
     host: String(details['host']),
     keyType: String(details['keyType']),
     fingerprint: String(details['fingerprint']),
@@ -70,7 +78,7 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   store.setPane(paneId, undefined);
   const { code, message, details } = result.error;
   if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
-    openTrustPrompt(pane, size, details);
+    openTrustPrompt(pane, { size }, details);
     return { kind: 'trust' };
   }
   recordProblem(pane, code, message);
@@ -113,15 +121,33 @@ export async function confirmTrust(replace: boolean): Promise<{ sessionId: strin
     replace,
   });
   const pane = { paneId: prompt.paneId, hostId: prompt.hostId };
-  if (trusted.ok) return connectToHost(pane, prompt.size);
+  const { retry, cancel, size } = prompt;
+  const resume: TrustResume | undefined =
+    retry !== undefined && cancel !== undefined ? { retry, cancel } : size !== undefined ? { size } : undefined;
+  if (resume === undefined) return undefined;
+  const again = async (): Promise<{ sessionId: string } | undefined> => {
+    if ('retry' in resume) {
+      resume.retry();
+      return undefined;
+    }
+    return connectToHost(pane, resume.size);
+  };
+  if (trusted.ok) return again();
   const { code, message, details } = trusted.error;
   // The key changed between the refusal and the click: show the user what it is now.
   if (code === 'ssh-host-key-changed' && details) {
-    openTrustPrompt(pane, prompt.size, details);
+    openTrustPrompt(pane, resume, details);
     return undefined;
   }
   // Main no longer holds the refusal (expired, or another window trusted the key): a fresh connect settles it.
-  if (code === 'ssh-host-key-unexpected') return connectToHost(pane, prompt.size);
+  if (code === 'ssh-host-key-unexpected') return again();
+  if ('cancel' in resume) {
+    resume.cancel();
+    useProblemsStore
+      .getState()
+      .add([{ groupId: `ssh:${prompt.hostId}`, source: 'hosts', severity: 'error', problem: { code, message } }]);
+    return undefined;
+  }
   recordProblem(pane, code, message);
   return undefined;
 }

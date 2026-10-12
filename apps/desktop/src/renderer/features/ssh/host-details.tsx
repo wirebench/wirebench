@@ -5,12 +5,13 @@
  * Hosts tab opens it; the right rail's icon, its close icon and Escape put it away.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Copy, Pencil, TriangleAlert } from 'lucide-react';
+import { Copy, FolderOpen, Pencil, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
+import { openFiles } from './files/open-files.js';
 import { HostForm } from './host-dialog.js';
 import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
@@ -135,6 +136,13 @@ export function HostDetails() {
           }}
         >
           Connect
+        </Button>
+        <Button
+          onClick={() => {
+            openFiles(entry.id);
+          }}
+        >
+          <FolderOpen size={12} aria-hidden="true" /> Files
         </Button>
         <Button onClick={edit}>
           <Pencil size={12} aria-hidden="true" /> Edit

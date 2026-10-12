@@ -171,6 +171,20 @@ const terminalTab = (): string => useEditorsStore.getState().tabs.find((t) => t.
 const lastTerminal = () => xterm.FakeTerminal.instances.at(-1);
 
 describe('the terminal tab', () => {
+  it('Files opens the host’s Files tab beside the terminal', async () => {
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await waitFor(() => {
+      expect(connect).toHaveBeenCalled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Files$/ }));
+    expect(useEditorsStore.getState().activeId).toBe('ssh-files:a');
+    expect(useEditorsStore.getState().tabs.map((t) => t.kind)).toEqual(['ssh-terminal', 'ssh-files']);
+  });
+
   it('survives switching tabs; only closing the tab closes the session', async () => {
     connect.mockResolvedValueOnce(OPEN('s1'));
     act(() => {

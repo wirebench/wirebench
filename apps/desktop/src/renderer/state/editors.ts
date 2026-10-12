@@ -77,7 +77,8 @@ export interface EditorTab {
     | 'mock'
     | 'runner'
     | 'cookies'
-    | 'ssh-terminal';
+    | 'ssh-terminal'
+    | 'ssh-files';
   readonly title: string;
   /**
    * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):
@@ -113,6 +114,11 @@ export interface EditorTab {
    * a session is a moment, so the tab is never persisted.
    */
   readonly panes?: PaneNode;
+  /**
+   * Set when `kind` is `'ssh-files'`: the host this Files tab browses, over its own SFTP session. Session only,
+   * like a terminal tab.
+   */
+  readonly hostId?: string;
   /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */
   readonly sequenceId?: string;
   /** Set when `kind` is `'mock'`: the mock this tab edits and runs. */

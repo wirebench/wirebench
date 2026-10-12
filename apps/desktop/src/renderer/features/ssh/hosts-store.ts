@@ -20,16 +20,22 @@ export type HostsDialog =
   | { mode: 'edit-group'; id: string }
   | null;
 
-/** A host key main refused until the user decides; `previous` is set when the stored key differs. */
+/**
+ * A host key main refused until the user decides; `previous` is set when the stored key differs. A terminal's
+ * prompt carries the size to connect at; another caller (a Files tab) passes `retry`, run once the key is
+ * trusted, and `cancel`, run instead of marking the host's connect failed when the prompt is dismissed.
+ */
 export interface TrustPrompt {
   /** The pane whose connect the key stopped; confirming connects it again. */
   paneId: string;
   hostId: string;
-  size: { cols: number; rows: number };
+  size?: { cols: number; rows: number };
   host: string;
   keyType: string;
   fingerprint: string;
   previous?: string;
+  retry?: () => void;
+  cancel?: () => void;
 }
 
 /** One terminal pane's session to its host. */
@@ -243,6 +249,11 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   cancelTrust: () => {
     const prompt = get().trustPrompt;
     if (prompt === null) return;
+    if (prompt.cancel !== undefined) {
+      set({ trustPrompt: null });
+      prompt.cancel();
+      return;
+    }
     set({ trustPrompt: null, connectFailed: { ...get().connectFailed, [prompt.paneId]: true } });
   },
   bumpReconnect: (paneId) => {

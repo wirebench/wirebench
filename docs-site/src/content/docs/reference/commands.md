@@ -53,6 +53,14 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: Import from SSH Config… | — | — |
 | Connect to Host | — | — |
 | Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
+| Open Files on Host… | — | — |
+| Files: Refresh | — | — |
+| Files: New Folder | — | — |
+| Files: Rename | — | — |
+| Files: Delete… | — | — |
+| Files: Permissions… | — | — |
+| Files: Show or Hide Hidden Files | — | — |
+| Files: Go to Folder… | <kbd>⌘L</kbd> | <kbd>Ctrl+L</kbd> |
 
 ## Definition
 

@@ -66,7 +66,8 @@ describe('hosts in the palette', () => {
     render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="quick-open" />);
     expect(screen.getByText('Hosts')).toBeDefined();
     expect(screen.getByText('api-1')).toBeDefined();
-    expect(screen.getByText('10.0.1.5 · prod/eu')).toBeDefined();
+    // Once under Hosts and once under Files.
+    expect(screen.getAllByText('10.0.1.5 · prod/eu')).toHaveLength(2);
   });
 
   it('quick-open omits the hosts when the ssh area is switched off', () => {
@@ -85,6 +86,31 @@ describe('hosts in the palette', () => {
     expect(useEditorsStore.getState().tabs).toMatchObject([
       { kind: 'ssh-terminal', title: 'api-1', panes: { kind: 'pane', hostId: 'a' } },
     ]);
+  });
+
+  it('quick-open also lists each host under Files, which opens its Files tab', () => {
+    const close = vi.fn();
+    render(<CommandPalette open onOpenChange={close} context={context} mode="quick-open" />);
+    expect(screen.getByText('Files')).toBeDefined();
+    fireEvent.click(screen.getByText('api-1 · Files'));
+    expect(close).toHaveBeenCalledWith(false);
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'ssh-files:a', kind: 'ssh-files', title: 'api-1 · Files', hostId: 'a' },
+    ]);
+  });
+
+  it('the files-hosts mode lists the hosts and opens the Files tab of the one picked', () => {
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="files-hosts" />);
+    expect(screen.getByPlaceholderText('Open files on host')).toBeDefined();
+    fireEvent.click(screen.getByText('api-1 · Files'));
+    expect(useEditorsStore.getState().tabs.map((t) => t.kind)).toEqual(['ssh-files']);
+  });
+
+  it('⌘K lists Open Files on Host…, which switches to the Files picker', () => {
+    render(<Shell />);
+    fireEvent.click(screen.getByText('Open Files on Host…'));
+    expect(screen.getByPlaceholderText('Open files on host')).toBeDefined();
+    expect(screen.getByText('api-1 · Files')).toBeDefined();
   });
 
   it('the hosts mode shows no host when the ssh area is switched off', () => {

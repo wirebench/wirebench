@@ -25,6 +25,7 @@ export function tabSetOf(tab: TabSetSubject): TabSet {
   if (tab.set !== undefined) return tab.set;
   switch (tab.kind) {
     case 'ssh-terminal':
+    case 'ssh-files':
       return 'ssh';
     case 'environment':
       return 'environments';
