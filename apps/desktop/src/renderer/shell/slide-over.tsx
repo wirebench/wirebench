@@ -24,18 +24,14 @@ export interface SlideOverProps {
 }
 
 /**
- * The overlay that replaced the right panel's remaining content: anchored to the right edge, in
- * front of the editor area rather than resizing it, opened from the right rail's icon. Only the
- * Code panel lives here today (`shell/code-panel.tsx`); Escape and the close icon both dismiss
- * it, and its left edge is a drag handle that remembers the chosen width.
+ * The right-hand panel, opened from the right rail's icon: the Code panel for a request, Host details
+ * in the SSH area. Like the sidebar it sits in the row and takes its width from the content beside it,
+ * so nothing (a toolbar button, a card) is ever hidden behind it. Escape and the close icon both
+ * dismiss it, and its left edge is a drag handle that remembers the chosen width.
  *
- * Unlike the sidebar and the console — which are in normal flow, and whose handles stay
- * hit-testable while collapsed so a drag or double-click can reopen them — this one is
- * `absolute` and sits *in front of* the editor area. A handle left behind while closed is
- * therefore an invisible strip over the editor's right edge that swallows clicks and
- * drag-selection there, so the closed panel renders nothing at all and takes no pointer events.
- * It is reopened from the right rail's Code icon, `view.toggleCode`, or the command palette.
- * Being out of flow, it never shifts the editor area either way.
+ * Unlike the sidebar and the console, whose handles stay mounted while collapsed so a drag or
+ * double-click can reopen them, the closed panel renders nothing at all: it is reopened from the right
+ * rail's icon, `view.toggleCode`, or the command palette.
  */
 export function SlideOver({ label, open, width, onWidthChange, onToggle, onClose, children }: SlideOverProps) {
   useEffect(() => {
@@ -71,8 +67,8 @@ export function SlideOver({ label, open, width, onWidthChange, onToggle, onClose
       id="slide-over"
       data-testid="slide-over"
       aria-label={label}
-      style={{ width: `${String(width)}px`, right: 'var(--wb-right-rail-width)' }}
-      className="absolute inset-y-0 z-30 flex min-w-0 border-l border-hairline bg-surface-base shadow-lg"
+      style={{ width: `${String(width)}px` }}
+      className="flex min-w-0 shrink-0 border-l border-hairline bg-surface-base"
     >
       <PanelHandle
         testId="panel-handle-slide-over"

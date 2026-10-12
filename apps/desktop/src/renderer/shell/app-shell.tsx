@@ -65,6 +65,7 @@ import { IdentityDialog } from '../features/sync/identity-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CodePanel } from './code-panel.js';
+import { slideOverWidthOf } from '../state/ui-state.js';
 import { HostDetails, useHostDetailsShown } from '../features/ssh/host-details.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { CommandPalette } from './command-palette.js';
@@ -125,7 +126,12 @@ export function AppShell() {
 
   const sidebar = useUiStore((state) => state.sidebar);
   const consoleState = useUiStore((state) => state.console);
+  // The console's tabs (problems, HTTP log, WS-I) are about requests: the SSH area has none, so it
+  // gets the full height. Its open/closed state, size and tab are kept for the other areas.
+  const consoleShown = useUiStore((state) => state.sidebar.view !== 'ssh');
   const slideOver = useUiStore((state) => state.slideOver);
+  // Each area keeps its own slide-over width.
+  const slideOverWidth = useUiStore(slideOverWidthOf);
   const theme = useUiStore((state) => state.theme);
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
@@ -456,20 +462,22 @@ export function AppShell() {
                     <EditorArea />
                   </div>
                   {/* Same rationale as the sidebar's handle above: stays mounted while the console
-                    is collapsed. */}
-                  <PanelHandle
-                    testId="panel-handle-console"
-                    label={consoleState.visible ? 'Resize Console' : 'Show Console'}
-                    orientation="horizontal"
-                    valueNow={consoleState.visible ? consoleState.size : 0}
-                    valueMin={CONSOLE_MIN}
-                    valueMax={CONSOLE_MAX}
-                    onDrag={dragConsole}
-                    onDragEnd={endConsoleDrag}
-                    onStep={stepConsole}
-                    onDoubleClick={onDoubleClickConsoleHandle}
-                  />
-                  {consoleState.visible && (
+                    is collapsed (outside the SSH area, which has no console at all). */}
+                  {consoleShown && (
+                    <PanelHandle
+                      testId="panel-handle-console"
+                      label={consoleState.visible ? 'Resize Console' : 'Show Console'}
+                      orientation="horizontal"
+                      valueNow={consoleState.visible ? consoleState.size : 0}
+                      valueMin={CONSOLE_MIN}
+                      valueMax={CONSOLE_MAX}
+                      onDrag={dragConsole}
+                      onDragEnd={endConsoleDrag}
+                      onStep={stepConsole}
+                      onDoubleClick={onDoubleClickConsoleHandle}
+                    />
+                  )}
+                  {consoleShown && consoleState.visible && (
                     <div
                       data-testid="console-panel"
                       style={{ height: `${String(consoleState.size)}%` }}
@@ -479,33 +487,32 @@ export function AppShell() {
                     </div>
                   )}
                 </div>
+                {/* The right panel shares this row with the sidebar and the editor: opening it narrows
+                  the editor (the row, and so the sidebar's share, stay the same width). While closed it
+                  unmounts completely; the rail's icon or `view.toggleCode` reopens it. */}
+                <SlideOver
+                  label="Code"
+                  open={slideOver.open && !hostDetailsShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={toggleCode}
+                  onClose={closeCode}
+                >
+                  <CodePanel />
+                </SlideOver>
+                <SlideOver
+                  label="Host details"
+                  open={hostDetailsShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={toggleHostDetails}
+                  onClose={closeHostDetails}
+                >
+                  <HostDetails />
+                </SlideOver>
               </div>
 
               <RightRail platform={platform} />
-              {/* The slide-over is the exception to the two handles above: it overlays the editor
-                rather than sharing the row with it, so while closed it unmounts completely — a
-                handle left over the editor's right edge would swallow clicks and drag-selection
-                there. The rail's Code icon and `view.toggleCode` reopen it. */}
-              <SlideOver
-                label="Code"
-                open={slideOver.open && !hostDetailsShown && !settingsOpen}
-                width={slideOver.width}
-                onWidthChange={setSlideOverWidth}
-                onToggle={toggleCode}
-                onClose={closeCode}
-              >
-                <CodePanel />
-              </SlideOver>
-              <SlideOver
-                label="Host details"
-                open={hostDetailsShown && !settingsOpen}
-                width={slideOver.width}
-                onWidthChange={setSlideOverWidth}
-                onToggle={toggleHostDetails}
-                onClose={closeHostDetails}
-              >
-                <HostDetails />
-              </SlideOver>
             </div>
           )}
         </div>
