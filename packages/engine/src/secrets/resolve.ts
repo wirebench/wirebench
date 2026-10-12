@@ -9,6 +9,7 @@ import { isEndpointAuth } from '../project/endpoints.js';
 import type { AuthConfig, SoapOwnerAuth, EndpointAuth } from '../project/model.js';
 import { kerberosField } from '../http/auth/kerberos-token.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
+import { jwtSendAuth } from '../http/auth/jwt-auth.js';
 import { secretPseudoRef } from './secret-token.js';
 
 /**
@@ -107,7 +108,9 @@ export function toSendAuth(auth?: ResolvedAuth): SendAuth | undefined {
  *
  * The token-bearing schemes are resolved here; OAuth2 is not, because obtaining a token is a
  * network exchange with its own cache and its own browser flow. The caller passes `accessToken`
- * for an OAuth2 configuration, having got it from `oauth2.ts`.
+ * for an OAuth2 configuration, having got it from `oauth2.ts`. A JWT is not either: it is signed
+ * through a token source with the request's scopes and keystores (`http/auth/jwt-auth.ts`), and the
+ * caller passes the signed token as `jwt`.
  *
  * `inherit` and `none` resolve to no credentials at all: `inherit` should already have been
  * resolved by `resolveAuthChain` before this is called, and reaching here means nothing in the
@@ -119,7 +122,7 @@ export function toSendAuth(auth?: ResolvedAuth): SendAuth | undefined {
 export async function resolveAuthConfig(
   auth: AuthConfig | undefined,
   getSecret: GetSecret,
-  options: { readonly accessToken?: string } = {},
+  options: { readonly accessToken?: string; readonly jwt?: string } = {},
 ): Promise<SendAuth | undefined> {
   if (auth === undefined) {
     return undefined;
@@ -154,6 +157,8 @@ export async function resolveAuthConfig(
     }
     case 'oauth2':
       return options.accessToken === undefined ? undefined : { type: 'oauth2', accessToken: options.accessToken };
+    case 'jwt':
+      return options.jwt === undefined ? undefined : jwtSendAuth(auth, options.jwt);
     case 'kerberos': {
       const spn = kerberosField(auth.spn);
       const principal = kerberosField(auth.principal);
@@ -172,6 +177,26 @@ export async function resolveAuthConfig(
         ...(domain !== undefined ? { domain } : {}),
         ...(password !== undefined ? { password } : {}),
       };
+    }
+    case 'aws-sigv4': {
+      const accessKeyId = await requireSecret(auth.accessKeyIdRef, getSecret);
+      const secretAccessKey = await requireSecret(auth.secretAccessKeyRef, getSecret);
+      if (accessKeyId === undefined || secretAccessKey === undefined) return undefined;
+      const sessionToken = await requireSecret(auth.sessionTokenRef, getSecret);
+      return {
+        type: 'aws-sigv4',
+        region: auth.region,
+        service: auth.service,
+        accessKeyId,
+        secretAccessKey,
+        ...(sessionToken !== undefined && sessionToken !== '' ? { sessionToken } : {}),
+        placement: auth.placement ?? 'header',
+        ...(auth.expiresSeconds !== undefined ? { expiresSeconds: auth.expiresSeconds } : {}),
+      };
+    }
+    case 'digest': {
+      const password = await requireSecret(auth.passwordRef, getSecret);
+      return { type: 'digest', username: auth.username ?? '', password: password ?? '' };
     }
     default:
       return undefined;

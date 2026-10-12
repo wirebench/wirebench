@@ -18,6 +18,7 @@ import {
   parseSecretPseudoRef,
   ProjectError,
   resolvedBaseUrl,
+  signJwtFor,
   resolveExchange,
   restEffectiveAuth,
   SecretPlaceholders,
@@ -27,6 +28,8 @@ import {
   wsEffectiveAuth,
 } from '@wirebench/engine';
 import type {
+  JwtAuth,
+  JwtSendAuth,
   AuthConfig,
   BaseUrlSource,
   DesktopAuditEvent,
@@ -653,6 +656,8 @@ async function previewOf<K extends DraftOf['kind']>(
       readonly secretTokens: () => boolean;
       /** The names of the `${secret:name}` tokens reached, in the order reached. */
       readonly secretNames: () => readonly string[];
+      /** Signs (or reuses) the JWT a send of this request would carry, with the real secrets. */
+      readonly signJwt: (auth: JwtAuth) => Promise<JwtSendAuth>;
     }
   | undefined
 > {
@@ -673,7 +678,8 @@ async function previewOf<K extends DraftOf['kind']>(
     if (name !== undefined) names.add(name);
     return tokenText(ref);
   };
-  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
+  const real = await desktopSendHost(deps, send);
+  const host: SendHost = { ...real, getSecret: asTyped };
   const placeholders = new SecretPlaceholders();
   return {
     item: item as Extract<SelectedRequest, { kind: K }>,
@@ -682,6 +688,8 @@ async function previewOf<K extends DraftOf['kind']>(
     asTyped,
     secretTokens: () => reached,
     secretNames: () => [...names],
+    // Through the app's JWT source, so an export shows the token the next send carries.
+    signJwt: (auth) => signJwtFor(auth, runContextOf(located, real)),
   };
 }
 
@@ -697,6 +705,8 @@ export interface RestPreview {
   readonly secretNames: readonly string[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
+  /** Signs (or reuses) the JWT a send would carry, reading the real secrets; only for `auth.type === 'jwt'`. */
+  readonly signJwt: (auth: JwtAuth) => Promise<JwtSendAuth>;
   /** Where the base URL came from, for the editor's badge. */
   readonly baseUrlSource: RestUrlSource;
   /** A webhook callback's editor note: where its URL came from, or why the target stands in. */
@@ -729,6 +739,7 @@ export async function previewRest(
     unresolved: resolved.unresolved,
     secretNames: preview.secretNames(),
     auth: restEffectiveAuth(item),
+    signJwt: preview.signJwt,
     ...restUrlSourceOf(deps, item, context),
   };
 }
@@ -768,6 +779,8 @@ export interface GrpcPreview {
   readonly secretNames: readonly string[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
+  /** Signs (or reuses) the JWT a send would carry, reading the real secrets; only for `auth.type === 'jwt'`. */
+  readonly signJwt: (auth: JwtAuth) => Promise<JwtSendAuth>;
   /** Where the target came from, for the editor's badge. */
   readonly targetSource: BaseUrlSource;
 }
@@ -802,6 +815,7 @@ export async function previewGrpc(
     secretTokens: preview.secretTokens(),
     secretNames: preview.secretNames(),
     auth: grpcEffectiveAuth(item),
+    signJwt: preview.signJwt,
     targetSource: resolvedBaseUrl(context, { slug: item.api.slug, baseUrl: item.api.target }).source,
   };
 }
@@ -816,6 +830,8 @@ export interface WsPreview {
   readonly secretNames: readonly string[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
+  /** Signs (or reuses) the JWT a send would carry, reading the real secrets; only for `auth.type === 'jwt'`. */
+  readonly signJwt: (auth: JwtAuth) => Promise<JwtSendAuth>;
   /** Where the server URL came from, for the editor's badge. */
   readonly urlSource: BaseUrlSource;
 }
@@ -843,6 +859,7 @@ export async function previewWs(
     secretTokens: preview.secretTokens(),
     secretNames: preview.secretNames(),
     auth: wsEffectiveAuth(item),
+    signJwt: preview.signJwt,
     urlSource: resolvedBaseUrl(context, { slug: item.api.slug, baseUrl: item.api.url }).source,
   };
 }

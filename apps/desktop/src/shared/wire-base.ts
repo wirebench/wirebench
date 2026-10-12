@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { isEnvironmentColor } from './environment-colors.js';
+import { JWT_ALGORITHM_NAMES } from './jwt-algorithms.js';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
@@ -88,6 +89,15 @@ export const oauth2StatusSchema = z.object({
   token: z.string().optional(),
   /** The loopback URI the provider must have registered, for the inspector to show. */
   redirectUri: z.string(),
+  /** While a device-code sign-in waits: the code the user types at the verification page. */
+  device: z
+    .object({
+      userCode: z.string(),
+      verificationUri: z.string(),
+      verificationUriComplete: z.string().optional(),
+      expiresAt: z.string(),
+    })
+    .optional(),
 });
 export type OAuth2StatusWire = z.infer<typeof oauth2StatusSchema>;
 
@@ -257,7 +267,7 @@ export type UnresolvedRefWire = z.infer<typeof unresolvedRefWireSchema>;
 export const requestAuthSourceSchema = z.object({
   /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
   source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest', 'jwt']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -309,10 +319,12 @@ export const requestPreflightRequestSchema = z.object({ requestId: z.string() })
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos', 'aws-sigv4', 'digest', 'jwt']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   spn: z.string().optional(),
+  /** What an AWS Signature v4 signed, masked as the headers are; the HTTP Log shows it. */
+  signature: z.object({ canonicalRequest: z.string(), stringToSign: z.string() }).optional(),
 });
 export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
 
@@ -418,12 +430,24 @@ export const headerEntrySchema = z.object({
 export type HeaderEntryWire = z.infer<typeof headerEntrySchema>;
 
 /**
- * Authentication as it crosses the bridge: the same eight schemes the engine models, with every
+ * Authentication as it crosses the bridge: the same eleven schemes the engine models, with every
  * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
  * renderer can configure a token it can never read back.
  */
 export const authConfigWireSchema = z.object({
-  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  type: z.enum([
+    'inherit',
+    'none',
+    'basic',
+    'ntlm',
+    'bearer',
+    'api-key',
+    'oauth2',
+    'kerberos',
+    'aws-sigv4',
+    'digest',
+    'jwt',
+  ]),
   /** Kerberos: the service principal, and the ticket-cache principal to pick. */
   spn: z.string().optional(),
   principal: z.string().optional(),
@@ -441,17 +465,44 @@ export const authConfigWireSchema = z.object({
   valueRef: z.string().optional(),
   valueEnv: z.string().optional(),
   in: z.enum(['header', 'query']).optional(),
-  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
+  grant: z.enum(['client-credentials', 'authorization-code', 'password', 'device-code']).optional(),
   tokenUrl: z.string().optional(),
   authorizationUrl: z.string().optional(),
+  deviceAuthorizationUrl: z.string().optional(),
   clientId: z.string().optional(),
   clientSecretRef: z.string().optional(),
   clientSecretEnv: z.string().optional(),
   scopes: z.array(z.string()).optional(),
   audience: z.string().optional(),
-  clientAuth: z.enum(['basic', 'body']).optional(),
+  clientAuth: z.enum(['basic', 'body', 'client-secret-jwt', 'private-key-jwt', 'tls-client-auth']).optional(),
+  clientKeystoreId: z.string().optional(),
+  assertionAlg: z.enum(JWT_ALGORITHM_NAMES).optional(),
   pkce: z.boolean().optional(),
   refreshTokenRef: z.string().optional(),
+  refreshTokenEnv: z.string().optional(),
+  /** JWT (#348): `name` and `in` above are its placement; the secret and the key are references. */
+  algorithm: z.enum(JWT_ALGORITHM_NAMES).optional(),
+  secretRef: z.string().optional(),
+  secretEnv: z.string().optional(),
+  keystoreRef: z.string().optional(),
+  alias: z.string().optional(),
+  header: z.string().optional(),
+  claims: z.string().optional(),
+  issuedAt: z.boolean().optional(),
+  expiresInSeconds: z.number().int().nonnegative().optional(),
+  jwtId: z.boolean().optional(),
+  prefix: z.string().optional(),
+  /** AWS Signature v4: where it signs, and with which three secrets. */
+  region: z.string().optional(),
+  service: z.string().optional(),
+  accessKeyIdRef: z.string().optional(),
+  accessKeyIdEnv: z.string().optional(),
+  secretAccessKeyRef: z.string().optional(),
+  secretAccessKeyEnv: z.string().optional(),
+  sessionTokenRef: z.string().optional(),
+  sessionTokenEnv: z.string().optional(),
+  placement: z.enum(['header', 'query']).optional(),
+  expiresSeconds: z.number().int().min(1).max(604_800).optional(),
 });
 export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
 
@@ -1832,6 +1883,8 @@ export const keystoreAliasWireSchema = z.object({
   notAfter: z.string(),
   fingerprintSha256: z.string(),
   hasPrivateKey: z.boolean(),
+  /** A PEM file holding only a private key (#348): something to sign a JWT with, no certificate. */
+  keyOnly: z.boolean().optional(),
 });
 export type KeystoreAliasWire = z.infer<typeof keystoreAliasWireSchema>;
 export const keystoresInspectResponseSchema = z.object({
@@ -1991,7 +2044,12 @@ export const preferencesWireSchema = z.object({
   accounts: z.object({ showInStatusBar: z.boolean() }),
   secrets: z.object({ sourceCacheSeconds: z.number() }),
   mocks: z.object({ listenOnAllInterfaces: z.boolean() }),
-  terminal: z.object({ confirmMultilinePaste: z.boolean(), copyOnSelect: z.boolean() }),
+  terminal: z.object({
+    confirmMultilinePaste: z.boolean(),
+    copyOnSelect: z.boolean(),
+    autoReconnect: z.boolean(),
+    reconnectAttempts: z.number(),
+  }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;

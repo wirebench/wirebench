@@ -1056,6 +1056,7 @@ export class ProjectHost {
           notAfter: alias.notAfter,
           fingerprintSha256: alias.fingerprintSha256,
           hasPrivateKey: alias.hasPrivateKey,
+          ...(alias.keyOnly === true ? { keyOnly: true } : {}),
         })),
       };
     } catch (error) {

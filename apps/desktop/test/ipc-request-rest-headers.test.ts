@@ -6,6 +6,7 @@
  * typed headers winning, `omitHeaders` honoured) and that a secret never reaches it unless the
  * session's show-secrets switch is on — with the switch off, no secret is even read.
  */
+import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { AuthConfig, CookieJarHost, KeyValueEntry, Project } from '@wirebench/engine';
@@ -243,5 +244,38 @@ describe('request.restHeaders', () => {
   it('answers no headers for an id that is not a REST request', async () => {
     setup({ rest: resolution() });
     expect((await headers({ requestId: 'soap-1' })).headers).toEqual([]);
+  });
+
+  describe('a client-signed JWT', () => {
+    const SECRET = 'jwt-shared-secret-0123456789-abcdefghijklmnop';
+    const JWT: AuthConfig = {
+      type: 'jwt',
+      algorithm: 'HS256',
+      secretRef: 'sec_jwt',
+      claims: '{"sub":"svc"}',
+      issuedAt: true,
+      expiresInSeconds: 300,
+      jwtId: false,
+      in: 'header',
+    };
+
+    it('shows a masked stand-in and signs nothing while the session hides secrets', async () => {
+      const getSecret = vi.fn(() => Promise.resolve<string | undefined>(SECRET));
+      setup({ rest: resolution({ auth: { ...JWT, name: 'X-Jwt', prefix: '' } }), getSecret });
+      const jwt = row(await headers({ requestId: 'rest-1' }), 'X-Jwt');
+      expect(jwt).toMatchObject({ source: 'auth', masked: true });
+      expect(getSecret).not.toHaveBeenCalled();
+    });
+
+    it('shows the token the next send carries while the session shows secrets', async () => {
+      setup({ rest: resolution({ auth: JWT }), show: true, secrets: { sec_jwt: SECRET } });
+      const first = row(await headers({ requestId: 'rest-1' }), 'Authorization');
+      const token = first?.value.replace(/^Bearer /u, '') ?? '';
+      const [head = '', body = '', signature = ''] = token.split('.');
+      expect(createHmac('sha256', SECRET).update(`${head}.${body}`).digest('base64url')).toBe(signature);
+      expect(JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))).toMatchObject({ sub: 'svc' });
+      // The app's source reuses a fresh token, so a second look shows the same one.
+      expect(row(await headers({ requestId: 'rest-1' }), 'Authorization')?.value).toBe(first?.value);
+    });
   });
 });

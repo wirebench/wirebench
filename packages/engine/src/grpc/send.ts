@@ -134,6 +134,14 @@ export interface GrpcExchange {
 /** Headers no metadata row may set: the protocol owns them. */
 const RESERVED_HEADERS = new Set(['te', 'content-type', 'grpc-timeout', 'grpc-encoding', 'grpc-accept-encoding']);
 
+/** Why a scheme cannot authenticate a gRPC call, by type. */
+const GRPC_REFUSALS: Readonly<Record<string, string>> = {
+  ntlm: 'NTLM cannot authenticate a gRPC call directly: it is an HTTP/1.1 connection handshake.',
+  kerberos: 'Kerberos cannot authenticate a gRPC call directly: it needs a Negotiate token made first.',
+  digest: 'Digest cannot authenticate a gRPC call: it answers a 401 challenge, which a gRPC call never sends.',
+  'aws-sigv4': 'AWS Signature v4 cannot authenticate a gRPC call: Wirebench signs HTTP/1.1 requests only.',
+};
+
 /** The `authorization` or custom header credentials become, as the HTTP transport spells them. */
 function authHeaders(auth: SendAuth | undefined): Record<string, string> {
   if (auth === undefined) {
@@ -148,10 +156,17 @@ function authHeaders(auth: SendAuth | undefined): Record<string, string> {
       return { [auth.name.toLowerCase()]: auth.value };
     case 'basic':
       return { authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`, 'utf8').toString('base64')}` };
+    case 'jwt':
+      if (auth.in === 'query') {
+        throw new GrpcError('grpc-auth-unsupported', 'A gRPC call has no query string: send the JWT as a header.', {
+          details: { type: auth.type },
+        });
+      }
+      return { [auth.name.toLowerCase()]: auth.prefix === '' ? auth.token : `${auth.prefix} ${auth.token}` };
     default:
       throw new GrpcError(
         'grpc-auth-unsupported',
-        `${auth.type} cannot authenticate a gRPC call directly; NTLM is an HTTP/1.1 connection handshake, and Kerberos needs a Negotiate token made first.`,
+        GRPC_REFUSALS[auth.type] ?? `${auth.type} cannot authenticate a gRPC call directly.`,
         {
           details: { type: auth.type },
         },

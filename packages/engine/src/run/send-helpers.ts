@@ -11,17 +11,23 @@ import type { TlsOptions } from '../http/types.js';
 import { resolveApiBaseUrl } from '../project/environments.js';
 import type { BaseUrlSource } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
-import type { AuthConfig, Project } from '../project/model.js';
-import { secretNamesIn } from '../project/properties.js';
+import type { AuthConfig, JwtAuth, Project } from '../project/model.js';
+import { expand, secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { urlOrigin } from '../project/sequence-guards.js';
 import type { SecretPlaceholders } from '../script/send.js';
+import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
+import { signConfiguredJwt } from '../http/auth/jwt-auth.js';
+import type { JwtSendAuth } from '../http/auth/jwt-auth.js';
+import { createJwtSource } from '../http/auth/jwt.js';
+import type { JwtSource } from '../http/auth/jwt.js';
 import { resolveWorkspaceApiBaseUrl, withActiveEnvironment } from '../workspace/environments.js';
 import { loadKeystore, toTlsClientIdentity } from '../keystore/index.js';
+import type { ClientIdentity } from './host.js';
 import type { Keystore } from '../keystore/index.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
@@ -180,6 +186,17 @@ export async function tlsFor(
   };
 }
 
+/** The keystore identity an OAuth2 key-based client authenticates with: the host's loader, else the project's. */
+async function oauth2IdentityFor(context: RunContext, keystoreId: string): Promise<ClientIdentity | undefined> {
+  const identity =
+    context.host.tls?.identityFor !== undefined
+      ? await context.host.tls.identityFor(keystoreId)
+      : await clientIdentityFor(context, keystoreId);
+  return identity?.cert !== undefined && identity.key !== undefined
+    ? { cert: identity.cert, key: identity.key }
+    : undefined;
+}
+
 /** The run's shared token source, or a fresh one for a send outside a run. */
 export function tokenSourceOf(context: RunContext): RunTokenSource {
   return (
@@ -205,11 +222,18 @@ export async function authFor(
   context: RunContext,
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
+  if (configured.type === 'jwt') {
+    return reportedAuth(await signJwtFor(configured, context), context);
+  }
+  if (configured.type === 'aws-sigv4') {
+    return reportedAuth(await resolveAuthConfig(expandSigV4(configured, context), context.host.getSecret), context);
+  }
   if (configured.type !== 'oauth2') {
     return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret), context);
   }
   const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
     scopes: scopesFor(context),
+    identityFor: (keystoreId) => oauth2IdentityFor(context, keystoreId),
     ...(tls !== undefined ? { tls } : {}),
     ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
@@ -218,11 +242,63 @@ export async function authFor(
   return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret, { accessToken }), context);
 }
 
+/** The run's shared JWT source, or a fresh one for a send outside a run. */
+export function jwtSourceOf(context: RunContext): JwtSource {
+  return context.host.jwts ?? createJwtSource();
+}
+
+/**
+ * A JWT signed (or reused) for `configured`, its claims expanded against the request's scopes and
+ * its private key read from the project's keystore entry. The app's previews sign through here too,
+ * so a header preview shows the token the next send carries.
+ *
+ * @throws WirebenchError from `signConfiguredJwt`, or the keystore's own load errors
+ */
+export async function signJwtFor(configured: JwtAuth, context: RunContext): Promise<JwtSendAuth> {
+  return signConfiguredJwt(
+    configured,
+    {
+      scopes: scopesFor(context),
+      getSecret: context.host.getSecret,
+      keystore: async (id) => {
+        const keystore = await keystoreFor(context, id);
+        if (keystore === undefined) return undefined;
+        const ref = context.project.keystores.find((candidate) => candidate.id === id);
+        const defaultAlias = ref === undefined ? undefined : toKeystoreDef(ref).defaultAlias;
+        return { keystore, ...(defaultAlias !== undefined ? { defaultAlias } : {}) };
+      },
+    },
+    jwtSourceOf(context),
+  );
+}
+
+/**
+ * A SigV4 configuration with `${…}` expanded in its region and service, so an environment can pick
+ * them; a reference nothing resolves refuses the send rather than signing for a literal `${region}`.
+ *
+ * @throws WirebenchError `unresolved-properties`
+ */
+function expandSigV4(config: Extract<AuthConfig, { type: 'aws-sigv4' }>, context: RunContext): AuthConfig {
+  const scopes = scopesFor(context);
+  const region = expand(config.region, scopes);
+  const service = expand(config.service, scopes);
+  const unresolved = [...region.unresolved, ...service.unresolved].map((ref) => ref.expr);
+  if (unresolved.length > 0) {
+    throw new WirebenchError(
+      'unresolved-properties',
+      `The AWS Signature v4 region or service has property references nothing resolves: ${unresolved.join(', ')}`,
+      { details: { unresolved } },
+    );
+  }
+  return { ...config, region: region.text.trim(), service: service.text.trim() };
+}
+
 /**
  * Tells the host each credential a resolved auth puts on the wire, in the form it travels there,
  * so a server that echoes one back has it masked: an API key's value, a bearer or OAuth2 access
- * token, and Basic's `base64(user:password)`. A password is never reported bare — people choose
- * them, so one is often ordinary text — and the NTLM and Kerberos passwords never travel at all.
+ * token, a signed JWT, Basic's `base64(user:password)`, and an AWS access key id and session token.
+ * A password is never reported bare — people choose them, so one is often ordinary text — and the
+ * NTLM, Kerberos and Digest passwords and the AWS secret key never travel at all.
  */
 export function reportedAuth(auth: SendAuth | undefined, context: RunContext): SendAuth | undefined {
   const report = context.host.onSecretValue;
@@ -237,8 +313,16 @@ export function reportedAuth(auth: SendAuth | undefined, context: RunContext): S
     case 'oauth2':
       report(auth.accessToken);
       break;
+    case 'jwt':
+      report(auth.token);
+      break;
     case 'basic':
       report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
+      break;
+    case 'aws-sigv4':
+      // The secret key never travels; the key id and a session token do, in a header or the URL.
+      report(auth.accessKeyId);
+      if (auth.sessionToken !== undefined) report(auth.sessionToken);
       break;
     default:
       break;
@@ -271,13 +355,16 @@ export function baseUrlFor(context: RunContext, api: { readonly slug: string; re
 }
 
 /**
- * After a server refused the credentials a send carried, drops the run's OAuth2 token among them,
+ * After a server refused the credentials a send carried, drops the run's OAuth2 token or JWT among them,
  * so the next request behind that configuration fetches a new one instead of repeating the refusal.
  * The refused request itself is never sent again.
  */
 export function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
   if (refused && auth?.type === 'oauth2') {
     context.host.tokens?.reject(auth.accessToken);
+  }
+  if (refused && auth?.type === 'jwt') {
+    context.host.jwts?.reject(auth.token);
   }
 }
 
@@ -289,6 +376,18 @@ export function originOf(url: string): { readonly origin?: string } {
 
 /** True for a reference that is set: neither absent nor empty. */
 export const present = (id: string | undefined): id is string => id !== undefined && id.length > 0;
+
+/**
+ * What an effective auth needs from a run: its own secrets, and the keystore password behind a
+ * client-signed JWT's private key or an OAuth2 key-based client authentication (`private-key-jwt`,
+ * `tls-client-auth`).
+ */
+export function authSecretNeeds(project: Project, auth: AuthConfig | undefined): SecretNeed[] {
+  const keyBased =
+    auth?.type === 'oauth2' && (auth.clientAuth === 'private-key-jwt' || auth.clientAuth === 'tls-client-auth');
+  const keystoreId = keyBased ? auth.clientKeystoreId : auth?.type === 'jwt' ? auth.keystoreRef : undefined;
+  return [...secretNeedsOfAuth(auth), ...(keystoreId !== undefined ? keystoreNeeds(project, keystoreId) : [])];
+}
 
 /** A keystore's password, when the registry entry has one; an unreadable entry needs nothing here. */
 export function keystoreNeeds(project: Project, keystoreId: string | undefined): SecretNeed[] {

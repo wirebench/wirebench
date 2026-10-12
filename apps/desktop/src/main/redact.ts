@@ -67,8 +67,16 @@ export function recordAuthValues(auth: SendAuth | undefined): void {
     case 'oauth2':
       recordSecretValue(auth.accessToken);
       return;
+    case 'jwt':
+      recordSecretValue(auth.token);
+      return;
     case 'basic':
       recordSecretValue(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
+      return;
+    case 'aws-sigv4':
+      // The secret key never travels; the key id and a session token do, in a header or the URL.
+      recordSecretValue(auth.accessKeyId);
+      if (auth.sessionToken !== undefined) recordSecretValue(auth.sessionToken);
       return;
     default:
       return;

@@ -8,11 +8,13 @@ import { detectPlatform } from '../../lib/platform.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { connectToHost, terminalTabId } from './connect.js';
+import { connectToHost, reconnectToHost, terminalTabId } from './connect.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
+import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
+import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
 import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
 
@@ -51,10 +53,32 @@ function endSession(hostId: string, sessionId: string): void {
 }
 
 /**
+ * A connect that ended after its tab was torn down. A remount of the same tab picks the session up from the
+ * store; with the tab gone, nothing will, so the session and any trust prompt go with it.
+ */
+function settleAfterTeardown(hostId: string, sessionId: string | undefined): void {
+  if (useEditorsStore.getState().tabs.some((t) => t.id === terminalTabId(hostId))) return;
+  if (sessionId !== undefined) endSession(hostId, sessionId);
+  const hosts = useHostsStore.getState();
+  if (hosts.trustPrompt?.hostId === hostId) hosts.setTrustPrompt(null);
+}
+
+/** The line a reconnect leaves in the scrollback, dimmed, between the old session's output and the new one's. */
+function reconnectedLine(at: Date): Uint8Array {
+  return encoder.encode(`\r\n\x1b[2m── reconnected ${at.toLocaleTimeString([], { hour12: false })} ──\x1b[0m\r\n`);
+}
+
+/** Whole seconds until `at`, never below zero. */
+function secondsUntil(at: number, now: number): number {
+  return Math.max(0, Math.ceil((at - now) / 1000));
+}
+
+/**
  * One host's shell. The tab stays mounted while another tab is in front (the editor area hides it),
  * so only closing the tab — or Reconnect, which bumps the host's nonce — ends the session. The tab
  * attaches to whatever session the hosts store records for its host, so a connect that went through
- * the trust prompt lands here too.
+ * the trust prompt lands here too. A session the network dropped reconnects on its own (Preferences →
+ * Terminal) into the same terminal, so the scrollback stays.
  */
 export function TerminalTab({ hostId, active }: { readonly hostId: string; readonly active: boolean }) {
   const holder = useRef<HTMLDivElement>(null);
@@ -75,6 +99,10 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
   const [findFocus, setFindFocus] = useState(0);
   const [findResults, setFindResults] = useState<FindResults | undefined>(undefined);
   const finder = useMemo(() => finderFor(() => live.current?.search), []);
+  const reconnector = useRef<Reconnector | null>(null);
+  const [reconnect, setReconnect] = useState<ReconnectState>({ kind: 'idle' });
+  /** Ticks once a second while a reconnect waits, for the countdown. */
+  const [now, setNow] = useState(() => Date.now());
 
   // The terminal and the connect, once per mount and again per Reconnect.
   useEffect(() => {
@@ -175,17 +203,30 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
 
     let disposed = false;
     void connectToHost(hostId, sent).then((result) => {
-      if (!disposed) return;
-      // Torn down while connecting. A remount of the same tab picks the session up from the store;
-      // with the tab gone, nothing will, so the session and any trust prompt go with it.
-      if (useEditorsStore.getState().tabs.some((t) => t.id === terminalTabId(hostId))) return;
-      if (result) endSession(hostId, result.sessionId);
-      const hosts = useHostsStore.getState();
-      if (hosts.trustPrompt?.hostId === hostId) hosts.setTrustPrompt(null);
+      if (disposed) settleAfterTeardown(hostId, result?.sessionId);
+    });
+
+    const loop = new Reconnector({
+      attempt: async () => {
+        const outcome = await reconnectToHost(hostId, { cols: term.cols, rows: term.rows });
+        if (disposed) settleAfterTeardown(hostId, useHostsStore.getState().sessions[hostId]?.sessionId);
+        return outcome;
+      },
+      onChange: setReconnect,
+      onReconnected: () => {
+        term.write(reconnectedLine(new Date()));
+      },
+    });
+    reconnector.current = loop;
+    const offWake = onReconnectNow(() => {
+      loop.wake();
     });
 
     return () => {
       disposed = true;
+      offWake();
+      loop.cancel();
+      reconnector.current = null;
       clearTimeout(timer);
       observer.disconnect();
       themeWatch.disconnect();
@@ -214,9 +255,12 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       write: (data) => {
         current.term.write(data);
       },
-      exit: (code) => {
+      exit: (code, reason) => {
         if (target.current === sessionId) target.current = undefined;
         setExit({ sessionId, code });
+        // Read per drop, so the Preferences switch and limit apply from the next drop on.
+        const prefs = usePreferencesStore.getState().preferences.terminal;
+        if (isDrop(reason) && prefs.autoReconnect) reconnector.current?.start(prefs.reconnectAttempts);
       },
     });
     current.syncSize();
@@ -234,13 +278,35 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
     live.current?.term.focus();
   }, [active]);
 
+  const waiting = reconnect.kind === 'waiting';
+  useEffect(() => {
+    if (!waiting) return;
+    setNow(Date.now());
+    const tick = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(tick);
+    };
+  }, [waiting]);
+
   const exitCode = sessionId !== undefined && exit?.sessionId === sessionId ? exit.code : undefined;
   const ended = sessionId !== undefined && (exitCode !== undefined || session?.state === 'closed');
-  const notice = failed
-    ? 'Could not connect · see Problems'
-    : ended
-      ? `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`
-      : undefined;
+  const reconnecting = reconnect.kind === 'waiting' || reconnect.kind === 'trying';
+  let notice: string | undefined;
+  if (reconnect.kind === 'waiting') {
+    const wait = secondsUntil(reconnect.at, now);
+    notice = `Connection lost · Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)} in ${String(wait)}s`;
+  } else if (reconnect.kind === 'trying') {
+    notice = `Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)}`;
+  } else if (reconnect.kind === 'gave-up') {
+    const attempts = `${String(reconnect.attempts)} ${reconnect.attempts === 1 ? 'attempt' : 'attempts'}`;
+    notice = `Connection lost · gave up after ${attempts} (${reconnect.message})`;
+  } else if (failed) {
+    notice = 'Could not connect · see Problems';
+  } else if (ended) {
+    notice = `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`;
+  }
 
   const closePaste = (): void => {
     setHeldPaste(null);
@@ -274,17 +340,44 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
         />
       </div>
       {notice !== undefined && (
-        <div className="flex items-center gap-3 border-t border-hairline px-3 py-2 text-sm text-fg-default">
-          <span>{notice}</span>
-          <button
-            type="button"
-            className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
-            onClick={() => {
-              useHostsStore.getState().bumpReconnect(hostId);
-            }}
-          >
-            Reconnect
-          </button>
+        <div
+          className="flex items-center gap-3 border-t border-hairline px-3 py-2 text-sm text-fg-default"
+          role="status"
+          data-testid="ssh-terminal-notice"
+        >
+          <span className="min-w-0 flex-1 truncate">{notice}</span>
+          {reconnect.kind === 'waiting' && (
+            <button
+              type="button"
+              className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
+              onClick={() => {
+                reconnector.current?.retryNow();
+              }}
+            >
+              Retry now
+            </button>
+          )}
+          {reconnecting ? (
+            <button
+              type="button"
+              className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
+              onClick={() => {
+                reconnector.current?.cancel();
+              }}
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
+              onClick={() => {
+                useHostsStore.getState().bumpReconnect(hostId);
+              }}
+            >
+              Reconnect
+            </button>
+          )}
         </div>
       )}
     </div>

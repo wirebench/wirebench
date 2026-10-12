@@ -5,14 +5,12 @@
  * owns only the third.
  */
 
-import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
-import { ipc } from '../../state/ipc-client.js';
+import { useKeystoreAliases } from '../../components/use-keystore-aliases.js';
 import { useProjectStore } from '../../state/project.js';
 import type { WssEntryWire } from '../../../shared/kinds/soap/wire.js';
-import type { KeystoreAliasWire } from '../../../shared/wire-base.js';
 
 type WssTimestampEntry = Extract<WssEntryWire, { kind: 'timestamp' }>;
 type WssUsernameTokenEntry = Extract<WssEntryWire, { kind: 'username-token' }>;
@@ -232,46 +230,6 @@ interface SignatureFieldsProps {
   readonly onChange: (entry: WssSignatureEntry) => void;
 }
 
-/**
- * The `ds:Signature` entry's fields: the signing keystore and alias, how the certificate is
- * referenced, the algorithms, and the parts table.
- *
- * The alias list comes from `keystores.inspect` — main reads the keystore; the renderer only
- * ever sees alias names and certificate metadata, never a key.
- */
-/**
- * The alias names of one keystore, loaded through `keystores.inspect` — main reads the
- * keystore; the renderer only ever sees alias names and certificate metadata, never a key.
- */
-export function useKeystoreAliases(keystoreRef: string): readonly KeystoreAliasWire[] {
-  const [aliases, setAliases] = useState<readonly KeystoreAliasWire[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (keystoreRef === '') {
-      setAliases([]);
-      return undefined;
-    }
-    void (async () => {
-      try {
-        const result = await ipc().keystores.inspect({ keystoreId: keystoreRef });
-        if (!cancelled) {
-          setAliases(result.ok ? result.value.aliases : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setAliases([]);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [keystoreRef]);
-
-  return aliases;
-}
-
 /** A keystore select plus, once one is chosen, its alias select ("Default" = the config's default alias). */
 export function KeystorePicker(props: {
   readonly label: string;
@@ -325,6 +283,13 @@ export function KeystorePicker(props: {
   );
 }
 
+/**
+ * The `ds:Signature` entry's fields: the signing keystore and alias, how the certificate is
+ * referenced, the algorithms, and the parts table.
+ *
+ * The alias list comes from `keystores.inspect` — main reads the keystore; the renderer only
+ * ever sees alias names and certificate metadata, never a key.
+ */
 export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
   const keystores = useProjectStore((state) => state.keystores);
   const aliases = useKeystoreAliases(entry.keystoreRef);

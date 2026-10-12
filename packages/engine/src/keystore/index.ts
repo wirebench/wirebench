@@ -4,6 +4,8 @@
  * `toTlsClientIdentity` shapes it for `TlsOptions`.
  */
 
+import { createPrivateKey } from 'node:crypto';
+import type { KeyObject } from 'node:crypto';
 import { WssError } from '../errors.js';
 import { loadPem } from './pem.js';
 import { loadPkcs12 } from './pkcs12.js';
@@ -44,22 +46,36 @@ export function loadKeystore(bytes: Uint8Array, options: LoadKeystoreOptions): K
  *
  * @param keystore the parsed keystore
  * @param alias the requested alias, or `undefined` to fall back to the only entry
+ * @param options `allowKeyOnly` accepts a key-only PEM entry, which only signing a JWT can use
  * @returns the selected alias
  * @throws WssError `keystore-alias-missing` when the name is unknown, or when nothing is named
- * and the keystore holds more (or fewer) than one usable entry
+ * and the keystore holds more (or fewer) than one usable entry; `keystore-invalid` when the entry
+ * holds only a private key and `allowKeyOnly` is not set
  */
-export function selectAlias(keystore: Keystore, alias?: string): KeystoreAlias {
+export function selectAlias(
+  keystore: Keystore,
+  alias?: string,
+  options: { readonly allowKeyOnly?: boolean } = {},
+): KeystoreAlias {
+  const allowKeyOnly = options.allowKeyOnly === true;
   if (alias !== undefined && alias.length > 0) {
     const found = keystore.aliases.find((candidate) => candidate.alias === alias);
     if (found === undefined) {
       throw new WssError('keystore-alias-missing', `The keystore has no alias "${alias}".`, { details: { alias } });
     }
+    if (found.keyOnly === true && !allowKeyOnly) {
+      throw keyOnlyRefused(found.alias);
+    }
     return found;
+  }
+  const usable = allowKeyOnly ? keystore.aliases : keystore.aliases.filter((candidate) => candidate.keyOnly !== true);
+  if (usable.length === 0 && keystore.aliases.length > 0) {
+    throw keyOnlyRefused(keystore.aliases[0]?.alias ?? '');
   }
   // "The only one" means the only one that can actually be presented: a keystore that also
   // carries its CA has two entries but only ever one identity.
-  const withKey = keystore.aliases.filter((candidate) => candidate.hasPrivateKey);
-  const candidates = withKey.length > 0 ? withKey : keystore.aliases;
+  const withKey = usable.filter((candidate) => candidate.hasPrivateKey);
+  const candidates = withKey.length > 0 ? withKey : usable;
   const only = candidates.length === 1 ? candidates[0] : undefined;
   if (only === undefined) {
     throw new WssError(
@@ -71,6 +87,33 @@ export function selectAlias(keystore: Keystore, alias?: string): KeystoreAlias {
     );
   }
   return only;
+}
+
+function keyOnlyRefused(alias: string): WssError {
+  return new WssError(
+    'keystore-invalid',
+    `The keystore entry "${alias}" holds only a private key; a certificate is needed here.`,
+    { details: { alias } },
+  );
+}
+
+/**
+ * The private key of `alias`, for signing a JWT (#348). Unlike every other use of a keystore, a
+ * key-only PEM entry is accepted: a JWT names its key by `kid`, not by certificate.
+ *
+ * @param keystore the parsed keystore
+ * @param alias the alias to sign with, or `undefined` for the keystore's only key
+ * @throws WssError `keystore-alias-missing` when the alias cannot be resolved, `keystore-invalid`
+ * when it carries no private key
+ */
+export function signingKeyOf(keystore: Keystore, alias?: string): KeyObject {
+  const entry = selectAlias(keystore, alias, { allowKeyOnly: true });
+  if (entry.keyPem === undefined) {
+    throw new WssError('keystore-invalid', `The keystore alias "${entry.alias}" has no private key.`, {
+      details: { alias: entry.alias },
+    });
+  }
+  return createPrivateKey(entry.keyPem);
 }
 
 /**

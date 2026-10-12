@@ -342,6 +342,7 @@
     "ssh.exit",
     "ssh.hostOsChanged",
     "ssh.hostsChanged",
+    "ssh.resumed",
     "ssh.state",
     "sync.conflict",
     "sync.pulled",

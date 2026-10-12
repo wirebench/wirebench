@@ -12,6 +12,35 @@ All notable changes to this project are documented here. The format follows
   find bar over the output: next and previous match, match case, whole word and regular expression, and a
   match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
   to the terminal. The shortcut never reaches the remote shell, and other tabs keep their own ⌘F (#406).
+- **A terminal session the network drops reconnects on its own.** After a reset, a timeout or a jump
+  host's connection ending, the tab keeps its scrollback and tries again after 1, 2, 4, 8 and 16
+  seconds, then every 30 seconds, showing "Reconnecting… attempt 2 of 10" with a countdown, **Retry
+  now** and **Cancel**. Waking from sleep or the network coming back tries every waiting tab at once. A
+  shell that exited, a sign-in failure or a changed host key never reconnects. Preferences → Terminal
+  turns it off (`terminal.autoReconnect`) and sets the attempt limit (`terminal.reconnectAttempts`, 1 to
+  100, default 10) (#407).
+
+- **Client-signed JWT auth.** A REST, gRPC or WebSocket request, folder or API can send a JWT that
+  Wirebench signs itself, with HS, RS, ES or PS at 256, 384 or 512 bits. The claims and extra header
+  fields are JSON whose strings take `${…}` properties, and `iat`, `exp` and `jti` can be generated.
+  The HMAC secret is a secret-store reference and the private key comes from a keystore, never from
+  the project file; a PEM keystore may now hold just a private key. The token goes in a header with a
+  configurable name and prefix, or in a query parameter, and is reused until 30 seconds before it
+  expires. It works in the app, `wirebench run` and MCP `send`; the headers preview, **Copy as** and
+  generated code show a freshly signed token while secrets are shown (#348).
+- **AWS Signature v4 and Digest auth.** A REST or SOAP request, folder, API, interface or endpoint can
+  sign with **AWS Signature v4**: region and service, which take property references, an access key
+  ID, a secret key and an optional session token, all kept in the secret store, in an
+  `Authorization` header or as a presigned URL with its own expiry. The body is always hashed, and S3
+  also gets `X-Amz-Content-Sha256`. The Headers tab shows the signature headers before you send, and
+  the HTTP log shows each signed send's canonical request and string to sign. The signer matches
+  AWS's published test suite. **Digest** answers the server's 401 challenge with MD5 or SHA-256 (and
+  the `-sess` forms) and `qop=auth`, or the older form without `qop`. The nonce is remembered per
+  origin for the session, so later requests skip the 401 and count `nc` up, and a stale nonce is
+  answered once. cURL import reads `--digest` and `--aws-sigv4`, storing every value as a secret, and
+  the cURL export writes them. `wirebench run` and the MCP `send` read the credentials from
+  `WIREBENCH_SECRET_*`. gRPC and WebSocket refuse both schemes by name (#339).
+
 - **`wirebench lint` checks an OpenAPI 2.0, 3.0, 3.1 or 3.2 document.** A built-in hygiene rule set
   checks descriptions, examples, `operationId`s and reusable schemas. A built-in OWASP API Top 10 rule
   set checks for no security scheme, credentials or OAuth endpoints over plain HTTP, and undefined
@@ -22,6 +51,23 @@ All notable changes to this project are documented here. The format follows
   folder, and a local document reaches the network only with `--allow-remote-refs`. In the desktop
   app, **Lint Definition** on a REST API puts the same findings in Problems, and so does an OpenAPI
   import or a definition update (#342).
+- **More OAuth 2 grants and client authentication.** The password grant (a username and a password
+  from the secret store) and the device-code grant (RFC 8628: **Get token** shows the code and opens
+  the verification page) join client credentials and authorization code. The client can now
+  authenticate with a signed assertion, `client_secret_jwt` (HMAC) or `private_key_jwt` (a keystore's
+  key, RS, PS or ES, the algorithm following the key unless chosen), or with the keystore's
+  certificate (`tls_client_auth`). `wirebench run` runs the password grant and refreshes tokens
+  headless, and starts an authorization-code or device-code configuration from a refresh token in
+  `WIREBENCH_SECRET_<refreshTokenEnv>`. OpenAPI, Postman and OpenCollection imports map the password
+  flow, OpenAPI 3.2's device flow maps to device code, and exports write the password grant (#338).
+
+### Breaking
+
+- **Project format 10.** Auth can be a client-signed JWT (`type: jwt`), Digest (`type: digest`) or
+  AWS Signature v4 (`type: aws-sigv4`), and OAuth 2 gains the password and device-code grants and the
+  assertion and certificate client authentications; a project saved by this version cannot be opened
+  by an older one, which refuses it as made by a newer Wirebench. A version-9 project opens unchanged
+  (#338, #339, #348).
 
 ## [6.0.0] - 2026-10-12
 

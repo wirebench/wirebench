@@ -30,7 +30,22 @@ describe('Postman auth mapping', () => {
     expect(summary.warnings?.some((w) => w.includes('grant'))).not.toBe(true);
   });
 
-  it.each(['password_credentials', 'implicit'])('reports the unsupported grant %s and sets none', (grant) => {
+  it('maps the password grant with its username, never its password, and the client placement', () => {
+    const { api } = importAuth({
+      type: 'oauth2',
+      oauth2: [
+        { key: 'grant_type', value: 'password_credentials' },
+        { key: 'accessTokenUrl', value: 'https://id.example.com/token' },
+        { key: 'username', value: '{{user}}' },
+        { key: 'password', value: 'hunter2' },
+        { key: 'client_authentication', value: 'body' },
+      ],
+    });
+    expect(api.auth).toMatchObject({ type: 'oauth2', grant: 'password', username: '${user}', clientAuth: 'body' });
+    expect(JSON.stringify(api.auth)).not.toContain('hunter2');
+  });
+
+  it.each(['implicit'])('reports the unsupported grant %s and sets none', (grant) => {
     const { api, summary } = oauth2(grant);
     expect(api.auth).toEqual({ type: 'none' });
     expect(summary.warnings).toContain(`OAuth 2.0 grant "${grant}" is not supported; set to "none"`);

@@ -126,6 +126,14 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   );
   await page.getByRole('tab', { name: /box/ }).click();
   await expect(connected).toBeVisible();
+
+  // A connection the network drops reconnects on its own, into the same terminal: the scrollback stays.
+  fixture.drop();
+  await expect(page.getByTestId('ssh-terminal-notice')).toContainText('Reconnecting', { timeout: 30_000 });
+  await expect(terminal).toContainText('reconnected', { timeout: 30_000 });
+  await expect(terminal).toContainText('echo hi');
+  await expect(page.getByTestId('ssh-terminal-notice')).toBeHidden();
+  await expect(connected).toBeVisible();
   await terminal.click();
 
   // The echo returns the cursor to column 0 without a line feed, so `exit 0` overwrites the first line.

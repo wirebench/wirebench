@@ -7,6 +7,7 @@
  * that name and the ref both turn into the environment variables a headless run is allowed to read.
  */
 
+import { isHmacAlgorithm } from '../http/auth/jwt-algorithms.js';
 import type { AuthConfig, EndpointAuth } from '../project/model.js';
 import { parseSecretPseudoRef, secretEnvName } from './secret-token.js';
 
@@ -48,11 +49,36 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
     case 'api-key':
       return need(auth.valueRef, auth.valueEnv, `API key "${auth.name}"`);
     case 'oauth2':
-      return need(auth.clientSecretRef, auth.clientSecretEnv, `OAuth2 client secret for "${auth.clientId}"`);
+      return [
+        // A key-based client never sends its secret, so a leftover reference is not a need.
+        ...(auth.clientAuth === 'private-key-jwt' || auth.clientAuth === 'tls-client-auth'
+          ? []
+          : need(auth.clientSecretRef, auth.clientSecretEnv, `OAuth2 client secret for "${auth.clientId}"`)),
+        ...(auth.grant === 'password'
+          ? need(auth.passwordRef, auth.passwordEnv, `OAuth2 password for "${auth.username ?? ''}"`)
+          : []),
+        // A browser grant runs headless only from a refresh token, so for those it is required.
+        ...(auth.grant === 'authorization-code' || auth.grant === 'device-code'
+          ? need(auth.refreshTokenRef, auth.refreshTokenEnv, `OAuth2 refresh token for "${auth.clientId}"`)
+          : []),
+      ];
+    case 'jwt':
+      // The private key's keystore password is the keystore's need, added where the project is known.
+      return isHmacAlgorithm(auth.algorithm)
+        ? need(auth.secretRef, auth.secretEnv, `JWT ${auth.algorithm} secret`)
+        : [];
     case 'kerberos':
       return auth.username !== undefined
         ? need(auth.passwordRef, auth.passwordEnv, `kerberos password for "${auth.username}"`)
         : [];
+    case 'aws-sigv4':
+      return [
+        ...need(auth.accessKeyIdRef, auth.accessKeyIdEnv, 'AWS access key id'),
+        ...need(auth.secretAccessKeyRef, auth.secretAccessKeyEnv, 'AWS secret access key'),
+        ...need(auth.sessionTokenRef, auth.sessionTokenEnv, 'AWS session token'),
+      ];
+    case 'digest':
+      return need(auth.passwordRef, auth.passwordEnv, `digest password for "${auth.username ?? ''}"`);
     default:
       return [];
   }

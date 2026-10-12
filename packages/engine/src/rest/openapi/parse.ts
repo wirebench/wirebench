@@ -740,6 +740,9 @@ function parseFlows(value: unknown): Readonly<Record<string, OpenApiOAuthFlow>> 
       ...(asString(entry['authorizationUrl']) !== undefined
         ? { authorizationUrl: asString(entry['authorizationUrl']) as string }
         : {}),
+      ...(asString(entry['deviceAuthorizationUrl']) !== undefined
+        ? { deviceAuthorizationUrl: asString(entry['deviceAuthorizationUrl']) as string }
+        : {}),
       ...(asString(entry['tokenUrl']) !== undefined ? { tokenUrl: asString(entry['tokenUrl']) as string } : {}),
       ...(asString(entry['refreshUrl']) !== undefined ? { refreshUrl: asString(entry['refreshUrl']) as string } : {}),
       ...(scopes !== undefined ? { scopes } : {}),

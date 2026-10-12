@@ -11,7 +11,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX, webhooksOf } from '@wirebench/engine';
+import {
+  createJwtSource,
+  failedRequestOf,
+  findWebhookRequest,
+  SIGNING_PSEUDO_REF_PREFIX,
+  webhooksOf,
+} from '@wirebench/engine';
 import type {
   AttemptedRequest,
   ClientIdentity,
@@ -115,6 +121,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       ? { keystoreFor: async (keystoreId: string) => await project.keystoreFor?.(projectId, keystoreId) }
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
+    jwts: APP_JWTS,
     ...(issued !== undefined ? { protocols: { soap: { issuedTokens: issued } } } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
     ...(cookies !== undefined ? { cookies } : {}),
@@ -155,6 +162,13 @@ export function desktopSecrets(
   return (ref) => (ref.startsWith(SIGNING_PSEUDO_REF_PREFIX) ? Promise.resolve(undefined) : getSecret(ref));
 }
 
+/**
+ * The app's one JWT source (#348): a signed token is reused across sends, previews and code
+ * generation until shortly before it expires, and dropped when a server refuses it. Held in memory
+ * only, like OAuth2 access tokens.
+ */
+const APP_JWTS = createJwtSource();
+
 /** The OAuth2 service as the engine's token source: its cache, its browser flow, its `clear`. */
 function oauth2Tokens(deps: DesktopSendDeps): RunTokenSource | undefined {
   const oauth2 = deps.oauth2;
@@ -165,6 +179,7 @@ function oauth2Tokens(deps: DesktopSendDeps): RunTokenSource | undefined {
       const proxy = request.proxy !== undefined ? await request.proxy(config.tokenUrl) : undefined;
       const token = await oauth2.accessToken(config, {
         credentials: await oauth2Credentials(deps, config),
+        ...(request.identityFor !== undefined ? { identityFor: request.identityFor } : {}),
         ...(request.tls !== undefined ? { tls: request.tls } : {}),
         ...(proxy !== undefined ? { proxy } : {}),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
@@ -284,18 +299,20 @@ function reportStsExchange(deps: DesktopSendDeps, send: DesktopSend, http: HttpE
   }
 }
 
-/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
+/** The client secret, remembered refresh token and resource-owner password an OAuth2 token request needs, if any. */
 async function oauth2Credentials(
   deps: Pick<DesktopSendDeps, 'getSecret'>,
   config: OAuth2Auth,
-): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
+): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string; readonly password?: string }> {
   const read = async (ref: string | undefined): Promise<string | undefined> =>
     ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
   const clientSecret = await read(config.clientSecretRef);
   const refreshToken = await read(config.refreshTokenRef);
+  const password = config.grant === 'password' ? await read(config.passwordRef) : undefined;
   return {
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     ...(refreshToken !== undefined ? { refreshToken } : {}),
+    ...(password !== undefined ? { password } : {}),
   };
 }
 

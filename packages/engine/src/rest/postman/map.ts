@@ -625,21 +625,26 @@ export function mapPostmanAuth(
       const scopeAttr = auth.oauth2?.find((a) => a.key === 'scope');
       const grant = asText(grantAttr?.value) ?? 'client_credentials';
       const isAuthCode = grant === 'authorization_code' || grant === 'authorization_code_with_pkce';
-      if (!isAuthCode && grant !== 'client_credentials') {
+      const isPassword = grant === 'password_credentials';
+      if (!isAuthCode && !isPassword && grant !== 'client_credentials') {
         warnings?.push(`OAuth 2.0 grant "${grant}" is not supported; set to "none"`);
         return { type: 'none' };
       }
       const authUrl = asText(authUrlAttr?.value);
       const scopeText = asText(scopeAttr?.value);
+      // The resource owner's name only: the password, like the client secret, is never imported.
+      const username = isPassword ? asText(auth.oauth2?.find((a) => a.key === 'username')?.value) : undefined;
+      const placement = asText(auth.oauth2?.find((a) => a.key === 'client_authentication')?.value);
 
       return {
         type: 'oauth2',
-        grant: isAuthCode ? 'authorization-code' : 'client-credentials',
+        grant: isAuthCode ? 'authorization-code' : isPassword ? 'password' : 'client-credentials',
         tokenUrl: asText(tokenUrlAttr?.value) ?? '',
         ...(authUrl !== undefined ? { authorizationUrl: authUrl } : {}),
         clientId: asText(clientIdAttr?.value) ?? '',
+        ...(username !== undefined ? { username } : {}),
         scopes: scopeText !== undefined ? scopeText.split(/[\s,]+/).filter(Boolean) : [],
-        clientAuth: 'basic',
+        clientAuth: placement === 'body' ? 'body' : 'basic',
         pkce: isAuthCode,
       };
     }

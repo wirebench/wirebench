@@ -93,6 +93,7 @@ vi.mock('@xterm/addon-search', () => ({ SearchAddon: xterm.FakeSearchAddon }));
 
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { reconnectNow } from '../../src/renderer/features/ssh/reconnect.js';
 import { __dispatchForTest as dispatch, bytesToBase64 } from '../../src/renderer/features/ssh/terminal-session.js';
 import { EditorArea } from '../../src/renderer/shell/editor-area.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -482,6 +483,153 @@ describe('the terminal tab', () => {
       vi.advanceTimersByTime(200);
       expect(writeText).toHaveBeenCalledTimes(1);
       expect(writeText).toHaveBeenCalledWith('hello');
+    });
+  });
+
+  describe('reconnecting a dropped session', () => {
+    const UNREACHABLE = {
+      ok: false,
+      error: { code: 'ssh-connect-failed', message: 'a.example:22: connect ETIMEDOUT' },
+    };
+    const decoder = new TextDecoder();
+    const notice = () => screen.queryByTestId('ssh-terminal-notice')?.textContent ?? null;
+    const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+    const terminalPrefs = (terminal: Partial<typeof DEFAULT_PREFERENCES_WIRE.terminal>) => {
+      usePreferencesStore.setState({
+        preferences: { ...DEFAULT_PREFERENCES_WIRE, terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, ...terminal } },
+      });
+    };
+
+    /** Opens the tab on session s1, then ends it the way main reports `reason`. */
+    async function dropped(reason: 'lost' | 'exit', code: number | null = null): Promise<void> {
+      connect.mockResolvedValueOnce(OPEN('s1'));
+      act(() => {
+        openTerminalFor('a');
+      });
+      render(<EditorArea />);
+      await waitFor(() => {
+        expect(useHostsStore.getState().sessions['a']?.sessionId).toBe('s1');
+      });
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      vi.setSystemTime(0);
+      act(() => {
+        dispatch('ssh.exit', { sessionId: 's1', code, reason });
+        useHostsStore.getState().noteSessionState('s1', 'closed');
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('reconnects into the same terminal after the first wait, keeping the scrollback', async () => {
+      await dropped('lost');
+      expect(notice()).toContain('Connection lost · Reconnecting… attempt 1 of 10 in 1s');
+      connect.mockResolvedValueOnce(OPEN('s2'));
+      await advance(1000);
+      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's2', state: 'open' });
+      expect(connect).toHaveBeenLastCalledWith({ hostId: 'a', cols: 80, rows: 24 });
+      expect(xterm.FakeTerminal.instances).toHaveLength(1);
+      expect(lastTerminal()?.disposed).toBe(false);
+      expect(
+        lastTerminal()
+          ?.written.map((b) => decoder.decode(b))
+          .join(''),
+      ).toContain('reconnected');
+      expect(notice()).toBeNull();
+      dispatch('ssh.data', { sessionId: 's2', data: bytesToBase64(new Uint8Array([33])) });
+      expect(lastTerminal()?.written.at(-1)).toEqual(new Uint8Array([33]));
+    });
+
+    it('a shell that exited never reconnects', async () => {
+      await dropped('exit', 0);
+      expect(notice()).toContain('Session ended (code 0)');
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts down, backs off on an unreachable host and gives up at the limit with Reconnect', async () => {
+      terminalPrefs({ reconnectAttempts: 2 });
+      await dropped('lost');
+      connect.mockResolvedValue(UNREACHABLE);
+      expect(notice()).toContain('attempt 1 of 2 in 1s');
+      await advance(1000);
+      expect(notice()).toContain('attempt 2 of 2 in 2s');
+      await advance(1000);
+      expect(notice()).toContain('attempt 2 of 2 in 1s');
+      await advance(1000);
+      expect(connect).toHaveBeenCalledTimes(3);
+      expect(notice()).toContain('Connection lost · gave up after 2 attempts (a.example:22: connect ETIMEDOUT)');
+      expect(screen.getByRole('button', { name: 'Reconnect' })).toBeDefined();
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(3);
+    });
+
+    it('a sign-in failure stops at once and shows the existing reason', async () => {
+      await dropped('lost');
+      connect.mockResolvedValue({ ok: false, error: { code: 'ssh-auth-failed', message: 'refused' } });
+      await advance(1000);
+      expect(notice()).toContain('Could not connect · see Problems');
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it('a changed host key stops at once and shows the trust prompt, never trusting it', async () => {
+      await dropped('lost');
+      connect.mockResolvedValue({
+        ok: false,
+        error: {
+          ...NEW_KEY.error,
+          code: 'ssh-host-key-changed',
+          details: { ...NEW_KEY.error.details, previous: 'SHA256:o' },
+        },
+      });
+      await advance(1000);
+      expect(useHostsStore.getState().trustPrompt).toMatchObject({ hostId: 'a', previous: 'SHA256:o' });
+      expect(notice()).toBeNull();
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it('Cancel stops the attempts and leaves Reconnect', async () => {
+      await dropped('lost');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(notice()).toContain('Session ended');
+      expect(screen.getByRole('button', { name: 'Reconnect' })).toBeDefined();
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('Retry now, waking from sleep and the network coming back all skip the wait', async () => {
+      await dropped('lost');
+      connect.mockResolvedValue(UNREACHABLE);
+      fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+      await advance(0);
+      expect(connect).toHaveBeenCalledTimes(2);
+      expect(notice()).toContain('attempt 2 of 10 in 2s');
+      act(() => {
+        reconnectNow();
+      });
+      await advance(0);
+      expect(connect).toHaveBeenCalledTimes(3);
+      expect(notice()).toContain('attempt 3 of 10 in 4s');
+    });
+
+    it('does nothing when Preferences → Terminal turns it off', async () => {
+      terminalPrefs({ autoReconnect: false });
+      await dropped('lost');
+      expect(notice()).toContain('Session ended');
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('closing the tab mid-wait stops the attempts', async () => {
+      await dropped('lost');
+      act(() => {
+        useEditorsStore.getState().close('ssh:a');
+      });
+      await advance(120_000);
+      expect(connect).toHaveBeenCalledTimes(1);
     });
   });
 

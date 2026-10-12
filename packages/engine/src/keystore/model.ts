@@ -32,6 +32,12 @@ export interface KeystoreAlias {
   /** SHA-256 of the DER certificate, upper-case hex in colon-separated pairs. */
   readonly fingerprintSha256: string;
   readonly hasPrivateKey: boolean;
+  /**
+   * A PEM file holding a private key and no certificate (#348): it can sign a JWT, but has no
+   * identity to present, so `certPem` and the certificate fields are empty and everything that needs
+   * a certificate (TLS, WS-Security) refuses it.
+   */
+  readonly keyOnly?: true;
 }
 
 /** A parsed keystore. */

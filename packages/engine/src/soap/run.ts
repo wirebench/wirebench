@@ -34,6 +34,7 @@ import {
   dropRefusedToken,
   insideProject,
   keystoreFor,
+  authSecretNeeds,
   keystoreNeeds,
   originOf,
   present,
@@ -57,7 +58,6 @@ import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
 import type { SoapRequestSnapshot } from './scripting.js';
 import { soapOperationElements, soapScriptTypes } from './script-types.js';
-import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveSoapAuth } from '../secrets/resolve.js';
 import { toSoapSendInput } from './send-input.js';
@@ -886,7 +886,7 @@ export const soapRun: ProtocolRun<SoapSelected> = {
     const outgoing = findConfig(configs.outgoing, request.wssOutgoingRef, toWssOutgoingConfig);
     const incoming = findConfig(configs.incoming, request.wssIncomingRef, toWssIncomingConfig);
     return [
-      ...secretNeedsOfAuth(soapEffectiveAuth(selected)),
+      ...authSecretNeeds(project, soapEffectiveAuth(selected)),
       ...keystoreNeeds(project, request.properties.sslKeystoreRef),
       ...(outgoing !== undefined ? outgoingNeeds(project, outgoing) : []),
       ...(incoming !== undefined ? incomingNeeds(project, incoming) : []),

@@ -242,6 +242,7 @@ class PostmanWriter {
       case 'inherit':
       case 'none':
       case 'kerberos':
+      case 'jwt':
         return { type: 'noauth' };
       case 'basic':
         return { type: 'basic', basic: attrs({ username: auth.username ?? '', password: '' }) };
@@ -259,13 +260,22 @@ class PostmanWriter {
         return { type: 'bearer', bearer: attrs({ token: '' }) };
       case 'api-key':
         return { type: 'apikey', apikey: attrs({ key: auth.name, value: '', in: auth.in }) };
+      case 'digest':
+        return { type: 'digest', digest: attrs({ username: auth.username ?? '', password: '' }) };
+      case 'aws-sigv4':
+        return {
+          type: 'awsv4',
+          awsv4: attrs({ accessKey: '', secretKey: '', sessionToken: '', region: auth.region, service: auth.service }),
+        };
       case 'oauth2': {
         const grant =
           auth.grant === 'client-credentials'
             ? 'client_credentials'
-            : auth.pkce
-              ? 'authorization_code_with_pkce'
-              : 'authorization_code';
+            : auth.grant === 'password'
+              ? 'password_credentials'
+              : auth.pkce
+                ? 'authorization_code_with_pkce'
+                : 'authorization_code';
         return {
           type: 'oauth2',
           oauth2: attrs({
@@ -274,6 +284,7 @@ class PostmanWriter {
             authUrl: auth.authorizationUrl,
             clientId: auth.clientId,
             clientSecret: '',
+            ...(auth.grant === 'password' ? { username: auth.username ?? '', password: '' } : {}),
             scope: auth.scopes.join(' '),
             client_authentication: auth.clientAuth === 'body' ? 'body' : 'header',
             addTokenTo: 'header',

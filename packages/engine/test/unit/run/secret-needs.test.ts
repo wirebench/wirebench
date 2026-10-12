@@ -150,6 +150,32 @@ describe('secretNeedsOf', () => {
     ]);
   });
 
+  it('lists the keystore password behind OAuth2 private-key-jwt client auth', () => {
+    const keystore: WssRef = {
+      id: 'ks-jwt',
+      name: 'signer',
+      document: { id: 'ks-jwt', name: 'signer', path: 's.p12', type: 'pkcs12', passwordSecretRef: 'sec_ks' },
+    };
+    const api = createApi('demo', {
+      id: 'api-1',
+      slug: 'demo',
+      auth: {
+        type: 'oauth2',
+        grant: 'client-credentials',
+        tokenUrl: 'https://id.example.test/token',
+        clientId: 'app',
+        scopes: [],
+        clientAuth: 'private-key-jwt',
+        clientKeystoreId: 'ks-jwt',
+        pkce: true,
+      },
+      requests: [createRestRequest('get', { id: 'r-1' })],
+    });
+    expect(needsOf(project({ apis: [api], wss: { keystores: [keystore] } }))).toEqual([
+      { ref: 'sec_ks', purpose: 'keystore password for "signer"', usedBy: ['demo/get'] },
+    ]);
+  });
+
   it('lists nothing for a request with auth none', () => {
     const api = createApi('demo', {
       id: 'api-1',
@@ -318,6 +344,32 @@ describe('secretNeedsOf — gRPC', () => {
       expect.objectContaining({ ref: 'sec_folder', envName: 'FOLDER_PW', usedBy: ['Greeter/Admin/Inherits'] }),
       expect.objectContaining({ ref: 'sec_ks', usedBy: ['Greeter/Admin/Inherits'] }),
       expect.objectContaining({ ref: 'sec_api', usedBy: ['Greeter/Top'] }),
+    ]);
+  });
+
+  it("lists a JWT's HMAC secret, or the keystore password of its private key", () => {
+    const keystores = [
+      {
+        id: 'ks-jwt',
+        name: 'jwt key',
+        document: { id: 'ks-jwt', name: 'jwt key', path: 'k.pem', type: 'pem', passwordSecretRef: 'sec_ks' },
+      } satisfies WssRef,
+    ];
+    const jwt = { type: 'jwt', claims: '{}', issuedAt: true, jwtId: false, in: 'header' } as const;
+    const api = createGrpcApi('Signed', {
+      id: 'api-s',
+      target: 'localhost:1',
+      requests: [
+        createGrpcRequest('Hmac', {
+          id: 'g-h',
+          auth: { ...jwt, algorithm: 'HS256', secretRef: 'sec_hmac', secretEnv: 'JWT_SECRET' },
+        }),
+        createGrpcRequest('Rsa', { id: 'g-r', order: 1, auth: { ...jwt, algorithm: 'RS256', keystoreRef: 'ks-jwt' } }),
+      ],
+    });
+    expect(needsOf(withGrpcApis(project({ wss: { keystores } }), [api]))).toEqual([
+      expect.objectContaining({ ref: 'sec_hmac', envName: 'JWT_SECRET', usedBy: ['Signed/Hmac'] }),
+      expect.objectContaining({ ref: 'sec_ks', usedBy: ['Signed/Rsa'] }),
     ]);
   });
 });

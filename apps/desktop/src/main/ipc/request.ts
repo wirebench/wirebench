@@ -2,6 +2,7 @@ import {
   applySoapAuth,
   applyWsaHeaders,
   CURL_REDACTED,
+  jwtSendAuth,
   envMarker,
   envVariablesFor,
   fromCurl,
@@ -25,6 +26,7 @@ import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import type {
   AuthConfig,
+  JwtAuth,
   CodeOptions,
   CodeRequest,
   DesktopAuditEvent,
@@ -313,6 +315,10 @@ export function unknownRequest(requestId: string): ProjectError {
 }
 
 /** The note under a Kerberos export: the ticket is the OS's to supply, so none is in the command. */
+/** curl signs a request's headers itself (`--aws-sigv4`) but cannot presign a URL. */
+const SIGV4_PRESIGN_NOTE =
+  "A presigned AWS Signature v4 URL is made at send time, so the command carries no signature; switch the placement to Header to export curl's --aws-sigv4 form.";
+
 const KERBEROS_CURL_NOTE =
   'Kerberos: curl asks the operating system for the ticket (--negotiate); no password is in the command.';
 
@@ -354,10 +360,39 @@ export function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
       return { type: 'bearer', token: CURL_REDACTED, ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}) };
     case 'api-key':
       return { type: 'api-key', name: auth.name, value: CURL_REDACTED, in: auth.in };
+    case 'jwt':
+      return jwtSendAuth(auth, CURL_REDACTED);
+    case 'digest':
+      return { type: 'digest', username: auth.username ?? '', password: CURL_REDACTED };
+    case 'aws-sigv4':
+      return {
+        type: 'aws-sigv4',
+        region: auth.region,
+        service: auth.service,
+        accessKeyId: CURL_REDACTED,
+        secretAccessKey: CURL_REDACTED,
+        ...(auth.sessionTokenRef !== undefined && auth.sessionTokenRef !== '' ? { sessionToken: CURL_REDACTED } : {}),
+        placement: auth.placement ?? 'header',
+        ...(auth.expiresSeconds !== undefined ? { expiresSeconds: auth.expiresSeconds } : {}),
+      };
     default:
       // `none`, `inherit` and `oauth2`: nothing to put on the command (the last is noted instead).
       return undefined;
   }
+}
+
+/**
+ * A preview's credentials with their real values, for an export while the session shows secrets. A
+ * JWT is signed through the app's source, so the export carries the token the next send would; any
+ * other scheme is read from the keychain.
+ */
+export async function shownAuth(
+  deps: RequestChannelDeps,
+  resolved: { readonly auth: AuthConfig; readonly signJwt: (auth: JwtAuth) => Promise<SendAuth> },
+): Promise<SendAuth | undefined> {
+  return resolved.auth.type === 'jwt'
+    ? await resolved.signJwt(resolved.auth)
+    : await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
 }
 
 /**
@@ -382,7 +417,7 @@ async function restCurl(
   const auth = kerberos
     ? { type: 'kerberos' as const, ...kerberosNames(resolved.auth) }
     : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+      ? await shownAuth(deps, resolved)
       : placeholderAuth(resolved.auth);
   // The engine masks by header name; a value main recorded (a `${secret:…}` or secret-source value, a
   // long `${#System#…}` one) can sit in the URL, any header or the body, so the whole command is masked.
@@ -405,6 +440,9 @@ async function restCurl(
   }
   if (kerberos) {
     notes.push(KERBEROS_CURL_NOTE);
+  }
+  if (resolved.auth.type === 'aws-sigv4' && resolved.auth.placement === 'query') {
+    notes.push(SIGV4_PRESIGN_NOTE);
   }
   if (resolved.auth.type === 'oauth2') {
     // The access token lives in main's memory for the session and is never written into a command:
@@ -485,6 +523,11 @@ async function curl(
   if (kerberos) {
     notes.push(KERBEROS_CURL_NOTE);
   }
+  if (auth?.type === 'digest' || auth?.type === 'aws-sigv4') {
+    notes.push(
+      `${auth.type === 'digest' ? 'Digest' : 'AWS Signature v4'} is not included in the cURL command for a SOAP request.`,
+    );
+  }
   if (auth?.type === 'oauth2' && accessToken === undefined) {
     notes.push('No OAuth2 access token is cached, so the Authorization header is not included; press Get new token.');
   }
@@ -531,12 +574,38 @@ function uncarriedAuthNote(type: AuthConfig['type'], tokenIncluded: boolean): st
       return 'NTLM is not included: it needs a challenge round trip the snippet does not make.';
     case 'kerberos':
       return 'Kerberos is not included: the snippet does not ask the operating system for a ticket.';
+    case 'digest':
+      return 'Digest is not included: it answers a challenge round trip the snippet does not make.';
+    case 'aws-sigv4':
+      return 'AWS Signature v4 is not included: the snippet does not sign the request.';
     case 'oauth2':
       return tokenIncluded
         ? undefined
         : 'The OAuth2 access token is not included; the snippet carries no Authorization.';
     default:
       return undefined;
+  }
+}
+
+/** What a snippet says about the JWT it carries: when it stops working, or how to see it. */
+function jwtCodeNote(auth: SendAuth | undefined, show: boolean): string {
+  if (!show || auth?.type !== 'jwt') {
+    return 'The JWT is masked: show secrets to include a token signed now.';
+  }
+  const exp = jwtExpiry(auth.token);
+  return exp === undefined
+    ? 'The JWT was signed now and has no expiry.'
+    : `The JWT was signed now and expires at ${new Date(exp * 1000).toISOString()}.`;
+}
+
+/** A JWT's `exp`, read from its payload without verifying it; undefined when it has none. */
+function jwtExpiry(token: string): number | undefined {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as unknown;
+    const exp = typeof payload === 'object' && payload !== null ? (payload as { exp?: unknown }).exp : undefined;
+    return typeof exp === 'number' ? exp : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -580,12 +649,16 @@ async function restCode(
   show: boolean,
 ): Promise<{ readonly request: CodeRequest; readonly notes: readonly string[] }> {
   const { type } = resolved.auth;
-  const carried = type === 'basic' || type === 'bearer' || type === 'api-key';
+  const carried = type === 'basic' || type === 'bearer' || type === 'api-key' || type === 'jwt';
+  // A JWT has no environment variable to read: the snippet carries a token signed now, shown only
+  // while the session shows secrets (owner's call, #348), and a masked stand-in otherwise.
   const auth = !carried
     ? undefined
     : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-      : environmentAuth(resolved.auth);
+      ? await shownAuth(deps, resolved)
+      : resolved.auth.type === 'jwt'
+        ? placeholderAuth(resolved.auth)
+        : environmentAuth(resolved.auth);
   // The preview's own credentials are dropped: only the ones decided here may reach the snippet.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
   const { auth: _preview, ...input } = resolved.input;
@@ -601,6 +674,7 @@ async function restCode(
   }
   const uncarried = uncarriedAuthNote(type, false);
   if (uncarried !== undefined) notes.push(uncarried);
+  if (type === 'jwt') notes.push(jwtCodeNote(auth, show));
   return {
     request: restCodeRequest(secretTokensToEnv({ ...input, ...(auth !== undefined ? { auth } : {}) })),
     notes,
@@ -910,27 +984,49 @@ async function importCurlAsRest(
   }
 
   const { method, url, pathParams, query, headers, body, settings } = parsed.request;
-  // A password in the command goes straight to the keychain; the model only ever holds its ref.
-  const password = parsed.basic?.password;
+  // Every credential value in the command goes straight to the keychain; the model only holds refs.
+  const store = async (value: string | undefined, label: string): Promise<string | undefined> =>
+    value !== undefined && value !== '' && deps.storeSecret !== undefined
+      ? await deps.storeSecret(value, `cURL import: ${label}`)
+      : undefined;
+  const user = parsed.basic ?? parsed.digest;
   const passwordRef =
-    parsed.kerberos !== undefined
+    user === undefined ? undefined : (request.passwordRef ?? (await store(user.password, user.username)));
+  const sigv4 = parsed.awsSigV4;
+  const sigv4Refs =
+    sigv4 === undefined
       ? undefined
-      : (request.passwordRef ??
-        (parsed.basic !== undefined && password !== undefined && password !== '' && deps.storeSecret !== undefined
-          ? await deps.storeSecret(password, `cURL import: ${parsed.basic.username}`)
-          : undefined));
+      : {
+          accessKeyIdRef: await store(sigv4.accessKeyId, 'AWS access key id'),
+          secretAccessKeyRef: await store(sigv4.secretAccessKey, 'AWS secret access key'),
+          sessionTokenRef: await store(sigv4.sessionToken, 'AWS session token'),
+        };
   // `--negotiate` reads as Kerberos (the parser drops `basic` then): the ticket needs no password.
-  const auth =
+  // `--digest` and `--aws-sigv4` read as their own schemes the same way.
+  const auth: AuthConfig | undefined =
     parsed.kerberos !== undefined
       ? parsed.kerberos
-      : parsed.basic === undefined
-        ? undefined
-        : {
-            type: 'basic' as const,
-            username: parsed.basic.username,
-            ...(passwordRef !== undefined ? { passwordRef } : {}),
-            preemptive: true,
-          };
+      : sigv4 !== undefined && sigv4Refs !== undefined
+        ? {
+            type: 'aws-sigv4',
+            region: sigv4.region,
+            service: sigv4.service,
+            ...(sigv4Refs.accessKeyIdRef !== undefined ? { accessKeyIdRef: sigv4Refs.accessKeyIdRef } : {}),
+            ...(sigv4Refs.secretAccessKeyRef !== undefined ? { secretAccessKeyRef: sigv4Refs.secretAccessKeyRef } : {}),
+            ...(sigv4Refs.sessionTokenRef !== undefined ? { sessionTokenRef: sigv4Refs.sessionTokenRef } : {}),
+          }
+        : parsed.digest !== undefined
+          ? { type: 'digest', username: parsed.digest.username, ...(passwordRef !== undefined ? { passwordRef } : {}) }
+          : parsed.basic === undefined
+            ? undefined
+            : {
+                type: 'basic' as const,
+                username: parsed.basic.username,
+                ...(passwordRef !== undefined ? { passwordRef } : {}),
+                preemptive: true,
+              };
+  const stored =
+    passwordRef !== undefined || (sigv4Refs !== undefined && Object.values(sigv4Refs).some((ref) => ref !== undefined));
   await project.projectMutate(owner, {
     kind: 'update-rest-request',
     requestId,
@@ -949,8 +1045,8 @@ async function importCurlAsRest(
   return {
     requestId,
     problems: [...parsed.problems],
-    ...(parsed.basic !== undefined ? { basicUsername: parsed.basic.username } : {}),
-    ...(passwordRef !== undefined ? { passwordStored: true } : {}),
+    ...(user !== undefined ? { basicUsername: user.username } : {}),
+    ...(stored ? { passwordStored: true } : {}),
   };
 }
 
@@ -1051,11 +1147,7 @@ async function grpcCommand(
   const show = deps.showSecrets?.get() ?? false;
   // Kerberos has no grpcurl form (the token is made per call), so it is dropped, with no secret read.
   const kerberos = resolved.auth.type === 'kerberos';
-  const auth = kerberos
-    ? undefined
-    : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-      : placeholderAuth(resolved.auth);
+  const auth = kerberos ? undefined : show ? await shownAuth(deps, resolved) : placeholderAuth(resolved.auth);
   // A definition discovered by reflection has no .proto files on disk to name, and grpcurl asks the
   // server itself when it is given none — so the flags are dropped rather than pointing at nothing.
   const { definition } = resolved.item.api;
@@ -1091,11 +1183,7 @@ async function wsCommand(
   // A Negotiate token is made per handshake and cannot be written into a command line, so a
   // Kerberos request is noted from its configuration, with no secret read for it.
   const kerberos = resolved.auth.type === 'kerberos';
-  const auth = kerberos
-    ? undefined
-    : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-      : placeholderAuth(resolved.auth);
+  const auth = kerberos ? undefined : show ? await shownAuth(deps, resolved) : placeholderAuth(resolved.auth);
   const material: WsSessionMaterial = { ...(auth !== undefined ? { auth } : {}) };
   const options = toWsSessionOptions(resolved.input, material);
   const command = wsToCommand(options, { shell: request.shell });
