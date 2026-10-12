@@ -86,7 +86,8 @@ These rules cover the OWASP API Security Top 10 items that a definition alone ca
 | ---------------------------- | -------------------------------------------------------------------------------------- |
 | `owasp-security-defined`     | no security scheme at all (`components.securitySchemes` / `securityDefinitions`)        |
 | `owasp-operation-security`   | an operation with no effective security requirement, unless it declares `security: []` (warning) |
-| `owasp-plain-http`           | an `http://` server URL (2.0: `schemes` containing `http`) or OAuth flow URL. A loopback host is exempt |
+| `owasp-plain-http`           | an `http://` server URL or OAuth flow URL. A loopback host is exempt |
+| `owasp-plain-http-scheme`    | Swagger 2.0 `schemes` containing `http`, unless `host` is a loopback host                |
 | `owasp-security-scheme-undefined` | a security requirement that names a scheme the document does not define           |
 | `owasp-oauth-scope-undefined`| a requirement that asks for an OAuth scope that none of the scheme's flows define       |
 

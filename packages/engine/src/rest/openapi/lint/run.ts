@@ -11,6 +11,7 @@ import type { FetchDocument } from '../../../http/fetch-document.js';
 import { parseDocumentText } from '../../../json/schema/parse-text.js';
 import { versionOf } from '../parse.js';
 import { HYGIENE_RULES } from './hygiene.js';
+import { OWASP_RULES } from './owasp.js';
 import type { LintFinding, LintReport, LintRuleInfo, LintSeverity } from './model.js';
 import { lintResolver, referenceLocation, runnerSource } from './resolver.js';
 import type { LintRule } from './rules.js';
@@ -141,7 +142,7 @@ export async function lintWithRules(
 }
 
 /** The built-in rules. */
-export const BUILTIN_RULES: readonly LintRule[] = [...HYGIENE_RULES];
+export const BUILTIN_RULES: readonly LintRule[] = [...HYGIENE_RULES, ...OWASP_RULES];
 
 /**
  * Lints one OpenAPI 2.0, 3.0, 3.1 or 3.2 document with the built-in rule sets.
