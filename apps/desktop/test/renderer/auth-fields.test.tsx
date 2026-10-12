@@ -56,13 +56,15 @@ describe('AuthFields', () => {
       'API key',
       'OAuth2',
       'Kerberos',
+      'Digest',
+      'AWS Signature v4',
     ]);
 
     rerender(<AuthFields scope="Request" inheritable auth={undefined} onChange={vi.fn()} />);
     expect(options()?.[0]).toBe('Inherit');
   });
 
-  it('offers a SOAP owner all six schemes but never Inherit', () => {
+  it('offers a SOAP owner every scheme but never Inherit', () => {
     installWirebenchApi();
     render(<AuthFields scope="Endpoint" types={SOAP_AUTH_TYPES} auth={undefined} onChange={vi.fn()} />);
 
@@ -78,6 +80,8 @@ describe('AuthFields', () => {
       'API key',
       'OAuth2',
       'Kerberos',
+      'Digest',
+      'AWS Signature v4',
     ]);
   });
 
@@ -323,5 +327,53 @@ describe('AuthFields', () => {
 
       expect(await flush?.()).toEqual({ type: 'bearer', tokenRef: 'ref-flushed' });
     });
+  });
+});
+
+describe('AuthFields — Digest and AWS Signature v4 (#339)', () => {
+  it('keeps the username and password when Basic becomes Digest, and nothing else of Basic', async () => {
+    installWirebenchApi();
+    const onChange = vi.fn();
+    render(
+      <AuthFields
+        scope="Request"
+        auth={{ type: 'basic', username: 'ada', passwordRef: 'ref-1', preemptive: false }}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByLabelText('Request authentication type'), 'digest');
+    expect(onChange).toHaveBeenCalledWith({ type: 'digest', username: 'ada', passwordRef: 'ref-1' });
+  });
+
+  it('starts SigV4 with an empty region and service, and shows its fields', async () => {
+    installWirebenchApi();
+    const onChange = vi.fn();
+    const { rerender } = render(<AuthFields scope="API" auth={{ type: 'none' }} onChange={onChange} />);
+    await userEvent.selectOptions(screen.getByLabelText('API authentication type'), 'aws-sigv4');
+    expect(onChange).toHaveBeenCalledWith({ type: 'aws-sigv4', region: '', service: '' });
+
+    rerender(<AuthFields scope="API" auth={{ type: 'aws-sigv4', region: '', service: '' }} onChange={onChange} />);
+    expect(screen.getByLabelText('API region')).toBeTruthy();
+    expect(screen.getByLabelText('API service')).toBeTruthy();
+    for (const label of ['access key id', 'secret key', 'session token']) {
+      expect(screen.getAllByLabelText(new RegExp(`API ${label}`)).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByLabelText('API presigned URL expiry')).toBeNull();
+  });
+
+  it('offers an expiry only for a presigned URL, and drops it when going back to the header', async () => {
+    installWirebenchApi();
+    const onChange = vi.fn();
+    const auth: AuthConfigWire = {
+      type: 'aws-sigv4',
+      region: 'r',
+      service: 's',
+      placement: 'query',
+      expiresSeconds: 60,
+    };
+    render(<AuthFields scope="API" auth={auth} onChange={onChange} />);
+    expect(screen.getByLabelText<HTMLInputElement>('API presigned URL expiry').value).toBe('60');
+    await userEvent.selectOptions(screen.getByLabelText('API signature placement'), 'header');
+    expect(onChange).toHaveBeenLastCalledWith({ type: 'aws-sigv4', region: 'r', service: 's', placement: 'header' });
   });
 });

@@ -169,7 +169,7 @@ describe('AuthInspector', () => {
     expect(sent).toEqual({ type: 'basic', username: 'ada' });
   });
 
-  it('offers Inherit and the six SOAP schemes', () => {
+  it('offers Inherit and every SOAP scheme', () => {
     install({ type: 'basic' }, { source: 'request', type: 'basic' });
     render(<AuthInspector requestId="req-1" />);
 
@@ -177,7 +177,18 @@ describe('AuthInspector', () => {
     const values = within(select)
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value);
-    expect(values).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']);
+    expect(values).toEqual([
+      'inherit',
+      'none',
+      'basic',
+      'ntlm',
+      'bearer',
+      'api-key',
+      'oauth2',
+      'kerberos',
+      'digest',
+      'aws-sigv4',
+    ]);
     expect(within(select).getByRole('option', { name: 'Inherit' })).toBeDefined();
   });
 

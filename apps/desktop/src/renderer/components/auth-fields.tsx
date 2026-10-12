@@ -36,6 +36,8 @@ const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: 
   { value: 'api-key', label: 'API key' },
   { value: 'oauth2', label: 'OAuth2' },
   { value: 'kerberos', label: 'Kerberos' },
+  { value: 'digest', label: 'Digest' },
+  { value: 'aws-sigv4', label: 'AWS Signature v4' },
 ];
 
 /** Every scheme but Kerberos: what a webhook delivery can be given. */
@@ -57,6 +59,8 @@ export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
   'api-key',
   'oauth2',
   'kerberos',
+  'digest',
+  'aws-sigv4',
 ];
 
 /**
@@ -70,7 +74,14 @@ export function asSoapAuth(auth: AuthConfigWire | null): SoapOwnerAuthWire | nul
 }
 
 /** Which secret field is which, so each can register its own flush. */
-type SecretSlot = 'passwordRef' | 'tokenRef' | 'valueRef' | 'clientSecretRef';
+type SecretSlot =
+  | 'passwordRef'
+  | 'tokenRef'
+  | 'valueRef'
+  | 'clientSecretRef'
+  | 'accessKeyIdRef'
+  | 'secretAccessKeyRef'
+  | 'sessionTokenRef';
 
 export interface AuthFieldsProps {
   /** Which level is being edited; prefixes every accessible name. */
@@ -221,7 +232,9 @@ export function AuthFields({
       | 'clientId'
       | 'audience'
       | 'spn'
-      | 'principal',
+      | 'principal'
+      | 'region'
+      | 'service',
     label: string,
     placeholder?: string,
   ): ReactNode => (
@@ -282,6 +295,20 @@ export function AuthFields({
               });
               return;
             }
+            if (value === 'digest') {
+              // Basic's and NTLM's username and password carry over; nothing else of theirs means anything here.
+              onChange({
+                type: 'digest',
+                ...(auth?.username !== undefined ? { username: auth.username } : {}),
+                ...(auth?.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+              });
+              return;
+            }
+            if (value === 'aws-sigv4') {
+              // The project format needs a region and a service, so a fresh configuration starts with both empty.
+              onChange({ type: 'aws-sigv4', region: '', service: '' });
+              return;
+            }
             patch({ type: value as AuthConfigWire['type'] });
           }}
         >
@@ -317,6 +344,71 @@ export function AuthFields({
               Send credentials preemptively (do not wait for a 401)
             </label>
           )}
+        </>
+      )}
+
+      {auth !== undefined && type === 'digest' && (
+        <>
+          {text('username', 'Username')}
+          {secret('passwordRef', 'Password')}
+          <p className="text-xs text-fg-subtle">
+            Sent after the server&apos;s 401 challenge; later requests to the same server reuse its nonce.
+          </p>
+        </>
+      )}
+
+      {auth !== undefined && type === 'aws-sigv4' && (
+        <>
+          {text('region', 'Region', 'us-east-1')}
+          {text('service', 'Service', 'execute-api')}
+          {secret('accessKeyIdRef', 'Access key ID')}
+          {secret('secretAccessKeyRef', 'Secret key')}
+          {secret('sessionTokenRef', 'Session token')}
+          <label className="flex items-center gap-2">
+            <span className="w-28 shrink-0 text-xs text-fg-subtle">Signature</span>
+            <select
+              aria-label={`${scope} signature placement`}
+              className={INPUT_CLASS}
+              value={auth.placement ?? 'header'}
+              onChange={(event) => {
+                const placement = event.target.value === 'query' ? 'query' : 'header';
+                const next: Record<string, unknown> = { ...auth, placement };
+                if (placement === 'header') delete next['expiresSeconds'];
+                onChange(next as AuthConfigWire);
+              }}
+            >
+              <option value="header">Authorization header</option>
+              <option value="query">Query string (presigned URL)</option>
+            </select>
+          </label>
+          {auth.placement === 'query' && (
+            <label className="flex items-center gap-2">
+              <span className="w-28 shrink-0 text-xs text-fg-subtle">Expires (s)</span>
+              <input
+                type="number"
+                min={1}
+                max={604800}
+                aria-label={`${scope} presigned URL expiry`}
+                className={INPUT_CLASS}
+                placeholder="900"
+                value={auth.expiresSeconds ?? ''}
+                onChange={(event) => {
+                  const seconds = Number.parseInt(event.target.value, 10);
+                  const next: Record<string, unknown> = { ...auth };
+                  if (Number.isInteger(seconds) && seconds >= 1 && seconds <= 604_800) {
+                    next['expiresSeconds'] = seconds;
+                  } else {
+                    delete next['expiresSeconds'];
+                  }
+                  onChange(next as AuthConfigWire);
+                }}
+              />
+            </label>
+          )}
+          <p className="text-xs text-fg-subtle">
+            Signed as the request goes out, over its headers and body. The Session token is only for temporary
+            credentials.
+          </p>
         </>
       )}
 
