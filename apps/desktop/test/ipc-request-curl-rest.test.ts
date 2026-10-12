@@ -406,6 +406,45 @@ describe('request.importCurl into an API', () => {
     expect(JSON.stringify(changes)).not.toContain('sec_42');
   });
 
+  it('records --digest as Digest and stores its password', async () => {
+    const changes: ProjectChange[] = [];
+    const stored: { value: string; label: string }[] = [];
+    setup({ changes, stored });
+
+    const result = unwrap<{ basicUsername?: string; passwordStored?: boolean }>(
+      await invoke('request.importCurl', {
+        command: `curl --digest -u 'admin:pw-339' https://api.test/pets`,
+        target: { kind: 'rest', apiId: 'api-1' },
+      }),
+    );
+
+    expect(stored.map((entry) => entry.value)).toEqual(['pw-339']);
+    expect(result.passwordStored).toBe(true);
+    expect(changes[1]).toMatchObject({ patch: { auth: { type: 'digest', username: 'admin' } } });
+    expect(JSON.stringify(changes)).not.toContain('pw-339');
+  });
+
+  it('records --aws-sigv4 with all three AWS secrets stored, the token header moved out', async () => {
+    const changes: ProjectChange[] = [];
+    const stored: { value: string; label: string }[] = [];
+    setup({ changes, stored });
+
+    const result = unwrap<{ passwordStored?: boolean }>(
+      await invoke('request.importCurl', {
+        command: `curl --aws-sigv4 'aws:amz:eu-west-1:execute-api' -u 'AKID339:SECRET339' -H 'X-Amz-Security-Token: TOKEN339' https://api.test/pets`,
+        target: { kind: 'rest', apiId: 'api-1' },
+      }),
+    );
+
+    expect(stored.map((entry) => entry.value)).toEqual(['AKID339', 'SECRET339', 'TOKEN339']);
+    expect(result.passwordStored).toBe(true);
+    expect(changes[1]).toMatchObject({
+      patch: { auth: { type: 'aws-sigv4', region: 'eu-west-1', service: 'execute-api' } },
+    });
+    const text = JSON.stringify(changes);
+    for (const secret of ['AKID339', 'SECRET339', 'TOKEN339']) expect(text).not.toContain(secret);
+  });
+
   it('reports the flags it could not use', async () => {
     setup({});
 

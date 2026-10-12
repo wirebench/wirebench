@@ -25,6 +25,13 @@ describe('previewCurl for a REST target', () => {
     expect(previewCurl(command, 'rest').bodyKind).toBe(kind);
   });
 
+  it('marks --digest and --aws-sigv4, which the REST import reads as their own schemes', () => {
+    const digest = previewCurl("curl --digest -u 'ada:pw' https://api.test", 'rest');
+    expect(digest).toMatchObject({ digest: true, awsSigV4: false, basicUsername: 'ada' });
+    const sigv4 = previewCurl("curl --aws-sigv4 'aws:amz:us-east-1:s3' -u 'K:S' https://b.s3.amazonaws.com", 'rest');
+    expect(sigv4).toMatchObject({ digest: false, awsSigV4: true });
+  });
+
   it('marks --negotiate, which the REST import turns into Kerberos rather than Basic', () => {
     expect(previewCurl("curl --negotiate -u 'CORP\\ada:' https://api.test", 'rest').negotiate).toBe(true);
     expect(previewCurl("curl -u 'ada:hunter2' https://api.test", 'rest').negotiate).toBe(false);

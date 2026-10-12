@@ -939,27 +939,49 @@ async function importCurlAsRest(
   }
 
   const { method, url, pathParams, query, headers, body, settings } = parsed.request;
-  // A password in the command goes straight to the keychain; the model only ever holds its ref.
-  const password = parsed.basic?.password;
+  // Every credential value in the command goes straight to the keychain; the model only holds refs.
+  const store = async (value: string | undefined, label: string): Promise<string | undefined> =>
+    value !== undefined && value !== '' && deps.storeSecret !== undefined
+      ? await deps.storeSecret(value, `cURL import: ${label}`)
+      : undefined;
+  const user = parsed.basic ?? parsed.digest;
   const passwordRef =
-    parsed.kerberos !== undefined
+    user === undefined ? undefined : (request.passwordRef ?? (await store(user.password, user.username)));
+  const sigv4 = parsed.awsSigV4;
+  const sigv4Refs =
+    sigv4 === undefined
       ? undefined
-      : (request.passwordRef ??
-        (parsed.basic !== undefined && password !== undefined && password !== '' && deps.storeSecret !== undefined
-          ? await deps.storeSecret(password, `cURL import: ${parsed.basic.username}`)
-          : undefined));
+      : {
+          accessKeyIdRef: await store(sigv4.accessKeyId, 'AWS access key id'),
+          secretAccessKeyRef: await store(sigv4.secretAccessKey, 'AWS secret access key'),
+          sessionTokenRef: await store(sigv4.sessionToken, 'AWS session token'),
+        };
   // `--negotiate` reads as Kerberos (the parser drops `basic` then): the ticket needs no password.
-  const auth =
+  // `--digest` and `--aws-sigv4` read as their own schemes the same way.
+  const auth: AuthConfig | undefined =
     parsed.kerberos !== undefined
       ? parsed.kerberos
-      : parsed.basic === undefined
-        ? undefined
-        : {
-            type: 'basic' as const,
-            username: parsed.basic.username,
-            ...(passwordRef !== undefined ? { passwordRef } : {}),
-            preemptive: true,
-          };
+      : sigv4 !== undefined && sigv4Refs !== undefined
+        ? {
+            type: 'aws-sigv4',
+            region: sigv4.region,
+            service: sigv4.service,
+            ...(sigv4Refs.accessKeyIdRef !== undefined ? { accessKeyIdRef: sigv4Refs.accessKeyIdRef } : {}),
+            ...(sigv4Refs.secretAccessKeyRef !== undefined ? { secretAccessKeyRef: sigv4Refs.secretAccessKeyRef } : {}),
+            ...(sigv4Refs.sessionTokenRef !== undefined ? { sessionTokenRef: sigv4Refs.sessionTokenRef } : {}),
+          }
+        : parsed.digest !== undefined
+          ? { type: 'digest', username: parsed.digest.username, ...(passwordRef !== undefined ? { passwordRef } : {}) }
+          : parsed.basic === undefined
+            ? undefined
+            : {
+                type: 'basic' as const,
+                username: parsed.basic.username,
+                ...(passwordRef !== undefined ? { passwordRef } : {}),
+                preemptive: true,
+              };
+  const stored =
+    passwordRef !== undefined || (sigv4Refs !== undefined && Object.values(sigv4Refs).some((ref) => ref !== undefined));
   await project.projectMutate(owner, {
     kind: 'update-rest-request',
     requestId,
@@ -978,8 +1000,8 @@ async function importCurlAsRest(
   return {
     requestId,
     problems: [...parsed.problems],
-    ...(parsed.basic !== undefined ? { basicUsername: parsed.basic.username } : {}),
-    ...(passwordRef !== undefined ? { passwordStored: true } : {}),
+    ...(user !== undefined ? { basicUsername: user.username } : {}),
+    ...(stored ? { passwordStored: true } : {}),
   };
 }
 

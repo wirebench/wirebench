@@ -189,6 +189,20 @@ export interface FromRestCurlResult {
    * account (`DOMAIN\user`); its password, which curl never needs for a ticket, is dropped.
    */
   readonly kerberos?: { readonly type: 'kerberos'; readonly username?: string; readonly domain?: string };
+  /** `--digest` with `-u user:password`, in place of `basic`; the password for the keychain, as Basic's. */
+  readonly digest?: { readonly username: string; readonly password?: string };
+  /**
+   * `--aws-sigv4 provider1[:provider2[:region[:service]]]` with `-u key:secret`, in place of `basic`. A
+   * missing region or service is read from an `*.amazonaws.com` host. Every value here is for the
+   * keychain: an `X-Amz-Security-Token` header is taken out of the headers into `sessionToken`.
+   */
+  readonly awsSigV4?: {
+    readonly region: string;
+    readonly service: string;
+    readonly accessKeyId?: string;
+    readonly secretAccessKey?: string;
+    readonly sessionToken?: string;
+  };
   /** What the command said that this client has no field for, in the order it was met. */
   readonly problems: readonly string[];
 }
@@ -255,6 +269,9 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
   let basic: { username: string; password?: string } | undefined;
   // Read after the loop: `--negotiate` turns a `-u` on either side of it into a Kerberos account.
   let negotiate = false;
+  // Read after the loop too: `--digest` and `--aws-sigv4` turn the `-u` pair into their own credentials.
+  let digest = false;
+  let sigv4Provider: string | undefined;
   const settings: { trustInvalid?: boolean; followRedirects?: boolean; maxRedirects?: number } = {};
   // `-G` sends the `-d` data as the query of a GET; `-I` asks for HEAD. Both are read after the loop,
   // because the flag may come before or after the data it changes.
@@ -293,6 +310,16 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
     if (token === '--negotiate') {
       negotiate = true;
       index += 1;
+      continue;
+    }
+    if (token === '--digest') {
+      digest = true;
+      index += 1;
+      continue;
+    }
+    if (token === '--aws-sigv4') {
+      sigv4Provider = next;
+      index += 2;
       continue;
     }
     if (token === '-F' || token === '--form') {
@@ -405,6 +432,15 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
   if (negotiate) {
     basic = undefined;
   }
+  const awsSigV4 =
+    !negotiate && sigv4Provider !== undefined ? sigV4From(sigv4Provider, url, basic, headers, problems) : undefined;
+  const digestAuth =
+    !negotiate && awsSigV4 === undefined && digest && basic !== undefined
+      ? { username: basic.username, ...(basic.password !== undefined ? { password: basic.password } : {}) }
+      : undefined;
+  if (awsSigV4 !== undefined || digestAuth !== undefined) {
+    basic = undefined;
+  }
   const body = bodyFrom({ parts, formFields, rawData, binaryPath, headers });
   const split = url === undefined ? undefined : splitAgainstBase(url, options.baseUrl);
   const pathParams = split === undefined ? [] : paramRows(split.path);
@@ -422,8 +458,59 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
     },
     ...(basic !== undefined ? { basic } : {}),
     ...(kerberos !== undefined ? { kerberos } : {}),
+    ...(digestAuth !== undefined ? { digest: digestAuth } : {}),
+    ...(awsSigV4 !== undefined ? { awsSigV4 } : {}),
     problems,
   };
+}
+
+/**
+ * An `--aws-sigv4` command's credentials: region and service from the provider string, or else from
+ * an `<…>.<service>.<region>.amazonaws.com` host; the key pair from `-u`; the session token from its
+ * header, which is removed from `headers` so it is stored as a secret rather than as a header value.
+ */
+function sigV4From(
+  provider: string,
+  url: string | undefined,
+  user: { readonly username: string; readonly password?: string } | undefined,
+  headers: KeyValueEntry[],
+  problems: string[],
+): NonNullable<FromRestCurlResult['awsSigV4']> {
+  const [, , region = '', service = ''] = provider.split(':');
+  const inferred = hostScope(url);
+  const scope = {
+    region: region !== '' ? region : inferred.region,
+    service: service !== '' ? service : inferred.service,
+  };
+  if (scope.region === '' || scope.service === '') {
+    problems.push(
+      "The AWS region or service could not be read from --aws-sigv4 or the host; set it in the request's authentication",
+    );
+  }
+  const tokenAt = headers.findIndex((row) => row.name.toLowerCase() === 'x-amz-security-token');
+  const sessionToken = tokenAt === -1 ? undefined : headers.splice(tokenAt, 1)[0]?.value;
+  return {
+    ...scope,
+    ...(user !== undefined && user.username !== '' ? { accessKeyId: user.username } : {}),
+    ...(user?.password !== undefined && user.password !== '' ? { secretAccessKey: user.password } : {}),
+    ...(sessionToken !== undefined && sessionToken !== '' ? { sessionToken } : {}),
+  };
+}
+
+/** The service and region an `*.amazonaws.com` host names, as curl reads them; empty when it names none. */
+function hostScope(url: string | undefined): { readonly region: string; readonly service: string } {
+  let host: string;
+  try {
+    host = new URL(url ?? '').hostname;
+  } catch {
+    return { region: '', service: '' };
+  }
+  const labels = host.split('.');
+  const at = labels.indexOf('amazonaws');
+  if (at < 1) return { region: '', service: '' };
+  const before = labels[at - 1] ?? '';
+  if (/^[a-z]{2}(-[a-z]+)+-\d+$/.test(before)) return { region: before, service: labels[at - 2] ?? '' };
+  return { region: '', service: before };
 }
 
 /** A `--negotiate` command's account, from its `-u` user part: `DOMAIN\user`, `user`, or empty for the ticket. */
