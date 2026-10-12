@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **AWS Signature v4 and Digest auth.** A REST or SOAP request, folder, API, interface or endpoint can
+  sign with **AWS Signature v4**: region and service, which take property references, an access key
+  ID, a secret key and an optional session token, all kept in the secret store, in an
+  `Authorization` header or as a presigned URL with its own expiry. The body is always hashed, and S3
+  also gets `X-Amz-Content-Sha256`. The Headers tab shows the signature headers before you send, and
+  the HTTP log shows each signed send's canonical request and string to sign. The signer matches
+  AWS's published test suite. **Digest** answers the server's 401 challenge with MD5 or SHA-256 (and
+  the `-sess` forms) and `qop=auth`, or the older form without `qop`. The nonce is remembered per
+  origin for the session, so later requests skip the 401 and count `nc` up, and a stale nonce is
+  answered once. cURL import reads `--digest` and `--aws-sigv4`, storing every value as a secret, and
+  the cURL export writes them. `wirebench run` and the MCP `send` read the credentials from
+  `WIREBENCH_SECRET_*`. gRPC and WebSocket refuse both schemes by name (#339).
 - **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
   Each column is read as `${#Data#column}`, substituted literally, and scripts read the row with
   `iteration.data.get()`. `--iterations` sets the count (`--data-overrun stop|wrap|repeat-last` when it
@@ -109,9 +121,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
-- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`; a project
-  saved by this version cannot be opened by an older one, which would drop them and send without
-  them (#334).
+- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`, and auth
+  can be `digest` or `aws-sigv4`; a project saved by this version cannot be opened by an older one,
+  which would drop the scripts and send without them (#334, #339).
 - **`@wirebench/engine`: a protocol's scripting facet has `levelTypes()`,** the generic types an API's,
   interface's or folder's script is checked against. `ScriptedRequest` gains `outer` (its levels'
   scripts, outermost first) and its own `scripts` is optional; `SentScripts` gains `levels` (#334).

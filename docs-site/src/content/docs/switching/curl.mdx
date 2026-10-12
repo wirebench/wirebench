@@ -27,6 +27,8 @@ guide. The same section covers **Copy as cURL**, which turns a request back into
 | `-H` / `--header` | Rows in the **Headers** table | |
 | `-u` / `--user` `name:password` | Basic auth, sent preemptively. The password is stored as a secret, outside the project | [Secrets](/wirebench/docs/guides/secrets/) |
 | `-u name`, with no password | Basic auth with the username. The toast asks you to set the password on the **Auth** tab | |
+| `--digest` with `-u name:password` | Digest auth. The password is stored as a secret | [Digest](/wirebench/docs/guides/auth/#digest) |
+| `--aws-sigv4 aws:amz:region:service` with `-u key:secret` | AWS Signature v4. The key, the secret and an `X-Amz-Security-Token` header are stored as secrets. A missing region or service is read from an `*.amazonaws.com` host | [AWS Signature v4](/wirebench/docs/guides/auth/#aws-signature-v4) |
 | `-d`, `--data`, `--data-raw`, `--data-binary` | A raw body, in the language its `Content-Type` names | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
 | `-d @file` | A binary body that reads that file when sent | |
 | A heredoc or PowerShell here-string after `-d @-` | A raw body with the heredoc's text | |
@@ -63,7 +65,7 @@ guide. The same section covers **Copy as cURL**, which turns a request back into
 <Aside type="note" title="Flags that take a value">
 When the import ignores a flag that takes a value, it skips the value too. So in
 `-o out.json https://…`, the URL is never mistaken for `out.json`. Flags that take no value, such as
-`--ntlm`, `--digest` or `--compressed`, don't swallow the word after them.
+`--ntlm` or `--compressed`, don't swallow the word after them.
 </Aside>
 
 ## After importing
