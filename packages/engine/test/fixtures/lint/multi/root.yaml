@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info:
+  title: Multi
+  version: '1.0'
+  description: References in and out of its folder.
+paths:
+  /pets:
+    $ref: './paths/pets.yaml'
+  /escape:
+    $ref: '../outside.yaml'
+  /remote:
+    $ref: 'https://remote.test/paths.yaml'

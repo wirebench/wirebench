@@ -18,6 +18,7 @@
  * progress tracking, and a unified summary screen.
  */
 
+import { lintRestDefinition } from '../rest-api/lint-actions.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
@@ -1136,6 +1137,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           return;
         }
         getExplorerTree()?.open(`proj:${imported.projectId}`);
+        // Its findings go to Problems quietly; a lint that fails never fails the import.
+        void lintRestDefinition(imported.apiId, { reveal: false });
         setResult({
           kind: 'openapi',
           apiId: imported.apiId,

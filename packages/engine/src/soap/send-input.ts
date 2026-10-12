@@ -165,7 +165,7 @@ export function toSoapSendInput(args: ToSoapSendInputArgs): SoapSendInput {
       ? { localAddress: properties.bindAddress }
       : {}),
     ...(preferences.http.requestCompression === 'gzip' ? { compressBody: 'gzip' as const } : {}),
-    ...(preferences.http.allowH2 ? { allowH2: true } : {}),
+    ...(preferences.http.offerH2 ? {} : { allowH2: false }),
     // The minimum protocol version is a floor the user sets once; everything else in `tls`
     // (trust anchors, the client identity, a per-endpoint trust decision) is resolved in the
     // desktop's main process, which reads files and secrets, and merged onto this.

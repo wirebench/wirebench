@@ -73,7 +73,8 @@
     },
     "neverBuiltDependencies": [
       "ssh2",
-      "cpu-features"
+      "cpu-features",
+      "@scarf/scarf"
     ]
   }
 }

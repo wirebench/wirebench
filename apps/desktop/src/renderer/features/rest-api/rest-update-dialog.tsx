@@ -25,6 +25,7 @@ import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
+import { lintRestDefinition } from './lint-actions.js';
 import type { ApiRestPlanUpdateResponse, RestUpdateSourceWire } from '../../../shared/kinds/rest/wire.js';
 import type { AuthConfigWire } from '../../../shared/wire-base.js';
 
@@ -238,6 +239,8 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
     const projectId = store.projectOf[apiId];
     if (projectId !== undefined) {
       store.applySnapshot(projectId, result.value.project);
+      // The definition changed, so its lint findings may have too.
+      void lintRestDefinition(apiId, { reveal: false });
     }
     // The update happened whether or not the dialog is still open: the snapshot and the toast stand.
     if (mounted.current) {

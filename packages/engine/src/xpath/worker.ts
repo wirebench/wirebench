@@ -1,7 +1,8 @@
 /**
  * Entry point run inside a `node:worker_threads` Worker by {@link evaluateWithTimeout} and
  * {@link matchRegexWithTimeout}. Receives either a query (`{text, kind, expression, options}`) or a
- * regular-expression job (`{job: 'regex', pattern, text}`) as `workerData`, runs it once, and posts
+ * regular-expression job (`{job: 'regex', pattern, text}`, or `{job: 'regex-many', pattern, texts}`) as
+ * `workerData`, runs it once, and posts
  * the result back — this file never imports anything Electron/DOM-specific, only what the
  * evaluators themselves need, so it can run unmodified in a bare worker thread.
  */
@@ -30,12 +31,31 @@ interface RegexRequest {
 /** What a regex job posts back: whether it matched, or why the pattern could not be compiled. */
 export type RegexWorkerResult = { readonly matched: boolean } | { readonly error: string };
 
+/** One pattern tested against many texts: a lint's project pattern, over every value it checks. */
+interface RegexManyRequest {
+  readonly job: 'regex-many';
+  readonly pattern: string;
+  readonly texts: readonly string[];
+}
+
+/** What a many-texts regex job posts back: one verdict per text, in order, or why it could not compile. */
+export type RegexManyWorkerResult = { readonly matches: readonly boolean[] } | { readonly error: string };
+
 /* v8 ignore start -- exercised only inside a real worker thread; covered by evaluate-async.test.ts
    end-to-end (a query actually running to completion, or timing out), not by unit-level coverage
    instrumentation, which does not attach across the thread boundary. */
 function runRegex(request: RegexRequest): RegexWorkerResult {
   try {
     return { matched: new RegExp(request.pattern).test(request.text) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function runRegexMany(request: RegexManyRequest): RegexManyWorkerResult {
+  try {
+    const pattern = new RegExp(request.pattern);
+    return { matches: request.texts.map((text) => pattern.test(text)) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
@@ -55,9 +75,11 @@ function runQuery(request: QueryRequest): QueryResult {
 }
 
 if (parentPort !== null) {
-  const request = workerData as QueryRequest | RegexRequest;
+  const request = workerData as QueryRequest | RegexRequest | RegexManyRequest;
   if (request.job === 'regex') {
     parentPort.postMessage(runRegex(request));
+  } else if (request.job === 'regex-many') {
+    parentPort.postMessage(runRegexMany(request));
   } else {
     parentPort.postMessage(runQuery(request));
   }

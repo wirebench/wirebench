@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { collect, renderThirdPartyLicenses } from './third-party-licenses.js';
 
 const target = fileURLToPath(new URL('../THIRD-PARTY-LICENSES.md', import.meta.url));
@@ -126,9 +126,16 @@ export function bareImportsOf(source: string): string[] {
 }
 
 describe('THIRD-PARTY-LICENSES.md', () => {
+  // Rendering walks the whole installed dependency tree; once for every test that needs it, with a
+  // budget of its own, because three walks under a loaded machine overran the 5s test default.
+  let rendered = '';
+  beforeAll(async () => {
+    rendered = await renderThirdPartyLicenses();
+  }, 60_000);
+
   it('matches what the installed dependency tree actually contains', async () => {
     const committed = await readFile(target, 'utf-8');
-    expect(committed).toBe(await renderThirdPartyLicenses());
+    expect(committed).toBe(rendered);
   });
 
   it('attributes the packages a reader would look for first', async () => {
@@ -140,13 +147,11 @@ describe('THIRD-PARTY-LICENSES.md', () => {
     expect(committed).not.toContain('| UNKNOWN |');
   });
 
-  it('attributes the engine optional dependencies', async () => {
-    const rendered = await renderThirdPartyLicenses();
+  it('attributes the engine optional dependencies', () => {
     expect(rendered).toMatch(/\| `kerberos` \| 7\.0\.0 \| Apache-2\.0 \|/);
   });
 
-  it('attributes the server image dependencies', async () => {
-    const rendered = await renderThirdPartyLicenses();
+  it('attributes the server image dependencies', () => {
     for (const name of ['fastify', 'pg', 'openid-client', 'jose', 'oauth4webapi']) {
       expect(rendered).toMatch(new RegExp(`^## ${name}@|\\| ${name} \\|`, 'm'));
     }

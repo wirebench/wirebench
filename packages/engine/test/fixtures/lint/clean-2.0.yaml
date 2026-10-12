@@ -1,0 +1,38 @@
+swagger: '2.0'
+info:
+  title: Pets
+  version: '1.0'
+  description: A small pet store.
+host: api.pets.test
+schemes: [https]
+basePath: /v1
+security:
+  - petAuth: [pets:read]
+paths:
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      summary: Read one pet.
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          type: string
+          description: The pet's id.
+      responses:
+        '200':
+          description: The pet.
+          schema: { $ref: '#/definitions/Pet' }
+definitions:
+  Pet:
+    description: A pet.
+    type: object
+    properties:
+      id: { type: string }
+securityDefinitions:
+  petAuth:
+    type: oauth2
+    flow: application
+    tokenUrl: https://auth.pets.test/token
+    scopes:
+      pets:read: Read pets.

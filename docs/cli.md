@@ -93,6 +93,10 @@ wirebench history diff <from-id> <to-id> [--ignore <path>]…
 wirebench diff-contract <old> <new> [--fail-on breaking|any|none] [--reporter <kind>=<file>]… [--project <dir>] [-q]
                        Compares two versions of a WSDL or an OpenAPI document: see "Contract diff" below.
 
+wirebench lint <definition> [--fail-severity <level>] [--ruleset <file>]… [--reporter json=<file>|sarif=<file>]… [--project <dir>] [--allow-remote-refs] [-q]
+                       Checks an OpenAPI document against the built-in and project rule sets: see
+                       "Lint an OpenAPI document" below.
+
 wirebench export <postman|opencollection> [--api <name|slug|id>] [--out <dir>] [--project <dir>] [--json]
                        Writes the project, or one API or interface, as a Postman Collection v2.1 or an
                        OpenCollection document: see "Export to another tool" below.
@@ -1062,6 +1066,120 @@ Exit 0 when the gate passes and 1 when it fails. Exit 2 for a usage error, an un
 cannot be fetched or parsed. What a definition could not resolve, and what its schema could not
 express, is printed to stderr as a warning and does not change the exit code.
 
+## Lint an OpenAPI document
+
+`wirebench lint <definition>` checks an OpenAPI 2.0, 3.0, 3.1 or 3.2 document against two built-in rule
+sets and the project's own (issue #342, see the
+[design spec](specs/2026-10-12-openapi-lint-design.md)). `<definition>` is a file, an `http(s)` URL
+(fetched through the proxy the environment names), or `project:<name>`: the cached definition of the
+REST API of that name or slug in `--project`, read with no network access.
+
+```bash
+wirebench lint openapi.yaml --reporter sarif=lint.sarif
+```
+
+The rules run on an open-source OpenAPI linter; Wirebench writes the rules and reads every `$ref`
+itself. A reference from a file stays inside that file's folder tree, and a local document never
+reaches the network unless `--allow-remote-refs` is given (a document fetched by URL may reference
+other URLs). A reference that is refused or cannot be read is an `invalid-ref` error naming why.
+Documents a reference pulls in are linted too, and their findings name that file.
+
+### Built-in rules
+
+`hygiene` (warnings unless noted):
+
+| Rule | Finds |
+| --- | --- |
+| `info-description` | The API has no `info.description`. |
+| `operation-operationId` | An operation has no `operationId`. |
+| `operation-operationId-unique` | Two operations share an `operationId` (error). |
+| `operation-description` | An operation has neither a `summary` nor a `description`. |
+| `operation-success-response` | An operation declares no 2xx or 3xx response. |
+| `parameter-description` | A parameter has no `description`. |
+| `schema-description` | A reusable schema (`components.schemas`, `definitions`) has no `description`. |
+| `media-example` | A 3.x request or response body has no `example`, `examples` or schema `example`. |
+| `inline-object-schema` | A body's schema is an inline object rather than a reference to a reusable schema. |
+
+`owasp` (errors unless noted), the OWASP API Security Top 10 items a definition alone can show:
+
+| Rule | Finds |
+| --- | --- |
+| `owasp-security-defined` | The API defines no security scheme. |
+| `owasp-operation-security` | An operation no security requirement protects; `security: []` marks one public on purpose (warning). |
+| `owasp-plain-http` | An `http://` server or OAuth endpoint URL. `localhost`, `127.x` and `[::1]` are exempt. |
+| `owasp-plain-http-scheme` | A Swagger 2.0 API whose `schemes` include `http`, unless its `host` is a loopback host. |
+| `owasp-security-scheme-undefined` | A security requirement names a scheme the document does not define. |
+| `owasp-oauth-scope-undefined` | A requirement asks for an OAuth scope its scheme does not define. |
+
+### Rule sets of your own
+
+Every `*.yaml` / `*.yml` file in the project's `lint/` folder applies, in name order, then each
+`--ruleset <file>` in the order given; a later file wins. The project is `--project <dir>`, or the
+current directory when it holds `wirebench.yaml`. The desktop app applies the same `lint/` folder.
+
+```yaml
+builtin: [hygiene, owasp]      # which built-in rule sets run; the default is both, [] runs none
+rules:
+  operation-description: off   # a built-in rule: off, error, warning, info or hint
+  owasp-plain-http: warning
+  summary-length:              # a rule of your own
+    target: operation
+    field: summary
+    check: max-length
+    value: 80
+    severity: warning          # the default
+    message: Keep summaries under 80 characters
+```
+
+| Key | Values |
+| --- | --- |
+| `target` | `info`, `server`, `operation`, `parameter`, `schema`, `response`, `media`, `security-scheme`, `tag`. Each covers both 2.0 and 3.x documents. |
+| `field` | A name inside the target, dotted for a nested one: `operationId`, `flows.authorizationCode.tokenUrl`. |
+| `check` | `present` and `absent` (no `value`); `pattern` and `not-pattern` (a regular expression); `max-length` and `min-length` (a whole number, for text or a list); `one-of` (a list of allowed values). |
+| `severity` | `error`, `warning` (default), `info` or `hint`. |
+| `message`, `description` | Optional: what a finding says, and what the rule checks. |
+
+A pattern is at most 500 characters. It runs on a separate worker thread with a time limit, so a
+pattern that backtracks on a long value becomes a finding that the field could not be checked; it
+never hangs the run. A file that is not valid stops the lint with `lint-ruleset-invalid`, naming the
+file and the field.
+
+### Options and output
+
+| Option | Does |
+| --- | --- |
+| `--fail-severity error` | Default. Exit 1 when any finding is an error. `warning`, `info` and `hint` fail on that severity or worse; `none` never fails. |
+| `--ruleset <file>` | A rule-set file, applied after the project's `lint/` folder. Repeatable. |
+| `--reporter json=<file>` | `tool`, `document`, `declaredVersion`, `summary` (a count per severity) and `findings` (`rule`, `severity`, `message`, `path` as a JSON Pointer, `source`, `range`). |
+| `--reporter sarif=<file>` | SARIF 2.1.0 for code scanning: every rule that ran, and one result per finding with its file and 1-based region. `info` and `hint` are `note`. |
+| `--project <dir>` | The project whose `lint/` folder applies and that `project:<name>` reads. |
+| `--allow-remote-refs` | Let a local document reference `http(s)` documents. |
+| `-q`, `--quiet` | Print the counts only. |
+
+stdout lists one finding per line, as `file:line:column`, then the counts:
+
+```text
+openapi.yaml:6:10  error    owasp-plain-http  http://api.example.test is plain HTTP; credentials and tokens sent to it travel unencrypted  (/servers/0/url)
+openapi.yaml:9:9  warning  operation-operationId  Operation has no operationId  (/paths/~1things/get)
+1 error, 1 warning, 0 infos, 0 hints in openapi.yaml
+```
+
+Exit 0 when the gate passes and 1 when it fails. Exit 2 for a usage error, an unreadable file or
+rule set (`file-not-found`), a rule set that is not valid (`lint-ruleset-invalid`), a document that is
+not OpenAPI 2.0 to 3.2 (`openapi-not-a-document`, `lint-unsupported-version`), a missing cache
+(`definition-cache-missing`) or an unknown `project:` name (`container-not-found`). Exit 3 when the
+document cannot be fetched or parsed.
+
+To upload the SARIF file to GitHub code scanning:
+
+```yaml
+- run: npx @wirebench/cli lint openapi.yaml --reporter sarif=lint.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  if: always()
+  with:
+    sarif_file: lint.sarif
+```
+
 ## `wirebench mock`
 
 ```text
@@ -1142,7 +1260,7 @@ walkthrough.
 ### GitHub Actions
 
 ```yaml
-- uses: wirebench/wirebench/action@v5.0.0
+- uses: wirebench/wirebench/action@v6.0.0
   with:
     project: ./api-tests
     env: staging
@@ -1160,12 +1278,12 @@ output. Every input arrives through `env:`, never interpolated into the step's s
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v5.0.0/templates/gitlab/wirebench.gitlab-ci.yml
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v6.0.0/templates/gitlab/wirebench.gitlab-ci.yml
 
 api-tests:
   extends: .wirebench-run
   variables:
-    WIREBENCH_VERSION: '5.0.0'
+    WIREBENCH_VERSION: '6.0.0'
     WIREBENCH_PROJECT: api-tests
     WIREBENCH_ENV: staging
 ```
@@ -1182,7 +1300,7 @@ rather than relying on the `latest` default. Map a CI/CD variable to
 ```bash
 docker run --rm -v "$PWD:/work" \
   -e WIREBENCH_SECRET_BILLING_PASSWORD \
-  ghcr.io/wirebench/wirebench-cli:5.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  ghcr.io/wirebench/wirebench-cli:6.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 The image (`linux/amd64` and `linux/arm64`) runs as the non-root `node` user with `WORKDIR /work`
@@ -1194,7 +1312,7 @@ secrets with `-e`.
 
 ```bash
 WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  npx --yes @wirebench/cli@5.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  npx --yes @wirebench/cli@6.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 Works on any CI runner with Node 24 already available and no other setup — the same package the
@@ -1209,10 +1327,10 @@ Start the mocks in the background, wait for the listening line, run the tests ag
 them. On a runner with Node 24:
 
 ```bash
-npx --yes @wirebench/cli@5.0.0 mock ./project orders --port 8089 > mock.log &
+npx --yes @wirebench/cli@6.0.0 mock ./project orders --port 8089 > mock.log &
 MOCK=$!
 until grep -q '^listening ' mock.log; do sleep 0.2; done
-npx --yes @wirebench/cli@5.0.0 run ./api-tests --env mocked
+npx --yes @wirebench/cli@6.0.0 run ./api-tests --env mocked
 kill -TERM "$MOCK"; wait "$MOCK"
 ```
 
@@ -1222,7 +1340,7 @@ with exit 0:
 
 ```bash
 docker run -d --name orders-mock -p 8089:8089 -v "$PWD:/work" \
-  ghcr.io/wirebench/wirebench-cli:5.0.0 mock ./project orders --port 8089
+  ghcr.io/wirebench/wirebench-cli:6.0.0 mock ./project orders --port 8089
 ```
 
 A CI system's service containers start before the repository is checked out, so they cannot see the

@@ -207,6 +207,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       restSource: vi.fn(),
       restPlanUpdate: vi.fn(),
       restApplyUpdate: vi.fn(),
+      restLint: vi.fn(),
       webhookItems: vi.fn(),
       importWebhooks: vi.fn(),
       apiDefinitionDocuments: vi.fn(),

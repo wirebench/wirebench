@@ -49,9 +49,11 @@ export interface HttpRequest {
   /** Whether to transparently decompress a gzip/deflate/br response body. Default true. */
   readonly decompress?: boolean;
   /**
-   * Offer HTTP/2 in the TLS ALPN handshake. Off by default: HTTP/2 changes how headers reach
-   * the wire (and so what the raw view can faithfully reconstruct), so it is opt-in. Plain
-   * HTTP is always HTTP/1.1 — there is no ALPN to negotiate over.
+   * Offer HTTP/2 in the TLS ALPN handshake (ADR-0024). On unless `false`: the handshake offers
+   * `h2` and `http/1.1` and the server picks, so a server that speaks only HTTP/1.1 stays on it.
+   * `false` pins the send to HTTP/1.1. NTLM and Kerberos ignore this and always use HTTP/1.1,
+   * since they authenticate the connection. Plain HTTP is always HTTP/1.1 — there is no ALPN to
+   * negotiate over.
    */
   readonly allowH2?: boolean;
   /**
@@ -148,7 +150,7 @@ export interface HttpExchange {
   readonly rawBody: Uint8Array;
   /**
    * The protocol the exchange actually travelled over, from the negotiated ALPN: `2` only when
-   * the caller offered HTTP/2 and the server took it. Labels the raw view.
+   * HTTP/2 was offered and the server took it. Labels the raw view.
    */
   readonly httpVersion: '1.1' | '2';
   /** True when the body was cut short because it exceeded `maxSizeBytes`. */

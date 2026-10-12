@@ -1,7 +1,7 @@
 import { Agent } from 'undici';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
-import { sendHttp } from '../../../src/http/client.js';
+import { createSingleConnectionDispatcher, sendHttp } from '../../../src/http/client.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { splitPemBundle } from '../../../src/http/tls.js';
 import {
@@ -122,7 +122,34 @@ describe('sendHttp over TLS', () => {
     expect(Buffer.from(exchange.rawResponse).toString('utf-8')).toContain('HTTP/2 200');
   });
 
-  it('stays on HTTP/1.1 when HTTP/2 is not offered', async () => {
+  it('offers HTTP/2 by default, so a server that picks h2 gets it', async () => {
+    const server = await startTls({ alpn: ['h2', 'http/1.1'] });
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] } }));
+
+    expect(exchange.httpVersion).toBe('2');
+  });
+
+  it('stays on HTTP/1.1 when HTTP/2 is turned off, even against a server that prefers h2', async () => {
+    const server = await startTls({ alpn: ['h2', 'http/1.1'] });
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] }, allowH2: false }));
+
+    expect(exchange.httpVersion).toBe('1.1');
+    expect(Buffer.from(exchange.rawResponse).toString('utf-8')).toContain('HTTP/1.1 200');
+  });
+
+  it('pins the single-connection dispatcher (NTLM, Kerberos) to HTTP/1.1', async () => {
+    const server = await startTls({ alpn: ['h2', 'http/1.1'] });
+    const dispatcher = createSingleConnectionDispatcher({ tls: { ca: [ca.certPem] } });
+    dispatchers.push(dispatcher as Agent);
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] } }), { dispatcher });
+
+    expect(exchange.httpVersion).toBe('1.1');
+  });
+
+  it('stays on HTTP/1.1 when the server does not offer HTTP/2', async () => {
     const server = await startTls();
 
     const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] } }));
