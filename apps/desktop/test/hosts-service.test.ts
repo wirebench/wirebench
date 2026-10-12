@@ -124,4 +124,30 @@ describe('HostsService', () => {
     service.invalidate();
     expect((await service.list()).file.hosts).toHaveLength(1);
   });
+  it('protected crosses the wire both ways and is resolved with its source', async () => {
+    const d = dir();
+    const service = new HostsService({ treeDir: () => d });
+    const saved = await service.save({
+      version: 1,
+      groups: [
+        {
+          id: 'prod',
+          name: 'prod',
+          tags: [],
+          protected: true,
+          ssh: {},
+          groups: [],
+          hosts: [{ id: 'a', name: 'a', address: 'x', tags: [], ssh: {} }],
+        },
+      ],
+      hosts: [{ id: 'b', name: 'b', address: 'y', tags: [], protected: false, ssh: {} }],
+    });
+    expect(saved.file.groups[0]?.protected).toBe(true);
+    expect(saved.file.hosts[0]?.protected).toBe(false);
+    expect(saved.resolved.map((h) => [h.id, h.protected])).toEqual([
+      ['a', { value: true, from: { group: 'prod' } }],
+      ['b', { value: false, from: 'host' }],
+    ]);
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toContain('protected: true');
+  });
 });

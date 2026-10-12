@@ -3,7 +3,15 @@ import { quickOpenHostEntries } from '../../src/renderer/shell/quick-open.js';
 
 it('matches on name, address, path and tags', () => {
   const [entry] = quickOpenHostEntries([
-    { id: 'a', name: 'api-1', address: '10.0.1.5', tags: ['prod'], path: ['prod', 'eu'], ssh: {} as never },
+    {
+      id: 'a',
+      name: 'api-1',
+      address: '10.0.1.5',
+      tags: ['prod'],
+      path: ['prod', 'eu'],
+      protected: { value: false, from: 'default' as const },
+      ssh: {} as never,
+    },
   ]);
   expect(entry).toMatchObject({
     key: 'host:a',

@@ -52,6 +52,7 @@ const hostSchema = z.strictObject({
   name: z.string().min(1),
   address: z.string().min(1),
   tags: z.array(z.string().min(1)).default([]),
+  protected: z.boolean().optional(),
   ssh: settingsSchema,
 });
 
@@ -62,6 +63,8 @@ export interface GroupEntry {
   id: string;
   name: string;
   tags: string[];
+  /** Runs touching a protected host always confirm; inherited, a nearer `false` lifts it. */
+  protected?: boolean | undefined;
   ssh: SshSettings;
   groups: GroupEntry[];
   hosts: HostEntry[];
@@ -72,6 +75,7 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
     id: z.string().regex(ID),
     name: z.string().min(1),
     tags: z.array(z.string().min(1)).default([]),
+    protected: z.boolean().optional(),
     ssh: settingsSchema,
     groups: z.array(groupSchema).default([]),
     hosts: z.array(hostSchema).default([]),
@@ -216,6 +220,7 @@ function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   const out: Record<string, unknown> = { id: entry.id, name: entry.name };
   if ('address' in entry) out['address'] = entry.address;
   if (entry.tags.length > 0) out['tags'] = entry.tags;
+  if (entry.protected !== undefined) out['protected'] = entry.protected;
   const ssh = settings(entry.ssh);
   if (Object.keys(ssh).length > 0) out['ssh'] = ssh;
   return out;

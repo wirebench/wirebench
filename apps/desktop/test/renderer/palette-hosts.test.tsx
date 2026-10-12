@@ -27,7 +27,15 @@ const context: CommandContext = {
   selection: undefined,
 };
 
-const HOST = { id: 'a', name: 'api-1', address: '10.0.1.5', tags: ['prod'], path: ['prod', 'eu'], ssh: {} as never };
+const HOST = {
+  id: 'a',
+  name: 'api-1',
+  address: '10.0.1.5',
+  tags: ['prod'],
+  path: ['prod', 'eu'],
+  protected: { value: false, from: 'default' as const },
+  ssh: {} as never,
+};
 
 /** What the app shell does with the palette: holds open and mode, and hands commands a way to reopen it. */
 function Shell() {
