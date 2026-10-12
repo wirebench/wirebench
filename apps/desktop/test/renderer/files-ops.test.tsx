@@ -203,6 +203,7 @@ describe('the sftp commands', () => {
         'sftp.rename',
         'sftp.delete',
         'sftp.permissions',
+        'sftp.copyToOtherPane',
         'sftp.toggleHidden',
         'sftp.focusPathBar',
       ].sort(),

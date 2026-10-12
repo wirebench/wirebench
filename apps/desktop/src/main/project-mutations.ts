@@ -17,6 +17,7 @@ import { MAIN_KINDS, mutationOwner } from './kinds/kind-main.js';
 import { kindById, type KindId } from '../shared/kinds/kind-module.js';
 import type { GeneratedEnvelope } from './kinds/soap/mutations.js';
 import { notFound } from './project-api-mutations.js';
+import { rekeyProjectEnvironments, renamedContainerSlugs } from './endpoint-renames.js';
 import {
   addEnvironment,
   deleteEnvironment,
@@ -159,7 +160,8 @@ export const CORE_CHANGE_KINDS: readonly ProjectChange['kind'][] = [
  * Applies one {@link ProjectChange}, returning the next model. Never mutates its input.
  *
  * Core applies the change kinds that are about no protocol; every other one is looked up in the
- * kinds' `mutations` tables (spec §5.2).
+ * kinds' `mutations` tables (spec §5.2). A change that renames an interface or API moves its
+ * endpoint overrides in the project's environments with its slug (#477).
  *
  * @throws ProjectError `unknown-change` when no kind owns `change.kind`.
  */
@@ -168,6 +170,12 @@ export async function applyChange(
   change: ProjectChange,
   deps: MutationDeps,
 ): Promise<MutationResult> {
+  const result = await applyChangeOnly(project, change, deps);
+  const rekeyed = rekeyProjectEnvironments(result.project, renamedContainerSlugs(project, result.project));
+  return rekeyed === result.project ? result : { ...result, project: rekeyed };
+}
+
+async function applyChangeOnly(project: Project, change: ProjectChange, deps: MutationDeps): Promise<MutationResult> {
   switch (change.kind) {
     case 'rename-project':
       return { project: { ...project, name: change.name } };

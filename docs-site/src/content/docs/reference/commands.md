@@ -67,6 +67,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Files: Rename | — | — |
 | Files: Delete… | — | — |
 | Files: Permissions… | — | — |
+| Files: Copy to Other Pane | — | — |
 | Files: Show or Hide Hidden Files | — | — |
 | Files: Go to Folder… | <kbd>⌘L</kbd> | <kbd>Ctrl+L</kbd> |
 

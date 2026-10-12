@@ -1,6 +1,6 @@
 import { catalogEntry } from '@shared/command-catalog.js';
 import { editHost, openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
-import { activeFilesTab, fileActions } from '../features/ssh/files/file-actions.js';
+import { activeFilesPane, fileActions } from '../features/ssh/files/file-actions.js';
 import { openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import {
@@ -14,9 +14,9 @@ import { registerCommand } from '../lib/commands.js';
 import type { PaletteMode } from '../shell/command-palette.js';
 import { useUiStore } from '../state/ui.js';
 
-/** The `sftp.*` commands act on the Files tab in front. */
+/** The `sftp.*` commands act on the pane last used in the Files tab in front. */
 function onFilesTab(): boolean {
-  return activeFilesTab() !== undefined;
+  return activeFilesPane() !== undefined;
 }
 
 /** The pane commands act on the terminal tab in front. */
@@ -140,8 +140,8 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     when: onFilesTab,
     whenScope: 'editor.files',
     run: () => {
-      const tabId = activeFilesTab();
-      if (tabId !== undefined) fileActions.refresh(tabId);
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.refresh(paneId);
     },
   });
   registerCommand({
@@ -149,8 +149,8 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     when: onFilesTab,
     whenScope: 'editor.files',
     run: () => {
-      const tabId = activeFilesTab();
-      if (tabId !== undefined) fileActions.newFolder(tabId);
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.newFolder(paneId);
     },
   });
   registerCommand({
@@ -158,8 +158,8 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     when: onFilesTab,
     whenScope: 'editor.files',
     run: () => {
-      const tabId = activeFilesTab();
-      if (tabId !== undefined) fileActions.rename(tabId);
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.rename(paneId);
     },
   });
   registerCommand({
@@ -167,8 +167,8 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     when: onFilesTab,
     whenScope: 'editor.files',
     run: () => {
-      const tabId = activeFilesTab();
-      if (tabId !== undefined) fileActions.remove(tabId);
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.remove(paneId);
     },
   });
   registerCommand({
@@ -176,8 +176,17 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     when: onFilesTab,
     whenScope: 'editor.files',
     run: () => {
-      const tabId = activeFilesTab();
-      if (tabId !== undefined) fileActions.permissions(tabId);
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.permissions(paneId);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('sftp.copyToOtherPane'),
+    when: onFilesTab,
+    whenScope: 'editor.files',
+    run: () => {
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.copyToOtherPane(paneId);
     },
   });
   registerCommand({
@@ -193,8 +202,8 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     when: onFilesTab,
     whenScope: 'editor.files',
     run: () => {
-      const tabId = activeFilesTab();
-      if (tabId !== undefined) fileActions.focusPathBar(tabId);
+      const paneId = activeFilesPane();
+      if (paneId !== undefined) fileActions.focusPathBar(paneId);
     },
   });
 }

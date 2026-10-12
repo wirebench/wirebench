@@ -49,14 +49,18 @@ describe('area channels', () => {
     const names = channelsFor('');
     expect(names).toContain('ssh.connect');
     expect(names.filter((n) => n.startsWith('sftp.')).sort()).toEqual([
+      'sftp.cancel',
       'sftp.chmod',
       'sftp.close',
+      'sftp.copy',
       'sftp.list',
       'sftp.localHome',
       'sftp.mkdir',
       'sftp.open',
       'sftp.remove',
       'sftp.rename',
+      'sftp.resolve',
+      'sftp.retry',
     ]);
   });
   it('with ssh=off no ssh.* or sftp.* channel exists', () => {

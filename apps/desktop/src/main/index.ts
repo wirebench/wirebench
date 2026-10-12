@@ -59,6 +59,7 @@ import { windowHosts, type HostsService } from './hosts-service.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpService } from './sftp-service.js';
+import { TransferQueue } from './transfers.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
 import { enabledKindsFromEnv, kindRegistry } from './kinds/enabled-kinds.js';
@@ -528,6 +529,8 @@ const sshService = new SshService({
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
+/** The Files tab's copies, a queue per window over that window's own SFTP sessions. */
+const sftpTransfers = new TransferQueue({ sftp: sftpService, emit: emitEvent });
 /** The keychain's SSH keys: generated and opened in main, installed over the host's current sign-in. */
 const sshKeys = new SshKeysService({
   secrets: sshSecrets,
@@ -551,7 +554,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   const picks = new DialogPicks(appPicks);
   // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions; a
   // rename or reload does not, and another window's sessions are its own workspace's.
-  const endSshOnSwitch = sshAreaEndsOnSwitch([sshService, sftpService], target);
+  const endSshOnSwitch = sshAreaEndsOnSwitch([sftpTransfers, sshService, sftpService], target);
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
   const hosts = windowHosts(
     () => workspace.treeDir(),
@@ -1232,6 +1235,7 @@ void app.whenReady().then(() => {
     secrets: sshSecrets,
     ssh: sshService,
     sftp: sftpService,
+    transfers: sftpTransfers,
     keys: sshKeys,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
@@ -1390,6 +1394,7 @@ app.on('before-quit', (event) => {
   hooksService.dispose();
   // SSH sessions end with the app; closing never throws or waits.
   sshService.disposeAll();
+  sftpTransfers.disposeAll();
   sftpService.disposeAll();
   // A mock's port is released now; not awaited, so a server that will not close never holds up the quit.
   void mockRunner.stopAll().catch((error: unknown) => {
