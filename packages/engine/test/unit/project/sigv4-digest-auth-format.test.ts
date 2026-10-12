@@ -1,4 +1,9 @@
+import { cp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { loadProject } from '../../../src/project/load.js';
+import { saveProject } from '../../../src/project/save.js';
+import { tempProjectDir } from './fixture.js';
 import { FORMAT_VERSION } from '../../../src/project/model.js';
 import { authConfigSchema, definitionAuthSchema, soapOwnerAuthSchema } from '../../../src/project/schema-parts.js';
 
@@ -13,11 +18,48 @@ const SIGV4 = {
   placement: 'query',
   expiresSeconds: 600,
 };
+const V5_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v5', 'project');
+
+async function readAllText(dir: string, prefix = ''): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      for (const [k, v] of await readAllText(join(dir, entry.name), relative)) out.set(k, v);
+    } else {
+      out.set(relative, await readFile(join(dir, entry.name), 'utf8'));
+    }
+  }
+  return out;
+}
+
 const DIGEST = { type: 'digest', username: 'admin', passwordRef: 'sec_d', passwordEnv: 'APPLIANCE' };
 
 describe('aws-sigv4 and digest auth in the project format', () => {
   it('need format 10, so an older build refuses the project', () => {
     expect(FORMAT_VERSION).toBe(10);
+  });
+
+  it('leave a version-9 project opening unchanged, rewritten with only its formatVersion line', async () => {
+    const dir = await tempProjectDir();
+    await cp(V5_DIR, dir, { recursive: true });
+    const manifest = join(dir, 'wirebench.yaml');
+    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 5', 'formatVersion: 9'));
+    const before = await readAllText(dir);
+
+    const { project, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(project.formatVersion).toBe(10);
+    await saveProject(project, dir);
+    const after = await readAllText(dir);
+
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+    for (const [file, beforeText] of before) {
+      const expected =
+        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 9', 'formatVersion: 10') : beforeText;
+      expect(after.get(file)).toBe(expected);
+    }
+    await rm(dir, { recursive: true, force: true });
   });
 
   it('are accepted on REST and SOAP owners', () => {
