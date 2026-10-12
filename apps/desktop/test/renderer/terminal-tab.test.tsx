@@ -700,6 +700,8 @@ describe('the terminal tab', () => {
         options: { caseSensitive: false, wholeWord: false, regex: false, incremental: true },
       });
       expect(last?.options['decorations']).toBeDefined();
+      // Real xterm refuses decorations (and so the count) unless the terminal allows proposed API.
+      expect(lastTerminal()?.options['allowProposedApi']).toBe(true);
       act(() => {
         search()?.fire(0, 2);
       });

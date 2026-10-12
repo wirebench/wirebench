@@ -113,6 +113,9 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       fontFamily: monoFontFromCss(),
       fontSize: 13,
       theme: themeFromCss(),
+      // The find bar's match highlights are decorations, which xterm still calls proposed API; without it
+      // every search throws and the count never comes.
+      allowProposedApi: true,
       // OSC 8 hyperlinks the remote program prints.
       linkHandler: {
         activate: (_event, uri) => {
