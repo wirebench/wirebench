@@ -41,6 +41,7 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
+import { subscribeToSnippets } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
 import { TrustDialog } from '../features/ssh/trust-dialog.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
@@ -303,6 +304,7 @@ export function AppShell() {
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
   useEffect(() => subscribeToHosts(), []);
+  useEffect(() => subscribeToSnippets(), []);
   useEffect(() => subscribeToSshEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
   useEffect(() => subscribeToAccounts(), []);
