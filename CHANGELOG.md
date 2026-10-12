@@ -159,6 +159,12 @@ All notable changes to this project are documented here. The format follows
 - **Panel widths are kept per area.** Each sidebar area and the right slide-over (Code, Host
   details) remember their own width. The SSH sidebar opens narrow, and the slide-over opens at
   294px instead of 420px (#391, #392).
+- **HTTP/2 is offered by default.** Every HTTPS send offers `h2` and `http/1.1` in the TLS handshake,
+  through a proxy too, and the server picks, so a stack that speaks only HTTP/1.1 stays on it. The
+  **Offer HTTP/2** preference is now on by default and is stored as `http.offerH2`. The old
+  `http.allowH2` key is dropped, since every saved file carried it as `false` although it never
+  turned HTTP/2 off. Turn the preference off for a server that asks for a client certificate
+  mid-connection (#80, ADR-0024).
 
 ### Fixed
 
@@ -166,6 +172,9 @@ All notable changes to this project are documented here. The format follows
   `Cookies` file on case-insensitive volumes, so persistent cookies were lost on every restart.
   Jars now live in `<userData>/cookie-jars/`, and a jar in the old `cookies/` folder moves there
   the first time its workspace opens (#385).
+- **NTLM and Kerberos could negotiate HTTP/2** on a direct HTTPS connection, and fail against a
+  server that answers `HTTP_1_1_REQUIRED`. Both now always use HTTP/1.1. **Offer HTTP/2** switched
+  off now does keep a direct send on HTTP/1.1 (#80).
 
 ### Breaking
 

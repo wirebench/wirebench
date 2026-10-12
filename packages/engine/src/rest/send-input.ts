@@ -105,7 +105,7 @@ export function toRestSendInput(args: ToRestSendInputArgs): RestSendInput {
       ...(encodeUrl !== undefined ? { encodeUrl } : {}),
       ...(maxSizeBytes !== undefined ? { maxSizeBytes } : {}),
       ...(bindAddress !== undefined && bindAddress.length > 0 ? { localAddress: bindAddress } : {}),
-      ...(preferences.http.allowH2 ? { allowH2: true } : {}),
+      ...(preferences.http.offerH2 ? {} : { allowH2: false }),
       // The request's own only: switching a generated header off is not inherited from the API.
       ...(request.settings.omitHeaders !== undefined && request.settings.omitHeaders.length > 0
         ? { omitHeaders: request.settings.omitHeaders }

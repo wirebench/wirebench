@@ -296,9 +296,9 @@ describe('toSoapSendInput: TLS and HTTP/2 preferences', () => {
     expect(build({ preferences }).tls?.rejectUnauthorized).toBeUndefined();
   });
 
-  it('leaves HTTP/2 unoffered by default and offers it when the preference is on', () => {
+  it('leaves the HTTP/2 offer to the transport by default and pins HTTP/1.1 when the preference is off', () => {
     expect(build().allowH2).toBeUndefined();
-    expect(build({ preferences: mergePreferences({ http: { allowH2: true } }) }).allowH2).toBe(true);
+    expect(build({ preferences: mergePreferences({ http: { offerH2: false } }) }).allowH2).toBe(false);
   });
 });
 
@@ -338,6 +338,12 @@ describe('toRestSendInput', () => {
       apiSettings: { followRedirects: true },
     }).settings;
     expect(settings.followRedirects).toBe(false);
+  });
+
+  it('pins HTTP/1.1 only when the HTTP/2 preference is off', () => {
+    expect(toRestSendInput({ request, baseUrl: 'https://h' }).settings.allowH2).toBeUndefined();
+    const preferences = mergePreferences({ http: { offerH2: false } });
+    expect(toRestSendInput({ request, baseUrl: 'https://h', preferences }).settings.allowH2).toBe(false);
   });
 
   it('follows redirects by default, unlike a SOAP send', () => {
