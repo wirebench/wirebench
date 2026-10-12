@@ -91,7 +91,8 @@ export function registerProjectCommands(): void {
 
   registerCommand({
     ...catalogEntry('env.switch'),
-    when: () => useWorkspaceStore.getState().workspace !== null,
+    // Needs a current project (#468): the switcher is disabled without one.
+    when: () => useWorkspaceStore.getState().workspace !== null && currentProjectId() !== undefined,
     whenScope: 'project',
     // With no argument this opens the status bar's dropdown, which is where the choice lives.
     // The palette can also pass an environment name or id to switch straight to it.

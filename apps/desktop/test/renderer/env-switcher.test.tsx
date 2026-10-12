@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { cycleEnvironment, EnvSwitcher } from '../../src/renderer/features/environments/env-switcher.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -202,8 +202,17 @@ describe('EnvSwitcher', () => {
     expect(trigger.disabled).toBe(true);
     expect(trigger.textContent).toContain('No project');
     // `env.switch` opening it from the ui store shows nothing either.
-    useUiStore.getState().setEnvSwitcherOpen(true);
+    act(() => {
+      useUiStore.getState().setEnvSwitcherOpen(true);
+    });
     await Promise.resolve();
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+    // The attempt is not remembered: focusing a project tab later does not pop the menu open.
+    act(() => {
+      useWorkspaceStore.setState({ lastProjectId: 'p1' });
+    });
+    await Promise.resolve();
+    expect(useUiStore.getState().envSwitcherOpen).toBe(false);
     expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
   });
 

@@ -149,6 +149,13 @@ describe('environment commands', () => {
     useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
   });
 
+  it('is unavailable while there is no current project (#468)', () => {
+    useWorkspaceStore.setState({ workspace: workspace([]), lastProjectId: undefined });
+    expect(listCommands(context).some((command) => command.id === 'env.switch')).toBe(false);
+    useWorkspaceStore.setState({ lastProjectId: 'p1' });
+    expect(listCommands(context).some((command) => command.id === 'env.switch')).toBe(true);
+  });
+
   it('opens the switcher dropdown with no argument', async () => {
     useWorkspaceStore.setState({ workspace: workspace([]) });
     await runCommand('env.switch', context);

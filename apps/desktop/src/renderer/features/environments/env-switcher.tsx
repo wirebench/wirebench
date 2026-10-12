@@ -1,6 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Braces, Check, ChevronDown } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { switcherEnvironments, switcherGroups, type SwitcherGroups } from '../../state/environment-scope.js';
 import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
 import { currentProjectId, useCurrentProjectId } from '../../state/workspace-tabs.js';
@@ -72,6 +72,13 @@ export function EnvSwitcher() {
   const active = environments.find((environment) => environment.id === activeId);
   // Until a project tab has been focused there is no project for a pick to apply to.
   const disabled = projectId === undefined;
+  // An open request made while disabled is dropped, not kept: otherwise focusing a project tab
+  // later would pop the menu open unasked (Radix resets it only on user interaction).
+  useEffect(() => {
+    if (disabled && open) {
+      setOpen(false);
+    }
+  }, [disabled, open, setOpen]);
 
   const select = (environmentId: string | null): void => {
     if (projectId !== undefined) {
