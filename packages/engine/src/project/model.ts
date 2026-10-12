@@ -33,7 +33,7 @@ import type { JwtAlgorithm } from '../http/auth/jwt-algorithms.js';
  * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
  * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.
  */
-export const FORMAT_VERSION = 9;
+export const FORMAT_VERSION = 10;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;

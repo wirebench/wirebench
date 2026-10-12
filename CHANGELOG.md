@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   expires. It works in the app, `wirebench run` and MCP `send`; the headers preview, **Copy as** and
   generated code show a freshly signed token while secrets are shown (#348).
 
+### Breaking
+
+- **Project format 10.** Auth can be a client-signed JWT (`type: jwt`); a project saved by this
+  version cannot be opened by an older one, which refuses it as made by a newer Wirebench. A
+  version-9 project opens unchanged (#348).
+
 ## [6.0.0] - 2026-10-12
 
 ### Added
