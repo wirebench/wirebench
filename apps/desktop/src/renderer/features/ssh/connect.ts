@@ -4,6 +4,7 @@ import { useProblemsStore } from '../../state/problems.js';
 import { findHost, useHostsStore } from './hosts-store.js';
 import { hasHost, leaves, onePane } from './panes/pane-tree.js';
 import type { PaneLeaf } from './panes/pane-tree.js';
+import { useRecentStore } from './recent-connections.js';
 import { isRetryableConnectError } from './reconnect.js';
 import type { AttemptOutcome } from './reconnect.js';
 
@@ -12,9 +13,13 @@ export interface Size {
   rows: number;
 }
 
-/** A connect that ends here leaves no session: the problem says why, the pane offers a retry. */
+/**
+ * A connect that ends here leaves no session: the problem says why, the pane offers a retry, and the recent
+ * connections note the failure.
+ */
 function recordProblem({ paneId, hostId }: PaneLeaf, code: string, message: string): void {
   useHostsStore.getState().noteConnectFailed(paneId);
+  useRecentStore.getState().record(hostId, 'failed');
   useProblemsStore
     .getState()
     .add([{ groupId: `ssh:${hostId}`, source: 'hosts', severity: 'error', problem: { code, message } }]);
@@ -73,6 +78,7 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   }
   if (result.ok) {
     store.setPane(paneId, { hostId, sessionId: result.value.sessionId, state: 'open' });
+    useRecentStore.getState().record(hostId, 'connected');
     return { kind: 'open', sessionId: result.value.sessionId };
   }
   store.setPane(paneId, undefined);

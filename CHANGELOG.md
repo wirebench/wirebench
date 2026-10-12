@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Recent SSH connections.** The Hosts tab shows the hosts you connected to lately in a **Recent** strip
+  (when, and whether the last connect failed) with a connect button and **Clear**, and gains a
+  **Recently connected** sort; **Connect to Host…** and quick-open list recent hosts first. The list is
+  kept on this machine per workspace with only the host id, time and outcome; deleted hosts drop out and
+  renamed ones show by their new name (#408).
 - **Generate an SSH key and install it on a host.** The Keychain's **Generate key…** makes an Ed25519
   (default), ECDSA (P-256, P-384, P-521) or RSA (4096, 3072, 2048 bits) key with an optional passphrase,
   and stores the private key as a workspace secret (the passphrase as `NAME_passphrase`); the private key

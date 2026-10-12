@@ -6,13 +6,14 @@ import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { openTerminalFor } from '../features/ssh/connect.js';
 import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { useRecentConnections } from '../features/ssh/recent-connections.js';
 import type { CommandContext } from '../lib/commands.js';
 import { listCommands, runCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import type { QuickOpenEntry } from './quick-open.js';
-import { quickOpenEntries, quickOpenHostEntries } from './quick-open.js';
+import { quickOpenEntries, quickOpenHostEntries, splitRecentHosts } from './quick-open.js';
 
 /**
  * Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts, to
@@ -110,6 +111,16 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
     () => (sshEnabled && mode !== 'commands' ? quickOpenHostEntries(resolvedHosts) : []),
     [sshEnabled, mode, resolvedHosts],
   );
+  // The hosts connected to lately lead, under their own heading.
+  const recentConnections = useRecentConnections();
+  const { recent: recentHosts, rest: otherHosts } = useMemo(
+    () =>
+      splitRecentHosts(
+        hostEntries,
+        recentConnections.map((entry) => entry.hostId),
+      ),
+    [hostEntries, recentConnections],
+  );
   const quickOpen = mode === 'quick-open';
   const filesPicker = mode === 'files-hosts';
   const hostsOnly = mode === 'hosts' || filesPicker;
@@ -171,9 +182,16 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
                   </Command.Item>
                 ))}
-              {picker && hostEntries.length > 0 && (
+              {picker && recentHosts.length > 0 && (
+                <Command.Group heading="Recent" className={GROUP_CLASS}>
+                  {recentHosts.map((entry) => (
+                    <HostItem key={entry.key} entry={entry} onOpenChange={onOpenChange} files={filesPicker} />
+                  ))}
+                </Command.Group>
+              )}
+              {picker && otherHosts.length > 0 && (
                 <Command.Group heading="Hosts" className={GROUP_CLASS}>
-                  {hostEntries.map((entry) => (
+                  {otherHosts.map((entry) => (
                     <HostItem key={entry.key} entry={entry} onOpenChange={onOpenChange} files={filesPicker} />
                   ))}
                 </Command.Group>

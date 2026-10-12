@@ -121,3 +121,21 @@ export function quickOpenHostEntries(resolved: readonly ResolvedHostWire[]): rea
     hostId: host.id,
   }));
 }
+
+/**
+ * Splits host rows into the recent ones, in the order of `recentIds` (newest first, at most `limit`), and the
+ * rest in their own order. An id with no row (a deleted host) is skipped.
+ *
+ * @param entries - Host rows from {@link quickOpenHostEntries}.
+ * @param recentIds - Host ids connected to lately, newest first.
+ */
+export function splitRecentHosts(
+  entries: readonly QuickOpenEntry[],
+  recentIds: readonly string[],
+  limit = 5,
+): { recent: QuickOpenEntry[]; rest: QuickOpenEntry[] } {
+  const byHost = new Map(entries.map((entry) => [entry.hostId, entry] as const));
+  const recent = recentIds.flatMap((id) => byHost.get(id) ?? []).slice(0, limit);
+  const picked = new Set(recent);
+  return { recent, rest: entries.filter((entry) => !picked.has(entry)) };
+}

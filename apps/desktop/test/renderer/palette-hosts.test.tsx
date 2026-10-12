@@ -12,6 +12,9 @@ import { resetCommands } from '../../src/renderer/lib/commands.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { writeRecent } from '../../src/renderer/features/ssh/recent-connections.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { WorkspaceWire } from '../../src/shared/wire-base.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 
 const context: CommandContext = {
@@ -68,6 +71,21 @@ describe('hosts in the palette', () => {
     expect(screen.getByText('api-1')).toBeDefined();
     // Once under Hosts and once under Files.
     expect(screen.getAllByText('10.0.1.5 · prod/eu')).toHaveLength(2);
+  });
+
+  it('recent hosts come first, under their own heading; a deleted one is not listed', () => {
+    localStorage.clear();
+    useWorkspaceStore.setState({ workspace: { id: 'w1' } as WorkspaceWire });
+    useHostsStore.setState({ resolved: [HOST, { ...HOST, id: 'b', name: 'db-1', path: [] }] });
+    writeRecent('w1', [
+      { hostId: 'b', at: 2, outcome: 'connected' },
+      { hostId: 'deleted', at: 1, outcome: 'connected' },
+    ]);
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="hosts" />);
+    expect(screen.getByText('Recent')).toBeDefined();
+    const rows = screen.getAllByTestId('quick-open-host').map((row) => row.textContent);
+    expect(rows).toEqual(['db-110.0.1.5', 'api-110.0.1.5 · prod/eu']);
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('quick-open omits the hosts when the ssh area is switched off', () => {
