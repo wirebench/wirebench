@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SNIPPETS_FILE,
+  expandSnippet,
   findSnippet,
   listSnippets,
   parseSnippetsFile,
+  previewSnippet,
+  SECRET_MASK,
   serializeSnippetsFile,
   SshModelError,
 } from '../../src/index.js';
-import type { SnippetsFile } from '../../src/index.js';
+import type { Snippet, SnippetsFile } from '../../src/index.js';
 
 const EXAMPLE = `
 version: 1
@@ -228,5 +231,90 @@ describe('listSnippets', () => {
     expect(findSnippet(file, 'tail-log')?.name).toBe('Tail service log');
     expect(findSnippet(file, 'call-health')?.name).toBe('Health with token');
     expect(findSnippet(file, 'deploy')).toBeUndefined();
+  });
+});
+
+const snippet = (script: string, variables: Snippet['variables'] = []): Snippet => ({
+  id: 's',
+  name: 's',
+  tags: [],
+  variables,
+  script,
+  enter: true,
+  confirm: false,
+});
+
+/** Asserts the error and that neither its message nor its details hold `secret`. */
+function expectQuiet(fn: () => unknown, code: string, secret: string): SshModelError {
+  const e = expectCode(fn, code);
+  expect(e.message).not.toContain(secret);
+  expect(JSON.stringify(e.details)).not.toContain(secret);
+  return e;
+}
+
+describe('expandSnippet', () => {
+  const tail = snippet('journalctl -u ${service} -n ${lines} -f', [
+    { name: 'service', default: 'api' },
+    { name: 'lines' },
+  ]);
+  it('replaces declared variables, values before defaults', () => {
+    expect(expandSnippet(tail, { lines: '200' }, {}).text).toBe('journalctl -u api -n 200 -f');
+    expect(expandSnippet(tail, { service: 'web', lines: '5' }, {}).text).toBe('journalctl -u web -n 5 -f');
+  });
+  it('leaves undeclared ${…}, $name and $(…) to the shell', () => {
+    const s = snippet('echo ${HOME} $HOME $(date) ${1} ${v}', [{ name: 'v' }]);
+    expect(expandSnippet(s, { v: 'x' }, {}).text).toBe('echo ${HOME} $HOME $(date) ${1} x');
+  });
+  it('a variable with no value and no default is snippet-variable-missing', () => {
+    const e = expectCode(() => expandSnippet(tail, {}, {}), 'snippet-variable-missing');
+    expect(e.details).toEqual({ snippet: 's', variable: 'lines' });
+  });
+  it('a value holding a line break or a control character is refused without echoing it', () => {
+    for (const bad of ['api\nrm -rf ~', 'api\rrm', 'a\x1b[2J', 'a\x03', 'a\tb', 'a\u0085b']) {
+      const e = expectQuiet(() => expandSnippet(tail, { lines: bad }, {}), 'snippet-value-invalid', bad);
+      expect(e.details).toEqual({ snippet: 's', variable: 'lines' });
+    }
+  });
+  it('a default holding a line break is refused too', () => {
+    const s = snippet('echo ${v}', [{ name: 'v', default: 'a\nb' }]);
+    expectCode(() => expandSnippet(s, {}, {}), 'snippet-value-invalid');
+  });
+  it('a variable named like an Object prototype key is not read from the prototype', () => {
+    const s = snippet('echo ${constructor}', [{ name: 'constructor' }]);
+    expectCode(() => expandSnippet(s, {}, {}), 'snippet-variable-missing');
+  });
+  it('a value that itself looks like a token is inserted literally, never expanded again', () => {
+    const s = snippet('echo ${a} ${b}', [{ name: 'a' }, { name: 'b' }]);
+    const out = expandSnippet(s, { a: '${secret:x}', b: '${a}' }, { x: 'leak' });
+    expect(out.text).toBe('echo ${secret:x} ${a}');
+    expect(out.secretValues).toEqual([]);
+  });
+  it('puts secret values in and lists each once', () => {
+    const s = snippet('curl -u ${secret:api_token} ${secret:api_token} ${secret:other}');
+    const out = expandSnippet(s, {}, { api_token: 'hunter2', other: 'pässwört' });
+    expect(out.text).toBe('curl -u hunter2 hunter2 pässwört');
+    expect(out.secretValues).toEqual(['hunter2', 'pässwört']);
+  });
+  it('a secret the caller did not resolve is a plain Error naming it', () => {
+    const s = snippet('echo ${secret:api_token}');
+    expect(() => expandSnippet(s, {}, {})).toThrow(/api_token/);
+    expect(() => expandSnippet(s, {}, {})).not.toThrow(SshModelError);
+  });
+  it('line endings become \\n and one trailing line break is dropped', () => {
+    expect(expandSnippet(snippet('a\r\nb\rc\n'), {}, {}).text).toBe('a\nb\nc');
+    expect(expandSnippet(snippet('a\n\n'), {}, {}).text).toBe('a\n');
+  });
+});
+
+describe('previewSnippet', () => {
+  it('shows every secret as the mask and needs no secret', () => {
+    const s = snippet('curl -H "Bearer ${secret:api_token}" ${host}', [{ name: 'host', default: 'localhost' }]);
+    expect(previewSnippet(s, {})).toBe(`curl -H "Bearer ${SECRET_MASK}" localhost`);
+    expect(SECRET_MASK).toBe('••••');
+  });
+  it('refuses as expandSnippet does', () => {
+    const s = snippet('echo ${v}', [{ name: 'v' }]);
+    expectCode(() => previewSnippet(s, {}), 'snippet-variable-missing');
+    expectCode(() => previewSnippet(s, { v: 'a\nb' }), 'snippet-value-invalid');
   });
 });

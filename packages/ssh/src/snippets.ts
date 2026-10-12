@@ -267,3 +267,69 @@ export function listSnippets(file: SnippetsFile): SnippetListItem[] {
 export function findSnippet(file: SnippetsFile, id: string): Snippet | undefined {
   return located(file).find((entry) => entry.snippet.id === id)?.snippet;
 }
+
+/** What a secret looks like wherever its value must not show: a preview, a masked session. */
+export const SECRET_MASK = '••••';
+
+/** A line break or any other control character: a value holding one could type a second command line. */
+const hasControl = (value: string): boolean =>
+  [...value].some((c) => {
+    const code = c.charCodeAt(0);
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+  });
+
+export interface Expansion {
+  readonly text: string;
+  /** The secret values put into `text`, for the session masker. */
+  readonly secretValues: readonly string[];
+}
+
+/** One left-to-right pass: an inserted value is never scanned again, so a `${…}` inside it stays as written. */
+function expand(snippet: Snippet, values: Readonly<Record<string, string>>, secret: (name: string) => string): string {
+  const declared = new Map(snippet.variables.map((v) => [v.name, v]));
+  const script = normalise(snippet.script).replace(/\n$/, '');
+  return script.replace(TOKEN, (token, isSecret: string | undefined, name: string) => {
+    if (isSecret !== undefined) return secret(name);
+    const variable = declared.get(name);
+    if (variable === undefined) return token;
+    const value = Object.hasOwn(values, name) ? values[name] : variable.default;
+    const details = { snippet: snippet.id, variable: name };
+    if (value === undefined) {
+      throw new SshModelError('snippet-variable-missing', `snippet "${snippet.id}": "${name}" has no value`, details);
+    }
+    if (hasControl(value)) {
+      throw new SshModelError(
+        'snippet-value-invalid',
+        `snippet "${snippet.id}": the value of "${name}" holds a line break or a control character`,
+        details,
+      );
+    }
+    return value;
+  });
+}
+
+/**
+ * Replaces declared `${name}` with `values` (else the default) and `${secret:NAME}` with `secrets`; any other
+ * `${…}` is left for the shell. Line endings become `\n` and one trailing line break is dropped.
+ * @throws SshModelError `snippet-variable-missing` | `snippet-value-invalid`; a plain `Error` for a secret
+ * missing from `secrets` (the caller resolves every name in `snippetSecrets` first). No error holds a value.
+ */
+export function expandSnippet(
+  snippet: Snippet,
+  values: Readonly<Record<string, string>>,
+  secrets: Readonly<Record<string, string>>,
+): Expansion {
+  const used = new Set<string>();
+  const text = expand(snippet, values, (name) => {
+    const value = Object.hasOwn(secrets, name) ? secrets[name] : undefined;
+    if (value === undefined) throw new Error(`secret "${name}" was not resolved before expanding`);
+    used.add(value);
+    return value;
+  });
+  return { text, secretValues: [...used] };
+}
+
+/** The expansion with every secret as {@link SECRET_MASK}; needs no secret. Same refusals as `expandSnippet`. */
+export function previewSnippet(snippet: Snippet, values: Readonly<Record<string, string>>): string {
+  return expand(snippet, values, () => SECRET_MASK);
+}
