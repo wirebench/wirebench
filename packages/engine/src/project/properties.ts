@@ -12,7 +12,9 @@
  *
  * `${#Sequence#name}` is the exception: its values come from responses, so
  * they are never expanded again, never reached by the shorthand, and never
- * allowed to form another reference's name (ADR-0015).
+ * allowed to form another reference's name (ADR-0015). `${#Data#column}`, a
+ * data-driven run's row, is substituted literally and never reached by the
+ * shorthand too (#336).
  *
  * Pure module: no I/O beyond reading the `scopes.system` map the caller
  * passes in (default `process.env`).
@@ -60,6 +62,11 @@ export interface PropertyScopes {
    * reference.
    */
   readonly sequence?: PropertyMap;
+  /**
+   * The row a data-driven run's iteration reads, for `${#Data#column}` (#336). Substituted literally
+   * and reachable only by the explicit form, as a Sequence value is, so a cell never reaches a secret.
+   */
+  readonly data?: PropertyMap;
   /**
    * The `${#Dynamic#…}` values of one send, so the same reference gives the same value wherever the
    * send uses it. A host makes one per send with its scopes; spreading the scopes keeps it. Absent:
@@ -127,10 +134,10 @@ export interface ExpandResult {
 }
 
 const DEFAULT_MAX_DEPTH = 8;
-const SCOPE_NAMES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System', 'Sequence', 'Dynamic']);
+const SCOPE_NAMES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System', 'Sequence', 'Data', 'Dynamic']);
 
 interface ParsedExpr {
-  /** Explicit scope (`Project`/`Env`/`Workspace`/`Global`/`System`/`Sequence`/`Dynamic`/`Secret`), or undefined for the shorthand form. */
+  /** Explicit scope (`Project`/`Env`/`Workspace`/`Global`/`System`/`Sequence`/`Data`/`Dynamic`/`Secret`), or undefined for the shorthand form. */
   readonly scope: string | undefined;
   readonly name: string;
 }
@@ -171,6 +178,8 @@ function lookupInScope(scope: string, name: string, scopes: PropertyScopes): str
       return (scopes.system ?? process.env)[name];
     case 'Sequence':
       return scopes.sequence !== undefined && Object.hasOwn(scopes.sequence, name) ? scopes.sequence[name] : undefined;
+    case 'Data':
+      return scopes.data !== undefined && Object.hasOwn(scopes.data, name) ? scopes.data[name] : undefined;
     case 'Secret':
       return SECRET_NAME_PATTERN.test(name) ? scopes.secrets?.[name] : undefined;
     default:
@@ -407,9 +416,10 @@ function expandAt(
         continue;
       }
       ctx.used.push({ scope, name });
-      if (scope === 'Sequence') {
-        // Literal: the value came from a response, and expanding it would let a server name any
-        // property or secret for the next request to carry back (ADR-0015).
+      if (scope === 'Sequence' || scope === 'Data') {
+        // Literal: a Sequence value came from a response, and expanding it would let a server name any
+        // property or secret for the next request to carry back (ADR-0015). A Data cell is held to the
+        // same rule, so a row never reaches a secret (#336).
         out += substituted(ctx, outer, value, scope);
         continue;
       }
@@ -525,8 +535,8 @@ export function secretNamesIn(text: string, scopes?: PropertyScopes): string[] {
         }
         continue;
       }
-      // A Sequence value is substituted literally, so a `${secret:…}` inside one is never resolved.
-      if (scopes === undefined || scope === 'Sequence') {
+      // A Sequence value or Data cell is substituted literally, so a `${secret:…}` inside one is never resolved.
+      if (scopes === undefined || scope === 'Sequence' || scope === 'Data') {
         continue;
       }
       let value: string | undefined;

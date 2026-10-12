@@ -359,3 +359,61 @@ describe('parseCliArgs — call', () => {
     expect(() => parseCliArgs(['call', 'a', '--allow-send'])).toThrow(UsageError);
   });
 });
+
+describe('run --data, --iterations, --delay, --data-overrun (#336)', () => {
+  it('adds nothing to a run that does not use them', () => {
+    const args = parseCliArgs(['run', 'p']);
+    for (const key of ['data', 'iterations', 'delayMs', 'dataOverrun']) {
+      expect(args).not.toHaveProperty(key);
+    }
+  });
+
+  it('reads all four', () => {
+    expect(
+      parseCliArgs(['run', 'p', '--data', 'rows.csv', '--iterations', '5', '--delay', '250', '--data-overrun', 'wrap']),
+    ).toMatchObject({ data: 'rows.csv', iterations: 5, delayMs: 250, dataOverrun: 'wrap' });
+  });
+
+  it('takes --iterations without a data file, and --delay 0', () => {
+    expect(parseCliArgs(['run', 'p', '--iterations', '3', '--delay', '0'])).toMatchObject({
+      iterations: 3,
+      delayMs: 0,
+    });
+  });
+
+  it('takes them with --sequence', () => {
+    expect(parseCliArgs(['run', 'p', '--sequence', 's', '--data', 'rows.json'])).toMatchObject({
+      sequences: ['s'],
+      data: 'rows.json',
+    });
+  });
+
+  it('refuses a bad count, delay or over-run mode', () => {
+    expect(() => parseCliArgs(['run', 'p', '--iterations', '0'])).toThrow('--iterations');
+    expect(() => parseCliArgs(['run', 'p', '--iterations', '10001'])).toThrow('--iterations');
+    expect(() => parseCliArgs(['run', 'p', '--delay', '-1'])).toThrow('--delay');
+    expect(() => parseCliArgs(['run', 'p', '--data', 'r.csv', '--data-overrun', 'loop'])).toThrow(
+      '--data-overrun must be one of stop, wrap, repeat-last',
+    );
+  });
+
+  it('refuses --data-overrun without --data', () => {
+    expect(() => parseCliArgs(['run', 'p', '--data-overrun', 'wrap'])).toThrow('--data-overrun needs --data');
+  });
+
+  it('refuses data or iterations with a baseline flag', () => {
+    for (const flags of [
+      ['--data', 'r.csv', '--baseline'],
+      ['--iterations', '2', '--update-baseline'],
+    ]) {
+      expect(() => parseCliArgs(['run', 'p', ...flags])).toThrow('cannot be combined with --baseline');
+    }
+  });
+
+  it('refuses them on other verbs', () => {
+    expect(() => parseCliArgs(['secrets', 'list', 'p', '--data', 'r.csv'])).toThrow(
+      '--data does not apply to wirebench secrets list',
+    );
+    expect(() => parseCliArgs(['send', 'r', '--iterations', '2'])).toThrow('--iterations does not apply');
+  });
+});

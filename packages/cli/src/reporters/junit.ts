@@ -109,9 +109,12 @@ export function renderJunit(result: RunResult): string {
   const { total, failed, errored, skipped, durationMs } = result.summary;
   const groups = new Map<string, RequestResult[]>();
   for (const request of result.requests) {
-    const bucket = groups.get(request.group);
+    // A data-driven run has one suite per group and iteration (#336).
+    const key =
+      request.iteration !== undefined ? `${request.group} [iteration ${request.iteration.index + 1}]` : request.group;
+    const bucket = groups.get(key);
     if (bucket === undefined) {
-      groups.set(request.group, [request]);
+      groups.set(key, [request]);
     } else {
       bucket.push(request);
     }

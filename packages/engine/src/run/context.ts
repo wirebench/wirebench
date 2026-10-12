@@ -74,6 +74,10 @@ export interface RunContext {
   ) => HeldSoapDefinition | undefined;
   /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
   readonly sequence?: PropertyMap;
+  /** The data row this iteration of a data-driven run reads, as `${#Data#column}` (#336). */
+  readonly data?: PropertyMap;
+  /** Which iteration of a data-driven run this is (0-based), and how many the run plans. */
+  readonly iteration?: { readonly index: number; readonly count: number };
   /**
    * Set for a request with a pre-request script: every `${secret:…}` in the request's text becomes
    * one of these placeholders, and the script's host puts the values back after it (#63).
@@ -124,6 +128,8 @@ export function scopesFor(context: RunContext): PropertyScopes {
     dynamic: new DynamicValues(),
     // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
     ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
+    // A data-driven run's row: literal and explicit-only too (#336).
+    ...(context.data !== undefined ? { data: context.data } : {}),
   };
 }
 

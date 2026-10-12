@@ -1,30 +1,42 @@
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   checkRunScripts,
   CookieJar,
+  createPacer,
+  createRunSender,
   createScriptChecker,
   createIssuedTokenSource,
   createScriptSandbox,
   createSourceCache,
   createSecretMasker,
+  dataFormatOf,
   isProtectedEnvironment,
   isWirebenchError,
+  iterationContext,
   jarCookieHost,
   loadProject,
   loadWorkspace,
+  parseDataFile,
+  planIterations,
   readGoldenFile,
   RequestScripting,
+  runIterations,
   runRequests,
   secretNeedsOf,
   selectRequests,
+  tagIteration,
   workspaceProjectDir,
   writeGoldenFile,
 } from '@wirebench/engine';
 import type {
   CallbackWaiting,
+  DataTable,
   Environment,
   GoldenFile,
+  Iteration,
   Project,
+  RequestResult,
   RunContext,
   RunResult,
   RunWorkspace,
@@ -191,6 +203,31 @@ export async function loadSelection(
 }
 
 /**
+ * The data file `--data` names, read and parsed before anything is sent (#336). A file that cannot be
+ * read or parsed is a usage error: printed with its code, exit 2.
+ */
+async function readDataTable(path: string, io: CliIo): Promise<DataTable | ExitCode> {
+  try {
+    const format = dataFormatOf(path);
+    let text: string;
+    try {
+      text = await readFile(path, 'utf8');
+    } catch (error) {
+      const reason = error instanceof Error && 'code' in error ? String(error.code) : 'unreadable';
+      io.stderr.write(`data-file-unreadable: the data file ${path} cannot be read (${reason})\n`);
+      return ExitCode.Usage;
+    }
+    return parseDataFile(text, format);
+  } catch (error) {
+    if (isWirebenchError(error)) {
+      io.stderr.write(`${error.code}: ${path}: ${error.message}\n`);
+      return ExitCode.Usage;
+    }
+    throw error;
+  }
+}
+
+/**
  * `wirebench run`: everything that can be refused is refused before the first send — a workspace
  * for a project, an unloadable project, an unknown environment, a selector that matches nothing —
  * because a pipeline that tested nothing must not be told it passed.
@@ -213,6 +250,15 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     }
     io.stderr.write(`warning: "${environment.name}" is a protected environment\n`);
   }
+  const table = args.data !== undefined ? await readDataTable(args.data, io) : undefined;
+  if (typeof table === 'number') {
+    return table;
+  }
+  const plan = planIterations({
+    ...(table !== undefined ? { rows: table.rows } : {}),
+    ...(args.iterations !== undefined ? { iterations: args.iterations } : {}),
+    ...(args.dataOverrun !== undefined ? { overrun: args.dataOverrun } : {}),
+  });
   const needs = secretNeedsOf(selected, project, args.vars, workspace?.workspace);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
   // one as it arrives, and every mask built after that — they are built per result — hides it.
@@ -283,19 +329,27 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       }
       return ExitCode.Usage;
     }
-    result =
-      sequences !== undefined
-        ? await runSequences(sequences, context, {
+    // One sender and one pacer for the whole run: a definition loads once, an OAuth2 token is shared,
+    // and the delay holds between iterations too (#336).
+    const send = createRunSender(context);
+    const pace = createPacer(args.delayMs, controller.signal);
+    const once = (iteration: Iteration): Promise<RunResult> => {
+      const iterated = iterationContext(context, iteration);
+      const done = (request: RequestResult): void => output.onRequestDone(tagIteration(request, iteration));
+      return sequences !== undefined
+        ? runSequences(sequences, iterated, {
             bail: args.bail,
             requireAssertions: args.requireAssertions,
             ...(args.slaMs !== undefined ? { slaMs: args.slaMs } : {}),
             signal: controller.signal,
-            onStepDone: (step) => output.onRequestDone(step),
+            onStepDone: done,
             containsKnownSecret: maskerDetects(maskNow),
             captures: captures.source,
             onCallbackWaiting,
+            send,
+            pace,
           })
-        : await runRequests(selected, context, {
+        : runRequests(selected, iterated, {
             bail: args.bail,
             // An API or folder run: its scripts may steer it (#335).
             runControl: true,
@@ -320,10 +374,14 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
                   },
                 }
               : {}),
-            onRequestDone: (request) => output.onRequestDone(request),
+            onRequestDone: done,
             captures: captures.source,
             onCallbackWaiting,
+            send,
+            pace,
           });
+    };
+    result = await runIterations(plan, once, { bail: args.bail, signal: controller.signal });
   } catch (error) {
     // An unexpected failure is printed by `main`; its message must not carry a value either. Only
     // the message is masked: `main` never prints `error.stack`, which still holds the raw text. A

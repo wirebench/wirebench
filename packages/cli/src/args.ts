@@ -11,6 +11,8 @@ import {
   VERB_HELP,
 } from './args-ops.js';
 import type { CallArgs, ExportArgs, McpArgs, OpArgs } from './args-ops.js';
+import { DATA_OPTIONS, parseRunData, refuseRunDataOnly } from './args-data.js';
+import type { RunDataArgs } from './args-data.js';
 import { DIFF_CONTRACT_HELP, DIFF_CONTRACT_USAGE, parseDiffContract } from './args-diff-contract.js';
 import type { DiffContractArgs } from './args-diff-contract.js';
 import { MOCK_CHECK_HELP, MOCK_HELP, parseMockCheck, parseMockServe } from './args-mock.js';
@@ -45,13 +47,20 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --sequence <name>  Run a sequence (by name, or sequences/<slug>.sequence.yaml) instead of
                        requests: its steps in order, with their transfers and assertions.
                        Repeatable; cannot be combined with selectors.
+    --data <file>      CSV (header row) or JSON (array of objects): one iteration per row, each
+                       column read as \${#Data#column}. Relative to the working directory.
+    --iterations <n>   Iterations to run (1-10000). Default: the data file's rows, else 1.
+    --data-overrun <mode>
+                       stop | wrap | repeat-last: when --iterations exceeds the rows. Default: stop.
+    --delay <ms>       Wait between requests (and sequence steps), across iterations.
 
 -e, --env <name>       Environment by name or slug. Required when the target defines any.
     --refuse-protected Exit 2 before sending when the environment is protected; without it a
                        protected environment is only warned about.
     --var <k=v>        Override an environment property for this run. Repeatable.
     --reporter <spec>  cli | junit=<file> | json=<file> | html=<file>. Repeatable. Default: cli.
-    --bail             Stop at the first failed or errored request; the rest are skipped.
+    --bail             Stop at the first failed or errored request; the rest are skipped, and so
+                       are every later iteration.
     --timeout <ms>     Per-request timeout override.
     --sla <ms>         Default response-time ceiling for requests that declare none.
     --require-assertions  A request without assertions is an error.
@@ -97,7 +106,7 @@ wirebench <verb> --help`;
 export type ReporterSpec =
   { readonly kind: 'cli' } | { readonly kind: 'junit' | 'json' | 'html'; readonly file: string };
 
-export interface RunArgs {
+export interface RunArgs extends RunDataArgs {
   readonly command: 'run';
   readonly path: string;
   readonly selectors: readonly string[];
@@ -233,6 +242,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean' },
         'fail-on': { type: 'string' },
+        ...DATA_OPTIONS,
         ...OP_OPTIONS,
         ...MOCK_RECORD_OPTIONS,
       },
@@ -267,6 +277,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     return { command: 'help' };
   }
 
+  if (word !== 'run') {
+    refuseRunDataOnly(values, `wirebench ${word === 'secrets' ? 'secrets list' : word}`);
+  }
+
   if (word === 'mock') {
     refuseDiffOnly(values, 'wirebench mock');
     // `mock record …` records (#60), `mock check …` checks stubs (#325); any other `mock <path> …` serves (#61).
@@ -298,6 +312,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     if (baseline && sequences.length > 0) {
       throw new UsageError('--baseline cannot be combined with --sequence: sequence steps are not compared');
     }
+    const data = parseRunData(values, baseline || updateBaseline);
     const vars = parseVars(values.var);
     const reporterSpecs = values.reporter ?? [];
     const reporters: readonly ReporterSpec[] =
@@ -323,6 +338,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       color: !values['no-color'],
       quiet: values.quiet ?? false,
       verbose: values.verbose ?? false,
+      ...data,
     };
   }
 

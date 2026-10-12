@@ -81,6 +81,16 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
     return lines;
   };
 
+  // A data-driven run's requests come in iteration order; a heading opens each iteration (#336).
+  let shownIteration: number | undefined;
+  const iterationHeading = (result: RequestResult): void => {
+    const { iteration } = result;
+    if (iteration === undefined || iteration.index === shownIteration) return;
+    shownIteration = iteration.index;
+    const row = iteration.row !== undefined ? ` (row ${iteration.row + 1})` : '';
+    out.write(`${iteration.index === 0 ? '' : '\n'}Iteration ${iteration.index + 1}/${iteration.count}${row}\n`);
+  };
+
   return {
     onCallbackWaiting(path, waiting) {
       if (options.interactive !== true || options.quiet) {
@@ -94,6 +104,7 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       if (options.quiet && result.outcome === 'passed') {
         return;
       }
+      iterationHeading(result);
       const parts = [paint(result.outcome, `${MARK[result.outcome]} ${result.path}`)];
       if (result.status !== undefined) {
         parts.push(String(result.status));
@@ -136,6 +147,10 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       out.write(
         `\n${passed} passed, ${failed} failed, ${errored} errored, ${skipped} skipped in ${(durationMs / 1000).toFixed(1)}s\n`,
       );
+      if (result.summary.iterations !== undefined) {
+        const { planned, run } = result.summary.iterations;
+        out.write(run === planned ? `${run} iterations\n` : `${run} of ${planned} iterations run\n`);
+      }
       if (result.summary.baseline !== undefined) {
         const { matched, differs, missing } = result.summary.baseline;
         out.write(`baseline: ${matched} matched, ${differs} differ, ${missing} missing\n`);

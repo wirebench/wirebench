@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
+  Each column is read as `${#Data#column}`, substituted literally, and scripts read the row with
+  `iteration.data.get()`. `--iterations` sets the count (`--data-overrun stop|wrap|repeat-last` when it
+  exceeds the rows), `--delay` waits between requests, and `--bail` stops every later iteration. Every
+  reporter names each request's iteration; a run without data reports as before (#336).
 - **Branching in sequences.** A sequence step can repeat itself, go to another step or skip the next
   one, depending on its response: the status, a header, a body expression, a SOAP fault, or whether the
   step passed, failed or errored. Every repeat and go-to has a maximum (at most 100) and can wait before

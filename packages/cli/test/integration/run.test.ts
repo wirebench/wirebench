@@ -258,6 +258,26 @@ describe('wirebench run — a project inside a workspace', () => {
     expect(demo.requests).toHaveLength(1);
   });
 
+  it('refuses a data-driven run under a protected environment before reading its data file (#336)', async () => {
+    const dir = await workspaceWith({ baseUrl: demo.url });
+    const envFile = join(dir, '..', '..', 'environments', 'ci.yaml');
+    await writeFile(envFile, `${await readFile(envFile, 'utf8')}protected: true\n`);
+    const rows = join(dir, '..', 'rows.csv');
+    await writeFile(rows, 'user\nann\nbob\n');
+
+    // The check comes first: a data file that is not there is never reached.
+    const refused = await runCli(['run', dir, '-e', 'CI', '--refuse-protected', '--data', join(dir, 'nowhere.csv')]);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('environment-protected');
+    expect(refused.stderr).not.toContain('data-file');
+    expect(demo.requests).toHaveLength(0);
+
+    const warned = await runCli(['run', dir, '-e', 'CI', '--data', rows, 'demo/ok']);
+    expect(warned.code).toBe(0);
+    expect(warned.stderr).toContain('warning: "CI" is a protected environment');
+    expect(demo.requests).toHaveLength(2);
+  });
+
   it('runs an unprotected environment with --refuse-protected and no warning', async () => {
     const dir = await workspaceWith({ baseUrl: demo.url });
     const { code, stderr } = await runCli(['run', dir, '-e', 'CI', '--refuse-protected', 'demo/ok']);

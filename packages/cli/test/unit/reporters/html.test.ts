@@ -64,3 +64,23 @@ describe('renderHtml', () => {
     expect(out).toContain('<p>Baseline not compared (&lt;b&gt;x).</p>');
   });
 });
+
+describe('renderHtml for a data-driven run (#336)', () => {
+  it('names each request’s iteration and data row, and the iterations run', () => {
+    const [passed] = SAMPLE_RESULT.requests;
+    const iterated = renderHtml(
+      {
+        ...SAMPLE_RESULT,
+        summary: { ...SAMPLE_RESULT.summary, iterations: { planned: 3, run: 2 } },
+        requests: [{ ...passed!, iteration: { index: 1, count: 3, row: 4 } }],
+      },
+      { name: 'wirebench', version: '0.0.0' },
+    );
+    expect(iterated).toContain('iteration 2/3, row 5');
+    expect(iterated).toContain('2 of 3 iterations');
+  });
+
+  it('adds nothing for a plain run', () => {
+    expect(html).not.toContain('iteration');
+  });
+});

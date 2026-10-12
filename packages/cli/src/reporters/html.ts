@@ -102,9 +102,13 @@ function renderSummary(result: RequestResult): string {
   const status = result.status !== undefined ? ` — ${String(result.status)}` : '';
   const duration = seconds(result.durationMs);
   const time = duration !== undefined ? ` — ${duration}` : '';
+  const { iteration } = result;
+  const row = iteration?.row !== undefined ? `, row ${String(iteration.row + 1)}` : '';
+  const which =
+    iteration !== undefined ? ` — iteration ${String(iteration.index + 1)}/${String(iteration.count)}${row}` : '';
   return (
     `<span class="${OUTCOME_CLASS[result.outcome]}">${escapeHtml(mark)}</span> ` +
-    `${escapeHtml(result.path)}${escapeHtml(status)}${escapeHtml(time)}`
+    `${escapeHtml(result.path)}${escapeHtml(status)}${escapeHtml(time)}${escapeHtml(which)}`
   );
 }
 
@@ -159,6 +163,11 @@ export function renderHtml(result: RunResult, tool: { readonly name: string; rea
   const { total, passed, failed, errored, skipped } = result.summary;
   const counts = `${String(passed)} passed, ${String(failed)} failed, ${String(errored)} errored, ${String(skipped)} skipped`;
   const environment = result.environment !== undefined ? `<p>environment: ${escapeHtml(result.environment)}</p>` : '';
+  const ran = result.summary.iterations;
+  const iterations =
+    ran === undefined
+      ? ''
+      : `<p>${ran.run === ran.planned ? `${String(ran.run)} iterations` : `${String(ran.run)} of ${String(ran.planned)} iterations`}</p>`;
   const requests = result.requests.map(renderRequest).join('');
   return `<!doctype html>
 <html lang="en">
@@ -225,7 +234,7 @@ pre {
 <body>
 <header>
 <h1>${escapeHtml(tool.name)} ${escapeHtml(tool.version)} run report</h1>
-${environment}
+${environment}${iterations}
 <p>started: ${escapeHtml(result.startedAt)}</p>
 <p>${escapeHtml(String(total))} total — ${escapeHtml(counts)}</p>
 </header>

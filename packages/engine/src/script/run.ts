@@ -54,6 +54,10 @@ export interface ScriptRunInput {
   readonly props: Readonly<Record<string, string>>;
   /** The values of the secrets `scripts.secrets` lists, and no others. */
   readonly secrets: Readonly<Record<string, string>>;
+  /** A data-driven run's row for this iteration (#336); absent: an empty row. */
+  readonly data?: Readonly<Record<string, string>>;
+  /** Which iteration this is (0-based) of how many; absent: 0 of 1. */
+  readonly iteration?: { readonly index: number; readonly count: number };
   /** The request's name, for `pm.info.requestName`. */
   readonly requestName: string;
   /** An extra layer run after the API and before the script (the Postman one, spec §Postman). */
@@ -193,6 +197,9 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
       vars: input.vars,
       props: input.props,
       secrets: input.secrets,
+      // A plain object for the sandbox: a row built without a prototype would not survive JSON as-is.
+      data: { ...input.data },
+      iteration: { index: input.iteration?.index ?? 0, count: input.iteration?.count ?? 1 },
       info: { requestName: input.requestName },
     },
   });

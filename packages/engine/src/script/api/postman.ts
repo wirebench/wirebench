@@ -233,15 +233,19 @@ const pmObject = {
   info: Object.freeze({
     requestName: input.info.requestName,
     eventName: input.phase === 'pre' ? 'prerequest' : 'test',
-    iteration: 0,
-    iterationCount: 1,
+    iteration: iteration.index,
+    iterationCount: iteration.count,
   }),
   request: pmRequest(),
   sendRequest: unsupported('pm.sendRequest'),
   cookies: Object.freeze({ get: () => undefined, has: () => false, toObject: () => ({}), jar: unsupported('pm.cookies.jar') }),
   visualizer: Object.freeze({ set: unsupported('pm.visualizer') }),
   execution: Object.freeze({ setNextRequest: (name) => execution.setNextRequest(name), skipRequest: () => execution.skipRequest() }),
-  iterationData: Object.freeze({ get: unsupported('pm.iterationData') }),
+  iterationData: Object.freeze({
+    get: (name) => iteration.data.get(name),
+    has: (name) => iteration.data.get(name) !== undefined,
+    toObject: () => Object.assign({}, input.data),
+  }),
   vault: Object.freeze({ get: unsupported('pm.vault') }),
   require: unsupported('pm.require'),
 };

@@ -11,9 +11,11 @@ import {
 import type {
   CallbackWaiting,
   CaptureSource,
+  Pacer,
   Project,
   RequestResult,
   RunContext,
+  RunRequestSender,
   RunResult,
   SelectedRequest,
   SentRequest,
@@ -116,6 +118,10 @@ export interface RunSequencesOptions {
   readonly captures: CaptureSource;
   /** A step has sent and waits for callbacks; `path` is the step's report path. */
   readonly onCallbackWaiting: (path: string, waiting: readonly CallbackWaiting[]) => void;
+  /** The run's sender, shared by every iteration of a data-driven run; one of its own when absent. */
+  readonly send?: RunRequestSender;
+  /** Waited on before each step's send: a data-driven run's delay (#336). */
+  readonly pace?: Pacer;
 }
 
 /**
@@ -130,7 +136,7 @@ export async function runSequences(
 ): Promise<RunResult> {
   const started = performance.now();
   const startedAt = new Date().toISOString();
-  const send = createRunSender(context);
+  const send = options.send ?? createRunSender(context);
   const results: RequestResult[] = [];
   let bailed = false;
 
@@ -149,9 +155,13 @@ export async function runSequences(
         return { error: { code: 'assertions-required', message: 'This step has no assertions.' } };
       }
       try {
+        await options.pace?.wait();
         const sent = await send(step.selected, {
           sequence: sequenceScope,
           ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
+          // An iteration's row reaches every step (#336).
+          ...(context.data !== undefined ? { data: context.data } : {}),
+          ...(context.iteration !== undefined ? { iteration: context.iteration } : {}),
         });
         raw.set(`${step.step.id}#${step.attempt}`, sent.raw);
         return {

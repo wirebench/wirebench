@@ -41,11 +41,18 @@ wirebench run <path> [selector…] [options]
     --sequence <name>  Run a sequence (by name, or sequences/<slug>.sequence.yaml) instead of
                        requests: its steps in order, with their transfers and assertions.
                        Repeatable; cannot be combined with selectors.
+    --data <file>      CSV (header row) or JSON (array of objects): one iteration per row, each
+                       column read as ${#Data#column}. Relative to the working directory.
+    --iterations <n>   Iterations to run (1-10000). Default: the data file's rows, else 1.
+    --data-overrun <mode>
+                       stop | wrap | repeat-last: when --iterations exceeds the rows. Default: stop.
+    --delay <ms>       Wait between requests (and sequence steps), across iterations.
 
 -e, --env <name>       Environment by name, slug or id. Required when the target defines any.
     --var <k=v>        Override an environment property for this run. Repeatable.
     --reporter <spec>  cli | junit=<file> | json=<file> | html=<file>. Repeatable. Default: cli.
-    --bail             Stop at the first failed or errored request; the rest are skipped.
+    --bail             Stop at the first failed or errored request; the rest are skipped, and so
+                       are every later iteration.
     --timeout <ms>     Per-request timeout override.
     --sla <ms>         Default response-time ceiling for requests that declare none.
     --require-assertions  A request without assertions is an error.
@@ -274,6 +281,42 @@ A step's `branches` can repeat it, go to another step or skip the next one ([des
 - The json report adds `attempt`, `retried` and `branch` (`{ rule, action, to?, count, max?, limitReached? }`),
   the html report a Path line. Both are additive; the json `formatVersion` stays 1.
 - A run stops at 1000 step runs, erroring the next step with `sequence-run-limit` (exit 3).
+
+## Data-driven runs
+
+`--data <file>` runs the selection, or the sequences, once per row of a CSV or JSON file (#336, see
+[the design](specs/2026-10-11-data-driven-runs-design.md)). Each row's columns are read as `${#Data#column}`:
+
+```text
+wirebench run ./shop -e staging apis/accounts --data accounts.csv --reporter junit=reports/accounts.xml
+```
+
+- **CSV**: the first line names the columns; RFC 4180 quoting (`"Smith, J"`, `""` for a quote, line breaks inside
+  quotes). **JSON**: an array of objects; a number or boolean becomes its text, `null` an empty value, an object or
+  array its JSON. Every value is text.
+- `${#Data#column}` is substituted as it is: a `${…}` inside a cell is not expanded, a `${secret:…}` inside one is
+  never resolved, and the `${column}` shorthand never reaches a column. A missing column stays unresolved, as any
+  missing property does.
+- Scripts read the row with `iteration.data.get('column')`, and `iteration.index` (0-based) and `iteration.count`.
+  The compatibility API's `pm.iterationData` reads the same row.
+- `--iterations <n>` runs that many iterations; without `--data` it repeats the selection `n` times. With more
+  iterations than rows, `--data-overrun` decides: `stop` (the default) ends after the last row, `wrap` starts again
+  at the first row, `repeat-last` keeps reading the last one.
+- `--delay <ms>` waits between sends: between requests, between sequence steps, and across iterations.
+- Values scripts set (`vars.set`) and sequence transfers start empty in every iteration. The cookie jar and OAuth2
+  tokens are the run's, shared by all iterations.
+- `--bail` stops at the first failure and runs no later iteration; the summary says how many ran.
+- The file is read before anything is sent: a file that cannot be read (`data-file-unreadable`), an unknown
+  extension (`data-file-format`), a malformed file (`data-file-invalid`, naming the line or item, never a value), a
+  file with no rows (`data-file-empty`) or one past 10 MiB, 100 000 rows or 1 000 columns (`data-file-too-large`)
+  exits 2.
+- `--data` and `--iterations` cannot be combined with `--baseline` or `--update-baseline`: a golden is per request,
+  not per row.
+
+Every report names the iteration: the `cli` reporter opens each with `Iteration 2/5 (row 2)` and ends with the
+iteration count, `junit` has one test suite per group and iteration (`<group> [iteration 2]`), `json` gives each
+request an `iteration` (`{ index, count, row? }`) and the summary `iterations` (`{ planned, run }`), and `html`
+names each request's iteration and row. A run of one iteration without data reports exactly as before.
 
 ## Scripts
 

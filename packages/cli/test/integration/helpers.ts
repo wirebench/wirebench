@@ -78,8 +78,9 @@ export async function startDemoServer(): Promise<DemoServer> {
   const client = `Basic ${Buffer.from(`runner:${CLIENT_SECRET}`).toString('base64')}`;
   let issued = 0;
   const server = createServer((req, res) => {
-    const path = req.url ?? '/';
-    requests.push(path);
+    // Recorded with its query; routed by its path alone, so a request may carry a data row's values.
+    requests.push(req.url ?? '/');
+    const path = (req.url ?? '/').split('?')[0]!;
     const json = (status: number, body: unknown): void => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));

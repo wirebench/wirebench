@@ -48,3 +48,9 @@ export type {
   PushMessage,
   StreamingSide,
 } from './exchange.js';
+export { DATA_FILE_LIMITS, dataFormatOf, parseDataFile } from './data-file.js';
+export type { DataFormat, DataTable } from './data-file.js';
+export { DATA_OVERRUNS, MAX_ITERATIONS, planIterations } from './iterations.js';
+export type { DataOverrun, Iteration, IterationPlanInput } from './iterations.js';
+export { createPacer, iterationContext, runIterations, tagIteration } from './iterate.js';
+export type { Pacer, RunIterationsOptions } from './iterate.js';

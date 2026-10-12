@@ -33,7 +33,11 @@ const RESPONSE: RestResponseSnapshot = {
 const run = (
   phase: 'pre' | 'post',
   source: string,
-  extra: { vars?: Record<string, string> } = {},
+  extra: {
+    vars?: Record<string, string>;
+    data?: Record<string, string>;
+    iteration?: { index: number; count: number };
+  } = {},
 ): Promise<ScriptOutcome> =>
   runScript({
     sandbox,
@@ -44,6 +48,8 @@ const run = (
     request: REQUEST,
     ...(phase === 'post' ? { response: RESPONSE } : {}),
     vars: extra.vars ?? {},
+    ...(extra.data !== undefined ? { data: extra.data } : {}),
+    ...(extra.iteration !== undefined ? { iteration: extra.iteration } : {}),
     props: { baseUrl: 'https://shop.test' },
     secrets: {},
     requestName: 'Login',
@@ -156,5 +162,22 @@ describe('the Postman layer', () => {
       "postman.setEnvironmentVariable('a', 'b'); console.log(postman.getEnvironmentVariable('a'));",
     );
     expect(outcome).toMatchObject({ ok: true, values: [{ name: 'a', value: 'b' }], log: { lines: ['b'] } });
+  });
+
+  it('reads the iteration data and number (#336)', async () => {
+    const outcome = await run(
+      'pre',
+      "console.log(pm.iterationData.get('user'), pm.iterationData.has('user'), pm.iterationData.has('x'), JSON.stringify(pm.iterationData.toObject()), pm.info.iteration, pm.info.iterationCount);",
+      { data: { user: 'ann' }, iteration: { index: 2, count: 4 } },
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['ann true false {"user":"ann"} 2 4'] } });
+  });
+
+  it('answers an empty row and iteration 0 of 1 outside a data-driven run', async () => {
+    const outcome = await run(
+      'pre',
+      'console.log(String(pm.iterationData.get("user")), pm.info.iteration, pm.info.iterationCount);',
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['undefined 0 1'] } });
   });
 });

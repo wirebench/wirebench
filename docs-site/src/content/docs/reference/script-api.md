@@ -86,6 +86,13 @@ declare const vars: {
   /** A value is used exactly as set: never expanded, always escaped where it lands. */
   set(name: string, value: string | number | boolean, options?: { secret?: boolean }): void;
 };
+/** This iteration of a data-driven run: its 0-based index, how many the run makes, and its data row. */
+declare const iteration: {
+  readonly index: number;
+  readonly count: number;
+  /** The row's value for a column of the data file, as `${#Data#column}` reads it. */
+  readonly data: { get(column: string): string | undefined };
+};
 /** Resolved properties. A secret is never returned. */
 declare const props: { get(name: string): string | undefined };
 /** The secrets this request's `scripts.secrets` lists, and no others. */

@@ -42,6 +42,12 @@ describe('the checker service', () => {
     );
   });
 
+  it('knows the iteration global, and leaves a script its own `data` (#336)', () => {
+    const source =
+      'const data = { name: "x" };\nlog(data.name, iteration.index, iteration.count, iteration.data.get("user"));\n';
+    expect(checkOnce({ source, declarations: DECLARATIONS, api: 'wirebench' })).toEqual([]);
+  });
+
   it('refuses syntax that cannot be erased', () => {
     const errors = checkOnce({
       source: 'enum Color { Red }\nlog(Color.Red);',

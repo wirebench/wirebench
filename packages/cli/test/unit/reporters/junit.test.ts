@@ -244,3 +244,24 @@ describe('renderJunit', () => {
     expect(renderJunit(runOf([baselineMissing]))).toContain('<system-out>no baseline saved</system-out>');
   });
 });
+
+describe('renderJunit for a data-driven run (#336)', () => {
+  const [passed] = SAMPLE_RESULT.requests;
+  const iterated: RunResult = {
+    ...SAMPLE_RESULT,
+    summary: { ...SAMPLE_RESULT.summary, total: 2, passed: 2, failed: 0, errored: 0, skipped: 0 },
+    requests: [0, 1].map((index) => ({ ...passed!, iteration: { index, count: 2, row: index } })),
+  };
+  const doc = parseXmlDocument(renderJunit(iterated));
+
+  it('has one <testsuite> per group and iteration', () => {
+    const suites = childrenNamed(doc.documentElement!, 'testsuite').map((suite) => attributesOf(suite)['name']);
+    expect(suites).toEqual(['Orders/PlaceOrder [iteration 1]', 'Orders/PlaceOrder [iteration 2]']);
+  });
+
+  it('validates against the XSD', async () => {
+    const xsd = await readFile(XSD_PATH, 'utf8');
+    const result = await validateAgainstXsd(renderJunit(iterated), xsd);
+    expect(result.errors).toEqual([]);
+  });
+});

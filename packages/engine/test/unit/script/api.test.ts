@@ -328,3 +328,23 @@ describe('SOAP and gRPC scripts', () => {
     expect(outcome).toMatchObject({ ok: true, tests: [{ name: 'fault', passed: true }] });
   });
 });
+
+describe('a data-driven run’s iteration (#336)', () => {
+  it('reads the row and the iteration number', async () => {
+    const outcome = await pre(
+      'log(String(iteration.data.get("user")), String(iteration.data.get("constructor")), iteration.index, iteration.count);',
+      { data: { user: 'ann' }, iteration: { index: 1, count: 3 } },
+    );
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['ann undefined 1 3'] } });
+  });
+
+  it('sees an empty row and iteration 0 of 1 outside a data-driven run', async () => {
+    const outcome = await post('log(String(iteration.data.get("user")), iteration.index, iteration.count);');
+    expect(outcome).toMatchObject({ ok: true, log: { lines: ['undefined 0 1'] } });
+  });
+
+  it('cannot change the row', async () => {
+    const outcome = await pre('(iteration.data as unknown as { get: unknown }).get = 1;', { data: { a: '1' } });
+    expect(outcome).toMatchObject({ ok: false });
+  });
+});
