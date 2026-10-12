@@ -77,9 +77,18 @@ export const workspaceEnvironmentFileSchema = z.looseObject({
   /**
    * Ids of the projects this environment applies to. Absent means every project; `[]` means none.
    * An id naming no project in the workspace is kept, not dropped (the project may be re-added).
+   * Parsed leniently: a hand edit or merge that leaves this key malformed must not skip the whole
+   * file, because the next save would then delete it. Null or a non-list reads as absent; empty,
+   * non-string and repeated ids are dropped.
    */
-  projects: z.array(z.string().min(1)).optional(),
+  projects: z.unknown().optional().transform(lenientProjectIds),
 });
+
+function lenientProjectIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return [...new Set(ids)];
+}
 
 /** `local.yaml`: machine-local state, never part of the shared tree. See `local-state.ts`. */
 export const workspaceLocalStateSchema = z.object({

@@ -251,6 +251,33 @@ describe('workspace environment project scope', () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it.each([
+    ['null', 'projects: null\n', undefined],
+    ['a scalar', 'projects: billing\n', undefined],
+    ['a mapping', 'projects: { a: 1 }\n', undefined],
+    ['one empty id', 'projects:\n  - ""\n', []],
+    ['empty, repeated and non-string ids', "projects:\n  - a\n  - ''\n  - a\n  - 7\n  - b\n", ['a', 'b']],
+  ])('keeps the environment when a hand edit leaves projects as %s', async (_label, line, expected) => {
+    const dir = await tempWorkspaceDir();
+    await saveWorkspace(sampleWorkspace(), dir);
+    const file = join(dir, 'environments', 'dev.yaml');
+    await writeFile(file, (await readFile(file, 'utf8')) + line);
+
+    const { workspace: loaded, problems } = await loadWorkspace(dir);
+    expect(problems).toEqual([]);
+    const dev = loaded.environments.find((e) => e.slug === 'dev');
+    expect(dev).toMatchObject({
+      name: 'dev',
+      properties: { region: 'local' },
+      endpoints: { 'CountryInfo/CountryInfoSoap': 'http://localhost:8080/country' },
+      disabledProperties: ['region'],
+    });
+    if (expected === undefined) expect(dev).not.toHaveProperty('projects');
+    else expect(dev?.projects).toEqual(expected);
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe('loadWorkspace', () => {
