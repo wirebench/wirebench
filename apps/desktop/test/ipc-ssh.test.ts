@@ -41,6 +41,7 @@ const NO_SSH = {
 };
 const NO_HOSTS = { list: vi.fn(), save: vi.fn() };
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
+const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn() };
 const NO_SFTP = {
   open: vi.fn(),
   close: vi.fn(),
@@ -64,6 +65,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     const host = {
@@ -87,6 +89,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     const answer = (await invoke('ssh.saveHosts', { file: { ...EMPTY.file, extra: 1 } })) as { ok: boolean };
@@ -100,6 +103,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     expect(await invoke('ssh.listHosts', undefined)).toEqual({ ok: true, value: EMPTY });
@@ -113,6 +117,7 @@ describe('ssh channels', () => {
       secrets: { names, set: vi.fn() },
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     expect(await invoke('ssh.secretNames', undefined)).toEqual({
@@ -127,6 +132,7 @@ describe('ssh channels', () => {
       secrets: { names: vi.fn(), set },
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     const answer = await invoke('ssh.setSecret', { name: 'DEPLOY_KEY', value: 'hunter2-value' });
@@ -146,6 +152,7 @@ describe('ssh channels', () => {
       secrets: service,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     const answer = await invoke('ssh.setSecret', { name: 'my password!', value: 'hunter2-value' });
@@ -159,6 +166,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     const answer = (await invoke('ssh.setSecret', { name: 'A', value: 'v', extra: 1 })) as { ok: boolean };
@@ -179,7 +187,14 @@ describe('ssh channels', () => {
         hostOs: vi.fn(),
         setHostOs: vi.fn(),
       };
-      registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT, sftp: NO_SFTP });
+      registerSshChannels({
+        hosts: NO_HOSTS,
+        secrets: NO_SECRETS,
+        ssh,
+        importer: NO_IMPORT,
+        keys: NO_KEYS,
+        sftp: NO_SFTP,
+      });
       return ssh;
     }
     it('ssh.connect', async () => {
@@ -228,7 +243,14 @@ describe('known hosts channels', () => {
   it('list the trusted keys and forget one by host and key type', async () => {
     const entry = { host: 'box:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:abc' };
     const ssh = { ...NO_SSH, knownHosts: vi.fn().mockResolvedValue([entry]), forgetHostKey: vi.fn() };
-    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT, sftp: NO_SFTP });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+    });
     expect(await invoke('ssh.knownHosts', undefined)).toEqual({ ok: true, value: { entries: [entry] } });
     expect(await invoke('ssh.forgetHostKey', { host: 'box:22', keyType: 'ssh-ed25519' })).toEqual({
       ok: true,
@@ -239,7 +261,14 @@ describe('known hosts channels', () => {
 
   it('refuse a forget request with anything beyond host and key type', async () => {
     const ssh = { ...NO_SSH, forgetHostKey: vi.fn() };
-    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT, sftp: NO_SFTP });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+    });
     expect(
       await invoke('ssh.forgetHostKey', { host: 'box:22', keyType: 'ssh-ed25519', fingerprint: 'x' }),
     ).toMatchObject({ ok: false });
@@ -256,7 +285,14 @@ describe('host OS channels', () => {
       hostOs: vi.fn().mockResolvedValue(entries),
       setHostOs: vi.fn().mockResolvedValue(undefined),
     };
-    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT, sftp: NO_SFTP });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+    });
     expect(await invoke('ssh.hostOs', undefined)).toEqual({ ok: true, value: { entries } });
     expect(await invokeAs(window, 'ssh.setHostOs', { host: 'box:22', os: 'alpine' })).toEqual({ ok: true, value: {} });
     expect(await invokeAs(window, 'ssh.setHostOs', { host: 'box:22', os: null })).toEqual({ ok: true, value: {} });
@@ -266,7 +302,14 @@ describe('host OS channels', () => {
 
   it('refuse an unknown OS id and extra fields', async () => {
     const ssh = { ...NO_SSH, setHostOs: vi.fn() };
-    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh, importer: NO_IMPORT, sftp: NO_SFTP });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+    });
     expect(await invoke('ssh.setHostOs', { host: 'box:22', os: 'beos' })).toMatchObject({ ok: false });
     expect(await invoke('ssh.setHostOs', { host: 'box:22', os: null, extra: 1 })).toMatchObject({ ok: false });
     expect(ssh.setHostOs).not.toHaveBeenCalled();
@@ -282,6 +325,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: { preview, apply },
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     const window = { id: 7 };
@@ -302,6 +346,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: { preview, apply: vi.fn() },
+      keys: NO_KEYS,
       sftp: NO_SFTP,
     });
     expect(await invoke('ssh.importPreview', { source: 'pick', path: '/etc/passwd' })).toMatchObject({ ok: false });
@@ -314,7 +359,14 @@ describe('ssh import channels', () => {
       list: vi.fn(() => Promise.resolve({ path: '/srv', entries: [] })),
       chmod: vi.fn(() => Promise.resolve()),
     };
-    registerSshChannels({ hosts: NO_HOSTS, secrets: NO_SECRETS, ssh: NO_SSH, importer: NO_IMPORT, sftp });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp,
+    });
     const window = { id: 3 };
     const place = { kind: 'remote', sessionId: 's1' };
     await expect(invokeAs(window, 'sftp.list', { place, path: '/srv' })).resolves.toEqual({
@@ -328,5 +380,39 @@ describe('ssh import channels', () => {
     expect(sftp.chmod).not.toHaveBeenCalled();
     await expect(invokeAs(window, 'sftp.close', { sessionId: 's1' })).resolves.toEqual({ ok: true, value: {} });
     expect(sftp.close).toHaveBeenCalledWith(window, { sessionId: 's1' });
+  });
+});
+
+describe('ssh key channels', () => {
+  it('pass the calling window to keys and install, and refuse a stray field on generate', async () => {
+    const keys = {
+      generate: vi.fn(),
+      keys: vi.fn(() => Promise.resolve([{ name: 'k', locked: true }])),
+      install: vi.fn(() => Promise.resolve({ result: 'added' as const })),
+    };
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      keys,
+      sftp: NO_SFTP,
+    });
+    const window = { id: 4 };
+    expect(await invokeAs(window, 'ssh.keys', undefined)).toEqual({
+      ok: true,
+      value: { keys: [{ name: 'k', locked: true }] },
+    });
+    expect(keys.keys).toHaveBeenCalledWith(window);
+    expect(await invokeAs(window, 'ssh.installKey', { secret: 'k', hostId: 'web' })).toEqual({
+      ok: true,
+      value: { result: 'added' },
+    });
+    expect(keys.install).toHaveBeenCalledWith(window, { secret: 'k', hostId: 'web' });
+    const stray = (await invoke('ssh.generateKey', { name: 'k', algorithm: 'ed25519', privateKey: 'x' })) as {
+      ok: boolean;
+    };
+    expect(stray.ok).toBe(false);
+    expect(keys.generate).not.toHaveBeenCalled();
   });
 });

@@ -57,6 +57,8 @@ export async function startSshFixture(options: {
    * chroot); `'refuse'` rejects the subsystem. Without it the subsystem is refused too.
    */
   sftp?: { root: string } | 'refuse';
+  /** Runs exec requests under `/bin/sh` with HOME (and the working folder) set to `home`; without it they do nothing. */
+  exec?: { home: string };
 }): Promise<SshFixture> {
   const sftp = options.sftp;
   const sftpBinary = typeof sftp === 'object' ? findSftpServer() : null;
@@ -125,11 +127,29 @@ export async function startSshFixture(options: {
           fixture.lastResize = { cols: info.cols, rows: info.rows };
           accept?.();
         });
-        // Runs nothing: stdout stays empty, as a refused exec channel's would, and the exit status is 0.
-        session.on('exec', (accept) => {
+        // Without `exec`, runs nothing: stdout stays empty, as a refused exec channel's would, and the exit
+        // status is 0. With it, `/bin/sh -c` runs the command for real with HOME set to that folder.
+        session.on('exec', (accept, _reject, info) => {
           const stream = accept();
-          stream.exit(0);
-          stream.end();
+          if (options.exec === undefined) {
+            stream.exit(0);
+            stream.end();
+            return;
+          }
+          const child = spawn('/bin/sh', ['-c', info.command], {
+            cwd: options.exec.home,
+            env: { HOME: options.exec.home, PATH: process.env['PATH'] ?? '/usr/bin:/bin' },
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+          children.add(child);
+          child.stdout.on('data', (data: Buffer) => stream.write(data));
+          child.stderr.on('data', (data: Buffer) => stream.stderr.write(data));
+          child.on('error', () => stream.close());
+          child.on('close', (code) => {
+            children.delete(child);
+            stream.exit(code ?? 1);
+            stream.end();
+          });
         });
         if (sftp !== undefined) {
           session.on('subsystem', (accept, reject, info) => {

@@ -39,6 +39,7 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter, secretStoreLabel } from './secret-resolver.js';
+import { SshKeysService } from './ssh-keys.js';
 import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
 import { TeamSecretsService } from './team-secrets-service.js';
@@ -527,6 +528,12 @@ const sshService = new SshService({
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
+/** The keychain's SSH keys: generated and opened in main, installed over the host's current sign-in. */
+const sshKeys = new SshKeysService({
+  secrets: sshSecrets,
+  connector: sshConnector,
+  secretsFor: sshConnectDeps.secretsFor,
+});
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
 const workspaceState = new WorkspaceState(app.getPath('userData'));
@@ -1225,6 +1232,7 @@ void app.whenReady().then(() => {
     secrets: sshSecrets,
     ssh: sshService,
     sftp: sftpService,
+    keys: sshKeys,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),

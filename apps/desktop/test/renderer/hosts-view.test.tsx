@@ -9,8 +9,11 @@ const setSecret = vi.fn();
 const knownHosts = vi.fn();
 const forgetHostKey = vi.fn();
 const setHostOs = vi.fn();
+const sshKeys = vi.fn(() => Promise.resolve({ ok: true, value: { keys: [] } }));
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey, setHostOs } }),
+  ipc: () => ({
+    ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey, setHostOs, keys: sshKeys },
+  }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
