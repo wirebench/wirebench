@@ -12,7 +12,12 @@ export type SshErrorCode =
   | 'ssh-connect-failed'
   | 'ssh-session-unknown'
   | 'ssh-config-empty'
-  | 'ssh-import-stale';
+  | 'ssh-import-stale'
+  | 'sftp-unavailable'
+  | 'sftp-not-found'
+  | 'sftp-permission-denied'
+  | 'sftp-exists'
+  | 'sftp-failed';
 
 /** Mirrors the engine's WirebenchError shape (code, message, details) without importing it. */
 export class SshModelError extends Error {
