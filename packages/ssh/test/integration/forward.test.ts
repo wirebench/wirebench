@@ -125,7 +125,10 @@ async function socksConnect(proxyPort: number, host: string, port: number): Prom
 async function hold(port: number): Promise<net.Server> {
   const server = net.createServer();
   holders.push(server);
-  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
   return server;
 }
 
@@ -286,5 +289,100 @@ describe('openForwardConnection: dynamic', () => {
     connections.push(connection);
     await connection.start(rule({ id: 'socks', type: 'dynamic', port }));
     expect(await socksReplyCode(port)).toBe(0x05);
+  });
+});
+
+describe('openForwardConnection: reconnect', () => {
+  /** Captures each scheduled retry so the test fires them by hand. */
+  function fakeTimers() {
+    const pending: (() => void)[] = [];
+    const setTimeoutFake = ((fn: () => void) => {
+      pending.push(fn);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    const fire = () => {
+      const next = pending.shift();
+      if (next === undefined) throw new Error('no retry scheduled');
+      next();
+    };
+    return { pending, setTimeoutFake, fire };
+  }
+  function openWithTimers(hops: ReturnType<typeof hop>[], timers: ReturnType<typeof fakeTimers>) {
+    const connection = openForwardConnection({ hops, verifyHostKey: accept, setTimeout: timers.setTimeoutFake });
+    connections.push(connection);
+    return connection;
+  }
+  const state = (status: ForwardStatus | undefined) => status?.state;
+
+  it('keeps the ports while reconnecting and comes back, asking for the remote rule again', async () => {
+    const f = await fixture({ tcpipForward: true });
+    const e = await echo();
+    const [localPort, remotePort] = [await freePort(), await freePort()];
+    const timers = fakeTimers();
+    const connection = openWithTimers([hop(f.port)], timers);
+    const { last } = record(connection);
+    const target = { host: '127.0.0.1', port: e.port };
+    await connection.start(rule({ id: 'db', type: 'local', port: localPort, target }));
+    await connection.start(rule({ id: 'web', type: 'remote', port: remotePort, target }));
+
+    await f.close();
+    fixtures.splice(fixtures.indexOf(f), 1);
+    await until(() => state(last('db')) === 'reconnecting' && state(last('web')) === 'reconnecting');
+    expect(last('db')).toEqual({ state: 'reconnecting', attempt: 1, nextInMs: 1000 });
+    expect(last('web')).toEqual({ state: 'reconnecting', attempt: 1, nextInMs: 1000 });
+    expect(timers.pending).toHaveLength(1);
+
+    await expect(hold(localPort)).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    holders.pop()?.close();
+    const meanwhile = await connectTo(localPort);
+    meanwhile.on('error', () => undefined);
+    await closed(meanwhile);
+
+    const back = await fixture({ tcpipForward: true, port: f.port });
+    timers.fire();
+    await until(() => state(last('db')) === 'running' && state(last('web')) === 'running');
+    expect(last('db')).toMatchObject({ listening: { port: localPort } });
+    expect(back.remoteForwards).toEqual([{ bindAddr: 'localhost', bindPort: remotePort, cancelled: false }]);
+    expect(await roundTrip(localPort, 'again')).toBe('again');
+    expect(await roundTrip(remotePort, 'remote again')).toBe('remote again');
+  });
+
+  it('gives up after ten attempts, freeing the port', async () => {
+    const f = await fixture();
+    const port = await freePort();
+    const timers = fakeTimers();
+    const connection = openWithTimers([hop(f.port)], timers);
+    const { seen, last } = record(connection);
+    await connection.start(rule({ id: 'db', type: 'local', port, target: { host: '127.0.0.1', port: 1 } }));
+    await f.close();
+    fixtures.splice(fixtures.indexOf(f), 1);
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      await until(() => timers.pending.length === 1);
+      timers.fire();
+    }
+    await until(() => state(last('db')) === 'failed');
+    expect(last('db')).toMatchObject({ state: 'failed', error: { code: 'ssh-forward-gave-up' } });
+    expect(timers.pending).toHaveLength(0);
+    const waits = seen.flatMap(({ status }) => (status.state === 'reconnecting' ? [status.nextInMs] : []));
+    expect(waits).toEqual([1000, 2000, 4000, 8000, 16_000, 30_000, 30_000, 30_000, 30_000, 30_000]);
+    await hold(port);
+  });
+
+  it('fails at once when the reconnect is refused with ssh-auth-failed', async () => {
+    const f = await fixture();
+    const port = await freePort();
+    const timers = fakeTimers();
+    const connection = openWithTimers([hop(f.port)], timers);
+    const { last } = record(connection);
+    await connection.start(rule({ id: 'db', type: 'local', port, target: { host: '127.0.0.1', port: 1 } }));
+    await f.close();
+    fixtures.splice(fixtures.indexOf(f), 1);
+    await until(() => timers.pending.length === 1);
+    await fixture({ port: f.port, password: { user: 'tester', password: 'changed' } });
+    timers.fire();
+    await until(() => state(last('db')) === 'failed');
+    expect(last('db')).toMatchObject({ state: 'failed', error: { code: 'ssh-auth-failed' } });
+    expect(timers.pending).toHaveLength(0);
+    await hold(port);
   });
 });

@@ -37,6 +37,11 @@ export interface ForwardConnection {
   onStatus(listener: (ruleId: string, status: ForwardStatus) => void): () => void;
 }
 
+/** The terminal's reconnect schedule (#407): these waits, then the maximum, for ten attempts in all. */
+export const FORWARD_RECONNECT_DELAYS_MS: readonly number[] = [1000, 2000, 4000, 8000, 16_000];
+export const FORWARD_RECONNECT_MAX_DELAY_MS = 30_000;
+export const FORWARD_RECONNECT_ATTEMPTS = 10;
+
 /** ssh-forward-port-in-use {address,port} · ssh-forward-bind-failed {address,port,errno} · ssh-forward-refused · ssh-forward-gave-up */
 export class ForwardError extends SshModelError {}
 
@@ -105,10 +110,13 @@ function forwardOut(client: Client, socket: net.Socket, host: string, port: numb
 /** One host's forwards over one chain, dialled on the first start and ended with the last stop. */
 export function openForwardConnection(options: DialOptions & ForwardConnectionOptions): ForwardConnection {
   const dial = options.dial ?? dialChain;
+  const schedule = options.setTimeout ?? setTimeout;
   const rules = new Map<string, Running>();
   const listeners = new Set<(ruleId: string, status: ForwardStatus) => void>();
   let chain: DialledChain | undefined;
   let dialling: Promise<DialledChain> | undefined;
+  /** Bumped on every loss, so a retry scheduled for an earlier one does nothing. */
+  let generation = 0;
 
   const emit = (id: string, status: ForwardStatus): void => {
     for (const listener of listeners) listener(id, status);
@@ -240,6 +248,7 @@ export function openForwardConnection(options: DialOptions & ForwardConnectionOp
     dialling ??= dial({ hops: options.hops, verifyHostKey: options.verifyHostKey })
       .then((dialled) => {
         dialled.client.on('tcp connection', onTcpConnection);
+        dialled.onLost(() => onChainLost(dialled));
         chain = dialled;
         return dialled;
       })
@@ -260,6 +269,76 @@ export function openForwardConnection(options: DialOptions & ForwardConnectionOp
     for (const socket of running.sockets) socket.destroy();
     running.sockets.clear();
     running.server?.close();
+  };
+
+  const reconnecting = (): Running[] => [...rules.values()].filter((r) => r.status.state === 'reconnecting');
+
+  const fail = (running: Running, error: unknown): void => {
+    rules.delete(running.rule.id);
+    release(running);
+    setStatus(running, { state: 'failed', error: errorOf(error) });
+  };
+
+  const scheduleRetry = (attempt: number): void => {
+    const token = generation;
+    const nextInMs = FORWARD_RECONNECT_DELAYS_MS[attempt - 1] ?? FORWARD_RECONNECT_MAX_DELAY_MS;
+    for (const running of reconnecting()) setStatus(running, { state: 'reconnecting', attempt, nextInMs });
+    schedule(() => {
+      if (token === generation) void retry(attempt);
+    }, nextInMs);
+  };
+
+  /** Asks the host again for every reconnecting remote rule; every reconnecting rule then runs again. */
+  const restore = async (dialled: DialledChain): Promise<void> => {
+    for (const running of reconnecting()) {
+      if (running.rule.type !== 'remote') continue;
+      try {
+        running.boundPort = await requestRemote(dialled.client, running);
+      } catch (error) {
+        if (isCurrent(running)) fail(running, error);
+      }
+    }
+    for (const running of reconnecting()) setStatus(running, runningStatus(running));
+    endChainIfIdle();
+  };
+
+  const retry = async (attempt: number): Promise<void> => {
+    if (reconnecting().length === 0) return;
+    let dialled: DialledChain;
+    try {
+      dialled = await ensureChain();
+    } catch (error) {
+      // Only an unreachable host is worth another try; an auth or host key refusal needs the user.
+      if (errorOf(error).code !== 'ssh-connect-failed') {
+        for (const running of reconnecting()) fail(running, error);
+      } else if (attempt < FORWARD_RECONNECT_ATTEMPTS) {
+        scheduleRetry(attempt + 1);
+      } else {
+        const gaveUp = new ForwardError(
+          'ssh-forward-gave-up',
+          `gave up reconnecting after ${FORWARD_RECONNECT_ATTEMPTS} attempts`,
+          { attempts: FORWARD_RECONNECT_ATTEMPTS },
+        );
+        for (const running of reconnecting()) fail(running, gaveUp);
+      }
+      return;
+    }
+    await restore(dialled);
+  };
+
+  /** The listeners here stay bound and close new sockets until the chain is back. */
+  const onChainLost = (lost: DialledChain): void => {
+    if (chain !== lost) return;
+    chain = undefined;
+    generation += 1;
+    const affected = [...rules.values()].filter((r) => r.status.state === 'running');
+    if (affected.length === 0) return;
+    for (const running of affected) {
+      for (const socket of running.sockets) socket.destroy();
+      running.sockets.clear();
+      running.status = { state: 'reconnecting', attempt: 1, nextInMs: 0 };
+    }
+    scheduleRetry(1);
   };
 
   const stop = async (ruleId: string): Promise<void> => {
@@ -308,6 +387,8 @@ export function openForwardConnection(options: DialOptions & ForwardConnectionOp
         if (rule.type === 'remote') running.boundPort = await requestRemote(dialled.client, running);
         if (!isCurrent(running)) return;
         setStatus(running, runningStatus(running));
+        // A start that dialled while other rules waited to reconnect brings them back now.
+        if (reconnecting().length > 0) await restore(dialled);
       } catch (error) {
         if (isCurrent(running)) {
           rules.delete(rule.id);
