@@ -165,6 +165,7 @@ function oauth2Tokens(deps: DesktopSendDeps): RunTokenSource | undefined {
       const proxy = request.proxy !== undefined ? await request.proxy(config.tokenUrl) : undefined;
       const token = await oauth2.accessToken(config, {
         credentials: await oauth2Credentials(deps, config),
+        ...(request.identityFor !== undefined ? { identityFor: request.identityFor } : {}),
         ...(request.tls !== undefined ? { tls: request.tls } : {}),
         ...(proxy !== undefined ? { proxy } : {}),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
@@ -284,18 +285,20 @@ function reportStsExchange(deps: DesktopSendDeps, send: DesktopSend, http: HttpE
   }
 }
 
-/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
+/** The client secret, remembered refresh token and resource-owner password an OAuth2 token request needs, if any. */
 async function oauth2Credentials(
   deps: Pick<DesktopSendDeps, 'getSecret'>,
   config: OAuth2Auth,
-): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
+): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string; readonly password?: string }> {
   const read = async (ref: string | undefined): Promise<string | undefined> =>
     ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
   const clientSecret = await read(config.clientSecretRef);
   const refreshToken = await read(config.refreshTokenRef);
+  const password = config.grant === 'password' ? await read(config.passwordRef) : undefined;
   return {
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     ...(refreshToken !== undefined ? { refreshToken } : {}),
+    ...(password !== undefined ? { password } : {}),
   };
 }
 

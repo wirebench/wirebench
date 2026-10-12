@@ -88,6 +88,15 @@ export const oauth2StatusSchema = z.object({
   token: z.string().optional(),
   /** The loopback URI the provider must have registered, for the inspector to show. */
   redirectUri: z.string(),
+  /** While a device-code sign-in waits: the code the user types at the verification page. */
+  device: z
+    .object({
+      userCode: z.string(),
+      verificationUri: z.string(),
+      verificationUriComplete: z.string().optional(),
+      expiresAt: z.string(),
+    })
+    .optional(),
 });
 export type OAuth2StatusWire = z.infer<typeof oauth2StatusSchema>;
 
