@@ -51,7 +51,7 @@ const FILE = {
     },
   ],
 };
-const RESOLVED = [{ id: 'web', name: 'web', address: '10.0.0.9', tags: [], path: [], ssh: defaults }];
+const RESOLVED = [{ id: 'web', name: 'web', address: '10.0.0.9', tags: [], path: [], ssh: defaults, forwards: [] }];
 const KEY = {
   name: 'deploy',
   locked: false,
