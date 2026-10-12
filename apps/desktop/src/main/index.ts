@@ -53,9 +53,11 @@ import {
   registerEnabledAreaChannels,
 } from './areas.js';
 import { SshImportService } from './ssh-import.js';
-import { sshScopeOf, sshSecretsFor } from './ssh-window.js';
+import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
-import { SshService, forwardResume, sshSessionsEndOnSwitch } from './ssh-service.js';
+import { SshService, forwardResume } from './ssh-service.js';
+import { RefusalStore, createSshConnector } from './ssh-connect.js';
+import { SftpService } from './sftp-service.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
 import { enabledKindsFromEnv, kindRegistry } from './kinds/enabled-kinds.js';
@@ -507,14 +509,24 @@ const hostsService = scoped(scopes, (scope) => scope.hosts);
  * The SSH sessions, each owned by the window that opened it; hosts and secrets resolve at connect, from
  * that window's workspace.
  */
-const sshService = new SshService({
-  hosts: (sender) => sshScopeOf(scopes, sender).hosts,
-  secretsFor: (sender) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
+const sshConnectDeps = {
+  hosts: (sender: WebContents) => sshScopeOf(scopes, sender).hosts,
+  secretsFor: (sender: WebContents) => sshSecretsFor(secretStore, sshScopeOf(scopes, sender), recordSecretValue),
   knownHostsFile: join(app.getPath('userData'), 'ssh-known-hosts.json'),
-  hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
   agentSocket: () => (process.platform === 'win32' ? 'pageant' : process.env['SSH_AUTH_SOCK']),
+};
+/** Keys refused to a terminal or a Files tab: one `ssh.trust` prompt serves both. */
+const sshRefusals = new RefusalStore();
+const sshConnector = createSshConnector({ ...sshConnectDeps, refusals: sshRefusals });
+const sshService = new SshService({
+  ...sshConnectDeps,
+  hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
   emit: emitEvent,
+  refusals: sshRefusals,
+  connector: sshConnector,
 });
+/** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
+const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
 const workspaceState = new WorkspaceState(app.getPath('userData'));
@@ -530,9 +542,9 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     emitEvent(target, event, payload);
   };
   const picks = new DialogPicks(appPicks);
-  // Only a switch of this window's workspace (or a close) ends this window's SSH sessions; a rename or
-  // reload does not, and another window's sessions are its own workspace's.
-  const endSshOnSwitch = sshSessionsEndOnSwitch(sshService, target);
+  // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions; a
+  // rename or reload does not, and another window's sessions are its own workspace's.
+  const endSshOnSwitch = sshAreaEndsOnSwitch([sshService, sftpService], target);
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
   const hosts = windowHosts(
     () => workspace.treeDir(),
@@ -1212,6 +1224,7 @@ void app.whenReady().then(() => {
     hosts: hostsService,
     secrets: sshSecrets,
     ssh: sshService,
+    sftp: sftpService,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
@@ -1369,6 +1382,7 @@ app.on('before-quit', (event) => {
   hooksService.dispose();
   // SSH sessions end with the app; closing never throws or waits.
   sshService.disposeAll();
+  sftpService.disposeAll();
   // A mock's port is released now; not awaited, so a server that will not close never holds up the quit.
   void mockRunner.stopAll().catch((error: unknown) => {
     console.warn('[mock] stopping the mocks on quit failed', error instanceof Error ? error.message : String(error));

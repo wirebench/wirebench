@@ -5,7 +5,24 @@ import {
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   parseAreaSwitches,
+  registerEnabledAreaChannels,
 } from '../src/main/areas.js';
+
+const registered = vi.hoisted(() => new Set<string>());
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (name: string) => {
+      registered.add(name);
+    },
+  },
+}));
+
+/** The channel names registering the enabled areas leaves behind; no handler is called. */
+function channelsFor(env: string): string[] {
+  registered.clear();
+  registerEnabledAreaChannels(enabledAreasFromEnv({ WIREBENCH_AREAS: env }), {} as never);
+  return [...registered];
+}
 
 describe('WIREBENCH_AREAS', () => {
   it('parses id=off and id=on pairs, ignoring blanks and case', () => {
@@ -24,6 +41,26 @@ describe('WIREBENCH_AREAS', () => {
       'history',
       'ssh',
     ]);
+  });
+});
+
+describe('area channels', () => {
+  it('the SSH area registers its ssh.* and sftp.* channels', () => {
+    const names = channelsFor('');
+    expect(names).toContain('ssh.connect');
+    expect(names.filter((n) => n.startsWith('sftp.')).sort()).toEqual([
+      'sftp.chmod',
+      'sftp.close',
+      'sftp.list',
+      'sftp.localHome',
+      'sftp.mkdir',
+      'sftp.open',
+      'sftp.remove',
+      'sftp.rename',
+    ]);
+  });
+  it('with ssh=off no ssh.* or sftp.* channel exists', () => {
+    expect(channelsFor('ssh=off').filter((n) => n.startsWith('ssh.') || n.startsWith('sftp.'))).toEqual([]);
   });
 });
 

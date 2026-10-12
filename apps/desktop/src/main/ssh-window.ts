@@ -1,7 +1,9 @@
+import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
 import { workspaceSecretGetter } from './secret-resolver.js';
 import type { SecretLookup } from './secret-resolver.js';
+import { whenWorkspaceSwitches } from './ssh-service.js';
 import { teamSecretGetter } from './team-secret-store.js';
 import type { TeamSecretsService } from './team-secrets-service.js';
 import type { WindowScopes } from './window-scope.js';
@@ -41,4 +43,18 @@ export function sshSecretsFor(store: SecretLookup, scope: SshWindowScope, record
       undefined,
     ),
   );
+}
+
+/**
+ * One window's workspace-switch hook for the whole SSH area (multi-window: each window holds its own
+ * workspace). A switch, or a close, in that window ends its terminals and its Files sessions; another
+ * window's go on.
+ */
+export function sshAreaEndsOnSwitch(
+  services: readonly { disposeFor(sender: WebContents): void }[],
+  sender: WebContents,
+): (workspaceId: string | null | undefined) => void {
+  return whenWorkspaceSwitches(() => {
+    for (const service of services) service.disposeFor(sender);
+  });
 }
