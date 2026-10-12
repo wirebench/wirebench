@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { parse as parseYaml } from 'yaml';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -975,6 +976,42 @@ describe('active environment: machine-local, via local.yaml', () => {
     const local = await loadLocalState(dir);
     expect(Object.values(local.activeEnvironments ?? {})).toContain(createdEnvironmentId);
 
+    await reopened.close();
+  });
+
+  it('upgrades a v2 local.yaml on open: the active environment is kept and local.yaml becomes v3', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    await writeFile(join(dir, 'local.yaml'), `version: 2\nactiveEnvironmentId: ${createdEnvironmentId as string}\n`);
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
+    // A workspace with no project records the choice under the transitional empty key.
+    expect(parseYaml(await readFile(join(dir, 'local.yaml'), 'utf8'))).toEqual({
+      version: 3,
+      activeEnvironments: { '': createdEnvironmentId },
+    });
+    await reopened.close();
+  });
+
+  it('drops a v2 local.yaml active environment that no longer exists', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    await writeFile(join(dir, 'local.yaml'), 'version: 2\nactiveEnvironmentId: DELETED\n');
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.activeEnvironmentId).toBeUndefined();
+    expect(existsSync(join(dir, 'local.yaml'))).toBe(false);
+    expect(await loadLocalState(dir)).toEqual({ version: 3 });
     await reopened.close();
   });
 

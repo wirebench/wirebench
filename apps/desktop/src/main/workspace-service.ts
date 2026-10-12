@@ -895,9 +895,8 @@ export class WorkspaceService implements ProjectRouter {
       local = stillThere(legacyActiveEnvironmentId)
         ? { ...rest, version: 3, activeEnvironments: spread(legacyActiveEnvironmentId) }
         : rest;
-      if (stillThere(legacyActiveEnvironmentId)) {
-        await saveLocalState(dir, local, this.fsOption());
-      }
+      // Saved either way, so a stale v2 file is rewritten at v3 (or removed when nothing is left).
+      await saveLocalState(dir, local, this.fsOption());
     }
     if (legacy.activeEnvironmentId !== undefined) {
       if (local.activeEnvironments === undefined && stillThere(legacy.activeEnvironmentId)) {
