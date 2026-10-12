@@ -100,64 +100,64 @@ workspace's `.vscode/settings.json`:
 ```json
 {
   "yaml.schemas": {
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/manifest.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/manifest.schema.json": [
       "**/wirebench.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/environment.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/environment.schema.json": [
       "**/environments/*.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/interface.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/interface.schema.json": [
       "**/interfaces/*/interface.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/soap-request.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/soap-request.schema.json": [
       "**/interfaces/*/operations/*/*.request.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/interface-definition-manifest.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/interface-definition-manifest.schema.json": [
       "**/interfaces/*/definition/manifest.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/api.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/api.schema.json": [
       "**/apis/*/api.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/api-request.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/api-request.schema.json": [
       "**/apis/*/requests/**/*.request.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/folder.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/folder.schema.json": [
       "**/apis/*/requests/**/folder.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/api-definition-manifest.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/api-definition-manifest.schema.json": [
       "**/apis/*/definition/manifest.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/golden.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/golden.schema.json": [
       "**/*.golden.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/sequence.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/sequence.schema.json": [
       "**/sequences/*.sequence.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/mock.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/mock.schema.json": [
       "**/mocks/*/mock.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/mock-operation.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/mock-operation.schema.json": [
       "**/mocks/*/operations/*/operation.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/mock-response.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/mock-response.schema.json": [
       "**/mocks/*/operations/*/*.response.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/webhooks.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/webhooks.schema.json": [
       "**/webhooks/webhooks.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/webhook-request.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/webhook-request.schema.json": [
       "**/webhooks/requests/**/*.request.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/webhook-folder.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/webhook-folder.schema.json": [
       "**/webhooks/requests/**/folder.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/keystores.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/keystores.schema.json": [
       "**/wss/keystores.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/wss-outgoing.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/wss-outgoing.schema.json": [
       "**/wss/outgoing/*.yaml"
     ],
-    "https://wirebench.github.io/wirebench/docs/schemas/v9/wss-incoming.schema.json": [
+    "https://wirebench.github.io/wirebench/docs/schemas/v10/wss-incoming.schema.json": [
       "**/wss/incoming/*.yaml"
     ]
   }
@@ -217,9 +217,10 @@ The project format is currently **version 9**:
    file beside the request, under `<slug>.examples/<id>.body.<ext>`.
 8. **Version 8** — auth can be Kerberos (`type: kerberos`), on a request or wherever auth is inherited from; a version-7 project migrates unchanged.
 9. **Version 9** — an API, a SOAP interface and a REST or gRPC folder can carry a `scripts` key, with
-   their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them, and auth can be
-   Digest (`type: digest`) or AWS Signature v4 (`type: aws-sigv4`); a version-8 project migrates
-   unchanged.
+   their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them; a version-8
+   project migrates unchanged.
+10. **Version 10** — REST and SOAP auth can be Digest (`type: digest`) or AWS Signature v4
+    (`type: aws-sigv4`); a version-9 project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it

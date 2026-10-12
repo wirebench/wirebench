@@ -31,6 +31,12 @@ All notable changes to this project are documented here. The format follows
   app, **Lint Definition** on a REST API puts the same findings in Problems, and so does an OpenAPI
   import or a definition update (#342).
 
+### Breaking
+
+- **Project format 10.** Auth can be Digest (`type: digest`) or AWS Signature v4 (`type: aws-sigv4`);
+  a project saved by this version cannot be opened by an older one, which refuses it as made by a
+  newer Wirebench. A version-9 project opens unchanged (#339).
+
 ## [6.0.0] - 2026-10-12
 
 ### Added
@@ -190,9 +196,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
-- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`, and auth
-  can be `digest` or `aws-sigv4`; a project saved by this version cannot be opened by an older one,
-  which would drop the scripts and send without them (#334, #339).
+- **Project format 9.** `api.yaml`, `interface.yaml` and `folder.yaml` can carry `scripts`; a project
+  saved by this version cannot be opened by an older one, which would drop them and send without
+  them (#334).
 - **`@wirebench/engine`: a protocol's scripting facet has `levelTypes()`,** the generic types an API's,
   interface's or folder's script is checked against. `ScriptedRequest` gains `outer` (its levels'
   scripts, outermost first) and its own `scripts` is optional; `SentScripts` gains `levels` (#334).

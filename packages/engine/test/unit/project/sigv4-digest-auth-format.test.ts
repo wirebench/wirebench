@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FORMAT_VERSION } from '../../../src/project/model.js';
 import { authConfigSchema, definitionAuthSchema, soapOwnerAuthSchema } from '../../../src/project/schema-parts.js';
 
 const SIGV4 = {
@@ -15,6 +16,10 @@ const SIGV4 = {
 const DIGEST = { type: 'digest', username: 'admin', passwordRef: 'sec_d', passwordEnv: 'APPLIANCE' };
 
 describe('aws-sigv4 and digest auth in the project format', () => {
+  it('need format 10, so an older build refuses the project', () => {
+    expect(FORMAT_VERSION).toBe(10);
+  });
+
   it('are accepted on REST and SOAP owners', () => {
     for (const schema of [authConfigSchema, soapOwnerAuthSchema]) {
       expect(schema.parse(SIGV4)).toEqual(SIGV4);
