@@ -65,7 +65,7 @@ every request in that folder that inherits picks it up.
 
 ### OAuth 2
 
-Two grants are supported:
+Four grants are supported:
 
 - **Client credentials** — a token URL, client ID and client secret; Wirebench requests a token
   directly, no browser involved.
@@ -73,22 +73,51 @@ Two grants are supported:
   the authorize URL and completes the flow through a local loopback listener. Register the
   redirect URI the status panel shows with your OAuth provider; if it needs a fixed port rather
   than a random one, set it under **Preferences → REST**.
+- **Password** (resource owner password credentials) — a username and a password, both kept like
+  any other credential: the username may use properties, the password lives in the secret store.
+  Wirebench requests a token directly, as for client credentials.
+- **Device code** (RFC 8628) — for providers that sign in a device rather than a browser redirect.
+  **Get token** asks for a code, opens the verification page in your browser and shows the code in
+  the status panel (with **Copy code**); approve it there or on any other device, and the token
+  arrives. **Cancel** stops waiting.
 
-Both grants also take scopes (space-separated), an audience, and whether the client is
-authenticated with a Basic header or in the request body.
+Every grant also takes scopes (space-separated) and an audience. **Client auth** decides how the
+client proves who it is to the token endpoint:
+
+- **Basic header** or **Request body** — the client secret, in an `Authorization` header or in
+  the form.
+- **Signed JWT, client secret** (`client_secret_jwt`) — a short-lived assertion signed with the
+  client secret, HS256 unless you pick HS384 or HS512.
+- **Signed JWT, private key** (`private_key_jwt`) — an assertion signed with the private key of a
+  keystore you choose (its default alias). The algorithm follows the key — RS256 for RSA, ES256,
+  ES384 or ES512 by curve — unless you pick another, such as PS256.
+- **Client certificate (mTLS)** (`tls_client_auth`) — the keystore's certificate is presented on
+  the token request, and only the client ID is sent.
+
+The keystores are the ones listed under **Client certificates and keystores** below; the private
+key never leaves them.
 
 The status panel below the fields shows whether a token is held and when it expires. **Get
-token** starts the flow (or requests one directly, for client credentials); **Clear** discards the
-held token. The token value itself is only shown when the session's show-secrets switch is on —
-otherwise the panel just says a token exists and when it expires.
+token** starts the flow (or requests one directly, for client credentials and password);
+**Clear** discards the held token. The token value itself is only shown when the session's
+show-secrets switch is on — otherwise the panel just says a token exists and when it expires.
+
+A token is refreshed shortly before it expires, on the next send that needs it, when the provider
+gave a refresh token; otherwise client credentials and password simply request a new one. A send
+never starts a browser or device sign-in on its own: when an authorization-code or device-code
+token cannot be refreshed, the send fails and asks you to press **Get token**.
 
 Turn on **Remember the refresh token** to keep a refresh token in the secret store across
 sessions, so re-opening the project doesn't force a fresh sign-in. Turning it off deletes the
 stored refresh token.
 
-The CLI runner (`wirebench run`) obtains a client-credentials token itself, for REST, gRPC and
-SOAP alike, reading the client secret from the request's environment variable. It refuses the
-authorization-code grant, since a pipeline has no browser to sign in with.
+The CLI runner (`wirebench run`) obtains tokens itself, for REST, gRPC, SOAP and WebSocket alike,
+with client credentials or password, and refreshes them the same way during a run. It reads the
+client secret and the password from their `WIREBENCH_SECRET_*` variables (`wirebench secrets list`
+names them). A pipeline has no browser, so an authorization-code or device-code configuration runs
+only from a refresh token: remember one in the app, give the configuration a `refreshTokenEnv`
+name, and set `WIREBENCH_SECRET_<name>` in the pipeline. Without it, the request is refused with
+the variable it needs.
 
 ### Kerberos
 
