@@ -1,6 +1,9 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Braces, Check, ChevronDown } from 'lucide-react';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useMemo } from 'react';
+import { environmentsForProject } from '../../state/environment-scope.js';
+import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
+import { currentProjectId, useCurrentProjectId } from '../../state/workspace-tabs.js';
 import { useUiStore } from '../../state/ui.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-base.js';
 import { EnvBadge } from './env-badge.js';
@@ -16,22 +19,27 @@ export const NO_ENVIRONMENT_LABEL = 'No environment';
 const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
 
 /**
- * Cycles the active environment, `No environment` included, and applies the result. Shared by
- * the `env.next` command and the switcher's keyboard affordance.
+ * Cycles the current project's active environment (#468) through the environments that apply to
+ * it, `No environment` included, and applies the result. Shared by the `env.next` command and the
+ * switcher's keyboard affordance. Does nothing while there is no current project.
  *
  * @param step - `1` for the next environment, `-1` for the previous one.
  */
 export async function cycleEnvironment(step = 1): Promise<void> {
-  const { workspace, setActiveEnvironment } = useWorkspaceStore.getState();
-  const environments = workspace?.environments ?? [];
+  const state = useWorkspaceStore.getState();
+  const projectId = currentProjectId();
+  if (state.workspace === null || projectId === undefined) {
+    return;
+  }
+  const environments = environmentsForProject(state.workspace, projectId);
   if (environments.length === 0) {
     return;
   }
   // `null` (no environment) sits at index 0, so n environments give n+1 stops.
   const ids: (string | null)[] = [null, ...environments.map((environment) => environment.id)];
-  const current = ids.indexOf(workspace?.activeEnvironmentId ?? null);
+  const current = ids.indexOf(selectActiveEnvironmentId(state, projectId) ?? null);
   const next = ids[(current + step + ids.length) % ids.length] ?? null;
-  await setActiveEnvironment(next);
+  await state.setActiveEnvironment(projectId, next);
 }
 
 /**
@@ -41,9 +49,18 @@ export async function cycleEnvironment(step = 1): Promise<void> {
  * strip they read after.
  */
 export function EnvSwitcher() {
-  const environments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
-  const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
-  const setActiveEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
+  // The current project's environments and active one (#468); the grouped menu is to come.
+  const projectId = useCurrentProjectId();
+  const workspace = useWorkspaceStore((state) => state.workspace);
+  const environments = useMemo(
+    () =>
+      workspace === null || projectId === undefined ? NO_ENVIRONMENTS : environmentsForProject(workspace, projectId),
+    [workspace, projectId],
+  );
+  const activeId = useWorkspaceStore((state) => selectActiveEnvironmentId(state, projectId));
+  const setProjectEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
+  const setActiveEnvironment = (environmentId: string | null): Promise<void> =>
+    projectId === undefined ? Promise.resolve() : setProjectEnvironment(projectId, environmentId);
   const open = useUiStore((state) => state.envSwitcherOpen);
   const setOpen = useUiStore((state) => state.setEnvSwitcherOpen);
   const showSidebarView = useUiStore((state) => state.showSidebarView);

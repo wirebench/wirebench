@@ -14,6 +14,7 @@ import type {
   WorkspaceChange,
   WorkspaceChangedEvent,
   WorkspaceEnvironmentPatchWire,
+  WorkspaceEnvironmentWire,
   WorkspaceSummaryWire,
   WorkspaceWire,
 } from '../../shared/wire-base.js';
@@ -25,6 +26,7 @@ import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { useProjectStore } from './project.js';
 import { reviewSecrets } from './secret-review.js';
+import { activeEnvironmentFor } from './environment-scope.js';
 import { restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
 import { ipc } from './ipc-client.js';
 import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
@@ -54,6 +56,12 @@ export interface WorkspaceSnapshot {
   readonly lastError?: string | undefined;
   readonly status: 'idle' | 'loading' | 'error';
   readonly error?: IpcError | undefined;
+  /**
+   * The project of the last focused tab that had one (#468): what the current project falls back to
+   * while the focused tab names none (Settings, SSH, a workspace environment). Session only, cleared
+   * when the workspace closes or another one opens; see `useCurrentProjectId`.
+   */
+  readonly lastProjectId?: string | undefined;
 }
 
 /** `workspace.shareToServer`'s request: the server, the team, and a new or an existing empty workspace there. */
@@ -91,8 +99,8 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
   /** Re-points a missing linked project at a folder the user picks. `false` when cancelled. */
   readonly locateProject: (projectId: string) => Promise<boolean>;
   readonly removeProject: (projectId: string, deleteFiles: boolean) => Promise<void>;
-  /** Switches the workspace's active environment; `null` deactivates. */
-  readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
+  /** Switches `projectId`'s active environment (#468); `null` deactivates it for that project. */
+  readonly setActiveEnvironment: (projectId: string, environmentId: string | null) => Promise<void>;
   /** Applies one change to the workspace manifest; returns any entity it created. */
   readonly mutate: (change: WorkspaceChange) => Promise<{ readonly createdEnvironmentId?: string }>;
   /** Toggles one workspace property's disabled flag without removing it. */
@@ -222,7 +230,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       useInterfaceEditorStore.getState().reset();
       useProjectStore.getState().reset();
     }
-    set({ workspace, status: 'idle', error: undefined });
+    set({
+      workspace,
+      status: 'idle',
+      error: undefined,
+      ...(leaving || workspace === null ? { lastProjectId: undefined } : {}),
+    });
     if (workspace === null) {
       return;
     }
@@ -413,9 +426,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       applyReply(sentIn, unwrap(await ipc().workspace.removeProject({ projectId, deleteFiles })).workspace);
     },
 
-    setActiveEnvironment: async (environmentId) => {
+    setActiveEnvironment: async (projectId, environmentId) => {
       const sentIn = generation;
-      applyReply(sentIn, unwrap(await ipc().workspace.setActiveEnvironment({ environmentId })).workspace);
+      applyReply(sentIn, unwrap(await ipc().workspace.setActiveEnvironment({ projectId, environmentId })).workspace);
     },
 
     mutate: async (change) => {
@@ -500,6 +513,33 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
   };
 });
+
+/**
+ * The id of the environment active for `projectId` (#468), or `undefined` when the project has none,
+ * no workspace is open, or the entry no longer holds (its environment gone or out of scope). A
+ * primitive, so it is safe inside a `useWorkspaceStore(...)` selector.
+ */
+export function selectActiveEnvironmentId(state: WorkspaceSnapshot, projectId: string | undefined): string | undefined {
+  return activeEnvironmentFor(state.workspace, projectId)?.id;
+}
+
+/**
+ * The workspace environment active for `projectId` — a request's, an API's or the current project's
+ * — kept current. Each reader passes its own project: two tabs of two projects may each have a
+ * different one.
+ */
+export function useActiveEnvironment(projectId: string | undefined): WorkspaceEnvironmentWire | undefined {
+  return useWorkspaceStore((state) => activeEnvironmentFor(state.workspace, projectId));
+}
+
+/**
+ * The id of the environment active for the project that owns `entityId` (a request, an API, an
+ * interface), kept current: what an editor re-runs its preflight on when that project switches.
+ */
+export function useActiveEnvironmentIdFor(entityId: string | undefined): string | undefined {
+  const projectId = useProjectStore((state) => (entityId === undefined ? undefined : state.projectOf[entityId]));
+  return useWorkspaceStore((state) => selectActiveEnvironmentId(state, projectId));
+}
 
 /**
  * Subscribes the mirror to `workspace.changed` and pulls the initial snapshot and list. Called

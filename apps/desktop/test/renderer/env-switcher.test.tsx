@@ -4,7 +4,7 @@ import { cycleEnvironment, EnvSwitcher } from '../../src/renderer/features/envir
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
-import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../src/shared/wire-base.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const dev: WorkspaceEnvironmentWire = {
@@ -26,14 +26,38 @@ const uat: WorkspaceEnvironmentWire = {
   disabled: [],
 };
 
+const P1: WorkspaceProjectWire = {
+  id: 'p1',
+  name: 'Billing',
+  slug: 'billing',
+  source: 'internal',
+  dir: '/tmp/b',
+  status: 'ready',
+};
+const P2: WorkspaceProjectWire = {
+  id: 'p2',
+  name: 'Crm',
+  slug: 'crm',
+  source: 'internal',
+  dir: '/tmp/c',
+  status: 'ready',
+};
+
+/** A workspace of two projects where `p1` is current (#468), with `activeEnvironmentId` active for it. */
+function workspaceFor(activeEnvironmentId: string | undefined, environments = [dev, uat]) {
+  return workspaceWire({
+    projects: [P1, P2],
+    environments,
+    activeEnvironments: activeEnvironmentId !== undefined ? { p1: activeEnvironmentId } : {},
+  });
+}
+
 function setUp(activeEnvironmentId: string | undefined) {
   const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
   useWorkspaceStore.setState({
-    workspace: workspaceWire({
-      environments: [dev, uat],
-      ...(activeEnvironmentId !== undefined ? { activeEnvironmentId } : {}),
-    }),
+    workspace: workspaceFor(activeEnvironmentId),
     setActiveEnvironment,
+    lastProjectId: 'p1',
   });
   useUiStore.setState({ envSwitcherOpen: false });
   return setActiveEnvironment;
@@ -42,7 +66,7 @@ function setUp(activeEnvironmentId: string | undefined) {
 describe('EnvSwitcher', () => {
   afterEach(() => {
     cleanup();
-    useWorkspaceStore.setState({ workspace: null });
+    useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
     useUiStore.setState({ envSwitcherOpen: false });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
@@ -93,7 +117,7 @@ describe('EnvSwitcher', () => {
 
     fireEvent.click(items[1]!);
     await waitFor(() => {
-      expect(setActiveEnvironment).toHaveBeenCalledWith('e2');
+      expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e2');
     });
   });
 
@@ -110,6 +134,21 @@ describe('EnvSwitcher', () => {
     });
   });
 
+  it("lists only the current project's environments, and shows that project's active one (#468)", async () => {
+    setUp(undefined);
+    useWorkspaceStore.setState({
+      workspace: {
+        ...workspaceFor('e2', [dev, { ...uat, projects: ['p2'] }]),
+        activeEnvironments: { p1: 'e1', p2: 'e2' },
+      },
+    });
+    render(<EnvSwitcher />);
+    expect(screen.getByTestId('env-switcher').textContent).toContain('dev');
+    fireEvent.keyDown(screen.getByTestId('env-switcher'), { key: 'Enter' });
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.map((item) => item.textContent)).toEqual(['dev', 'No environment', 'Manage environments…']);
+  });
+
   it('opens from the ui store, so `env.switch` can drive it', async () => {
     setUp('e1');
     render(<EnvSwitcher />);
@@ -120,28 +159,46 @@ describe('EnvSwitcher', () => {
 
 describe('cycleEnvironment', () => {
   afterEach(() => {
-    useWorkspaceStore.setState({ workspace: null });
+    useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
   });
 
-  it('cycles none -> first -> second -> none', async () => {
+  it('cycles none -> first -> second -> none, for the current project', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [dev, uat] }), setActiveEnvironment });
+    useWorkspaceStore.setState({ workspace: workspaceFor(undefined), setActiveEnvironment, lastProjectId: 'p1' });
 
     await cycleEnvironment(1);
-    expect(setActiveEnvironment).toHaveBeenLastCalledWith('e1');
+    expect(setActiveEnvironment).toHaveBeenLastCalledWith('p1', 'e1');
 
-    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e1' }) });
+    useWorkspaceStore.setState({ workspace: workspaceFor('e1') });
     await cycleEnvironment(1);
-    expect(setActiveEnvironment).toHaveBeenLastCalledWith('e2');
+    expect(setActiveEnvironment).toHaveBeenLastCalledWith('p1', 'e2');
 
-    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e2' }) });
+    useWorkspaceStore.setState({ workspace: workspaceFor('e2') });
     await cycleEnvironment(1);
-    expect(setActiveEnvironment).toHaveBeenLastCalledWith(null);
+    expect(setActiveEnvironment).toHaveBeenLastCalledWith('p1', null);
+  });
+
+  it('walks only the environments that apply to the current project', async () => {
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      workspace: workspaceFor('e1', [dev, { ...uat, projects: ['p2'] }]),
+      setActiveEnvironment,
+      lastProjectId: 'p1',
+    });
+    await cycleEnvironment(1);
+    expect(setActiveEnvironment).toHaveBeenLastCalledWith('p1', null);
+  });
+
+  it('does nothing with no current project', async () => {
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({ workspace: workspaceFor(undefined), setActiveEnvironment, lastProjectId: undefined });
+    await cycleEnvironment(1);
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
   });
 
   it('does nothing when the workspace has no environments', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-    useWorkspaceStore.setState({ workspace: workspaceWire(), setActiveEnvironment });
+    useWorkspaceStore.setState({ workspace: workspaceFor(undefined, []), setActiveEnvironment, lastProjectId: 'p1' });
     await cycleEnvironment(1);
     expect(setActiveEnvironment).not.toHaveBeenCalled();
   });

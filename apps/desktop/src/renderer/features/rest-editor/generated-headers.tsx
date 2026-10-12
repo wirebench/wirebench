@@ -13,7 +13,7 @@ import { useCurrentValuesStore } from '../../state/current-values.js';
 import { ipc } from '../../state/ipc-client.js';
 import { restDraftPatch } from '../../state/project.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironmentIdFor } from '../../state/workspace.js';
 import type {
   RestHeaderRowWire,
   RestRequestPatchWire,
@@ -74,7 +74,7 @@ export interface GeneratedHeadersProps {
 /** The Generated section, for a REST request. Shows nothing until main has answered. */
 export function GeneratedHeaders({ request, onChange }: GeneratedHeadersProps) {
   const requestId = request.id;
-  const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const activeEnvironment = useActiveEnvironmentIdFor(requestId);
   const currentValues = useCurrentValuesStore((state) => state.byScope);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const [rows, setRows] = useState<readonly RestHeaderRowWire[] | undefined>(undefined);

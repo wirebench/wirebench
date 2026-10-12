@@ -183,14 +183,20 @@ describe('EditorArea environment colour', () => {
 
   const env = { id: 'e1', name: 'prod', slug: 'prod', order: 0, endpoints: {}, properties: {}, disabled: [] };
 
-  it('borders the tab strip in the active environment colour', () => {
+  it('borders the tab strip in the current project’s active environment colour', () => {
+    useProjectStore.setState({ projectOf: { a: 'p1', b: 'p2' } });
     useWorkspaceStore.setState({
-      workspace: workspaceWire({ environments: [{ ...env, color: '#12ab9f' }], activeEnvironmentId: 'e1' }),
+      workspace: workspaceWire({ environments: [{ ...env, color: '#12ab9f' }], activeEnvironments: { p2: 'e1' } }),
     });
     setUp();
     const strip = screen.getByTestId('editor-tab-strip');
     expect(strip.style.getPropertyValue('--env-color')).toBe('#12ab9f');
     expect(strip.className).toContain('border-t-');
+
+    // Focusing a request of a project with no active environment takes the colour away (#468).
+    fireEvent.click(screen.getByRole('tab', { name: /^A/ }));
+    expect(screen.getByTestId('editor-tab-strip').style.getPropertyValue('--env-color')).toBe('');
+    useProjectStore.setState({ projectOf: {} });
   });
 
   it('leaves the strip plain with no colour, or no active environment', () => {

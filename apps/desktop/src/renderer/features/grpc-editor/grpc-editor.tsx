@@ -22,7 +22,7 @@ import { useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { folderChainOf, useProjectStore } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironmentIdFor } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import { RestAuthTab } from '../rest-editor/auth-tab.js';
 import type {
@@ -108,7 +108,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
   const pushGrpcMessage = useExchangesStore((state) => state.pushGrpcMessage);
   const halfCloseGrpc = useExchangesStore((state) => state.halfCloseGrpc);
   const preferences = usePreferencesStore((state) => state.preferences);
-  const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const activeEnvironment = useActiveEnvironmentIdFor(requestId);
   const currentValues = useCurrentValuesStore((state) => state.byScope);
   const layout = useEditorLayout(requestId);
   const [tab, setTab] = useState<TabId>('message');

@@ -23,7 +23,6 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
   activeEnvironmentFor,
-  appliesToProject,
   assertBranchName,
   assertEnvironmentInScope,
   assertPathSegment,
@@ -68,7 +67,6 @@ import {
   WORKSPACE_SHARE_FILE,
   workspaceDir,
   WorkspaceError,
-  workspaceForProject,
   workspaceManifestFile,
   workspaceProjectDir,
   WORKSPACES_DIR,
@@ -411,11 +409,6 @@ interface OpenWorkspace {
   recording: boolean;
   /** The `lastSyncAt` of the last sync status seen: a new one means a fetch (or a push) went through. */
   lastSyncAt: string | undefined;
-  /**
-   * Transitional (#468): the project `setActiveEnvironment` last changed. Its active environment fills
-   * the workspace's resolution slot and the wire's single `activeEnvironmentId`; none until the first set.
-   */
-  recentProjectId: string | undefined;
 }
 
 /** Under `<workspaceDir>/server/`: the desktop audit events not yet reported (desktop audit events §2.4). */
@@ -592,14 +585,6 @@ function withActiveEntries(
     delete next.activeEnvironments;
   }
   return next;
-}
-
-/**
- * Transitional (#468): `workspace` with its resolution slot holding `projectId`'s active environment,
- * or none. Until sends read each project's own entry, the hosts resolve through this one slot.
- */
-function withResolutionSlot(workspace: Workspace, projectId: string | undefined): Workspace {
-  return projectId === undefined ? withoutActiveEnvironment(workspace) : workspaceForProject(workspace, projectId);
 }
 
 /**
@@ -994,7 +979,8 @@ export class WorkspaceService implements ProjectRouter {
     }
     // Only entries that still hold are applied — a deleted environment, a narrowed scope, a project
     // gone from the manifest, or a workspace local.yaml was copied from by hand must not resurrect a
-    // dangling pointer. The resolution slot stays empty until a project is set (`recentProjectId`).
+    // dangling pointer. The workspace-wide resolution slot stays empty: each send resolves under its
+    // own project's entry (`workspaceForProject`).
     const workspace: Workspace = {
       ...loaded,
       activeEnvironments: liveActiveEnvironments(loaded, local.activeEnvironments ?? {}),
@@ -1015,7 +1001,6 @@ export class WorkspaceService implements ProjectRouter {
       syncReady: Promise.resolve(),
       recording: false,
       lastSyncAt: undefined,
-      recentProjectId: undefined,
     };
     this.current = open;
     this.failure = undefined;
@@ -1419,10 +1404,10 @@ export class WorkspaceService implements ProjectRouter {
     // in-memory model, each entry only while it still holds in the reloaded one (#468). A pull that
     // deletes an environment, narrows its scope, or drops a project takes the entry with it. The
     // entries key on project ids, so a slug renamed on disk keeps its entry (and its scope).
-    open.workspace = withResolutionSlot(
-      { ...loaded, activeEnvironments: liveActiveEnvironments(loaded, open.workspace.activeEnvironments) },
-      open.recentProjectId,
-    );
+    open.workspace = withoutActiveEnvironment({
+      ...loaded,
+      activeEnvironments: liveActiveEnvironments(loaded, open.workspace.activeEnvironments),
+    });
     try {
       await this.persistActiveEnvironments(open);
     } catch {
@@ -2301,10 +2286,7 @@ export class WorkspaceService implements ProjectRouter {
     // Nothing of the project is left in the environments either (#468): its id leaves every scope,
     // its `<projectSlug>/…` endpoint overrides go, and so does its active entry. A scope it was the
     // last project of stays `[]` (*No project*), so nothing typed into that environment is lost.
-    if (open.recentProjectId === projectId) {
-      open.recentProjectId = undefined;
-    }
-    open.workspace = withResolutionSlot(withoutProject(open.workspace, entry.ref), open.recentProjectId);
+    open.workspace = withoutProject(open.workspace, entry.ref);
     await this.saveManifest(open);
     await this.persistActiveEnvironments(open);
     if (trashFolder && trash !== undefined) {
@@ -2918,13 +2900,10 @@ export class WorkspaceService implements ProjectRouter {
         }
       }
       // A removed environment, or a scope that now leaves a project out, takes its entries with it.
-      open.workspace = withResolutionSlot(
-        {
-          ...open.workspace,
-          activeEnvironments: liveActiveEnvironments(open.workspace, open.workspace.activeEnvironments),
-        },
-        open.recentProjectId,
-      );
+      open.workspace = {
+        ...open.workspace,
+        activeEnvironments: liveActiveEnvironments(open.workspace, open.workspace.activeEnvironments),
+      };
 
       // Pre-announced before the write (not just after, with the actual written/removed lists):
       // `saveWorkspace`'s several atomic renames are each individually visible to `fs.watch`
@@ -2952,16 +2931,13 @@ export class WorkspaceService implements ProjectRouter {
    * resolves its endpoints and `${#Env#…}` properties through the workspace, so this is the switch
    * behind the status bar's `● dev ▾`. Written to `local.yaml` (v3) before `onChanged` fires.
    *
-   * Transitional (until the renderer always names the project): without `projectId`, the
-   * environment becomes active for every project its scope applies to, and `null` clears them all.
-   *
    * @throws WorkspaceError `project-not-found` for a project id not in this workspace,
    * `environment-not-found` for an environment id it does not have, and `environment-out-of-scope`
    * when the environment does not apply to the project — an id the renderer could only have made
    * up, and silently ignoring it would leave the UI showing an environment that is not applied.
    */
   async setActiveEnvironment(request: {
-    readonly projectId?: string | undefined;
+    readonly projectId: string;
     readonly environmentId: string | null;
   }): Promise<WorkspaceWire> {
     // Captured before enqueueing — see `mutate`'s identical reasoning: re-fetching
@@ -2972,30 +2948,21 @@ export class WorkspaceService implements ProjectRouter {
       this.requireStillOpen(open);
       const { projectId, environmentId } = request;
       const current = open.workspace.activeEnvironments;
-      let next: Record<string, string>;
-      if (projectId !== undefined) {
-        if (!open.workspace.projects.some((ref) => ref.id === projectId)) {
-          throw new WorkspaceError('project-not-found', `No project with id "${projectId}" in this workspace.`, {
-            details: { projectId },
-          });
-        }
-        if (environmentId !== null) {
-          assertEnvironmentInScope(open.workspace, environmentId, projectId);
-        }
-        next = Object.fromEntries(Object.entries(current).filter(([key]) => key !== projectId));
-        if (environmentId !== null) {
-          next[projectId] = environmentId;
-        }
-        open.recentProjectId = projectId;
-      } else if (environmentId === null) {
-        next = {};
-      } else {
-        const environment = requireEnvironment(open.workspace, environmentId);
-        const inScope = open.workspace.projects.filter((ref) => appliesToProject(environment, ref.id));
-        next = { ...current, ...Object.fromEntries(inScope.map((ref) => [ref.id, environmentId])) };
-        open.recentProjectId = inScope[0]?.id ?? open.recentProjectId;
+      if (!open.workspace.projects.some((ref) => ref.id === projectId)) {
+        throw new WorkspaceError('project-not-found', `No project with id "${projectId}" in this workspace.`, {
+          details: { projectId },
+        });
       }
-      open.workspace = withResolutionSlot({ ...open.workspace, activeEnvironments: next }, open.recentProjectId);
+      if (environmentId !== null) {
+        assertEnvironmentInScope(open.workspace, environmentId, projectId);
+      }
+      const next: Record<string, string> = Object.fromEntries(
+        Object.entries(current).filter(([key]) => key !== projectId),
+      );
+      if (environmentId !== null) {
+        next[projectId] = environmentId;
+      }
+      open.workspace = { ...open.workspace, activeEnvironments: next };
       // Machine-local: written to local.yaml, in the app-data dir, never to a tree file (see
       // local-state.ts) — so, unlike `mutate`/`rename`, there is nothing here for
       // `open.watcher` (which only watches the tree) to ever see or need pre-announcing.
@@ -3203,7 +3170,6 @@ export class WorkspaceService implements ProjectRouter {
         ...(environment.projects !== undefined ? { projects: [...environment.projects] } : {}),
       })),
       activeEnvironments: { ...workspace.activeEnvironments },
-      ...(workspace.activeEnvironmentId !== undefined ? { activeEnvironmentId: workspace.activeEnvironmentId } : {}),
       projects: open.entries.map((entry): WorkspaceProjectWire => {
         const project = entry.host?.snapshot();
         return {

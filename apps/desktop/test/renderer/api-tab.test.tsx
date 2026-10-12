@@ -128,7 +128,7 @@ describe('ApiTab', () => {
       workspace: {
         ...workspaceWire(),
         environments: [environment({ petstore: 'https://ws.test' }, 'ws-env')],
-        activeEnvironmentId: 'ws-env',
+        activeEnvironments: { p1: 'ws-env' },
       },
     });
     mount();

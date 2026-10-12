@@ -17,7 +17,7 @@ import { useCurrentValuesStore } from '../state/current-values.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { ipc } from '../state/ipc-client.js';
 import { grpcDraftPatch, restDraftPatch, useProjectStore, wsDraftPatch } from '../state/project.js';
-import { useWorkspaceStore } from '../state/workspace.js';
+import { selectActiveEnvironmentId, useWorkspaceStore } from '../state/workspace.js';
 import { highlightCurl, type CurlTokenKind } from './curl-highlight.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { useUiStore } from '../state/ui.js';
@@ -152,9 +152,13 @@ export function CodePanel() {
   // active environment's endpoint override and expand `${...}` references against environment,
   // project and global properties — so the preview must regenerate on any of those, not just on
   // edits to the request draft itself.
-  const workspace = useWorkspaceStore((state) => state.workspace);
-  const activeEnvironmentId = workspace?.activeEnvironmentId;
-  const environments = workspace?.environments;
+  // The environment is the request's own project's (#468), whichever project is current.
+  const ownerProjectId = useProjectStore((state) => {
+    const id = requestId ?? restRequestId ?? grpcRequestId ?? wsRequestId;
+    return id === undefined ? undefined : state.projectOf[id];
+  });
+  const activeEnvironmentId = useWorkspaceStore((state) => selectActiveEnvironmentId(state, ownerProjectId));
+  const environments = useWorkspaceStore((state) => state.workspace?.environments);
   const projectProperties = useProjectStore((state) => {
     const projectId = requestId === undefined ? undefined : state.projectOf[requestId];
     return projectId === undefined ? undefined : state.projects[projectId]?.properties;

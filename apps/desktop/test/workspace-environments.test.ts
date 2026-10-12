@@ -135,7 +135,7 @@ describe('workspace environment routing', () => {
     // Nothing is redirected until the environment is actually active.
     expect(service.hostFor(projectId).kind('soap').endpointFor(requestId)).toBe(`${primary.url}/soap`);
 
-    await service.setActiveEnvironment({ environmentId });
+    await service.setActiveEnvironment({ projectId, environmentId });
     expect(service.hostFor(projectId).kind('soap').endpointFor(requestId)).toBe(`${secondary.url}/soap`);
     expect(service.hostFor(projectId).preflight(requestId).endpointSource).toBe('workspace-environment');
 
@@ -178,7 +178,7 @@ describe('workspace environment routing', () => {
   }, 60_000);
 
   it("lets a linked project's own dev environment win over the workspace's for the same property", async () => {
-    const { service, requestId } = await workspaceWithCalculator();
+    const { service, projectId, requestId } = await workspaceWithCalculator();
     folderPick = await seedLinkedProject('Linked', { region: 'us-east' });
     const workspace = await service.linkProject(SENDER);
     const linkedId = workspace?.projects.find((project) => project.source === 'linked')?.id as string;
@@ -190,7 +190,8 @@ describe('workspace environment routing', () => {
       environmentId,
       patch: { properties: { region: 'emea' } },
     });
-    await service.setActiveEnvironment({ environmentId });
+    await service.setActiveEnvironment({ projectId, environmentId });
+    await service.setActiveEnvironment({ projectId: linkedId, environmentId });
 
     const linkedRequestId = service.projectSnapshot(linkedId)?.requests[0]?.id as string;
     expect(service.scopesFor(linkedRequestId).env?.region).toBe('us-east');
@@ -211,7 +212,7 @@ describe('workspace properties', () => {
       environmentId: createdEnvironmentId as string,
       patch: { endpoints: { [`Calc/${interfaceSlug}`]: `${secondary.url}/soap` } },
     });
-    await service.setActiveEnvironment({ environmentId: createdEnvironmentId as string });
+    await service.setActiveEnvironment({ projectId, environmentId: createdEnvironmentId as string });
 
     const host = service.hostFor(projectId);
     await host.mutate({
@@ -256,7 +257,7 @@ describe('workspace environment disabled properties', () => {
       environmentId,
       patch: { properties: { region: 'us' }, endpoints: { [`Calc/${interfaceSlug}`]: `${secondary.url}/soap` } },
     });
-    await service.setActiveEnvironment({ environmentId });
+    await service.setActiveEnvironment({ projectId, environmentId });
 
     const host = service.hostFor(projectId);
     await host.mutate({
@@ -326,7 +327,7 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
         disabled: [],
       },
     });
-    await service.setActiveEnvironment({ environmentId: dev as string });
+    await service.setActiveEnvironment({ projectId, environmentId: dev as string });
 
     const dir = service.snapshot()?.dir as string;
     const reload = async (): Promise<Awaited<ReturnType<typeof loadWorkspace>>['workspace']> =>
@@ -375,23 +376,22 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
     // Removing the active environment clears the pointer rather than dangling it.
     await service.mutate({ kind: 'remove-workspace-environment', environmentId: dev as string });
     const afterRemoval = await reload();
-    expect(service.snapshot()?.activeEnvironmentId).toBeUndefined();
     expect(service.snapshot()?.activeEnvironments).toEqual({});
     expect(await reloadLocal()).toBeUndefined();
     expect(afterRemoval.environments.map((environment) => environment.id)).toEqual([prod]);
 
-    await service.setActiveEnvironment({ environmentId: prod as string });
+    await service.setActiveEnvironment({ projectId, environmentId: prod as string });
     expect(await reloadLocal()).toEqual({ [projectId]: prod });
-    await service.setActiveEnvironment({ environmentId: null });
+    await service.setActiveEnvironment({ projectId, environmentId: null });
     expect(await reloadLocal()).toBeUndefined();
 
     await service.close();
   }, 60_000);
 
   it('refuses a change that names an environment the workspace does not have', async () => {
-    const { service } = await workspaceWithCalculator();
+    const { service, projectId } = await workspaceWithCalculator();
 
-    await expect(service.setActiveEnvironment({ environmentId: '01JNOTANENV' })).rejects.toThrow(
+    await expect(service.setActiveEnvironment({ projectId, environmentId: '01JNOTANENV' })).rejects.toThrow(
       /No environment with id/,
     );
     await expect(

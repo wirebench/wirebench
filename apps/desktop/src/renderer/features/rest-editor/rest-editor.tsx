@@ -26,7 +26,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { folderChainOf, selectApiOf, useProjectStore } from '../../state/project.js';
 import { isAbsoluteUrl, queryFromUrl, syncPathParams } from '../../state/rest-url.js';
 import { useCurrentValuesStore } from '../../state/current-values.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironmentIdFor } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import type { RequestPreflightResponse } from '../../../shared/wire-types.js';
 import type { RestRequestPatchWire } from '../../../shared/kinds/rest/wire.js';
@@ -112,9 +112,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const sendRest = useExchangesStore((state) => state.sendRest);
   const cancelRest = useExchangesStore((state) => state.cancelRest);
   const preferences = usePreferencesStore((state) => state.preferences);
-  // A base URL can come from the active environment, which lives on the workspace, so an
-  // environment switch has to re-run the preflight as well as a project change.
-  const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  // A base URL can come from the request's project's active environment, which lives on the
+  // workspace, so switching it has to re-run the preflight as well as a project change.
+  const activeEnvironment = useActiveEnvironmentIdFor(requestId);
   const currentValues = useCurrentValuesStore((state) => state.byScope);
   const layout = useEditorLayout(requestId);
   const [tab, setTab] = useState<TabId>('params');

@@ -140,8 +140,7 @@ describe('sends resolve per project', () => {
 
     const reopened = newService();
     const snapshot = await reopened.open(workspaceId);
-    // The transitional workspace-wide id names nothing yet; resolution never reads it.
-    expect(snapshot.activeEnvironmentId).toBeUndefined();
+    expect(snapshot.activeEnvironments).toEqual({ [billing.id]: dev, [crm.id]: qa });
     expect(await target(reopened, billing.requestId)).toBe(`https://${billing.slug}.dev/pets`);
     expect(await target(reopened, crm.requestId)).toBe(`https://${crm.slug}.qa/pets`);
     expect(reopened.runContextFor(billing.requestId)?.environmentId).toBe(dev);

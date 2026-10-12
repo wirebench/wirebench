@@ -512,15 +512,19 @@ describe('workspace.* channels', () => {
     expect(service.locateProject).toHaveBeenCalledWith('p1', SENDER);
   });
 
-  it('setActiveEnvironment accepts an id or null, for a project or (transitionally) for all', async () => {
+  it('setActiveEnvironment accepts an id or null for a project', async () => {
     await invoke('workspace.setActiveEnvironment', { projectId: 'p1', environmentId: 'e1' });
     await invoke('workspace.setActiveEnvironment', { projectId: 'p1', environmentId: null });
-    await invoke('workspace.setActiveEnvironment', { environmentId: 'e1' });
     expect(service.setActiveEnvironment.mock.calls).toEqual([
       [{ projectId: 'p1', environmentId: 'e1' }],
       [{ projectId: 'p1', environmentId: null }],
-      [{ environmentId: 'e1' }],
     ]);
+  });
+
+  it('setActiveEnvironment refuses a request that names no project (#468)', async () => {
+    expect((await invoke('workspace.setActiveEnvironment', { environmentId: 'e1' })).ok).toBe(false);
+    expect((await invoke('workspace.setActiveEnvironment', { projectId: '', environmentId: null })).ok).toBe(false);
+    expect(service.setActiveEnvironment).not.toHaveBeenCalled();
   });
 
   it('mutate forwards the change and passes the created id through', async () => {

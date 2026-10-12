@@ -16,6 +16,7 @@ import { DYNAMIC_GENERATORS } from '@wirebench/engine/rest';
 import { Button } from '../../../components/button.js';
 import { useGlobalsStore } from '../../../state/globals.js';
 import { useProjectStore } from '../../../state/project.js';
+import { activeEnvironmentFor } from '../../../state/environment-scope.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 
 /** Where a property comes from, which decides the scope token in its reference. */
@@ -43,20 +44,21 @@ export interface GetDataDialogProps {
 
 /**
  * The flat, scope-ordered list of everything this request can expand: its own project's
- * properties, the workspace's active environment, the workspace itself, and the user's globals
+ * properties, that project's active workspace environment, the workspace itself, and the user's globals
  * — the engine's `Env -> Project -> Workspace -> Global` chain, in that order — then the
  * Dynamic scope's generators, which are always there.
  */
 function useEntries(interfaceId: string): readonly Entry[] {
-  const projectProperties = useProjectStore((state) => {
-    const projectId = state.projectOf[interfaceId];
-    return projectId === undefined ? undefined : state.projects[projectId]?.properties;
-  });
+  const projectId = useProjectStore((state) => state.projectOf[interfaceId]);
+  const projectProperties = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.properties,
+  );
   const workspace = useWorkspaceStore((state) => state.workspace);
   const globalProperties = useGlobalsStore((state) => state.properties);
 
   return useMemo(() => {
-    const active = workspace?.environments.find((environment) => environment.id === workspace.activeEnvironmentId);
+    // The interface's own project's active environment (#468).
+    const active = activeEnvironmentFor(workspace, projectId);
     const out: Entry[] = [];
     for (const [name, value] of Object.entries(active?.properties ?? {})) {
       out.push({ scope: 'Env', name, value, reference: `\${#Env#${name}}` });
@@ -79,7 +81,7 @@ function useEntries(interfaceId: string): readonly Entry[] {
       });
     }
     return out;
-  }, [projectProperties, workspace, globalProperties]);
+  }, [projectId, projectProperties, workspace, globalProperties]);
 }
 
 /** Lists the properties in scope and inserts the chosen one's `${#…}` reference. */

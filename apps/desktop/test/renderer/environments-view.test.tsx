@@ -35,10 +35,13 @@ function setUp(
     setActiveEnvironment: vi.fn().mockResolvedValue(undefined),
   };
   useWorkspaceStore.setState({
+    // `p1` is the current project (#468); the view shows and toggles its active environment.
     workspace: workspaceWire({
+      projects: [{ id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' }],
       environments: patch.environments ?? [dev, uat],
-      activeEnvironmentId: patch.activeEnvironmentId ?? 'e1',
+      activeEnvironments: { p1: patch.activeEnvironmentId ?? 'e1' },
     }),
+    lastProjectId: 'p1',
     ...actions,
   });
   render(
@@ -56,7 +59,7 @@ describe('EnvironmentsView', () => {
 
   afterEach(() => {
     cleanup();
-    useWorkspaceStore.setState({ workspace: null });
+    useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
   });
 
   it('lists Globals, Workspace, then the environments in order, with the active one marked', () => {
@@ -100,7 +103,7 @@ describe('EnvironmentsView', () => {
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[2]!);
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Deactivate' }));
     await waitFor(() => {
-      expect(setActiveEnvironment).toHaveBeenCalledWith(null);
+      expect(setActiveEnvironment).toHaveBeenCalledWith('p1', null);
     });
   });
 
@@ -109,7 +112,7 @@ describe('EnvironmentsView', () => {
     const uatRow = screen.getAllByTestId('environment-row')[3]!;
     fireEvent.click(uatRow.querySelector('button[aria-label="Set uat active"]')!);
     await waitFor(() => {
-      expect(setActiveEnvironment).toHaveBeenCalledWith('e2');
+      expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e2');
     });
   });
 
@@ -195,7 +198,7 @@ describe('EnvironmentsView', () => {
       return Promise.resolve({ createdEnvironmentId: 'e3' });
     });
     useWorkspaceStore.setState({
-      workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e1' }),
+      workspace: workspaceWire({ environments: [dev, uat], activeEnvironments: { p1: 'e1' } }),
       mutate,
       setActiveEnvironment: vi.fn().mockResolvedValue(undefined),
     });

@@ -111,10 +111,10 @@ async function gitLog(tree: string, cwdGit = git): Promise<string> {
   return (await cwdGit.run(tree, ['log', '--format=%s'])).stdout;
 }
 
-/** Adds a workspace environment and makes it the active one; returns its id. */
-async function activateEnvironment(service: WorkspaceService): Promise<string> {
+/** Adds a workspace environment and makes it `projectId`'s active one; returns its id. */
+async function activateEnvironment(service: WorkspaceService, projectId: string): Promise<string> {
   const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
-  await service.setActiveEnvironment({ environmentId: createdEnvironmentId as string });
+  await service.setActiveEnvironment({ projectId, environmentId: createdEnvironmentId as string });
   return createdEnvironmentId as string;
 }
 
@@ -237,7 +237,7 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
   it('rolls back when git init fails before share.yaml is written, keeping the active environment', async () => {
     const { root, service } = await newService('a', { git: () => Promise.resolve(gitFailingOn('init')) });
     const { dir, projectId } = await seedLocal(service, root);
-    const environmentId = await activateEnvironment(service);
+    const environmentId = await activateEnvironment(service, projectId);
     const before = await snapshotFiles(dir);
 
     await expect(service.share({})).rejects.toMatchObject({ code: 'git-failed' });
@@ -261,7 +261,7 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
       },
     });
     const { dir, projectId } = await seedLocal(service, root);
-    const environmentId = await activateEnvironment(service);
+    const environmentId = await activateEnvironment(service, projectId);
     failInto = join(dir, 'tree', 'projects');
     const before = await snapshotFiles(dir);
 
@@ -277,7 +277,7 @@ describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
   it('rolls back when adding the remote fails', async () => {
     const { root, service } = await newService('a', { git: () => Promise.resolve(gitFailingOn('remote')) });
     const { dir, projectId } = await seedLocal(service, root);
-    const environmentId = await activateEnvironment(service);
+    const environmentId = await activateEnvironment(service, projectId);
     const before = await snapshotFiles(dir);
 
     await expect(service.share({ remote: remote.url })).rejects.toMatchObject({ code: 'git-failed' });
@@ -454,7 +454,7 @@ describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
       },
     });
     const { dir, projectId } = await seedLocal(service, root);
-    const environmentId = await activateEnvironment(service);
+    const environmentId = await activateEnvironment(service, projectId);
     const before = await snapshotFiles(dir);
 
     await expect(service.shareToFolder(sender)).rejects.toMatchObject({ code: 'EACCES' });
@@ -488,7 +488,7 @@ describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
       },
     });
     const { dir, projectId } = await seedLocal(service, root);
-    const environmentId = await activateEnvironment(service);
+    const environmentId = await activateEnvironment(service, projectId);
     sourceProjects = join(dir, 'projects');
     const before = await snapshotFiles(dir);
 

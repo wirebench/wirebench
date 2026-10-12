@@ -444,6 +444,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
 
   it('serialises mutate and setActiveEnvironment behind an in-flight reload, so neither loses the other', async () => {
     const { workspace, tree } = await seedWorkspace('Team');
+    const alphaId = workspace.projects[0]?.id as string;
 
     // Wraps `loadWorkspace` (used only by the watcher's reload, `open()`, `list()` and rename's
     // "not open" branch — never by `mutate`/`setActiveEnvironment`, which only ever call
@@ -491,7 +492,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
         if (createdId === undefined) {
           throw new Error('expected mutate to report createdEnvironmentId');
         }
-        return service.setActiveEnvironment({ environmentId: createdId }).then(() => createdId);
+        return service.setActiveEnvironment({ projectId: alphaId, environmentId: createdId }).then(() => createdId);
       });
 
       // Gives the unfixed code every chance to run `mutate` and `setActiveEnvironment` to
@@ -509,7 +510,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
 
       const finalSnapshot = service.snapshot();
       expect(finalSnapshot?.environments.map((environment) => environment.id)).toContain(createdId);
-      expect(finalSnapshot?.activeEnvironmentId).toBe(createdId);
+      expect(finalSnapshot?.activeEnvironments).toEqual({ [alphaId]: createdId });
 
       const { workspace: onDisk } = await loadWorkspace(tree);
       expect(onDisk.environments.map((environment) => environment.id)).toContain(createdId);
@@ -821,8 +822,6 @@ describe('WorkspaceService — per-project active environments over a reload (#4
     const snapshot = service.snapshot();
     expect(snapshot?.activeEnvironments).toEqual({ [alpha]: dev, [beta]: qa });
     expect(snapshot?.environments.find((environment) => environment.id === dev)?.projects).toEqual([alpha]);
-    // The transitional single id still follows the project set last.
-    expect(snapshot?.activeEnvironmentId).toBe(qa);
 
     await service.close();
   }, 20_000);
@@ -841,7 +840,6 @@ describe('WorkspaceService — per-project active environments over a reload (#4
       expect(service.snapshot()?.environments.map((e) => e.id)).toEqual([qa]);
     }, WAIT_OPTIONS);
     expect(service.snapshot()?.activeEnvironments).toEqual({ [beta]: qa });
-    expect(service.snapshot()?.activeEnvironmentId).toBeUndefined();
     expect(recorded.onDisk).toEqual([]);
     // The snapshot changes as soon as the reload assigns it; local.yaml is written straight after.
     await vi.waitFor(async () => {
@@ -858,7 +856,8 @@ describe('WorkspaceService — per-project active environments over a reload (#4
     const { workspace, tree, alpha, beta, qa } = await seedScoped();
     const { service, recorded } = newService();
     await service.open(workspace.id);
-    await service.setActiveEnvironment({ environmentId: qa });
+    await service.setActiveEnvironment({ projectId: alpha, environmentId: qa });
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
     expect(service.snapshot()?.activeEnvironments).toEqual({ [alpha]: qa, [beta]: qa });
     await settle();
 

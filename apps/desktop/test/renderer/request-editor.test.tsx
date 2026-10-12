@@ -76,7 +76,7 @@ describe('RequestEditor', () => {
     // Only the workspace store changes, exactly as `workspace.changed` after `setActiveEnvironment`.
     act(() => {
       useWorkspaceStore.setState({
-        workspace: workspaceWire({ environments: [environment], activeEnvironmentId: 'env-1', projects }),
+        workspace: workspaceWire({ environments: [environment], activeEnvironments: { p1: 'env-1' }, projects }),
       });
     });
 

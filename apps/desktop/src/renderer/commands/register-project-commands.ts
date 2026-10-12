@@ -8,7 +8,9 @@ import { registerCommand } from '../lib/commands.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from '../state/ipc-client.js';
 import { useProjectStore } from '../state/project.js';
+import { environmentsForProject } from '../state/environment-scope.js';
 import { useWorkspaceStore } from '../state/workspace.js';
+import { currentProjectId } from '../state/workspace-tabs.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { activeGrpcRequestId, activeRequestId, activeRestRequestId, activeWsRequestId, ui } from './command-helpers.js';
 
@@ -93,11 +95,13 @@ export function registerProjectCommands(): void {
     // With no argument this opens the status bar's dropdown, which is where the choice lives.
     // The palette can also pass an environment name or id to switch straight to it.
     run: (_context, arg) => {
-      if (typeof arg === 'string') {
-        const environments = useWorkspaceStore.getState().workspace?.environments ?? [];
-        const match = environments.find((env) => env.id === arg || env.name === arg);
+      // A name or id switches the current project (#468), among the environments that apply to it.
+      const workspace = useWorkspaceStore.getState().workspace;
+      const projectId = currentProjectId();
+      if (typeof arg === 'string' && workspace !== null && projectId !== undefined) {
+        const match = environmentsForProject(workspace, projectId).find((env) => env.id === arg || env.name === arg);
         if (match !== undefined) {
-          void useWorkspaceStore.getState().setActiveEnvironment(match.id);
+          void useWorkspaceStore.getState().setActiveEnvironment(projectId, match.id);
           return;
         }
       }

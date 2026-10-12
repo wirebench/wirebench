@@ -21,7 +21,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
 import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 import { folderChainOf, useProjectStore, wsDraftPatch } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironmentIdFor } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import { RestAuthTab } from '../rest-editor/auth-tab.js';
 import { HeadersTab } from '../rest-editor/headers-tab.js';
@@ -105,7 +105,7 @@ export function WsEditor({ requestId }: WsEditorProps) {
   const cancelWs = useExchangesStore((state) => state.cancelWs);
   const disconnectWs = useExchangesStore((state) => state.disconnectWs);
   const preferences = usePreferencesStore((state) => state.preferences);
-  const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const activeEnvironment = useActiveEnvironmentIdFor(requestId);
   const currentValues = useCurrentValuesStore((state) => state.byScope);
   const selectedMessageId = useWsSelectionStore((state) => state.selected[requestId]);
   const selectMessage = useWsSelectionStore((state) => state.select);

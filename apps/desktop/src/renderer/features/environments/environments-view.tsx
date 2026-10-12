@@ -6,7 +6,8 @@ import { IconButton } from '../../components/icon-button.js';
 import { openCookiesTab } from '../cookies/cookie-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useUiStore } from '../../state/ui.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
+import { useCurrentProjectId } from '../../state/workspace-tabs.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-base.js';
 import { duplicateEnvironment, nextEnvironmentName, openEnvironmentTab } from './environment-actions.js';
@@ -144,10 +145,14 @@ function EnvironmentRow({
   onDelete,
 }: EnvironmentRowProps) {
   const setActiveEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
+  const projectId = useCurrentProjectId();
   const ref = useRevealWhenOpen(open);
 
+  // For the current project (#468), like the title-bar switcher.
   const setActive = (): void => {
-    void setActiveEnvironment(active ? null : environment.id);
+    if (projectId !== undefined) {
+      void setActiveEnvironment(projectId, active ? null : environment.id);
+    }
   };
 
   return (
@@ -270,7 +275,8 @@ function EnvironmentRow({
  */
 export function EnvironmentsView() {
   const environments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
-  const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const currentProject = useCurrentProjectId();
+  const activeId = useWorkspaceStore((state) => selectActiveEnvironmentId(state, currentProject));
   const hasWorkspace = useWorkspaceStore((state) => state.workspace !== null);
   const mutate = useWorkspaceStore((state) => state.mutate);
   // `collapseSidebar`, not `toggleSidebar`: this button is only ever reachable while the sidebar

@@ -2639,11 +2639,6 @@ export const workspaceWireSchema = z.object({
   environments: z.array(workspaceEnvironmentWireSchema),
   /** Each project's active environment (#468), keyed by project id; a project with no entry has none. */
   activeEnvironments: z.record(z.string(), z.string()),
-  /**
-   * @deprecated Transitional (#468): the active environment of the project most recently set through
-   * `workspace.setActiveEnvironment`, or absent. Read `activeEnvironments` instead.
-   */
-  activeEnvironmentId: z.string().optional(),
   projects: z.array(workspaceProjectWireSchema),
   share: workspaceShareWireSchema.optional(),
 });
@@ -2801,11 +2796,11 @@ export const workspaceExportCollectionResponseSchema = z.object({
 export type WorkspaceExportCollectionResponse = z.infer<typeof workspaceExportCollectionResponseSchema>;
 
 /**
- * Request for `workspace.setActiveEnvironment`; `null` deactivates. Transitional (#468): without
- * `projectId` the change applies to every project the environment applies to (`null` clears them all).
+ * Request for `workspace.setActiveEnvironment`: the project whose active environment changes (#468),
+ * and the environment, or `null` to deactivate.
  */
 export const workspaceSetActiveEnvironmentRequestSchema = z.object({
-  projectId: z.string().optional(),
+  projectId: z.string().min(1),
   environmentId: z.string().nullable(),
 });
 

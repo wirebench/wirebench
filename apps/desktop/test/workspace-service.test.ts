@@ -905,7 +905,8 @@ describe('active environment: machine-local, via local.yaml', () => {
 
     expect(await loadLocalState(dir)).toEqual({ version: 3, activeEnvironments: { [billing]: dev } });
     expect(service.snapshot()?.activeEnvironments).toEqual({ [billing]: dev });
-    expect(service.snapshot()?.activeEnvironmentId).toBe(dev);
+    // No workspace-wide id on the wire any more: each project has its own.
+    expect(service.snapshot()).not.toHaveProperty('activeEnvironmentId');
 
     await service.close();
   });
@@ -984,8 +985,6 @@ describe('active environment: machine-local, via local.yaml', () => {
     const reopened = newService();
     const snapshot = await reopened.open(id);
     expect(snapshot.activeEnvironments).toEqual({ [billing]: dev, [crm]: qa });
-    // No project has been set since the open, so the transitional single id names none.
-    expect(snapshot.activeEnvironmentId).toBeUndefined();
 
     await reopened.close();
   });
@@ -1088,7 +1087,6 @@ describe('active environment: machine-local, via local.yaml', () => {
     const reopened = newService();
     const snapshot = await reopened.open(created.id);
     expect(snapshot.activeEnvironments).toEqual({});
-    expect(snapshot.activeEnvironmentId).toBeUndefined();
     expect(existsSync(join(dir, 'local.yaml'))).toBe(false);
     expect(await loadLocalState(dir)).toEqual({ version: 3 });
     await reopened.close();
@@ -1148,7 +1146,8 @@ describe('active environment: machine-local, via local.yaml', () => {
     expect(migratedManifest).not.toContain('activeEnvironmentId');
 
     // Explicitly clearing it must stick across a close/reopen — nothing on disk can bring it back.
-    await reopened.setActiveEnvironment({ environmentId: null });
+    await reopened.setActiveEnvironment({ projectId: billing, environmentId: null });
+    await reopened.setActiveEnvironment({ projectId: crm, environmentId: null });
     await reopened.close();
 
     const relaunched = newService();
@@ -1181,7 +1180,7 @@ describe('active environment: machine-local, via local.yaml', () => {
 });
 
 describe('active environment per project (#468)', () => {
-  it('keeps one active environment per project, and the transitional id follows the project last set', async () => {
+  it('keeps one active environment per project', async () => {
     const { id, dir, billing, crm } = await twoProjectWorkspace();
     const service = newService();
     await service.open(id);
@@ -1191,12 +1190,11 @@ describe('active environment per project (#468)', () => {
     await service.setActiveEnvironment({ projectId: billing, environmentId: dev });
     const afterCrm = await service.setActiveEnvironment({ projectId: crm, environmentId: qa });
     expect(afterCrm.activeEnvironments).toEqual({ [billing]: dev, [crm]: qa });
-    expect(afterCrm.activeEnvironmentId).toBe(qa);
+    expect(afterCrm).not.toHaveProperty('activeEnvironmentId');
     expect(await loadLocalState(dir)).toEqual({ version: 3, activeEnvironments: { [billing]: dev, [crm]: qa } });
 
     const afterClear = await service.setActiveEnvironment({ projectId: billing, environmentId: null });
     expect(afterClear.activeEnvironments).toEqual({ [crm]: qa });
-    expect(afterClear.activeEnvironmentId).toBeUndefined();
     expect(await loadLocalState(dir)).toEqual({ version: 3, activeEnvironments: { [crm]: qa } });
 
     await service.close();
@@ -1241,34 +1239,13 @@ describe('active environment per project (#468)', () => {
     await service.close();
   });
 
-  it('without a project, applies to every project in the environment’s scope, and null clears them all', async () => {
-    const { id, billing, crm } = await twoProjectWorkspace();
-    const service = newService();
-    await service.open(id);
-    const dev = await addEnvironment(service, 'dev');
-    const qa = await addEnvironment(service, 'qa');
-    await service.mutate({ kind: 'update-workspace-environment', environmentId: qa, patch: { projects: [crm] } });
-
-    expect((await service.setActiveEnvironment({ environmentId: dev })).activeEnvironments).toEqual({
-      [billing]: dev,
-      [crm]: dev,
-    });
-    const scoped = await service.setActiveEnvironment({ environmentId: qa });
-    expect(scoped.activeEnvironments).toEqual({ [billing]: dev, [crm]: qa });
-    expect(scoped.activeEnvironmentId).toBe(qa);
-
-    const cleared = await service.setActiveEnvironment({ environmentId: null });
-    expect(cleared.activeEnvironments).toEqual({});
-    expect(cleared.activeEnvironmentId).toBeUndefined();
-    await service.close();
-  });
-
   it('narrowing a scope drops the entries it leaves out; widening it again keeps the rest', async () => {
-    const { id, dir, crm } = await twoProjectWorkspace();
+    const { id, dir, billing, crm } = await twoProjectWorkspace();
     const service = newService();
     await service.open(id);
     const dev = await addEnvironment(service, 'dev');
-    await service.setActiveEnvironment({ environmentId: dev });
+    await service.setActiveEnvironment({ projectId: billing, environmentId: dev });
+    await service.setActiveEnvironment({ projectId: crm, environmentId: dev });
 
     const narrowed = await service.mutate({
       kind: 'update-workspace-environment',
@@ -1300,7 +1277,6 @@ describe('active environment per project (#468)', () => {
 
     const { workspace } = await service.mutate({ kind: 'remove-workspace-environment', environmentId: qa });
     expect(workspace.activeEnvironments).toEqual({ [billing]: dev });
-    expect(workspace.activeEnvironmentId).toBeUndefined();
     expect(await loadLocalState(dir)).toEqual({ version: 3, activeEnvironments: { [billing]: dev } });
     await service.close();
   });

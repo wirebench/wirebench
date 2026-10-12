@@ -13,6 +13,7 @@ import { Button } from '../../components/button.js';
 import { referenceText, type RequestVariables, type VariableScope } from '../../editor/variable-assist.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { useProjectStore } from '../../state/project.js';
+import { activeEnvironmentFor } from '../../state/environment-scope.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
 
@@ -37,9 +38,8 @@ export function useVariableScopeOptions(projectId: string | undefined): readonly
 
   return useMemo(() => {
     const options: VariableScopeOption[] = [];
-    const workspaceEnvironment = workspace?.environments.find(
-      (environment) => environment.id === workspace.activeEnvironmentId,
-    );
+    // The request's own project's active environment (#468).
+    const workspaceEnvironment = activeEnvironmentFor(workspace, projectId);
     const projectEnvironment =
       workspace === undefined || workspace === null
         ? project?.environments.find((environment) => environment.id === project.activeEnvironmentId)

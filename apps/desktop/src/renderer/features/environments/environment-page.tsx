@@ -8,7 +8,8 @@ import { currentColumn, useCurrentValues } from '../../state/current-values.js';
 import type { ScopeKeyWire } from '../../../shared/wire-base.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
+import { useCurrentProjectId } from '../../state/workspace-tabs.js';
 
 // Shared box model between the resting and editing states — same height, padding, border width,
 // font — so nothing shifts by a pixel when the input mounts. Only the border's and background's
@@ -264,6 +265,9 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     projectId === undefined ? undefined : state.projects[projectId]?.disabledProperties,
   );
   const setWorkspaceActive = useWorkspaceStore((state) => state.setActiveEnvironment);
+  // A workspace environment's *Active* toggle acts for the current project (#468).
+  const currentProject = useCurrentProjectId();
+  const currentActiveId = useWorkspaceStore((state) => selectActiveEnvironmentId(state, currentProject));
   const setProjectActive = useProjectStore((state) => state.setActiveEnvironment);
   const globalsProperties = useGlobalsStore((state) => state.properties);
   const globalsDisabled = useGlobalsStore((state) => state.disabled);
@@ -274,9 +278,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
   }
 
   const isWorkspaceScoped = workspaceEnvironment !== undefined;
-  const active = isWorkspaceScoped
-    ? workspace?.activeEnvironmentId === environmentId
-    : projectActiveId === environmentId;
+  const active = isWorkspaceScoped ? currentActiveId === environmentId : projectActiveId === environmentId;
 
   const owningProjectName = workspace?.projects.find((candidate) => candidate.id === projectId)?.name;
 
@@ -437,7 +439,9 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
           value: active,
           onToggle: () => {
             if (isWorkspaceScoped) {
-              void setWorkspaceActive(active ? null : environmentId);
+              if (currentProject !== undefined) {
+                void setWorkspaceActive(currentProject, active ? null : environmentId);
+              }
             } else if (projectId !== undefined) {
               void setProjectActive(projectId, active ? null : environmentId);
             }

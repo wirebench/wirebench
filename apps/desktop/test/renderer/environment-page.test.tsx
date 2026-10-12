@@ -21,7 +21,7 @@ function renderPage(target: Parameters<typeof EnvironmentPage>[0]['target']) {
 
 afterEach(() => {
   cleanup();
-  useWorkspaceStore.setState({ workspace: null });
+  useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
   useProjectStore.getState().reset();
   useGlobalsStore.setState({ properties: {}, disabled: [] });
 });
@@ -130,10 +130,13 @@ describe('EnvironmentPage — a workspace environment', () => {
     });
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
     useWorkspaceStore.setState({
+      // `p1` is the current project (#468): the Active toggle acts for it.
       workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' }],
         environments: [env],
-        ...(activeEnvironmentId !== undefined ? { activeEnvironmentId } : {}),
+        activeEnvironments: activeEnvironmentId !== undefined ? { p1: activeEnvironmentId } : {},
       }),
+      lastProjectId: 'p1',
       mutate: mutate as unknown as ReturnType<typeof useWorkspaceStore.getState>['mutate'],
       setActiveEnvironment,
     });
@@ -271,13 +274,13 @@ describe('EnvironmentPage — a workspace environment', () => {
   it('activates through the workspace store when toggled on', () => {
     const { setActiveEnvironment } = setUp(environment, undefined);
     fireEvent.click(screen.getByTestId('environment-active'));
-    expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
+    expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e1');
   });
 
   it('deactivates through the workspace store when toggled off', () => {
     const { setActiveEnvironment } = setUp(environment, 'e1');
     fireEvent.click(screen.getByTestId('environment-active'));
-    expect(setActiveEnvironment).toHaveBeenCalledWith(null);
+    expect(setActiveEnvironment).toHaveBeenCalledWith('p1', null);
   });
 
   it('toggles a variable disabled and back through the disabled list', async () => {

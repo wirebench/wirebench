@@ -7,6 +7,7 @@ import type { EndpointSourceWire, EndpointWire } from '../../shared/kinds/soap/w
 import type { WorkspaceWire } from '../../shared/wire-base.js';
 import type { ProjectSnapshot } from './project.js';
 import { resolveEndpointOverride } from './endpoint-override.js';
+import { activeEnvironmentFor } from './environment-scope.js';
 
 /** What {@link selectRequestEndpoint} answers: the URL, and which rule produced it. */
 export interface ResolvedEndpoint {
@@ -45,13 +46,14 @@ export function selectRequestEndpoint(
   }
   const iface = state.interfaces[request.interfaceId];
 
-  // The active environment is the *workspace's*, and its endpoint keys are
+  // The active environment is a *workspace* one, and its endpoint keys are
   // `<projectSlug>/<interfaceSlug>`. A linked project's own environment (matched to the active
   // workspace environment by slug) beats the workspace environment's override — same precedence
   // as the engine's `resolveWorkspaceEndpoint`.
   if (iface !== undefined && workspace !== null) {
-    const active = workspace.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
     const projectId = state.projectOf[iface.id];
+    // The request's own project's active environment (#468), not whichever project is current.
+    const active = activeEnvironmentFor(workspace, projectId);
     const projectSlug = workspace.projects.find((project) => project.id === projectId)?.slug;
     const workspaceOverride = projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
     const linkedEnvironment = (projectId === undefined ? undefined : state.projects[projectId])?.environments.find(

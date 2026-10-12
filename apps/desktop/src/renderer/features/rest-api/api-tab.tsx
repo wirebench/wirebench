@@ -20,7 +20,7 @@ import { updateRestDefinition } from './api-actions.js';
 import { RestUpdateDialog } from './rest-update-dialog.js';
 import { useRestUpdateStore } from './rest-update-state.js';
 import { useProjectStore } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironment } from '../../state/workspace.js';
 import type { RestApiWire } from '../../../shared/kinds/rest/wire.js';
 import type { AuthConfigWire } from '../../../shared/wire-base.js';
 
@@ -65,8 +65,8 @@ export function ApiTab({ apiId }: ApiTabProps) {
   const projectId = useProjectStore((state) => state.projectOf[apiId]);
   const project = useProjectStore((state) => (projectId === undefined ? undefined : state.projects[projectId]));
   const updateApi = useProjectStore((state) => state.updateApi);
-  const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments);
-  const activeWorkspaceEnvironmentId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  // The API's own project's active workspace environment (#468), whichever project is current.
+  const workspaceEnvironment = useActiveEnvironment(projectId);
   const updating = useRestUpdateStore((state) => state.apiId === apiId);
   const closeUpdate = useRestUpdateStore((state) => state.close);
   // The dialog lives in this tab, so a tab that goes away takes the request to open it with it —
@@ -93,9 +93,6 @@ export function ApiTab({ apiId }: ApiTabProps) {
   }
 
   const projectEnvironment = project?.environments.find((candidate) => candidate.id === project.activeEnvironmentId);
-  const workspaceEnvironment = workspaceEnvironments?.find(
-    (candidate) => candidate.id === activeWorkspaceEnvironmentId,
-  );
   const effective = effectiveBaseUrl({
     api,
     projectOverride: projectEnvironment?.endpoints[api.slug],

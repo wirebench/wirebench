@@ -33,13 +33,13 @@ describe('GetDataDialog', () => {
     // The form's request belongs to interface `if-1` of this project; the dialog finds the
     // project through that, exactly as it does for a real request.
     useProjectStore.setState((state) => ({ projectOf: { ...state.projectOf, 'if-1': 'p1' } }));
-    // The Env scope is the *workspace's* active environment now.
+    // The Env scope is the project's active *workspace* environment (#468).
     useWorkspaceStore.setState({
       workspace: workspaceWire({
         environments: [
           { id: 'e1', name: 'QA', slug: 'qa', order: 0, endpoints: {}, properties: { user: 'qa-bot' }, disabled: [] },
         ],
-        activeEnvironmentId: 'e1',
+        activeEnvironments: { p1: 'e1', p2: 'e-other' },
         properties: { region: 'emea' },
       }),
     });
