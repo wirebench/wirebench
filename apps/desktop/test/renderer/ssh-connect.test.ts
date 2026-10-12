@@ -5,7 +5,10 @@ const trustHostKey = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: { connect, trustHostKey } }) }));
 import { confirmTrust, connectToHost } from '../../src/renderer/features/ssh/connect.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { readRecent } from '../../src/renderer/features/ssh/recent-connections.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { WorkspaceWire } from '../../src/shared/wire-base.js';
 
 const SIZE = { cols: 80, rows: 24 };
 const A = { paneId: 'pa', hostId: 'a' };
@@ -24,6 +27,23 @@ beforeEach(() => {
   useProblemsStore.setState({ items: [] });
   connect.mockReset();
   trustHostKey.mockReset();
+  localStorage.clear();
+  useWorkspaceStore.setState({ workspace: { id: 'w1' } as WorkspaceWire });
+});
+
+it('a connect that opens or fails is recorded in the recent connections; a trust prompt is not', async () => {
+  connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+  await connectToHost(A, SIZE);
+  connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
+  await connectToHost(B, SIZE);
+  expect(readRecent('w1')).toMatchObject([
+    { hostId: 'b', outcome: 'failed' },
+    { hostId: 'a', outcome: 'connected' },
+  ]);
+  useHostsStore.setState({ panes: {} });
+  connect.mockResolvedValueOnce(NEW_KEY);
+  await connectToHost(A, SIZE);
+  expect(readRecent('w1')[0]?.hostId).toBe('b');
 });
 
 it('a new host key opens the trust prompt; confirming trusts then connects', async () => {
