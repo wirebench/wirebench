@@ -38,6 +38,10 @@ export interface SshFixture {
   readonly port: number;
   readonly hostKey: KnownHostEntry;
   lastResize?: { cols: number; rows: number };
+  /** SSH connections the server has accepted so far. */
+  readonly connections: number;
+  /** Every `tcpip-forward` global request granted, in order, and whether it was cancelled since. */
+  readonly remoteForwards: { bindAddr: string; bindPort: number; cancelled: boolean }[];
   /** Resets every client's TCP connection, as a network that went away would: no exit status, no disconnect. */
   drop(): void;
   close(): Promise<void>;
@@ -59,6 +63,12 @@ export async function startSshFixture(options: {
   sftp?: { root: string } | 'refuse';
   /** Runs exec requests under `/bin/sh` with HOME (and the working folder) set to `home`; without it they do nothing. */
   exec?: { home: string };
+  /** Listen here instead of on a free port, so a test can bring a closed fixture back at the same address. */
+  port?: number;
+  /** Grant `tcpip-forward` (a listener on this side for each request) and `cancel-tcpip-forward`. */
+  tcpipForward?: boolean;
+  /** Refuse direct-tcpip channels and `tcpip-forward` requests, as `AllowTcpForwarding no` would. */
+  refuseForward?: boolean;
 }): Promise<SshFixture> {
   const sftp = options.sftp;
   const sftpBinary = typeof sftp === 'object' ? findSftpServer() : null;
@@ -76,8 +86,14 @@ export async function startSshFixture(options: {
   const clients = new Set<Connection>();
   const sockets = new Set<net.Socket>();
   const children = new Set<ChildProcess>();
+  const forwardServers = new Set<net.Server>();
+  let connections = 0;
   const fixture: SshFixture = {
     port: 0,
+    get connections() {
+      return connections;
+    },
+    remoteForwards: [],
     hostKey: { host: '', keyType: keyTypeOf(publicBlob), fingerprint: fingerprintOf(publicBlob) },
     drop: () => {
       for (const client of clients) (client as unknown as { _sock: net.Socket })._sock.resetAndDestroy();
@@ -86,13 +102,19 @@ export async function startSshFixture(options: {
       for (const client of clients) client.end();
       for (const socket of sockets) socket.destroy();
       for (const child of children) child.kill();
+      for (const listener of forwardServers) listener.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
 
   const server = new Server({ hostKeys: [privateKey] }, (client) => {
     clients.add(client);
-    client.on('close', () => clients.delete(client));
+    connections += 1;
+    const remoteListeners = new Map<string, net.Server>();
+    client.on('close', () => {
+      clients.delete(client);
+      for (const listener of remoteListeners.values()) listener.close();
+    });
     client.on('error', () => undefined);
     client.on('authentication', (ctx) => {
       const methods: ssh2.AuthenticationType[] = allowedKey === undefined ? ['password'] : ['password', 'publickey'];
@@ -189,7 +211,52 @@ export async function startSshFixture(options: {
         });
       });
     });
-    if (options.allowForwardOut) {
+    if (options.tcpipForward || options.refuseForward) {
+      client.on('request', (accept, reject, name, info) => {
+        const key = `${info.bindAddr}:${info.bindPort}`;
+        if (options.refuseForward || (name !== 'tcpip-forward' && name !== 'cancel-tcpip-forward')) {
+          return reject?.();
+        }
+        if (name === 'cancel-tcpip-forward') {
+          remoteListeners.get(key)?.close();
+          remoteListeners.delete(key);
+          const granted = fixture.remoteForwards.findLast(
+            (f) => f.bindAddr === info.bindAddr && f.bindPort === info.bindPort,
+          );
+          if (granted) granted.cancelled = true;
+          return accept?.();
+        }
+        const listener = net.createServer((socket) => {
+          sockets.add(socket);
+          socket.on('close', () => sockets.delete(socket));
+          socket.on('error', () => undefined);
+          const bound = (listener.address() as AddressInfo).port;
+          client.forwardOut(
+            info.bindAddr,
+            bound,
+            socket.remoteAddress ?? '127.0.0.1',
+            socket.remotePort ?? 0,
+            (error, stream) => {
+              if (error) return socket.destroy();
+              stream.on('error', () => socket.destroy());
+              socket.pipe(stream).pipe(socket);
+            },
+          );
+        });
+        forwardServers.add(listener);
+        listener.on('close', () => forwardServers.delete(listener));
+        listener.once('error', () => reject?.());
+        const host = info.bindAddr === 'localhost' || info.bindAddr === '' ? '127.0.0.1' : info.bindAddr;
+        listener.listen(info.bindPort, host, () => {
+          remoteListeners.set(key, listener);
+          fixture.remoteForwards.push({ bindAddr: info.bindAddr, bindPort: info.bindPort, cancelled: false });
+          accept?.((listener.address() as AddressInfo).port);
+        });
+      });
+    }
+    if (options.refuseForward) {
+      client.on('tcpip', (_accept, reject) => reject());
+    } else if (options.allowForwardOut) {
       client.on('tcpip', (accept, _reject, info) => {
         const stream = accept();
         const out = net.connect(info.destPort, info.destIP);
@@ -202,7 +269,7 @@ export async function startSshFixture(options: {
     }
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
   return Object.assign(fixture, { port, hostKey: { ...fixture.hostKey, host: `127.0.0.1:${port}` } });
 }
