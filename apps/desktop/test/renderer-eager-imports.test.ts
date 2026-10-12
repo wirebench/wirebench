@@ -29,6 +29,7 @@ const FORBIDDEN_FILES = [
   'shared/wire-types.ts',
   'shared/wire-base.ts',
   'shared/ssh-wire.ts',
+  'shared/sftp-wire.ts',
   'shared/runner-wire.ts',
   ...['soap', 'rest', 'grpc', 'ws'].flatMap((kind) => [
     `shared/kinds/${kind}/wire.ts`,

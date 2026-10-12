@@ -24,6 +24,31 @@ import {
   sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
+  sftpChmodRequestSchema,
+  sftpCloseRequestSchema,
+  sftpClosedEventSchema,
+  sftpConflictEventSchema,
+  sftpCopyRequestSchema,
+  sftpCopyResponseSchema,
+  sftpEditEventSchema,
+  sftpEditReplyRequestSchema,
+  sftpEditRequestSchema,
+  sftpEditResponseSchema,
+  sftpEndEditRequestSchema,
+  sftpListRequestSchema,
+  sftpListResponseSchema,
+  sftpLocalHomeRequestSchema,
+  sftpLocalHomeResponseSchema,
+  sftpMkdirRequestSchema,
+  sftpOpenRequestSchema,
+  sftpOpenResponseSchema,
+  sftpRemoveRequestSchema,
+  sftpRenameRequestSchema,
+  sftpResolveRequestSchema,
+  sftpTransferEventSchema,
+  sftpTransferRequestSchema,
+} from './sftp-wire.js';
+import {
   accountAcceptInvitationRequestSchema,
   accountCancelResponseSchema,
   accountChangedEventSchema,
@@ -923,6 +948,24 @@ export const channels = {
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
   },
+  // The Files tab (SSH area slice 3). Registered only while the SSH area is on; a local place is used as given.
+  sftp: {
+    open: defineChannel('sftp.open', sftpOpenRequestSchema, sftpOpenResponseSchema),
+    close: defineChannel('sftp.close', sftpCloseRequestSchema, z.object({})),
+    list: defineChannel('sftp.list', sftpListRequestSchema, sftpListResponseSchema),
+    mkdir: defineChannel('sftp.mkdir', sftpMkdirRequestSchema, z.object({})),
+    rename: defineChannel('sftp.rename', sftpRenameRequestSchema, z.object({})),
+    remove: defineChannel('sftp.remove', sftpRemoveRequestSchema, z.object({})),
+    chmod: defineChannel('sftp.chmod', sftpChmodRequestSchema, z.object({})),
+    copy: defineChannel('sftp.copy', sftpCopyRequestSchema, sftpCopyResponseSchema),
+    resolve: defineChannel('sftp.resolve', sftpResolveRequestSchema, z.object({})),
+    cancel: defineChannel('sftp.cancel', sftpTransferRequestSchema, z.object({})),
+    retry: defineChannel('sftp.retry', sftpTransferRequestSchema, z.object({})),
+    localHome: defineChannel('sftp.localHome', sftpLocalHomeRequestSchema, sftpLocalHomeResponseSchema),
+    edit: defineChannel('sftp.edit', sftpEditRequestSchema, sftpEditResponseSchema),
+    endEdit: defineChannel('sftp.endEdit', sftpEndEditRequestSchema, z.object({})),
+    editReply: defineChannel('sftp.editReply', sftpEditReplyRequestSchema, z.object({})),
+  },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,
   // The WS-I catalogue, both runners and the HTML renderer live in the engine, which is a
@@ -932,6 +975,16 @@ export const channels = {
 
 /** The registry of main-to-renderer events. */
 export const events = {
+  sftp: {
+    /** A transfer's state or progress (at most four a second, plus every state change); names and sizes only. */
+    transfer: defineEvent('sftp.transfer', sftpTransferEventSchema),
+    /** The first clash of a batch (or each, until one is answered for the rest): `sftp.resolve` answers. */
+    conflict: defineEvent('sftp.conflict', sftpConflictEventSchema),
+    /** The session ended (closed, lost, or with its window's workspace); the id is gone. To its window only. */
+    closed: defineEvent('sftp.closed', sftpClosedEventSchema),
+    /** An edit in the system editor changed state. */
+    edit: defineEvent('sftp.edit', sftpEditEventSchema),
+  },
   ssh: {
     /** `hosts.yaml` was written: a view re-lists. */
     hostsChanged: defineEvent('ssh.hostsChanged', z.object({})),

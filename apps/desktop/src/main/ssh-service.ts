@@ -1,19 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import type { WebContents } from 'electron';
 import type { z } from 'zod';
-import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
-import type { GetSecret } from '@wirebench/engine';
-import {
-  checkKnownHost,
-  detectOs,
-  jumpChain,
-  openSession,
-  parseKnownHosts,
-  rememberKnownHost,
-  secretNameOf,
-  serializeKnownHosts,
-} from '@wirebench/ssh';
-import type { HopCredentials, HostsFile, KnownHostEntry, ResolvedHost, SshSession } from '@wirebench/ssh';
+import { WirebenchError, nodeFs, writeFileAtomic } from '@wirebench/engine';
+import { detectOs, openSession, rememberKnownHost, serializeKnownHosts } from '@wirebench/ssh';
+import type { KnownHostEntry, SshSession } from '@wirebench/ssh';
 import { events } from '../shared/ipc.js';
 import type { IpcEvent } from '../shared/ipc.js';
 import { sshHostOsResponseSchema } from '../shared/ssh-wire.js';
@@ -27,51 +17,30 @@ import type {
   SshTrustRequest,
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
-import { asWirebenchError } from './hosts-service.js';
-import type { HostsService } from './hosts-service.js';
+import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
+import type { SshConnectDeps, SshConnector } from './ssh-connect.js';
 
-export interface SshServiceDeps {
-  /**
-   * The `hosts.yaml` of the connecting window's workspace (multi-window: each window holds its own).
-   * @throws WirebenchError when that window is gone
-   */
-  readonly hosts: (sender: WebContents) => Pick<HostsService, 'current' | 'list'>;
-  /**
-   * The secret getter for the connecting window's workspace, taken when a connect begins and bound to the
-   * workspace open then, so a switch mid-connect never hands one workspace's secrets to another's host.
-   */
-  readonly secretsFor: (sender: WebContents) => GetSecret;
-  /** `userData/ssh-known-hosts.json`: per machine, never in the workspace tree. */
-  readonly knownHostsFile: string;
+export interface SshServiceDeps extends SshConnectDeps {
   /** `userData/ssh-host-os.json`: per machine, the OS each server was found or chosen to run. */
   readonly hostOsFile: string;
-  /** `SSH_AUTH_SOCK` (or `'pageant'` on Windows); undefined when no agent runs. */
-  readonly agentSocket: () => string | undefined;
   readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
   /** Tests inject a fake. */
   readonly open?: typeof openSession;
   /** Milliseconds; tests inject a clock. */
   readonly now?: () => number;
-}
-
-/** A key a connect refused, which that window may now trust (and nothing else). */
-interface Refusal extends KnownHostEntry {
-  readonly kind: 'new' | 'changed';
-  /** The stored fingerprint a `changed` key differed from. */
-  readonly previous?: string;
-  readonly at: number;
+  /**
+   * The refused keys `trust` may record, shared with `SftpService` so one prompt serves terminal and Files;
+   * one of its own when not given (tests).
+   */
+  readonly refusals?: RefusalStore;
+  /** The chain, credential and host key path (built over {@link refusals} when not given). */
+  readonly connector?: SshConnector;
 }
 
 /** The command the OS probe runs: `os-release` on Linux, `uname -s` on the BSDs and macOS, `ver` on Windows. */
 const OS_PROBE = 'cat /etc/os-release 2>/dev/null || uname -s 2>/dev/null || ver';
 /** Milliseconds the probe may take before the host is left unlabelled. */
 const OS_PROBE_TIMEOUT_MS = 5000;
-
-/** The same host and key type: the slot a known-hosts entry fills. */
-const sameSlot = (a: KnownHostEntry, b: KnownHostEntry): boolean => a.host === b.host && a.keyType === b.keyType;
-
-/** How long a refused key stays trustable without connecting again. */
-export const REFUSAL_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Calls `onSwitch` when the open workspace id differs from the last one seen (closing counts), and not for
@@ -123,8 +92,9 @@ export class SshService {
   private readonly live = new Map<string, Live>();
   /** Senders already watched for going away or reloading (one set of listeners per window, not per session). */
   private readonly watched = new Set<number>();
-  /** Keys each window's connects refused, by sender id: the only keys `trust` will record for it. */
-  private readonly refused = new Map<number, Refusal[]>();
+  /** Keys each window's connects refused: the only keys `trust` will record for it. */
+  private readonly refusals: RefusalStore;
+  private readonly connector: SshConnector;
   /** `trust` reads, changes and writes the file; one at a time, so no entry is lost. */
   private trustQueue: Promise<void> = Promise.resolve();
   private hostOsQueue: Promise<void> = Promise.resolve();
@@ -136,7 +106,10 @@ export class SshService {
    */
   private readonly inFlight = new Map<number, { count: number; generation: number }>();
 
-  constructor(private readonly deps: SshServiceDeps) {}
+  constructor(private readonly deps: SshServiceDeps) {
+    this.refusals = deps.refusals ?? new RefusalStore(() => this.now());
+    this.connector = deps.connector ?? createSshConnector({ ...deps, refusals: this.refusals });
+  }
 
   /**
    * @throws WirebenchError `workspace-not-open` | a hosts.yaml refusal | `ssh-host-unknown` | `ssh-jump-unknown` |
@@ -169,62 +142,17 @@ export class SshService {
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
-    const getSecret = this.deps.secretsFor(sender);
-    const chain = await this.chainFor(sender, request.hostId);
-    if (stale()) throw closed();
-    const hops = await this.credentialsFor(chain, getSecret);
-    const known = await this.readKnownHosts();
+    const hops = await this.connector.prepareHops(sender, request.hostId, stale);
+    const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
-    // The last key refused as changed (hops connect in order and a refusal ends the connect).
-    let changed: { entry: KnownHostEntry; previous: string } | undefined;
-    const verifyHostKey = (_hop: unknown, key: KnownHostEntry): Promise<'accept' | 'reject'> => {
-      const check = checkKnownHost(known, key);
-      if (check === 'known') return Promise.resolve('accept');
-      const previous = known.find((e) => e.host === key.host && e.keyType === key.keyType);
-      changed = check === 'changed' && previous ? { entry: key, previous: previous.fingerprint } : undefined;
-      return Promise.resolve('reject');
-    };
     let session: SshSession;
     try {
       session = await (this.deps.open ?? openSession)({ hops, cols: request.cols, rows: request.rows, verifyHostKey });
     } catch (error) {
-      const code = (error as { code?: unknown }).code;
-      const details = (error as { details?: Record<string, unknown> }).details;
-      if (code === 'ssh-host-key-new' && details) {
-        const refusedKey = {
-          host: String(details['host']),
-          keyType: String(details['keyType']),
-          fingerprint: String(details['fingerprint']),
-        };
-        const wasChanged =
-          changed !== undefined &&
-          changed.entry.host === refusedKey.host &&
-          changed.entry.fingerprint === refusedKey.fingerprint;
-        // A refusal from before this window's switch belongs to the workspace it left: not kept.
-        if (!stale()) {
-          this.recordRefusal(sender, {
-            ...refusedKey,
-            kind: wasChanged ? 'changed' : 'new',
-            ...(wasChanged && changed ? { previous: changed.previous } : {}),
-            at: this.now(),
-          });
-        }
-      }
-      if (
-        changed &&
-        code === 'ssh-host-key-new' &&
-        details?.['host'] === changed.entry.host &&
-        details['fingerprint'] === changed.entry.fingerprint
-      ) {
-        throw new WirebenchError(
-          'ssh-host-key-changed',
-          `${changed.entry.host} presented a different ${changed.entry.keyType} key than before (was ${changed.previous}, now ${changed.entry.fingerprint})`,
-          { details: { ...changed.entry, previous: changed.previous } },
-        );
-      }
-      throw asWirebenchError(error);
+      // A refused key is forgotten with the window, as its sessions are.
+      if ((error as { code?: unknown }).code === 'ssh-host-key-new' && !stale()) this.watch(sender);
+      throw this.connector.refusalError(sender, error);
     }
     if (stale()) {
       session.close();
@@ -334,7 +262,7 @@ export class SshService {
   }
 
   /**
-   * Records a key a connect from this window refused in the last {@link REFUSAL_TTL_MS}; nothing else.
+   * Records a key a connect from this window refused in the last ten minutes (`REFUSAL_TTL_MS`); nothing else.
    * A changed key needs `replace: true`; a new one never does. Serialised, so concurrent trusts all land.
    *
    * @throws WirebenchError `ssh-host-key-unexpected` | `ssh-host-key-changed`
@@ -346,9 +274,9 @@ export class SshService {
   }
 
   private async trustNow(sender: WebContents, request: SshTrustRequest): Promise<void> {
-    const refusal = this.refusalsOf(sender.id).find(
-      (r) => r.host === request.host && r.keyType === request.keyType && r.fingerprint === request.fingerprint,
-    );
+    const refusal = this.refusals
+      .of(sender.id)
+      .find((r) => r.host === request.host && r.keyType === request.keyType && r.fingerprint === request.fingerprint);
     if (!refusal) throw new WirebenchError('ssh-host-key-unexpected', 'Connect to the host again to review its key');
     const entry: KnownHostEntry = { host: refusal.host, keyType: refusal.keyType, fingerprint: refusal.fingerprint };
     if (refusal.kind === 'changed' && !request.replace) {
@@ -360,7 +288,7 @@ export class SshService {
     }
     // The file may have gained a key for this host since the refusal (another prompt, another window):
     // overwriting it is a replace, whatever the refusal was.
-    const known = await this.readKnownHosts();
+    const known = await readKnownHosts(this.deps.knownHostsFile);
     const stored = known.find((e) => e.host === entry.host && e.keyType === entry.keyType);
     if (stored && stored.fingerprint !== entry.fingerprint && !request.replace) {
       throw new WirebenchError(
@@ -371,18 +299,13 @@ export class SshService {
     }
     await writeFileAtomic(nodeFs, this.deps.knownHostsFile, serializeKnownHosts(rememberKnownHost(known, entry)));
     // What was just decided settles this host and key type for every window: no older prompt can undo it.
-    for (const senderId of [...this.refused.keys()]) {
-      this.refused.set(
-        senderId,
-        this.refusalsOf(senderId).filter((r) => !sameSlot(r, entry)),
-      );
-    }
+    this.refusals.settle(entry);
   }
 
   /** Closes every session (workspace switch, quit). */
   disposeAll(): void {
     this.epoch += 1;
-    this.refused.clear();
+    this.refusals.clear();
     for (const [sessionId, live] of [...this.live]) {
       live.session.close();
       this.drop(sessionId);
@@ -396,7 +319,7 @@ export class SshService {
   disposeFor(sender: WebContents): void {
     const flight = this.inFlight.get(sender.id);
     if (flight) flight.generation += 1;
-    this.refused.delete(sender.id);
+    this.connector.forget(sender);
     for (const [sessionId, live] of [...this.live]) {
       if (live.sender.id !== sender.id) continue;
       live.session.close();
@@ -422,21 +345,6 @@ export class SshService {
     return (this.deps.now ?? Date.now)();
   }
 
-  /** The window's refusals still within the TTL (expired ones are dropped on the way). */
-  private refusalsOf(senderId: number): Refusal[] {
-    const fresh = (this.refused.get(senderId) ?? []).filter((r) => this.now() - r.at <= REFUSAL_TTL_MS);
-    if (fresh.length > 0) this.refused.set(senderId, fresh);
-    else this.refused.delete(senderId);
-    return fresh;
-  }
-
-  private recordRefusal(sender: WebContents, refusal: Refusal): void {
-    // Only the latest key a host presented to this window stays trustable.
-    const others = this.refusalsOf(sender.id).filter((r) => !sameSlot(r, refusal));
-    this.refused.set(sender.id, [...others, refusal]);
-    this.watch(sender);
-  }
-
   private owned(sender: WebContents, sessionId: string): Live {
     const live = this.live.get(sessionId);
     if (!live || live.sender.id !== sender.id) throw new WirebenchError('ssh-session-unknown', 'No such session');
@@ -451,92 +359,9 @@ export class SshService {
     if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });
   }
 
-  /** The hops to the host, outermost first, each complete; nothing here touches the network. */
-  private async chainFor(sender: WebContents, hostId: string): Promise<readonly ResolvedHost[]> {
-    const hosts = this.deps.hosts(sender);
-    const listing = await hosts.list(); // cached; reads hosts.yaml once per workspace
-    const problem = listing.problems[0];
-    if (problem) {
-      // The file did not parse: its own refusal (ssh-hosts-invalid, ssh-duplicate-id, …) is the answer.
-      throw new WirebenchError(problem.code, `hosts.yaml: ${problem.message}`, {
-        details: { ...(problem.path ? { path: problem.path } : {}) },
-      });
-    }
-    const file: HostsFile | undefined = hosts.current();
-    if (!file) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
-    let chain: readonly ResolvedHost[];
-    try {
-      chain = jumpChain(file, hostId);
-    } catch (error) {
-      throw asWirebenchError(error);
-    }
-    for (const hop of chain) {
-      if (hop.incomplete) {
-        throw new WirebenchError(
-          'ssh-host-incomplete',
-          `${hop.name} has no ${hop.incomplete.field}; set it on the host or one of its groups`,
-          { details: { hostId: hop.id, field: hop.incomplete.field } },
-        );
-      }
-    }
-    return chain;
-  }
-
-  /** In order, so the first missing secret is the one named; an agent without a socket fails here too. */
-  private async credentialsFor(chain: readonly ResolvedHost[], getSecret: GetSecret): Promise<HopCredentials[]> {
-    const value = async (token: string): Promise<string> => {
-      const name = secretNameOf(token);
-      const ref = secretPseudoRef(name);
-      const found = await getSecret(ref);
-      if (found === undefined) {
-        throw new WirebenchError(
-          'secret-missing',
-          `The secret "${name}" is not on this machine — set it from the host's form (Hosts).`,
-          { details: { ref, name } },
-        );
-      }
-      return found;
-    };
-    const hops: HopCredentials[] = [];
-    for (const hop of chain) {
-      const auth = hop.ssh.auth.value;
-      const user = hop.ssh.user.value;
-      if (!auth || user === undefined) continue; // unreachable: chainFor refused incomplete hops
-      const credentials: HopCredentials['auth'] =
-        auth.kind === 'password'
-          ? { kind: 'password', password: await value(auth.password) }
-          : auth.kind === 'key'
-            ? {
-                kind: 'key',
-                privateKey: await value(auth.key),
-                ...(auth.passphrase ? { passphrase: await value(auth.passphrase) } : {}),
-              }
-            : { kind: 'agent', socket: this.requireAgent(hop) };
-      hops.push({
-        address: hop.address,
-        port: hop.ssh.port.value,
-        user,
-        auth: credentials,
-        keepAlive: hop.ssh.keepAlive.value,
-        connectTimeout: hop.ssh.connectTimeout.value,
-      });
-    }
-    return hops;
-  }
-
-  private requireAgent(hop: ResolvedHost): string {
-    const socket = this.deps.agentSocket();
-    if (!socket) {
-      throw new WirebenchError('ssh-auth-failed', 'No SSH agent is running (SSH_AUTH_SOCK is unset)', {
-        details: { host: `${hop.address}:${hop.ssh.port.value}`, method: 'agent' },
-      });
-    }
-    return socket;
-  }
-
   /** The host keys trusted on this machine, for the Known hosts view. */
   async knownHosts(): Promise<readonly KnownHostEntry[]> {
-    return this.readKnownHosts();
+    return readKnownHosts(this.deps.knownHostsFile);
   }
 
   /**
@@ -544,24 +369,9 @@ export class SshService {
    * trust prompt again. Forgetting a key that is not there is a no-op, not an error.
    */
   async forgetHostKey(request: { readonly host: string; readonly keyType: string }): Promise<void> {
-    const known = await this.readKnownHosts();
+    const known = await readKnownHosts(this.deps.knownHostsFile);
     const kept = known.filter((e) => !(e.host === request.host && e.keyType === request.keyType));
     if (kept.length === known.length) return;
     await writeFileAtomic(nodeFs, this.deps.knownHostsFile, serializeKnownHosts(kept));
-  }
-
-  private async readKnownHosts(): Promise<readonly KnownHostEntry[]> {
-    try {
-      return parseKnownHosts(await readFile(this.deps.knownHostsFile, 'utf8'));
-    } catch (error) {
-      const errno = (error as NodeJS.ErrnoException).code;
-      if (errno === 'ENOENT') return [];
-      // Raw, it would cross IPC as `internal-error`; no host is trusted or refused without the file.
-      throw new WirebenchError(
-        'ssh-hosts-invalid',
-        `The trusted host keys file could not be read (${errno ?? 'unknown error'}): ${this.deps.knownHostsFile}`,
-        { details: { file: 'known-hosts', ...(errno === undefined ? {} : { errno }) }, cause: error },
-      );
-    }
   }
 }

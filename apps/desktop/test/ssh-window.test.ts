@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
+import type { WebContents } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 import { workspaceSecretLabel } from '../src/main/secret-resolver.js';
-import { sshScopeOf, sshSecretsFor } from '../src/main/ssh-window.js';
+import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from '../src/main/ssh-window.js';
 import type { SshWindowScope } from '../src/main/ssh-window.js';
 import { WindowScopes } from '../src/main/window-scope.js';
 
@@ -85,5 +86,20 @@ describe('sshSecretsFor', () => {
     const getter = sshSecretsFor(store(), a.s, vi.fn());
     a.switchTo('w2');
     expect(await getter(PW)).toBe('A:pw-w1');
+  });
+});
+
+describe('sshAreaEndsOnSwitch', () => {
+  it("a switch in one window ends that window's terminals and Files sessions; a rename does not", () => {
+    const window = { id: 1 } as WebContents;
+    const ssh = { disposeFor: vi.fn() };
+    const sftp = { disposeFor: vi.fn() };
+    const onWorkspace = sshAreaEndsOnSwitch([ssh, sftp], window);
+    onWorkspace('w1');
+    onWorkspace('w1'); // the same workspace again: a rename or a reload
+    expect(ssh.disposeFor.mock.calls).toEqual([[window]]);
+    expect(sftp.disposeFor.mock.calls).toEqual([[window]]);
+    onWorkspace(null); // closed
+    expect(sftp.disposeFor).toHaveBeenCalledTimes(2);
   });
 });
