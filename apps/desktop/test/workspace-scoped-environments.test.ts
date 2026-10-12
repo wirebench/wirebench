@@ -8,25 +8,26 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadLocalState, loadWorkspace, workspaceDir } from '@wirebench/engine';
-import type { RestApi } from '@wirebench/engine';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadLocalState, loadWorkspace, nodeFs, workspaceDir } from '@wirebench/engine';
+import type { FsLike, RestApi } from '@wirebench/engine';
 import { restApisOf } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { sendToEnvironments } from '../src/main/multi-env-send.js';
 import { ExchangeRegistry, previewRest, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
-import { WorkspaceService } from '../src/main/workspace-service.js';
+import { WorkspaceService, type WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 
 let root: string;
 
-function newService(): WorkspaceService {
+function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
   return new WorkspaceService({
     userDataDir: root,
     engine: new EngineService(),
     history: new HistoryService(root),
     trash: () => Promise.resolve(),
+    ...overrides,
   });
 }
 
@@ -211,6 +212,48 @@ describe('an environment out of the project’s scope', () => {
       }),
       expect.objectContaining({ outcome: 'error', environmentId: 'no-such-env', code: 'unknown-environment' }),
     ]);
+    await service.close();
+  });
+});
+
+describe('a local.yaml write that fails during a workspace change', () => {
+  it('neither fails the change already on disk nor skips its notification, and is retried on the next write', async () => {
+    let armed = false;
+    const isLocal = (path: string): boolean => path.includes('local.yaml');
+    const eio = (): Promise<never> => Promise.reject(new Error('EIO'));
+    const failingFs: FsLike = {
+      ...nodeFs,
+      writeFile: (path, data) => (armed && isLocal(path) ? eio() : nodeFs.writeFile(path, data)),
+      rename: (from, to) => (armed && isLocal(to) ? eio() : nodeFs.rename(from, to)),
+      rm: (path, options) => (armed && isLocal(path) ? eio() : nodeFs.rm(path, options)),
+    };
+    const onChanged = vi.fn();
+    const service = newService({ fs: failingFs, hooks: { onChanged } });
+    const created = await service.create('Scoped');
+    const billing = await addRestProject(service, 'Billing');
+    const crm = await addRestProject(service, 'CRM');
+    const dev = await addEnvironment(service, 'dev', [billing, crm]);
+    await service.setActiveEnvironment({ projectId: billing.id, environmentId: dev });
+    const localDir = workspaceDir(root, created.id);
+
+    armed = true;
+    onChanged.mockClear();
+    // Narrowing dev to CRM drops Billing's entry, so local.yaml has to be written — and fails.
+    const { workspace } = await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId: dev,
+      patch: { projects: [crm.id] },
+    });
+    expect(workspace.activeEnvironments).toEqual({});
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect((await loadWorkspace(created.dir)).workspace.environments.find((e) => e.id === dev)?.projects).toEqual([
+      crm.id,
+    ]);
+    expect((await loadLocalState(localDir)).activeEnvironments).toEqual({ [billing.id]: dev });
+
+    armed = false;
+    await service.mutate({ kind: 'update-workspace-environment', environmentId: dev, patch: { color: 'red' } });
+    expect((await loadLocalState(localDir)).activeEnvironments).toBeUndefined();
     await service.close();
   });
 });

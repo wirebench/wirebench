@@ -310,7 +310,12 @@ function AppliesTo({
                   onChange={(event) => {
                     const include = event.currentTarget.checked;
                     void queueEnvironmentPatch(environment.id, (current) => {
-                      const list = current.projects ?? [];
+                      // Queued behind a switch to All projects: that choice stands, a tick must
+                      // not narrow it back to one project.
+                      if (current.projects === undefined) {
+                        return undefined;
+                      }
+                      const list = current.projects;
                       if (include === list.includes(project.id)) {
                         return undefined;
                       }

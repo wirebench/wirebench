@@ -826,7 +826,7 @@ describe('WorkspaceService — per-project active environments over a reload (#4
     await service.close();
   }, 20_000);
 
-  it('a pull that deletes a project’s active environment drops the entry, without an error', async () => {
+  it('a pull that deletes a project’s active environment drops the entry in memory, without an error', async () => {
     const { workspace, tree, alpha, beta, dev, qa } = await seedScoped();
     const { service, recorded } = newService();
     await service.open(workspace.id);
@@ -841,18 +841,23 @@ describe('WorkspaceService — per-project active environments over a reload (#4
     }, WAIT_OPTIONS);
     expect(service.snapshot()?.activeEnvironments).toEqual({ [beta]: qa });
     expect(recorded.onDisk).toEqual([]);
-    // The snapshot changes as soon as the reload assigns it; local.yaml is written straight after.
-    await vi.waitFor(async () => {
-      expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
-        version: 3,
-        activeEnvironments: { [beta]: qa },
-      });
-    }, WAIT_OPTIONS);
+    // A reload does not write the drop: a pull caught half-way (an environment file not yet
+    // written) must not lose this machine's pick for good. local.yaml still holds it…
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [alpha]: dev, [beta]: qa },
+    });
+    // …until the next write of the active environments, which carries the in-memory map.
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [beta]: qa },
+    });
 
     await service.close();
   }, 20_000);
 
-  it('a pull that narrows a scope drops the entry of the project it leaves out', async () => {
+  it('a pull that narrows a scope drops, in memory, the entry of the project it leaves out', async () => {
     const { workspace, tree, alpha, beta, qa } = await seedScoped();
     const { service, recorded } = newService();
     await service.open(workspace.id);
@@ -874,13 +879,18 @@ describe('WorkspaceService — per-project active environments over a reload (#4
     }, WAIT_OPTIONS);
     expect(service.snapshot()?.activeEnvironments).toEqual({ [beta]: qa });
     expect(recorded.onDisk).toEqual([]);
-    // The snapshot changes as soon as the reload assigns it; local.yaml is written straight after.
-    await vi.waitFor(async () => {
-      expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
-        version: 3,
-        activeEnvironments: { [beta]: qa },
-      });
-    }, WAIT_OPTIONS);
+    // A reload does not write the drop: a pull caught half-way (an environment file not yet
+    // written) must not lose this machine's pick for good. local.yaml still holds it…
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [alpha]: qa, [beta]: qa },
+    });
+    // …until the next write of the active environments, which carries the in-memory map.
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [beta]: qa },
+    });
 
     await service.close();
   }, 20_000);

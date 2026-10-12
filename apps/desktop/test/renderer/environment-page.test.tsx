@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
+import { queueEnvironmentPatch } from '../../src/renderer/features/environments/environment-queue.js';
 import { useCurrentValuesStore } from '../../src/renderer/state/current-values.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useGlobalsStore } from '../../src/renderer/state/globals.js';
@@ -366,6 +367,25 @@ describe('EnvironmentPage — a workspace environment', () => {
         patch: { projects: [] },
       });
     });
+  });
+
+  it('leaves All projects in place when a tick was queued behind switching to it', async () => {
+    const { mutate } = setUp({ ...environment, projects: ['p1'] });
+    // Both edits are queued before the first round trip: the tick's turn finds every project.
+    fireEvent.click(screen.getByRole('radio', { name: 'All projects' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Applies to Crm' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { projects: null },
+      });
+    });
+    await act(async () => {
+      await queueEnvironmentPatch('e1', () => undefined);
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(useWorkspaceStore.getState().workspace?.environments[0]).not.toHaveProperty('projects');
   });
 
   it('keeps a project id this machine does not know when the scope changes', async () => {

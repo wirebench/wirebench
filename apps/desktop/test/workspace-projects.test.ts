@@ -369,6 +369,35 @@ describe('WorkspaceService.linkProject', () => {
     await service.close();
   }, 60_000);
 
+  it('exports only the workspace environments that apply to the exported project (#468)', async () => {
+    const { service, projectId } = await workspaceWithProject('Calculator');
+    const add = async (name: string, projects?: string[]): Promise<void> => {
+      const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name });
+      if (projects !== undefined) {
+        await service.mutate({
+          kind: 'update-workspace-environment',
+          environmentId: createdEnvironmentId!,
+          patch: { projects },
+        });
+      }
+    };
+    await add('Everywhere');
+    await add('Mine', [projectId]);
+    await add('Elsewhere', ['p-other']);
+    await add('Nowhere', []);
+    const outDir = join(root, 'scoped-collection-out');
+    await mkdir(outDir, { recursive: true });
+    folderPick = outDir;
+
+    const result = await service.exportCollection({ projectId, format: 'postman' }, SENDER);
+    expect([...(result?.files ?? [])].sort()).toEqual([
+      'calculator.postman_collection.json',
+      'everywhere.postman_environment.json',
+      'mine.postman_environment.json',
+    ]);
+    await service.close();
+  }, 60_000);
+
   it('refuses the same folder twice', async () => {
     const source = await workspaceWithProject('Calculator');
     const linkedDir = workspaceProjectDir(source.workspace.dir, 'Calculator');

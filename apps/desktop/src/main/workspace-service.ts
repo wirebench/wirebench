@@ -32,6 +32,7 @@ import {
   createWorkspaceEnvironment,
   DEFAULT_GIT_SHARE_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
+  environmentsForProject,
   exportCollection,
   grpcApisOf,
   isTeamSecretsPath,
@@ -1404,19 +1405,14 @@ export class WorkspaceService implements ProjectRouter {
     // in-memory model, each entry only while it still holds in the reloaded one (#468). A pull that
     // deletes an environment, narrows its scope, or drops a project takes the entry with it. The
     // entries key on project ids, so a slug renamed on disk keeps its entry (and its scope).
+    // The drop is NOT written to local.yaml here: a reload can land mid-pull, with an environment
+    // file not yet written, and writing then would lose this machine's pick for good. The next
+    // `mutate`, `setActiveEnvironment` or `open` writes the in-memory map (or drops the same
+    // stale entries on read).
     open.workspace = withoutActiveEnvironment({
       ...loaded,
       activeEnvironments: liveActiveEnvironments(loaded, open.workspace.activeEnvironments),
     });
-    try {
-      await this.persistActiveEnvironments(open);
-    } catch {
-      // local.yaml could not be rewritten: the in-memory entries are already right, the next
-      // `setActiveEnvironment` writes them again, and `open` drops the same stale entries on read.
-    }
-    if (this.stale(open)) {
-      return;
-    }
 
     // Re-derive the project entries: a ref gone from the reloaded manifest (or one whose slug or
     // path changed — a rename pulled from a teammate) is released; anything new is opened. A
@@ -2455,7 +2451,7 @@ export class WorkspaceService implements ProjectRouter {
     };
     const entry = request.projectId !== undefined ? this.requireEntry(request.projectId) : open.entries.find(holds);
     const model = entry?.host?.model();
-    if (model === undefined) {
+    if (entry === undefined || model === undefined) {
       throw new WirebenchError('unknown-project', 'The project to export is not open.', {
         details: { ...(request.projectId !== undefined ? { projectId: request.projectId } : {}) },
       });
@@ -2463,7 +2459,9 @@ export class WorkspaceService implements ProjectRouter {
     const result = exportCollection(request.format, {
       project: model,
       target: request.containerId !== undefined ? { kind: 'container', id: request.containerId } : { kind: 'project' },
-      environments: [...open.workspace.environments, ...model.environments],
+      // Only the workspace environments that apply to this project (#468): one scoped elsewhere is
+      // not this project's to hand out.
+      environments: [...environmentsForProject(open.workspace, entry.ref.id), ...model.environments],
       workspaceProperties: open.workspace.properties,
       workspaceDisabledProperties: open.workspace.disabledProperties,
     });
@@ -2914,7 +2912,10 @@ export class WorkspaceService implements ProjectRouter {
       const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
       await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
       this.requireStillOpen(open);
-      await this.persistActiveEnvironments(open);
+      // Best-effort: the change is already on disk, so a failed local.yaml write must not fail it
+      // nor skip the commit and the renderer's notification. The in-memory entries are right, and
+      // `open.local` still says what the file holds, so the next persist writes them again.
+      await this.persistActiveEnvironments(open).catch(() => undefined);
       this.requireStillOpen(open);
       open.sync?.afterSave('workspace', commitHint);
       this.backfillTeamSecrets();
@@ -2979,8 +2980,10 @@ export class WorkspaceService implements ProjectRouter {
     if (sameActiveEnvironments(open.local.activeEnvironments, open.workspace.activeEnvironments)) {
       return;
     }
-    open.local = withActiveEntries(open.local, open.workspace.activeEnvironments);
-    await saveLocalState(open.dir, open.local, this.fsOption());
+    // Assigned only once written, so `open.local` keeps saying what local.yaml holds after a failure.
+    const local = withActiveEntries(open.local, open.workspace.activeEnvironments);
+    await saveLocalState(open.dir, local, this.fsOption());
+    open.local = local;
   }
 
   /** Each open project's display name by id, for commit messages that name projects. */
@@ -3169,6 +3172,10 @@ export class WorkspaceService implements ProjectRouter {
         ...(environment.protected === true ? { protected: true } : {}),
         ...(environment.projects !== undefined ? { projects: [...environment.projects] } : {}),
       })),
+      // Keyed on `entry.ref.id` (the manifest's id: environment scopes and active entries), while
+      // `projects[].id` below is `entry.projectId` (the id the project's own `wirebench.yaml`
+      // carries). The two are equal for a created, copied or linked project; a linked folder whose
+      // own id changes after linking is not supported, and its scope and active entry would not match.
       activeEnvironments: { ...workspace.activeEnvironments },
       projects: open.entries.map((entry): WorkspaceProjectWire => {
         const project = entry.host?.snapshot();
