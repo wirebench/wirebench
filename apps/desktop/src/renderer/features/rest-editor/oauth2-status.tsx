@@ -23,6 +23,9 @@ export interface OAuth2StatusPanelProps {
   readonly grant: AuthConfigWire['grant'];
 }
 
+/** How often the status is read again while Get token waits. */
+const STATUS_POLL_MS = 1000;
+
 /** How each state reads. */
 const STATE_LABEL: Readonly<Record<OAuth2StatusWire['state'], string>> = {
   none: 'No token yet',
@@ -55,6 +58,7 @@ export function expiryLabel(expiresAt: string | undefined, now: number = Date.no
 export function OAuth2StatusPanel({ ownerId, grant }: OAuth2StatusPanelProps) {
   const [status, setStatus] = useState<OAuth2StatusWire | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const read = useCallback(async (): Promise<void> => {
     const result = await ipc().oauth2.status({ ownerId });
@@ -68,6 +72,14 @@ export function OAuth2StatusPanel({ ownerId, grant }: OAuth2StatusPanelProps) {
   useEffect(() => {
     void read();
   }, [read]);
+
+  // A device sign-in only learns its code after Get token was pressed, and that call answers only
+  // once the user has approved it: while it waits, the status is read again so the code appears.
+  useEffect(() => {
+    if (!busy) return undefined;
+    const timer = setInterval(() => void read(), STATUS_POLL_MS);
+    return () => clearInterval(timer);
+  }, [busy, read]);
 
   async function onGetToken(): Promise<void> {
     setBusy(true);
@@ -97,11 +109,27 @@ export function OAuth2StatusPanel({ ownerId, grant }: OAuth2StatusPanelProps) {
   }
 
   const expiry = expiryLabel(status?.expiresAt);
+  const device = status?.device;
+  const stateLabel =
+    status?.state === 'pending' && device !== undefined
+      ? 'Waiting for approval…'
+      : STATE_LABEL[status?.state ?? 'none'];
+
+  function onCopyCode(code: string): void {
+    void navigator.clipboard.writeText(code).then(
+      () => {
+        setCopied(true);
+      },
+      () => {
+        showToast('Could not copy the code');
+      },
+    );
+  }
 
   return (
     <div data-testid="oauth2-status" className="mt-1 flex flex-col gap-1 rounded border border-hairline-strong p-2">
       <p className="text-xs text-fg-default">
-        <span data-testid="oauth2-state">{STATE_LABEL[status?.state ?? 'none']}</span>
+        <span data-testid="oauth2-state">{stateLabel}</span>
         {expiry !== undefined && <span className="text-fg-subtle"> · {expiry}</span>}
         {status?.scopes !== undefined && status.scopes.length > 0 && (
           <span className="text-fg-subtle"> · {status.scopes.join(' ')}</span>
@@ -113,6 +141,30 @@ export function OAuth2StatusPanel({ ownerId, grant }: OAuth2StatusPanelProps) {
         <p data-testid="oauth2-token" className="truncate font-mono text-xs text-fg-subtle">
           {status.token}
         </p>
+      )}
+
+      {/* RFC 8628 §3.3: the code is what the user types, so it is large, monospace and selectable. */}
+      {device !== undefined && (
+        <div data-testid="oauth2-device" className="flex flex-col gap-1">
+          <p className="text-xs text-fg-subtle">
+            Enter this code at{' '}
+            <code data-testid="oauth2-verification-uri" className="select-all">
+              {device.verificationUri}
+            </code>{' '}
+            — the page was opened in your browser, or use any other device.
+          </p>
+          <div className="flex items-center gap-2">
+            <span
+              data-testid="oauth2-user-code"
+              className="select-all font-mono text-lg tracking-widest text-fg-default"
+            >
+              {device.userCode}
+            </span>
+            <Button variant="secondary" data-testid="oauth2-copy-code" onClick={() => onCopyCode(device.userCode)}>
+              {copied ? 'Copied' : 'Copy code'}
+            </Button>
+          </div>
+        </div>
       )}
 
       {grant === 'authorization-code' && status?.redirectUri !== undefined && (

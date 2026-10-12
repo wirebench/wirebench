@@ -123,10 +123,11 @@ protocol modules add the keystore password need for `clientKeystoreId`.
   it through the token source, and the `oauth2.fetchToken` channel takes it from the project's
   `clientIdentityFor`.
 
-`oauth2.status` gains an optional `device` object. While a device flow is pending, the renderer
-polls status. The status shows the user code in large monospace with a Copy button, the
-verification URL with an Open button (via `shell.openExternal` on an existing channel), and
-Cancel. The auth editor gains:
+`oauth2.status` gains an optional `device` object. Main opens the verification page itself when the
+flow starts, as the authorization-code flow opens the browser, so no new channel is needed. While
+Get token waits, the renderer reads the status every second. It shows the user code in large
+monospace with a Copy button, the verification URL as selectable text (the code can be entered on
+any device), and Cancel. The auth editor gains:
 
 - the two grants;
 - Username plus the Password secret field (password grant);
