@@ -25,6 +25,8 @@ import {
   apiInspectHttpFileRequestSchema,
   apiInspectHttpFileResponseSchema,
   apiRestApplyUpdateRequestSchema,
+  apiRestLintRequestSchema,
+  apiRestLintResponseSchema,
   apiRestPlanUpdateRequestSchema,
   apiRestPlanUpdateResponseSchema,
   apiWebhookItemsRequestSchema,
@@ -127,6 +129,8 @@ export const restChannels = {
       apiRestApplyUpdateRequestSchema,
       apiRestApplyUpdateResponseSchema,
     ),
+    /** Lints a REST API's cached definition with the built-in and project rule sets; findings go to Problems. */
+    restLint: defineChannel('api.restLint', apiRestLintRequestSchema, apiRestLintResponseSchema),
     /** An API's webhooks and callbacks, for the *Import webhooks…* picker. */
     webhookItems: defineChannel('api.webhookItems', apiWebhookItemsRequestSchema, apiWebhookItemsResponseSchema),
     /** Places the chosen webhooks/callbacks into the API's linked webhook group, creating it if needed. */

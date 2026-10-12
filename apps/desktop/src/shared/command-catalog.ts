@@ -352,6 +352,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'REST: Update Definition…',
     category: 'Explorer',
   },
+  'rest.lintDefinition': {
+    id: 'rest.lintDefinition',
+    label: 'REST: Lint Definition',
+    category: 'Explorer',
+  },
   'grpc.send': {
     id: 'grpc.send',
     label: 'Send gRPC Request',

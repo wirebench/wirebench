@@ -13,6 +13,7 @@ import {
   createCachedApiFetch,
   findWebhookRequest,
   hookKey,
+  lintOpenApi,
   matchOperation,
   nextApiOrder,
   nodeFs,
@@ -20,6 +21,7 @@ import {
   planRestUpdate,
   ProjectError,
   readApiDefinitionCache,
+  readProjectLintRulesets,
   restApisOf,
   toWireSchema,
   uniqueSlug,
@@ -36,6 +38,7 @@ import type {
   AuthConfig,
   DefinitionAuth,
   JsonSchema,
+  LintReport,
   OpenApiDocument,
   ParsedOpenApi,
   Project,
@@ -412,24 +415,26 @@ export class RestHost implements KindHostHooks {
   ): Promise<{ readonly document: OpenApiDocument; readonly documents: readonly ResolvedDocument[] }> {
     const api = this.requireCachedRestApi(apiId);
     const cached = await readApiDefinitionCache(apiDefinitionDir(this.core.require().dir, api.slug));
-    const byLocation = new Map<string, ResolvedDocument>();
-    for (const document of cached.documents) {
-      byLocation.set(document.requestedLocation, document);
-      byLocation.set(document.location, document);
-    }
-    const inMemory = (location: string) => {
-      const document = byLocation.get(location);
-      if (document === undefined) {
-        return Promise.reject(
-          new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
-            details: { location },
-          }),
-        );
-      }
-      return Promise.resolve({ location: document.location, bytes: document.bytes, text: document.text });
-    };
+    const inMemory = cacheFetch(cached.documents);
     const parsed = await parseOpenApi({ kind: 'url', url: cached.manifest.rootLocation }, { fetchDocument: inMemory });
     return { document: parsed.document, documents: cached.documents };
+  }
+
+  /**
+   * Lints the API's cached definition (#342) with the built-in rule sets and the project's `lint/`
+   * folder. Every reference is read from the cache, never the network, so a remote one is followed
+   * as safely as a local one.
+   */
+  async lintApi(apiId: string): Promise<LintReport> {
+    const api = this.requireCachedRestApi(apiId);
+    const { dir } = this.core.require();
+    const cached = await readApiDefinitionCache(apiDefinitionDir(dir, api.slug));
+    const fetchDocument = cacheFetch(cached.documents);
+    const root = await fetchDocument(cached.manifest.rootLocation);
+    return lintOpenApi(
+      { text: root.text, location: root.location },
+      { fetchDocument, allowRemoteRefs: true, rulesets: await readProjectLintRulesets(dir) },
+    );
   }
 
   /**
@@ -736,4 +741,24 @@ export class RestHost implements KindHostHooks {
     }
     return written;
   }
+}
+
+/** Reads only what the definition cache holds, by requested or final location; anything else is refused. */
+function cacheFetch(documents: readonly ResolvedDocument[]) {
+  const byLocation = new Map<string, ResolvedDocument>();
+  for (const document of documents) {
+    byLocation.set(document.requestedLocation, document);
+    byLocation.set(document.location, document);
+  }
+  return (location: string): Promise<{ location: string; bytes: Uint8Array; text: string }> => {
+    const document = byLocation.get(location);
+    if (document === undefined) {
+      return Promise.reject(
+        new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+          details: { location },
+        }),
+      );
+    }
+    return Promise.resolve({ location: document.location, bytes: document.bytes, text: document.text });
+  };
 }

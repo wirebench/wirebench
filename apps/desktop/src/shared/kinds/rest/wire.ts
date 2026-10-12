@@ -663,6 +663,26 @@ export const apiWebhookItemsResponseSchema = z.object({
 });
 export type ApiWebhookItemsResponse = z.infer<typeof apiWebhookItemsResponseSchema>;
 
+/** Request for `api.restLint`: lint one REST API's cached definition with the project's rule sets. */
+export const apiRestLintRequestSchema = z.object({ apiId: z.string().max(MAX_REST_UPDATE_ID_CHARS) });
+export type ApiRestLintRequest = z.infer<typeof apiRestLintRequestSchema>;
+
+const lintPositionWireSchema = z.object({ line: z.number().int(), column: z.number().int() });
+
+/** One lint finding as Problems shows it; `source` is the cached document's location. */
+export const lintFindingWireSchema = z.object({
+  rule: z.string().max(200),
+  severity: z.enum(['error', 'warning', 'info', 'hint']),
+  message: z.string().max(4000),
+  path: z.string().max(4000),
+  source: z.string().max(4000),
+  range: z.object({ start: lintPositionWireSchema, end: lintPositionWireSchema }).optional(),
+});
+export type LintFindingWire = z.infer<typeof lintFindingWireSchema>;
+
+export const apiRestLintResponseSchema = z.object({ findings: z.array(lintFindingWireSchema).max(10_000) });
+export type ApiRestLintResponse = z.infer<typeof apiRestLintResponseSchema>;
+
 /** Request/response for `api.importWebhooks`: places the chosen items into the linked webhook group. */
 export const apiImportWebhooksRequestSchema = z.object({
   apiId: z.string().max(MAX_REST_UPDATE_ID_CHARS),
