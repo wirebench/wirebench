@@ -1,7 +1,7 @@
 # Project-scoped environments — design
 
 **Date:** 2026-10-12
-**Status:** Draft — for owner review
+**Status:** Approved 2026-10-12
 **Scope:** Issue #468. Builds on the workspaces design (`docs/specs/2026-09-11-wirebench-workspaces-design.md`), the
 Environments view (`docs/specs/2026-09-12-wirebench-layout-and-environments-design.md`) and the environment guard
 (`docs/specs/2026-10-11-environment-colour-and-guard-design.md`).
@@ -57,8 +57,8 @@ endpoints: { billing/payments: https://sandbox.billing.example }
 - **Older builds.** The workspace schema is loose, so an older build reads a scoped environment as an all-projects one
   (it shows more, it never hides data). But its serializer writes only the fields it knows, so if a teammate on an
   older build *edits* that environment, `projects` is dropped and the environment becomes all-projects again.
-  `color`/`protected` (#345) took the same trade without a bump. Whether to bump `WORKSPACE_FORMAT_VERSION` (4 → 5) and
-  have older builds refuse the workspace is open question 2.
+  `color`/`protected` (#345) took the same trade without a bump, and the owner accepted it here too: no
+  `WORKSPACE_FORMAT_VERSION` bump.
 
 ### Active environment per project
 
@@ -186,10 +186,9 @@ environment is scoped, the project is added to its scope.
   (`packages/cli/src/commands/sequence.ts:210`), so the name is likely missing from the result.
 - Interface and API renames re-derive slugs but do not rewrite the `<projectSlug>/<interfaceSlug>` endpoint keys.
 
-## Open questions
+## Resolved questions (owner, 2026-10-12)
 
-1. When a removed project leaves an environment with an empty scope: keep it as *No project* (proposed), delete the
-   environment, or turn it back into all-projects?
-2. Should the workspace format be bumped so older builds refuse a workspace with scoped environments, rather than drop
-   `projects` on edit (no bump proposed, as with #345)?
-3. Milestone: 6.0 or Later?
+1. An environment whose scope becomes empty after a project is removed is kept as *No project*.
+2. No workspace format bump: an older build reads a scoped environment as all-projects, and drops `projects` if it edits
+   one, as with `color`/`protected` (#345).
+3. Milestone 6.0.
