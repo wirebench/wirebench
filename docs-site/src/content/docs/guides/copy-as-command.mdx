@@ -108,8 +108,9 @@ In code, a credential is never written out. Each snippet reads it from the envir
 [`wirebench run`](/wirebench/docs/guides/run-in-ci/) reads it from, such as `WIREBENCH_SECRET_API_TOKEN`, so
 it runs once that variable is set. A `${secret:name}` reference becomes a read of
 `WIREBENCH_SECRET_<NAME>`. The panel says *Secrets are read from WIREBENCH_SECRET\_\* environment
-variables unless Show secrets is on.* NTLM, Kerberos and an OAuth 2 access token are not written into a
-snippet; a note says so.
+variables unless Show secrets is on.* NTLM, Kerberos, Digest, AWS Signature v4 and an OAuth 2
+access token are not written into a snippet; a note says so. The cURL command does carry Digest
+(`--digest`) and a header AWS signature (`--aws-sigv4`), since curl computes both itself.
 
 In a command, credentials from a request's authentication settings are masked as `<redacted>` by default: a Basic
 password, a bearer token, an API key in a header or the query string. A SOAP or gRPC command also masks

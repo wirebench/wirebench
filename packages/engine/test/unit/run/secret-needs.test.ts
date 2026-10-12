@@ -150,6 +150,32 @@ describe('secretNeedsOf', () => {
     ]);
   });
 
+  it('lists the keystore password behind OAuth2 private-key-jwt client auth', () => {
+    const keystore: WssRef = {
+      id: 'ks-jwt',
+      name: 'signer',
+      document: { id: 'ks-jwt', name: 'signer', path: 's.p12', type: 'pkcs12', passwordSecretRef: 'sec_ks' },
+    };
+    const api = createApi('demo', {
+      id: 'api-1',
+      slug: 'demo',
+      auth: {
+        type: 'oauth2',
+        grant: 'client-credentials',
+        tokenUrl: 'https://id.example.test/token',
+        clientId: 'app',
+        scopes: [],
+        clientAuth: 'private-key-jwt',
+        clientKeystoreId: 'ks-jwt',
+        pkce: true,
+      },
+      requests: [createRestRequest('get', { id: 'r-1' })],
+    });
+    expect(needsOf(project({ apis: [api], wss: { keystores: [keystore] } }))).toEqual([
+      { ref: 'sec_ks', purpose: 'keystore password for "signer"', usedBy: ['demo/get'] },
+    ]);
+  });
+
   it('lists nothing for a request with auth none', () => {
     const api = createApi('demo', {
       id: 'api-1',

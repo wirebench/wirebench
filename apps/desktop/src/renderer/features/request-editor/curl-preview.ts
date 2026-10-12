@@ -25,6 +25,10 @@ export interface CurlPreview {
   readonly basicUsername: string | undefined;
   /** `--negotiate`: a REST import makes the `-u` user a Kerberos account instead of Basic auth. */
   readonly negotiate: boolean;
+  /** `--digest`: a REST import makes the `-u` pair Digest credentials instead of Basic. */
+  readonly digest: boolean;
+  /** `--aws-sigv4`: a REST import makes the `-u` pair an AWS access key instead of Basic. */
+  readonly awsSigV4: boolean;
   /** Things the real import will drop, named the same way `fromCurl` names them. */
   readonly problems: readonly string[];
 }
@@ -114,6 +118,8 @@ export function previewCurl(text: string, target: 'soap' | 'rest' = 'soap'): Cur
     bodyKind: dataInQuery ? undefined : bodyKind,
     basicUsername,
     negotiate: has(text, '--negotiate'),
+    digest: has(text, '--digest'),
+    awsSigV4: /(?:^|\s)--aws-sigv4(?=\s)/.test(text),
     problems,
   };
 }

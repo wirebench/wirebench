@@ -35,10 +35,15 @@ function PreviewRow({ label, value }: { readonly label: string; readonly value: 
   );
 }
 
-/** What a REST import does with the auth flags: `--negotiate` makes `-u` a Kerberos account. */
+/**
+ * What a REST import does with the auth flags: `--negotiate` makes `-u` a Kerberos account, `--aws-sigv4`
+ * an AWS access key (never named: it is a secret), `--digest` Digest credentials.
+ */
 function authPreview(preview: CurlPreview): string {
   const user = preview.basicUsername !== undefined && preview.basicUsername !== '' ? preview.basicUsername : undefined;
   if (preview.negotiate) return user === undefined ? 'Kerberos' : `Kerberos, as “${user}”`;
+  if (preview.awsSigV4) return 'AWS Signature v4';
+  if (preview.digest && user !== undefined) return `Digest, as “${user}”`;
   return preview.basicUsername === undefined ? '—' : `Basic, as “${preview.basicUsername}”`;
 }
 

@@ -319,6 +319,12 @@ class OcWriter {
       case 'none':
       case 'kerberos':
         return 'none';
+      case 'digest':
+      case 'aws-sigv4':
+        this.ctx.report.warn(
+          `${label}: ${auth.type === 'digest' ? 'Digest' : 'AWS Signature v4'} authentication is not represented and was written as no auth.`,
+        );
+        return 'none';
       case 'basic':
         return { type: 'basic', ...optional('username', auth.username) };
       case 'ntlm':
@@ -333,7 +339,12 @@ class OcWriter {
       case 'oauth2':
         return {
           type: 'oauth2',
-          flow: auth.grant === 'client-credentials' ? 'client_credentials' : 'authorization_code',
+          flow:
+            auth.grant === 'client-credentials'
+              ? 'client_credentials'
+              : auth.grant === 'password'
+                ? 'resource_owner_password_credentials'
+                : 'authorization_code',
           accessTokenUrl: auth.tokenUrl,
           ...(auth.grant === 'authorization-code' ? optional('authorizationUrl', auth.authorizationUrl) : {}),
           credentials: {
@@ -341,6 +352,7 @@ class OcWriter {
             placement: auth.clientAuth === 'body' ? 'body' : 'basic_auth_header',
           },
           ...optional('scope', auth.scopes.join(' ')),
+          ...(auth.grant === 'password' ? { resourceOwner: optional('username', auth.username) } : {}),
           ...(auth.grant === 'authorization-code' ? { pkce: { disabled: !auth.pkce } } : {}),
         };
     }

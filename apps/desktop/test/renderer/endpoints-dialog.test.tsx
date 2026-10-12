@@ -88,14 +88,25 @@ describe('EndpointsDialog', () => {
     });
   });
 
-  it('offers an endpoint all six SOAP schemes, and commits a Bearer choice', async () => {
+  it('offers an endpoint every SOAP scheme, and commits a Bearer choice', async () => {
     const mutate = stubMutate();
     render(<EndpointsDialog open onOpenChange={vi.fn()} interfaceId="if-1" />);
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
     const select = screen.getByLabelText('Endpoint authentication type');
     const options = [...select.querySelectorAll('option')].map((option) => option.value);
-    expect(options).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']);
+    expect(options).toEqual([
+      'inherit',
+      'none',
+      'basic',
+      'ntlm',
+      'bearer',
+      'api-key',
+      'oauth2',
+      'kerberos',
+      'digest',
+      'aws-sigv4',
+    ]);
 
     await userEvent.selectOptions(select, 'bearer');
     expect(mutate).toHaveBeenCalledWith({

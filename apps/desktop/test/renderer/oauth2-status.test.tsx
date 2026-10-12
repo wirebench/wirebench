@@ -156,4 +156,65 @@ describe('OAuth2StatusPanel', () => {
     expect(screen.getByTestId('oauth2-state').textContent).toBe('No token yet');
     expect(screen.queryByTestId('oauth2-token')).toBeNull();
   });
+
+  it('shows the device code and where to enter it while a device sign-in waits, and cancels it', async () => {
+    const pending = {
+      state: 'pending' as const,
+      redirectUri: NONE.redirectUri,
+      device: {
+        userCode: 'WDJB-MJHT',
+        verificationUri: 'https://id.test/device',
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      },
+    };
+    status.mockResolvedValue({ ok: true, value: pending });
+    render(<OAuth2StatusPanel ownerId="api-1" grant="device-code" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('oauth2-user-code').textContent).toBe('WDJB-MJHT');
+    });
+    expect(screen.getByTestId('oauth2-verification-uri').textContent).toBe('https://id.test/device');
+    expect(screen.getByTestId('oauth2-state').textContent).toBe('Waiting for approval…');
+    expect(screen.queryByTestId('oauth2-redirect-uri')).toBeNull();
+
+    status.mockResolvedValue({ ok: true, value: NONE });
+    await userEvent.click(screen.getByTestId('oauth2-cancel'));
+    expect(cancel).toHaveBeenCalledWith({ ownerId: 'api-1' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('oauth2-user-code')).toBeNull();
+    });
+  });
+
+  it('keeps asking for the status while Get token waits, so a device code appears', async () => {
+    let finish: ((value: unknown) => void) | undefined;
+    fetchToken.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(<OAuth2StatusPanel ownerId="api-1" grant="device-code" />);
+    await waitFor(() => {
+      expect(status).toHaveBeenCalledTimes(1);
+    });
+    status.mockResolvedValue({
+      ok: true,
+      value: {
+        state: 'pending',
+        redirectUri: NONE.redirectUri,
+        device: { userCode: 'ABCD-EFGH', verificationUri: 'https://id.test/device', expiresAt: '2099-01-01T00:00:00Z' },
+      },
+    });
+    await userEvent.click(screen.getByTestId('oauth2-get-token'));
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('oauth2-user-code').textContent).toBe('ABCD-EFGH');
+      },
+      { timeout: 3000 },
+    );
+    finish?.({ ok: true, value: { state: 'valid', redirectUri: NONE.redirectUri } });
+    await waitFor(() => {
+      expect(screen.getByTestId('oauth2-state').textContent).toBe('Token held');
+    });
+  });
 });

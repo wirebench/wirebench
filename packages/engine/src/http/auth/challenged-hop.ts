@@ -23,13 +23,13 @@ import type { HttpExchange, HttpRequest } from '../types.js';
 export function challengedRequest(
   request: HttpRequest,
   challenge: HttpExchange,
-  scheme: 'kerberos' | 'ntlm',
+  scheme: 'kerberos' | 'ntlm' | 'digest',
 ): HttpRequest {
   if (challenge.redirects.length === 0) return request;
   const hop = challenge.request.url;
   const origin = new URL(request.url).origin;
   if (!ownOrigins(request, challenge).has(new URL(hop).origin)) {
-    const name = scheme === 'kerberos' ? 'Kerberos' : 'NTLM';
+    const name = scheme === 'kerberos' ? 'Kerberos' : scheme === 'ntlm' ? 'NTLM' : 'Digest';
     const label = hopLabel(hop);
     throw new HttpError(
       `${scheme}-cross-origin`,

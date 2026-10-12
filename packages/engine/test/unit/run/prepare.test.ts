@@ -213,7 +213,9 @@ describe('prepareFor — SOAP', () => {
     await expect(prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }))).rejects.toMatchObject(
       {
         code: 'auth-grant-unsupported',
-        message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+        message: expect.stringContaining(
+          'signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+        ) as unknown,
         details: { grant: 'authorization-code' },
       },
     );

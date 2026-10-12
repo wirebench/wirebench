@@ -41,7 +41,9 @@ The workspace's environments and properties are exported with the project's own.
   stay as written, with a warning.
 - **Auth.** The type and its settings — user name, key name and placement, token and authorization
   URLs, client id, scopes — on the collection, folder or request that has it. Kerberos is written as
-  no auth, with a warning.
+  no auth, with a warning. Digest and AWS Signature v4 keep their type, username, region and service
+  in a Postman Collection; OpenCollection has no form for them, so they are written as no auth, with a
+  warning.
 - **Scripts.** Every pre-request and post-response script, as text. A script written against
   Wirebench's own script API is flagged: the other tool will not run it.
 - **SOAP.** Each SOAP request becomes an HTTP POST of its envelope to its endpoint, with its

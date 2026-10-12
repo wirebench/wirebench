@@ -23,6 +23,7 @@ import {
   baseUrlFor,
   dropRefusedToken,
   insideProject,
+  authSecretNeeds,
   keystoreNeeds,
   originOf,
   tlsFor,
@@ -36,7 +37,6 @@ import type { RestRequestSnapshot } from './scripting.js';
 import { createSseParser, isEventStream } from './sse.js';
 import type { SseRow } from './sse.js';
 import { loadOpenApiDocument, restOperationFor, restScriptTypes } from './script-types.js';
-import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { toRestSendInput } from './send-input.js';
 import {
@@ -495,7 +495,7 @@ export const restRun: ProtocolRun<RestSelected> = {
 
   secretNeeds(selected, project) {
     return [
-      ...secretNeedsOfAuth(restEffectiveAuth(selected)),
+      ...authSecretNeeds(project, restEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
       ...signingNeeds(selected),
     ];

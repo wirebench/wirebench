@@ -338,3 +338,22 @@ describe('escapeStrayRedactionMarkers', () => {
     }
   });
 });
+
+describe('AWS Signature v4 credentials (#339)', () => {
+  it('masks a presigned URL’s signature, credential and session token', () => {
+    const masked = redactUrl(
+      'https://b.s3.amazonaws.com/k?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKID%2F20250101%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Security-Token=TOKEN&X-Amz-Signature=abc',
+    );
+    expect(masked).not.toContain('AKID');
+    expect(masked).not.toContain('TOKEN');
+    expect(masked).not.toContain('=abc');
+    expect(masked).toContain('X-Amz-Algorithm=AWS4-HMAC-SHA256');
+  });
+
+  it('masks the session token header', () => {
+    expect(redactHeaders({ 'X-Amz-Security-Token': 'TOKEN', 'X-Amz-Date': 'd' })).toEqual({
+      'X-Amz-Security-Token': REDACTED_MARKER,
+      'X-Amz-Date': 'd',
+    });
+  });
+});

@@ -62,10 +62,38 @@ describe('createRunTokenSource', () => {
       h.source.accessTokenFor({ ...CONFIG, grant: 'authorization-code' }, { scopes: SCOPES }),
     ).rejects.toMatchObject({
       code: 'auth-grant-unsupported',
-      message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      message: expect.stringContaining(
+        'signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      ) as unknown,
       details: { grant: 'authorization-code' },
     });
     expect(h.sent).toHaveLength(0);
+  });
+
+  it('keeps the refresh token when a refresh does not rotate it, and reports both tokens', async () => {
+    const h = harness([
+      exchange(200, { access_token: 'tok-1', expires_in: 10, refresh_token: 'rt-1' }),
+      exchange(200, { access_token: 'tok-2', expires_in: 10 }),
+      exchange(200, { access_token: 'tok-3', expires_in: 10 }),
+    ]);
+    await h.source.accessTokenFor(CONFIG, { scopes: SCOPES });
+    await expect(h.source.accessTokenFor(CONFIG, { scopes: SCOPES })).resolves.toBe('tok-2');
+    await expect(h.source.accessTokenFor(CONFIG, { scopes: SCOPES })).resolves.toBe('tok-3');
+    const bodies = h.sent.map((r) => new URLSearchParams(new TextDecoder().decode(r.body)));
+    expect(bodies.map((b) => b.get('grant_type'))).toEqual(['client_credentials', 'refresh_token', 'refresh_token']);
+    expect(bodies[2]?.get('refresh_token')).toBe('rt-1');
+    expect(h.seen).toEqual(['tok-1', 'rt-1', 'tok-2', 'tok-3']);
+  });
+
+  it('falls back to the grant when a refresh is refused', async () => {
+    const h = harness([
+      exchange(200, { access_token: 'tok-1', expires_in: 10, refresh_token: 'rt-1' }),
+      exchange(400, { error: 'invalid_grant' }),
+      exchange(200, { access_token: 'tok-2', expires_in: 3600 }),
+    ]);
+    await h.source.accessTokenFor(CONFIG, { scopes: SCOPES });
+    await expect(h.source.accessTokenFor(CONFIG, { scopes: SCOPES })).resolves.toBe('tok-2');
+    expect(h.sent).toHaveLength(3);
   });
 
   it('reports every token obtained through onSecretValue', async () => {

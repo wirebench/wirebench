@@ -21,8 +21,10 @@ import {
   redactSecretBytes,
   redactSecretText,
   redactXml,
+  REDACTED_MARKER,
 } from './redact.js';
 import type {
+  AuthSummary,
   RestContractResult,
   RestEventStream,
   RestExchange,
@@ -65,7 +67,7 @@ import type {
   WssTimelineStepWire,
 } from '../shared/kinds/soap/wire.js';
 import type { WsExchangeSummary, WsFrameContractWire, WsFrameWire, WsHandshakeWire } from '../shared/kinds/ws/wire.js';
-import type { HttpExchangeWire, SslInfoWire, UnresolvedRefWire } from '../shared/wire-base.js';
+import type { AuthSummaryWire, HttpExchangeWire, SslInfoWire, UnresolvedRefWire } from '../shared/wire-base.js';
 
 /** Base name of a URL or file path (its last `/`-separated, query/fragment-free segment). */
 function basenameOf(location: string): string {
@@ -391,17 +393,36 @@ export function toRestExchangeSummary(
     }),
     methodChanged: exchange.methodChanged,
     problems: [],
-    ...(exchange.auth !== undefined
+    ...(exchange.auth !== undefined ? { auth: toAuthSummaryWire(exchange.auth, show) } : {}),
+    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(exchange.stream, { show }) } : {}),
+  };
+}
+
+/**
+ * What authentication did, for the renderer. A SigV4 canonical request carries the session token
+ * (an `x-amz-security-token` header line, or the presign parameter) and a presign's access key id;
+ * both are masked unless the session shows secrets, by name as well as by recorded value.
+ */
+export function toAuthSummaryWire(auth: AuthSummary, show: boolean): AuthSummaryWire {
+  const mask = (text: string): string =>
+    show
+      ? text
+      : redactSecretText(text, { show })
+          .replace(/^(x-amz-security-token:).*$/gim, `$1${REDACTED_MARKER}`)
+          .replace(/(X-Amz-(?:Security-Token|Credential)=)[^&\n]*/g, `$1${REDACTED_MARKER}`);
+  return {
+    scheme: auth.scheme,
+    challenged: auth.challenged,
+    attempts: auth.attempts,
+    ...(auth.spn !== undefined ? { spn: auth.spn } : {}),
+    ...(auth.signature !== undefined
       ? {
-          auth: {
-            scheme: exchange.auth.scheme,
-            challenged: exchange.auth.challenged,
-            attempts: exchange.auth.attempts,
-            ...(exchange.auth.spn !== undefined ? { spn: exchange.auth.spn } : {}),
+          signature: {
+            canonicalRequest: mask(auth.signature.canonicalRequest),
+            stringToSign: auth.signature.stringToSign,
           },
         }
       : {}),
-    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(exchange.stream, { show }) } : {}),
   };
 }
 
@@ -697,16 +718,7 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
         }
       : {}),
     problems: exchange.problems.map((problem) => ({ code: problem.code, message: problem.message })),
-    ...(exchange.auth !== undefined
-      ? {
-          auth: {
-            scheme: exchange.auth.scheme,
-            challenged: exchange.auth.challenged,
-            attempts: exchange.auth.attempts,
-            ...(exchange.auth.spn !== undefined ? { spn: exchange.auth.spn } : {}),
-          },
-        }
-      : {}),
+    ...(exchange.auth !== undefined ? { auth: toAuthSummaryWire(exchange.auth, opts?.show ?? false) } : {}),
     ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
     ...(exchange.wsa !== undefined
       ? {

@@ -105,6 +105,24 @@ describe('toWsSessionOptions', () => {
     );
   });
 
+  it('Digest and AWS Signature v4 throw ws-auth-unsupported rather than sending no credentials', () => {
+    expect(() => toWsSessionOptions(callInput(), { auth: { type: 'digest', username: 'u', password: 'p' } })).toThrow(
+      expect.objectContaining({ code: 'ws-auth-unsupported' }),
+    );
+    expect(() =>
+      toWsSessionOptions(callInput(), {
+        auth: {
+          type: 'aws-sigv4',
+          region: 'r',
+          service: 's',
+          accessKeyId: 'a',
+          secretAccessKey: 'b',
+          placement: 'header',
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'ws-auth-unsupported' }));
+  });
+
   it('carries settings.handshakeTimeoutMs, maxMessageBytes and bindAddress through', () => {
     const options = toWsSessionOptions(
       callInput({ settings: { handshakeTimeoutMs: 5000, maxMessageBytes: 1024, bindAddress: '10.0.0.1' } }),

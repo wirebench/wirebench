@@ -20,6 +20,7 @@ import { Button } from './button.js';
 import { SecretField } from './secret-field.js';
 import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
+import { useProjectStore } from '../state/project.js';
 import { VariableInput } from './variable-field.js';
 import type { SoapOwnerAuthWire } from '../../shared/kinds/soap/wire.js';
 import type { AuthConfigWire } from '../../shared/wire-base.js';
@@ -36,6 +37,8 @@ const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: 
   { value: 'api-key', label: 'API key' },
   { value: 'oauth2', label: 'OAuth2' },
   { value: 'kerberos', label: 'Kerberos' },
+  { value: 'digest', label: 'Digest' },
+  { value: 'aws-sigv4', label: 'AWS Signature v4' },
 ];
 
 /** Every scheme but Kerberos: what a webhook delivery can be given. */
@@ -57,6 +60,8 @@ export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
   'api-key',
   'oauth2',
   'kerberos',
+  'digest',
+  'aws-sigv4',
 ];
 
 /**
@@ -70,7 +75,14 @@ export function asSoapAuth(auth: AuthConfigWire | null): SoapOwnerAuthWire | nul
 }
 
 /** Which secret field is which, so each can register its own flush. */
-type SecretSlot = 'passwordRef' | 'tokenRef' | 'valueRef' | 'clientSecretRef';
+type SecretSlot =
+  | 'passwordRef'
+  | 'tokenRef'
+  | 'valueRef'
+  | 'clientSecretRef'
+  | 'accessKeyIdRef'
+  | 'secretAccessKeyRef'
+  | 'sessionTokenRef';
 
 export interface AuthFieldsProps {
   /** Which level is being edited; prefixes every accessible name. */
@@ -107,6 +119,48 @@ export interface AuthFieldsProps {
   readonly newSecretRefs?: boolean;
 }
 
+type OAuth2Grant = NonNullable<AuthConfigWire['grant']>;
+type OAuth2ClientAuth = NonNullable<AuthConfigWire['clientAuth']>;
+type AssertionAlg = NonNullable<AuthConfigWire['assertionAlg']>;
+
+/** The algorithms a client secret can sign an assertion with, and those a private key can. */
+const HMAC_ALGS: readonly AssertionAlg[] = ['HS256', 'HS384', 'HS512'];
+const KEY_ALGS: readonly AssertionAlg[] = [
+  'RS256',
+  'RS384',
+  'RS512',
+  'PS256',
+  'PS384',
+  'PS512',
+  'ES256',
+  'ES384',
+  'ES512',
+];
+
+/** Whether the client authenticates with a keystore rather than its secret. */
+function keyBased(clientAuth: OAuth2ClientAuth | undefined): boolean {
+  return clientAuth === 'private-key-jwt' || clientAuth === 'tls-client-auth';
+}
+
+/**
+ * The keystores a configuration may pick, de-duplicated by id across open projects, plus the one it
+ * already names when that keystore is gone — so the choice is shown, not silently swapped.
+ */
+function keystoreOptions(
+  keystores: readonly { readonly id: string; readonly name: string }[],
+  selected: string | undefined,
+): { readonly value: string; readonly label: string }[] {
+  const seen = new Set<string>();
+  const options = keystores.flatMap((keystore) => {
+    if (seen.has(keystore.id)) return [];
+    seen.add(keystore.id);
+    return [{ value: keystore.id, label: keystore.name }];
+  });
+  return selected !== undefined && selected !== '' && !seen.has(selected)
+    ? [...options, { value: selected, label: `${selected} (missing)` }]
+    : options;
+}
+
 /** The form. */
 export function AuthFields({
   scope,
@@ -125,6 +179,17 @@ export function AuthFields({
   const patch = (next: Partial<AuthConfigWire>): void => {
     onChange({ ...(auth ?? { type: 'none' }), ...next });
   };
+  /** Sets an optional OAuth2 field, or drops it entirely when the choice is empty. */
+  const patchOptional = (field: 'clientKeystoreId' | 'assertionAlg', value: string): void => {
+    const next: Record<string, unknown> = { ...(auth ?? { type: 'none' }) };
+    if (value === '') {
+      delete next[field];
+    } else {
+      next[field] = value;
+    }
+    onChange(next as AuthConfigWire);
+  };
+  const keystores = useProjectStore((state) => state.keystores);
   // Kept current every render (as SecretField's own `commitRef` is) so the unmount effect below,
   // registered once, always flushes through the latest `onChange`/`auth` rather than a stale one.
   const onChangeRef = useRef(onChange);
@@ -218,10 +283,13 @@ export function AuthFields({
       | 'name'
       | 'tokenUrl'
       | 'authorizationUrl'
+      | 'deviceAuthorizationUrl'
       | 'clientId'
       | 'audience'
       | 'spn'
-      | 'principal',
+      | 'principal'
+      | 'region'
+      | 'service',
     label: string,
     placeholder?: string,
   ): ReactNode => (
@@ -282,6 +350,20 @@ export function AuthFields({
               });
               return;
             }
+            if (value === 'digest') {
+              // Basic's and NTLM's username and password carry over; nothing else of theirs means anything here.
+              onChange({
+                type: 'digest',
+                ...(auth?.username !== undefined ? { username: auth.username } : {}),
+                ...(auth?.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+              });
+              return;
+            }
+            if (value === 'aws-sigv4') {
+              // The project format needs a region and a service, so a fresh configuration starts with both empty.
+              onChange({ type: 'aws-sigv4', region: '', service: '' });
+              return;
+            }
             patch({ type: value as AuthConfigWire['type'] });
           }}
         >
@@ -317,6 +399,71 @@ export function AuthFields({
               Send credentials preemptively (do not wait for a 401)
             </label>
           )}
+        </>
+      )}
+
+      {auth !== undefined && type === 'digest' && (
+        <>
+          {text('username', 'Username')}
+          {secret('passwordRef', 'Password')}
+          <p className="text-xs text-fg-subtle">
+            Sent after the server&apos;s 401 challenge; later requests to the same server reuse its nonce.
+          </p>
+        </>
+      )}
+
+      {auth !== undefined && type === 'aws-sigv4' && (
+        <>
+          {text('region', 'Region', 'us-east-1')}
+          {text('service', 'Service', 'execute-api')}
+          {secret('accessKeyIdRef', 'Access key ID')}
+          {secret('secretAccessKeyRef', 'Secret key')}
+          {secret('sessionTokenRef', 'Session token')}
+          <label className="flex items-center gap-2">
+            <span className="w-28 shrink-0 text-xs text-fg-subtle">Signature</span>
+            <select
+              aria-label={`${scope} signature placement`}
+              className={INPUT_CLASS}
+              value={auth.placement ?? 'header'}
+              onChange={(event) => {
+                const placement = event.target.value === 'query' ? 'query' : 'header';
+                const next: Record<string, unknown> = { ...auth, placement };
+                if (placement === 'header') delete next['expiresSeconds'];
+                onChange(next as AuthConfigWire);
+              }}
+            >
+              <option value="header">Authorization header</option>
+              <option value="query">Query string (presigned URL)</option>
+            </select>
+          </label>
+          {auth.placement === 'query' && (
+            <label className="flex items-center gap-2">
+              <span className="w-28 shrink-0 text-xs text-fg-subtle">Expires (s)</span>
+              <input
+                type="number"
+                min={1}
+                max={604800}
+                aria-label={`${scope} presigned URL expiry`}
+                className={INPUT_CLASS}
+                placeholder="900"
+                value={auth.expiresSeconds ?? ''}
+                onChange={(event) => {
+                  const seconds = Number.parseInt(event.target.value, 10);
+                  const next: Record<string, unknown> = { ...auth };
+                  if (Number.isInteger(seconds) && seconds >= 1 && seconds <= 604_800) {
+                    next['expiresSeconds'] = seconds;
+                  } else {
+                    delete next['expiresSeconds'];
+                  }
+                  onChange(next as AuthConfigWire);
+                }}
+              />
+            </label>
+          )}
+          <p className="text-xs text-fg-subtle">
+            Signed as the request goes out, over its headers and body. The Session token is only for temporary
+            credentials.
+          </p>
         </>
       )}
 
@@ -401,18 +548,28 @@ export function AuthFields({
               className={INPUT_CLASS}
               value={auth.grant ?? 'client-credentials'}
               onChange={(event) => {
-                patch({ grant: event.target.value as 'client-credentials' | 'authorization-code' });
+                patch({ grant: event.target.value as OAuth2Grant });
               }}
             >
               <option value="client-credentials">Client credentials</option>
               <option value="authorization-code">Authorization code</option>
+              <option value="password">Password</option>
+              <option value="device-code">Device code</option>
             </select>
           </label>
           {text('tokenUrl', 'Token URL', 'https://issuer.example.com/oauth/token')}
           {auth.grant === 'authorization-code' &&
             text('authorizationUrl', 'Authorize URL', 'https://issuer.example.com/oauth/authorize')}
+          {auth.grant === 'device-code' &&
+            text('deviceAuthorizationUrl', 'Device authorization URL', 'https://issuer.example.com/oauth/device')}
+          {auth.grant === 'password' && (
+            <>
+              {text('username', 'Username')}
+              {secret('passwordRef', 'Password')}
+            </>
+          )}
           {text('clientId', 'Client ID')}
-          {secret('clientSecretRef', 'Client secret')}
+          {!keyBased(auth.clientAuth) && secret('clientSecretRef', 'Client secret')}
           <label className="flex items-center gap-2">
             <span className="w-28 shrink-0 text-xs text-fg-subtle">Scopes</span>
             <input
@@ -434,13 +591,56 @@ export function AuthFields({
               className={INPUT_CLASS}
               value={auth.clientAuth ?? 'basic'}
               onChange={(event) => {
-                patch({ clientAuth: event.target.value as 'basic' | 'body' });
+                patch({ clientAuth: event.target.value as OAuth2ClientAuth });
               }}
             >
               <option value="basic">Basic header</option>
               <option value="body">Request body</option>
+              <option value="client-secret-jwt">Signed JWT, client secret</option>
+              <option value="private-key-jwt">Signed JWT, private key</option>
+              <option value="tls-client-auth">Client certificate (mTLS)</option>
             </select>
           </label>
+          {keyBased(auth.clientAuth) && (
+            <label className="flex items-center gap-2">
+              <span className="w-28 shrink-0 text-xs text-fg-subtle">Keystore</span>
+              <select
+                aria-label={`${scope} client keystore`}
+                className={INPUT_CLASS}
+                value={auth.clientKeystoreId ?? ''}
+                onChange={(event) => {
+                  patchOptional('clientKeystoreId', event.target.value);
+                }}
+              >
+                <option value="">Choose a keystore…</option>
+                {keystoreOptions(keystores, auth.clientKeystoreId).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {(auth.clientAuth === 'client-secret-jwt' || auth.clientAuth === 'private-key-jwt') && (
+            <label className="flex items-center gap-2">
+              <span className="w-28 shrink-0 text-xs text-fg-subtle">Algorithm</span>
+              <select
+                aria-label={`${scope} assertion algorithm`}
+                className={INPUT_CLASS}
+                value={auth.assertionAlg ?? ''}
+                onChange={(event) => {
+                  patchOptional('assertionAlg', event.target.value);
+                }}
+              >
+                <option value="">Automatic</option>
+                {(auth.clientAuth === 'client-secret-jwt' ? HMAC_ALGS : KEY_ALGS).map((alg) => (
+                  <option key={alg} value={alg}>
+                    {alg}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {auth.grant === 'authorization-code' && (
             <label className="flex items-center gap-2 text-xs text-fg-default">
               <input

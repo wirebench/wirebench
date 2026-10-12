@@ -24,6 +24,8 @@ their own auth. Every scheme below is available at all six levels.
 | API key | Name, value, and whether it's sent as a header or a query parameter |
 | OAuth 2 | See below |
 | Kerberos | Your Windows sign-in or `kinit` ticket; optional SPN; on Windows, another account |
+| Digest | Username and password; answered after the server's 401 challenge |
+| AWS Signature v4 | Region, service, access key ID, secret key, optional session token; header or presigned URL |
 
 <Steps>
 
@@ -65,7 +67,7 @@ every request in that folder that inherits picks it up.
 
 ### OAuth 2
 
-Two grants are supported:
+Four grants are supported:
 
 - **Client credentials** — a token URL, client ID and client secret; Wirebench requests a token
   directly, no browser involved.
@@ -73,22 +75,51 @@ Two grants are supported:
   the authorize URL and completes the flow through a local loopback listener. Register the
   redirect URI the status panel shows with your OAuth provider; if it needs a fixed port rather
   than a random one, set it under **Preferences → REST**.
+- **Password** (resource owner password credentials) — a username and a password, both kept like
+  any other credential: the username may use properties, the password lives in the secret store.
+  Wirebench requests a token directly, as for client credentials.
+- **Device code** (RFC 8628) — for providers that sign in a device rather than a browser redirect.
+  **Get token** asks for a code, opens the verification page in your browser and shows the code in
+  the status panel (with **Copy code**); approve it there or on any other device, and the token
+  arrives. **Cancel** stops waiting.
 
-Both grants also take scopes (space-separated), an audience, and whether the client is
-authenticated with a Basic header or in the request body.
+Every grant also takes scopes (space-separated) and an audience. **Client auth** decides how the
+client proves who it is to the token endpoint:
+
+- **Basic header** or **Request body** — the client secret, in an `Authorization` header or in
+  the form.
+- **Signed JWT, client secret** (`client_secret_jwt`) — a short-lived assertion signed with the
+  client secret, HS256 unless you pick HS384 or HS512.
+- **Signed JWT, private key** (`private_key_jwt`) — an assertion signed with the private key of a
+  keystore you choose (its default alias). The algorithm follows the key — RS256 for RSA, ES256,
+  ES384 or ES512 by curve — unless you pick another, such as PS256.
+- **Client certificate (mTLS)** (`tls_client_auth`) — the keystore's certificate is presented on
+  the token request, and only the client ID is sent.
+
+The keystores are the ones listed under **Client certificates and keystores** below; the private
+key never leaves them.
 
 The status panel below the fields shows whether a token is held and when it expires. **Get
-token** starts the flow (or requests one directly, for client credentials); **Clear** discards the
-held token. The token value itself is only shown when the session's show-secrets switch is on —
-otherwise the panel just says a token exists and when it expires.
+token** starts the flow (or requests one directly, for client credentials and password);
+**Clear** discards the held token. The token value itself is only shown when the session's
+show-secrets switch is on — otherwise the panel just says a token exists and when it expires.
+
+A token is refreshed shortly before it expires, on the next send that needs it, when the provider
+gave a refresh token; otherwise client credentials and password simply request a new one. A send
+never starts a browser or device sign-in on its own: when an authorization-code or device-code
+token cannot be refreshed, the send fails and asks you to press **Get token**.
 
 Turn on **Remember the refresh token** to keep a refresh token in the secret store across
 sessions, so re-opening the project doesn't force a fresh sign-in. Turning it off deletes the
 stored refresh token.
 
-The CLI runner (`wirebench run`) obtains a client-credentials token itself, for REST, gRPC and
-SOAP alike, reading the client secret from the request's environment variable. It refuses the
-authorization-code grant, since a pipeline has no browser to sign in with.
+The CLI runner (`wirebench run`) obtains tokens itself, for REST, gRPC, SOAP and WebSocket alike,
+with client credentials or password, and refreshes them the same way during a run. It reads the
+client secret and the password from their `WIREBENCH_SECRET_*` variables (`wirebench secrets list`
+names them). A pipeline has no browser, so an authorization-code or device-code configuration runs
+only from a refresh token: remember one in the app, give the configuration a `refreshTokenEnv`
+name, and set `WIREBENCH_SECRET_<name>` in the pipeline. Without it, the request is refused with
+the variable it needs.
 
 ### Kerberos
 
@@ -158,6 +189,57 @@ download, the 20-second limit on each request.
 | `kerberos-failed` | Kerberos failed, with the operating system's own text. | Read the text; it is what the OS reported. |
 | `timeout` | Timed out waiting for a Kerberos ticket for the SPN. | Check that this machine can reach the domain's KDC, or raise the request's timeout. |
 | `kerberos-failed` (busy) | Kerberos is still waiting on earlier requests to the Kerberos server; try again shortly. | Wait for the KDC to answer or time out, then send again. |
+
+### Digest
+
+Digest is the challenge-and-response scheme many appliances and older enterprise servers still use.
+Wirebench sends the request bare. When the server answers `401` with a `Digest` challenge, Wirebench
+computes the response and sends the request again. Both attempts share the request's timeout.
+
+- **Algorithms:** MD5 and SHA-256, and their `-sess` forms, with `qop=auth`. When a server offers
+  both, Wirebench picks SHA-256. It also answers the older form that has no `qop`.
+- **Nonce reuse:** the server's nonce is remembered per origin for the rest of the session (in the
+  CLI, for the rest of the run). Later requests to that server answer it straight away, counting
+  `nc` up, so there is no 401 each time. A `stale=true` challenge, or a new nonce, is answered once
+  with the new nonce. The same nonce refused again means the credentials are wrong, and the `401`
+  is the result.
+- After a redirect, the retry goes to the host that challenged, which must be on the request's own
+  origin. Otherwise the send fails with `digest-cross-origin`.
+- A typed `Authorization` header wins, and Digest is not sent.
+
+| Code | Message | Fix |
+| --- | --- | --- |
+| `digest-unsupported` | The server's Digest challenge asks for something Wirebench does not support, such as `qop=auth-int` only or the SHA-512-256 algorithm. | Ask the service owner whether it also accepts `qop=auth` with MD5 or SHA-256. |
+| `digest-cross-origin` | A redirect target on another origin asked for Digest. | Send the request to the URL the message names. |
+
+### AWS Signature v4
+
+APIs hosted on AWS (API Gateway, Lambda function URLs, S3 and the service APIs) need every request
+signed with Signature Version 4. Fill in the **region** (`eu-west-1`) and the **service** (the
+signing name: `execute-api`, `lambda`, `s3`…). Both take property references such as
+`${#Env#region}`. Then set the **access key ID**, the **secret key** and, for temporary
+credentials, the **session token**. All three are kept in the secret store. In CI they are read from
+the `WIREBENCH_SECRET_*` names the project declares.
+
+The request is signed as it goes out, over its URL, its body and the headers a proxy will not
+rewrite: `Host`, `Content-Type`, `Range` and every `X-Amz-*` header. The body is always hashed with
+SHA-256, and for S3 the hash is also sent as `X-Amz-Content-Sha256`.
+
+- **Signature: Authorization header** (the default) adds `Authorization`, `X-Amz-Date` and, with a
+  session token, `X-Amz-Security-Token`. The request's **Headers** tab shows them, computed for
+  now.
+- **Signature: Query string (presigned URL)** puts the signature in the URL instead, valid for
+  **Expires** seconds (default 900, at most 604800). For S3 the presigned form signs
+  `UNSIGNED-PAYLOAD`, as S3 requires.
+
+The HTTP log's **Headers** tab shows the **Canonical request** and the **String to sign** for every
+signed send. Compare them with the ones in AWS's `SignatureDoesNotMatch` error to see which part
+differs. The session token in them is masked unless Show secrets is on, and so are the key ID and
+the session token wherever they appear in a URL or a response.
+
+A cURL export of a header signature uses curl's own `--aws-sigv4 'aws:amz:<region>:<service>'`; a
+presigned one is noted instead, since curl cannot presign. gRPC and WebSocket requests refuse both
+Digest and AWS Signature v4.
 
 ## WS-Security (SOAP)
 

@@ -109,5 +109,12 @@ describe('buildGrpcHeaders', () => {
     } catch (error) {
       expect((error as GrpcError).code).toBe('grpc-auth-unsupported');
     }
+    try {
+      buildGrpcHeaders({ ...base, auth: { type: 'digest', username: 'u', password: 'p' } }, target);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as GrpcError).code).toBe('grpc-auth-unsupported');
+      expect((error as GrpcError).message).toMatch(/Digest/);
+    }
   });
 });
