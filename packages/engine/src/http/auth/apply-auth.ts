@@ -92,7 +92,15 @@ export function applyAuth(auth: SendAuth | undefined): AppliedAuth {
  */
 export function missingSecretRef(
   auth: AuthConfig,
-): 'tokenRef' | 'valueRef' | 'clientSecretRef' | 'accessKeyIdRef' | 'secretAccessKeyRef' | 'secretRef' | 'keystoreRef' | undefined {
+):
+  | 'tokenRef'
+  | 'valueRef'
+  | 'clientSecretRef'
+  | 'accessKeyIdRef'
+  | 'secretAccessKeyRef'
+  | 'secretRef'
+  | 'keystoreRef'
+  | undefined {
   switch (auth.type) {
     case 'bearer':
       return auth.tokenRef === undefined || auth.tokenRef === '' ? 'tokenRef' : undefined;

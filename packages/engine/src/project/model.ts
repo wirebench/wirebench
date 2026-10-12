@@ -46,17 +46,7 @@ export type PropertyMap = Readonly<Record<string, string>>;
  * {@link EndpointAuth}, the subset without it.
  */
 export type AuthType =
-  | 'inherit'
-  | 'none'
-  | 'basic'
-  | 'ntlm'
-  | 'bearer'
-  | 'api-key'
-  | 'oauth2'
-  | 'kerberos'
-  | 'aws-sigv4'
-  | 'digest'
-  | 'jwt';
+  'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2' | 'kerberos' | 'aws-sigv4' | 'digest' | 'jwt';
 
 /** How a request or endpoint authenticates. Passwords are always `secretRef`s, never values. */
 export interface EndpointAuth {
