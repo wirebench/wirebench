@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-10-12
+
 ### Added
 
 - **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
@@ -109,6 +111,41 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Settings is a full-window page.** A left sidebar groups the sections under General, Requests,
+  Network, Workspace and Account, with a search that covers every setting's label and description.
+  Each setting shows its description under the label. A changed value is marked, with a Reset on the
+  row, and a row locked by policy shows a "Managed" pill. While Settings is open, the title bar and
+  status bar hide the controls that act on the workbench behind it (#396, #399).
+- **Settings inputs check the limits the app enforces as you type.** A number field takes only
+  digits, shows an inline message such as "Enter a whole number from 1 to 65535", and never saves an
+  invalid value. An invalid change is refused whole instead of silently dropping its section, and an
+  out-of-range number in an older preferences file is clamped on load (#400).
+- **One Import… command (`Mod+I`) for every format.** The dialog detects the format, or lets you
+  pick it; the ten per-format import commands are gone (#378).
+- **Send leads every request bar.** In SOAP and REST it is one split button whose ▾ menu holds
+  *Send to environments…*; gRPC and WebSocket keep a plain button (#374).
+- **The SOAP editor's request and response tabs sit along the top**, as in the REST editor, with
+  Body as the first tab of each pane (#375).
+- **Each sidebar area shows its own editor tabs.** Explorer, Environments, History and Hosts each
+  keep their own set and their own active tab. Opening a tab from another set brings its area into
+  view (#379).
+- **The key/value table** (REST params, headers and form fields, gRPC metadata, SOAP headers):
+  - typing in the add row makes one row, not one per keystroke;
+  - new rows sit above the computed ones;
+  - long values wrap, and fold to two lines until focused;
+  - columns can be resized by dragging or with the arrow keys (#376, #377).
+- **SSH hosts.** The SSH sidebar is a menu (Hosts, Keychain, Known hosts) opening into a fixed first
+  tab:
+  - Hosts shows compact cards grouped by host group, with group filter chips and an icon for the
+    host's operating system, which is detected on connect and can be overridden.
+  - Keychain lists the secrets hosts sign in with and which hosts use them.
+  - Known hosts lists trusted host keys, each with Forget.
+
+  A card no longer has a hover Connect button: double-click or Enter connects, and clicking the
+  picked card hides its details (#382, #387, #394).
+- **Panel widths are kept per area.** Each sidebar area and the right slide-over (Code, Host
+  details) remember their own width. The SSH sidebar opens narrow, and the slide-over opens at
+  294px instead of 420px (#391, #392).
 - **HTTP/2 is offered by default.** Every HTTPS send offers `h2` and `http/1.1` in the TLS handshake,
   through a proxy too, and the server picks, so a stack that speaks only HTTP/1.1 stays on it. The
   **Offer HTTP/2** preference is now on by default and is stored as `http.offerH2`. The old
@@ -118,6 +155,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Saved cookie jars load and save again on macOS.** Their folder clashed with the runtime's own
+  `Cookies` file on case-insensitive volumes, so persistent cookies were lost on every restart.
+  Jars now live in `<userData>/cookie-jars/`, and a jar in the old `cookies/` folder moves there
+  the first time its workspace opens (#385).
 - **NTLM and Kerberos could negotiate HTTP/2** on a direct HTTPS connection, and fail against a
   server that answers `HTTP_1_1_REQUIRED`. Both now always use HTTP/1.1. **Offer HTTP/2** switched
   off now does keep a direct send on HTTP/1.1 (#80).
@@ -1342,7 +1383,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.0.0...HEAD
+[6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/wirebench/wirebench/compare/v2.2.1...v3.1.0
