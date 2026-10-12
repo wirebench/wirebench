@@ -1,6 +1,7 @@
 import { callCommand } from './commands/call.js';
 import { diffContractCommand } from './commands/diff-contract.js';
 import { exportCommand } from './commands/export.js';
+import { lintCommand } from './commands/lint.js';
 import { mcpCommand } from './commands/mcp.js';
 import { mockCommand } from './commands/mock.js';
 import { mockCheckCommand } from './commands/mock-check.js';
@@ -51,6 +52,9 @@ export async function main(
       }
       case 'diff-contract': {
         return await diffContractCommand(args, io);
+      }
+      case 'lint': {
+        return await lintCommand(args, io);
       }
       case 'mcp': {
         return await mcpCommand(args, io);

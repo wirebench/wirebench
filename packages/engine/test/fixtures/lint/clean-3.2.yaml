@@ -1,0 +1,64 @@
+openapi: 3.2.0
+info:
+  title: Pets
+  version: '1.0'
+  description: A small pet store.
+servers:
+  - url: https://api.pets.test/v1
+  - url: http://localhost:8080/v1
+security:
+  - petAuth: [pets:read]
+paths:
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        description: The pet's id.
+        schema: { type: string }
+    get:
+      operationId: getPet
+      summary: Read one pet.
+      responses:
+        '200':
+          description: The pet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pet' }
+              example: { id: '1', name: Rex }
+    put:
+      operationId: putPet
+      summary: Replace one pet.
+      security:
+        - petAuth: [pets:write]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Pet' }
+            example: { id: '1', name: Rex }
+      responses:
+        '204': { description: Replaced. }
+  /health:
+    get:
+      operationId: health
+      description: Liveness, deliberately public.
+      security: []
+      responses:
+        '200': { description: Alive. }
+components:
+  schemas:
+    Pet:
+      description: A pet.
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+  securitySchemes:
+    petAuth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.pets.test/token
+          scopes:
+            pets:read: Read pets.
+            pets:write: Write pets.

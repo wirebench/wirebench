@@ -5,6 +5,7 @@ import { registerCommand } from '../../lib/commands.js';
 import { useProjectStore } from '../../state/project.js';
 import { copyAsCurl } from '../../features/request-editor/request-actions.js';
 import { getOAuth2Token } from '../../features/rest-editor/rest-actions.js';
+import { lintRestDefinition } from '../../features/rest-api/lint-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { restSendBlocked } from '../../features/rest-editor/send-blocked.js';
 import { activeRestRequestId, ui } from '../../commands/command-helpers.js';
@@ -52,6 +53,15 @@ export function registerRestCommands(): void {
     whenScope: 'selection.api',
     run: (ctx) => {
       explorerActions.updateRestDefinition(ctx.selection?.apiId);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('rest.lintDefinition'),
+    when: (ctx) => insideKindApi('rest', ctx.selection) && hasRestDefinition(ctx.selection?.apiId),
+    whenScope: 'selection.api',
+    run: (ctx) => {
+      const apiId = ctx.selection?.apiId;
+      if (apiId !== undefined) void lintRestDefinition(apiId, { reveal: true });
     },
   });
   // A REST tab's own send. It shares `Mod+Enter` with `request.send` because the two can never be
