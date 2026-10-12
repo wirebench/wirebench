@@ -8,3 +8,4 @@ export * from './sftp.js';
 export * from './openssh-config/index.js';
 export * from './os-release.js';
 export * from './snippets.js';
+export * from './stream-masker.js';
