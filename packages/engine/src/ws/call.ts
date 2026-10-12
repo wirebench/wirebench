@@ -97,6 +97,15 @@ function authHeadersAndQuery(auth: SendAuth | undefined): {
       { details: { type: auth.type } },
     );
   }
+  if (auth.type === 'digest' || auth.type === 'aws-sigv4') {
+    throw new WsError(
+      'ws-auth-unsupported',
+      auth.type === 'digest'
+        ? 'Digest answers a 401 challenge with a second request, which a single WebSocket handshake cannot do. Use Basic, Bearer, an API key, or OAuth2 instead.'
+        : 'AWS Signature v4 is not applied to a WebSocket handshake. Use Basic, Bearer, an API key, or OAuth2 instead.',
+      { details: { type: auth.type } },
+    );
+  }
   if (auth.type === 'basic') {
     // `http/auth/apply-auth.ts`'s `applyAuth` deliberately leaves Basic to the HTTP transport's challenge
     // flow, because a REST send can retry after a 401. A WebSocket handshake gets exactly one

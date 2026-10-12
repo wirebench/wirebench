@@ -147,7 +147,14 @@ export function containsRedaction(text: string): boolean {
 }
 
 /** Header names (case-insensitive) whose value is always masked. */
-const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-amz-security-token',
+]);
 
 /** True when a header named `name` (any case) always carries a credential; see {@link redactHeaders}. */
 export function isSensitiveHeaderName(name: string): boolean {
@@ -229,6 +236,10 @@ const SENSITIVE_QUERY_PARAMS = new Set([
   'auth',
   'signature',
   'sig',
+  // A presigned AWS URL (#339): the signature is a credential for as long as the URL is valid.
+  'x-amz-signature',
+  'x-amz-credential',
+  'x-amz-security-token',
 ]);
 
 /** True when a query parameter named `name` (any case) carries a credential; see {@link redactUrl}. */
