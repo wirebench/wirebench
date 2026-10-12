@@ -80,11 +80,11 @@ export function HttpSection({ preferences, update }: SectionProps) {
         />
         <BooleanSetting
           label="Offer HTTP/2"
-          setting="http.allowH2"
-          value={http.allowH2}
-          testId="http-allow-h2"
-          onChange={(allowH2) => update({ http: { allowH2 } })}
-          hint="Advertises h2 in the TLS handshake. Off by default; most SOAP stacks speak HTTP/1.1 only."
+          setting="http.offerH2"
+          value={http.offerH2}
+          testId="http-offer-h2"
+          onChange={(offerH2) => update({ http: { offerH2 } })}
+          hint="Advertises h2 in the TLS handshake; the server picks, so HTTP/1.1-only stacks stay on 1.1. NTLM and Kerberos always use HTTP/1.1. Turn off for a server that asks for a client certificate mid-connection."
         />
         <NumberSetting
           label="Chunking threshold"

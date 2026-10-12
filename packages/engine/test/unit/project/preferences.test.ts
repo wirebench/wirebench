@@ -125,10 +125,21 @@ describe('resetPreferences', () => {
 });
 
 describe('network preference defaults', () => {
-  it('starts with no proxy, no extra anchors, a TLS 1.2 floor and HTTP/2 off', () => {
+  it('starts with no proxy, no extra anchors, a TLS 1.2 floor and HTTP/2 offered', () => {
     expect(DEFAULT_PREFERENCES.proxy).toEqual({ mode: 'none', excludes: [] });
     expect(DEFAULT_PREFERENCES.ssl).toEqual({ minVersion: 'TLSv1.2', expiryWarningDays: 30, trustAll: false });
-    expect(DEFAULT_PREFERENCES.http.allowH2).toBe(false);
+    expect(DEFAULT_PREFERENCES.http.offerH2).toBe(true);
+  });
+
+  it('drops the old allowH2 key, which every saved file carries as false (ADR-0024)', () => {
+    const merged = mergePreferences({ http: { allowH2: false, maxConnections: 7 } });
+    expect(merged.http.offerH2).toBe(true);
+    expect(merged.http.maxConnections).toBe(7);
+    expect(merged.http).not.toHaveProperty('allowH2');
+  });
+
+  it('keeps HTTP/2 off once the user turns it off', () => {
+    expect(mergePreferences({ http: { offerH2: false } }).http.offerH2).toBe(false);
   });
 
   it('keeps a certificate expiry warning window in range, clamping one read from disk', () => {
