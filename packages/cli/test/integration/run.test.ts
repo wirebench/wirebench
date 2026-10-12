@@ -308,6 +308,55 @@ describe('wirebench run — a project inside a workspace', () => {
     expect(stderr).toContain('unknown environment "local"; environments: CI');
   });
 
+  describe('scoped environments (#468)', () => {
+    /** Adds a second workspace environment `QA`, applying to the given project ids. */
+    async function withQa(dir: string, projects: readonly string[]): Promise<void> {
+      const file = join(dir, '..', '..', 'environments', 'qa.yaml');
+      await writeFile(
+        file,
+        [
+          'id: WSENV2',
+          'name: QA',
+          'order: 1',
+          `projects: [${projects.join(', ')}]`,
+          'endpoints: {}',
+          'properties:',
+          `  baseUrl: ${JSON.stringify(demo.url)}`,
+          '',
+        ].join('\n'),
+      );
+    }
+
+    it('refuses an environment that does not apply to the project, listing the ones that do', async () => {
+      const dir = await workspaceWith({ baseUrl: demo.url });
+      await withQa(dir, ['OTHER00001']);
+      for (const env of ['QA', 'qa', 'WSENV2']) {
+        const { code, stderr } = await runCli(['run', dir, '-e', env, 'demo/ok']);
+        expect(code).toBe(2);
+        expect(stderr).toContain('"QA" does not apply to this project; environments for it: CI');
+      }
+      expect(demo.requests).toHaveLength(0);
+    });
+
+    it('runs an environment whose scope lists the project', async () => {
+      const dir = await workspaceWith({ baseUrl: demo.url });
+      await withQa(dir, ['RUNNER0001']);
+      const { code } = await runCli(['run', dir, '-e', 'QA', 'demo/ok']);
+      expect(code).toBe(0);
+    });
+
+    it('requires --env only while an environment applies to the project', async () => {
+      const dir = await workspaceWith({ baseUrl: demo.url });
+      const envFile = join(dir, '..', '..', 'environments', 'ci.yaml');
+      await writeFile(envFile, `${await readFile(envFile, 'utf8')}projects: [OTHER00001]\n`);
+      const none = await runCli(['run', dir, '--var', `baseUrl=${demo.url}`, 'demo/ok']);
+      expect(none.code).toBe(0);
+      const named = await runCli(['run', dir, '-e', 'CI', 'demo/ok']);
+      expect(named.code).toBe(2);
+      expect(named.stderr).toContain('none apply to it');
+    });
+  });
+
   it('finds a ${secret:name} token a workspace environment property holds', async () => {
     const dir = await workspaceWith({ baseUrl: demo.url, key: '${secret:demo_key}' });
     const request = join(dir, 'apis', 'demo', 'requests', 'ok.request.yaml');

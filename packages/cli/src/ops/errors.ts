@@ -23,6 +23,7 @@ export const USAGE_CODES: ReadonlySet<string> = new Set([
   'environment-required',
   'environment-not-found',
   'environment-not-allowed',
+  'environment-out-of-scope',
   'history-entry-not-found',
   'history-no-response',
   'unsupported-kind',

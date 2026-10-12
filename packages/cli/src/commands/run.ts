@@ -49,7 +49,7 @@ import type { RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { cliSecrets } from '../source-secrets.js';
-import { pickEnvironment } from '../ops/environment.js';
+import { pickEnvironment, projectIdOf } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
 import { verboseIssuedTokens } from '../verbose-sts.js';
@@ -168,7 +168,7 @@ export async function loadSelection(
     environment =
       workspace === undefined
         ? pickEnvironment(project.environments, 'project', args.env)
-        : pickEnvironment(workspace.workspace.environments, 'workspace', args.env);
+        : pickEnvironment(workspace.workspace.environments, 'workspace', args.env, projectIdOf(workspace));
   } catch (error) {
     // `wirebench run` reports a bad environment as a usage error, as it always has.
     if (error instanceof OpsError) {

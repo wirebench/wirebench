@@ -79,10 +79,11 @@ export async function startContractTools(
 ): Promise<ContractToolsHost> {
   const debounceMs = options.debounceMs ?? WATCH_DEBOUNCE_MS;
   const derive = async (): Promise<ContractToolSet> => {
-    const { project } = await openProject(base);
+    const { project, workspace } = await openProject(base);
     const derived = await deriveContractTools(project, {
       projectDir: base.projectDir,
       gates: base.gates,
+      ...(workspace !== undefined ? { workspace } : {}),
       ...(options.containers !== undefined ? { containers: options.containers } : {}),
     });
     for (const note of derived.notes) {

@@ -26,7 +26,7 @@ import type {
 } from '@wirebench/engine';
 import { enclosingWorkspace, exists } from '../workspace-lookup.js';
 import type { OpsContext } from './context.js';
-import { checkAllowed, pickEnvironment } from './environment.js';
+import { checkAllowed, pickEnvironment, projectIdOf } from './environment.js';
 import { OpsError } from './errors.js';
 
 export interface OpenedProject {
@@ -61,7 +61,7 @@ export function environmentFor(
   const environment =
     opened.workspace === undefined
       ? pickEnvironment(opened.project.environments, 'project', wanted)
-      : pickEnvironment(opened.workspace.workspace.environments, 'workspace', wanted);
+      : pickEnvironment(opened.workspace.workspace.environments, 'workspace', wanted, projectIdOf(opened.workspace));
   checkAllowed(environment, allowed);
   return environment;
 }
