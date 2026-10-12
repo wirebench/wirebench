@@ -56,8 +56,8 @@ export const LINT_CHECKS = [
 /** A dotted field name: segments of letters, digits and `_ - $ @`, never empty. */
 const FIELD = /^[\w$@-]+(?:\.[\w$@-]+)*$/;
 
-/** A rule id: lower-case letters, digits and hyphens. */
-const RULE_ID = /^[a-z0-9][a-z0-9-]*$/;
+/** A rule id: letters, digits and hyphens, as the built-in ids are. */
+const RULE_ID = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 
 const MAX_PATTERN = 500;
 
@@ -312,7 +312,7 @@ export function planLintRules(
     if (parsed.data.builtin !== undefined) builtin = parsed.data.builtin;
     for (const [id, entry] of Object.entries(parsed.data.rules ?? {})) {
       if (!RULE_ID.test(id)) {
-        throw invalid(file.name, `rules.${id}: a rule id is lower-case letters, digits and hyphens`);
+        throw invalid(file.name, `rules.${id}: a rule id is letters, digits and hyphens`);
       }
       const checked = typeof entry === 'string' ? settingSchema.safeParse(entry) : customSchema.safeParse(entry);
       if (!checked.success) throw invalidIssue(file.name, checked.error.issues, ['rules', id]);

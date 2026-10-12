@@ -49,7 +49,7 @@ describe('planLintRules', () => {
         'rules: { a: { target: info, field: x, check: pattern, value: "(" } }',
         /rules\.a\.value: Invalid regular expression/,
       ],
-      ['rules: { Bad_Id: off }', /a rule id is lower-case/],
+      ['rules: { Bad_Id: off }', /a rule id is letters, digits and hyphens/],
     ];
     for (const [text, message] of cases) {
       expect(() => planLintRules([file(text)]), text).toThrowError(message);
