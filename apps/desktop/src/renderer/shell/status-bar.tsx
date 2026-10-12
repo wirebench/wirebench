@@ -80,6 +80,8 @@ export function StatusBar() {
   const consoleVisible = useUiStore((state) => state.console.visible);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const toggleConsole = useUiStore((state) => state.toggleConsole);
+  // Sidebar, Console and Problems drive the workbench, which Settings covers while it is open.
+  const workbenchShown = !useUiStore((state) => state.preferences.open);
   // The endpoint the *active* request would be sent to — not the last one sent — so the warning
   // is about what the next Send will do.
   const activeRequestId = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.requestId);
@@ -100,66 +102,78 @@ export function StatusBar() {
       className="flex h-status-bar shrink-0 items-center justify-between border-t border-hairline bg-surface-sunken px-3 text-xs text-fg-subtle"
     >
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          data-testid="status-bar-sidebar"
-          title="Toggle Sidebar"
-          aria-label="Toggle Sidebar"
-          aria-pressed={sidebarVisible}
-          className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
-            sidebarVisible ? 'text-fg-default' : ''
-          }`}
-          onClick={() => {
-            toggleSidebar();
-          }}
-        >
-          Sidebar
-        </button>
-        <span aria-hidden="true" className="text-fg-faint">
-          ·
-        </span>
-        <button
-          type="button"
-          data-testid="status-bar-console"
-          title="Toggle Console"
-          aria-label="Toggle Console"
-          aria-pressed={consoleVisible}
-          className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
-            consoleVisible ? 'text-fg-default' : ''
-          } ${errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''}`}
-          onClick={() => {
-            toggleConsole();
-          }}
-        >
-          Console{problemCount > 0 ? ` (${String(problemCount)})` : ''}
-        </button>
+        {workbenchShown && (
+          <>
+            <button
+              type="button"
+              data-testid="status-bar-sidebar"
+              title="Toggle Sidebar"
+              aria-label="Toggle Sidebar"
+              aria-pressed={sidebarVisible}
+              className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+                sidebarVisible ? 'text-fg-default' : ''
+              }`}
+              onClick={() => {
+                toggleSidebar();
+              }}
+            >
+              Sidebar
+            </button>
+            <span aria-hidden="true" className="text-fg-faint">
+              ·
+            </span>
+            <button
+              type="button"
+              data-testid="status-bar-console"
+              title="Toggle Console"
+              aria-label="Toggle Console"
+              aria-pressed={consoleVisible}
+              className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+                consoleVisible ? 'text-fg-default' : ''
+              } ${errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''}`}
+              onClick={() => {
+                toggleConsole();
+              }}
+            >
+              Console{problemCount > 0 ? ` (${String(problemCount)})` : ''}
+            </button>
+          </>
+        )}
         {saveLabel !== undefined && (
+          <>
+            {workbenchShown && (
+              <span aria-hidden="true" className="text-fg-faint">
+                ·
+              </span>
+            )}
+            <span data-testid="status-bar-save">{saveLabel}</span>
+          </>
+        )}
+        {workbenchShown && (
           <>
             <span aria-hidden="true" className="text-fg-faint">
               ·
             </span>
-            <span data-testid="status-bar-save">{saveLabel}</span>
+            <button
+              type="button"
+              data-testid="status-bar-problems"
+              title="Show the Problems panel"
+              className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+                errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''
+              }`}
+              onClick={() => {
+                showConsoleTab('problems');
+              }}
+            >
+              {problemCount} {problemCount === 1 ? 'problem' : 'problems'}
+            </button>
           </>
         )}
-        <span aria-hidden="true" className="text-fg-faint">
-          ·
-        </span>
-        <button
-          type="button"
-          data-testid="status-bar-problems"
-          title="Show the Problems panel"
-          className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
-            errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''
-          }`}
-          onClick={() => {
-            showConsoleTab('problems');
-          }}
-        >
-          {problemCount} {problemCount === 1 ? 'problem' : 'problems'}
-        </button>
-        <span aria-hidden="true" className="text-fg-faint">
-          ·
-        </span>
+        {(workbenchShown || saveLabel !== undefined) && (
+          <span aria-hidden="true" className="text-fg-faint">
+            ·
+          </span>
+        )}
         <span data-testid="status-bar-tls">{tlsLabel}</span>
         {trustInvalid && (
           <>

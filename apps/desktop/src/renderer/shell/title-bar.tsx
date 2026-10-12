@@ -22,6 +22,7 @@ export interface TitleBarProps {
  */
 export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette, onToggleTheme }: TitleBarProps) {
   const theme = useUiStore((state) => state.theme);
+  const settingsOpen = useUiStore((state) => state.preferences.open);
   const paletteShortcut = shortcutFor('palette.open', platform) ?? '';
 
   return (
@@ -61,8 +62,9 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
 
       <div className="wb-no-drag flex shrink-0 items-center gap-2">
         {/* Before the theme toggle: the active environment decides where the next Send goes, so
-            it is the one piece of state worth carrying at the top right. */}
-        {workspaceName !== null && <EnvSwitcher />}
+            it is the one piece of state worth carrying at the top right. Settings has no Send, so
+            the switcher steps aside while it is open. */}
+        {workspaceName !== null && !settingsOpen && <EnvSwitcher />}
         <IconButton
           label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
           onClick={onToggleTheme}

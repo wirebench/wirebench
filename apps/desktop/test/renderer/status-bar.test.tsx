@@ -171,4 +171,20 @@ describe('StatusBar', () => {
     expect(indicator.dataset['themePreference']).toBe('system');
     expect(indicator.textContent).toContain('System (Dark)');
   });
+  it('hides Sidebar, Console and Problems while Settings is open, and brings them back after', () => {
+    useUiStore.getState().setPreferencesOpen(true);
+    try {
+      render(<StatusBar />);
+      expect(screen.queryByTestId('status-bar-sidebar')).toBeNull();
+      expect(screen.queryByTestId('status-bar-console')).toBeNull();
+      expect(screen.queryByTestId('status-bar-problems')).toBeNull();
+      expect(screen.getByTestId('status-bar-tls')).toBeTruthy();
+    } finally {
+      useUiStore.getState().setPreferencesOpen(false);
+    }
+    cleanup();
+    render(<StatusBar />);
+    expect(screen.getByTestId('status-bar-console')).toBeTruthy();
+    expect(screen.getByTestId('status-bar-problems')).toBeTruthy();
+  });
 });
