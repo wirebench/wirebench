@@ -16,6 +16,7 @@ import { secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { urlOrigin } from '../project/sequence-guards.js';
 import type { SecretPlaceholders } from '../script/send.js';
+import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
@@ -289,6 +290,16 @@ export function originOf(url: string): { readonly origin?: string } {
 
 /** True for a reference that is set: neither absent nor empty. */
 export const present = (id: string | undefined): id is string => id !== undefined && id.length > 0;
+
+/**
+ * What an effective auth needs from a run: its own secrets, and the keystore password behind an
+ * OAuth2 key-based client authentication (`private-key-jwt`, `tls-client-auth`).
+ */
+export function authSecretNeeds(project: Project, auth: AuthConfig | undefined): SecretNeed[] {
+  const keyBased =
+    auth?.type === 'oauth2' && (auth.clientAuth === 'private-key-jwt' || auth.clientAuth === 'tls-client-auth');
+  return [...secretNeedsOfAuth(auth), ...(keyBased ? keystoreNeeds(project, auth.clientKeystoreId) : [])];
+}
 
 /** A keystore's password, when the registry entry has one; an unreadable entry needs nothing here. */
 export function keystoreNeeds(project: Project, keystoreId: string | undefined): SecretNeed[] {

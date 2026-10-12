@@ -46,6 +46,51 @@ describe('authConfigSchema', () => {
     expect(authDocument(parse(document))).toEqual(document);
   });
 
+  it('round-trips the password grant with JWT client auth', () => {
+    const document = {
+      type: 'oauth2',
+      grant: 'password',
+      tokenUrl: 'https://id.example.test/token',
+      clientId: 'app',
+      username: '${user}',
+      passwordRef: 'sec_6',
+      passwordEnv: 'APP_PASSWORD',
+      clientAuth: 'private-key-jwt',
+      clientKeystoreId: 'ks-1',
+      assertionAlg: 'PS256',
+      pkce: true,
+      refreshTokenRef: 'sec_7',
+      refreshTokenEnv: 'APP_REFRESH',
+    };
+    expect(authDocument(parse(document))).toEqual(document);
+  });
+
+  it('round-trips the device-code grant', () => {
+    const document = {
+      type: 'oauth2',
+      grant: 'device-code',
+      tokenUrl: 'https://id.example.test/token',
+      deviceAuthorizationUrl: 'https://id.example.test/device',
+      clientId: 'cli',
+      clientAuth: 'tls-client-auth',
+      clientKeystoreId: 'ks-1',
+      pkce: true,
+    };
+    expect(authDocument(parse(document))).toEqual(document);
+  });
+
+  it('refuses an algorithm Wirebench does not sign with', () => {
+    const result = authConfigSchema.safeParse({
+      type: 'oauth2',
+      grant: 'client-credentials',
+      tokenUrl: 't',
+      clientId: 'c',
+      clientAuth: 'client-secret-jwt',
+      assertionAlg: 'none',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('fills the oauth2 defaults a hand-written document leaves out', () => {
     const auth = parse({ type: 'oauth2', grant: 'client-credentials', tokenUrl: 'https://t', clientId: 'c' });
     expect(auth).toMatchObject({ scopes: [], clientAuth: 'basic', pkce: true });

@@ -24,6 +24,7 @@ import {
   authFor,
   baseUrlFor,
   dropRefusedToken,
+  authSecretNeeds,
   keystoreNeeds,
   tlsFor,
   unresolvedError,
@@ -34,7 +35,6 @@ import { ORPHANED_STEP_REASON, findInTree, walkTree } from '../run/tree.js';
 import { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from './scripting.js';
 import type { GrpcRequestSnapshot } from './scripting.js';
 import { grpcMessageTypes, grpcScriptTypes } from './script-types.js';
-import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import { toGrpcSendInput } from './send-input.js';
 import { readGrpcDefinitionCache } from './cache.js';
 import { callGrpc } from './call.js';
@@ -547,7 +547,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
 
   secretNeeds(selected, project) {
     return [
-      ...secretNeedsOfAuth(grpcEffectiveAuth(selected)),
+      ...authSecretNeeds(project, grpcEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   },

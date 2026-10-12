@@ -441,17 +441,24 @@ export const authConfigWireSchema = z.object({
   valueRef: z.string().optional(),
   valueEnv: z.string().optional(),
   in: z.enum(['header', 'query']).optional(),
-  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
+  grant: z.enum(['client-credentials', 'authorization-code', 'password', 'device-code']).optional(),
   tokenUrl: z.string().optional(),
   authorizationUrl: z.string().optional(),
+  deviceAuthorizationUrl: z.string().optional(),
   clientId: z.string().optional(),
   clientSecretRef: z.string().optional(),
   clientSecretEnv: z.string().optional(),
   scopes: z.array(z.string()).optional(),
   audience: z.string().optional(),
-  clientAuth: z.enum(['basic', 'body']).optional(),
+  clientAuth: z.enum(['basic', 'body', 'client-secret-jwt', 'private-key-jwt', 'tls-client-auth']).optional(),
+  clientKeystoreId: z.string().optional(),
+  /** The engine's `JWT_ALGS`, spelled out: shared code here must not import the engine's values. */
+  assertionAlg: z
+    .enum(['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512'])
+    .optional(),
   pkce: z.boolean().optional(),
   refreshTokenRef: z.string().optional(),
+  refreshTokenEnv: z.string().optional(),
 });
 export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
 

@@ -14,13 +14,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { OAuth2StatusWire } from '../../../shared/wire-base.js';
+import type { AuthConfigWire, OAuth2StatusWire } from '../../../shared/wire-base.js';
 
 export interface OAuth2StatusPanelProps {
   /** The API, folder or request whose configuration main should use. */
   readonly ownerId: string;
   /** The grant in force, which decides whether a browser round trip is part of getting a token. */
-  readonly grant: 'client-credentials' | 'authorization-code' | undefined;
+  readonly grant: AuthConfigWire['grant'];
 }
 
 /** How each state reads. */

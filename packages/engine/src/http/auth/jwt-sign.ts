@@ -10,23 +10,10 @@
 import { createHmac, createPrivateKey, constants, sign } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '../../errors.js';
+import type { JwtAlg } from './jwt-algs.js';
 
-/** The JWS algorithms Wirebench signs with. `none` is deliberately absent. */
-export const JWT_ALGS = [
-  'HS256',
-  'HS384',
-  'HS512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'PS256',
-  'PS384',
-  'PS512',
-  'ES256',
-  'ES384',
-  'ES512',
-] as const;
-export type JwtAlg = (typeof JWT_ALGS)[number];
+export { JWT_ALGS } from './jwt-algs.js';
+export type { JwtAlg } from './jwt-algs.js';
 
 export interface SignJwtInput {
   readonly alg: JwtAlg;
