@@ -1940,7 +1940,7 @@ export const preferencesWireSchema = z.object({
     chunkingThreshold: z.number(),
     socketTimeoutMs: z.number(),
     maxConnections: z.number(),
-    allowH2: z.boolean(),
+    offerH2: z.boolean(),
   }),
   proxy: z.object({
     mode: z.enum(['none', 'system', 'manual']),

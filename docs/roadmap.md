@@ -34,6 +34,12 @@ the engine, the app and `wirebench mock`, recording a mock from live traffic, re
 checking stubs against the contract, the contract diff and breaking-change report, Postman Collection
 and OpenCollection export, published JSON Schemas for project files, several workspaces open at once,
 the portable Windows build, and SSH hosts and terminals with import from an OpenSSH config.
+6.0.0 carries the 5.1 milestone, the daily driver: dynamic variables, variables in the editor, scripts
+on APIs, interfaces and folders that can steer a run, data-driven runs in the CLI and the app's
+Runner, branching in sequences, code generation, a preview of the headers a send adds, environment
+colours with a production guard, and import of collection v3 folders. It is a major release because
+the engine's project model changed shape (each protocol in its own module); it took the project format
+to version 9.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
@@ -211,7 +217,7 @@ enabled checkbox, and the `disabled` list format bump
   Wirebench's own project files, so any editor validates them. Switching cost is the moat the cloud
   platforms rely on; every client that displaced one began as an importer.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
-- **HTTP/2.** Evaluate making it the default once enough servers negotiate it cleanly.
+- **HTTP/2.** Done (#80, ADR-0024): offered by default with ALPN fallback; NTLM and Kerberos stay on HTTP/1.1.
 - **Same-host `http://` → `https://` 301 on a POST** (shipped, #71). Wirebench still does not follow
   redirects on a SOAP send by default, because a redirected POST becomes a GET and loses the envelope. The
   exact upgrade shape (same host, path and query, default ports, 301/302/307/308) is followed anyway, with
