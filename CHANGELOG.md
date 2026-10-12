@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Find in a terminal's scrollback.** ⌘F (Ctrl+F on Windows and Linux) in a focused SSH terminal opens a
+  find bar over the output: next and previous match, match case, whole word and regular expression, and a
+  match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
+  to the terminal. The shortcut never reaches the remote shell, and other tabs keep their own ⌘F (#406).
+
 ## [6.0.0] - 2026-10-12
 
 ### Added

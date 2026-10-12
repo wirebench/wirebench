@@ -28,6 +28,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@wirebench/engine": "workspace:*",
     "@wirebench/ssh": "workspace:*",
+    "@xterm/addon-search": "0.16.0",
     "electron-updater": "^6.8.9",
     "simple-icons": "^16.35.0",
     "yaml": "^2.9",

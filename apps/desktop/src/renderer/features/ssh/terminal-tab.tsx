@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import { detectPlatform } from '../../lib/platform.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -10,6 +12,7 @@ import { connectToHost, terminalTabId } from './connect.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
+import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
 import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
 
@@ -26,6 +29,7 @@ function openLink(uri: string): void {
 /** The terminal one mount of the tab owns, with what the session was last told its size is. */
 interface Live {
   readonly term: Terminal;
+  readonly search: SearchAddon;
   /** Fits the terminal to its holder (never while the holder is hidden) and, debounced, tells the session. */
   readonly refit: () => void;
   /** Tells the session the terminal's size now, when it differs from what it was last told. */
@@ -67,6 +71,10 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
   const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
   /** A multi-line paste held for the user's yes; xterm never saw it. */
   const [heldPaste, setHeldPaste] = useState<string | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocus, setFindFocus] = useState(0);
+  const [findResults, setFindResults] = useState<FindResults | undefined>(undefined);
+  const finder = useMemo(() => finderFor(() => live.current?.search), []);
 
   // The terminal and the connect, once per mount and again per Reconnect.
   useEffect(() => {
@@ -86,6 +94,23 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon({ highlightLimit: FIND_HIGHLIGHT_LIMIT });
+    term.loadAddon(search);
+    const results = search.onDidChangeResults(({ resultIndex, resultCount }) => {
+      setFindResults({ index: resultIndex, count: resultCount });
+    });
+    // xterm sees keys only while it has focus, so the find chord is the focused terminal's alone; it opens
+    // the find bar and never reaches the shell.
+    const platform = detectPlatform();
+    term.attachCustomKeyEventHandler((event) => {
+      if (!isFindChord(event, platform)) return true;
+      if (event.type === 'keydown') {
+        event.preventDefault();
+        setFindOpen(true);
+        setFindFocus((n) => n + 1);
+      }
+      return false;
+    });
     // The default handler opens a blank window first, which main refuses; this hands main the URL.
     term.loadAddon(
       new WebLinksAddon((_event, uri) => {
@@ -109,7 +134,7 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       clearTimeout(timer);
       timer = setTimeout(syncSize, RESIZE_DEBOUNCE_MS);
     };
-    live.current = { term, refit, syncSize };
+    live.current = { term, search, refit, syncSize };
     const observer = new ResizeObserver(refit);
     observer.observe(element);
 
@@ -169,6 +194,7 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       clearTimeout(copyTimer);
       input.dispose();
       binary.dispose();
+      results.dispose();
       const current = useHostsStore.getState().sessions[hostId]?.sessionId;
       if (current !== undefined) endSession(hostId, current);
       target.current = undefined;
@@ -234,7 +260,19 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
           closePaste();
         }}
       />
-      <div ref={holder} className="min-h-0 flex-1 bg-surface-sunken p-2" data-testid="ssh-terminal" />
+      <div className="relative min-h-0 flex-1">
+        <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
+        <TerminalFindBar
+          open={findOpen}
+          focusRequest={findFocus}
+          finder={finder}
+          results={findResults}
+          onClose={() => {
+            setFindOpen(false);
+            live.current?.term.focus();
+          }}
+        />
+      </div>
       {notice !== undefined && (
         <div className="flex items-center gap-3 border-t border-hairline px-3 py-2 text-sm text-fg-default">
           <span>{notice}</span>

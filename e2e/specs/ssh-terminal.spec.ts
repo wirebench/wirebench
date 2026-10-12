@@ -90,6 +90,25 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   await page.keyboard.press('Enter');
   await expect(terminal).toContainText('echo hi', { timeout: 30_000 });
 
+  // ⌘F (Ctrl+F elsewhere) in the focused terminal finds in the scrollback; Escape gives the keys back.
+  // The line overwrites `echo hi`, as above.
+  await page.keyboard.type('find needle and needle');
+  await page.keyboard.press('Enter');
+  await expect(terminal).toContainText('find needle and needle', { timeout: 30_000 });
+  await page.keyboard.press(`${MOD}+f`);
+  const find = page.getByTestId('terminal-find');
+  await expect(find).toBeVisible();
+  await expect(find.getByRole('textbox', { name: 'Find' })).toBeFocused();
+  await page.keyboard.type('needle');
+  await expect(find.getByTestId('terminal-find-count')).toHaveText(/^\d of 2$/);
+  await find.getByRole('button', { name: 'Match whole word' }).click();
+  await expect(find.getByTestId('terminal-find-count')).toHaveText(/^\d of 2$/);
+  await find.getByRole('textbox', { name: 'Find' }).fill('needles');
+  await expect(find.getByTestId('terminal-find-count')).toHaveText('No results');
+  await find.getByRole('textbox', { name: 'Find' }).press('Escape');
+  await expect(find).toBeHidden();
+  await expect(terminal.locator('textarea.xterm-helper-textarea')).toBeFocused();
+
   // The terminal's tab belongs to Hosts: Explorer's strip does not show it, and coming back finds
   // the same session still open.
   const connected = page.getByTestId('editor-area').getByLabel('connected', { exact: true });

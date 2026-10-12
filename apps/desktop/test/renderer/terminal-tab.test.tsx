@@ -13,13 +13,22 @@ const xterm = vi.hoisted(() => {
     selection = '';
     selectionListeners: (() => void)[] = [];
     disposed = false;
+    focused = 0;
+    keyHandler: ((event: KeyboardEvent) => boolean) | undefined;
     constructor(options: Record<string, unknown>) {
       this.options = options;
       FakeTerminal.instances.push(this);
     }
-    loadAddon(): void {}
+    loadAddon(addon: { activate?: (term: FakeTerminal) => void }): void {
+      addon.activate?.(this);
+    }
     open(): void {}
-    focus(): void {}
+    focus(): void {
+      this.focused += 1;
+    }
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+      this.keyHandler = handler;
+    }
     write(data: Uint8Array): void {
       this.written.push(data);
     }
@@ -43,7 +52,35 @@ const xterm = vi.hoisted(() => {
       this.disposed = true;
     }
   }
-  return { FakeTerminal };
+  /** Records the searches; `fire` reports results the way the addon's event does. */
+  class FakeSearchAddon {
+    static instances: FakeSearchAddon[] = [];
+    calls: { direction: string; term: string; options: Record<string, unknown> }[] = [];
+    cleared = 0;
+    listeners: ((r: { resultIndex: number; resultCount: number }) => void)[] = [];
+    constructor() {
+      FakeSearchAddon.instances.push(this);
+    }
+    findNext(term: string, options: Record<string, unknown>): boolean {
+      this.calls.push({ direction: 'next', term, options });
+      return true;
+    }
+    findPrevious(term: string, options: Record<string, unknown>): boolean {
+      this.calls.push({ direction: 'previous', term, options });
+      return true;
+    }
+    clearDecorations(): void {
+      this.cleared += 1;
+    }
+    onDidChangeResults(listener: (r: { resultIndex: number; resultCount: number }) => void) {
+      this.listeners.push(listener);
+      return { dispose: () => undefined };
+    }
+    fire(resultIndex: number, resultCount: number): void {
+      for (const listener of this.listeners) listener({ resultIndex, resultCount });
+    }
+  }
+  return { FakeTerminal, FakeSearchAddon };
 });
 vi.mock('@xterm/xterm', () => ({ Terminal: xterm.FakeTerminal }));
 vi.mock('@xterm/addon-fit', () => ({
@@ -52,6 +89,7 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
+vi.mock('@xterm/addon-search', () => ({ SearchAddon: xterm.FakeSearchAddon }));
 
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
@@ -81,6 +119,7 @@ const writeText = vi.fn();
 
 beforeEach(() => {
   xterm.FakeTerminal.instances = [];
+  xterm.FakeSearchAddon.instances = [];
   usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE });
   // Main answers with the document after the patch, which the store then adopts.
   preferencesUpdate.mockReset().mockImplementation((request: { patch: { terminal?: object } }) =>
@@ -443,6 +482,91 @@ describe('the terminal tab', () => {
       vi.advanceTimersByTime(200);
       expect(writeText).toHaveBeenCalledTimes(1);
       expect(writeText).toHaveBeenCalledWith('hello');
+    });
+  });
+
+  describe('find in the scrollback', () => {
+    async function mount(): Promise<void> {
+      connect.mockResolvedValueOnce(OPEN('s1'));
+      act(() => {
+        openTerminalFor('a');
+      });
+      render(<EditorArea />);
+      await waitFor(() => {
+        expect(useHostsStore.getState().sessions['a']?.state).toBe('open');
+      });
+    }
+    /** A keydown as the focused terminal's xterm sees it; returns whether xterm may handle it. */
+    function terminalKey(init: KeyboardEventInit): { passed: boolean; event: KeyboardEvent } {
+      const event = new KeyboardEvent('keydown', { cancelable: true, ...init });
+      let passed = true;
+      act(() => {
+        passed = lastTerminal()?.keyHandler?.(event) ?? true;
+      });
+      return { passed, event };
+    }
+    // jsdom's user agent is not a Mac's, so the chord here is Ctrl+F.
+    const CHORD = { key: 'f', ctrlKey: true };
+    const findBar = () => screen.getByTestId('terminal-find');
+    const search = () => xterm.FakeSearchAddon.instances.at(-1);
+
+    it('the chord in the focused terminal opens the bar and never reaches the shell', async () => {
+      await mount();
+      expect(findBar().hidden).toBe(true);
+      const { passed, event } = terminalKey(CHORD);
+      expect(passed).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
+      expect(findBar().hidden).toBe(false);
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Find' }));
+      // The keyup of the same chord is swallowed too.
+      const up = new KeyboardEvent('keyup', CHORD);
+      expect(lastTerminal()?.keyHandler?.(up)).toBe(false);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('other keys still go to the shell', async () => {
+      await mount();
+      expect(terminalKey({ key: 'f' }).passed).toBe(true);
+      expect(terminalKey({ key: 'g', ctrlKey: true }).passed).toBe(true);
+      expect(findBar().hidden).toBe(true);
+    });
+
+    it('does not take the chord from anywhere but the focused terminal', async () => {
+      await mount();
+      const event = new KeyboardEvent('keydown', { ...CHORD, bubbles: true, cancelable: true });
+      act(() => {
+        document.body.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented).toBe(false);
+      expect(findBar().hidden).toBe(true);
+    });
+
+    it('searches the scrollback with highlights and shows the count', async () => {
+      await mount();
+      terminalKey(CHORD);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Find' }), { target: { value: 'needle' } });
+      const last = search()?.calls.at(-1);
+      expect(last).toMatchObject({
+        direction: 'next',
+        term: 'needle',
+        options: { caseSensitive: false, wholeWord: false, regex: false, incremental: true },
+      });
+      expect(last?.options['decorations']).toBeDefined();
+      act(() => {
+        search()?.fire(0, 2);
+      });
+      expect(screen.getByTestId('terminal-find-count').textContent).toBe('1 of 2');
+    });
+
+    it('Escape closes the bar, clears the highlights and focuses the terminal', async () => {
+      await mount();
+      terminalKey(CHORD);
+      const focusedBefore = lastTerminal()?.focused ?? 0;
+      const cleared = search()?.cleared ?? 0;
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'Find' }), { key: 'Escape' });
+      expect(findBar().hidden).toBe(true);
+      expect(lastTerminal()?.focused).toBe(focusedBefore + 1);
+      expect(search()?.cleared).toBeGreaterThan(cleared);
     });
   });
 });
