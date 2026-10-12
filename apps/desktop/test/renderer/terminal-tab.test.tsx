@@ -90,8 +90,16 @@ vi.mock('@xterm/addon-fit', () => ({
 }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: xterm.FakeSearchAddon }));
+// ⌘W's command comes with the editor commands, which load Monaco.
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
+import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import { registerEditorCommands } from '../../src/renderer/commands/register-editor-commands.js';
+import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
+import { usePanesStore } from '../../src/renderer/features/ssh/panes/pane-actions.js';
+import { leaves, type PaneNode } from '../../src/renderer/features/ssh/panes/pane-tree.js';
+import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { reconnectNow } from '../../src/renderer/features/ssh/reconnect.js';
 import { __dispatchForTest as dispatch, bytesToBase64 } from '../../src/renderer/features/ssh/terminal-session.js';
@@ -747,5 +755,176 @@ describe('the terminal tab', () => {
       expect(lastTerminal()?.focused).toBe(focusedBefore + 1);
       expect(search()?.cleared).toBeGreaterThan(cleared);
     });
+  });
+});
+
+describe('split panes', () => {
+  const resolvedHost = (id: string, name: string) =>
+    ({
+      id,
+      name,
+      address: `${id}.example`,
+      path: [],
+      tags: [],
+      ssh: {
+        user: {},
+        port: { value: 22 },
+        auth: {},
+        jump: {},
+        keepAlive: { value: 0 },
+        connectTimeout: { value: 10 },
+      },
+      forwards: [],
+    }) as unknown as ResolvedHostWire;
+
+  beforeEach(() => {
+    // Panes a test mounts beyond the ones it names connect too.
+    connect.mockResolvedValue(OPEN('s-more'));
+    usePanesStore.setState({ focused: {}, picker: undefined });
+    useHostsStore.setState({ resolved: [resolvedHost('a', 'alpha'), resolvedHost('b', 'beta')] });
+    resetCommands();
+    registerSshCommands(vi.fn());
+    registerEditorCommands();
+  });
+
+  const tree = (): PaneNode => {
+    const panes = useEditorsStore.getState().tabs.find((t) => t.kind === 'ssh-terminal')?.panes;
+    if (panes === undefined) throw new Error('no terminal tab');
+    return panes;
+  };
+
+  async function mount(): Promise<void> {
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await waitFor(() => {
+      expect(sessionOn('a')?.state).toBe('open');
+    });
+  }
+
+  /** Splits right through the toolbar and picks the host the picker starts on. */
+  async function splitOnSameHost(): Promise<void> {
+    connect.mockResolvedValueOnce(OPEN('s2'));
+    fireEvent.click(screen.getByRole('button', { name: /Split right/ }));
+    const input = await screen.findByTestId('ssh-pane-host-input');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => {
+      expect(Object.values(useHostsStore.getState().panes).filter((p) => p.state === 'open')).toHaveLength(2);
+    });
+  }
+
+  it('Split right opens the picker on the pane’s host, and Enter connects a second pane there', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: /Split right/ }));
+    await screen.findByTestId('ssh-pane-host-input');
+    const selected = screen.getAllByTestId('ssh-pane-host').find((row) => row.dataset['selected'] === 'true');
+    expect(selected?.textContent).toContain('alpha');
+    connect.mockResolvedValueOnce(OPEN('s2'));
+    fireEvent.keyDown(screen.getByTestId('ssh-pane-host-input'), { key: 'Enter' });
+    await waitFor(() => {
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+    expect(connect).toHaveBeenLastCalledWith(expect.objectContaining({ hostId: 'a' }));
+    expect(leaves(tree()).map((leaf) => leaf.hostId)).toEqual(['a', 'a']);
+    expect(screen.getAllByTestId('ssh-pane-header')).toHaveLength(2);
+    expect(screen.queryByTestId('ssh-pane-host-input')).toBeNull();
+  });
+
+  it('Escape cancels the split', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: /Split down/ }));
+    const input = await screen.findByTestId('ssh-pane-host-input');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('ssh-pane-host-input')).toBeNull();
+    });
+    expect(tree().kind).toBe('pane');
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('dragging the divider sets the ratio, and a double-click evens it out', async () => {
+    await mount();
+    await splitOnSameHost();
+    const divider = screen.getByTestId('ssh-pane-divider');
+    const split = divider.parentElement;
+    if (split === null) throw new Error('no split');
+    split.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100 }) as DOMRect;
+    fireEvent.pointerDown(divider, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 60 });
+    fireEvent.pointerUp(window);
+    expect(tree()).toMatchObject({ kind: 'split', ratio: 0.3 });
+    fireEvent.pointerMove(window, { clientX: 150 });
+    expect(tree()).toMatchObject({ ratio: 0.3 });
+    fireEvent.doubleClick(divider);
+    expect(tree()).toMatchObject({ ratio: 0.5 });
+  });
+
+  it('a pane chord is the app’s: the terminal never sends it to the shell', async () => {
+    await mount();
+    // jsdom's user agent is not a Mac's, so ⌘D here is Ctrl+D.
+    const event = new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, cancelable: true });
+    expect(lastTerminal()?.keyHandler?.(event)).toBe(false);
+    expect(lastTerminal()?.keyHandler?.(new KeyboardEvent('keydown', { key: 'd' }))).toBe(true);
+  });
+
+  it('focus moves between panes, and Files acts on the focused one', async () => {
+    await mount();
+    await splitOnSameHost();
+    const [left, right] = xterm.FakeTerminal.instances;
+    const panes = screen.getAllByTestId('ssh-pane');
+    expect(panes[1]?.dataset['focused']).toBe('true');
+    const before = left?.focused ?? 0;
+    await act(async () => {
+      await runCommand('ssh.focusPaneLeft', {} as never);
+    });
+    expect(screen.getAllByTestId('ssh-pane')[0]?.dataset['focused']).toBe('true');
+    expect(left?.focused).toBeGreaterThan(before);
+    expect(right).toBeDefined();
+
+    // A pane on another host, focused by a click, is the one Files opens.
+    act(() => {
+      useEditorsStore.setState({
+        tabs: useEditorsStore
+          .getState()
+          .tabs.map((t) =>
+            t.panes?.kind === 'split'
+              ? { ...t, panes: { ...t.panes, b: { ...t.panes.b, hostId: 'b' } as PaneNode } }
+              : t,
+          ),
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId('ssh-pane')).toHaveLength(2);
+    });
+    fireEvent.pointerDown(screen.getAllByTestId('ssh-pane')[1] as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: /^Files$/ }));
+    expect(useEditorsStore.getState().activeId).toBe('ssh-files:b');
+  });
+
+  it('⌘W closes only the focused pane’s session; the sibling fills the tab, and the last pane closes it', async () => {
+    await mount();
+    await splitOnSameHost();
+    await act(async () => {
+      await runCommand('editor.closeTab', {} as never);
+    });
+    expect(close).toHaveBeenCalledWith({ sessionId: 's2' });
+    expect(close).not.toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(tree().kind).toBe('pane');
+    expect(screen.queryByTestId('ssh-pane-header')).toBeNull();
+    await act(async () => {
+      await runCommand('editor.closeTab', {} as never);
+    });
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+    expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
+  });
+
+  it('Open in new tab opens a second tab for the same host', async () => {
+    await mount();
+    await act(async () => {
+      await runCommand('ssh.openInNewTab', {} as never, 'a');
+    });
+    expect(useEditorsStore.getState().tabs.filter((t) => t.kind === 'ssh-terminal')).toHaveLength(2);
   });
 });

@@ -54,6 +54,14 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Connect to Host | — | — |
 | Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
 | Open Files on Host… | — | — |
+| Open Host in New Tab… | — | — |
+| Terminal: Split Right | <kbd>⌘D</kbd> | <kbd>Ctrl+D</kbd> |
+| Terminal: Split Down | <kbd>⌘⇧D</kbd> | <kbd>Ctrl+Shift+D</kbd> |
+| Terminal: Focus Pane Left | <kbd>⌘⌥←</kbd> | <kbd>Ctrl+Alt+Left</kbd> |
+| Terminal: Focus Pane Right | <kbd>⌘⌥→</kbd> | <kbd>Ctrl+Alt+Right</kbd> |
+| Terminal: Focus Pane Above | <kbd>⌘⌥↑</kbd> | <kbd>Ctrl+Alt+Up</kbd> |
+| Terminal: Focus Pane Below | <kbd>⌘⌥↓</kbd> | <kbd>Ctrl+Alt+Down</kbd> |
+| Terminal: Close Pane | — | — |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |

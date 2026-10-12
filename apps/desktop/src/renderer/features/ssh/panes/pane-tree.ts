@@ -83,28 +83,57 @@ export function setRatio(node: PaneNode, path: readonly ('a' | 'b')[], ratio: nu
   return child === node[step] ? node : { ...node, [step]: child };
 }
 
-interface Rect {
+/** A share of the tab's area, as fractions of its width (`x`) and height (`y`). */
+export interface Rect {
   readonly x0: number;
   readonly y0: number;
   readonly x1: number;
   readonly y1: number;
 }
 
-/** Each pane's share of the unit square. */
-function layout(node: PaneNode, rect: Rect, out: Map<string, Rect>): void {
+/** One split's place in a layout: the way to it from the root, and the area its two halves share. */
+export interface SplitArea {
+  readonly path: readonly ('a' | 'b')[];
+  readonly dir: 'row' | 'column';
+  readonly ratio: number;
+  readonly rect: Rect;
+}
+
+/** A tree laid out on the unit square: each pane's area, and each split's. */
+export interface Layout {
+  readonly panes: ReadonlyMap<string, Rect>;
+  readonly splits: readonly SplitArea[];
+}
+
+function lay(
+  node: PaneNode,
+  rect: Rect,
+  path: readonly ('a' | 'b')[],
+  panes: Map<string, Rect>,
+  splits: SplitArea[],
+): void {
   if (node.kind === 'pane') {
-    out.set(node.paneId, rect);
+    panes.set(node.paneId, rect);
     return;
   }
+  splits.push({ path, dir: node.dir, ratio: node.ratio, rect });
   if (node.dir === 'row') {
     const x = rect.x0 + (rect.x1 - rect.x0) * node.ratio;
-    layout(node.a, { ...rect, x1: x }, out);
-    layout(node.b, { ...rect, x0: x }, out);
+    lay(node.a, { ...rect, x1: x }, [...path, 'a'], panes, splits);
+    lay(node.b, { ...rect, x0: x }, [...path, 'b'], panes, splits);
   } else {
     const y = rect.y0 + (rect.y1 - rect.y0) * node.ratio;
-    layout(node.a, { ...rect, y1: y }, out);
-    layout(node.b, { ...rect, y0: y }, out);
+    lay(node.a, { ...rect, y1: y }, [...path, 'a'], panes, splits);
+    lay(node.b, { ...rect, y0: y }, [...path, 'b'], panes, splits);
   }
+}
+
+/** Where every pane and split of the tree sits on the unit square. */
+export function layoutOf(node: PaneNode): Layout {
+  const panes = new Map<string, Rect>();
+  const splits: SplitArea[] = [];
+  lay(node, { x0: 0, y0: 0, x1: 1, y1: 1 }, [], panes, splits);
+  return { panes, splits };
 }
 
 const EPSILON = 1e-9;
@@ -132,8 +161,7 @@ export function neighbour(
   paneId: string,
   direction: 'left' | 'right' | 'up' | 'down',
 ): string | undefined {
-  const rects = new Map<string, Rect>();
-  layout(node, { x0: 0, y0: 0, x1: 1, y1: 1 }, rects);
+  const rects = layoutOf(node).panes;
   const from = rects.get(paneId);
   if (from === undefined) return undefined;
   const horizontal = direction === 'left' || direction === 'right';
