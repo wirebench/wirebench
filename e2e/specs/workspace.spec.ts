@@ -143,16 +143,18 @@ test.describe('workspaces', () => {
       timeout: 20_000,
     });
 
-    await page.getByTestId('env-switcher').click();
-    await page.getByRole('menuitem', { name: 'dev', exact: true }).click();
-    await expect(page.getByTestId('env-switcher')).toContainText('dev');
-
     // --- the Calculator tab's send now goes to the second server, and only there ---------
     const importedBefore = posts(imported);
     const addressingBefore = posts(addressing);
     // The request tabs are Explorer's: Start, Calculator, WsAddressingService.
     await page.getByRole('button', { name: 'Explorer', exact: true }).click();
     await editorTabs(page).nth(1).click();
+    // Each project keeps its own active environment (#468), and the switcher acts for the
+    // focused request's: with the Calculator tab focused, `dev` becomes Calculator Project's.
+    await expect(page.getByTestId('env-switcher-project')).toHaveText('Calculator Project');
+    await page.getByTestId('env-switcher').click();
+    await page.getByRole('menuitem', { name: 'dev', exact: true }).click();
+    await expect(page.getByTestId('env-switcher')).toContainText('dev');
     await expect(page.getByTestId('endpoint-env-badge')).toBeVisible({ timeout: 20_000 });
     await send(page);
     expect(posts(deployed)).toBe(1);

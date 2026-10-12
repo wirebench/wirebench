@@ -31,12 +31,13 @@ export const useMultiEnvStore = create<MultiEnvStore>(() => ({ picker: undefined
 
 /**
  * Why *Send to environments…* is unavailable, or `undefined` when it is not: it needs two or
- * more environments to choose from — the workspace's inside a workspace, else the project's.
+ * more environments to choose from — inside a workspace, the workspace's that apply to the
+ * request's project (#468); else the project's own.
  */
 export function sendToEnvironmentsBlocker(environmentCount: number, inWorkspace: boolean): string | undefined {
   if (environmentCount < 2) {
     return inWorkspace
-      ? 'Needs two or more environments in this workspace'
+      ? 'Needs two or more environments for this project'
       : 'Needs two or more environments in this project';
   }
   return undefined;

@@ -62,7 +62,7 @@ describe('EnvPickerDialog', () => {
 describe('sendToEnvironmentsBlocker', () => {
   it('blocks only with fewer than two environments, naming where they are missing', () => {
     expect(sendToEnvironmentsBlocker(1, false)).toMatch(/two or more environments in this project/);
-    expect(sendToEnvironmentsBlocker(1, true)).toMatch(/two or more environments in this workspace/);
+    expect(sendToEnvironmentsBlocker(1, true)).toMatch(/two or more environments for this project/);
     expect(sendToEnvironmentsBlocker(0, true)).toBeDefined();
     expect(sendToEnvironmentsBlocker(2, false)).toBeUndefined();
     expect(sendToEnvironmentsBlocker(3, true)).toBeUndefined();
@@ -129,13 +129,13 @@ describe('the environments *Send to environments…* offers', () => {
     useWorkspaceStore.setState({
       workspace: workspaceWire({ environments: [wsEnv('wall', 0), { ...wsEnv('wp2', 1), projects: ['p2'] }] }),
     });
-    expect(currentBlocker('r1')).toMatch(/in this workspace/);
+    expect(currentBlocker('r1')).toMatch(/for this project/);
     expect(currentBlocker('r2')).toBeUndefined();
   });
 
   it('blocks inside a workspace with fewer than two workspace environments', () => {
     useProjectStore.setState({ projectOf: { r1: 'p1' } });
     useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [wsEnv('wdev', 0)] }) });
-    expect(currentBlocker('r1')).toMatch(/in this workspace/);
+    expect(currentBlocker('r1')).toMatch(/for this project/);
   });
 });

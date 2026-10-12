@@ -3,6 +3,9 @@ import {
   activeEnvironmentFor,
   appliesToProject,
   environmentsForProject,
+  environmentsLeftWithoutProject,
+  switcherEnvironments,
+  switcherGroups,
 } from '../../src/renderer/state/environment-scope.js';
 import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
@@ -63,5 +66,34 @@ describe('environment scope (renderer)', () => {
     expect(activeEnvironmentFor(null, 'p-billing')).toBeUndefined();
     const workspace = workspaceWire({ environments: [everywhere], activeEnvironments: { p: 'e-all' } });
     expect(activeEnvironmentFor(workspace, undefined)).toBeUndefined();
+  });
+
+  it("switcherGroups puts every-project environments first, then the project's own, each in order", () => {
+    const later = environment('e-all-2', 0);
+    const workspace = workspaceWire({ environments: [everywhere, nowhere, billingOnly, later] });
+    const groups = switcherGroups(workspace, 'p-billing');
+    expect(groups.allProjects.map((e) => e.id)).toEqual(['e-all-2', 'e-all']);
+    expect(groups.project.map((e) => e.id)).toEqual(['e-billing']);
+    // One flat list for `env.next`, in the menu's order.
+    expect(switcherEnvironments(workspace, 'p-billing').map((e) => e.id)).toEqual(['e-all-2', 'e-all', 'e-billing']);
+    expect(switcherGroups(workspace, 'p-crm').project).toEqual([]);
+  });
+
+  it('environmentsLeftWithoutProject names only scopes that removing the project empties', () => {
+    const shared = environment('e-shared', 3, ['p-billing', 'p-crm']);
+    const unknownToo = environment('e-unknown', 4, ['p-billing', 'p-not-pulled']);
+    const projects = ['p-billing', 'p-crm'].map((id) => ({
+      id,
+      name: id,
+      slug: id,
+      source: 'internal' as const,
+      dir: `/tmp/${id}`,
+      status: 'ready' as const,
+    }));
+    const workspace = workspaceWire({ projects, environments: [everywhere, nowhere, billingOnly, shared, unknownToo] });
+    // An id this machine does not know is ignored on read, so that scope shows as *No project* too.
+    expect(environmentsLeftWithoutProject(workspace, 'p-billing').map((e) => e.id)).toEqual(['e-billing', 'e-unknown']);
+    // Already *No project*, every-project and still-shared scopes are not news.
+    expect(environmentsLeftWithoutProject(workspace, 'p-crm')).toEqual([]);
   });
 });

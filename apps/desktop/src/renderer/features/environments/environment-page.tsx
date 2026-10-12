@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EndpointsTable } from './endpoints-table.js';
-import type { EnvironmentTarget } from './environment-actions.js';
+import { setProjectEnvironment, type EnvironmentTarget } from './environment-actions.js';
 import { EnvironmentLook } from './environment-look.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from './variables-table.js';
 import { currentColumn, useCurrentValues } from '../../state/current-values.js';
-import type { ScopeKeyWire } from '../../../shared/wire-base.js';
+import type { ScopeKeyWire, WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import { activeBlocker, appliesToProject } from '../../state/environment-scope.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
@@ -110,6 +111,7 @@ function PageHeader({
   active,
   hint,
   look,
+  scope,
 }: {
   readonly name: string;
   /** For a linked project's own environment: the project that owns it, so two environments named
@@ -117,10 +119,13 @@ function PageHeader({
    * workspace environments (which have no single owning project). */
   readonly owningProjectName?: string;
   readonly editableName?: { readonly onCommit: (name: string) => void };
-  readonly active?: { readonly value: boolean; readonly onToggle: () => void };
+  /** `disabledReason`, when set, disables the toggle and is its tooltip (#468). */
+  readonly active?: { readonly value: boolean; readonly onToggle: () => void; readonly disabledReason?: string };
   readonly hint: string;
   /** A real environment's colour and protection (#345); Globals and Workspace have neither. */
   readonly look?: ReactNode;
+  /** A workspace environment's *Applies to* (#468); every other page has no scope to choose. */
+  readonly scope?: ReactNode;
 }) {
   return (
     <header className="flex flex-col gap-2">
@@ -136,12 +141,16 @@ function PageHeader({
           </span>
         )}
         {active !== undefined && (
-          <label className="flex items-center gap-1.5 text-sm text-fg-subtle">
+          <label
+            className={`flex items-center gap-1.5 text-sm text-fg-subtle ${active.disabledReason !== undefined ? 'opacity-60' : ''}`}
+            title={active.disabledReason}
+          >
             <input
               type="checkbox"
               aria-label={active.value ? `Deactivate ${name}` : `Activate ${name}`}
               data-testid="environment-active"
               checked={active.value}
+              disabled={active.disabledReason !== undefined}
               onChange={active.onToggle}
             />
             Active
@@ -149,6 +158,7 @@ function PageHeader({
         )}
       </div>
       {look}
+      {scope}
       <p className="text-xs text-fg-subtle">{hint}</p>
     </header>
   );
@@ -239,6 +249,87 @@ function WorkspacePage() {
   );
 }
 
+const SCOPE_OPTION_CLASS = 'flex items-center gap-1.5 text-sm text-fg-default';
+
+/**
+ * A workspace environment's **Applies to** (#468): every project, or the ones ticked. Narrowing
+ * starts from every project of the workspace, so nothing drops out of a switcher until a box is
+ * cleared; clearing every box is allowed and leaves the environment in no project. Each edit is
+ * built from the environment as it stands when its turn comes, so an id this machine does not know
+ * (a project a teammate has and this machine has not pulled) is kept.
+ */
+function AppliesTo({
+  environment,
+  projects,
+}: {
+  readonly environment: WorkspaceEnvironmentWire;
+  readonly projects: readonly WorkspaceProjectWire[];
+}) {
+  const scoped = environment.projects !== undefined;
+  const groupName = `applies-to-${environment.id}`;
+  return (
+    <fieldset data-testid="environment-applies-to" className="flex flex-col gap-1.5">
+      <legend className="mb-1 text-sm text-fg-subtle">Applies to</legend>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className={SCOPE_OPTION_CLASS}>
+          <input
+            type="radio"
+            name={groupName}
+            checked={!scoped}
+            onChange={() => {
+              void queueEnvironmentPatch(environment.id, (current) =>
+                current.projects === undefined ? undefined : { projects: null },
+              );
+            }}
+          />
+          All projects
+        </label>
+        <label className={SCOPE_OPTION_CLASS}>
+          <input
+            type="radio"
+            name={groupName}
+            checked={scoped}
+            onChange={() => {
+              void queueEnvironmentPatch(environment.id, (current) =>
+                current.projects !== undefined ? undefined : { projects: projects.map((project) => project.id) },
+              );
+            }}
+          />
+          Selected projects
+        </label>
+      </div>
+      {scoped && (
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 pl-1">
+          {projects.map((project) => (
+            <li key={project.id}>
+              <label className={SCOPE_OPTION_CLASS}>
+                <input
+                  type="checkbox"
+                  aria-label={`Applies to ${project.name}`}
+                  checked={appliesToProject(environment, project.id)}
+                  onChange={(event) => {
+                    const include = event.currentTarget.checked;
+                    void queueEnvironmentPatch(environment.id, (current) => {
+                      const list = current.projects ?? [];
+                      if (include === list.includes(project.id)) {
+                        return undefined;
+                      }
+                      return {
+                        projects: include ? [...list, project.id] : list.filter((id) => id !== project.id),
+                      };
+                    });
+                  }}
+                />
+                {project.name}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </fieldset>
+  );
+}
+
 /** A real environment's page: a workspace environment, or a linked project's own. */
 function EnvironmentScopePage({ environmentId }: { readonly environmentId: string }) {
   const workspace = useWorkspaceStore((state) => state.workspace);
@@ -264,7 +355,6 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
   const projectDisabled = useProjectStore((state) =>
     projectId === undefined ? undefined : state.projects[projectId]?.disabledProperties,
   );
-  const setWorkspaceActive = useWorkspaceStore((state) => state.setActiveEnvironment);
   // A workspace environment's *Active* toggle acts for the current project (#468).
   const currentProject = useCurrentProjectId();
   const currentActiveId = useWorkspaceStore((state) => selectActiveEnvironmentId(state, currentProject));
@@ -279,6 +369,11 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
 
   const isWorkspaceScoped = workspaceEnvironment !== undefined;
   const active = isWorkspaceScoped ? currentActiveId === environmentId : projectActiveId === environmentId;
+  // A workspace environment's toggle needs a current project it applies to (#468); main refuses the rest.
+  const activeDisabledReason =
+    workspaceEnvironment === undefined
+      ? undefined
+      : activeBlocker(workspaceEnvironment, currentProject, workspace?.projects ?? []);
 
   const owningProjectName = workspace?.projects.find((candidate) => candidate.id === projectId)?.name;
 
@@ -437,16 +532,20 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         }}
         active={{
           value: active,
+          ...(activeDisabledReason !== undefined ? { disabledReason: activeDisabledReason } : {}),
           onToggle: () => {
             if (isWorkspaceScoped) {
-              if (currentProject !== undefined) {
-                void setWorkspaceActive(currentProject, active ? null : environmentId);
+              if (currentProject !== undefined && activeDisabledReason === undefined) {
+                void setProjectEnvironment(currentProject, active ? null : environmentId);
               }
             } else if (projectId !== undefined) {
               void setProjectActive(projectId, active ? null : environmentId);
             }
           },
         }}
+        {...(workspaceEnvironment !== undefined
+          ? { scope: <AppliesTo environment={workspaceEnvironment} projects={workspace?.projects ?? []} /> }
+          : {})}
         look={
           <EnvironmentLook
             name={environment.name}
@@ -470,7 +569,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         }
         hint={
           isWorkspaceScoped
-            ? "A workspace environment, shared across every project — beaten by a linked project's own environment of the same name, when one is active."
+            ? "A workspace environment, shared across the projects it applies to — beaten by a linked project's own environment of the same name, when one is active."
             : "This project's own environment — its endpoint overrides and variables win over the workspace's, when both name the same interface."
         }
       />

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
 import { useCurrentValuesStore } from '../../src/renderer/state/current-values.js';
@@ -120,9 +120,16 @@ describe('EnvironmentPage — a workspace environment', () => {
       if (change.kind === 'update-workspace-environment') {
         const current = useWorkspaceStore.getState().workspace;
         if (current !== null) {
-          const environments = current.environments.map((candidate) =>
-            candidate.id === change.environmentId ? { ...candidate, ...change.patch } : candidate,
-          );
+          // As main does: `projects: null` drops the scope (#468) rather than storing a null.
+          const environments = current.environments.map((candidate) => {
+            if (candidate.id !== change.environmentId) {
+              return candidate;
+            }
+            const { projects, ...rest } = { ...candidate, ...change.patch } as WorkspaceEnvironmentWire & {
+              projects?: string[] | null;
+            };
+            return projects === null || projects === undefined ? rest : { ...rest, projects };
+          });
           useWorkspaceStore.setState({ workspace: { ...current, environments } });
         }
       }
@@ -132,7 +139,10 @@ describe('EnvironmentPage — a workspace environment', () => {
     useWorkspaceStore.setState({
       // `p1` is the current project (#468): the Active toggle acts for it.
       workspace: workspaceWire({
-        projects: [{ id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' }],
+        projects: [
+          { id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' },
+          { id: 'p2', name: 'Crm', slug: 'crm', source: 'internal', dir: '/tmp/c', status: 'ready' },
+        ],
         environments: [env],
         activeEnvironments: activeEnvironmentId !== undefined ? { p1: activeEnvironmentId } : {},
       }),
@@ -281,6 +291,94 @@ describe('EnvironmentPage — a workspace environment', () => {
     const { setActiveEnvironment } = setUp(environment, 'e1');
     fireEvent.click(screen.getByTestId('environment-active'));
     expect(setActiveEnvironment).toHaveBeenCalledWith('p1', null);
+  });
+
+  it('disables the Active toggle, with a tooltip, when the environment does not apply to the current project (#468)', () => {
+    const { setActiveEnvironment } = setUp({ ...environment, projects: ['p2'] });
+    const toggle = screen.getByTestId<HTMLInputElement>('environment-active');
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.closest('label')?.getAttribute('title')).toBe('uat does not apply to Billing');
+    fireEvent.click(toggle);
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
+  });
+
+  it('disables the Active toggle while there is no current project', () => {
+    setUp();
+    act(() => {
+      useWorkspaceStore.setState({ lastProjectId: undefined });
+    });
+    const toggle = screen.getByTestId<HTMLInputElement>('environment-active');
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.closest('label')?.getAttribute('title')).toMatch(/Open a request/);
+  });
+
+  it('applies to all projects by default, without a project list', () => {
+    setUp();
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'All projects' }).checked).toBe(true);
+    expect(screen.queryByRole('checkbox', { name: 'Applies to Billing' })).toBeNull();
+  });
+
+  it('narrows to Selected projects starting from every project, so no switcher loses it yet', async () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByRole('radio', { name: 'Selected projects' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { projects: ['p1', 'p2'] },
+      });
+    });
+  });
+
+  it('sends projects: null when switched back to All projects', async () => {
+    const { mutate } = setUp({ ...environment, projects: ['p1'] });
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Selected projects' }).checked).toBe(true);
+    fireEvent.click(screen.getByRole('radio', { name: 'All projects' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { projects: null },
+      });
+    });
+  });
+
+  it('ticks a second project into the scope', async () => {
+    const { mutate } = setUp({ ...environment, projects: ['p1'] });
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Applies to Billing' }).checked).toBe(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Applies to Crm' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { projects: ['p1', 'p2'] },
+      });
+    });
+  });
+
+  it('allows unticking every project, which sends an empty scope', async () => {
+    const { mutate } = setUp({ ...environment, projects: ['p1'] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Applies to Billing' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { projects: [] },
+      });
+    });
+  });
+
+  it('keeps a project id this machine does not know when the scope changes', async () => {
+    const { mutate } = setUp({ ...environment, projects: ['p1', 'p-not-pulled'] });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Applies to Billing' }));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        // A teammate may have that project; dropping it here would narrow their scope.
+        patch: { projects: ['p-not-pulled'] },
+      });
+    });
   });
 
   it('toggles a variable disabled and back through the disabled list', async () => {

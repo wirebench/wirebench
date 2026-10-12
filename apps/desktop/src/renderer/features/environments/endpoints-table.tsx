@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
+import { appliesToProject } from '../../state/environment-scope.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
 import type { ProjectWire } from '../../../shared/wire-types.js';
@@ -223,9 +224,11 @@ function EndpointRow({ row, gridRow, onCommit }: EndpointRowProps) {
 }
 
 /**
- * Every interface *and API* of every open project, in the workspace's project order, for a workspace
- * environment: `key` is `<projectSlug>/<entitySlug>`, the map a workspace environment stores its
- * overrides under. An API's rows follow its project's interfaces, as they do in the explorer.
+ * Every interface *and API* of every open project in the environment's scope (#468), in the
+ * workspace's project order, for a workspace environment: `key` is `<projectSlug>/<entitySlug>`,
+ * the map a workspace environment stores its overrides under. An API's rows follow its project's
+ * interfaces, as they do in the explorer. Overrides for a project out of scope stay in the file,
+ * unshown and unused, so adding the project back brings them back.
  */
 function workspaceRows(
   environment: WorkspaceEnvironmentWire,
@@ -236,6 +239,9 @@ function workspaceRows(
 ): readonly Row[] {
   const rows: Row[] = [];
   for (const project of workspaceProjectOrder) {
+    if (!appliesToProject(environment, project.id)) {
+      continue;
+    }
     const group = order.find((candidate) => candidate.projectId === project.id);
     const mirrored = projects[project.id];
     if (group === undefined && mirrored === undefined) {
@@ -329,9 +335,14 @@ export function EndpointsTable({ environmentId }: EndpointsTableProps) {
       projects,
       workspace?.projects.map((project) => ({ id: project.id, slug: project.slug })) ?? [],
     );
+    // Scoped to no project of this workspace (#468): nothing to override until *Applies to* names one.
+    const inNoProject = workspace?.projects.every((project) => !appliesToProject(workspaceEnvironment, project.id));
     return (
       <EndpointsTableView
         rows={rows}
+        {...(inNoProject === true && workspaceEnvironment.projects !== undefined
+          ? { emptyText: 'This environment applies to no project. Choose one under Applies to, above.' }
+          : {})}
         onCommit={(key, url) => {
           void queueEndpointOverride(environmentId, key, url);
         }}
@@ -392,16 +403,23 @@ export function EndpointsTable({ environmentId }: EndpointsTableProps) {
 
 function EndpointsTableView({
   rows,
+  emptyText,
   onCommit,
 }: {
   readonly rows: readonly Row[];
+  /** What an empty table says in place of the default "import something" hint. */
+  readonly emptyText?: string;
   readonly onCommit: (key: string, url: string) => void;
 }) {
   // A grid, as History, Keystores and the variables table above are: the override rows are one
   // tab stop, Up/Down/Home/End between them.
   const { gridProps, rowProps } = useGridNavigation(rows.length);
   if (rows.length === 0) {
-    return <p className="text-sm text-fg-subtle">Import a WSDL, or add an API, to override where it points here.</p>;
+    return (
+      <p className="text-sm text-fg-subtle">
+        {emptyText ?? 'Import a WSDL, or add an API, to override where it points here.'}
+      </p>
+    );
   }
   const hasSource = rows.some((row) => row.source !== undefined);
   // Leading and trailing blank spacer columns, matching the variables table's On and

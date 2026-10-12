@@ -177,10 +177,12 @@ export async function pushNow(page: Page): Promise<void> {
 export const ENVIRONMENT_NAME = 'Environment 1';
 
 /**
- * Adds a workspace environment holding `variable = value` and makes it the active one, which
- * writes the machine-local `local.yaml`. Leaves the Explorer view showing.
+ * Adds a workspace environment holding `variable = value` and makes it the active one for the
+ * calculator project, which writes the machine-local `local.yaml`. Leaves the Explorer view showing.
  */
 export async function addActiveEnvironment(page: Page, variable: string, value: string): Promise<void> {
+  // The switcher acts for the last focused request's project (#468); it offers nothing before one.
+  await openFirstRequest(page);
   await openEnvironmentsView(page);
   await page.getByRole('button', { name: 'Add environment' }).click();
   await expect(environmentRow(page, ENVIRONMENT_NAME)).toBeVisible();

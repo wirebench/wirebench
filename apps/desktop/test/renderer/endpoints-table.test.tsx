@@ -107,6 +107,65 @@ describe('EndpointsTable — workspace environment', () => {
   });
 });
 
+describe('EndpointsTable — a scoped workspace environment (#468)', () => {
+  const crmIface: InterfaceWire = { ...iface, id: 'iface-2', name: 'Contacts', slug: 'contacts' };
+
+  function setUp(projects: string[] | undefined) {
+    const environment: WorkspaceEnvironmentWire = {
+      id: 'e1',
+      name: 'uat',
+      slug: 'uat',
+      order: 0,
+      // The CRM override stays in the file while CRM is out of scope.
+      endpoints: { 'crm/contacts': 'http://crm.test' },
+      properties: {},
+      disabled: [],
+      ...(projects !== undefined ? { projects } : {}),
+    };
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [environment],
+        projects: [
+          { id: 'p1', name: 'Demo', slug: 'demo', source: 'internal', dir: '/tmp/demo', status: 'ready' },
+          { id: 'p2', name: 'Crm', slug: 'crm', source: 'internal', dir: '/tmp/crm', status: 'ready' },
+        ],
+      }),
+    });
+    useProjectStore.setState({
+      projects: {
+        p1: { id: 'p1', name: 'Demo', environments: [] } as unknown as ProjectWire,
+        p2: { id: 'p2', name: 'Crm', environments: [] } as unknown as ProjectWire,
+      },
+      interfaces: { 'iface-1': iface, 'iface-2': crmIface },
+      order: [
+        { projectId: 'p1', interfaceIds: ['iface-1'] },
+        { projectId: 'p2', interfaceIds: ['iface-2'] },
+      ],
+    });
+    render(<EndpointsTable environmentId="e1" />);
+  }
+
+  it('lists only the projects in scope', () => {
+    setUp(['p1']);
+    expect(screen.getAllByTestId('env-endpoints-group').map((group) => group.textContent)).toEqual(['Demo']);
+    expect(screen.queryByLabelText('Endpoint override for Crm › Contacts')).toBeNull();
+  });
+
+  it('lists every project when the environment applies to all of them', () => {
+    setUp(undefined);
+    expect(screen.getAllByTestId('env-endpoints-group').map((group) => group.textContent)).toEqual(['Demo', 'Crm']);
+    expect(screen.getByLabelText<HTMLInputElement>('Endpoint override for Crm › Contacts').value).toBe(
+      'http://crm.test',
+    );
+  });
+
+  it('lists no project for an environment scoped to none', () => {
+    setUp([]);
+    expect(screen.queryAllByTestId('env-endpoints-group')).toEqual([]);
+    expect(screen.getByText(/applies to no project/)).toBeTruthy();
+  });
+});
+
 describe('EndpointsTable — project environment', () => {
   const environment: EnvironmentWire = {
     id: 'e1',

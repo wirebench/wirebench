@@ -194,6 +194,18 @@ describe('environment commands', () => {
     await runCommand('env.next', context);
     expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e1');
   });
+
+  it('is unavailable when nothing applies to the current project, or there is no current project (#468)', () => {
+    const uat = { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [] };
+    useWorkspaceStore.setState({ workspace: workspace([{ ...uat, projects: ['p2'] }]) });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
+
+    useWorkspaceStore.setState({ workspace: workspace([uat]), lastProjectId: undefined });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
+
+    useWorkspaceStore.setState({ lastProjectId: 'p1' });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(true);
+  });
 });
 
 describe('editor layout commands', () => {
