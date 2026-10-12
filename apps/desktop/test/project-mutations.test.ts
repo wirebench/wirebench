@@ -5,7 +5,9 @@ import {
   createProject,
   createRequest,
   createRestRequest,
+  createWorkspaceEnvironment,
   isWirebenchError,
+  linkedEnvironment,
   soapInterfacesOf,
 } from '@wirebench/engine';
 import type { Interface, Project, RestResponseExample } from '@wirebench/engine';
@@ -283,7 +285,7 @@ describe('applyChange: environments', () => {
     expect(twice.project.environments.map((env) => env.order)).toEqual([0, 1]);
   });
 
-  it('update-environment renames (re-slugging) and replaces the endpoint/property maps whole', async () => {
+  it('update-environment renames (keeping the slug) and replaces the endpoint/property maps whole', async () => {
     const project = await withEnvironments();
     const target = project.environments[0]!;
 
@@ -298,10 +300,15 @@ describe('applyChange: environments', () => {
     );
     expect(renamed.project.environments[0]).toMatchObject({
       name: 'Staging',
-      slug: 'Staging',
+      // The slug links it to the workspace environment of the same slug (#475): a rename keeps it.
+      slug: 'Dev',
       endpoints: { Calculator: 'http://staging.test/soap' },
       properties: { who: 'me' },
     });
+
+    // The workspace environment named "Dev" still finds it, now called Staging.
+    const workspaceDev = createWorkspaceEnvironment('Dev', new Set());
+    expect(linkedEnvironment(renamed.project, workspaceDev)?.id).toBe(target.id);
 
     // A patch without a map leaves it alone; a patch with one replaces it (keys can disappear).
     const cleared = await applyChange(

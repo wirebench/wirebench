@@ -69,6 +69,13 @@ All notable changes to this project are documented here. The format follows
   by an older one, which refuses it as made by a newer Wirebench. A version-9 project opens unchanged
   (#338, #339, #348).
 
+### Fixed
+
+- **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
+  workspace a project environment applies through the workspace environment with the same slug; a
+  rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped
+  applying. A rename now keeps the slug, as a workspace environment's rename already did (#475).
+
 ## [6.0.0] - 2026-10-12
 
 ### Added
