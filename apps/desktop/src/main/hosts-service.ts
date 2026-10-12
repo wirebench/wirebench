@@ -9,8 +9,17 @@ import {
   secretNameOf,
   serializeHostsFile,
 } from '@wirebench/ssh';
-import type { GroupEntry, HostEntry, HostsFile, ResolvedHost, SshAuth, SshSettings } from '@wirebench/ssh';
 import type {
+  ForwardEntry,
+  GroupEntry,
+  HostEntry,
+  HostsFile,
+  ResolvedHost,
+  SshAuth,
+  SshSettings,
+} from '@wirebench/ssh';
+import type {
+  ForwardEntryWire,
   GroupEntryWire,
   HostEntryWire,
   HostsFileWire,
@@ -174,8 +183,24 @@ function settingsFromWire({ auth, ...rest }: SshSettingsWire): SshSettings {
   const model = authFromWire(auth);
   return { ...rest, ...(model ? { auth: model } : {}) };
 }
+function forwardFromWire(f: ForwardEntryWire): ForwardEntry {
+  if (!('type' in f)) return { id: f.id, enabled: false };
+  return {
+    id: f.id,
+    type: f.type,
+    port: f.port,
+    ...(f.bind === undefined ? {} : { bind: f.bind }),
+    ...(f.target === undefined ? {} : { target: f.target }),
+    ...(f.autoStart === undefined ? {} : { autoStart: f.autoStart }),
+    ...(f.enabled === undefined ? {} : { enabled: f.enabled }),
+  };
+}
 const hostToWire = (h: HostEntry): HostEntryWire => ({ ...h, tags: [...h.tags], ssh: settingsToWire(h.ssh) });
-const hostFromWire = (h: HostEntryWire): HostEntry => ({ ...h, ssh: settingsFromWire(h.ssh) });
+const hostFromWire = (h: HostEntryWire): HostEntry => ({
+  ...h,
+  ssh: settingsFromWire(h.ssh),
+  forwards: h.forwards?.map(forwardFromWire),
+});
 const groupToWire = (g: GroupEntry): GroupEntryWire => ({
   ...g,
   tags: [...g.tags],
@@ -186,6 +211,7 @@ const groupToWire = (g: GroupEntry): GroupEntryWire => ({
 const groupFromWire = (g: GroupEntryWire): GroupEntry => ({
   ...g,
   ssh: settingsFromWire(g.ssh),
+  forwards: g.forwards?.map(forwardFromWire),
   groups: g.groups.map(groupFromWire),
   hosts: g.hosts.map(hostFromWire),
 });
@@ -204,4 +230,5 @@ const resolvedToWire = (h: ResolvedHost): ResolvedHostWire => ({
   tags: [...h.tags],
   path: [...h.path],
   ssh: { ...h.ssh, auth: { value: authToWire(h.ssh.auth.value), from: h.ssh.auth.from } },
+  forwards: [...h.forwards],
 });

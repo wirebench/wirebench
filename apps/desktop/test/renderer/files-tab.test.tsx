@@ -34,7 +34,7 @@ beforeEach(() => {
   useHostsStore.setState({
     file: { version: 1, groups: [], hosts: [{ id: 'a', name: 'alpha', address: 'a.example', tags: [], ssh: {} }] },
     resolved: [],
-    sessions: {},
+    panes: {},
     trustPrompt: null,
   });
   useEditorsStore.getState().open({ id: TAB, kind: 'ssh-files', title: 'alpha · Files', hostId: 'a' });
@@ -55,8 +55,9 @@ it('connects on mount and lists the host’s home folder', async () => {
 it('Open terminal opens or focuses the host’s terminal tab', async () => {
   render(<Tab />);
   fireEvent.click(screen.getByRole('button', { name: /Open terminal/ }));
-  expect(useEditorsStore.getState().activeId).toBe('ssh:a');
-  expect(useEditorsStore.getState().tabs.map((t) => t.id)).toEqual([TAB, 'ssh:a']);
+  const terminal = useEditorsStore.getState().tabs.find((t) => t.kind === 'ssh-terminal');
+  expect(terminal?.panes).toMatchObject({ hostId: 'a' });
+  expect(useEditorsStore.getState().activeId).toBe(terminal?.id);
   await waitFor(() => {
     expect(list).toHaveBeenCalled();
   });

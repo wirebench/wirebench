@@ -37,7 +37,7 @@ beforeEach(() => {
   close.mockReset().mockResolvedValue({ ok: true, value: {} });
   trustHostKey.mockReset();
   useFilesStore.setState({ panes: {}, showHidden: false });
-  useHostsStore.setState({ trustPrompt: null, sessions: {}, connectFailed: {} });
+  useHostsStore.setState({ trustPrompt: null, panes: {}, connectFailed: {} });
   useEditorsStore.getState().reset();
   useEditorsStore.getState().open({ id: TAB, kind: 'ssh-files', title: 'a · Files', hostId: 'a' });
   useWorkspaceStore.setState({ workspace: { id: 'w1' } } as never);

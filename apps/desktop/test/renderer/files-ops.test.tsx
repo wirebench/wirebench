@@ -44,7 +44,7 @@ beforeEach(() => {
   useHostsStore.setState({
     file: { version: 1, groups: [], hosts: [] },
     resolved: [],
-    sessions: {},
+    panes: {},
     trustPrompt: null,
   });
   useEditorsStore.getState().open({ id: TAB, kind: 'ssh-files', title: 'a · Files', hostId: 'a' });

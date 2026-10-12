@@ -224,6 +224,7 @@ describe('AppShell', () => {
     render(<App />);
     act(() => {
       useHostsStore.getState().setTrustPrompt({
+        paneId: 'p1',
         hostId: 'a',
         size: { cols: 80, rows: 24 },
         host: 'h:22',
@@ -240,6 +241,7 @@ describe('AppShell', () => {
   it('mounts no trust prompt while the SSH area is switched off', () => {
     useUiStore.setState({ enabledAreas: AREAS.map((area) => area.id).filter((id) => id !== 'ssh') });
     useHostsStore.getState().setTrustPrompt({
+      paneId: 'p1',
       hostId: 'a',
       size: { cols: 80, rows: 24 },
       host: 'h:22',

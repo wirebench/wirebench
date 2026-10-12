@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { tabSetOf, tabsInSet, type TabSet } from './tab-sets.js';
 import type { EditorLayout } from '../features/request-editor/layout.js';
+import type { PaneNode } from '../features/ssh/panes/pane-tree.js';
 import type { EnvSendResult } from '../../shared/wire-types.js';
 
 /** Which fields the Form view shows. Owned here, not by the request pane's component state, so
@@ -109,8 +110,13 @@ export interface EditorTab {
    */
   readonly hookId?: string;
   /**
-   * Set when `kind` is `'ssh-terminal'` or `'ssh-files'`: the host this terminal or Files tab is connected
-   * to. Session only: a session is a moment, so the tab is never persisted.
+   * Set when `kind` is `'ssh-terminal'`: the tab's panes, each its own session to a host. Session only:
+   * a session is a moment, so the tab is never persisted.
+   */
+  readonly panes?: PaneNode;
+  /**
+   * Set when `kind` is `'ssh-files'`: the host this Files tab browses, over its own SFTP session. Session only,
+   * like a terminal tab.
    */
   readonly hostId?: string;
   /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */

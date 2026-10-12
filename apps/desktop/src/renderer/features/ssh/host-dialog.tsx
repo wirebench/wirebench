@@ -103,7 +103,12 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     const id = existing?.id ?? freeId(file, slug(name));
     const clean = dropEmpty(ssh);
     const next = isHost
-      ? upsertHost(file, { id, name: name.trim(), address: address.trim(), tags: tagList, ssh: clean }, parent)
+      ? upsertHost(
+          file,
+          // The form does not edit forwarding rules; an edited host keeps its own.
+          { id, name: name.trim(), address: address.trim(), tags: tagList, ssh: clean, forwards: existing?.forwards },
+          parent,
+        )
       : upsertGroup(file, { id, name: name.trim(), tags: tagList, ssh: clean, groups: [], hosts: [] }, parent);
     if (!(await save(next))) {
       setFailed(true);

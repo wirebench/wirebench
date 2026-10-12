@@ -291,8 +291,9 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       if (!opened.ok) {
         const { code, message, details } = opened.error;
         if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
+          // The Files tab stands in for the terminal's pane: the prompt resumes the tab's own connect.
           openTrustPrompt(
-            hostId,
+            { paneId: tabId, hostId },
             {
               retry: () => {
                 void get().connect(tabId, hostId);

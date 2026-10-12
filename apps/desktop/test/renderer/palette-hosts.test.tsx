@@ -27,7 +27,15 @@ const context: CommandContext = {
   selection: undefined,
 };
 
-const HOST = { id: 'a', name: 'api-1', address: '10.0.1.5', tags: ['prod'], path: ['prod', 'eu'], ssh: {} as never };
+const HOST = {
+  id: 'a',
+  name: 'api-1',
+  address: '10.0.1.5',
+  tags: ['prod'],
+  path: ['prod', 'eu'],
+  ssh: {} as never,
+  forwards: [],
+};
 
 /** What the app shell does with the palette: holds open and mode, and hands commands a way to reopen it. */
 function Shell() {
@@ -45,7 +53,7 @@ describe('hosts in the palette', () => {
   beforeEach(() => {
     resetCommands();
     useEditorsStore.getState().reset();
-    useHostsStore.setState({ resolved: [HOST], sessions: {}, file: { version: 1, groups: [], hosts: [] } });
+    useHostsStore.setState({ resolved: [HOST], panes: {}, file: { version: 1, groups: [], hosts: [] } });
     useUiStore.setState({ enabledAreas: ['explorer', 'ssh'] } as never);
   });
   afterEach(() => {
@@ -74,8 +82,8 @@ describe('hosts in the palette', () => {
     expect(screen.getByPlaceholderText('Connect to host')).toBeDefined();
     fireEvent.click(screen.getByText('api-1'));
     expect(close).toHaveBeenCalledWith(false);
-    expect(useEditorsStore.getState().tabs).toEqual([
-      { id: 'ssh:a', kind: 'ssh-terminal', title: 'api-1', hostId: 'a' },
+    expect(useEditorsStore.getState().tabs).toMatchObject([
+      { kind: 'ssh-terminal', title: 'api-1', panes: { kind: 'pane', hostId: 'a' } },
     ]);
   });
 

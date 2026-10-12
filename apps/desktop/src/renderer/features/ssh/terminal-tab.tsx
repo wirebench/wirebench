@@ -6,15 +6,15 @@ import { FolderOpen } from 'lucide-react';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { detectPlatform } from '../../lib/platform.js';
-import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { connectToHost, reconnectToHost, terminalTabId } from './connect.js';
+import { connectToHost, paneIsOpen, reconnectToHost } from './connect.js';
 import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
+import { leaves, type PaneLeaf, type PaneNode } from './panes/pane-tree.js';
 import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
 import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
@@ -30,7 +30,7 @@ function openLink(uri: string): void {
   window.open(uri, '_blank', 'noopener');
 }
 
-/** The terminal one mount of the tab owns, with what the session was last told its size is. */
+/** The terminal one mount of a pane owns, with what the session was last told its size is. */
 interface Live {
   readonly term: Terminal;
   readonly search: SearchAddon;
@@ -46,24 +46,23 @@ function hasSize(element: HTMLElement): boolean {
   return element.clientWidth > 0 && element.clientHeight > 0;
 }
 
-/** Closes a host's session for good: no more output routed, main told, the host idle again. */
-function endSession(hostId: string, sessionId: string): void {
+/** Closes a pane's session for good: no more output routed, main told, the pane idle again. */
+function endSession(paneId: string, sessionId: string): void {
   detachTerminal(sessionId);
   void ipc().ssh.close({ sessionId });
   const hosts = useHostsStore.getState();
-  if (hosts.sessions[hostId]?.sessionId === sessionId) hosts.setSession(hostId, undefined);
+  if (hosts.panes[paneId]?.sessionId === sessionId) hosts.setPane(paneId, undefined);
 }
 
 /**
- * A connect that ended after its tab was torn down. A remount of the same tab picks the session up from the
- * store; with the tab gone, nothing will, so the session and any trust prompt go with it.
+ * A connect that ended after its pane was torn down. A remount of the same pane picks the session up from
+ * the store; with the pane gone, nothing will, so the session and any trust prompt go with it.
  */
-function settleAfterTeardown(hostId: string, sessionId: string | undefined): void {
-  if (useEditorsStore.getState().tabs.some((t) => t.id === terminalTabId(hostId))) return;
-  if (sessionId !== undefined) endSession(hostId, sessionId);
+function settleAfterTeardown(paneId: string, sessionId: string | undefined): void {
+  if (paneIsOpen(paneId)) return;
+  if (sessionId !== undefined) endSession(paneId, sessionId);
   const hosts = useHostsStore.getState();
-  // A Files tab's prompt for the same host is not this terminal's to drop.
-  if (hosts.trustPrompt?.hostId === hostId && hosts.trustPrompt.retry === undefined) hosts.setTrustPrompt(null);
+  if (hosts.trustPrompt?.paneId === paneId) hosts.setTrustPrompt(null);
 }
 
 /** The line a reconnect leaves in the scrollback, dimmed, between the old session's output and the new one's. */
@@ -77,23 +76,86 @@ function secondsUntil(at: number, now: number): number {
 }
 
 /**
- * One host's shell. The tab stays mounted while another tab is in front (the editor area hides it),
- * so only closing the tab — or Reconnect, which bumps the host's nonce — ends the session. The tab
- * attaches to whatever session the hosts store records for its host, so a connect that went through
+ * A terminal tab: its pane tree, laid out. The tab stays mounted while another tab is in front (the editor
+ * area hides it), so only closing the tab ends its sessions.
+ */
+export function TerminalTab({
+  tabId,
+  panes,
+  active,
+}: {
+  readonly tabId: string;
+  readonly panes: PaneNode;
+  readonly active: boolean;
+}) {
+  // Connect on a host brings forward the tab used last with a pane on it.
+  useEffect(() => {
+    if (active) useHostsStore.getState().noteTerminalTabUsed(tabId);
+  }, [active, tabId]);
+  // Keystrokes go to one pane: the first, until panes can take focus.
+  const focused = leaves(panes)[0]?.paneId;
+  return <PaneView node={panes} active={active} focused={focused} />;
+}
+
+function PaneView({
+  node,
+  active,
+  focused,
+}: {
+  readonly node: PaneNode;
+  readonly active: boolean;
+  readonly focused: string | undefined;
+}) {
+  if (node.kind === 'pane') {
+    return (
+      <TerminalPane
+        key={`${node.paneId}:${node.hostId}`}
+        pane={node}
+        active={active}
+        focused={node.paneId === focused}
+      />
+    );
+  }
+  return (
+    <div className={`flex h-full w-full min-h-0 min-w-0 ${node.dir === 'row' ? 'flex-row' : 'flex-col'}`}>
+      <div className="min-h-0 min-w-0" style={{ flex: `${String(node.ratio)} 1 0` }}>
+        <PaneView node={node.a} active={active} focused={focused} />
+      </div>
+      <div className="min-h-0 min-w-0" style={{ flex: `${String(1 - node.ratio)} 1 0` }}>
+        <PaneView node={node.b} active={active} focused={focused} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One pane's shell. Only closing its tab — or Reconnect, which bumps the pane's nonce — ends the session.
+ * The pane attaches to whatever session the hosts store records for it, so a connect that went through
  * the trust prompt lands here too. A session the network dropped reconnects on its own (Preferences →
  * Terminal) into the same terminal, so the scrollback stays.
  */
-export function TerminalTab({ hostId, active }: { readonly hostId: string; readonly active: boolean }) {
+function TerminalPane({
+  pane,
+  active,
+  focused,
+}: {
+  readonly pane: PaneLeaf;
+  /** Whether the pane's tab is in front. */
+  readonly active: boolean;
+  /** Whether keystrokes go to this pane while its tab is in front. */
+  readonly focused: boolean;
+}) {
+  const { paneId, hostId } = pane;
   const holder = useRef<HTMLDivElement>(null);
   const live = useRef<Live | null>(null);
   /** The session keystrokes go to; unset until attached and again once the session has ended. */
   const target = useRef<string | undefined>(undefined);
-  const activeRef = useRef(active);
-  activeRef.current = active;
-  const nonce = useHostsStore((s) => s.reconnectNonce[hostId] ?? 0);
-  const session = useHostsStore((s) => s.sessions[hostId]);
+  const focusRef = useRef(active && focused);
+  focusRef.current = active && focused;
+  const nonce = useHostsStore((s) => s.reconnectNonce[paneId] ?? 0);
+  const session = useHostsStore((s) => s.panes[paneId]);
   // The last connect ended with no session (refused, failed, or the trust prompt dismissed).
-  const failed = useHostsStore((s) => s.connectFailed[hostId] === true) && session === undefined;
+  const failed = useHostsStore((s) => s.connectFailed[paneId] === true) && session === undefined;
   const sessionId = session?.sessionId;
   const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
   /** A multi-line paste held for the user's yes; xterm never saw it. */
@@ -208,14 +270,14 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     let disposed = false;
-    void connectToHost(hostId, sent).then((result) => {
-      if (disposed) settleAfterTeardown(hostId, result?.sessionId);
+    void connectToHost({ paneId, hostId }, sent).then((result) => {
+      if (disposed) settleAfterTeardown(paneId, result?.sessionId);
     });
 
     const loop = new Reconnector({
       attempt: async () => {
-        const outcome = await reconnectToHost(hostId, { cols: term.cols, rows: term.rows });
-        if (disposed) settleAfterTeardown(hostId, useHostsStore.getState().sessions[hostId]?.sessionId);
+        const outcome = await reconnectToHost({ paneId, hostId }, { cols: term.cols, rows: term.rows });
+        if (disposed) settleAfterTeardown(paneId, useHostsStore.getState().panes[paneId]?.sessionId);
         return outcome;
       },
       onChange: setReconnect,
@@ -242,20 +304,20 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       input.dispose();
       binary.dispose();
       results.dispose();
-      const current = useHostsStore.getState().sessions[hostId]?.sessionId;
-      if (current !== undefined) endSession(hostId, current);
+      const current = useHostsStore.getState().panes[paneId]?.sessionId;
+      if (current !== undefined) endSession(paneId, current);
       target.current = undefined;
       live.current = null;
       term.dispose();
     };
-  }, [hostId, nonce]);
+  }, [paneId, hostId, nonce]);
 
-  // Attach to the host's session once the store has one: from the connect above, or from the trust prompt.
+  // Attach to the pane's session once the store has one: from the connect above, or from the trust prompt.
   useEffect(() => {
     const current = live.current;
     if (sessionId === undefined || current === null) return;
     // A render from before a Reconnect still names the session the teardown just closed.
-    if (useHostsStore.getState().sessions[hostId]?.sessionId !== sessionId) return;
+    if (useHostsStore.getState().panes[paneId]?.sessionId !== sessionId) return;
     target.current = sessionId;
     attachTerminal(sessionId, {
       write: (data) => {
@@ -270,19 +332,19 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
       },
     });
     current.syncSize();
-    if (activeRef.current) current.term.focus();
+    if (focusRef.current) current.term.focus();
     return () => {
       detachTerminal(sessionId);
       if (target.current === sessionId) target.current = undefined;
     };
-  }, [hostId, sessionId, nonce]);
+  }, [paneId, sessionId, nonce]);
 
   // Coming back to the front: the holder had no size while hidden, so fit it now.
   useEffect(() => {
     if (!active) return;
     live.current?.refit();
-    live.current?.term.focus();
-  }, [active]);
+    if (focused) live.current?.term.focus();
+  }, [active, focused]);
 
   const waiting = reconnect.kind === 'waiting';
   useEffect(() => {
@@ -389,7 +451,7 @@ export function TerminalTab({ hostId, active }: { readonly hostId: string; reado
               type="button"
               className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
               onClick={() => {
-                useHostsStore.getState().bumpReconnect(hostId);
+                useHostsStore.getState().bumpReconnect(paneId);
               }}
             >
               Reconnect
