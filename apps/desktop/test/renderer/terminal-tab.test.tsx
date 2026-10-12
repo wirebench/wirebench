@@ -142,7 +142,7 @@ beforeEach(() => {
   useEditorsStore.getState().reset();
   useHostsStore.setState({
     file: { version: 1, groups: [], hosts: [{ id: 'a', name: 'alpha', address: 'a.example', tags: [], ssh: {} }] },
-    sessions: {},
+    panes: {},
     trustPrompt: null,
     connectFailed: {},
   });
@@ -152,6 +152,20 @@ afterEach(() => {
   cleanup();
   useEditorsStore.getState().reset();
 });
+
+/** The pane on a host, as its session was keyed by host before tabs held panes. */
+const paneIdOn = (hostId: string): string | undefined => {
+  const { panes } = useHostsStore.getState();
+  return Object.keys(panes).find((id) => panes[id]?.hostId === hostId);
+};
+const sessionOn = (hostId: string) => {
+  const id = paneIdOn(hostId);
+  const pane = id === undefined ? undefined : useHostsStore.getState().panes[id];
+  return pane === undefined ? undefined : { sessionId: pane.sessionId, state: pane.state };
+};
+
+/** The terminal tab's id (`ssh-terminal:<uuid>`). */
+const terminalTab = (): string => useEditorsStore.getState().tabs.find((t) => t.kind === 'ssh-terminal')?.id ?? '';
 
 /** The terminal the tab created most recently. */
 const lastTerminal = () => xterm.FakeTerminal.instances.at(-1);
@@ -164,7 +178,7 @@ describe('the terminal tab', () => {
     });
     render(<EditorArea />);
     await waitFor(() => {
-      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
+      expect(sessionOn('a')).toEqual({ sessionId: 's1', state: 'open' });
     });
     expect(connect).toHaveBeenCalledWith({ hostId: 'a', cols: 80, rows: 24 });
 
@@ -173,7 +187,7 @@ describe('the terminal tab', () => {
     });
     expect(screen.getByTestId('ssh-terminal').closest('[hidden]')).not.toBeNull();
     act(() => {
-      useEditorsStore.getState().activate('ssh:a');
+      useEditorsStore.getState().activate(terminalTab());
     });
     expect(screen.getByTestId('ssh-terminal').closest('[hidden]')).toBeNull();
     expect(close).not.toHaveBeenCalled();
@@ -181,10 +195,10 @@ describe('the terminal tab', () => {
     expect(xterm.FakeTerminal.instances).toHaveLength(1);
 
     act(() => {
-      useEditorsStore.getState().close('ssh:a');
+      useEditorsStore.getState().close(terminalTab());
     });
     expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
-    expect(useHostsStore.getState().sessions['a']).toBeUndefined();
+    expect(sessionOn('a')).toBeUndefined();
     expect(lastTerminal()?.disposed).toBe(true);
   });
 
@@ -200,7 +214,8 @@ describe('the terminal tab', () => {
     // What confirmTrust does once the user clicks Trust; output can arrive before the tab attaches.
     dispatch('ssh.data', { sessionId: 's2', data: bytesToBase64(new Uint8Array([104, 105])) });
     act(() => {
-      useHostsStore.getState().setSession('a', { sessionId: 's2', state: 'open' });
+      const { paneId = '' } = useHostsStore.getState().trustPrompt ?? {};
+      useHostsStore.getState().setPane(paneId, { hostId: 'a', sessionId: 's2', state: 'open' });
     });
     await waitFor(() => {
       expect(lastTerminal()?.written).toEqual([new Uint8Array([104, 105])]);
@@ -216,19 +231,19 @@ describe('the terminal tab', () => {
     });
     render(<EditorArea />);
     await waitFor(() => {
-      expect(useHostsStore.getState().sessions['a']?.sessionId).toBe('s1');
+      expect(sessionOn('a')?.sessionId).toBe('s1');
     });
     act(() => {
       dispatch('ssh.exit', { sessionId: 's1', code: 0 });
       useHostsStore.getState().noteSessionState('s1', 'closed');
     });
     expect(await screen.findByText('Session ended (code 0)')).toBeDefined();
-    expect(useEditorsStore.getState().tabs.map((t) => t.id)).toEqual(['ssh:a']);
+    expect(useEditorsStore.getState().tabs).toHaveLength(1);
 
     connect.mockResolvedValueOnce(OPEN('s3'));
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
     await waitFor(() => {
-      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's3', state: 'open' });
+      expect(sessionOn('a')).toEqual({ sessionId: 's3', state: 'open' });
     });
     expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
     expect(connect).toHaveBeenCalledTimes(2);
@@ -246,7 +261,7 @@ describe('the terminal tab', () => {
     connect.mockResolvedValueOnce(OPEN('s1'));
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
     await waitFor(() => {
-      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
+      expect(sessionOn('a')).toEqual({ sessionId: 's1', state: 'open' });
     });
     expect(connect).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/Could not connect/)).toBeNull();
@@ -281,7 +296,7 @@ describe('the terminal tab', () => {
       openTerminalFor('a');
     });
     await waitFor(() => {
-      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
+      expect(sessionOn('a')).toEqual({ sessionId: 's1', state: 'open' });
     });
     expect(connect).toHaveBeenCalledTimes(2);
     expect(useEditorsStore.getState().tabs).toHaveLength(1);
@@ -302,14 +317,14 @@ describe('the terminal tab', () => {
       expect(connect).toHaveBeenCalledTimes(1);
     });
     act(() => {
-      useEditorsStore.getState().close('ssh:a');
+      useEditorsStore.getState().close(terminalTab());
     });
     expect(close).not.toHaveBeenCalled();
     resolve(OPEN('s9'));
     await waitFor(() => {
       expect(close).toHaveBeenCalledWith({ sessionId: 's9' });
     });
-    expect(useHostsStore.getState().sessions['a']).toBeUndefined();
+    expect(sessionOn('a')).toBeUndefined();
   });
 
   it('the tab strip shows the session state as a dot', async () => {
@@ -333,7 +348,7 @@ describe('the terminal tab', () => {
       });
       render(<EditorArea />);
       await waitFor(() => {
-        expect(useHostsStore.getState().sessions['a']?.state).toBe('open');
+        expect(sessionOn('a')?.state).toBe('open');
       });
       return firePaste(text);
     }
@@ -427,7 +442,7 @@ describe('the terminal tab', () => {
       });
       render(<EditorArea />);
       await waitFor(() => {
-        expect(useHostsStore.getState().sessions['a']?.state).toBe('open');
+        expect(sessionOn('a')?.state).toBe('open');
       });
     }
     const select = (text: string) => {
@@ -508,7 +523,7 @@ describe('the terminal tab', () => {
       });
       render(<EditorArea />);
       await waitFor(() => {
-        expect(useHostsStore.getState().sessions['a']?.sessionId).toBe('s1');
+        expect(sessionOn('a')?.sessionId).toBe('s1');
       });
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
       vi.setSystemTime(0);
@@ -527,7 +542,7 @@ describe('the terminal tab', () => {
       expect(notice()).toContain('Connection lost · Reconnecting… attempt 1 of 10 in 1s');
       connect.mockResolvedValueOnce(OPEN('s2'));
       await advance(1000);
-      expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's2', state: 'open' });
+      expect(sessionOn('a')).toEqual({ sessionId: 's2', state: 'open' });
       expect(connect).toHaveBeenLastCalledWith({ hostId: 'a', cols: 80, rows: 24 });
       expect(xterm.FakeTerminal.instances).toHaveLength(1);
       expect(lastTerminal()?.disposed).toBe(false);
@@ -626,7 +641,7 @@ describe('the terminal tab', () => {
     it('closing the tab mid-wait stops the attempts', async () => {
       await dropped('lost');
       act(() => {
-        useEditorsStore.getState().close('ssh:a');
+        useEditorsStore.getState().close(terminalTab());
       });
       await advance(120_000);
       expect(connect).toHaveBeenCalledTimes(1);
@@ -641,7 +656,7 @@ describe('the terminal tab', () => {
       });
       render(<EditorArea />);
       await waitFor(() => {
-        expect(useHostsStore.getState().sessions['a']?.state).toBe('open');
+        expect(sessionOn('a')?.state).toBe('open');
       });
     }
     /** A keydown as the focused terminal's xterm sees it; returns whether xterm may handle it. */

@@ -10,7 +10,12 @@ import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 
 const request = (id: string): EditorTab => ({ id, kind: 'rest-request', title: id, restRequestId: id });
-const terminal = (id: string): EditorTab => ({ id, kind: 'ssh-terminal', title: id, hostId: id });
+const terminal = (id: string): EditorTab => ({
+  id,
+  kind: 'ssh-terminal',
+  title: id,
+  panes: { kind: 'pane', paneId: id, hostId: id },
+});
 const environment = (id: string): EditorTab => ({ id, kind: 'environment', title: id, environmentId: id });
 
 beforeEach(() => {

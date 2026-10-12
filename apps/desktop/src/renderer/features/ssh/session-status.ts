@@ -1,6 +1,4 @@
-import type { HostSession } from './hosts-store.js';
-
-/** How a host's session state is drawn: the dot's colour and its spoken label (tree rows, terminal tabs). */
+/** How a host's or a tab's state is drawn: the dot's colour and its spoken label (host cards, terminal tabs). */
 export const SESSION_STATUS = {
   idle: { label: 'not connected', color: 'text-fg-faint' },
   connecting: { label: 'connecting', color: 'text-status-warning' },
@@ -8,6 +6,8 @@ export const SESSION_STATUS = {
   closed: { label: 'not connected', color: 'text-fg-faint' },
 } as const;
 
-export function sessionStatus(session: HostSession | undefined): (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS] {
-  return SESSION_STATUS[session?.state ?? 'idle'];
+export function sessionStatus(
+  state: keyof typeof SESSION_STATUS | undefined,
+): (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS] {
+  return SESSION_STATUS[state ?? 'idle'];
 }

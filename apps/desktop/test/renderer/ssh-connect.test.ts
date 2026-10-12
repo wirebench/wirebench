@@ -8,6 +8,8 @@ import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 
 const SIZE = { cols: 80, rows: 24 };
+const A = { paneId: 'pa', hostId: 'a' };
+const B = { paneId: 'pb', hostId: 'b' };
 const NEW_KEY = {
   ok: false,
   error: {
@@ -18,7 +20,7 @@ const NEW_KEY = {
 };
 
 beforeEach(() => {
-  useHostsStore.setState({ sessions: {}, trustPrompt: null });
+  useHostsStore.setState({ panes: {}, trustPrompt: null });
   useProblemsStore.setState({ items: [] });
   connect.mockReset();
   trustHostKey.mockReset();
@@ -26,8 +28,8 @@ beforeEach(() => {
 
 it('a new host key opens the trust prompt; confirming trusts then connects', async () => {
   connect.mockResolvedValueOnce(NEW_KEY);
-  expect(await connectToHost('a', SIZE)).toBeUndefined();
-  expect(useHostsStore.getState().trustPrompt).toMatchObject({ hostId: 'a', fingerprint: 'SHA256:k' });
+  expect(await connectToHost(A, SIZE)).toBeUndefined();
+  expect(useHostsStore.getState().trustPrompt).toMatchObject({ paneId: 'pa', hostId: 'a', fingerprint: 'SHA256:k' });
   expect(useHostsStore.getState().trustPrompt?.previous).toBeUndefined();
   trustHostKey.mockResolvedValueOnce({ ok: true, value: {} });
   connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
@@ -39,7 +41,7 @@ it('a new host key opens the trust prompt; confirming trusts then connects', asy
     replace: false,
   });
   expect(useHostsStore.getState().trustPrompt).toBeNull();
-  expect(useHostsStore.getState().sessions['a']).toEqual({ sessionId: 's1', state: 'open' });
+  expect(useHostsStore.getState().panes['pa']).toEqual({ hostId: 'a', sessionId: 's1', state: 'open' });
 });
 
 it('a changed key carries the previous fingerprint', async () => {
@@ -51,14 +53,14 @@ it('a changed key carries the previous fingerprint', async () => {
       details: { host: 'h:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:k', previous: 'SHA256:old' },
     },
   });
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
   expect(useHostsStore.getState().trustPrompt?.previous).toBe('SHA256:old');
 });
 
 it('any other error clears the connecting state and records a problem', async () => {
   connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
-  await connectToHost('a', SIZE);
-  expect(useHostsStore.getState().sessions['a']).toBeUndefined();
+  await connectToHost(A, SIZE);
+  expect(useHostsStore.getState().panes['pa']).toBeUndefined();
   expect(useProblemsStore.getState().items).toMatchObject([
     { groupId: 'ssh:a', source: 'hosts', problem: { code: 'ssh-auth-failed', message: 'nope' } },
   ]);
@@ -66,7 +68,7 @@ it('any other error clears the connecting state and records a problem', async ()
 
 it('a trust refused because the key changed meanwhile reopens the prompt with the new details', async () => {
   connect.mockResolvedValueOnce(NEW_KEY);
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
   trustHostKey.mockResolvedValueOnce({
     ok: false,
     error: {
@@ -86,7 +88,7 @@ it('a trust refused because the key changed meanwhile reopens the prompt with th
 
 it('a trust main no longer expects retries the connect once', async () => {
   connect.mockResolvedValueOnce(NEW_KEY);
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
   trustHostKey.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-host-key-unexpected', message: 'again' } });
   connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's2' } });
   expect(await confirmTrust(false)).toEqual({ sessionId: 's2' });
@@ -96,7 +98,7 @@ it('a trust main no longer expects retries the connect once', async () => {
 
 it('any other trust failure records a problem', async () => {
   connect.mockResolvedValueOnce(NEW_KEY);
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
   trustHostKey.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-known-hosts-write', message: 'disk' } });
   expect(await confirmTrust(false)).toBeUndefined();
   expect(connect).toHaveBeenCalledTimes(1);
@@ -107,30 +109,32 @@ it('any other trust failure records a problem', async () => {
 
 it('a failure then a success leaves no problem for the host', async () => {
   connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
   connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
   expect(useProblemsStore.getState().items).toEqual([]);
 });
 
 it('two failures leave exactly one problem for the host', async () => {
   connect.mockResolvedValue({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
-  await connectToHost('a', SIZE);
-  await connectToHost('a', SIZE);
+  await connectToHost(A, SIZE);
+  await connectToHost(A, SIZE);
   expect(useProblemsStore.getState().items).toHaveLength(1);
 });
 
-it('a host that is open or connecting is not connected twice', async () => {
-  useHostsStore.setState({ sessions: { a: { sessionId: 's1', state: 'open' }, b: { state: 'connecting' } } });
-  expect(await connectToHost('a', SIZE)).toEqual({ sessionId: 's1' });
-  expect(await connectToHost('b', SIZE)).toBeUndefined();
+it('a pane that is open or connecting is not connected twice', async () => {
+  useHostsStore.setState({
+    panes: { pa: { hostId: 'a', sessionId: 's1', state: 'open' }, pb: { hostId: 'b', state: 'connecting' } },
+  });
+  expect(await connectToHost(A, SIZE)).toEqual({ sessionId: 's1' });
+  expect(await connectToHost(B, SIZE)).toBeUndefined();
   expect(connect).not.toHaveBeenCalled();
 });
 
 it('a rejected connect clears the connecting state and records a problem', async () => {
   connect.mockRejectedValueOnce(new Error('bridge down'));
-  expect(await connectToHost('a', SIZE)).toBeUndefined();
-  expect(useHostsStore.getState().sessions['a']).toBeUndefined();
+  expect(await connectToHost(A, SIZE)).toBeUndefined();
+  expect(useHostsStore.getState().panes['pa']).toBeUndefined();
   expect(useProblemsStore.getState().items).toMatchObject([
     { groupId: 'ssh:a', problem: { code: 'ssh-connect-failed', message: 'bridge down' } },
   ]);

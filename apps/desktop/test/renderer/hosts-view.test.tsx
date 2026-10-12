@@ -25,6 +25,13 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { DEFAULT_HOSTS_PREFS, readHostsPrefs, writeHostsPrefs } from '../../src/renderer/features/ssh/hosts-prefs.js';
 import type { WorkspaceWire } from '../../src/shared/wire-base.js';
 
+/** The host of the terminal tab in front (its one pane). */
+const activeTerminalHost = (): string | undefined => {
+  const { tabs, activeId } = useEditorsStore.getState();
+  const panes = tabs.find((t) => t.id === activeId)?.panes;
+  return panes?.kind === 'pane' ? panes.hostId : undefined;
+};
+
 const defaults = {
   user: { value: undefined, from: 'default' },
   port: { value: 22, from: 'default' },
@@ -55,10 +62,11 @@ const STATE = {
       address: '10.0.0.1',
       tags: ['prod'],
       path: ['g'],
+      forwards: [],
       ssh: defaults,
       incomplete: { field: 'user' as const },
     },
-    { id: 'b', name: 'beta', address: 'beta.example', tags: [], path: [], ssh: defaults },
+    { id: 'b', name: 'beta', address: 'beta.example', tags: [], path: [], ssh: defaults, forwards: [] },
   ],
   problems: [{ code: 'ssh-bad-yaml', message: 'could not parse' }],
   loaded: true,
@@ -94,7 +102,7 @@ beforeEach(() => {
     groupFilter: undefined,
     osByHost: {},
     dialog: null,
-    sessions: {},
+    panes: {},
     homeView: 'hosts',
     selectedHostId: undefined,
     detailsOpen: false,
@@ -232,9 +240,14 @@ describe('Hosts tab', () => {
     render(<SshArea />);
     await userEvent.dblClick(screen.getByTestId('host-row-b'));
     expect(useEditorsStore.getState().tabs).toEqual([
-      { id: 'ssh:b', kind: 'ssh-terminal', title: 'beta', hostId: 'b' },
+      {
+        id: expect.stringMatching(/^ssh-terminal:/) as unknown,
+        kind: 'ssh-terminal',
+        title: 'beta',
+        panes: { kind: 'pane', paneId: expect.any(String) as unknown, hostId: 'b' },
+      },
     ]);
-    expect(useEditorsStore.getState().activeId).toBe('ssh:b');
+    expect(useEditorsStore.getState().activeId).toBe(useEditorsStore.getState().tabs[0]?.id);
   });
   it('the second press connects the host the first picked, even when the card moved from under it', () => {
     useEditorsStore.getState().reset();
@@ -243,7 +256,7 @@ describe('Hosts tab', () => {
     // press, at the same spot, lands on another card.
     fireEvent.mouseDown(screen.getByTestId('host-row-b'), { detail: 1, clientX: 40, clientY: 40 });
     fireEvent.mouseDown(screen.getByTestId('host-row-a'), { detail: 2, clientX: 41, clientY: 40 });
-    expect(useEditorsStore.getState().tabs.map((t) => t.id)).toEqual(['ssh:b']);
+    expect(useEditorsStore.getState().tabs.map((t) => t.panes)).toMatchObject([{ hostId: 'b' }]);
   });
   it('two presses far apart connect nothing', () => {
     useEditorsStore.getState().reset();
@@ -253,7 +266,7 @@ describe('Hosts tab', () => {
     expect(useEditorsStore.getState().tabs).toEqual([]);
   });
   it('a connected host shows it in its row', () => {
-    useHostsStore.setState({ sessions: { b: { sessionId: 's1', state: 'open' } } });
+    useHostsStore.setState({ panes: { p1: { hostId: 'b', sessionId: 's1', state: 'open' } } });
     render(<SshArea />);
     expect(screen.getByLabelText('connected')).toBeDefined();
   });
@@ -358,7 +371,7 @@ describe('Hosts tab view', () => {
           { id: 'y', name: 'yak', address: '10.0.0.2', tags: [], ssh: {} },
         ],
       },
-      sessions: { z: { sessionId: 's', state: 'open' } },
+      panes: { p1: { hostId: 'z', sessionId: 's', state: 'open' } },
     });
     render(<SshHome />);
     const names = (): string[] => screen.getAllByTestId(/^host-row-/).map((el) => el.dataset['hostCard'] ?? '');
@@ -378,7 +391,7 @@ describe('Hosts tab view', () => {
     await userEvent.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(screen.getByTestId('host-row-a'));
     await userEvent.keyboard('{Enter}');
-    expect(useEditorsStore.getState().activeId).toBe('ssh:a');
+    expect(activeTerminalHost()).toBe('a');
   });
   it('the ⋯ menu offers the same actions as right-click', async () => {
     useEditorsStore.getState().reset();
@@ -386,7 +399,7 @@ describe('Hosts tab view', () => {
     await userEvent.click(screen.getByRole('button', { name: 'More actions for beta' }));
     expect(await screen.findByRole('menuitem', { name: 'Duplicate' })).toBeDefined();
     await userEvent.click(screen.getByRole('menuitem', { name: 'Connect' }));
-    expect(useEditorsStore.getState().activeId).toBe('ssh:b');
+    expect(activeTerminalHost()).toBe('b');
   });
   it('New host ▾ offers a group and the SSH config import', async () => {
     render(<SshHome />);
@@ -546,7 +559,7 @@ describe('Clicking the picked card', () => {
     render(<SshHome />);
     expect(within(screen.getByTestId('host-row-b')).queryByRole('button', { name: 'Connect' })).toBeNull();
     await userEvent.dblClick(screen.getByTestId('host-row-b'));
-    expect(useEditorsStore.getState().activeId).toBe('ssh:b');
+    expect(activeTerminalHost()).toBe('b');
   });
 });
 
@@ -630,6 +643,19 @@ describe('Host OS', () => {
     await userEvent.selectOptions(select, 'debian');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(setHostOs).toHaveBeenCalledWith({ host: '10.0.0.1:22', os: 'debian' });
+  });
+  it('saving an edited host keeps its forwarding rules', async () => {
+    const forwards = [{ id: 'pg', type: 'local' as const, port: 5432, target: 'db:5432' }];
+    const group = STATE.file.groups[0] as (typeof STATE.file.groups)[number];
+    useHostsStore.setState({
+      file: { ...STATE.file, groups: [{ ...group, hosts: [{ ...group.hosts[0]!, forwards }] }] },
+      selectedHostId: 'a',
+      dialog: { mode: 'edit-host', id: 'a' },
+    });
+    render(<HostDetails />);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    expect(sent.file.groups[0]?.hosts[0]).toMatchObject({ id: 'a', forwards });
   });
   it('saving without touching the OS stores nothing', async () => {
     useHostsStore.setState({ selectedHostId: 'a', dialog: { mode: 'edit-host', id: 'a' } });
