@@ -68,6 +68,7 @@ describe('buildApi', () => {
       'mock',
       'oauth2',
       'on',
+      'pathForFile',
       'preferences',
       'project',
       'request',
@@ -95,6 +96,12 @@ describe('buildApi', () => {
       'xpath',
     ]);
     expect('ipcRenderer' in api).toBe(false);
+  });
+
+  it("reads a dropped file's path through the transport it is given, and none without one", () => {
+    const file = new File([''], 'a.txt');
+    expect(buildApi(vi.fn(), vi.fn()).pathForFile(file)).toBe('');
+    expect(buildApi(vi.fn(), vi.fn(), undefined, (f) => `/drop/${f.name}`).pathForFile(file)).toBe('/drop/a.txt');
   });
 
   it('defaults env to a non-e2e dark build, and carries whatever the caller passes', () => {

@@ -17,6 +17,7 @@ export function registerSshChannels(deps: {
   importer: Pick<SshImportService, 'preview' | 'apply'>;
   keys: Pick<SshKeysService, 'generate' | 'keys' | 'install'>;
   sftp: Parameters<typeof registerSftpChannels>[0]['sftp'];
+  transfers: Parameters<typeof registerSftpChannels>[0]['transfers'];
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
   registerHandler(channels.ssh.saveHosts, (request) => deps.hosts.save(request.file));
@@ -60,5 +61,5 @@ export function registerSshChannels(deps: {
   registerHandler(channels.ssh.keys, async (_request, sender) => ({ keys: await deps.keys.keys(sender) }));
   registerHandler(channels.ssh.installKey, (request, sender) => deps.keys.install(sender, request));
   // The Files tab rides with the SSH area: off with it, so its local-path exception (spec R5) goes too.
-  registerSftpChannels({ sftp: deps.sftp });
+  registerSftpChannels({ sftp: deps.sftp, transfers: deps.transfers });
 }

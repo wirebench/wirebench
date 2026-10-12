@@ -107,6 +107,8 @@ export type TransferStateWire = z.infer<typeof transferStateWireSchema>;
 export const sftpTransferEventSchema = z.object({
   transferId: z.string(),
   batchId: z.string(),
+  /** The file's path under the batch's target folder, `/`-separated (`site/css/a.css`). */
+  name: z.string(),
   state: transferStateWireSchema,
   /** Bytes. */
   done: z.number(),
@@ -118,6 +120,8 @@ const conflictSideSchema = z.object({ size: z.number(), mtime: z.number() });
 export const sftpConflictEventSchema = z.object({
   batchId: z.string(),
   transferId: z.string(),
+  /** As in `sftp.transfer`. */
+  name: z.string(),
   existing: conflictSideSchema,
   incoming: conflictSideSchema,
   /** Clashes of the batch still to come after this one. */

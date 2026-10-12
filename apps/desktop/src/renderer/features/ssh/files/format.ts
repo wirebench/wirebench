@@ -1,21 +1,44 @@
 /**
- * Pure helpers of the Files tab: remote paths, crumbs, and how an entry's size, time and mode read. Remote
- * paths are POSIX strings the server resolves; nothing here normalises one beyond joining with `/`.
+ * Pure helpers of the Files tab: paths, crumbs, and how an entry's size, time and mode read. A host's paths
+ * are POSIX strings the server resolves; this machine's are the same, except on Windows (`C:\…`), where
+ * they use backslashes. Nothing here normalises a path beyond joining and cutting it.
  */
 import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
 import type { PaneSort } from './files-store.js';
 
-/** `name` inside `dir`. */
-export function joinRemote(dir: string, name: string): string {
-  return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`;
+/** A drive path (`C:\…`, `C:/…`) or a share (`\\server\share`): a Windows path of this machine. */
+const WINDOWS_ROOT = /^(?:[A-Za-z]:(?:[\\/]|$)|\\\\)/;
+
+/** The separator `path` uses. */
+const separatorOf = (path: string): string => (WINDOWS_ROOT.test(path) ? '\\' : '/');
+
+/** `C:\` of `C:\Users\me`, `/` of a POSIX path. */
+function rootOf(path: string): string {
+  const drive = /^[A-Za-z]:/.exec(path);
+  return drive ? `${drive[0]}\\` : '/';
 }
 
-/** The folder holding `path`; the root is its own parent. */
-export function parentOf(path: string): string {
-  const trimmed = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
-  const cut = trimmed.lastIndexOf('/');
-  return cut <= 0 ? '/' : trimmed.slice(0, cut);
+/** `name` inside `dir`. */
+export function joinPath(dir: string, name: string): string {
+  const separator = separatorOf(dir);
+  return dir.endsWith(separator) || dir.endsWith('/') ? `${dir}${name}` : `${dir}${separator}${name}`;
 }
+
+/** The folder holding `path`; a root is its own parent. */
+export function parentOf(path: string): string {
+  const root = rootOf(path);
+  let trimmed = path;
+  while (trimmed.length > root.length && /[\\/]$/.test(trimmed)) trimmed = trimmed.slice(0, -1);
+  if (trimmed.length <= root.length) return root;
+  const cut =
+    separatorOf(path) === '\\'
+      ? Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/'))
+      : trimmed.lastIndexOf('/');
+  return cut < root.length ? root : trimmed.slice(0, cut);
+}
+
+/** An absolute path on either kind of machine. */
+const isAbsolute = (path: string): boolean => path.startsWith('/') || WINDOWS_ROOT.test(path);
 
 /**
  * What a typed path means: `~` and `~/…` are under the pane's home, a relative path is under the current
@@ -25,9 +48,9 @@ export function resolveTyped(input: string, home: string, current: string): stri
   const text = input.trim();
   if (text === '') return current;
   if (text === '~') return home;
-  if (text.startsWith('~/')) return joinRemote(home, text.slice(2));
-  if (text.startsWith('/')) return text;
-  return joinRemote(current, text);
+  if (text.startsWith('~/') || text.startsWith('~\\')) return joinPath(home, text.slice(2));
+  if (isAbsolute(text)) return text;
+  return joinPath(current, text);
 }
 
 /** One crumb of a path bar: what it shows and where a click goes. */
@@ -38,11 +61,13 @@ export interface Crumb {
 
 /** The crumbs of an absolute path: the root, then each folder down to the last. */
 export function crumbsOf(path: string): readonly Crumb[] {
-  const crumbs: Crumb[] = [{ label: '/', path: '/' }];
-  let at = '';
-  for (const part of path.split('/')) {
+  const root = rootOf(path);
+  const separator = separatorOf(path);
+  const crumbs: Crumb[] = [{ label: root === '/' ? '/' : root.slice(0, -1), path: root }];
+  let at = root;
+  for (const part of path.slice(root.length).split(/[\\/]/)) {
     if (part === '') continue;
-    at = `${at}/${part}`;
+    at = at === root ? `${root}${part}` : `${at}${separator}${part}`;
     crumbs.push({ label: part, path: at });
   }
   return crumbs;

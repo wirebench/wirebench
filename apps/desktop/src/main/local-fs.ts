@@ -86,6 +86,21 @@ export async function localStat(path: string): Promise<SftpEntryWire> {
   }
 }
 
+/**
+ * For a copy: the entry for `path` with its permission bits (an upload keeps them), or `undefined` when
+ * nothing is there.
+ */
+export async function localEntry(path: string): Promise<SftpEntryWire | undefined> {
+  try {
+    const entry = await entryOf(path, basename(path) || path);
+    const { mode } = await lstat(path);
+    return { ...entry, mode: mode & 0o7777 };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw localFsError(error, 'stat', path);
+  }
+}
+
 /** One folder; an existing path is `sftp-exists`. */
 export async function localMkdir(path: string): Promise<void> {
   try {

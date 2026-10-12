@@ -1,18 +1,36 @@
 /**
- * The Files tabs' state: one remote pane per tab, with its SFTP session, folder, listing, selection and Back
- * history. Every file operation is a typed channel to main; this store only remembers what main answered.
- * Each host's last folder and the hidden-entries toggle are remembered on this machine (`files-prefs.ts`).
+ * The Files tabs' state: two panes per tab, this machine on the left and the host on the right, each with its
+ * place, folder, listing, selection and Back history (the host's with its SFTP session). A pane's id is its
+ * tab's id for the host's pane and {@link localPaneId} for this machine's. Every file operation is a typed
+ * channel to main; this store only remembers what main answered. Each host's last folder and the
+ * hidden-entries toggle are remembered on this machine (`files-prefs.ts`).
  */
 import { create } from 'zustand';
 import type { IpcResult } from '../../../../shared/ipc.js';
-import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
+import type { SftpEntryWire, SftpPlaceWire } from '../../../../shared/sftp-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 import { openTrustPrompt } from '../connect.js';
 import { folderKey, readFilesPrefs, updateFilesPrefs } from './files-prefs.js';
-import { freeName, joinRemote, parentOf } from './format.js';
+import { freeName, joinPath, parentOf } from './format.js';
+
+/** The id of a tab's pane for this machine; the host's pane has the tab's own id. */
+export function localPaneId(tabId: string): string {
+  return `${tabId}#local`;
+}
+
+/** The tab a pane belongs to. */
+export function tabOfPane(paneId: string): string {
+  return paneId.endsWith('#local') ? paneId.slice(0, -'#local'.length) : paneId;
+}
+
+/** The pane beside `paneId` in its tab. */
+export function otherPaneId(paneId: string): string {
+  const tabId = tabOfPane(paneId);
+  return paneId === tabId ? localPaneId(tabId) : tabId;
+}
 
 export interface PaneError {
   readonly code: string;
@@ -26,11 +44,14 @@ export interface PaneSort {
   readonly descending: boolean;
 }
 
+export type PanePlace =
+  { readonly kind: 'local' } | { readonly kind: 'remote'; readonly hostId: string; readonly sessionId?: string };
+
 export interface PaneState {
-  readonly place: { readonly kind: 'remote'; readonly hostId: string; readonly sessionId?: string };
+  readonly place: PanePlace;
   /** The absolute folder listed; `''` until the first listing lands. */
   readonly path: string;
-  /** The server's login folder, what `~` means. */
+  /** The server's login folder, or this machine's home folder: what `~` means. */
   readonly home: string;
   readonly entries: readonly SftpEntryWire[];
   /** Names in `path`. */
@@ -53,8 +74,16 @@ export type PaneDialog =
   | { readonly kind: 'permissions'; readonly name: string; readonly mode: number };
 
 interface FilesState {
-  /** By editor tab id. */
+  /** By pane id (see {@link localPaneId}). The store's per-pane actions take a pane id. */
   readonly panes: Readonly<Record<string, PaneState>>;
+  /** Per tab: the pane last used, which the `sftp.*` commands act on. */
+  readonly activePanes: Readonly<Record<string, string>>;
+  setActivePane: (paneId: string) => void;
+  /** Bumped per pane to move the keyboard into its list (Tab from the other pane). */
+  readonly focusRequests: Readonly<Record<string, number>>;
+  focusPane: (paneId: string) => void;
+  /** Lists this machine's home folder in a new local pane; a pane already listing is left as it is. */
+  openLocal: (paneId: string) => Promise<void>;
   /** Whether names starting with `.` show; one setting for every pane, remembered on this machine. */
   readonly showHidden: boolean;
   /** Bumped per tab to turn its path bar into a text field (⌘L). */
@@ -86,7 +115,7 @@ interface FilesState {
   setSort: (tabId: string, sort: PaneSort) => void;
   /** Main ended a session (lost, or the workspace went): its pane says so and offers to connect again. */
   noteClosed: (sessionId: string) => void;
-  /** The tab closed: its session ends and its state goes. */
+  /** The tab closed: its session ends and both panes' state goes. */
   close: (tabId: string) => void;
 }
 
@@ -125,6 +154,16 @@ function tabExists(tabId: string): boolean {
   return useEditorsStore.getState().tabs.some((t) => t.id === tabId);
 }
 
+/** Where a pane's operations go: this machine, or its session; `undefined` while a host's pane has none. */
+export function placeWireOf(pane: PaneState): SftpPlaceWire | undefined {
+  if (pane.place.kind === 'local') return { kind: 'local' };
+  return pane.place.sessionId === undefined ? undefined : { kind: 'remote', sessionId: pane.place.sessionId };
+}
+
+/** The session of a host's pane. */
+const sessionOf = (pane: PaneState | undefined): string | undefined =>
+  pane?.place.kind === 'remote' ? pane.place.sessionId : undefined;
+
 function rememberFolder(hostId: string, path: string): void {
   const workspaceId = useWorkspaceStore.getState().workspace?.id;
   if (workspaceId === undefined) return;
@@ -152,22 +191,18 @@ function freshPane(hostId: string): PaneState {
   };
 }
 
-/** Where a tab's file operations go: its session and folder, and the names already there. */
-interface RemoteTarget {
-  readonly place: { readonly kind: 'remote'; readonly sessionId: string };
+/** Where a pane's file operations go: its place and folder, and the names already there. */
+interface PaneTarget {
+  readonly place: SftpPlaceWire;
   readonly path: string;
   readonly names: readonly string[];
 }
 
-function remoteTarget(tabId: string): RemoteTarget | undefined {
-  const pane = useFilesStore.getState().panes[tabId];
-  const sessionId = pane?.place.sessionId;
-  if (pane === undefined || sessionId === undefined || pane.path === '') return undefined;
-  return {
-    place: { kind: 'remote' as const, sessionId },
-    path: pane.path,
-    names: pane.entries.map((e) => e.name),
-  };
+function paneTarget(paneId: string): PaneTarget | undefined {
+  const pane = useFilesStore.getState().panes[paneId];
+  const place = pane === undefined ? undefined : placeWireOf(pane);
+  if (pane === undefined || place === undefined || pane.path === '') return undefined;
+  return { place, path: pane.path, names: pane.entries.map((e) => e.name) };
 }
 
 export const useFilesStore = create<FilesState>()((set, get) => {
@@ -182,6 +217,48 @@ export const useFilesStore = create<FilesState>()((set, get) => {
 
   return {
     panes: {},
+    activePanes: {},
+    setActivePane: (paneId) => {
+      const tabId = tabOfPane(paneId);
+      if (get().activePanes[tabId] !== paneId) set({ activePanes: { ...get().activePanes, [tabId]: paneId } });
+    },
+    focusRequests: {},
+    focusPane: (paneId) => {
+      const { focusRequests } = get();
+      set({ focusRequests: { ...focusRequests, [paneId]: (focusRequests[paneId] ?? 0) + 1 } });
+      get().setActivePane(paneId);
+    },
+    openLocal: async (paneId) => {
+      // A pane that never listed (its home could not be read) may try again.
+      const existing = get().panes[paneId];
+      if (existing !== undefined && !(existing.status === 'error' && existing.path === '')) return;
+      set({
+        panes: {
+          ...get().panes,
+          [paneId]: {
+            place: { kind: 'local' },
+            path: '',
+            home: '',
+            entries: [],
+            selected: [],
+            history: [],
+            status: 'loading',
+            sort: DEFAULT_SORT,
+          },
+        },
+      });
+      const home = await settle(() => ipc().sftp.localHome({}), 'The home folder could not be found');
+      if (get().panes[paneId] === undefined) return;
+      if (!home.ok) {
+        patch(paneId, { status: 'error', error: errorOf(home.error, 'The home folder could not be found') });
+        return;
+      }
+      patch(paneId, { home: home.value.home });
+      if (!(await get().navigate(paneId, home.value.home))) {
+        const pane = get().panes[paneId];
+        if (pane !== undefined && pane.path === '') patch(paneId, { status: 'error' });
+      }
+    },
     showHidden: readFilesPrefs().showHidden,
     pathEditRequests: {},
     dialogs: {},
@@ -194,11 +271,11 @@ export const useFilesStore = create<FilesState>()((set, get) => {
     },
 
     newFolder: async (tabId) => {
-      const target = remoteTarget(tabId);
+      const target = paneTarget(tabId);
       if (target === undefined) return;
       const name = freeName('New folder', target.names);
       const made = await settle(
-        () => ipc().sftp.mkdir({ place: target.place, path: joinRemote(target.path, name) }),
+        () => ipc().sftp.mkdir({ place: target.place, path: joinPath(target.path, name) }),
         'The folder could not be made',
       );
       if (!made.ok) {
@@ -212,14 +289,14 @@ export const useFilesStore = create<FilesState>()((set, get) => {
     },
 
     rename: async (tabId, from, to) => {
-      const target = remoteTarget(tabId);
+      const target = paneTarget(tabId);
       if (target === undefined) return false;
       const renamed = await settle(
         () =>
           ipc().sftp.rename({
             place: target.place,
-            from: joinRemote(target.path, from),
-            to: joinRemote(target.path, to),
+            from: joinPath(target.path, from),
+            to: joinPath(target.path, to),
           }),
         'The entry could not be renamed',
       );
@@ -230,13 +307,13 @@ export const useFilesStore = create<FilesState>()((set, get) => {
     },
 
     remove: async (tabId, names) => {
-      const target = remoteTarget(tabId);
+      const target = paneTarget(tabId);
       if (target === undefined || names.length === 0) return;
       const removed = await settle(
         () =>
           ipc().sftp.remove({
             place: target.place,
-            paths: names.map((name) => joinRemote(target.path, name)),
+            paths: names.map((name) => joinPath(target.path, name)),
             recursive: true,
           }),
         'The entries could not be deleted',
@@ -246,10 +323,10 @@ export const useFilesStore = create<FilesState>()((set, get) => {
     },
 
     chmod: async (tabId, name, mode) => {
-      const target = remoteTarget(tabId);
+      const target = paneTarget(tabId);
       if (target === undefined) return;
       const changed = await settle(
-        () => ipc().sftp.chmod({ place: target.place, path: joinRemote(target.path, name), mode }),
+        () => ipc().sftp.chmod({ place: target.place, path: joinPath(target.path, name), mode }),
         'The permissions could not be changed',
       );
       if (!changed.ok) showToast(changed.error.message);
@@ -267,7 +344,7 @@ export const useFilesStore = create<FilesState>()((set, get) => {
 
     connect: async (tabId, hostId) => {
       const existing = get().panes[tabId];
-      if (existing?.place.sessionId !== undefined || connecting.has(tabId)) return;
+      if (sessionOf(existing) !== undefined || connecting.has(tabId)) return;
       set({
         panes: {
           ...get().panes,
@@ -319,19 +396,17 @@ export const useFilesStore = create<FilesState>()((set, get) => {
 
     navigate: async (tabId, path, options = {}) => {
       const pane = get().panes[tabId];
-      const sessionId = pane?.place.sessionId;
-      if (pane === undefined || sessionId === undefined) return false;
+      const place = pane === undefined ? undefined : placeWireOf(pane);
+      if (pane === undefined || place === undefined) return false;
+      const sessionId = sessionOf(pane);
       const turn = nextTurn(tabId);
       patch(tabId, { status: 'loading' });
-      const listed = await settle(
-        () => ipc().sftp.list({ place: { kind: 'remote', sessionId }, path }),
-        'The folder could not be listed',
-      );
+      const listed = await settle(() => ipc().sftp.list({ place, path }), 'The folder could not be listed');
       const now = get().panes[tabId];
-      if (turns.get(tabId) !== turn || now === undefined || now.place.sessionId !== sessionId) return false;
+      if (turns.get(tabId) !== turn || now === undefined || sessionOf(now) !== sessionId) return false;
       if (!listed.ok) {
         const error = errorOf(listed.error, 'The folder could not be listed');
-        if (error.code === 'sftp-session-unknown') {
+        if (error.code === 'sftp-session-unknown' && now.place.kind === 'remote') {
           patch(tabId, { status: 'error', error, place: { kind: 'remote', hostId: now.place.hostId } });
         } else {
           patch(tabId, { status: 'idle', error });
@@ -349,7 +424,7 @@ export const useFilesStore = create<FilesState>()((set, get) => {
         history: pushed ? [...current.history, left] : current.history,
         status: 'idle',
       }));
-      rememberFolder(now.place.hostId, listed.value.path);
+      if (now.place.kind === 'remote') rememberFolder(now.place.hostId, listed.value.path);
       return true;
     },
 
@@ -362,14 +437,14 @@ export const useFilesStore = create<FilesState>()((set, get) => {
 
     up: async (tabId) => {
       const pane = get().panes[tabId];
-      if (pane === undefined || pane.path === '' || pane.path === '/') return;
+      if (pane === undefined || pane.path === '' || parentOf(pane.path) === pane.path) return;
       await get().navigate(tabId, parentOf(pane.path), { push: true });
     },
 
     refresh: async (tabId) => {
       const pane = get().panes[tabId];
       if (pane === undefined) return;
-      if (pane.place.sessionId === undefined) {
+      if (pane.place.kind === 'remote' && pane.place.sessionId === undefined) {
         await get().connect(tabId, pane.place.hostId);
         return;
       }
@@ -390,9 +465,9 @@ export const useFilesStore = create<FilesState>()((set, get) => {
 
     noteClosed: (sessionId) => {
       const { panes } = get();
-      const tabId = Object.keys(panes).find((id) => panes[id]?.place.sessionId === sessionId);
+      const tabId = Object.keys(panes).find((id) => sessionOf(panes[id]) === sessionId);
       const pane = tabId === undefined ? undefined : panes[tabId];
-      if (tabId === undefined || pane === undefined) return;
+      if (tabId === undefined || pane?.place.kind !== 'remote') return;
       patch(tabId, {
         place: { kind: 'remote', hostId: pane.place.hostId },
         status: 'error',
@@ -401,20 +476,26 @@ export const useFilesStore = create<FilesState>()((set, get) => {
     },
 
     close: (tabId) => {
-      const pane = get().panes[tabId];
-      if (pane === undefined) return;
+      const local = localPaneId(tabId);
+      const { panes, activePanes } = get();
+      if (panes[tabId] === undefined && panes[local] === undefined) return;
       turns.delete(tabId);
-      const sessionId = pane.place.sessionId;
+      turns.delete(local);
+      const sessionId = sessionOf(panes[tabId]);
       if (sessionId !== undefined)
         void ipc()
           .sftp.close({ sessionId })
           .catch(() => undefined);
-      const panes = { ...get().panes };
-      delete panes[tabId];
+      const rest = { ...panes };
+      delete rest[tabId];
+      delete rest[local];
+      const active = { ...activePanes };
+      delete active[tabId];
       set({
-        panes,
-        dialogs: { ...get().dialogs, [tabId]: undefined },
-        renaming: { ...get().renaming, [tabId]: undefined },
+        panes: rest,
+        activePanes: active,
+        dialogs: { ...get().dialogs, [tabId]: undefined, [local]: undefined },
+        renaming: { ...get().renaming, [tabId]: undefined, [local]: undefined },
       });
     },
   };

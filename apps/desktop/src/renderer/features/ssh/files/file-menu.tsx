@@ -10,7 +10,10 @@ export interface FileMenuActions {
   readonly count: number;
   /** One folder (or link to one) selected: Open lists it. Otherwise the item reads Edit, which waits for #444. */
   readonly folder: boolean;
+  /** This machine's pane: permissions are changed on a host only. */
+  readonly local: boolean;
   readonly open: () => void;
+  readonly copyToOtherPane: () => void;
   readonly rename: () => void;
   readonly remove: () => void;
   readonly permissions: () => void;
@@ -36,7 +39,7 @@ export function FileMenu({
           <ContextMenu.Item className={ITEM_CLASS} disabled={!(one && a.folder)} onSelect={a.open}>
             {a.count > 0 && !a.folder ? 'Edit' : 'Open'}
           </ContextMenu.Item>
-          <ContextMenu.Item className={ITEM_CLASS} disabled>
+          <ContextMenu.Item className={ITEM_CLASS} disabled={a.count === 0} onSelect={a.copyToOtherPane}>
             Copy to other pane
           </ContextMenu.Item>
           <ContextMenu.Item className={ITEM_CLASS} disabled={!one} onSelect={a.rename}>
@@ -45,7 +48,7 @@ export function FileMenu({
           <ContextMenu.Item className={ITEM_CLASS} disabled={a.count === 0} onSelect={a.remove}>
             Delete…
           </ContextMenu.Item>
-          <ContextMenu.Item className={ITEM_CLASS} disabled={!one} onSelect={a.permissions}>
+          <ContextMenu.Item className={ITEM_CLASS} disabled={!one || a.local} onSelect={a.permissions}>
             Permissions…
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-hairline" />

@@ -375,6 +375,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       exportHtml: fail('wsi.exportHtml'),
     },
     on: vi.fn().mockReturnValue(() => undefined),
+    pathForFile: vi.fn((file: File) => `/dropped/${file.name}`),
   };
 
   const merged: Record<string, unknown> = { ...defaults };
