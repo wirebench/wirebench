@@ -1,6 +1,7 @@
 export * from './errors.js';
 export * from './model.js';
 export * from './forward-rules.js';
+export * from './socks5.js';
 export * from './resolve.js';
 export * from './known-hosts.js';
 export * from './dial.js';
