@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Client-signed JWT auth.** A REST, gRPC or WebSocket request, folder or API can send a JWT that
+  Wirebench signs itself, with HS, RS, ES or PS at 256, 384 or 512 bits. The claims and extra header
+  fields are JSON whose strings take `${…}` properties, and `iat`, `exp` and `jti` can be generated.
+  The HMAC secret is a secret-store reference and the private key comes from a keystore, never from
+  the project file; a PEM keystore may now hold just a private key. The token goes in a header with a
+  configurable name and prefix, or in a query parameter, and is reused until 30 seconds before it
+  expires. It works in the app, `wirebench run` and MCP `send`; the headers preview, **Copy as** and
+  generated code show a freshly signed token while secrets are shown (#348).
 - **AWS Signature v4 and Digest auth.** A REST or SOAP request, folder, API, interface or endpoint can
   sign with **AWS Signature v4**: region and service, which take property references, an access key
   ID, a secret key and an optional session token, all kept in the secret store, in an
@@ -30,17 +38,6 @@ All notable changes to this project are documented here. The format follows
   folder, and a local document reaches the network only with `--allow-remote-refs`. In the desktop
   app, **Lint Definition** on a REST API puts the same findings in Problems, and so does an OpenAPI
   import or a definition update (#342).
-
-### Breaking
-
-- **Project format 10.** Auth can be Digest (`type: digest`) or AWS Signature v4 (`type: aws-sigv4`);
-  a project saved by this version cannot be opened by an older one, which refuses it as made by a
-  newer Wirebench. A version-9 project opens unchanged (#339).
-
-## [6.0.0] - 2026-10-12
-
-### Added
-
 - **More OAuth 2 grants and client authentication.** The password grant (a username and a password
   from the secret store) and the device-code grant (RFC 8628: **Get token** shows the code and opens
   the verification page) join client credentials and authorization code. The client can now
@@ -50,6 +47,19 @@ All notable changes to this project are documented here. The format follows
   headless, and starts an authorization-code or device-code configuration from a refresh token in
   `WIREBENCH_SECRET_<refreshTokenEnv>`. OpenAPI, Postman and OpenCollection imports map the password
   flow, OpenAPI 3.2's device flow maps to device code, and exports write the password grant (#338).
+
+### Breaking
+
+- **Project format 10.** Auth can be a client-signed JWT (`type: jwt`), Digest (`type: digest`) or
+  AWS Signature v4 (`type: aws-sigv4`), and OAuth 2 gains the password and device-code grants and the
+  assertion and certificate client authentications; a project saved by this version cannot be opened
+  by an older one, which refuses it as made by a newer Wirebench. A version-9 project opens unchanged
+  (#338, #339, #348).
+
+## [6.0.0] - 2026-10-12
+
+### Added
+
 - **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
   Each column is read as `${#Data#column}`, substituted literally, and scripts read the row with
   `iteration.data.get()`. `--iterations` sets the count (`--data-overrun stop|wrap|repeat-last` when it

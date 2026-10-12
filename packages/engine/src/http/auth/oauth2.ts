@@ -15,8 +15,8 @@ import { X509Certificate, createHash, randomBytes } from 'node:crypto';
 import { WirebenchError } from '../../errors.js';
 import type { OAuth2Auth } from '../../project/model.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
-import { defaultAlgFor, signJwt } from './jwt-sign.js';
-import type { JwtAlg } from './jwt-sign.js';
+import { defaultAlgFor, privateKeyOf, signJwt } from './jwt.js';
+import type { JwtAlgorithm } from './jwt.js';
 import type { ClientIdentity } from '../../run/host.js';
 
 /** The credential values the host resolved for one OAuth2 configuration. */
@@ -415,7 +415,7 @@ const ASSERTION_LIFETIME_S = 60;
  * @throws WirebenchError `oauth2-client-secret-missing` | `oauth2-client-key-missing` |
  * `oauth2-assertion-alg`, or the signer's own `jwt-*` errors for a key it cannot use
  */
-export function clientAssertion(input: ClientAssertionInput): string {
+export async function clientAssertion(input: ClientAssertionInput): Promise<string> {
   const { config } = input;
   const iat = Math.floor((input.now ?? new Date()).getTime() / 1000);
   const claims = {
@@ -441,7 +441,7 @@ export function clientAssertion(input: ClientAssertionInput): string {
       'private_key_jwt signs with the keystore key, so it cannot use an HMAC algorithm.',
     );
     const kid = createHash('sha256').update(new X509Certificate(input.identity.cert).raw).digest('base64url');
-    return signJwt({ alg, key: input.identity.key, header: { kid }, claims });
+    return signJwt({ algorithm: alg, key: privateKeyOf(input.identity.key, alg), header: { kid }, claims });
   }
   if (input.secret === undefined || input.secret === '') {
     throw new WirebenchError(
@@ -458,10 +458,10 @@ export function clientAssertion(input: ClientAssertionInput): string {
     alg,
     'client_secret_jwt signs with the client secret, so it needs an HMAC algorithm.',
   );
-  return signJwt({ alg, key: input.secret, claims });
+  return signJwt({ algorithm: alg, key: new TextEncoder().encode(input.secret), claims });
 }
 
-function refuseAlg(refused: boolean, alg: JwtAlg, message: string): void {
+function refuseAlg(refused: boolean, alg: JwtAlgorithm, message: string): void {
   if (refused) {
     throw new WirebenchError('oauth2-assertion-alg', message, { details: { alg } });
   }
@@ -479,15 +479,15 @@ export interface ClientAuthMaterial {
  * `basic`/`body`, a freshly signed assertion for the JWT methods (one per request, since each
  * carries its own `jti`), nothing for `tls-client-auth`.
  */
-export function clientAuthSecrets(
+export async function clientAuthSecrets(
   config: OAuth2Auth,
   material: ClientAuthMaterial,
-): Pick<OAuth2Secrets, 'clientSecret' | 'clientAssertion'> {
+): Promise<Pick<OAuth2Secrets, 'clientSecret' | 'clientAssertion'>> {
   switch (config.clientAuth) {
     case 'client-secret-jwt':
     case 'private-key-jwt':
       return {
-        clientAssertion: clientAssertion({
+        clientAssertion: await clientAssertion({
           config,
           ...(material.clientSecret !== undefined ? { secret: material.clientSecret } : {}),
           ...(material.identity !== undefined ? { identity: material.identity } : {}),
@@ -589,7 +589,7 @@ export function parseDeviceAuthorizationResponse(input: TokenResponseInput): Dev
 export interface PollDeviceTokenInput {
   readonly authorization: DeviceAuthorization;
   /** Builds each poll's token request: a JWT client authenticates afresh every time. */
-  readonly request: () => HttpRequest;
+  readonly request: () => HttpRequest | Promise<HttpRequest>;
   readonly send: (request: HttpRequest) => Promise<HttpExchange>;
   readonly now?: () => Date;
   /** Waits between polls; a timer by default, instant in tests. */
@@ -643,7 +643,7 @@ export async function pollDeviceToken(input: PollDeviceTokenInput): Promise<Toke
     if (isAborted(input.signal)) {
       throw new WirebenchError('oauth2-cancelled', 'The sign-in was cancelled');
     }
-    const exchange = await input.send(input.request());
+    const exchange = await input.send(await input.request());
     try {
       return parseTokenResponse({ status: exchange.status, body: exchange.body, now });
     } catch (error) {

@@ -159,11 +159,11 @@ export function createRunTokenSource(options: RunTokenSourceOptions): RunTokenSo
     const built = buildTokenRequest(
       config,
       {
-        ...clientAuthSecrets(config, {
+        ...(await clientAuthSecrets(config, {
           ...(clientSecret !== undefined ? { clientSecret } : {}),
           ...(identity !== undefined ? { identity } : {}),
           now: now(),
-        }),
+        })),
         ...(password !== undefined ? { password } : {}),
       },
       grant,

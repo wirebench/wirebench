@@ -23,6 +23,7 @@ const TYPE_LABEL: Readonly<Record<string, string>> = {
   'api-key': 'API key',
   oauth2: 'OAuth2',
   kerberos: 'Kerberos',
+  jwt: 'JWT',
 };
 
 /** How one scheme reads wherever a source line names it. */

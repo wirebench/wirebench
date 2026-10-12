@@ -156,6 +156,13 @@ function authHeaders(auth: SendAuth | undefined): Record<string, string> {
       return { [auth.name.toLowerCase()]: auth.value };
     case 'basic':
       return { authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`, 'utf8').toString('base64')}` };
+    case 'jwt':
+      if (auth.in === 'query') {
+        throw new GrpcError('grpc-auth-unsupported', 'A gRPC call has no query string: send the JWT as a header.', {
+          details: { type: auth.type },
+        });
+      }
+      return { [auth.name.toLowerCase()]: auth.prefix === '' ? auth.token : `${auth.prefix} ${auth.token}` };
     default:
       throw new GrpcError(
         'grpc-auth-unsupported',

@@ -241,7 +241,7 @@ export class OAuth2Service {
   /** Runs one token request and caches what came back. */
   private async runGrant(config: OAuth2Auth, grant: TokenGrantInput, options: FetchTokenOptions): Promise<TokenSet> {
     const prepared = await this.prepare(config, options);
-    const request = buildTokenRequest(config, prepared.secrets(), grant, {
+    const request = buildTokenRequest(config, await prepared.secrets(), grant, {
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     const exchange = await prepared.send(request);
@@ -272,7 +272,7 @@ export class OAuth2Service {
     config: OAuth2Auth,
     options: FetchTokenOptions,
   ): Promise<{
-    readonly secrets: () => OAuth2Secrets;
+    readonly secrets: () => Promise<OAuth2Secrets>;
     readonly send: (request: HttpRequest) => Promise<HttpExchange>;
   }> {
     const keyBased = config.clientAuth === 'private-key-jwt' || config.clientAuth === 'tls-client-auth';
@@ -284,12 +284,12 @@ export class OAuth2Service {
         : options.tls;
     const send = this.deps.send ?? sendHttp;
     return {
-      secrets: () => ({
-        ...clientAuthSecrets(config, {
+      secrets: async () => ({
+        ...(await clientAuthSecrets(config, {
           ...(clientSecret !== undefined ? { clientSecret } : {}),
           ...(identity !== undefined ? { identity } : {}),
           now: this.now(),
-        }),
+        })),
         ...(password !== undefined ? { password } : {}),
       }),
       send: (request) =>
@@ -318,7 +318,7 @@ export class OAuth2Service {
     try {
       const prepared = await this.prepare(config, options);
       const exchange = await prepared.send(
-        buildDeviceAuthorizationRequest(config, prepared.secrets(), { signal: controller.signal }),
+        buildDeviceAuthorizationRequest(config, await prepared.secrets(), { signal: controller.signal }),
       );
       const authorization = parseDeviceAuthorizationResponse({
         status: exchange.status,
@@ -332,10 +332,10 @@ export class OAuth2Service {
         .catch(() => undefined);
       const token = await pollDeviceToken({
         authorization,
-        request: () =>
+        request: async () =>
           buildTokenRequest(
             config,
-            prepared.secrets(),
+            await prepared.secrets(),
             { grant: 'device-code', deviceCode: authorization.deviceCode },
             { signal: controller.signal },
           ),

@@ -4,6 +4,7 @@
  */
 import type { CookieJarHost } from '../http/cookies.js';
 import type { ProxyOptions } from '../http/types.js';
+import type { JwtSource } from '../http/auth/jwt.js';
 import type { Keystore } from '../keystore/index.js';
 import type { Preferences } from '../project/preferences.js';
 import type { SelectedBase } from '../protocol/module.js';
@@ -70,6 +71,8 @@ export interface SendHost {
   readonly keystoreFor?: (keystoreId: string) => Promise<Keystore | undefined>;
   /** The OAuth2 token source; a run creates one per run when the host brings none. */
   readonly tokens?: RunTokenSource;
+  /** The JWT source (#348), which reuses a signed token until shortly before it expires; one per run when absent. */
+  readonly jwts?: JwtSource;
   /**
    * What a host lends one protocol beyond this interface, keyed by kind (`soap`: the issued SAML
    * token source). Core passes the entries through and never reads them; each module reads its own.

@@ -14,7 +14,8 @@ before any request-level auth applies. Every credential you type goes through th
 ## Request auth (REST and SOAP)
 
 A REST request, folder or API — and a SOAP interface, endpoint or request — can each configure
-their own auth. Every scheme below is available at all six levels.
+their own auth. Every scheme below is available at all six levels, except a signed JWT, which REST,
+gRPC and WebSocket requests, folders and APIs take.
 
 | Scheme | Fields |
 | --- | --- |
@@ -26,6 +27,7 @@ their own auth. Every scheme below is available at all six levels.
 | Kerberos | Your Windows sign-in or `kinit` ticket; optional SPN; on Windows, another account |
 | Digest | Username and password; answered after the server's 401 challenge |
 | AWS Signature v4 | Region, service, access key ID, secret key, optional session token; header or presigned URL |
+| JWT (signed here) | See below |
 
 <Steps>
 
@@ -120,6 +122,36 @@ names them). A pipeline has no browser, so an authorization-code or device-code 
 only from a refresh token: remember one in the app, give the configuration a `refreshTokenEnv`
 name, and set `WIREBENCH_SECRET_<name>` in the pipeline. Without it, the request is refused with
 the variable it needs.
+
+### JWT signed by Wirebench
+
+Many service APIs want a JWT the caller signs itself. Choose **JWT (signed here)** and Wirebench signs
+one for each send, so you never paste a token that has already expired.
+
+| Field | What it does |
+| --- | --- |
+| Algorithm | HS256/384/512 (HMAC), RS256/384/512 (RSA), ES256/384/512 (ECDSA) or PS256/384/512 (RSA-PSS) |
+| Secret | HS only: the shared secret, entered through the secret dialog |
+| Signing key | RS, ES and PS: a keystore and alias (see [keystores](#client-certificates-and-keystores)) |
+| Claims | The payload, as a JSON object |
+| Header | Extra header fields such as `kid`, as a JSON object; `alg` always comes from the algorithm |
+| `iat`, `exp`, `jti` | Add the issue time, an expiry so many seconds after it, and a random id |
+| Send in | A header (name `Authorization` and prefix `Bearer` by default; clear the prefix to send the bare token) or a query parameter (`access_token` by default) |
+
+String values in the claims and the header may use `${…}` properties, such as
+`"iss": "${clientId}"` or `"nonce": "${$randomUUID}"`. A value that is exactly one reference under
+`exp`, `nbf` or `iat` becomes a number when the property holds one. An unresolved reference stops the
+send rather than signing a token with `${…}` in it.
+
+A signed token is reused for later sends until 30 seconds before its `exp`, then signed again; one
+without `exp` is signed on every send. Changing a claim or an environment value signs a new one, and
+so does a server refusing it with a 401.
+
+The headers preview and **Copy as** show the token the next send carries while the session shows
+secrets, and a masked stand-in otherwise. Generated code carries a token signed at that moment, with a
+note saying when it expires. The CLI and MCP `send` sign the same way: the HMAC secret comes from its
+`WIREBENCH_SECRET_<name>` variable and the private key from the keystore in the project folder, whose
+password comes from its variable too.
 
 ### Kerberos
 
@@ -319,9 +351,12 @@ loaded (a wrong password shows as **Wrong password**, a missing file as **File m
 certificate aliases once it did. A keystore's password is entered through the secret dialog, same
 as any other credential — Wirebench holds no key material or password in the renderer.
 
-Keystores serve two purposes:
+Keystores serve three purposes:
 
 - **WS-Security signing and encryption** — a Signature or Encryption entry above references one.
+- **Signing a JWT** — a [signed JWT](#jwt-signed-by-wirebench) with an RS, ES or PS algorithm signs
+  with a keystore's private key. For this alone, a PEM file holding only the private key is enough;
+  it is listed as a key with no certificate, and cannot be a TLS client certificate.
 - **TLS client certificates** — under **Settings → SSL / TLS**, set a **Client keystore** to present
   by default whenever a server asks for one. A request can also select its own keystore, which
   always wins over the default.

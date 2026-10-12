@@ -318,6 +318,7 @@ class OcWriter {
         return undefined;
       case 'none':
       case 'kerberos':
+      case 'jwt':
         return 'none';
       case 'digest':
       case 'aws-sigv4':

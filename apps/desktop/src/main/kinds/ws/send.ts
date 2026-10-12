@@ -10,6 +10,7 @@ import { recordWs, reportWsHandshakeFailure, summariseWs } from '../../send/reco
 import type { WsExchangeSummary } from '../../../shared/kinds/ws/wire.js';
 import type { KindSend } from '../kind-main.js';
 import { withWsPatch } from './mutations.js';
+import { namedCredential } from '../key-masks.js';
 
 export const wsSend: KindSend<'websocket'> = {
   selected(project, requestId, draft) {
@@ -88,8 +89,8 @@ export const wsSend: KindSend<'websocket'> = {
 
   keyMasks(item) {
     // A WebSocket session masks its URL's key alone, as the app always has: its rows mask headers by name.
-    const auth = wsEffectiveAuth(item);
-    return auth.type === 'api-key' && auth.in === 'query' ? { keyParams: [auth.name] } : {};
+    const named = namedCredential(wsEffectiveAuth(item));
+    return named?.in === 'query' ? { keyParams: [named.name] } : {};
   },
 };
 

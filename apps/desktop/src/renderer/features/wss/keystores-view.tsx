@@ -136,11 +136,17 @@ function KeystoreRow({
                       </button>
                     )}
                   </div>
-                  <p className="truncate" title={alias.subject}>
-                    {alias.subject}
-                  </p>
-                  <p>Expires {formatExpiry(alias.notAfter)}</p>
-                  <p className="font-mono break-all">{alias.fingerprintSha256}</p>
+                  {alias.keyOnly === true ? (
+                    <p>A private key with no certificate: it can sign a JWT, not present a TLS identity.</p>
+                  ) : (
+                    <>
+                      <p className="truncate" title={alias.subject}>
+                        {alias.subject}
+                      </p>
+                      <p>Expires {formatExpiry(alias.notAfter)}</p>
+                      <p className="font-mono break-all">{alias.fingerprintSha256}</p>
+                    </>
+                  )}
                 </li>
               ))}
               {status !== undefined && status.aliases.length === 0 && (
