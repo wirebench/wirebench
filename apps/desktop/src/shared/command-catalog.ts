@@ -130,6 +130,53 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Open Files on Host…',
     category: 'Hosts',
   },
+  'ssh.openInNewTab': {
+    id: 'ssh.openInNewTab',
+    label: 'Open Host in New Tab…',
+    category: 'Hosts',
+  },
+  'ssh.splitRight': {
+    id: 'ssh.splitRight',
+    label: 'Terminal: Split Right',
+    category: 'Hosts',
+    shortcut: 'Mod+D',
+  },
+  'ssh.splitDown': {
+    id: 'ssh.splitDown',
+    label: 'Terminal: Split Down',
+    category: 'Hosts',
+    shortcut: 'Mod+Shift+D',
+  },
+  'ssh.focusPaneLeft': {
+    id: 'ssh.focusPaneLeft',
+    label: 'Terminal: Focus Pane Left',
+    category: 'Hosts',
+    shortcut: 'Mod+Alt+Left',
+  },
+  'ssh.focusPaneRight': {
+    id: 'ssh.focusPaneRight',
+    label: 'Terminal: Focus Pane Right',
+    category: 'Hosts',
+    shortcut: 'Mod+Alt+Right',
+  },
+  'ssh.focusPaneUp': {
+    id: 'ssh.focusPaneUp',
+    label: 'Terminal: Focus Pane Above',
+    category: 'Hosts',
+    shortcut: 'Mod+Alt+Up',
+  },
+  'ssh.focusPaneDown': {
+    id: 'ssh.focusPaneDown',
+    label: 'Terminal: Focus Pane Below',
+    category: 'Hosts',
+    shortcut: 'Mod+Alt+Down',
+  },
+  // No chord of its own: ⌘W closes the focused pane of a split tab (see `editor.closeTab`).
+  'ssh.closePane': {
+    id: 'ssh.closePane',
+    label: 'Terminal: Close Pane',
+    category: 'Hosts',
+  },
   'sftp.refresh': {
     id: 'sftp.refresh',
     label: 'Files: Refresh',

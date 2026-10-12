@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   close,
   hasHost,
+  layoutOf,
   leaves,
   MAX_PANES,
   neighbour,
@@ -81,6 +82,14 @@ describe('the pane tree', () => {
     expect(neighbour(GRID, 'p1', 'left')).toBeUndefined();
     expect(neighbour(GRID, 'p1', 'up')).toBeUndefined();
     expect(neighbour(GRID, 'p4', 'right')).toBeUndefined();
+  });
+
+  it('lays every pane and split out on the unit square', () => {
+    const { panes, splits } = layoutOf(GRID);
+    expect(panes.get('p1')).toEqual({ x0: 0, y0: 0, x1: 0.5, y1: 0.5 });
+    expect(panes.get('p4')).toEqual({ x0: 0.5, y0: 0.5, x1: 1, y1: 1 });
+    expect(splits.map((s) => s.path)).toEqual([[], ['a'], ['b']]);
+    expect(splits[2]).toEqual({ path: ['b'], dir: 'row', ratio: 0.5, rect: { x0: 0, y0: 0.5, x1: 1, y1: 1 } });
   });
 
   it('picks the neighbour that overlaps the pane most', () => {

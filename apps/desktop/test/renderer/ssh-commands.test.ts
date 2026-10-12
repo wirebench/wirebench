@@ -5,6 +5,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: { connect } }) }));
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
+import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { getCommand, resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -92,5 +93,25 @@ describe('ssh.connectPalette', () => {
     expect(useEditorsStore.getState().tabs).toEqual([
       { id: 'ssh-files:a', kind: 'ssh-files', title: 'a · Files', hostId: 'a' },
     ]);
+  });
+
+  it('ssh.openInNewTab with no host id asks which host, in the new-tab picker', async () => {
+    const openPalette = vi.fn();
+    resetCommands();
+    registerSshCommands(openPalette);
+    await runCommand('ssh.openInNewTab', {} as never);
+    expect(openPalette).toHaveBeenCalledWith('new-tab-hosts');
+  });
+
+  it('the pane commands are live only while a terminal tab is in front', () => {
+    resetCommands();
+    registerSshCommands(vi.fn());
+    useEditorsStore.getState().reset();
+    expect(getCommand('ssh.splitRight')?.when?.({} as never)).toBe(false);
+    useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
+    openTerminalFor('a');
+    for (const id of ['ssh.splitRight', 'ssh.splitDown', 'ssh.focusPaneLeft', 'ssh.closePane'] as const) {
+      expect(getCommand(id)?.when?.({} as never)).toBe(true);
+    }
   });
 });

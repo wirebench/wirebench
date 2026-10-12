@@ -191,8 +191,16 @@ export function openTerminalFor(hostId: string): void {
     editors.activate(tab.id);
     return;
   }
+  openInNewTab(hostId);
+}
+
+/** Opens another one-pane terminal tab on the host, whatever tabs it already has. */
+export function openInNewTab(hostId: string): void {
+  const hosts = useHostsStore.getState();
   const title = hosts.resolved.find((h) => h.id === hostId)?.name ?? findHost(hosts.file, hostId)?.name ?? hostId;
-  editors.open({ id: `ssh-terminal:${crypto.randomUUID()}`, kind: 'ssh-terminal', title, panes: onePane(hostId) });
+  useEditorsStore
+    .getState()
+    .open({ id: `ssh-terminal:${crypto.randomUUID()}`, kind: 'ssh-terminal', title, panes: onePane(hostId) });
 }
 
 /**

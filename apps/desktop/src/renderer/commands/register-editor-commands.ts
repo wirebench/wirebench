@@ -5,6 +5,7 @@ import { flipMode, flipOrientation, setEditorLayout } from '../features/request-
 import { focusOtherPane } from '../features/request-editor/pane-focus.js';
 import { moveToAdjacentValue } from '../features/request-editor/value-navigation.js';
 import { goToSchemaDefinitionAtCursor } from '../features/request-editor/schema-navigation.js';
+import { activeTerminal, closePane, focusedPaneOf } from '../features/ssh/panes/pane-actions.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
 import { tabsInSet } from '../state/tab-sets.js';
@@ -118,12 +119,21 @@ export function registerEditorCommands(): void {
   });
 
   // ⌘W. Closes whichever editor tab is active; the always-present Start tab is not a tab in
-  // the store, so with nothing else open this is simply unavailable.
+  // the store, so with nothing else open this is simply unavailable. In a split terminal tab it
+  // closes the focused pane instead, and only the last pane takes the tab with it.
   registerCommand({
     ...catalogEntry('editor.closeTab'),
     when: () => useEditorsStore.getState().activeId !== undefined,
     whenScope: 'editor',
     run: () => {
+      const terminal = activeTerminal();
+      if (terminal?.panes.kind === 'split') {
+        const paneId = focusedPaneOf(terminal.tabId, terminal.panes);
+        if (paneId !== undefined) {
+          closePane(terminal.tabId, paneId);
+        }
+        return;
+      }
       const { activeId, close } = useEditorsStore.getState();
       if (activeId !== undefined) {
         close(activeId);
