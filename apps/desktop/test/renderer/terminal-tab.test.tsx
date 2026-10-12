@@ -1,3 +1,4 @@
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -798,7 +799,12 @@ describe('split panes', () => {
     act(() => {
       openTerminalFor('a');
     });
-    render(<EditorArea />);
+    // The Files tab's buttons need the shell's TooltipProvider, which tests render outside.
+    render(
+      <TooltipPrimitive.Provider>
+        <EditorArea />
+      </TooltipPrimitive.Provider>,
+    );
     await waitFor(() => {
       expect(sessionOn('a')?.state).toBe('open');
     });
