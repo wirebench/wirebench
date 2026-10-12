@@ -322,6 +322,40 @@ describe('applyChange: environments', () => {
     });
   });
 
+  it("update-api's rename moves the API's endpoint override keys with its slug (#477)", async () => {
+    const withApi = await applyChange(build(), { kind: 'add-api', name: 'Shop', baseUrl: 'https://shop.test' }, deps);
+    const apiId = withApi.createdId!;
+    const withEnv = await applyChange(withApi.project, { kind: 'add-environment', name: 'Dev' }, deps);
+    const environmentId = withEnv.createdEnvironmentId!;
+    const overridden = await applyChange(
+      withEnv.project,
+      {
+        kind: 'update-environment',
+        environmentId,
+        patch: { endpoints: { Shop: 'https://dev.shop.test', Calculator: 'http://dev.test/soap' } },
+      },
+      deps,
+    );
+
+    const renamed = await applyChange(
+      overridden.project,
+      { kind: 'update-api', apiId, patch: { name: 'Store' } },
+      deps,
+    );
+    expect(renamed.project.environments[0]?.endpoints).toEqual({
+      Store: 'https://dev.shop.test',
+      Calculator: 'http://dev.test/soap',
+    });
+
+    // A change that renames nothing leaves the environments as they were.
+    const untouched = await applyChange(
+      renamed.project,
+      { kind: 'update-api', apiId, patch: { baseUrl: 'https://x.test' } },
+      deps,
+    );
+    expect(untouched.project.environments).toBe(renamed.project.environments);
+  });
+
   it('set-active-environment switches and clears the active environment', async () => {
     const project = await withEnvironments();
     const active = await applyChange(

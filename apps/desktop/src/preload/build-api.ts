@@ -59,6 +59,11 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
     readonly e2e: boolean;
     readonly osTheme: 'dark' | 'light';
   };
+  /**
+   * The path on this machine of a file dropped from the OS (`webUtils.getPathForFile`), or `''` for one
+   * that has none. The Files tab copies dropped files by path.
+   */
+  pathForFile(file: File): string;
 };
 
 function isChannel(value: unknown): value is IpcChannel<z.ZodType, z.ZodType> {
@@ -90,11 +95,13 @@ export function buildApi(
   invoke: Invoke,
   on: On,
   env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark' },
+  pathForFile: (file: File) => string = () => '',
 ): WirebenchApi {
   const channelApi = buildChannelApi(channels, invoke);
   return {
     ...channelApi,
     on: (name, listener) => on(name as string, listener as (payload: unknown) => void),
     env,
+    pathForFile,
   } as WirebenchApi;
 }

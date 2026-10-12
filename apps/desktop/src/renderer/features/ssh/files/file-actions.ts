@@ -1,16 +1,21 @@
 /**
- * What the Files tab's menu and its `sftp.*` commands do, in one place: each acts on a tab's pane and its
- * selection. Dialogs and renaming are state in the store, so a command and a right click open the same one.
+ * What the Files tab's menu and its `sftp.*` commands do, in one place: each acts on one pane (by its id, see
+ * `localPaneId`) and its selection. Dialogs and renaming are state in the store, so a command and a right
+ * click open the same one.
  */
 import { useEditorsStore } from '../../../state/editors.js';
-import { useFilesStore } from './files-store.js';
-import { isFolderLike, joinRemote } from './format.js';
+import { otherPaneId, useFilesStore } from './files-store.js';
+import { isFolderLike, joinPath } from './format.js';
+import { useTransfersStore } from './transfers-store.js';
 
-/** The Files tab in front, if the active editor tab is one. */
-export function activeFilesTab(): string | undefined {
+/** The pane last used in the Files tab in front (the host's until another is used), if a Files tab is in front. */
+export function activeFilesPane(): string | undefined {
   const { tabs, activeId } = useEditorsStore.getState();
   const tab = tabs.find((t) => t.id === activeId);
-  return tab?.kind === 'ssh-files' && useFilesStore.getState().panes[tab.id] !== undefined ? tab.id : undefined;
+  if (tab?.kind !== 'ssh-files') return undefined;
+  const { panes, activePanes } = useFilesStore.getState();
+  const paneId = activePanes[tab.id] ?? tab.id;
+  return panes[paneId] !== undefined ? paneId : undefined;
 }
 
 function selectedEntries(tabId: string) {
@@ -31,6 +36,11 @@ export const fileActions = {
   rename(tabId: string): void {
     const [entry, ...more] = selectedEntries(tabId);
     if (entry !== undefined && more.length === 0) useFilesStore.getState().setRenaming(tabId, entry.name);
+  },
+  /** Copies the selection into the folder the other pane shows. */
+  copyToOtherPane(paneId: string): void {
+    const names = selectedEntries(paneId).map((e) => e.name);
+    if (names.length > 0) void useTransfersStore.getState().copy(paneId, names, otherPaneId(paneId));
   },
   /** Asks, then deletes the selection. */
   remove(tabId: string): void {
@@ -53,7 +63,7 @@ export const fileActions = {
     const pane = useFilesStore.getState().panes[tabId];
     if (pane === undefined || pane.path === '') return;
     const entries = selectedEntries(tabId);
-    const text = entries.length === 0 ? pane.path : entries.map((e) => joinRemote(pane.path, e.name)).join('\n');
+    const text = entries.length === 0 ? pane.path : entries.map((e) => joinPath(pane.path, e.name)).join('\n');
     void navigator.clipboard.writeText(text).catch(() => undefined);
   },
   /** Opens the one selected folder. */
@@ -61,7 +71,7 @@ export const fileActions = {
     const pane = useFilesStore.getState().panes[tabId];
     const [entry, ...more] = selectedEntries(tabId);
     if (pane === undefined || entry === undefined || more.length > 0 || !isFolderLike(entry)) return;
-    void useFilesStore.getState().navigate(tabId, joinRemote(pane.path, entry.name), { push: true });
+    void useFilesStore.getState().navigate(tabId, joinPath(pane.path, entry.name), { push: true });
   },
   toggleHidden(): void {
     const store = useFilesStore.getState();

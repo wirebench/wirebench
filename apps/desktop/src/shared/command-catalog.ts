@@ -155,6 +155,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Files: Permissions…',
     category: 'Hosts',
   },
+  'sftp.copyToOtherPane': {
+    id: 'sftp.copyToOtherPane',
+    label: 'Files: Copy to Other Pane',
+    category: 'Hosts',
+  },
   'sftp.toggleHidden': {
     id: 'sftp.toggleHidden',
     label: 'Files: Show or Hide Hidden Files',

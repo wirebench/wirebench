@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   crumbsOf,
   formatSize,
-  joinRemote,
+  joinPath,
   modeString,
   parentOf,
   resolveTyped,
@@ -38,8 +38,8 @@ describe('format', () => {
   });
 
   it('joins, parents and crumbs remote paths', () => {
-    expect(joinRemote('/var', 'log')).toBe('/var/log');
-    expect(joinRemote('/', 'etc')).toBe('/etc');
+    expect(joinPath('/var', 'log')).toBe('/var/log');
+    expect(joinPath('/', 'etc')).toBe('/etc');
     expect(parentOf('/var/log/app')).toBe('/var/log');
     expect(parentOf('/var')).toBe('/');
     expect(parentOf('/')).toBe('/');
@@ -49,6 +49,22 @@ describe('format', () => {
       { label: 'log', path: '/var/log' },
       { label: 'app', path: '/var/log/app' },
     ]);
+  });
+
+  it('joins, parents and crumbs a Windows path of this machine with backslashes', () => {
+    expect(joinPath('C:\\Users', 'me')).toBe('C:\\Users\\me');
+    expect(joinPath('C:\\', 'Users')).toBe('C:\\Users');
+    expect(parentOf('C:\\Users\\me')).toBe('C:\\Users');
+    expect(parentOf('C:\\Users')).toBe('C:\\');
+    expect(parentOf('C:\\')).toBe('C:\\');
+    expect(crumbsOf('C:\\Users\\me')).toEqual([
+      { label: 'C:', path: 'C:\\' },
+      { label: 'Users', path: 'C:\\Users' },
+      { label: 'me', path: 'C:\\Users\\me' },
+    ]);
+    expect(resolveTyped('D:\\data', 'C:\\Users\\me', 'C:\\')).toBe('D:\\data');
+    expect(resolveTyped('~\\src', 'C:\\Users\\me', 'C:\\')).toBe('C:\\Users\\me\\src');
+    expect(resolveTyped('tmp', 'C:\\Users\\me', 'C:\\Users')).toBe('C:\\Users\\tmp');
   });
 
   it('reads a typed path against home and the current folder', () => {

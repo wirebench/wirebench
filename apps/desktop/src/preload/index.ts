@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { buildApi } from './build-api.js';
 import { OS_THEME_ARGUMENT } from '../shared/os-theme-argument.js';
 
@@ -24,6 +24,7 @@ const api = buildApi(
     // per-app appearance override. Absent (a preload loaded outside our window) means dark.
     osTheme: process.argv.includes(`${OS_THEME_ARGUMENT}light`) ? 'light' : 'dark',
   },
+  (file) => webUtils.getPathForFile(file),
 );
 
 contextBridge.exposeInMainWorld('wirebench', api);

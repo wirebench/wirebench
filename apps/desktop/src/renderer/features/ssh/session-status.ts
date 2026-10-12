@@ -18,6 +18,6 @@ export function sessionStatus(
 export function filesSessionStatus(
   pane: Pick<PaneState, 'place' | 'status'> | undefined,
 ): (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS] {
-  if (pane?.place.sessionId !== undefined) return SESSION_STATUS.open;
+  if (pane?.place.kind === 'remote' && pane.place.sessionId !== undefined) return SESSION_STATUS.open;
   return pane?.status === 'connecting' || pane?.status === 'loading' ? SESSION_STATUS.connecting : SESSION_STATUS.idle;
 }

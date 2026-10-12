@@ -111,6 +111,7 @@ import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
 import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
+import { rekeyEndpoints, renamedContainerSlugs } from './endpoint-renames.js';
 import { checkCertificates } from './certificate-expiry.js';
 import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
@@ -2790,16 +2791,47 @@ export class WorkspaceService implements ProjectRouter {
       // been queued by the watcher as an outside edit — see `candidateWorkspacePaths`. Released
       // once the write settles (`saveWorkspaceAnnounced`'s `finally`), whether it succeeded or
       // threw, so a failed save never leaves every candidate suppressed for the rest of the TTL.
-      const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
-      await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
-      this.requireStillOpen(open);
-      open.sync?.afterSave('workspace');
-      this.backfillTeamSecrets();
-      this.deps.hooks?.onChanged?.(this.snapshot());
+      await this.saveChangedWorkspace(open, previousWorkspace);
       return {
         workspace: this.requireSnapshot(),
         ...(createdEnvironmentId !== undefined ? { createdEnvironmentId } : {}),
       };
+    });
+  }
+
+  /** Writes `open.workspace` after a change from `previousWorkspace`, then tells sync and the hooks. */
+  private async saveChangedWorkspace(open: OpenWorkspace, previousWorkspace: Workspace): Promise<void> {
+    const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
+    await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
+    this.requireStillOpen(open);
+    open.sync?.afterSave('workspace');
+    this.backfillTeamSecrets();
+    this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  /**
+   * Moves the workspace environments' endpoint overrides for a project's renamed interfaces and
+   * APIs, keyed `<projectSlug>/<slug>`, to their new slugs (#477). Saves only when a key moved.
+   */
+  private async rekeyWorkspaceEndpoints(projectSlug: string, renames: ReadonlyMap<string, string>): Promise<void> {
+    const open = this.requireOpen();
+    await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      const previousWorkspace = open.workspace;
+      let moved = false;
+      const environments = open.workspace.environments.map((environment) => {
+        const endpoints = rekeyEndpoints(environment.endpoints, renames, `${projectSlug}/`);
+        if (endpoints === environment.endpoints) {
+          return environment;
+        }
+        moved = true;
+        return { ...environment, endpoints };
+      });
+      if (!moved) {
+        return;
+      }
+      open.workspace = { ...open.workspace, environments };
+      await this.saveChangedWorkspace(open, previousWorkspace);
     });
   }
 
@@ -3165,10 +3197,19 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  projectMutate(
+  async projectMutate(
     ...[projectId, change]: Parameters<ProjectRouter['projectMutate']>
   ): ReturnType<ProjectRouter['projectMutate']> {
-    return this.hostFor(projectId).mutate(change);
+    const host = this.hostFor(projectId);
+    const before = host.open?.project;
+    const result = await host.mutate(change);
+    const after = host.open?.project;
+    const renames = before !== undefined && after !== undefined ? renamedContainerSlugs(before, after) : new Map();
+    const slug = this.current?.entries.find((entry) => entry.projectId === projectId)?.ref.slug;
+    if (renames.size > 0 && slug !== undefined) {
+      await this.rekeyWorkspaceEndpoints(slug, renames);
+    }
+    return result;
   }
 
   /** @inheritdoc */
