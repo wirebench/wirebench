@@ -48,11 +48,11 @@ describe('the password grant', () => {
   it('obtains a token on a send, with no browser, and caches it', async () => {
     const opened: string[] = [];
     const service = new OAuth2Service({ openExternal: (url) => Promise.resolve(void opened.push(url)) });
-    const password = config({ grant: 'password', username: 'alice', passwordRef: 'sec_pw' });
+    const ownerGrant = config({ grant: 'password', username: 'alice', passwordRef: 'sec_pw' });
     const before = server.oauthCalls.length;
 
-    const first = await service.accessToken(password, { credentials: { clientSecret: 's3cret', password: 'pa55' } });
-    const second = await service.accessToken(password, { credentials: { clientSecret: 's3cret', password: 'pa55' } });
+    const first = await service.accessToken(ownerGrant, { credentials: { clientSecret: 's3cret', password: 'pa55' } });
+    const second = await service.accessToken(ownerGrant, { credentials: { clientSecret: 's3cret', password: 'pa55' } });
 
     expect(second).toBe(first);
     expect(opened).toEqual([]);
@@ -61,9 +61,9 @@ describe('the password grant', () => {
 
   it('runs from Get new token too', async () => {
     const service = new OAuth2Service({ openExternal: () => Promise.resolve() });
-    const password = config({ grant: 'password', username: 'alice', passwordRef: 'sec_pw' });
+    const ownerGrant = config({ grant: 'password', username: 'alice', passwordRef: 'sec_pw' });
     await expect(
-      service.fetchToken(password, { credentials: { clientSecret: 's3cret', password: 'pa55' } }),
+      service.fetchToken(ownerGrant, { credentials: { clientSecret: 's3cret', password: 'pa55' } }),
     ).resolves.toMatchObject({ state: 'valid' });
   });
 });
