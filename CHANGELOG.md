@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
+  All projects | Selected projects**, with a project list that starts with every project ticked. A
+  project is offered only the environments that apply to it, in the title-bar switcher (grouped as
+  **All projects** and the current project), in **Send to environments…** and on the command line,
+  and the Environments view shows the projects as chips. Each project now keeps its own active
+  environment: moving to a tab of another project shows that project's choice. Removing a project
+  drops it from every scope and deletes its endpoint overrides; an environment left with no
+  project is kept as **No project**. `wirebench run`, `call` and MCP refuse an environment that
+  does not apply to the project with exit code 2 (`environment-out-of-scope`), listing the ones
+  that do, and `--env` is required only when one applies (#468).
+
 - **Find in a terminal's scrollback.** ⌘F (Ctrl+F on Windows and Linux) in a focused SSH terminal opens a
   find bar over the output: next and previous match, match case, whole word and regular expression, and a
   match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
