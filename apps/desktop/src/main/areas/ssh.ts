@@ -2,6 +2,7 @@ import { channels } from '../../shared/ipc.js';
 import { registerHandler } from '../ipc/register.js';
 import type { HostsService } from '../hosts-service.js';
 import type { SshImportService } from '../ssh-import.js';
+import type { SshKeysService } from '../ssh-keys.js';
 import type { SshSecretsService } from '../ssh-secrets.js';
 import type { SshService } from '../ssh-service.js';
 import { registerSftpChannels } from './sftp-channels.js';
@@ -14,6 +15,7 @@ export function registerSshChannels(deps: {
     'connect' | 'write' | 'resize' | 'close' | 'trust' | 'knownHosts' | 'forgetHostKey' | 'hostOs' | 'setHostOs'
   >;
   importer: Pick<SshImportService, 'preview' | 'apply'>;
+  keys: Pick<SshKeysService, 'generate' | 'keys' | 'install'>;
   sftp: Parameters<typeof registerSftpChannels>[0]['sftp'];
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
@@ -54,6 +56,9 @@ export function registerSshChannels(deps: {
   // A preview belongs to the window that asked for it; only that window can apply it.
   registerHandler(channels.ssh.importPreview, (request, sender) => deps.importer.preview(sender, request));
   registerHandler(channels.ssh.importApply, (request, sender) => deps.importer.apply(sender, request));
+  registerHandler(channels.ssh.generateKey, (request) => deps.keys.generate(request));
+  registerHandler(channels.ssh.keys, async (_request, sender) => ({ keys: await deps.keys.keys(sender) }));
+  registerHandler(channels.ssh.installKey, (request, sender) => deps.keys.install(sender, request));
   // The Files tab rides with the SSH area: off with it, so its local-path exception (spec R5) goes too.
   registerSftpChannels({ sftp: deps.sftp });
 }

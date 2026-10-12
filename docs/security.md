@@ -703,6 +703,18 @@ A catch URL can check the signature of what it receives, and a webhook item can 
   project file or the repository; the file holds only the reference and a CI name.
 - **In CI.** The CLI reads `WIREBENCH_SECRET_<name>` and masks the value like any other secret.
 
+## SSH keys made in the keychain
+
+A key from the Keychain's **Generate key…** is made in main (`packages/ssh` `generateKey`, OpenSSH format,
+encrypted with aes256-ctr and bcrypt when it has a passphrase) and goes straight into the workspace's
+secrets: the private key as the named secret, the passphrase as `NAME_passphrase`. The renderer gets the
+public key, its type and fingerprint, and the names; no channel returns a private key or passphrase, and a
+key the passphrase cannot open is listed as locked rather than read. **Install public key on host…** signs
+in with the host's existing auth and runs a fixed `sh -c` script that receives the public key as a quoted
+argument (never spliced into the script); it only appends to `~/.ssh/authorized_keys`, never removes a line,
+and takes group and other write off `~/.ssh` and the file. Tests: `packages/ssh/test/unit/keygen.test.ts`,
+`packages/ssh/test/unit/install.test.ts`, `apps/desktop/test/ssh-keys.test.ts`.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time
