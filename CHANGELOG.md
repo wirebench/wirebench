@@ -17,7 +17,9 @@ All notable changes to this project are documented here. The format follows
   drops it from every scope and deletes its endpoint overrides; an environment left with no
   project is kept as **No project**. `wirebench run`, `call` and MCP refuse an environment that
   does not apply to the project with exit code 2 (`environment-out-of-scope`), listing the ones
-  that do, and `--env` is required only when one applies (#468).
+  that do, and `--env` is required only when one applies (#468). Opening the workspace in an older
+  build afterwards resets this machine's local state for it: the active environment and the local
+  secret-source overrides.
 
 - **Find in a terminal's scrollback.** ⌘F (Ctrl+F on Windows and Linux) in a focused SSH terminal opens a
   find bar over the output: next and previous match, match case, whole word and regular expression, and a
