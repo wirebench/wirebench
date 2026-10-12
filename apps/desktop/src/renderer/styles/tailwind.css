@@ -72,3 +72,20 @@
     -webkit-app-region: no-drag;
   }
 }
+
+/* `${…}` in a snippet's script (snippet-editor.tsx): a declared variable, a secret, and shell text left
+   as written. Two classes, so they win over Monaco's own token colours. */
+.monaco-editor .wb-snippet-variable {
+  color: var(--wb-status-info);
+  font-weight: 600;
+}
+
+.monaco-editor .wb-snippet-secret {
+  color: var(--wb-status-warning);
+  font-weight: 600;
+}
+
+.monaco-editor .wb-snippet-shell {
+  color: var(--wb-fg-subtle);
+  font-style: italic;
+}

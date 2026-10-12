@@ -6,8 +6,13 @@ import type {
   SnippetsFileWire,
   SshListSnippetsResponse,
 } from '../../../../shared/snippets-wire.js';
+import { useEditorsStore } from '../../../state/editors.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProblemsStore } from '../../../state/problems.js';
+import { useHostsStore } from '../hosts-store.js';
+
+/** What the right panel edits: a saved snippet, or a new one (in `packageId`, when one is given). */
+export type SnippetEditorTarget = { mode: 'edit'; id: string } | { mode: 'new'; packageId?: string };
 
 interface SnippetsState {
   file: SnippetsFileWire;
@@ -20,6 +25,11 @@ interface SnippetsState {
   save: (file: SnippetsFileWire) => Promise<{ ok: true } | { ok: false; error: IpcError }>;
   selectedId: string | undefined;
   select: (id: string | undefined) => void;
+  /** The right panel's snippet, if it is open. */
+  editor: SnippetEditorTarget | null;
+  /** Opens the right panel on a snippet (picking it) or on a new one. */
+  openEditor: (target: SnippetEditorTarget) => void;
+  closeEditor: () => void;
   /** Stays across workspaces, like the hosts filter. */
   filter: string;
   setFilter: (text: string) => void;
@@ -40,6 +50,7 @@ const WORKSPACE_STATE = {
   problems: [],
   loaded: false,
   selectedId: undefined,
+  editor: null,
   collapsed: [],
 } satisfies Partial<SnippetsState>;
 
@@ -58,6 +69,12 @@ export const useSnippetsStore = create<SnippetsState>()((set, get) => ({
   },
   select: (selectedId) => {
     set({ selectedId });
+  },
+  openEditor: (editor) => {
+    set({ editor, ...(editor.mode === 'edit' ? { selectedId: editor.id } : {}) });
+  },
+  closeEditor: () => {
+    set({ editor: null });
   },
   setFilter: (filter) => {
     set({ filter });
@@ -85,14 +102,16 @@ function apply(result: IpcResult<SshListSnippetsResponse>): void {
     return;
   }
   const { file, snippets, problems } = result.value;
-  const { selectedId } = useSnippetsStore.getState();
+  const { selectedId, editor } = useSnippetsStore.getState();
+  const gone = (id: string): boolean => !snippets.some((s) => s.id === id);
   useSnippetsStore.setState({
     file,
     snippets,
     problems,
     loaded: true,
-    // A snippet removed (here, or by an edit outside) is no longer picked.
-    ...(selectedId !== undefined && !snippets.some((s) => s.id === selectedId) ? { selectedId: undefined } : {}),
+    // A snippet removed (here, or by an edit outside) is no longer picked, nor edited.
+    ...(selectedId !== undefined && gone(selectedId) ? { selectedId: undefined } : {}),
+    ...(editor?.mode === 'edit' && gone(editor.id) ? { editor: null } : {}),
   });
   const store = useProblemsStore.getState();
   store.clearSource('snippets');
@@ -129,4 +148,19 @@ export function filterSnippets(
       t.toLowerCase().includes(needle),
     );
   return items.filter((s) => matches(s) && tags.every((t) => s.tags.includes(t)));
+}
+
+/**
+ * Whether the snippet panel is in front: the Snippets view is showing, and its snippet exists (or is new).
+ * Here, not beside the editor, so the shell can ask without loading the editor (it is Monaco).
+ */
+export function useSnippetEditorShown(): boolean {
+  const homeInFront = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
+  const onSnippets = useHostsStore((s) => s.homeView === 'snippets');
+  const exists = useSnippetsStore((s) => {
+    const target = s.editor;
+    if (target === null) return false;
+    return target.mode === 'new' || s.snippets.some((x) => x.id === target.id);
+  });
+  return homeInFront && onSnippets && exists;
 }
