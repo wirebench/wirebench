@@ -265,6 +265,16 @@ wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/che
 Each step is reported as a request of the run: grouped by its sequence (one JUnit test suite per sequence),
 named `<sequence>/<n>. <step>`.
 
+A step's `branches` can repeat it, go to another step or skip the next one ([design](specs/2026-10-11-sequence-branching-design.md)):
+
+- Each run of a step is its own entry; from the second on, its name ends ` (attempt k)`. The cli line names the
+  path taken: `→ repeat (2 of 10)`, `→ 4. Fallback (1 of 1)`, `→ skip next`, or `limit reached: repeat 10 of 10`.
+- Only the last run of a step counts. An earlier run is reported as skipped with `retried: true`, its assertions
+  kept, so the summary, JUnit and the exit code follow the last run. A step passed over is skipped.
+- The json report adds `attempt`, `retried` and `branch` (`{ rule, action, to?, count, max?, limitReached? }`),
+  the html report a Path line. Both are additive; the json `formatVersion` stays 1.
+- A run stops at 1000 step runs, erroring the next step with `sequence-run-limit` (exit 3).
+
 ## Scripts
 
 A saved SOAP, REST or gRPC request may carry a pre-request and a post-response script, in TypeScript files

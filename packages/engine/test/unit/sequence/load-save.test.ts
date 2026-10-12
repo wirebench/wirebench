@@ -24,7 +24,7 @@ function withSequences(...names: string[]): Project {
 }
 
 const FOREIGN = {
-  newer: 'kind: sequence\nversion: 2\nid: S9\nname: From a newer build\norder: 0\n',
+  newer: 'kind: sequence\nversion: 3\nid: S9\nname: From a newer build\norder: 0\n',
   malformed: 'kind: sequence\nversion: 1\nid: S8\nname: "unclosed\n',
 };
 

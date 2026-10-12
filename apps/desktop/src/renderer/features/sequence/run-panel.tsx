@@ -11,6 +11,7 @@ import type { SequenceRunState } from '../../state/sequence-runs.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { openCatchUrlTab } from '../webhooks/webhooks-actions.js';
+import { branchText } from './branch-text.js';
 import { waitingText } from './callback-text.js';
 import type { SequenceStepResultWire, SequenceWire } from '../../../shared/wire-base.js';
 
@@ -32,6 +33,7 @@ const SKIPPED_BECAUSE: Record<NonNullable<SequenceStepResultWire['skipped']>, st
   disabled: 'disabled',
   'after-failure': 'after a failure',
   cancelled: 'cancelled',
+  branch: 'passed over by a branch',
 };
 
 /**
@@ -73,27 +75,50 @@ function showInHistory(runId: string): void {
 
 function StepRow({ step }: { readonly step: SequenceStepResultWire }) {
   const details = step.assertions.length > 0 || step.transfers.length > 0 || step.error !== undefined;
+  const path = branchText(step);
+  const retried = step.retried === true;
   const summary = (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className={`flex min-w-0 items-center gap-2 ${retried ? 'opacity-60' : ''}`}>
       <span className={`w-4 shrink-0 text-center ${OUTCOME_TONE[step.outcome]}`}>{OUTCOME_MARK[step.outcome]}</span>
       <span className="truncate text-fg-default">
         {step.index + 1}. {step.name}
+        {step.attempt !== undefined ? ` (attempt ${step.attempt})` : ''}
       </span>
       {step.status !== undefined && <span className="text-fg-muted">{step.status}</span>}
       {step.durationMs !== undefined && <span className="text-fg-subtle">{Math.round(step.durationMs)} ms</span>}
       {step.skipped !== undefined && <span className="text-fg-subtle">skipped ({SKIPPED_BECAUSE[step.skipped]})</span>}
+      {path !== undefined && (
+        <span data-testid="sequence-run-branch" className="shrink-0 text-fg-muted">
+          {path}
+        </span>
+      )}
+      {retried && (
+        <span className="shrink-0 text-fg-subtle" title="A later run of this step replaced this one; it does not count">
+          retried
+        </span>
+      )}
       {step.origin !== undefined && <span className="truncate font-mono text-xs text-fg-subtle">{step.origin}</span>}
     </span>
   );
   if (!details) {
     return (
-      <li data-testid="sequence-run-step" data-outcome={step.outcome} className="px-2 py-1 text-sm">
+      <li
+        data-testid="sequence-run-step"
+        data-outcome={step.outcome}
+        data-retried={retried ? 'true' : undefined}
+        className="px-2 py-1 text-sm"
+      >
         {summary}
       </li>
     );
   }
   return (
-    <li data-testid="sequence-run-step" data-outcome={step.outcome} className="px-2 py-1 text-sm">
+    <li
+      data-testid="sequence-run-step"
+      data-outcome={step.outcome}
+      data-retried={retried ? 'true' : undefined}
+      className="px-2 py-1 text-sm"
+    >
       <details open={step.outcome === 'failed' || step.outcome === 'errored'}>
         <summary className="cursor-pointer">{summary}</summary>
         <div className="mt-1 ml-6 flex flex-col gap-0.5">
@@ -152,7 +177,9 @@ export function RunPanel({ sequence }: RunPanelProps) {
       </p>
     );
   }
-  const steps = Object.values(run.steps).sort((a, b) => a.index - b.index);
+  const steps = run.steps;
+  // Steps reported so far, each counted once however often a branch ran it.
+  const reported = new Set(steps.map((step) => step.stepId)).size;
   const outcome = run.result?.outcome;
   return (
     <section data-testid="sequence-run-panel" aria-label="Run results" className="flex flex-col gap-1">
@@ -162,7 +189,7 @@ export function RunPanel({ sequence }: RunPanelProps) {
           className={outcome !== undefined ? OUTCOME_TONE[outcome] : 'text-fg-muted'}
         >
           {run.status === 'running'
-            ? `Running… ${steps.length} of ${sequence.steps.length}`
+            ? `Running… ${reported} of ${sequence.steps.length}`
             : run.status === 'failed'
               ? `Could not run: ${run.error ?? ''}`
               : `Run ${outcome ?? ''}`}
@@ -179,8 +206,9 @@ export function RunPanel({ sequence }: RunPanelProps) {
         )}
       </div>
       <ul>
-        {steps.map((step) => (
-          <StepRow key={step.stepId} step={step} />
+        {steps.map((step, position) => (
+          // A step may appear once per run of it; the list only ever grows during a run.
+          <StepRow key={`${position}-${step.stepId}`} step={step} />
         ))}
       </ul>
       {run.status === 'running' && run.waiting !== undefined && (

@@ -885,6 +885,42 @@ export const sequenceTransferWireSchema = z.discriminatedUnion('from', [
 ]);
 export type SequenceTransferWire = z.infer<typeof sequenceTransferWireSchema>;
 
+const notWire = { not: z.boolean().optional() };
+const branchOutcomeWire = z.enum(['passed', 'failed', 'errored']);
+
+/** What a branch rule tests (#347): a response check, without a name, or the step's outcome. */
+export const branchConditionWireSchema = z.discriminatedUnion('type', [
+  statusAssertionWire.omit({ name: true }).extend(notWire),
+  soapFaultAssertionWire.omit({ name: true }).extend(notWire),
+  matchAssertionWire.omit({ name: true }).extend(notWire),
+  headerAssertionWire.omit({ name: true }).extend(notWire),
+  z.object({
+    type: z.literal('outcome'),
+    equals: z.union([branchOutcomeWire, z.array(branchOutcomeWire)]),
+    ...notWire,
+  }),
+]);
+export type BranchConditionWire = z.infer<typeof branchConditionWireSchema>;
+
+/** Where a step's run goes when the condition holds. Main holds it to the file's limits. */
+export const branchRuleWireSchema = z.discriminatedUnion('then', [
+  z.object({
+    when: branchConditionWireSchema,
+    then: z.literal('goto'),
+    step: z.string(),
+    max: z.number().int(),
+    delayMs: z.number().int().optional(),
+  }),
+  z.object({
+    when: branchConditionWireSchema,
+    then: z.literal('repeat'),
+    max: z.number().int(),
+    delayMs: z.number().int().optional(),
+  }),
+  z.object({ when: branchConditionWireSchema, then: z.literal('skip-next') }),
+]);
+export type BranchRuleWire = z.infer<typeof branchRuleWireSchema>;
+
 export const sequenceStepWireSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
@@ -893,6 +929,7 @@ export const sequenceStepWireSchema = z.object({
   requestAssertions: z.boolean(),
   transfers: z.array(sequenceTransferWireSchema),
   assertions: z.array(stepAssertionWireSchema),
+  branches: z.array(branchRuleWireSchema).optional(),
 });
 export type SequenceStepWire = z.infer<typeof sequenceStepWireSchema>;
 
@@ -956,7 +993,22 @@ export const sequenceStepResultWireSchema = z.object({
   assertions: z.array(sequenceAssertionResultWireSchema),
   transfers: z.array(sequenceTransferResultWireSchema),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
-  skipped: z.enum(['disabled', 'after-failure', 'cancelled']).optional(),
+  skipped: z.enum(['disabled', 'after-failure', 'cancelled', 'branch']).optional(),
+  /** Which run of the step this is, from 2 (#347). */
+  attempt: z.number().int().optional(),
+  /** A later run of this step superseded this one; it does not count. */
+  retried: z.literal(true).optional(),
+  /** What the step's branches did. */
+  branch: z
+    .object({
+      rule: z.number().int(),
+      action: z.enum(['goto', 'repeat', 'skip-next']),
+      to: z.object({ index: z.number().int(), stepId: z.string(), name: z.string() }).optional(),
+      count: z.number().int(),
+      max: z.number().int().optional(),
+      limitReached: z.literal(true).optional(),
+    })
+    .optional(),
   /** What the step request's scripts logged, masked (#63). */
   scriptLog: z.array(z.string()).optional(),
   /** The step's request has scripts, switched off, so none ran. */

@@ -117,6 +117,16 @@ describe('runFinishedEvent', () => {
     });
   });
 
+  it('counts a run a branch superseded as skipped, as the outcome does (#347)', () => {
+    const retried = {
+      ...result,
+      outcome: 'passed' as const,
+      steps: [{ ...step('failed', 'https://a.example'), retried: true as const }, step('passed', 'https://a.example')],
+    };
+    const event = runFinishedEvent(retried, retried.startedAt, now, null);
+    expect(event.action === 'desktop.run_finished' && [event.details.failed, event.details.skipped]).toEqual([0, 1]);
+  });
+
   it('reports cancelled when the caller says so, and caps hosts at 64', () => {
     const many = { ...result, steps: Array.from({ length: 80 }, (_, i) => step('passed', `https://h${i}.example`)) };
     const event = runFinishedEvent(many, many.startedAt, now, null, true);

@@ -1,5 +1,6 @@
 import { seconds } from '@wirebench/engine';
 import type { RequestOutcome, RequestResult, RunResult } from '@wirebench/engine';
+import { branchText } from './branch-text.js';
 import { controlLine } from './run-control.js';
 import type { Reporter } from './types.js';
 
@@ -102,6 +103,14 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       }
       if (result.unasserted && result.outcome !== 'skipped') {
         parts.push('(no assertions)');
+      }
+      // The path a sequence step took (#347), and whether a later run of it superseded this one.
+      const path = branchText(result);
+      if (path !== undefined) {
+        parts.push(path);
+      }
+      if (result.retried === true) {
+        parts.push('(retried)');
       }
       if (result.baseline?.status === 'matched') {
         parts.push('baseline: matches');

@@ -7,13 +7,23 @@
  * reasoning is in `docs/specs/2026-09-28-sequences-design.md` and ADR-0015.
  */
 
-import type { AssertionLanguage, StepAssertion } from '../assert/model.js';
+import type {
+  AssertionLanguage,
+  HeaderAssertion,
+  MatchAssertion,
+  SoapFaultAssertion,
+  StatusAssertion,
+  StepAssertion,
+} from '../assert/model.js';
 import { generateId } from '../project/model.js';
 import type { CreateOptions } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 
-/** The version of the sequence file this build writes and the highest it reads. */
-export const SEQUENCE_VERSION = 1;
+/**
+ * The highest sequence file version this build reads. Version 2 added `branches` (#347); a sequence
+ * without any is still written as version 1, so a build that predates branches keeps reading it.
+ */
+export const SEQUENCE_VERSION = 2;
 
 /** Bounds on one sequence file and one run, whatever the file or the server says. */
 export const SEQUENCE_LIMITS = Object.freeze({
@@ -24,6 +34,17 @@ export const SEQUENCE_LIMITS = Object.freeze({
   assertionsPerStep: 50,
   /** A transferred value larger than this errors the step (`sequence-value-too-large`). */
   valueBytes: 64 * 1024,
+  /** Branch rules on one step. */
+  branchesPerStep: 20,
+  /** The largest `max` a `goto` or `repeat` rule may have. */
+  branchMax: 100,
+  /** The longest wait a rule may ask for before it jumps. */
+  branchDelayMs: 60_000,
+  /**
+   * Step runs in one run, whatever the rules say: each rule's `max` bounds how often it fires, and this
+   * bounds a long loop body run that often. Reaching it errors the step that would run next (`sequence-run-limit`).
+   */
+  stepRuns: 1000,
 });
 
 /** A transfer's name, as `${#Sequence#name}` uses it. */
@@ -73,6 +94,51 @@ export interface CookieTransfer extends TransferBase {
 /** One value lifted from a step's response. */
 export type Transfer = BodyTransfer | HeaderTransfer | StatusTransfer | CookieTransfer;
 
+/** A step outcome, as an `outcome` condition compares it. */
+export type BranchOutcome = 'passed' | 'failed' | 'errored';
+
+/** Holds when the step's own outcome is one of `equals`: what lets a send error branch. */
+export interface OutcomeCondition {
+  readonly type: 'outcome';
+  readonly equals: BranchOutcome | readonly BranchOutcome[];
+}
+
+/**
+ * What a branch rule tests about the step's response: one of the step checks, holding when the same
+ * check as an assertion would pass, or the step's outcome. `not` inverts it.
+ */
+export type BranchCondition = (
+  | Omit<StatusAssertion, 'name'>
+  | Omit<HeaderAssertion, 'name'>
+  | Omit<MatchAssertion, 'name'>
+  | Omit<SoapFaultAssertion, 'name'>
+  | OutcomeCondition
+) & { readonly not?: boolean };
+
+/** Where the run goes when a rule's condition holds. */
+export type BranchRule =
+  | {
+      readonly when: BranchCondition;
+      /** Continue at the step with this id; may be the step itself. */
+      readonly then: 'goto';
+      readonly step: string;
+      /** How many times this rule may fire in one run. Every loop has one. */
+      readonly max: number;
+      readonly delayMs?: number;
+    }
+  | {
+      readonly when: BranchCondition;
+      /** Run this step again. */
+      readonly then: 'repeat';
+      readonly max: number;
+      readonly delayMs?: number;
+    }
+  | {
+      readonly when: BranchCondition;
+      /** Report the next step as skipped and continue after it. It cannot loop, so it has no `max`. */
+      readonly then: 'skip-next';
+    };
+
 /** One request in a sequence, and what to take from and check about its response. */
 export interface SequenceStep {
   readonly id: string;
@@ -86,6 +152,8 @@ export interface SequenceStep {
   readonly requestAssertions: boolean;
   readonly transfers: readonly Transfer[];
   readonly assertions: readonly StepAssertion[];
+  /** Evaluated in order after the step; the first that holds and is under its `max` decides where to go. */
+  readonly branches?: readonly BranchRule[];
 }
 
 /** How a sequence runs. */
@@ -142,6 +210,7 @@ export interface CreateSequenceStepInput extends Omit<CreateOptions, 'order'> {
   readonly requestAssertions?: boolean;
   readonly transfers?: readonly Transfer[];
   readonly assertions?: readonly StepAssertion[];
+  readonly branches?: readonly BranchRule[];
 }
 
 /** Creates a step that sends `requestId`, enabled, with the request's own assertions on. */
@@ -154,5 +223,6 @@ export function createSequenceStep(requestId: string, input: CreateSequenceStepI
     requestAssertions: input.requestAssertions ?? true,
     transfers: input.transfers ?? [],
     assertions: input.assertions ?? [],
+    ...(input.branches !== undefined && input.branches.length > 0 ? { branches: input.branches } : {}),
   };
 }
