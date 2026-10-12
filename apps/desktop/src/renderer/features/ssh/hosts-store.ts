@@ -68,7 +68,7 @@ export function hostStatusOf(panes: Readonly<Record<string, PaneSession>>, hostI
 }
 
 /** What the SSH area's fixed first tab shows, picked from the area's menu. */
-export type SshHomeView = 'hosts' | 'keychain' | 'known-hosts';
+export type SshHomeView = 'hosts' | 'snippets' | 'keychain' | 'known-hosts';
 
 interface HostsState {
   /** Stays across workspaces, like the filter: it is where the user was, not workspace data. */
@@ -407,9 +407,18 @@ export function upsertGroup(file: HostsFileWire, group: GroupEntryWire, parentGr
   if (findGroup(file, group.id) !== undefined) {
     return {
       ...file,
-      groups: mapGroups(file.groups, (g) =>
-        g.id === group.id ? { ...g, name: group.name, tags: group.tags, ssh: group.ssh } : g,
-      ),
+      groups: mapGroups(file.groups, (g) => {
+        if (g.id !== group.id) return g;
+        const { protected: dropped, ...rest } = g;
+        void dropped;
+        return {
+          ...rest,
+          name: group.name,
+          tags: group.tags,
+          ...(group.protected === undefined ? {} : { protected: group.protected }),
+          ssh: group.ssh,
+        };
+      }),
     };
   }
   if (parentGroupId === undefined) return { ...file, groups: [...file.groups, group] };

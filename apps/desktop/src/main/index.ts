@@ -56,6 +56,7 @@ import {
 import { SshImportService } from './ssh-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
+import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpService } from './sftp-service.js';
@@ -189,6 +190,8 @@ interface WindowScope {
   readonly workspace: WorkspaceService;
   /** The SSH area's cached `hosts.yaml` of this window's workspace. */
   readonly hosts: HostsService;
+  /** The SSH area's cached `snippets.yaml`, beside `hosts.yaml`. */
+  readonly snippets: SnippetsService;
   /** The reopen of the last workspace this window started with; resolved at once for one opened at the picker. */
   ready: Promise<void>;
   /** Whether the window's audit server was signed in at the last account change. */
@@ -506,6 +509,8 @@ const kindsRegistry = kindRegistry(enabledKinds);
 
 /** The calling window's `hosts.yaml` (each window has its own, for its own workspace; see `createWindowScope`). */
 const hostsService = scoped(scopes, (scope) => scope.hosts);
+/** The calling window's `snippets.yaml`, cached per window like its hosts. */
+const snippetsService = scoped(scopes, (scope) => scope.snippets);
 
 /**
  * The SSH sessions, each owned by the window that opened it; hosts and secrets resolve at connect, from
@@ -560,6 +565,13 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     () => workspace.treeDir(),
     () => {
       send(events.ssh.hostsChanged, {});
+    },
+  );
+  // `snippets.yaml` beside it, dropped on the same workspace switch.
+  const snippets = windowSnippets(
+    () => workspace.treeDir(),
+    () => {
+      send(events.ssh.snippetsChanged, {});
     },
   );
   const teamSecrets = new TeamSecretsService({
@@ -719,6 +731,9 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         hostsOnWorkspaceChange(enabledAreas, hosts, () => {
           send(events.ssh.hostsChanged, {});
         });
+        hostsOnWorkspaceChange(enabledAreas, snippets, () => {
+          send(events.ssh.snippetsChanged, {});
+        });
         // A session belongs to the workspace it was opened in; its credentials were that workspace's.
         endSshOnSwitch(snapshot?.id);
       },
@@ -751,6 +766,11 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
       onHostsFileChanged: () => {
         hostsOnFileChange(enabledAreas, hosts, () => {
           send(events.ssh.hostsChanged, {});
+        });
+      },
+      onSnippetsFileChanged: () => {
+        hostsOnFileChange(enabledAreas, snippets, () => {
+          send(events.ssh.snippetsChanged, {});
         });
       },
       onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
@@ -791,6 +811,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     audit,
     workspace,
     hosts,
+    snippets,
     ready: Promise.resolve(),
     auditSignedIn: false,
     closing: undefined,
@@ -1235,6 +1256,7 @@ void app.whenReady().then(() => {
     secrets: sshSecrets,
     ssh: sshService,
     sftp: sftpService,
+    snippets: snippetsService,
     transfers: sftpTransfers,
     keys: sshKeys,
     importer: new SshImportService<WebContents>({

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Server, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { KeyRound, Server, ShieldCheck, SquareTerminal, type LucideIcon } from 'lucide-react';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostDialog } from './host-dialog.js';
 import { useHostsStore, type SshHomeView } from './hosts-store.js';
 import { ImportDialog } from './import-dialog.js';
+import { useSnippetsStore } from './snippets/snippets-store.js';
 
 const ENTRIES: readonly { readonly id: SshHomeView; readonly label: string; readonly icon: LucideIcon }[] = [
   { id: 'hosts', label: 'Hosts', icon: Server },
+  { id: 'snippets', label: 'Snippets', icon: SquareTerminal },
   { id: 'keychain', label: 'Keychain', icon: KeyRound },
   { id: 'known-hosts', label: 'Known hosts', icon: ShieldCheck },
 ];
@@ -19,6 +21,7 @@ const ENTRIES: readonly { readonly id: SshHomeView; readonly label: string; read
 export function HostsView() {
   const refresh = useHostsStore((s) => s.refresh);
   const resolved = useHostsStore((s) => s.resolved);
+  const snippetCount = useSnippetsStore((s) => s.snippets.length);
   const homeView = useHostsStore((s) => s.homeView);
   const setHomeView = useHostsStore((s) => s.setHomeView);
   // Whether the fixed tab is the one in front: the entry only reads as current while it is.
@@ -27,6 +30,10 @@ export function HostsView() {
 
   useEffect(() => {
     void refresh();
+    useSnippetsStore
+      .getState()
+      .refresh()
+      .catch(() => undefined); // only the count: the Snippets view reads again when shown
   }, [refresh]);
 
   // Counted again when the menu is picked from or the hosts are saved (a host's dialog can store a
@@ -42,7 +49,13 @@ export function HostsView() {
   }, [homeView, homeShown, resolved]);
 
   const countOf = (id: SshHomeView): number | undefined =>
-    id === 'hosts' ? resolved.length : id === 'keychain' ? counts.keychain : counts.knownHosts;
+    id === 'hosts'
+      ? resolved.length
+      : id === 'snippets'
+        ? snippetCount
+        : id === 'keychain'
+          ? counts.keychain
+          : counts.knownHosts;
 
   const open = (id: SshHomeView): void => {
     setHomeView(id);

@@ -30,6 +30,7 @@ import type {
 import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
+import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
 import { RecentSection } from './recent-section.js';
@@ -49,7 +50,15 @@ export function SshHome() {
   const view = useHostsStore((s) => s.homeView);
   return (
     <div data-testid="ssh-home" className="h-full min-h-0 overflow-auto p-4">
-      {view === 'hosts' ? <HostsPanel /> : view === 'keychain' ? <KeychainPanel /> : <KnownHostsPanel />}
+      {view === 'hosts' ? (
+        <HostsPanel />
+      ) : view === 'snippets' ? (
+        <SnippetsPanel />
+      ) : view === 'keychain' ? (
+        <KeychainPanel />
+      ) : (
+        <KnownHostsPanel />
+      )}
       <InstallKeyDialog />
     </div>
   );

@@ -74,3 +74,61 @@ export function InheritedField<T extends string | number>({
     </div>
   );
 }
+
+export interface InheritedSwitchProps {
+  readonly label: string;
+  /** What the setting resolves to without an override here, and where that came from. */
+  readonly provenance: Provenance<boolean>;
+  /** This entry's own value; `undefined` means it inherits. */
+  readonly override: boolean | undefined;
+  readonly onChange: (next: boolean | undefined) => void;
+}
+
+const SWITCH_CLASS =
+  'inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-hairline-strong px-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-50';
+
+/**
+ * {@link InheritedField} for an on/off setting: the inherited value shows on a greyed switch with its source;
+ * Override makes it editable, starting from the inherited value, and switching Override off inherits again.
+ */
+export function InheritedSwitch({ label, provenance, override, onChange }: InheritedSwitchProps) {
+  const overridden = override !== undefined;
+  const on = overridden ? override : (provenance.value ?? false);
+  const source =
+    typeof provenance.from === 'object'
+      ? `from ${provenance.from.group}`
+      : provenance.from === 'default'
+        ? 'default'
+        : undefined;
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="flex-1 text-fg-subtle">{label}</span>
+      {source !== undefined && !overridden ? <span className="text-fg-subtle">{source}</span> : null}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        disabled={!overridden}
+        className={`${SWITCH_CLASS} ${on ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
+        onClick={() => {
+          onChange(!on);
+        }}
+      >
+        <span className="size-2.5 rounded-full bg-fg-default" />
+      </button>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={overridden}
+        aria-label={`Override ${label}`}
+        className={`${SWITCH_CLASS} ${overridden ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
+        onClick={() => {
+          onChange(overridden ? undefined : (provenance.value ?? false));
+        }}
+      >
+        <span className="size-2.5 rounded-full bg-fg-default" />
+      </button>
+    </div>
+  );
+}

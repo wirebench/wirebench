@@ -16,6 +16,7 @@ import { HostForm } from './host-dialog.js';
 import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
+import { ProtectedMark } from './protected-mark.js';
 import { sessionStatus } from './session-status.js';
 
 /** Whether the details slide-over is in front: the Hosts tab is showing, a host is picked, and it was not put away. */
@@ -121,7 +122,10 @@ export function HostDetails() {
   const header = (
     <div className="flex flex-col gap-3 px-1 py-3">
       <div className="flex min-w-0 flex-col">
-        <h2 className="truncate text-md font-medium text-fg-default">{entry.name}</h2>
+        <h2 className="flex min-w-0 items-center gap-1.5 text-md font-medium text-fg-default">
+          <span className="truncate">{entry.name}</span>
+          {host?.protected.value === true && <ProtectedMark size={14} />}
+        </h2>
         <p className="flex items-center gap-1.5 text-xs text-fg-subtle">
           <span className={`size-2 shrink-0 rounded-full bg-current ${status.color}`} aria-hidden="true" />
           <span>{status.label}</span>

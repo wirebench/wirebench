@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Snippets in the SSH area.** The SSH menu gains **Snippets**: the workspace's `snippets.yaml`, beside
+  `hosts.yaml`, shown as packages of snippets with a filter (⌘F) and tag chips. A snippet opens in the right
+  panel to edit its name, package, tags, description and script, whose `${…}` tokens are marked as declared
+  variables, secrets or shell text; a `${name}` the script uses can be declared as a variable in one click,
+  and **Insert secret** puts `${secret:NAME}` at the cursor (the value never enters the file). Snippets
+  duplicate, move between packages and delete; packages are created, renamed and deleted once empty. A file
+  that does not parse shows in the view and in the Problems tab. Running a snippet comes in a later release
+  (#450).
+- **Protected hosts.** A host or a group can be marked **Protected** in its form, inherited like the other
+  settings; a protected host shows a shield on its card and in its details (#450).
 - **Recent SSH connections.** The Hosts tab shows the hosts you connected to lately in a **Recent** strip
   (when, and whether the last connect failed) with a connect button and **Clear**, and gains a
   **Recently connected** sort; **Connect to Host…** and quick-open list recent hosts first. The list is

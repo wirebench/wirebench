@@ -26,7 +26,7 @@ export function registerEnabledAreaChannels(
 }
 
 /**
- * A workspace change: the cached `hosts.yaml` belongs to the workspace left, so it is dropped; when the ssh
+ * A workspace change: the cached `hosts.yaml` (or `snippets.yaml`) belongs to the workspace left, so it is dropped; when the ssh
  * area is on, the renderer is told to read the new workspace's file (its store was reset on the switch).
  */
 export function hostsOnWorkspaceChange(
@@ -39,7 +39,7 @@ export function hostsOnWorkspaceChange(
 }
 
 /**
- * `hosts.yaml` changed on disk (an outside edit, or this app's own save): the cache is dropped, and the
+ * `hosts.yaml` (or `snippets.yaml`) changed on disk (an outside edit, or this app's own save): the cache is dropped, and the
  * renderer is told to re-read only when the ssh area is on, as on a workspace change.
  */
 export function hostsOnFileChange(

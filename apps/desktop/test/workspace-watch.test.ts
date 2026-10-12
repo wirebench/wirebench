@@ -50,10 +50,11 @@ interface Recorded {
    * the close()-races-a-reload test, to detect a host that a reload opened but never closed. */
   projectOnDisk: { projectId: string; paths: readonly string[] }[];
   hosts: string[];
+  snippets: string[];
 }
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: WorkspaceService; recorded: Recorded } {
-  const recorded: Recorded = { changed: [], onDisk: [], projectOnDisk: [], hosts: [] };
+  const recorded: Recorded = { changed: [], onDisk: [], projectOnDisk: [], hosts: [], snippets: [] };
   const service = new WorkspaceService({
     userDataDir: root,
     engine: new EngineService(),
@@ -65,6 +66,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: W
         recorded.onDisk.push({ workspaceId, paths: [...paths], message }),
       onProjectChangedOnDisk: (projectId, paths) => recorded.projectOnDisk.push({ projectId, paths: [...paths] }),
       onHostsFileChanged: (workspaceId) => recorded.hosts.push(workspaceId),
+      onSnippetsFileChanged: (workspaceId) => recorded.snippets.push(workspaceId),
     },
     ...overrides,
   });
@@ -142,6 +144,24 @@ describe('WorkspaceService — workspace-level watcher', () => {
       expect(recorded.hosts).toEqual([workspace.id]);
     }, WAIT_OPTIONS);
     // Not a manifest reload: no onChanged, no failure report.
+    expect(recorded.changed.length).toBe(before);
+    expect(recorded.onDisk).toEqual([]);
+
+    await service.close();
+  });
+
+  it('reports an outside edit to snippets.yaml through onSnippetsFileChanged, and only that file', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const { service, recorded } = newService();
+    await service.open(workspace.id);
+    await settle();
+    const before = recorded.changed.length;
+
+    await writeFile(join(tree, 'snippets.yaml'), 'version: 1\n', 'utf8');
+    await vi.waitFor(() => {
+      expect(recorded.snippets).toEqual([workspace.id]);
+    }, WAIT_OPTIONS);
+    expect(recorded.hosts).toEqual([]);
     expect(recorded.changed.length).toBe(before);
     expect(recorded.onDisk).toEqual([]);
 
