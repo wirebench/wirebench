@@ -7,11 +7,12 @@ import { create } from 'zustand';
 import type { IpcResult } from '../../../../shared/ipc.js';
 import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
 import { useEditorsStore } from '../../../state/editors.js';
+import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 import { openTrustPrompt } from '../connect.js';
 import { folderKey, readFilesPrefs, updateFilesPrefs } from './files-prefs.js';
-import { parentOf } from './format.js';
+import { freeName, joinRemote, parentOf } from './format.js';
 
 export interface PaneError {
   readonly code: string;
@@ -46,6 +47,11 @@ export interface PaneState {
   readonly sort: PaneSort;
 }
 
+/** A pane's open dialog: confirming a delete, or editing one entry's permissions. */
+export type PaneDialog =
+  | { readonly kind: 'delete'; readonly names: readonly string[]; readonly folders: boolean }
+  | { readonly kind: 'permissions'; readonly name: string; readonly mode: number };
+
 interface FilesState {
   /** By editor tab id. */
   readonly panes: Readonly<Record<string, PaneState>>;
@@ -54,6 +60,19 @@ interface FilesState {
   /** Bumped per tab to turn its path bar into a text field (⌘L). */
   readonly pathEditRequests: Readonly<Record<string, number>>;
   requestPathEdit: (tabId: string) => void;
+  /** Per tab: the dialog open over its pane. */
+  readonly dialogs: Readonly<Record<string, PaneDialog | undefined>>;
+  setDialog: (tabId: string, dialog: PaneDialog | undefined) => void;
+  /** Per tab: the entry being renamed in place. */
+  readonly renaming: Readonly<Record<string, string | undefined>>;
+  setRenaming: (tabId: string, name: string | undefined) => void;
+  /** Makes a folder with a free name (`New folder`, `New folder 2`, …), selects it and starts renaming it. */
+  newFolder: (tabId: string) => Promise<void>;
+  /** Renames `from` to `to` in the pane's folder; `false` when refused (the toast says why). */
+  rename: (tabId: string, from: string, to: string) => Promise<boolean>;
+  /** Deletes the named entries, folders with their contents. */
+  remove: (tabId: string, names: readonly string[]) => Promise<void>;
+  chmod: (tabId: string, name: string, mode: number) => Promise<void>;
   setShowHidden: (show: boolean) => void;
   /** Opens the tab's SFTP session (again, after a failure) and lists the host's last folder or its home. */
   connect: (tabId: string, hostId: string) => Promise<void>;
@@ -133,6 +152,24 @@ function freshPane(hostId: string): PaneState {
   };
 }
 
+/** Where a tab's file operations go: its session and folder, and the names already there. */
+interface RemoteTarget {
+  readonly place: { readonly kind: 'remote'; readonly sessionId: string };
+  readonly path: string;
+  readonly names: readonly string[];
+}
+
+function remoteTarget(tabId: string): RemoteTarget | undefined {
+  const pane = useFilesStore.getState().panes[tabId];
+  const sessionId = pane?.place.sessionId;
+  if (pane === undefined || sessionId === undefined || pane.path === '') return undefined;
+  return {
+    place: { kind: 'remote' as const, sessionId },
+    path: pane.path,
+    names: pane.entries.map((e) => e.name),
+  };
+}
+
 export const useFilesStore = create<FilesState>()((set, get) => {
   const replace = (tabId: string, change: (pane: PaneState) => PaneState): void => {
     const pane = get().panes[tabId];
@@ -147,6 +184,78 @@ export const useFilesStore = create<FilesState>()((set, get) => {
     panes: {},
     showHidden: readFilesPrefs().showHidden,
     pathEditRequests: {},
+    dialogs: {},
+    setDialog: (tabId, dialog) => {
+      set({ dialogs: { ...get().dialogs, [tabId]: dialog } });
+    },
+    renaming: {},
+    setRenaming: (tabId, name) => {
+      set({ renaming: { ...get().renaming, [tabId]: name } });
+    },
+
+    newFolder: async (tabId) => {
+      const target = remoteTarget(tabId);
+      if (target === undefined) return;
+      const name = freeName('New folder', target.names);
+      const made = await settle(
+        () => ipc().sftp.mkdir({ place: target.place, path: joinRemote(target.path, name) }),
+        'The folder could not be made',
+      );
+      if (!made.ok) {
+        showToast(made.error.message);
+        await get().refresh(tabId);
+        return;
+      }
+      await get().refresh(tabId);
+      get().select(tabId, [name]);
+      get().setRenaming(tabId, name);
+    },
+
+    rename: async (tabId, from, to) => {
+      const target = remoteTarget(tabId);
+      if (target === undefined) return false;
+      const renamed = await settle(
+        () =>
+          ipc().sftp.rename({
+            place: target.place,
+            from: joinRemote(target.path, from),
+            to: joinRemote(target.path, to),
+          }),
+        'The entry could not be renamed',
+      );
+      if (!renamed.ok) showToast(renamed.error.message);
+      await get().refresh(tabId);
+      if (renamed.ok) get().select(tabId, [to]);
+      return renamed.ok;
+    },
+
+    remove: async (tabId, names) => {
+      const target = remoteTarget(tabId);
+      if (target === undefined || names.length === 0) return;
+      const removed = await settle(
+        () =>
+          ipc().sftp.remove({
+            place: target.place,
+            paths: names.map((name) => joinRemote(target.path, name)),
+            recursive: true,
+          }),
+        'The entries could not be deleted',
+      );
+      if (!removed.ok) showToast(removed.error.message);
+      await get().refresh(tabId);
+    },
+
+    chmod: async (tabId, name, mode) => {
+      const target = remoteTarget(tabId);
+      if (target === undefined) return;
+      const changed = await settle(
+        () => ipc().sftp.chmod({ place: target.place, path: joinRemote(target.path, name), mode }),
+        'The permissions could not be changed',
+      );
+      if (!changed.ok) showToast(changed.error.message);
+      await get().refresh(tabId);
+    },
+
     requestPathEdit: (tabId) => {
       const { pathEditRequests } = get();
       set({ pathEditRequests: { ...pathEditRequests, [tabId]: (pathEditRequests[tabId] ?? 0) + 1 } });
@@ -301,7 +410,11 @@ export const useFilesStore = create<FilesState>()((set, get) => {
           .catch(() => undefined);
       const panes = { ...get().panes };
       delete panes[tabId];
-      set({ panes });
+      set({
+        panes,
+        dialogs: { ...get().dialogs, [tabId]: undefined },
+        renaming: { ...get().renaming, [tabId]: undefined },
+      });
     },
   };
 });

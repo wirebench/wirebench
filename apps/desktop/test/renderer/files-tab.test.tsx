@@ -94,15 +94,6 @@ it('a path that does not exist shows the error under the bar and keeps the listi
   expect(screen.getByText('notes.txt')).toBeDefined();
 });
 
-it('⌘L turns the path bar into a field', async () => {
-  render(<Tab />);
-  await waitFor(() => {
-    expect(screen.getByText('notes.txt')).toBeDefined();
-  });
-  fireEvent.keyDown(screen.getByTestId('files-list'), { key: 'l', metaKey: true });
-  expect(document.activeElement).toBe(screen.getByTestId('files-path-input'));
-});
-
 it('the hidden toggle shows names starting with a dot', async () => {
   list.mockResolvedValue({
     ok: true,

@@ -2,19 +2,27 @@ import { useMemo, useState } from 'react';
 import { ArrowLeft, ArrowUp, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { IconButton } from '../../../components/icon-button.js';
+import { DeleteDialog } from './delete-dialog.js';
+import { fileActions } from './file-actions.js';
 import { FileList } from './file-list.js';
+import { FileMenu } from './file-menu.js';
 import { useFilesStore } from './files-store.js';
 import { isFolderLike, joinRemote, visibleEntries } from './format.js';
 import { PathBar } from './path-bar.js';
+import { PermissionsDialog } from './permissions-dialog.js';
+import { RenameField } from './rename-field.js';
 
 /**
  * One pane of a Files tab: Back, Up, Refresh and the hidden-entries toggle, the path bar, a refusal under it
- * when a folder could not be listed (the listing stays), and the list.
+ * when a folder could not be listed (the listing stays), and the list with its menu: rename in place (F2),
+ * delete with confirmation (Delete), new folder, permissions, copy path and refresh.
  */
 export function FilePane({ tabId }: { readonly tabId: string }) {
   const pane = useFilesStore((s) => s.panes[tabId]);
   const showHidden = useFilesStore((s) => s.showHidden);
   const pathEdit = useFilesStore((s) => s.pathEditRequests[tabId] ?? 0);
+  const dialog = useFilesStore((s) => s.dialogs[tabId]);
+  const renaming = useFilesStore((s) => s.renaming[tabId]);
   const store = useFilesStore.getState;
   const [focusList, setFocusList] = useState(0);
   const entries = useMemo(
@@ -50,16 +58,7 @@ export function FilePane({ tabId }: { readonly tabId: string }) {
   };
 
   return (
-    <div
-      className="flex h-full min-h-0 flex-col"
-      data-testid="files-pane"
-      onKeyDown={(e) => {
-        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
-          e.preventDefault();
-          store().requestPathEdit(tabId);
-        }
-      }}
-    >
+    <div className="flex h-full min-h-0 flex-col" data-testid="files-pane">
       <div className="flex items-center gap-1 border-b border-hairline px-2 py-1">
         <IconButton
           label="Back"
@@ -107,23 +106,101 @@ export function FilePane({ tabId }: { readonly tabId: string }) {
           {pane.error.message}
         </p>
       )}
-      <FileList
-        listKey={pane.path}
-        entries={entries}
-        selected={pane.selected}
-        sort={pane.sort}
-        focusRequest={focusList}
-        onSort={(sort) => {
-          store().setSort(tabId, sort);
+      <FileMenu
+        actions={{
+          count: pane.selected.length,
+          folder: pane.entries.some((e) => pane.selected.includes(e.name) && isFolderLike(e)),
+          open: () => {
+            fileActions.open(tabId);
+          },
+          rename: () => {
+            fileActions.rename(tabId);
+          },
+          remove: () => {
+            fileActions.remove(tabId);
+          },
+          permissions: () => {
+            fileActions.permissions(tabId);
+          },
+          newFolder: () => {
+            fileActions.newFolder(tabId);
+          },
+          copyPath: () => {
+            fileActions.copyPath(tabId);
+          },
+          refresh: () => {
+            fileActions.refresh(tabId);
+          },
         }}
-        onSelect={(names) => {
-          store().select(tabId, names);
+      >
+        <div className="flex min-h-0 flex-1 flex-col">
+          <FileList
+            listKey={pane.path}
+            entries={entries}
+            selected={pane.selected}
+            sort={pane.sort}
+            focusRequest={focusList}
+            onSort={(sort) => {
+              store().setSort(tabId, sort);
+            }}
+            onSelect={(names) => {
+              store().select(tabId, names);
+            }}
+            onOpen={(entry) => {
+              if (isFolderLike(entry)) void navigate(joinRemote(pane.path, entry.name));
+            }}
+            onUp={() => {
+              void store().up(tabId);
+            }}
+            onRowContextMenu={(entry) => {
+              if (!pane.selected.includes(entry.name)) store().select(tabId, [entry.name]);
+            }}
+            onKey={(event) => {
+              if (event.key === 'F2') fileActions.rename(tabId);
+              else if (event.key === 'Delete' || ((event.metaKey || event.ctrlKey) && event.key === 'Backspace')) {
+                fileActions.remove(tabId);
+              } else return false;
+              event.preventDefault();
+              return true;
+            }}
+            renderName={(entry) =>
+              entry.name === renaming ? (
+                <RenameField
+                  name={entry.name}
+                  onCommit={(to) => {
+                    store().setRenaming(tabId, undefined);
+                    void store().rename(tabId, entry.name, to);
+                    setFocusList((n) => n + 1);
+                  }}
+                  onCancel={() => {
+                    store().setRenaming(tabId, undefined);
+                  }}
+                />
+              ) : undefined
+            }
+          />
+        </div>
+      </FileMenu>
+      <DeleteDialog
+        target={dialog?.kind === 'delete' ? dialog : null}
+        onCancel={() => {
+          store().setDialog(tabId, undefined);
         }}
-        onOpen={(entry) => {
-          if (isFolderLike(entry)) void navigate(joinRemote(pane.path, entry.name));
+        onConfirm={() => {
+          if (dialog?.kind !== 'delete') return;
+          store().setDialog(tabId, undefined);
+          void store().remove(tabId, dialog.names);
         }}
-        onUp={() => {
-          void store().up(tabId);
+      />
+      <PermissionsDialog
+        target={dialog?.kind === 'permissions' ? dialog : null}
+        onCancel={() => {
+          store().setDialog(tabId, undefined);
+        }}
+        onApply={(mode) => {
+          if (dialog?.kind !== 'permissions') return;
+          store().setDialog(tabId, undefined);
+          void store().chmod(tabId, dialog.name, mode);
         }}
       />
     </div>

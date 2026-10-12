@@ -126,3 +126,21 @@ export function visibleEntries(
 ): SftpEntryWire[] {
   return sortEntries(showHidden ? entries : entries.filter((e) => !isHidden(e.name)), sort);
 }
+
+/** `base`, or `base 2`, `base 3`, … — the first not in `taken`. */
+export function freeName(base: string, taken: readonly string[]): string {
+  const names = new Set(taken);
+  if (!names.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base} ${String(n)}`;
+    if (!names.has(candidate)) return candidate;
+  }
+}
+
+/** Why `name` cannot name an entry, or `undefined` when it can. */
+export function nameError(name: string): string | undefined {
+  if (name.trim() === '') return 'A name cannot be empty.';
+  if (name.includes('/') || name.includes('\0')) return 'A name cannot contain /.';
+  if (name === '.' || name === '..') return 'That name is reserved.';
+  return undefined;
+}

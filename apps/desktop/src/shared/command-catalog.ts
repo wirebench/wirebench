@@ -130,6 +130,42 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Open Files on Host…',
     category: 'Hosts',
   },
+  'sftp.refresh': {
+    id: 'sftp.refresh',
+    label: 'Files: Refresh',
+    category: 'Hosts',
+  },
+  'sftp.newFolder': {
+    id: 'sftp.newFolder',
+    label: 'Files: New Folder',
+    category: 'Hosts',
+  },
+  'sftp.rename': {
+    id: 'sftp.rename',
+    label: 'Files: Rename',
+    category: 'Hosts',
+  },
+  'sftp.delete': {
+    id: 'sftp.delete',
+    label: 'Files: Delete…',
+    category: 'Hosts',
+  },
+  'sftp.permissions': {
+    id: 'sftp.permissions',
+    label: 'Files: Permissions…',
+    category: 'Hosts',
+  },
+  'sftp.toggleHidden': {
+    id: 'sftp.toggleHidden',
+    label: 'Files: Show or Hide Hidden Files',
+    category: 'Hosts',
+  },
+  'sftp.focusPathBar': {
+    id: 'sftp.focusPathBar',
+    label: 'Files: Go to Folder…',
+    category: 'Hosts',
+    shortcut: 'Mod+L',
+  },
   'view.showCookies': {
     id: 'view.showCookies',
     label: 'Show Cookies',
