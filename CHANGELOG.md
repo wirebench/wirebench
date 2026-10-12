@@ -6,8 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [6.0.0] - 2026-10-12
-
 ### Added
 
 - **`wirebench lint` checks an OpenAPI 2.0, 3.0, 3.1 or 3.2 document.** A built-in hygiene rule set
@@ -20,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   folder, and a local document reaches the network only with `--allow-remote-refs`. In the desktop
   app, **Lint Definition** on a REST API puts the same findings in Problems, and so does an OpenAPI
   import or a definition update (#342).
+
+## [6.0.0] - 2026-10-12
+
+### Added
+
 - **`wirebench run --data <file>` runs a selection or a sequence once per row of a CSV or JSON file.**
   Each column is read as `${#Data#column}`, substituted literally, and scripts read the row with
   `iteration.data.get()`. `--iterations` sets the count (`--data-overrun stop|wrap|repeat-last` when it
