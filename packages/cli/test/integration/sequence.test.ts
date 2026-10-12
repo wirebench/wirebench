@@ -153,6 +153,51 @@ describe('wirebench run --sequence', () => {
     expect(xml).not.toContain(LOGIN_TOKEN);
   });
 
+  it('repeats and skips by its branches, reports the path, and counts only the last run of a step', async () => {
+    const loop = [
+      'kind: sequence',
+      'version: 2',
+      'id: SEQ0006',
+      'name: loop',
+      'order: 0',
+      'steps:',
+      '  - id: STEP0040',
+      '    request: SHOP0002',
+      '    branches:',
+      '      - { when: { type: status, equals: 200 }, then: repeat, max: 2 }',
+      '  - id: STEP0041',
+      '    request: SHOP0002',
+      '    branches:',
+      '      - { when: { type: outcome, equals: passed }, then: skip-next }',
+      '  - id: STEP0042',
+      '    request: SHOP0003',
+      '',
+    ].join('\n');
+    const dir = await shopProject({ loop });
+    const report = join(dir, '..', `${Date.now()}-loop.json`);
+    temps.push(report);
+    const { code, stdout } = await run(dir, '--sequence', 'loop', '--reporter', 'cli', '--reporter', `json=${report}`);
+    expect(code).toBe(0);
+    expect(demo.requests).toEqual(['/login', '/login', '/login', '/login']);
+    expect(stdout).toContain('- loop/1. login  200');
+    expect(stdout).toContain('→ repeat (1 of 2)');
+    expect(stdout).toContain('loop/1. login (attempt 3)');
+    expect(stdout).toContain('limit reached: repeat 2 of 2');
+    expect(stdout).toContain('→ skip next');
+    expect(stdout).toContain('- loop/3. cart');
+    expect(stdout).toContain('2 passed, 0 failed, 0 errored, 3 skipped');
+    const json = JSON.parse(await readFile(report, 'utf8')) as {
+      requests: { outcome: string; attempt?: number; retried?: boolean; branch?: { action: string } }[];
+    };
+    expect(json.requests.map((r) => [r.outcome, r.attempt, r.retried, r.branch?.action])).toEqual([
+      ['skipped', undefined, true, 'repeat'],
+      ['skipped', 2, true, 'repeat'],
+      ['passed', 3, undefined, 'repeat'],
+      ['passed', undefined, undefined, 'skip-next'],
+      ['skipped', undefined, undefined, undefined],
+    ]);
+  });
+
   it('fails a step on its assertion and skips the rest', async () => {
     const failing = sequence(
       'SEQ0002',

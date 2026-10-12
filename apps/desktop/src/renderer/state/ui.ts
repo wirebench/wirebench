@@ -16,19 +16,18 @@ import type {
 } from './ui-state.js';
 import type { RequestImportCurlTarget } from '../../shared/kinds/rest/wire.js';
 import type { SettingsSectionRequest } from '../features/preferences/settings-model.js';
-import { DEFAULT_UI_STATE, readUi, sidebarSizeGroup, SSH_SIDEBAR_SIZE, writeUi } from './ui-state.js';
+import { DEFAULT_UI_STATE, defaultSidebarSize, readUi, writeUi } from './ui-state.js';
 
 /**
- * Moves the sidebar to `view`. Crossing between the SSH area and the rest swaps the width in use with
- * the one parked for the other group, so each comes back as the user last left it (collapsed or not).
+ * Moves the sidebar to `view`, saving the width of the area it leaves and taking up the one `view`
+ * was last left at (or its default), so each area keeps its own width, collapsed or not.
  */
 function moveSidebarTo(draft: Draft<UiSnapshot>, view: SidebarView): void {
   const sidebar = draft.sidebar;
-  if (sidebarSizeGroup(view) !== sidebarSizeGroup(sidebar.view)) {
-    const current = sidebar.visible ? sidebar.size : sidebar.lastSize;
-    const next =
-      sidebar.parkedSize ?? (sidebarSizeGroup(view) === 'ssh' ? SSH_SIDEBAR_SIZE : DEFAULT_UI_STATE.sidebar.size);
-    sidebar.parkedSize = current;
+  if (view !== sidebar.view) {
+    const byView = (sidebar.sizeByView ??= {});
+    byView[sidebar.view] = sidebar.visible ? sidebar.size : sidebar.lastSize;
+    const next = byView[view] ?? defaultSidebarSize(view);
     sidebar.size = next;
     sidebar.lastSize = next;
   }
@@ -556,7 +555,8 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
     setSlideOverWidth: (width) =>
       update((draft) => {
-        draft.slideOver.width = width;
+        // Each area keeps its own: the width set here is the one this area comes back to.
+        draft.slideOver.widthByView = { ...draft.slideOver.widthByView, [draft.sidebar.view]: width };
       }),
     setCodeShell: (shell) =>
       update((draft) => {

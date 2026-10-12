@@ -76,7 +76,7 @@ function refineOneCheck(
 }
 
 /** A `match` or `header` assertion names exactly one check, and a `matches:` must compile. */
-function refineCheck(
+export function refineCheck(
   value: {
     readonly type: string;
     readonly equals?: unknown;
@@ -233,3 +233,14 @@ export const stepAssertionsSchema = z.array(
     ])
     .superRefine(refineCheck),
 );
+
+/**
+ * The checks a sequence branch condition may reuse (#347), each still to be refined with
+ * {@link refineCheck}: those that read only the response in hand.
+ */
+export const responseCheckSchemas = Object.freeze({
+  status: statusSchema,
+  soapFault: soapFaultSchema,
+  match: matchSchema,
+  header: headerSchema,
+});

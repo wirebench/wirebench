@@ -82,10 +82,10 @@ export interface UiSnapshot {
     /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
     readonly lastSize: number;
     /**
-     * The width the *other* size group last had: the SSH area keeps its own (it holds a short menu),
-     * every other view shares one. Swapped with `size` when the view crosses groups; absent until then.
+     * Each area's own width, saved as the sidebar leaves it and restored when it comes back; an area
+     * not listed opens at {@link defaultSidebarSize}. `size` is the width of the area in view.
      */
-    readonly parkedSize?: number;
+    readonly sizeByView?: Partial<Record<SidebarView, number>>;
   };
   readonly console: {
     readonly visible: boolean;
@@ -97,7 +97,10 @@ export interface UiSnapshot {
   /** The right-hand slide-over hosting the Code panel; opened from the right rail. */
   readonly slideOver: {
     readonly open: boolean;
+    /** The width of an area that has not been given its own; see {@link slideOverWidthOf}. */
     readonly width: number;
+    /** Each area's own width, set when the user drags the slide-over while in that area. */
+    readonly widthByView?: Partial<Record<SidebarView, number>>;
     /** The Code panel's POSIX/PowerShell choice; carried here since the panel now lives in the slide-over. */
     readonly codeShell: CodeShell;
     /** The language the Code panel shows, picked last; `curl` uses {@link codeShell}. */
@@ -196,7 +199,9 @@ function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['
   const open = record?.['open'];
   const width = record?.['width'];
   const codeShell = record?.['codeShell'] ?? legacyCodeShell;
+  const widthByView = widthsByView(record?.['widthByView']);
   return {
+    ...(widthByView === undefined ? {} : { widthByView }),
     open: typeof open === 'boolean' ? open : DEFAULT_UI_STATE.slideOver.open,
     width: typeof width === 'number' && width !== PREVIOUS_SLIDE_OVER_WIDTH ? width : DEFAULT_UI_STATE.slideOver.width,
     codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.slideOver.codeShell,
@@ -235,24 +240,46 @@ function mergeCodeSettings(stored: unknown): UiSnapshot['slideOver']['codeSettin
  * never chose.
  */
 function mergeSidebar(stored: unknown): UiSnapshot['sidebar'] {
+  const record = asRecord(stored);
   const merged = mergeSection(DEFAULT_UI_STATE.sidebar, stored);
-  const lastSize = asRecord(stored)?.['lastSize'];
-  const parkedSize = asRecord(stored)?.['parkedSize'];
+  const lastSize = record?.['lastSize'];
   const sidebar = { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
-  if (typeof parkedSize === 'number') return { ...sidebar, parkedSize };
-  // Saved before the SSH area had its own width while showing it: that width was the shared one.
-  if (sidebar.view === 'ssh') {
-    return { ...sidebar, size: SSH_SIDEBAR_SIZE, lastSize: SSH_SIDEBAR_SIZE, parkedSize: sidebar.lastSize };
+  const sizeByView = widthsByView(record?.['sizeByView']);
+  if (sizeByView !== undefined) return { ...sidebar, sizeByView };
+  // Saved before each area had its own width. An area with no saved width opens at its default, but
+  // a layout left on SSH had the tree views' width in use, so SSH starts at its own default instead;
+  // a width SSH had been given beside it (`parkedSize`) is kept as SSH's.
+  const parked = record?.['parkedSize'];
+  if (sidebar.view === 'ssh' && typeof parked !== 'number') {
+    return { ...sidebar, size: SSH_SIDEBAR_SIZE, lastSize: SSH_SIDEBAR_SIZE };
   }
+  if (sidebar.view !== 'ssh' && typeof parked === 'number') return { ...sidebar, sizeByView: { ssh: parked } };
   return sidebar;
+}
+
+/** Reads a stored `area → width` record, keeping only known areas with a number. */
+function widthsByView(value: unknown): Partial<Record<SidebarView, number>> | undefined {
+  const record = asRecord(value);
+  if (record === undefined) return undefined;
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [SidebarView, number] =>
+        SIDEBAR_VIEWS.includes(entry[0] as SidebarView) && typeof entry[1] === 'number',
+    ),
+  );
 }
 
 /** The SSH area's sidebar holds a short menu, so it opens narrower than the views that hold trees. */
 export const SSH_SIDEBAR_SIZE = 12;
 
-/** Which width a view uses: the SSH area keeps its own, every other view shares one. */
-export function sidebarSizeGroup(view: SidebarView): 'ssh' | 'shared' {
-  return view === 'ssh' ? 'ssh' : 'shared';
+/** The width an area's sidebar opens at before the user gives it one. */
+export function defaultSidebarSize(view: SidebarView): number {
+  return view === 'ssh' ? SSH_SIDEBAR_SIZE : DEFAULT_UI_STATE.sidebar.size;
+}
+
+/** The slide-over's width in the area in view: its own if the user set one there, else the default. */
+export function slideOverWidthOf(state: Pick<UiSnapshot, 'sidebar' | 'slideOver'>): number {
+  return state.slideOver.widthByView?.[state.sidebar.view] ?? state.slideOver.width;
 }
 
 /** The console's equivalent of {@link mergeSidebar}. */

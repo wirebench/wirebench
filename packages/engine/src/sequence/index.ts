@@ -22,5 +22,6 @@ export type {
   SequenceStepResult,
   SequenceStepSender,
   SequenceStepSent,
+  StepBranch,
   TransferResult,
 } from './run.js';
