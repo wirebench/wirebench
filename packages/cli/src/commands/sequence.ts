@@ -207,7 +207,9 @@ export async function runSequences(
   }
 
   const count = (outcome: RequestResult['outcome']): number => results.filter((r) => r.outcome === outcome).length;
-  const environment = context.project.environments.find((e) => e.id === context.environmentId)?.name;
+  // Inside a workspace the environment a run names is the workspace's, as for a request run (#476).
+  const environments = context.workspace?.workspace.environments ?? context.project.environments;
+  const environment = environments.find((e) => e.id === context.environmentId)?.name;
   return {
     startedAt,
     ...(environment !== undefined ? { environment } : {}),
