@@ -165,6 +165,8 @@ export interface OpenApiSecurityScheme {
 /** One OAuth2 flow. */
 export interface OpenApiOAuthFlow {
   readonly authorizationUrl?: string;
+  /** OpenAPI 3.2's `deviceAuthorization` flow: where the device code is asked for (RFC 8628). */
+  readonly deviceAuthorizationUrl?: string;
   readonly tokenUrl?: string;
   readonly refreshUrl?: string;
   readonly scopes?: Readonly<Record<string, string>>;

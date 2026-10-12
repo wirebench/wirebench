@@ -280,6 +280,58 @@ describe('AuthFields', () => {
       });
     });
 
+    it('offers the password and device-code grants, each with its own fields', async () => {
+      installWirebenchApi();
+      const onChange = vi.fn();
+      const { rerender } = render(<AuthFields scope="API" auth={CLIENT_CREDENTIALS} onChange={onChange} />);
+
+      await userEvent.selectOptions(screen.getByLabelText('API oauth2 grant'), 'password');
+      expect(onChange).toHaveBeenCalledWith({ ...CLIENT_CREDENTIALS, grant: 'password' });
+
+      rerender(<AuthFields scope="API" auth={{ ...CLIENT_CREDENTIALS, grant: 'password' }} onChange={onChange} />);
+      expect(screen.getByLabelText('API username')).toBeTruthy();
+      expect(screen.getByLabelText('API password')).toBeTruthy();
+      expect(screen.queryByLabelText('API device authorization url')).toBeNull();
+
+      rerender(<AuthFields scope="API" auth={{ ...CLIENT_CREDENTIALS, grant: 'device-code' }} onChange={onChange} />);
+      expect(screen.getByLabelText('API device authorization url')).toBeTruthy();
+      expect(screen.queryByLabelText('API username')).toBeNull();
+    });
+
+    it('asks for a keystore rather than a secret for key-based client authentication', () => {
+      installWirebenchApi();
+      const { rerender } = render(
+        <AuthFields scope="API" auth={{ ...CLIENT_CREDENTIALS, clientAuth: 'private-key-jwt' }} onChange={vi.fn()} />,
+      );
+      expect(screen.getByLabelText('API client keystore')).toBeTruthy();
+      expect(screen.getByLabelText('API assertion algorithm')).toBeTruthy();
+      expect(screen.queryByLabelText('API client secret')).toBeNull();
+
+      rerender(
+        <AuthFields scope="API" auth={{ ...CLIENT_CREDENTIALS, clientAuth: 'tls-client-auth' }} onChange={vi.fn()} />,
+      );
+      expect(screen.getByLabelText('API client keystore')).toBeTruthy();
+      expect(screen.queryByLabelText('API assertion algorithm')).toBeNull();
+
+      rerender(
+        <AuthFields scope="API" auth={{ ...CLIENT_CREDENTIALS, clientAuth: 'client-secret-jwt' }} onChange={vi.fn()} />,
+      );
+      expect(screen.queryByLabelText('API client keystore')).toBeNull();
+      expect(screen.getByRole('option', { name: 'HS512' })).toBeTruthy();
+      expect(screen.queryByRole('option', { name: 'RS256' })).toBeNull();
+    });
+
+    it('writes the algorithm, and drops it again for Automatic', async () => {
+      installWirebenchApi();
+      const onChange = vi.fn();
+      const auth: AuthConfigWire = { ...CLIENT_CREDENTIALS, clientAuth: 'private-key-jwt', assertionAlg: 'PS256' };
+      render(<AuthFields scope="API" auth={auth} onChange={onChange} />);
+
+      await userEvent.selectOptions(screen.getByLabelText('API assertion algorithm'), '');
+      const sent = onChange.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect('assertionAlg' in sent).toBe(false);
+    });
+
     it('renders the status panel it is given, under the fields', () => {
       installWirebenchApi();
       render(

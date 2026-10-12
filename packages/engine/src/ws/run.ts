@@ -27,7 +27,7 @@ import {
   authFor,
   baseUrlFor,
   dropRefusedToken,
-  authNeeds,
+  authSecretNeeds,
   keystoreNeeds,
   originOf,
   tlsFor,
@@ -624,7 +624,7 @@ export const wsRun: ProtocolRun<WsSelected> = {
 
   secretNeeds(selected, project) {
     return [
-      ...authNeeds(project, wsEffectiveAuth(selected)),
+      ...authSecretNeeds(project, wsEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   },

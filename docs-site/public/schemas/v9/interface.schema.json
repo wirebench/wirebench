@@ -63,17 +63,47 @@
                 "type": "object",
                 "properties": {
                   "type": { "type": "string", "const": "oauth2" },
-                  "grant": { "type": "string", "enum": ["client-credentials", "authorization-code"] },
+                  "grant": {
+                    "type": "string",
+                    "enum": ["client-credentials", "authorization-code", "password", "device-code"]
+                  },
                   "tokenUrl": { "type": "string" },
                   "authorizationUrl": { "type": "string" },
+                  "deviceAuthorizationUrl": { "type": "string" },
+                  "username": { "type": "string" },
+                  "passwordRef": { "type": "string" },
+                  "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
                   "clientId": { "type": "string" },
                   "clientSecretRef": { "type": "string" },
                   "clientSecretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
                   "scopes": { "default": [], "type": "array", "items": { "type": "string" } },
                   "audience": { "type": "string" },
-                  "clientAuth": { "default": "basic", "type": "string", "enum": ["basic", "body"] },
+                  "clientAuth": {
+                    "default": "basic",
+                    "type": "string",
+                    "enum": ["basic", "body", "client-secret-jwt", "private-key-jwt", "tls-client-auth"]
+                  },
+                  "clientKeystoreId": { "type": "string" },
+                  "assertionAlg": {
+                    "type": "string",
+                    "enum": [
+                      "HS256",
+                      "HS384",
+                      "HS512",
+                      "RS256",
+                      "RS384",
+                      "RS512",
+                      "PS256",
+                      "PS384",
+                      "PS512",
+                      "ES256",
+                      "ES384",
+                      "ES512"
+                    ]
+                  },
                   "pkce": { "default": true, "type": "boolean" },
-                  "refreshTokenRef": { "type": "string" }
+                  "refreshTokenRef": { "type": "string" },
+                  "refreshTokenEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
                 },
                 "required": ["type", "grant", "tokenUrl", "clientId"],
                 "additionalProperties": {}
@@ -166,17 +196,47 @@
           "type": "object",
           "properties": {
             "type": { "type": "string", "const": "oauth2" },
-            "grant": { "type": "string", "enum": ["client-credentials", "authorization-code"] },
+            "grant": {
+              "type": "string",
+              "enum": ["client-credentials", "authorization-code", "password", "device-code"]
+            },
             "tokenUrl": { "type": "string" },
             "authorizationUrl": { "type": "string" },
+            "deviceAuthorizationUrl": { "type": "string" },
+            "username": { "type": "string" },
+            "passwordRef": { "type": "string" },
+            "passwordEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
             "clientId": { "type": "string" },
             "clientSecretRef": { "type": "string" },
             "clientSecretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
             "scopes": { "default": [], "type": "array", "items": { "type": "string" } },
             "audience": { "type": "string" },
-            "clientAuth": { "default": "basic", "type": "string", "enum": ["basic", "body"] },
+            "clientAuth": {
+              "default": "basic",
+              "type": "string",
+              "enum": ["basic", "body", "client-secret-jwt", "private-key-jwt", "tls-client-auth"]
+            },
+            "clientKeystoreId": { "type": "string" },
+            "assertionAlg": {
+              "type": "string",
+              "enum": [
+                "HS256",
+                "HS384",
+                "HS512",
+                "RS256",
+                "RS384",
+                "RS512",
+                "PS256",
+                "PS384",
+                "PS512",
+                "ES256",
+                "ES384",
+                "ES512"
+              ]
+            },
             "pkce": { "default": true, "type": "boolean" },
-            "refreshTokenRef": { "type": "string" }
+            "refreshTokenRef": { "type": "string" },
+            "refreshTokenEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
           },
           "required": ["type", "grant", "tokenUrl", "clientId"],
           "additionalProperties": {}

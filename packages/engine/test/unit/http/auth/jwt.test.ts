@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import {
   JWT_ALGORITHMS,
   createJwtSource,
+  defaultAlgFor,
   isHmacAlgorithm,
+  privateKeyOf,
   signJwt,
   templateJwtJson,
 } from '../../../../src/http/auth/jwt.js';
@@ -184,5 +186,35 @@ describe('createJwtSource', () => {
     await source.tokenFor(request({ key }));
     await source.tokenFor(request({ key }));
     expect(loads).toBe(1);
+  });
+});
+
+describe('defaultAlgFor and privateKeyOf', () => {
+  const pem = (key: KeyObject): string => key.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+  it('picks RS256 for RSA and the ES size by curve, from PEM text or a KeyObject', () => {
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
+    expect(defaultAlgFor(pem(rsa))).toBe('RS256');
+    expect(defaultAlgFor(rsa)).toBe('RS256');
+    for (const [namedCurve, algorithm] of [
+      ['P-256', 'ES256'],
+      ['P-384', 'ES384'],
+      ['P-521', 'ES512'],
+    ] as const) {
+      expect(defaultAlgFor(pem(generateKeyPairSync('ec', { namedCurve }).privateKey))).toBe(algorithm);
+    }
+  });
+
+  it('refuses a key type JWS has no algorithm for, and text that is not a key', () => {
+    const ed = generateKeyPairSync('ed25519').privateKey;
+    expect(() => defaultAlgFor(pem(ed))).toThrow(expect.objectContaining({ code: 'jwt-key-unsupported' }));
+    expect(() => privateKeyOf('plain secret', 'RS256')).toThrow(expect.objectContaining({ code: 'jwt-key-invalid' }));
+  });
+
+  it('refuses a private key offered as an HMAC secret', async () => {
+    const rsa = pem(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey);
+    await expect(signJwt({ algorithm: 'HS256', key: new TextEncoder().encode(rsa), claims: {} })).rejects.toMatchObject(
+      { code: 'jwt-key-mismatch' },
+    );
   });
 });

@@ -7,7 +7,7 @@
  * a file or a secret store.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createPrivateKey, randomUUID } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import { SignJWT } from 'jose';
 import type { JwtAlgorithm } from './jwt-algorithms.js';
@@ -43,6 +43,11 @@ export async function signJwt(input: SignJwtInput): Promise<string> {
       details: { algorithm: input.algorithm },
     });
   }
+  if (input.key instanceof Uint8Array && new TextDecoder().decode(input.key).includes('PRIVATE KEY-----')) {
+    throw new WirebenchError('jwt-key-mismatch', `${input.algorithm} signs with a shared secret, not a private key.`, {
+      details: { algorithm: input.algorithm },
+    });
+  }
   // `alg` is the configured algorithm's alone: a header field must never downgrade it.
   const header = Object.fromEntries(Object.entries(input.header ?? {}).filter(([name]) => name !== 'alg'));
   try {
@@ -56,6 +61,51 @@ export async function signJwt(input: SignJwtInput): Promise<string> {
       { details: { algorithm: input.algorithm }, cause: error },
     );
   }
+}
+
+/** The curve each ES algorithm signs on (RFC 7518 §3.4), as `node:crypto` names it. */
+const ES_CURVES: Readonly<Record<string, JwtAlgorithm>> = {
+  prime256v1: 'ES256',
+  secp384r1: 'ES384',
+  secp521r1: 'ES512',
+};
+
+/**
+ * A PEM private key as a `KeyObject`.
+ *
+ * @throws WirebenchError `jwt-key-invalid` when the text is not a private key `node:crypto` reads
+ */
+export function privateKeyOf(pem: string, algorithm: JwtAlgorithm): KeyObject {
+  try {
+    return createPrivateKey(pem);
+  } catch (error) {
+    throw new WirebenchError(
+      'jwt-key-invalid',
+      `${algorithm} needs a PEM private key, and this key could not be read.`,
+      {
+        details: { algorithm },
+        cause: error,
+      },
+    );
+  }
+}
+
+/**
+ * The algorithm a private key signs with when nobody chose one: RS256 for RSA, the ES size that
+ * matches an EC key's curve.
+ *
+ * @throws WirebenchError `jwt-key-invalid` for unreadable PEM text, `jwt-key-unsupported` for any
+ * other key type
+ */
+export function defaultAlgFor(key: KeyObject | string): JwtAlgorithm {
+  const keyObject = typeof key === 'string' ? privateKeyOf(key, 'RS256') : key;
+  if (keyObject.asymmetricKeyType === 'rsa') return 'RS256';
+  const curve = keyObject.asymmetricKeyDetails?.namedCurve;
+  const es = keyObject.asymmetricKeyType === 'ec' && curve !== undefined ? ES_CURVES[curve] : undefined;
+  if (es !== undefined) return es;
+  throw new WirebenchError('jwt-key-unsupported', 'Only RSA and P-256/384/521 EC keys can sign a JWT.', {
+    details: { keyType: keyObject.asymmetricKeyType ?? 'unknown' },
+  });
 }
 
 /** Claims whose value is a NumericDate (RFC 7519 §2), which a lone `${…}` may fill with a number. */

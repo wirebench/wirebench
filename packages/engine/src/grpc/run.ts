@@ -24,7 +24,7 @@ import {
   authFor,
   baseUrlFor,
   dropRefusedToken,
-  authNeeds,
+  authSecretNeeds,
   keystoreNeeds,
   tlsFor,
   unresolvedError,
@@ -547,7 +547,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
 
   secretNeeds(selected, project) {
     return [
-      ...authNeeds(project, grpcEffectiveAuth(selected)),
+      ...authSecretNeeds(project, grpcEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   },

@@ -23,7 +23,7 @@ export interface OAuth2ChannelDeps {
    * `soapAuthOf` is wired — a SOAP interface, endpoint or request.
    */
   readonly project: Pick<ProjectRouter, 'restAuthOf' | 'projectId'> &
-    Partial<Pick<ProjectRouter, 'soapAuthOf' | 'proxyFor'>>;
+    Partial<Pick<ProjectRouter, 'soapAuthOf' | 'proxyFor' | 'clientIdentityFor'>>;
   /** Resolves one keychain reference; the store in the app, a stub in tests. */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
   /** Stores a refresh token the user asked to be remembered. */
@@ -52,14 +52,16 @@ function configOf(deps: OAuth2ChannelDeps, ownerId: string): OAuth2Auth {
 async function credentialsOf(
   deps: OAuth2ChannelDeps,
   config: OAuth2Auth,
-): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
+): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string; readonly password?: string }> {
   const read = async (ref: string | undefined): Promise<string | undefined> =>
     ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
   const clientSecret = await read(config.clientSecretRef);
   const refreshToken = await read(config.refreshTokenRef);
+  const password = config.grant === 'password' ? await read(config.passwordRef) : undefined;
   return {
     ...(clientSecret !== undefined ? { clientSecret } : {}),
     ...(refreshToken !== undefined ? { refreshToken } : {}),
+    ...(password !== undefined ? { password } : {}),
   };
 }
 
@@ -71,6 +73,7 @@ function statusWire(deps: OAuth2ChannelDeps, config: OAuth2Auth): OAuth2StatusWi
     ...(status.expiresAt !== undefined ? { expiresAt: status.expiresAt } : {}),
     ...(status.scopes !== undefined ? { scopes: [...status.scopes] } : {}),
     ...(status.token !== undefined ? { token: status.token } : {}),
+    ...(status.device !== undefined ? { device: { ...status.device } } : {}),
     redirectUri: deps.oauth2.redirectUri(),
   };
 }
@@ -80,8 +83,20 @@ export function registerOAuth2Channels(deps: OAuth2ChannelDeps): void {
   registerHandler(channels.oauth2.fetchToken, async (request) => {
     const config = configOf(deps, request.ownerId);
     const credentials = await credentialsOf(deps, config);
+    const projectId = deps.project.projectId(request.ownerId);
+    const clientIdentityFor = deps.project.clientIdentityFor;
     await deps.oauth2.fetchToken(config, {
       credentials,
+      ...(projectId !== undefined && clientIdentityFor !== undefined
+        ? {
+            identityFor: async (keystoreId: string) => {
+              const identity = await clientIdentityFor(projectId, keystoreId);
+              return identity?.cert !== undefined && identity.key !== undefined
+                ? { cert: identity.cert, key: identity.key }
+                : undefined;
+            },
+          }
+        : {}),
       // A refresh token is only ever stored when the configuration says to remember one: without
       // `refreshTokenRef` there is nowhere to put it, and it stays in memory for the session.
       ...(config.refreshTokenRef !== undefined && deps.setSecret !== undefined

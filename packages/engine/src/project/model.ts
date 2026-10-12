@@ -101,13 +101,30 @@ export interface ApiKeyAuth {
  * sign-in). Access tokens are never persisted — they live in the host's memory for the session —
  * so the only secrets here are the client secret and, if the user opts in, a refresh token.
  */
+/** The OAuth2 grants Wirebench runs. Password and device code arrived with #338. */
+export type OAuth2Grant = 'client-credentials' | 'authorization-code' | 'password' | 'device-code';
+
+/**
+ * How the client authenticates to the token endpoint: `basic`/`body` send the client secret
+ * (RFC 6749 §2.3.1), the two JWT methods send a signed assertion (RFC 7523 §2.2), and
+ * `tls-client-auth` presents a certificate on the connection (RFC 8705 §2.1).
+ */
+export type OAuth2ClientAuth = 'basic' | 'body' | 'client-secret-jwt' | 'private-key-jwt' | 'tls-client-auth';
+
 export interface OAuth2Auth {
   readonly type: 'oauth2';
-  readonly grant: 'client-credentials' | 'authorization-code';
+  readonly grant: OAuth2Grant;
   /** Token endpoint. Property expansion applies. */
   readonly tokenUrl: string;
   /** Authorization endpoint; required for, and only used by, the authorization-code grant. */
   readonly authorizationUrl?: string;
+  /** Device authorization endpoint (RFC 8628 §3.1); the device-code grant only. Property expansion applies. */
+  readonly deviceAuthorizationUrl?: string;
+  /** The resource owner's name for the password grant. Property expansion applies. */
+  readonly username?: string;
+  /** The resource owner's password for the password grant: a keychain reference, never a value. */
+  readonly passwordRef?: string;
+  readonly passwordEnv?: string;
   readonly clientId: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a secret value. */
   readonly clientSecretRef?: string;
@@ -115,8 +132,15 @@ export interface OAuth2Auth {
   readonly clientSecretEnv?: string;
   readonly scopes: readonly string[];
   readonly audience?: string;
-  /** Whether the client credentials go in an `Authorization: Basic` header or the request body. */
-  readonly clientAuth: 'basic' | 'body';
+  /** How the client authenticates to the token endpoint. */
+  readonly clientAuth: OAuth2ClientAuth;
+  /**
+   * The keystore whose client identity (its default alias, as for TLS) signs a `private-key-jwt`
+   * assertion or is presented by `tls-client-auth`.
+   */
+  readonly clientKeystoreId?: string;
+  /** Overrides the assertion's algorithm: HS256 for a secret, by key type for a private key. */
+  readonly assertionAlg?: JwtAlgorithm;
   /** Proof Key for Code Exchange (RFC 7636); authorization-code only, on by default. */
   readonly pkce: boolean;
   /**
@@ -124,6 +148,8 @@ export interface OAuth2Auth {
    * credential it is then a keychain reference, never a value (ADR-0004).
    */
   readonly refreshTokenRef?: string;
+  /** The name CI supplies the refresh token under, so a run can start a browser grant from it. */
+  readonly refreshTokenEnv?: string;
 }
 
 /** Kerberos over HTTP Negotiate (#40): the OS ticket by default; the account fields are Windows-only. */

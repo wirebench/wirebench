@@ -23,7 +23,7 @@ import {
   baseUrlFor,
   dropRefusedToken,
   insideProject,
-  authNeeds,
+  authSecretNeeds,
   keystoreNeeds,
   originOf,
   tlsFor,
@@ -495,7 +495,7 @@ export const restRun: ProtocolRun<RestSelected> = {
 
   secretNeeds(selected, project) {
     return [
-      ...authNeeds(project, restEffectiveAuth(selected)),
+      ...authSecretNeeds(project, restEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
       ...signingNeeds(selected),
     ];

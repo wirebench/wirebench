@@ -89,6 +89,15 @@ export const oauth2StatusSchema = z.object({
   token: z.string().optional(),
   /** The loopback URI the provider must have registered, for the inspector to show. */
   redirectUri: z.string(),
+  /** While a device-code sign-in waits: the code the user types at the verification page. */
+  device: z
+    .object({
+      userCode: z.string(),
+      verificationUri: z.string(),
+      verificationUriComplete: z.string().optional(),
+      expiresAt: z.string(),
+    })
+    .optional(),
 });
 export type OAuth2StatusWire = z.infer<typeof oauth2StatusSchema>;
 
@@ -442,17 +451,21 @@ export const authConfigWireSchema = z.object({
   valueRef: z.string().optional(),
   valueEnv: z.string().optional(),
   in: z.enum(['header', 'query']).optional(),
-  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
+  grant: z.enum(['client-credentials', 'authorization-code', 'password', 'device-code']).optional(),
   tokenUrl: z.string().optional(),
   authorizationUrl: z.string().optional(),
+  deviceAuthorizationUrl: z.string().optional(),
   clientId: z.string().optional(),
   clientSecretRef: z.string().optional(),
   clientSecretEnv: z.string().optional(),
   scopes: z.array(z.string()).optional(),
   audience: z.string().optional(),
-  clientAuth: z.enum(['basic', 'body']).optional(),
+  clientAuth: z.enum(['basic', 'body', 'client-secret-jwt', 'private-key-jwt', 'tls-client-auth']).optional(),
+  clientKeystoreId: z.string().optional(),
+  assertionAlg: z.enum(JWT_ALGORITHM_NAMES).optional(),
   pkce: z.boolean().optional(),
   refreshTokenRef: z.string().optional(),
+  refreshTokenEnv: z.string().optional(),
   /** JWT (#348): `name` and `in` above are its placement; the secret and the key are references. */
   algorithm: z.enum(JWT_ALGORITHM_NAMES).optional(),
   secretRef: z.string().optional(),
