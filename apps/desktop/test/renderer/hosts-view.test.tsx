@@ -59,10 +59,11 @@ const STATE = {
       address: '10.0.0.1',
       tags: ['prod'],
       path: ['g'],
+      forwards: [],
       ssh: defaults,
       incomplete: { field: 'user' as const },
     },
-    { id: 'b', name: 'beta', address: 'beta.example', tags: [], path: [], ssh: defaults },
+    { id: 'b', name: 'beta', address: 'beta.example', tags: [], path: [], ssh: defaults, forwards: [] },
   ],
   problems: [{ code: 'ssh-bad-yaml', message: 'could not parse' }],
   loaded: true,
@@ -639,6 +640,19 @@ describe('Host OS', () => {
     await userEvent.selectOptions(select, 'debian');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(setHostOs).toHaveBeenCalledWith({ host: '10.0.0.1:22', os: 'debian' });
+  });
+  it('saving an edited host keeps its forwarding rules', async () => {
+    const forwards = [{ id: 'pg', type: 'local' as const, port: 5432, target: 'db:5432' }];
+    const group = STATE.file.groups[0] as (typeof STATE.file.groups)[number];
+    useHostsStore.setState({
+      file: { ...STATE.file, groups: [{ ...group, hosts: [{ ...group.hosts[0]!, forwards }] }] },
+      selectedHostId: 'a',
+      dialog: { mode: 'edit-host', id: 'a' },
+    });
+    render(<HostDetails />);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    expect(sent.file.groups[0]?.hosts[0]).toMatchObject({ id: 'a', forwards });
   });
   it('saving without touching the OS stores nothing', async () => {
     useHostsStore.setState({ selectedHostId: 'a', dialog: { mode: 'edit-host', id: 'a' } });
