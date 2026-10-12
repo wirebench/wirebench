@@ -601,6 +601,7 @@ describe('prepareFor — inside a workspace', () => {
     createdAt: '2026-09-18T00:00:00.000Z',
     properties: { host: 'https://ws.example.test' },
     disabledProperties: [],
+    activeEnvironments: {},
     projects: [{ id: 'proj-1', slug: 'billing', source: 'internal' }],
     environments: [LINKED, STAGING],
   };

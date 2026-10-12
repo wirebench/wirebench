@@ -223,6 +223,36 @@ describe('workspace environment colour and protection', () => {
   });
 });
 
+describe('workspace environment project scope', () => {
+  it('round-trips an absent scope, an empty one and two ids, keeping an unknown id', async () => {
+    const dir = await tempWorkspaceDir();
+    const base = sampleWorkspace();
+    const [first, second] = base.environments;
+    const workspace: Workspace = {
+      ...base,
+      environments: [
+        { ...first!, projects: ['gone-project', base.projects[0]!.id] },
+        { ...second!, projects: [] },
+        { ...second!, id: 'ENV-ALL', slug: 'all', order: 2 },
+      ],
+    };
+    await saveWorkspace(workspace, dir);
+
+    expect((await readBytes(dir, `environments/${first!.slug}.yaml`)).toString('utf8')).toContain(
+      `projects:\n  - gone-project\n  - ${base.projects[0]!.id}\n`,
+    );
+    expect((await readBytes(dir, `environments/${second!.slug}.yaml`)).toString('utf8')).toContain('projects: []\n');
+    expect((await readBytes(dir, 'environments/all.yaml')).toString('utf8')).not.toContain('projects');
+
+    const { workspace: loaded, problems } = await loadWorkspace(dir);
+    expect(problems).toEqual([]);
+    expect(loaded.environments.map((e) => e.projects)).toEqual([['gone-project', base.projects[0]!.id], [], undefined]);
+    expect(loaded.environments[2]).not.toHaveProperty('projects');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe('loadWorkspace', () => {
   it('round-trips a workspace to a deep-equal model, activeEnvironmentId aside (it is never saved)', async () => {
     const dir = await tempWorkspaceDir();

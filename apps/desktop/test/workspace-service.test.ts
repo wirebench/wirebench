@@ -872,7 +872,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     expect(manifestBefore).not.toContain('activeEnvironmentId');
 
     const local = await loadLocalState(dir);
-    expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
+    expect(Object.values(local.activeEnvironments ?? {})).toContain(createdEnvironmentId);
     expect(service.snapshot()?.activeEnvironmentId).toBe(createdEnvironmentId);
 
     await service.close();
@@ -907,15 +907,15 @@ describe('active environment: machine-local, via local.yaml', () => {
     await service.open(created.id);
     await service.setActiveEnvironment(createdEnvironmentId as string);
     expect(await loadLocalState(dir)).toEqual({
-      version: 2,
-      activeEnvironmentId: createdEnvironmentId,
+      version: 3,
+      activeEnvironments: { '': createdEnvironmentId },
       secretSources: overrides,
       secretSourcesApproved: approval,
     });
 
     await service.setActiveEnvironment(null);
     expect(await loadLocalState(dir)).toEqual({
-      version: 2,
+      version: 3,
       secretSources: overrides,
       secretSourcesApproved: approval,
     });
@@ -935,7 +935,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     await service.open(created.id);
     await service.setActiveEnvironment(createdEnvironmentId as string);
     await service.setActiveEnvironment(null);
-    expect(await loadLocalState(dir)).toEqual({ version: 2, secretSourcesRaw: ['one'] });
+    expect(await loadLocalState(dir)).toEqual({ version: 3, secretSourcesRaw: ['one'] });
     await service.close();
   });
 
@@ -973,7 +973,7 @@ describe('active environment: machine-local, via local.yaml', () => {
     expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
     expect(existsSync(join(dir, 'local.yaml'))).toBe(true);
     const local = await loadLocalState(dir);
-    expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
+    expect(Object.values(local.activeEnvironments ?? {})).toContain(createdEnvironmentId);
 
     await reopened.close();
   });

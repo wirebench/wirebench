@@ -21,6 +21,7 @@ import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { enabledProperties } from '../project/properties.js';
+import { WorkspaceError } from '../errors.js';
 import type { Workspace, WorkspaceEnvironment } from './model.js';
 
 /**
@@ -67,6 +68,66 @@ export function withActiveEnvironment(workspace: Workspace, environmentId: strin
   const copy: { -readonly [K in keyof Workspace]: Workspace[K] } = { ...workspace };
   delete copy.activeEnvironmentId;
   return copy;
+}
+
+/**
+ * True when `environment` applies to the project `projectId`: its `projects` scope is absent (every
+ * project, including ones added later) or lists the id. `[]` applies to none.
+ */
+export function appliesToProject(environment: WorkspaceEnvironment, projectId: string): boolean {
+  return environment.projects === undefined || environment.projects.includes(projectId);
+}
+
+/** The environments of `workspace` that apply to `projectId`, in `order`. */
+export function environmentsForProject(workspace: Workspace, projectId: string): readonly WorkspaceEnvironment[] {
+  return workspace.environments
+    .filter((environment) => appliesToProject(environment, projectId))
+    .sort((a, b) => a.order - b.order);
+}
+
+/**
+ * The environment active for `projectId`, or `undefined` when the project has no entry, the entry's
+ * environment is gone, or it no longer applies to the project (its scope was narrowed).
+ */
+export function activeEnvironmentFor(workspace: Workspace, projectId: string): WorkspaceEnvironment | undefined {
+  const environmentId = Object.hasOwn(workspace.activeEnvironments, projectId)
+    ? workspace.activeEnvironments[projectId]
+    : undefined;
+  if (environmentId === undefined) {
+    return undefined;
+  }
+  const environment = workspace.environments.find((candidate) => candidate.id === environmentId);
+  return environment !== undefined && appliesToProject(environment, projectId) ? environment : undefined;
+}
+
+/**
+ * `workspace` set up to resolve for `projectId`: its resolution slot holds that project's active
+ * environment, or nothing. Resolvers read the slot, so call this once per project before them.
+ */
+export function workspaceForProject(workspace: Workspace, projectId: string): Workspace {
+  return withActiveEnvironment(workspace, activeEnvironmentFor(workspace, projectId)?.id);
+}
+
+/**
+ * Refuses an environment that does not apply to the project.
+ *
+ * @throws WorkspaceError `environment-out-of-scope` (details `environmentName`, `projectId`), or
+ * `environment-not-found` for an id that names no environment.
+ */
+export function assertEnvironmentInScope(workspace: Workspace, environmentId: string, projectId: string): void {
+  const environment = workspace.environments.find((candidate) => candidate.id === environmentId);
+  if (environment === undefined) {
+    throw new WorkspaceError('environment-not-found', `No environment with id "${environmentId}" in this workspace.`, {
+      details: { environmentId },
+    });
+  }
+  if (!appliesToProject(environment, projectId)) {
+    throw new WorkspaceError(
+      'environment-out-of-scope',
+      `Environment "${environment.name}" does not apply to project "${projectId}".`,
+      { details: { environmentName: environment.name, projectId } },
+    );
+  }
 }
 
 /** Finds `workspace`'s active environment (per `activeEnvironmentId`), or `undefined` when none is active. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commitMessage, describeTreePath } from '../../../src/workspace/commit-message.js';
+import { commitMessage, describeTreePath, scopeChangeMessage } from '../../../src/workspace/commit-message.js';
 import type { TreeChange, TreeEntity } from '../../../src/workspace/commit-message.js';
 
 describe('describeTreePath', () => {
@@ -225,5 +225,22 @@ describe('commitMessage', () => {
       { path: 'projects/b/wss/keystores.yaml', status: 'modified' },
     ];
     expect(commitMessage(changes).split('\n\n')[0]).toBe('Update 2 WS-Security configs, 1 keystores');
+  });
+});
+
+describe('scopeChangeMessage', () => {
+  const names = { p1: 'Billing', p2: 'CRM' };
+
+  it('names the projects an environment is scoped to', () => {
+    expect(scopeChangeMessage('QA', ['p1', 'p2'], names)).toBe('Scope environment QA to Billing, CRM');
+  });
+
+  it('reads as all projects when the scope goes back to every project', () => {
+    expect(scopeChangeMessage('QA', undefined, names)).toBe('Apply environment QA to all projects');
+  });
+
+  it('shows an unknown id as the id, and an empty scope as no projects', () => {
+    expect(scopeChangeMessage('QA', ['p1', 'gone'], names)).toBe('Scope environment QA to Billing, gone');
+    expect(scopeChangeMessage('QA', [], names)).toBe('Scope environment QA to no projects');
   });
 });

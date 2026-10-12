@@ -150,6 +150,7 @@ function insideWorkspace(slug: string): { workspace: () => Workspace } {
     properties: {},
     disabledProperties: [],
     projects: [],
+    activeEnvironments: {},
     activeEnvironmentId: 'wdev',
     environments: [
       workspaceEnv('wtest', 1, slug, 'https://wtest.example', 'beta'),

@@ -55,6 +55,7 @@ export function sampleWorkspace(): Workspace {
     properties: { region: 'eu-west-1', tier: 'gold' },
     disabledProperties: ['tier'],
     activeEnvironmentId: devEnvId,
+    activeEnvironments: {},
     projects: [
       { id: countryProjectId, slug: 'CountryInfo', source: 'internal' },
       { id: ordersProjectId, slug: 'Orders', source: 'linked', path: '/srv/wirebench-projects/orders' },

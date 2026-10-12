@@ -1203,8 +1203,12 @@ export async function keepLegacyActiveEnvironment(
     return;
   }
   const local = await loadLocalState(dir, fsOption);
-  if (local.activeEnvironmentId === undefined) {
-    await saveLocalState(dir, { ...local, version: 2, activeEnvironmentId: legacyId }, fsOption);
+  if (local.activeEnvironments === undefined) {
+    // Transitional: the one legacy active environment is recorded for every project of the workspace.
+    const activeEnvironments = Object.fromEntries(
+      (workspace.projects.length > 0 ? workspace.projects.map((ref) => ref.id) : ['']).map((id) => [id, legacyId]),
+    );
+    await saveLocalState(dir, { ...local, version: 3, activeEnvironments }, fsOption);
   }
 }
 

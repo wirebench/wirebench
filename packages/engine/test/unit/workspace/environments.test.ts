@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { WorkspaceError } from '../../../src/errors.js';
 import {
+  activeEnvironmentFor,
+  appliesToProject,
+  assertEnvironmentInScope,
+  environmentsForProject,
   isProtectedEnvironment,
   linkedEnvironment,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
+  workspaceForProject,
 } from '../../../src/workspace/environments.js';
 import { createProject, type Environment, type Project } from '../../../src/project/model.js';
 import { createInterface, type Interface } from '../../../src/soap/model.js';
@@ -48,6 +54,7 @@ function fixtureWorkspace(activeEnv: WorkspaceEnvironment | undefined, overrides
     properties: { name: 'ws-name', onlyWorkspace: 'w-value' },
     disabledProperties: [],
     ...(activeEnv !== undefined ? { activeEnvironmentId: activeEnv.id } : {}),
+    activeEnvironments: {},
     projects: [{ id: 'proj-1', slug: 'demo', source: 'internal' }],
     environments: activeEnv !== undefined ? [activeEnv] : [],
     ...overrides,
@@ -226,5 +233,102 @@ describe('resolveWorkspaceEndpoint', () => {
     const result = resolveWorkspaceEndpoint({ workspace, project, projectSlug: 'demo', iface, request: {} });
     expect(result).toMatchObject({ url: 'https://default.test/soap', source: 'interface-default' });
     expect(result.endpoint).toBeDefined();
+  });
+});
+
+describe('project scope', () => {
+  const everywhere: WorkspaceEnvironment = { ...workspaceEnv, id: 'e-all', name: 'All', slug: 'all', order: 2 };
+  const billingOnly: WorkspaceEnvironment = {
+    ...workspaceEnv,
+    id: 'e-billing',
+    name: 'Billing QA',
+    slug: 'billing-qa',
+    order: 0,
+    projects: ['p-billing', 'p-gone'],
+  };
+  const nowhere: WorkspaceEnvironment = {
+    ...workspaceEnv,
+    id: 'e-none',
+    name: 'Off',
+    slug: 'off',
+    order: 1,
+    projects: [],
+  };
+
+  it('appliesToProject: absent is every project, [] is none, a list is exactly those', () => {
+    expect(appliesToProject(everywhere, 'anything')).toBe(true);
+    expect(appliesToProject(nowhere, 'p-billing')).toBe(false);
+    expect(appliesToProject(billingOnly, 'p-billing')).toBe(true);
+    expect(appliesToProject(billingOnly, 'p-crm')).toBe(false);
+  });
+
+  it('environmentsForProject lists the applicable environments in order', () => {
+    const workspace = fixtureWorkspace(undefined, { environments: [everywhere, nowhere, billingOnly] });
+    expect(environmentsForProject(workspace, 'p-billing').map((e) => e.id)).toEqual(['e-billing', 'e-all']);
+    expect(environmentsForProject(workspace, 'p-crm').map((e) => e.id)).toEqual(['e-all']);
+  });
+
+  it('activeEnvironmentFor is undefined for a missing, deleted or out-of-scope entry', () => {
+    const workspace = fixtureWorkspace(undefined, {
+      environments: [everywhere, billingOnly],
+      activeEnvironments: { 'p-billing': 'e-billing', 'p-crm': 'e-billing', 'p-old': 'e-deleted', 'p-all': 'e-all' },
+    });
+    expect(activeEnvironmentFor(workspace, 'p-billing')?.id).toBe('e-billing');
+    expect(activeEnvironmentFor(workspace, 'p-all')?.id).toBe('e-all');
+    expect(activeEnvironmentFor(workspace, 'p-missing')).toBeUndefined();
+    expect(activeEnvironmentFor(workspace, 'p-old')).toBeUndefined();
+    expect(activeEnvironmentFor(workspace, 'p-crm')).toBeUndefined();
+    expect(activeEnvironmentFor(workspace, '__proto__')).toBeUndefined();
+  });
+
+  it('workspaceForProject resolves each project against its own active environment', () => {
+    const alpha: WorkspaceEnvironment = {
+      ...workspaceEnv,
+      id: 'e-a',
+      slug: 'a',
+      endpoints: { 'demo/calculator': 'https://a.test/soap' },
+      projects: ['proj-1'],
+    };
+    const beta: WorkspaceEnvironment = {
+      ...workspaceEnv,
+      id: 'e-b',
+      slug: 'b',
+      endpoints: { 'demo/calculator': 'https://b.test/soap' },
+    };
+    const workspace = fixtureWorkspace(undefined, {
+      environments: [alpha, beta],
+      activeEnvironments: { 'proj-1': 'e-a', 'proj-2': 'e-b', 'proj-3': 'e-a' },
+    });
+    const { project, iface } = fixtureProject([]);
+    const resolve = (projectId: string) =>
+      resolveWorkspaceEndpoint({
+        workspace: workspaceForProject(workspace, projectId),
+        project,
+        projectSlug: 'demo',
+        iface,
+        request: {},
+      });
+    expect(resolve('proj-1')).toMatchObject({ url: 'https://a.test/soap', source: 'workspace-environment' });
+    expect(resolve('proj-2')).toMatchObject({ url: 'https://b.test/soap', source: 'workspace-environment' });
+    // proj-3's entry is out of scope for e-a, so nothing is active for it.
+    expect(resolve('proj-3').source).toBe('interface-default');
+    expect(workspaceForProject(workspace, 'proj-3').activeEnvironmentId).toBeUndefined();
+  });
+
+  it('assertEnvironmentInScope throws environment-out-of-scope with the name and project', () => {
+    const workspace = fixtureWorkspace(undefined, { environments: [everywhere, billingOnly] });
+    expect(() => assertEnvironmentInScope(workspace, 'e-all', 'p-crm')).not.toThrow();
+    expect(() => assertEnvironmentInScope(workspace, 'e-billing', 'p-billing')).not.toThrow();
+    try {
+      assertEnvironmentInScope(workspace, 'e-billing', 'p-crm');
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(WorkspaceError);
+      expect((error as WorkspaceError).code).toBe('environment-out-of-scope');
+      expect((error as WorkspaceError).details).toEqual({ environmentName: 'Billing QA', projectId: 'p-crm' });
+    }
+    expect(() => assertEnvironmentInScope(workspace, 'nope', 'p-crm')).toThrow(
+      expect.objectContaining({ code: 'environment-not-found' }),
+    );
   });
 });

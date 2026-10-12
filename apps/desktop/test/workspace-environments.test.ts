@@ -301,7 +301,8 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
     const dir = service.snapshot()?.dir as string;
     const reload = async (): Promise<Awaited<ReturnType<typeof loadWorkspace>>['workspace']> =>
       (await loadWorkspace(dir)).workspace;
-    const reloadLocal = async (): Promise<string | undefined> => (await loadLocalState(dir)).activeEnvironmentId;
+    const reloadLocal = async (): Promise<string | undefined> =>
+      Object.values((await loadLocalState(dir)).activeEnvironments ?? {})[0];
 
     const saved = await reload();
     expect(saved.name).toBe('Renamed');

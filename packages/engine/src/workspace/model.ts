@@ -63,6 +63,11 @@ export interface WorkspaceEnvironment {
   readonly color?: string;
   /** True asks before every send under this environment; absent means false. */
   readonly protected?: boolean;
+  /**
+   * Ids of the projects this environment applies to. Absent means every project, including ones
+   * added later; `[]` means none. An id naming no project in the workspace is kept as written.
+   */
+  readonly projects?: readonly string[];
 }
 
 /** A whole Wirebench workspace, as loaded from (or saved to) a workspace folder. */
@@ -88,11 +93,17 @@ export interface Workspace {
    */
   readonly secretSourcesRaw?: unknown;
   /**
-   * Id of the environment currently active for this workspace, if any. Machine-local: kept only
-   * in memory while a workspace is open, and never serialised into `workspace.yaml` — see
-   * `local-state.ts`, which is where it actually lives on disk.
+   * The resolution slot: the id of the environment the resolvers in `environments.ts` read. Not
+   * state of its own; only `workspaceForProject` and `withActiveEnvironment` set it, from the
+   * per-project {@link activeEnvironments}. Never serialised into `workspace.yaml`.
    */
   readonly activeEnvironmentId?: string;
+  /**
+   * Project id to the id of that project's active environment. Machine-local: kept only in memory
+   * while a workspace is open, and never serialised into `workspace.yaml` — see `local-state.ts`,
+   * which is where it actually lives on disk.
+   */
+  readonly activeEnvironments: Readonly<Record<string, string>>;
   readonly projects: readonly WorkspaceProjectRef[];
   readonly environments: readonly WorkspaceEnvironment[];
 }
@@ -111,6 +122,7 @@ export function createWorkspace(name: string, options?: CreateOptions & { readon
     createdAt: now().toISOString(),
     properties: {},
     disabledProperties: [],
+    activeEnvironments: {},
     projects: [],
     environments: [],
   };

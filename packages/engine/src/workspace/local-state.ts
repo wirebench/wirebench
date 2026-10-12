@@ -1,7 +1,7 @@
 /**
  * `local.yaml`: the machine-local half of a workspace's app-data folder. Never inside the tree,
- * never committed, never shared — it is the one place `activeEnvironmentId` lives now that
- * `workspace.yaml` no longer carries it (see `model.ts`). It also holds this machine's
+ * never committed, never shared — it is the one place the per-project active environments live now
+ * that `workspace.yaml` no longer carries them (see `model.ts`). It also holds this machine's
  * secret-source overrides and its approval of the shared mapping (secret sources spec D1, D4).
  *
  * Mirrors `share.ts`'s discipline (`readYaml`/`parseWorkspaceFile` in, `stringifyYaml` +
@@ -33,9 +33,15 @@ export interface SecretSourcesApproval {
 
 /** The machine-local state of one workspace on this machine. */
 export interface WorkspaceLocalState {
-  readonly version: 2;
-  /** Id of the environment currently active for this workspace, on this machine. */
-  readonly activeEnvironmentId?: string;
+  readonly version: 3;
+  /** Project id to the id of that project's active environment, on this machine. */
+  readonly activeEnvironments?: Readonly<Record<string, string>>;
+  /**
+   * The single active environment a version 1 or 2 file recorded, before each project kept its own.
+   * Set on load only, never written back: the loader does not know the project list, so the caller
+   * expands it into {@link activeEnvironments}.
+   */
+  readonly legacyActiveEnvironmentId?: string;
   /** This machine's secret-source overrides; `{ kind: none }` unmaps a shared name. */
   readonly secretSources?: LocalSecretSources;
   /**
@@ -48,7 +54,7 @@ export interface WorkspaceLocalState {
 }
 
 /** The state of a workspace that has never had anything local recorded for it. */
-export const EMPTY_LOCAL_STATE: WorkspaceLocalState = { version: 2 };
+export const EMPTY_LOCAL_STATE: WorkspaceLocalState = { version: 3 };
 
 /** Options shared by {@link loadLocalState} and {@link saveLocalState}. */
 export interface LocalStateOptions {
@@ -82,8 +88,13 @@ export async function loadLocalState(dir: string, options?: LocalStateOptions): 
   // A malformed approval is dropped alone: it must not take the active environment or the overrides with it.
   const approval = secretSourcesApprovalSchema.safeParse(data.secretSourcesApproved);
   return {
-    version: 2,
-    ...(data.activeEnvironmentId !== undefined ? { activeEnvironmentId: data.activeEnvironmentId } : {}),
+    version: 3,
+    ...(data.version === 3 && data.activeEnvironments !== undefined && Object.keys(data.activeEnvironments).length > 0
+      ? { activeEnvironments: data.activeEnvironments }
+      : {}),
+    ...(data.version !== 3 && data.activeEnvironmentId !== undefined
+      ? { legacyActiveEnvironmentId: data.activeEnvironmentId }
+      : {}),
     ...(Object.keys(local).length > 0 ? { secretSources: local } : {}),
     ...(isNonMappingSecretSources(data.secretSources) ? { secretSourcesRaw: data.secretSources } : {}),
     ...(approval.success && approval.data !== undefined ? { secretSourcesApproved: approval.data } : {}),
@@ -103,7 +114,7 @@ export async function saveLocalState(
   const fs = options?.fs ?? nodeFs;
   const path = join(dir, WORKSPACE_LOCAL_FILE);
   const empty =
-    state.activeEnvironmentId === undefined &&
+    (state.activeEnvironments === undefined || Object.keys(state.activeEnvironments).length === 0) &&
     (state.secretSources === undefined || Object.keys(state.secretSources).length === 0) &&
     state.secretSourcesRaw === undefined &&
     state.secretSourcesApproved === undefined;
@@ -116,8 +127,11 @@ export async function saveLocalState(
     path,
     stringifyYaml(
       compact({
-        version: 2,
-        activeEnvironmentId: state.activeEnvironmentId,
+        version: 3,
+        activeEnvironments:
+          state.activeEnvironments !== undefined && Object.keys(state.activeEnvironments).length > 0
+            ? state.activeEnvironments
+            : undefined,
         secretSources:
           state.secretSources !== undefined && Object.keys(state.secretSources).length > 0
             ? serializeSecretSources(state.secretSources)

@@ -360,7 +360,7 @@ describe('setLocalSecretSources', () => {
     await service.setActiveEnvironment(createdEnvironmentId as string);
     await service.setLocalSecretSources({ name: 'db', entry: { kind: 'none' } });
     const local = await localFile(dir);
-    expect(local).toContain('activeEnvironmentId');
+    expect(local).toContain('activeEnvironments');
     expect(local).toContain('kind: none');
   });
 
@@ -412,7 +412,7 @@ describe('queueing and the change hook', () => {
     open();
     await Promise.all([activating, writing]);
     const local = await loadLocalState(dir);
-    expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
+    expect(Object.values(local.activeEnvironments ?? {})).toContain(createdEnvironmentId);
     expect(Object.keys(local.secretSources ?? {})).toEqual(['api']);
   });
 

@@ -267,3 +267,21 @@ export function commitMessage(changes: readonly TreeChange[], options?: { readon
 
   return `${withAutosave(subject, options?.autosave)}\n\n${body}`;
 }
+
+/**
+ * The subject for a change to which projects an environment applies to: `Scope environment QA to
+ * Billing, CRM`, or `Apply environment QA to all projects` when `projects` is `undefined` (the scope
+ * went back to every project). `projectNames` maps project id to display name; an id it does not
+ * know shows as the id itself, so a stale scope still reads.
+ */
+export function scopeChangeMessage(
+  environmentName: string,
+  projects: readonly string[] | undefined,
+  projectNames: Readonly<Record<string, string>>,
+): string {
+  if (projects === undefined) {
+    return `Apply environment ${environmentName} to all projects`;
+  }
+  const names = projects.map((id) => (Object.hasOwn(projectNames, id) ? (projectNames[id] ?? id) : id));
+  return `Scope environment ${environmentName} to ${names.length === 0 ? 'no projects' : names.join(', ')}`;
+}

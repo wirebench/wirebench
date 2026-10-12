@@ -261,6 +261,7 @@ describe('secretNeedsOf — ${secret:name} tokens', () => {
       createdAt: '2026-09-18T00:00:00.000Z',
       properties: { team: '${secret:team_key}' },
       disabledProperties: [],
+      activeEnvironments: {},
       projects: [{ id: 'proj-1', slug: 'demo-project', source: 'internal' }],
       environments: [
         {
