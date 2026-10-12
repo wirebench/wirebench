@@ -83,6 +83,9 @@ All notable changes to this project are documented here. The format follows
   workspace a project environment applies through the workspace environment with the same slug; a
   rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped
   applying. A rename now keeps the slug, as a workspace environment's rename already did (#475).
+- **A sequence run inside a workspace names its environment in the report.** `wirebench run
+  --sequence -e <environment>` looked the name up only among the project's environments, so the
+  json, html and console reports left it out when the environment was the workspace's (#476).
 
 ## [6.0.0] - 2026-10-12
 
