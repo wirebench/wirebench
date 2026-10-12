@@ -59,7 +59,8 @@ through a jump chain work exactly like direct ones. Credentials never leave the 
   `realpath`, `mkdir`, `rmdir`, `unlink`, `rename`, `chmod`, `createReadStream` and `createWriteStream`.
 - The ssh integration fixture (`packages/ssh/test/helpers/ssh-fixture.ts`) is an in-process `ssh2` server with
   `shell` and `exec` handlers and no `sftp` subsystem.
-- #407 (terminal reconnect) changes `session.ts` in parallel; this slice's first change follows it.
+- #407 (terminal reconnect, merged 2026-10-12) taught `session.ts` to tell a lost connection from an exit
+  (`SessionExit.reason`); the dialler split keeps that.
 
 ## Design
 

@@ -43,7 +43,8 @@ Playwright `_electron` e2e.
 - Renderer code never imports a value from `shared/sftp-wire.ts` eagerly (the renderer CSP trap,
   `test/renderer-eager-imports.test.ts`); constants it needs go in `shared/sftp-defaults.ts`.
 - `ssh-files` tabs are never persisted (`renderer/state/tab-sets.ts` drops them like `ssh-terminal`).
-- PR 1 starts after #407 (terminal reconnect) merges, because both change `packages/ssh/src/session.ts`.
+- #407 (terminal reconnect, merged) changed `packages/ssh/src/session.ts`: the `dialChain` split keeps its
+  `SessionExit.reason` and lost-connection wiring intact, and its `session.test.ts` cases must pass unchanged.
 
 ## Review focus
 
@@ -88,8 +89,10 @@ stays unchanged and green.
     readonly client: Client;
     /** Ends every hop's client; idempotent. */
     endAll(): void;
-    /** Fires once when any hop's connection is lost after `ready`. */
+    /** Fires once when any hop's connection errors, ends or closes after `ready` (then every hop is ended). */
     onLost(listener: () => void): () => void;
+    /** Whether that has happened: `openSession` reads it to tell `reason: 'lost'` from `'exit'` (#407). */
+    readonly lost: boolean;
   }
   export function dialChain(options: DialOptions): Promise<DialledChain>;
   ```
@@ -100,11 +103,12 @@ stays unchanged and green.
 - [ ] Test first in `dial.test.ts` against the existing fixture: one hop resolves with a client that can `exec`;
       two hops (a second fixture as the target) resolve; a refused key rejects with `ssh-host-key-new`; a wrong
       password rejects with `ssh-auth-failed`; `endAll()` twice does not throw; stopping the jump fixture fires
-      `onLost` once.
+      `onLost` once and `lost` reads `true`; `endAll()` alone leaves `lost` `false`.
 - [ ] Move `connectHop`, `forwardOut` and the loop from `openSession` into `dialChain` without changing their
-      error mapping. `openSession` becomes `const chain = await dialChain(options)`, the shell on
-      `chain.client`, and `wrap(channel, chain.client, chain.endAll)`, with `chain.onLost` wired where the
-      inline `onLost` was.
+      error mapping, including the `error`/`end`/`close` lost-connection wiring #407 added. `openSession`
+      becomes `const chain = await dialChain(options)`, the shell on `chain.client`, and
+      `wrap(channel, chain.client, chain.endAll, chain)` (the chain is the `link` whose `lost` flag `wrap`
+      reads), so `SessionExit.reason` stays `exit` / `lost` / `closed` exactly as today.
 - [ ] Run `pnpm --filter @wirebench/ssh test`; `session.test.ts` passes unchanged.
 - [ ] Commit `refactor(ssh): dial the hop chain in its own module`.
 
