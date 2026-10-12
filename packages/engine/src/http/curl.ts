@@ -44,6 +44,15 @@ export interface CurlCommand {
   readonly basic?: { readonly username: string; readonly password: string };
   /** `--negotiate`: curl asks the OS for the ticket; no password is ever part of the command. */
   readonly negotiate?: { readonly username?: string; readonly domain?: string };
+  /** `--digest --user user:password`: curl answers the challenge itself. */
+  readonly digest?: { readonly username: string; readonly password: string };
+  /** `--aws-sigv4 aws:amz:<region>:<service> --user key:secret`: curl signs the request itself. */
+  readonly awsSigV4?: {
+    readonly region: string;
+    readonly service: string;
+    readonly accessKeyId: string;
+    readonly secretAccessKey: string;
+  };
   /** `-k`: send even when the certificate does not verify. */
   readonly insecure?: boolean;
   /** `-L`, with `--max-redirs` when a limit is set. */
@@ -107,6 +116,15 @@ export function toCurl(command: CurlCommand, options: ToCurlOptions = {}): strin
     const { username, domain } = command.negotiate;
     const user = username !== undefined ? `${domain !== undefined ? `${domain}\\` : ''}${username}` : '';
     args.push(`--negotiate --user ${quote(`${user}:`)}`);
+  }
+  if (command.digest !== undefined) {
+    args.push(`--digest --user ${quote(`${command.digest.username}:${command.digest.password}`)}`);
+  }
+  if (command.awsSigV4 !== undefined) {
+    const { region, service, accessKeyId, secretAccessKey } = command.awsSigV4;
+    args.push(
+      `--aws-sigv4 ${quote(`aws:amz:${region}:${service}`)} --user ${quote(`${accessKeyId}:${secretAccessKey}`)}`,
+    );
   }
   if (command.insecure === true) {
     args.push('--insecure');

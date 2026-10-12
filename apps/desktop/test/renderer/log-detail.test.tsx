@@ -284,3 +284,31 @@ describe('LogDetail for an STS row (no parsed response)', () => {
     }
   });
 });
+
+describe('LogDetail — an AWS Signature v4 send (#339)', () => {
+  it('shows the canonical request and the string to sign under the headers', () => {
+    const base = makeRestExchange();
+    renderDetail(
+      logExchange({
+        ...base,
+        auth: {
+          scheme: 'aws-sigv4',
+          challenged: false,
+          attempts: 1,
+          signature: {
+            canonicalRequest: 'GET\n/\n\nhost:x\n\nhost\nabc',
+            stringToSign: 'AWS4-HMAC-SHA256\n20261012T000000Z',
+          },
+        },
+      }),
+      'headers',
+    );
+    expect(screen.getByLabelText('Canonical request').textContent).toContain('host:x');
+    expect(screen.getByLabelText('String to sign').textContent).toContain('AWS4-HMAC-SHA256');
+  });
+
+  it('shows no signature block for any other send', () => {
+    renderDetail(exchange, 'headers');
+    expect(screen.queryByTestId('log-detail-signature')).toBeNull();
+  });
+});

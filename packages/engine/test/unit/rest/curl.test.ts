@@ -335,6 +335,53 @@ describe('fromRestCurl', () => {
   });
 });
 
+describe('fromRestCurl — Digest and AWS Signature v4 (#339)', () => {
+  it('reads --digest -u as Digest, not Basic', () => {
+    const parsed = fromRestCurl("curl --digest -u 'admin:pw' https://appliance.local/status");
+    expect(parsed.digest).toEqual({ username: 'admin', password: 'pw' });
+    expect(parsed.basic).toBeUndefined();
+    expect(parsed.request.url).toBe('https://appliance.local/status');
+    expect(parsed.problems).toEqual([]);
+  });
+
+  it('reads --aws-sigv4 with the scope from the provider string', () => {
+    const parsed = fromRestCurl(
+      "curl --aws-sigv4 'aws:amz:eu-west-1:execute-api' --user 'AKID:SECRET' -H 'x-amz-security-token: TOK' -H 'Accept: */*' https://x.example/prod/items",
+    );
+    expect(parsed.awsSigV4).toEqual({
+      region: 'eu-west-1',
+      service: 'execute-api',
+      accessKeyId: 'AKID',
+      secretAccessKey: 'SECRET',
+      sessionToken: 'TOK',
+    });
+    expect(parsed.basic).toBeUndefined();
+    expect(parsed.request.headers?.map((row) => row.name)).toEqual(['Accept']);
+  });
+
+  it('reads the region and service from an amazonaws.com host when the provider string stops short', () => {
+    expect(
+      fromRestCurl("curl --aws-sigv4 'aws:amz' -u 'K:S' https://abc123.execute-api.ap-southeast-2.amazonaws.com/prod")
+        .awsSigV4,
+    ).toMatchObject({ region: 'ap-southeast-2', service: 'execute-api' });
+    expect(
+      fromRestCurl("curl --aws-sigv4 aws:amz:us-east-1 -u 'K:S' https://bucket.s3.amazonaws.com/k").awsSigV4,
+    ).toMatchObject({ region: 'us-east-1', service: 's3' });
+  });
+
+  it('says so when no region can be found', () => {
+    const parsed = fromRestCurl("curl --aws-sigv4 'aws:amz' -u 'K:S' https://api.example.com/x");
+    expect(parsed.awsSigV4).toMatchObject({ region: '', service: '' });
+    expect(parsed.problems.join(' ')).toContain('region or service');
+  });
+
+  it('lets --negotiate win over the others', () => {
+    const parsed = fromRestCurl("curl --negotiate --digest -u 'ada:' https://api.test");
+    expect(parsed.kerberos).toBeDefined();
+    expect(parsed.digest).toBeUndefined();
+  });
+});
+
 describe('heredoc scan', () => {
   it('is linear, where the regex it replaces backtracked the body against the delimiter', () => {
     const time = (n: number): number => {
@@ -380,7 +427,7 @@ describe('heredoc scan', () => {
   });
 
   describe('flags that take no value', () => {
-    it.each(['--ntlm', '--digest', '--basic', '--anyauth', '-O', '--compressed', '-S', '--http1.0', '--tlsv1.2'])(
+    it.each(['--ntlm', '--basic', '--anyauth', '-O', '--compressed', '-S', '--http1.0', '--tlsv1.2'])(
       '%s does not swallow the token after it',
       (flag) => {
         const result = fromRestCurl(`curl ${flag} -u ada:pw https://api.test/pets`);

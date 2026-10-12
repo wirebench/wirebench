@@ -6,6 +6,7 @@
 
 import { applyAuth } from '../http/auth/apply-auth.js';
 import { basicAuthorization } from '../http/auth/basic.js';
+import { signSigV4 } from '../http/auth/sigv4.js';
 import { encodeRestBody } from './body.js';
 import type { EncodedBody } from './body.js';
 import { cookieHeader } from './cookies.js';
@@ -15,7 +16,7 @@ import type { RestSendInput } from './send.js';
 import { composeUrl } from './url.js';
 
 /** The scheme an `Authorization` only a challenge round trip sends would carry. */
-const HANDSHAKE_SCHEME = { basic: 'Basic', ntlm: 'NTLM', kerberos: 'Negotiate' } as const;
+const HANDSHAKE_SCHEME = { basic: 'Basic', ntlm: 'NTLM', kerberos: 'Negotiate', digest: 'Digest' } as const;
 
 /**
  * The body as the send encodes it. A file part that cannot be read leaves the length unknown and
@@ -54,10 +55,15 @@ function hostOf(url: string): string | undefined {
  *
  * Credentials go on as the send applies them: a preemptive Basic `Authorization` is a row of its own,
  * and one that only a challenge round trip sends (NTLM, Kerberos, a non-preemptive Basic) is a
- * `handshake` row whose value is its scheme. The cookie jar is read for the composed URL when the
- * send would read it. Nothing is sent and the jar is not written.
+ * `handshake` row whose value is its scheme (NTLM, Kerberos, Digest, a non-preemptive Basic). An AWS
+ * Signature v4 header signature is computed for real at `options.now`, over the headers and body the
+ * send would sign, and each header it adds is a row. The cookie jar is read for the composed URL when
+ * the send would read it. Nothing is sent and the jar is not written.
  */
-export async function previewRestHeaders(input: RestSendInput): Promise<RestHeaderRow[]> {
+export async function previewRestHeaders(
+  input: RestSendInput,
+  options: { readonly now?: number } = {},
+): Promise<RestHeaderRow[]> {
   const { request, settings } = input;
   const omit = settings.omitHeaders;
   const applied = applyAuth(input.auth);
@@ -92,7 +98,29 @@ export async function previewRestHeaders(input: RestSendInput): Promise<RestHead
       source: 'auth',
       state,
     });
-  } else if (transport?.type === 'basic' || transport?.type === 'ntlm' || transport?.type === 'kerberos') {
+  } else if (transport?.type === 'aws-sigv4' && transport.placement === 'header' && hostOf(url) !== undefined) {
+    const sent: Record<string, string> = {};
+    for (const row of rows) if (row.state === 'sent' || row.state === 'merged') sent[row.name] = row.value;
+    const signed = signSigV4(
+      {
+        method: request.method.toUpperCase(),
+        url: new URL(url).href,
+        headers: sent,
+        ...(encoded.bytes !== undefined ? { body: encoded.bytes } : {}),
+      },
+      transport,
+      { now: options.now ?? Date.now() },
+    );
+    const state: RestHeaderState = typed('Authorization') ? 'overridden' : 'sent';
+    for (const [name, value] of Object.entries(signed.headers)) {
+      generated.push({ name, value, source: 'auth', state });
+    }
+  } else if (
+    transport?.type === 'basic' ||
+    transport?.type === 'ntlm' ||
+    transport?.type === 'kerberos' ||
+    transport?.type === 'digest'
+  ) {
     generated.push({
       name: 'Authorization',
       value: HANDSHAKE_SCHEME[transport.type],

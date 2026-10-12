@@ -532,6 +532,8 @@ export type {
   IdGenerator,
   InheritAuth,
   KerberosAuth,
+  AwsSigV4Auth,
+  DigestAuth,
   OAuth2Auth,
   Project,
   ProjectSettings,

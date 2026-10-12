@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **AWS Signature v4 and Digest auth.** A REST or SOAP request, folder, API, interface or endpoint can
+  sign with **AWS Signature v4**: region and service, which take property references, an access key
+  ID, a secret key and an optional session token, all kept in the secret store, in an
+  `Authorization` header or as a presigned URL with its own expiry. The body is always hashed, and S3
+  also gets `X-Amz-Content-Sha256`. The Headers tab shows the signature headers before you send, and
+  the HTTP log shows each signed send's canonical request and string to sign. The signer matches
+  AWS's published test suite. **Digest** answers the server's 401 challenge with MD5 or SHA-256 (and
+  the `-sess` forms) and `qop=auth`, or the older form without `qop`. The nonce is remembered per
+  origin for the session, so later requests skip the 401 and count `nc` up, and a stale nonce is
+  answered once. cURL import reads `--digest` and `--aws-sigv4`, storing every value as a secret, and
+  the cURL export writes them. `wirebench run` and the MCP `send` read the credentials from
+  `WIREBENCH_SECRET_*`. gRPC and WebSocket refuse both schemes by name (#339).
 - **`wirebench lint` checks an OpenAPI 2.0, 3.0, 3.1 or 3.2 document.** A built-in hygiene rule set
   checks descriptions, examples, `operationId`s and reusable schemas. A built-in OWASP API Top 10 rule
   set checks for no security scheme, credentials or OAuth endpoints over plain HTTP, and undefined
@@ -18,6 +30,12 @@ All notable changes to this project are documented here. The format follows
   folder, and a local document reaches the network only with `--allow-remote-refs`. In the desktop
   app, **Lint Definition** on a REST API puts the same findings in Problems, and so does an OpenAPI
   import or a definition update (#342).
+
+### Breaking
+
+- **Project format 10.** Auth can be Digest (`type: digest`) or AWS Signature v4 (`type: aws-sigv4`);
+  a project saved by this version cannot be opened by an older one, which refuses it as made by a
+  newer Wirebench. A version-9 project opens unchanged (#339).
 
 ## [6.0.0] - 2026-10-12
 
