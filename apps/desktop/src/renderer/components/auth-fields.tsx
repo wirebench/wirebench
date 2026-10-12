@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './button.js';
 import { SecretField } from './secret-field.js';
+import { DEFAULT_JWT_AUTH, JwtAuthFields } from './jwt-auth-fields.js';
 import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
 import { VariableInput } from './variable-field.js';
@@ -36,6 +37,7 @@ const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: 
   { value: 'api-key', label: 'API key' },
   { value: 'oauth2', label: 'OAuth2' },
   { value: 'kerberos', label: 'Kerberos' },
+  { value: 'jwt', label: 'JWT (signed here)' },
 ];
 
 /** Every scheme but Kerberos: what a webhook delivery can be given. */
@@ -44,10 +46,11 @@ export const WEBHOOK_AUTH_TYPES: readonly AuthConfigWire['type'][] = TYPES.map((
 );
 
 /**
- * The schemes a SOAP interface, endpoint or request may hold: all six, but never *Inherit*.
+ * The schemes a SOAP interface, endpoint or request may hold: every one but a signed JWT, and never
+ * *Inherit*.
  *
  * A SOAP owner has nothing above it to inherit from (the project format refuses `inherit` there),
- * so the form offers every real scheme and leaves "configures nothing" to *Not configured*.
+ * so the form offers every other scheme and leaves "configures nothing" to *Not configured*.
  */
 export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
   'none',
@@ -70,7 +73,7 @@ export function asSoapAuth(auth: AuthConfigWire | null): SoapOwnerAuthWire | nul
 }
 
 /** Which secret field is which, so each can register its own flush. */
-type SecretSlot = 'passwordRef' | 'tokenRef' | 'valueRef' | 'clientSecretRef';
+type SecretSlot = 'passwordRef' | 'tokenRef' | 'valueRef' | 'clientSecretRef' | 'secretRef';
 
 export interface AuthFieldsProps {
   /** Which level is being edited; prefixes every accessible name. */
@@ -272,6 +275,10 @@ export function AuthFields({
               onChange({ type: 'api-key', name: '', in: 'header' });
               return;
             }
+            if (value === 'jwt') {
+              onChange(DEFAULT_JWT_AUTH);
+              return;
+            }
             if (value === 'kerberos') {
               // A fresh Kerberos configuration carries nothing over from another scheme, whatever the
               // platform: a leftover username or password would be refused by the engine off Windows.
@@ -390,6 +397,16 @@ export function AuthFields({
             </select>
           </label>
         </>
+      )}
+
+      {auth !== undefined && type === 'jwt' && (
+        <JwtAuthFields
+          scope={scope}
+          auth={auth}
+          onChange={onChange}
+          secretRow={secret('secretRef', 'Secret')}
+          nameRow={(placeholder) => text('name', 'Name', placeholder)}
+        />
       )}
 
       {auth !== undefined && type === 'oauth2' && (

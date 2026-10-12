@@ -19,6 +19,7 @@ import type { ProjectRouter } from '../project-router.js';
 import type { AuthConfig, EffectiveSigning, RestBody, RestRequestDef } from '@wirebench/engine';
 import { type SendThroughEngineDeps } from '../send/exchange.js';
 import { registerHandler } from './register.js';
+import { namedCredential } from '../kinds/key-masks.js';
 
 /** What the `history.*` channels need beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
@@ -180,7 +181,8 @@ export function resendUrl(
   const formEncoded = query.some((row) => ENCODED_MARKER.test(row.name) || ENCODED_MARKER.test(row.value));
   const plus = (text: string): string => (formEncoded ? text.replaceAll('+', '%20') : text);
   const { auth, request } = saved;
-  const keyName = auth.type === 'api-key' && auth.in === 'query' ? auth.name : undefined;
+  const named = namedCredential(auth);
+  const keyName = named?.in === 'query' ? named.name : undefined;
   const savedQuery = [...typedQuery(request.url), ...request.query];
   const rows: KeyValueWire[] = [];
   for (const recorded of query) {

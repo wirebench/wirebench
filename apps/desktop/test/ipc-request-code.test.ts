@@ -101,7 +101,9 @@ function soapProject(auth?: SoapOwnerAuth): Project {
   };
 }
 
-const getSecret = vi.fn((ref: string) => Promise.resolve({ sec_tok: 'tok-live', sec_pw: 'pa55' }[ref]));
+const getSecret = vi.fn((ref: string) =>
+  Promise.resolve({ sec_tok: 'tok-live', sec_pw: 'pa55', sec_jwt: 'jwt-secret-0123456789-abcdefghijklmn' }[ref]),
+);
 
 function register(model: Project, options: { readonly show?: boolean; readonly environmentId?: string } = {}): void {
   handlers.clear();
@@ -184,6 +186,34 @@ describe('request.code for a REST request', () => {
     const { command, notes } = await code({ requestId: 'rest-1', target: 'csharp-httpclient' });
     expect(command).not.toContain('Authorization');
     expect(notes?.join(' ')).toContain('Kerberos is not included');
+  });
+
+  it('carries a JWT signed now with show-secrets on, and says when it expires', async () => {
+    const jwt: AuthConfig = {
+      type: 'jwt',
+      algorithm: 'HS256',
+      secretRef: 'sec_jwt',
+      claims: '{"sub":"code-337"}',
+      issuedAt: true,
+      expiresInSeconds: 600,
+      jwtId: false,
+      in: 'header',
+    };
+    register(restProject(jwt), { show: true });
+    const shown = await code({ requestId: 'rest-1', target: 'js-fetch' });
+    const token = /'Authorization': 'Bearer ([\w-]+\.[\w-]+\.[\w-]+)'/u.exec(shown.command)?.[1] ?? '';
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as {
+      sub?: string;
+    };
+    expect(payload.sub).toBe('code-337');
+    expect(shown.notes?.join(' ')).toMatch(/signed now and expires at \d{4}-/u);
+
+    getSecret.mockClear();
+    register(restProject(jwt));
+    const hidden = await code({ requestId: 'rest-1', target: 'js-fetch' });
+    expect(hidden.command).not.toContain(token);
+    expect(hidden.notes?.join(' ')).toContain('show secrets');
+    expect(getSecret).not.toHaveBeenCalled();
   });
 
   it('describes the unsaved draft, as the curl export does', async () => {

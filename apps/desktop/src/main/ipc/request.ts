@@ -2,6 +2,7 @@ import {
   applySoapAuth,
   applyWsaHeaders,
   CURL_REDACTED,
+  jwtSendAuth,
   envMarker,
   envVariablesFor,
   fromCurl,
@@ -25,6 +26,7 @@ import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import type {
   AuthConfig,
+  JwtAuth,
   CodeOptions,
   CodeRequest,
   DesktopAuditEvent,
@@ -354,10 +356,26 @@ export function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
       return { type: 'bearer', token: CURL_REDACTED, ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}) };
     case 'api-key':
       return { type: 'api-key', name: auth.name, value: CURL_REDACTED, in: auth.in };
+    case 'jwt':
+      return jwtSendAuth(auth, CURL_REDACTED);
     default:
       // `none`, `inherit` and `oauth2`: nothing to put on the command (the last is noted instead).
       return undefined;
   }
+}
+
+/**
+ * A preview's credentials with their real values, for an export while the session shows secrets. A
+ * JWT is signed through the app's source, so the export carries the token the next send would; any
+ * other scheme is read from the keychain.
+ */
+export async function shownAuth(
+  deps: RequestChannelDeps,
+  resolved: { readonly auth: AuthConfig; readonly signJwt: (auth: JwtAuth) => Promise<SendAuth> },
+): Promise<SendAuth | undefined> {
+  return resolved.auth.type === 'jwt'
+    ? await resolved.signJwt(resolved.auth)
+    : await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
 }
 
 /**
@@ -382,7 +400,7 @@ async function restCurl(
   const auth = kerberos
     ? { type: 'kerberos' as const, ...kerberosNames(resolved.auth) }
     : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+      ? await shownAuth(deps, resolved)
       : placeholderAuth(resolved.auth);
   // The engine masks by header name; a value main recorded (a `${secret:…}` or secret-source value, a
   // long `${#System#…}` one) can sit in the URL, any header or the body, so the whole command is masked.
@@ -540,6 +558,28 @@ function uncarriedAuthNote(type: AuthConfig['type'], tokenIncluded: boolean): st
   }
 }
 
+/** What a snippet says about the JWT it carries: when it stops working, or how to see it. */
+function jwtCodeNote(auth: SendAuth | undefined, show: boolean): string {
+  if (!show || auth?.type !== 'jwt') {
+    return 'The JWT is masked: show secrets to include a token signed now.';
+  }
+  const exp = jwtExpiry(auth.token);
+  return exp === undefined
+    ? 'The JWT was signed now and has no expiry.'
+    : `The JWT was signed now and expires at ${new Date(exp * 1000).toISOString()}.`;
+}
+
+/** A JWT's `exp`, read from its payload without verifying it; undefined when it has none. */
+function jwtExpiry(token: string): number | undefined {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as unknown;
+    const exp = typeof payload === 'object' && payload !== null ? (payload as { exp?: unknown }).exp : undefined;
+    return typeof exp === 'number' ? exp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The settings a `request.code` call asked for, in the engine's terms. */
 function codeOptions(settings: RequestCodeRequest['settings']): CodeOptions {
   return {
@@ -580,12 +620,16 @@ async function restCode(
   show: boolean,
 ): Promise<{ readonly request: CodeRequest; readonly notes: readonly string[] }> {
   const { type } = resolved.auth;
-  const carried = type === 'basic' || type === 'bearer' || type === 'api-key';
+  const carried = type === 'basic' || type === 'bearer' || type === 'api-key' || type === 'jwt';
+  // A JWT has no environment variable to read: the snippet carries a token signed now, shown only
+  // while the session shows secrets (owner's call, #348), and a masked stand-in otherwise.
   const auth = !carried
     ? undefined
     : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-      : environmentAuth(resolved.auth);
+      ? await shownAuth(deps, resolved)
+      : resolved.auth.type === 'jwt'
+        ? placeholderAuth(resolved.auth)
+        : environmentAuth(resolved.auth);
   // The preview's own credentials are dropped: only the ones decided here may reach the snippet.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
   const { auth: _preview, ...input } = resolved.input;
@@ -601,6 +645,7 @@ async function restCode(
   }
   const uncarried = uncarriedAuthNote(type, false);
   if (uncarried !== undefined) notes.push(uncarried);
+  if (type === 'jwt') notes.push(jwtCodeNote(auth, show));
   return {
     request: restCodeRequest(secretTokensToEnv({ ...input, ...(auth !== undefined ? { auth } : {}) })),
     notes,
@@ -1051,11 +1096,7 @@ async function grpcCommand(
   const show = deps.showSecrets?.get() ?? false;
   // Kerberos has no grpcurl form (the token is made per call), so it is dropped, with no secret read.
   const kerberos = resolved.auth.type === 'kerberos';
-  const auth = kerberos
-    ? undefined
-    : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-      : placeholderAuth(resolved.auth);
+  const auth = kerberos ? undefined : show ? await shownAuth(deps, resolved) : placeholderAuth(resolved.auth);
   // A definition discovered by reflection has no .proto files on disk to name, and grpcurl asks the
   // server itself when it is given none — so the flags are dropped rather than pointing at nothing.
   const { definition } = resolved.item.api;
@@ -1091,11 +1132,7 @@ async function wsCommand(
   // A Negotiate token is made per handshake and cannot be written into a command line, so a
   // Kerberos request is noted from its configuration, with no secret read for it.
   const kerberos = resolved.auth.type === 'kerberos';
-  const auth = kerberos
-    ? undefined
-    : show
-      ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-      : placeholderAuth(resolved.auth);
+  const auth = kerberos ? undefined : show ? await shownAuth(deps, resolved) : placeholderAuth(resolved.auth);
   const material: WsSessionMaterial = { ...(auth !== undefined ? { auth } : {}) };
   const options = toWsSessionOptions(resolved.input, material);
   const command = wsToCommand(options, { shell: request.shell });

@@ -1845,6 +1845,8 @@ export const keystoreAliasWireSchema = z.object({
   notAfter: z.string(),
   fingerprintSha256: z.string(),
   hasPrivateKey: z.boolean(),
+  /** A PEM file holding only a private key (#348): something to sign a JWT with, no certificate. */
+  keyOnly: z.boolean().optional(),
 });
 export type KeystoreAliasWire = z.infer<typeof keystoreAliasWireSchema>;
 export const keystoresInspectResponseSchema = z.object({

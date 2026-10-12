@@ -22,6 +22,7 @@ import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
 import { signConfiguredJwt } from '../http/auth/jwt-auth.js';
+import type { JwtSendAuth } from '../http/auth/jwt-auth.js';
 import { createJwtSource } from '../http/auth/jwt.js';
 import type { JwtSource } from '../http/auth/jwt.js';
 import { resolveWorkspaceApiBaseUrl, withActiveEnvironment } from '../workspace/environments.js';
@@ -210,7 +211,7 @@ export async function authFor(
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
   if (configured.type === 'jwt') {
-    return reportedAuth(await jwtFor(configured, context), context);
+    return reportedAuth(await signJwtFor(configured, context), context);
   }
   if (configured.type !== 'oauth2') {
     return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret), context);
@@ -232,11 +233,12 @@ export function jwtSourceOf(context: RunContext): JwtSource {
 
 /**
  * A JWT signed (or reused) for `configured`, its claims expanded against the request's scopes and
- * its private key read from the project's keystore entry.
+ * its private key read from the project's keystore entry. The app's previews sign through here too,
+ * so a header preview shows the token the next send carries.
  *
  * @throws WirebenchError from `signConfiguredJwt`, or the keystore's own load errors
  */
-async function jwtFor(configured: JwtAuth, context: RunContext): Promise<SendAuth> {
+export async function signJwtFor(configured: JwtAuth, context: RunContext): Promise<JwtSendAuth> {
   return signConfiguredJwt(
     configured,
     {

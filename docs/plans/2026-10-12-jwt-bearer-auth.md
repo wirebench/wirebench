@@ -16,6 +16,5 @@ Spec: `docs/specs/2026-10-12-jwt-bearer-auth-design.md`. Issue #348. One commit 
    `SendHost.jwts`, refused-token drop, keystore needs in `secrets list`. Regenerate the published
    schemas. Engine tests including a REST run against the test server, and a CLI send test.
 4. **Desktop.** Wire schema, auth editor fields (keystore picker reuse), labels, redaction,
-   placeholder auth, header preview, code generation signed now, keystore-removal cleanup, the
-   app's JWT source. Unit tests for main-process pieces.
+   placeholder auth, header preview, code generation signed now, the app's JWT source. Unit tests for main-process pieces.
 5. **Docs and changelog.** Auth docs page section, CHANGELOG under [Unreleased].

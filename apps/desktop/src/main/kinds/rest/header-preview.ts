@@ -5,18 +5,18 @@
  * The request is resolved as its send resolves it (`previewRest`) and its headers come from the
  * engine's `previewRestHeaders`, the rows `sendRest` itself merges. Credentials go on as the cURL
  * export puts them: read only while the session shows secrets, a masked stand-in otherwise. An
- * OAuth2 token is never fetched here; a cached one is used.
+ * OAuth2 token is never fetched here; a cached one is used. A JWT is signed (or the fresh one
+ * reused) only while secrets show.
  */
-import { CURL_REDACTED, previewRestHeaders } from '@wirebench/engine';
+import { CURL_REDACTED, jwtSendAuth, previewRestHeaders } from '@wirebench/engine';
 import type { SendAuth } from '@wirebench/engine';
 import type {
   RequestRestHeadersRequest,
   RequestRestHeadersResponse,
   RestHeaderRowWire,
 } from '../../../shared/kinds/rest/wire.js';
-import { cachedAccessToken, placeholderAuth, type RequestChannelDeps } from '../../ipc/request.js';
+import { cachedAccessToken, placeholderAuth, shownAuth, type RequestChannelDeps } from '../../ipc/request.js';
 import { redactHeaders } from '../../redact.js';
-import { resolveAuthConfig } from '../../secret-resolver.js';
 import { previewRest, type RestPreview, type SendThroughEngineDeps } from '../../send/exchange.js';
 
 /** The credentials the preview applies, and a note when the header they make is not known yet. */
@@ -37,17 +37,19 @@ async function previewAuth(
       // Only the scheme is shown, so no ticket is asked for and no secret is read.
       return { auth: { type: 'kerberos' } };
     default: {
-      const auth = show
-        ? await resolveAuthConfig(config, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
-        : placeholderAuth(config);
+      // A JWT is signed through the app's source while secrets show, so the row is the token the
+      // next send carries; a stand-in otherwise, as for every other credential.
+      const auth = show ? await shownAuth(deps, resolved) : placeholderAuth(config);
       return auth !== undefined ? { auth } : {};
     }
   }
 }
 
-/** The extra header names a credential may use that the masker cannot know by name: an API key's. */
+/** The extra header names a credential may use that the masker cannot know by name: an API key's or a JWT's. */
 function keyHeaders(resolved: RestPreview): string[] {
-  return resolved.auth.type === 'api-key' && resolved.auth.in === 'header' ? [resolved.auth.name] : [];
+  const { auth } = resolved;
+  if (auth.type === 'jwt' && auth.in === 'header') return [jwtSendAuth(auth, '').name];
+  return auth.type === 'api-key' && auth.in === 'header' ? [auth.name] : [];
 }
 
 /** The `request.restHeaders` answer for one request; no headers when it is not a REST request. */

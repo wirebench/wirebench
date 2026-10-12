@@ -85,9 +85,12 @@ engine reports it through `onSecretValue`, the app records it for redaction.
 - Header preview (#346): `Authorization: Bearer <signed JWT>` while secrets are hidden; the real
   token when shown.
 - Code generation (#337), owner decision: the snippet carries a token **signed at generation
-  time**.
-- Removing a keystore clears `keystoreRef` from JWT auth that names it, as it already does for
-  `sslKeystoreRef`.
+  time** while the session shows secrets, with a note saying when it expires; with secrets hidden
+  it carries a masked stand-in, as every other credential is hidden then. cURL and the gRPC and
+  WebSocket commands do the same.
+- Removing a keystore leaves JWT auth naming it as it is; its next send is refused with
+  `jwt-key-missing`, which names the keystore, so the user picks another. (Removal clears only SOAP
+  requests' TLS keystore today; walking every REST, gRPC and WebSocket tree is not this issue's.)
 
 ## 7. CLI and MCP
 

@@ -11,7 +11,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX, webhooksOf } from '@wirebench/engine';
+import {
+  createJwtSource,
+  failedRequestOf,
+  findWebhookRequest,
+  SIGNING_PSEUDO_REF_PREFIX,
+  webhooksOf,
+} from '@wirebench/engine';
 import type {
   AttemptedRequest,
   ClientIdentity,
@@ -115,6 +121,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       ? { keystoreFor: async (keystoreId: string) => await project.keystoreFor?.(projectId, keystoreId) }
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
+    jwts: APP_JWTS,
     ...(issued !== undefined ? { protocols: { soap: { issuedTokens: issued } } } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
     ...(cookies !== undefined ? { cookies } : {}),
@@ -154,6 +161,13 @@ export function desktopSecrets(
   const getSecret = deps.secretsFor?.(projectId) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
   return (ref) => (ref.startsWith(SIGNING_PSEUDO_REF_PREFIX) ? Promise.resolve(undefined) : getSecret(ref));
 }
+
+/**
+ * The app's one JWT source (#348): a signed token is reused across sends, previews and code
+ * generation until shortly before it expires, and dropped when a server refuses it. Held in memory
+ * only, like OAuth2 access tokens.
+ */
+const APP_JWTS = createJwtSource();
 
 /** The OAuth2 service as the engine's token source: its cache, its browser flow, its `clear`. */
 function oauth2Tokens(deps: DesktopSendDeps): RunTokenSource | undefined {

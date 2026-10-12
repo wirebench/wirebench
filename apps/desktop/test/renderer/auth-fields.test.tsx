@@ -56,6 +56,7 @@ describe('AuthFields', () => {
       'API key',
       'OAuth2',
       'Kerberos',
+      'JWT (signed here)',
     ]);
 
     rerender(<AuthFields scope="Request" inheritable auth={undefined} onChange={vi.fn()} />);
