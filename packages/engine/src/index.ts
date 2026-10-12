@@ -655,6 +655,8 @@ export type {
   TokenResponseInput,
   TokenSet,
 } from './http/auth/oauth2.js';
+export { JWT_ALGS, defaultAlgFor, signJwt } from './http/auth/jwt-sign.js';
+export type { JwtAlg, SignJwtInput } from './http/auth/jwt-sign.js';
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
