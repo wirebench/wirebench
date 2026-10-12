@@ -623,7 +623,7 @@ describe('PreferencesEditor — changed settings', () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
     usePreferencesStore.setState({
-      preferences: { ...DEFAULTS, http: { ...DEFAULTS.http, maxConnections: 7, allowH2: true } },
+      preferences: { ...DEFAULTS, http: { ...DEFAULTS.http, maxConnections: 7, offerH2: false } },
       loaded: true,
     });
     render(<PreferencesEditor initialSection="http" />);

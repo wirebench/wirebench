@@ -32,10 +32,13 @@ export interface HttpPreferences {
   /** Maximum simultaneous connections per host. Reserved. */
   readonly maxConnections: number;
   /**
-   * Offer HTTP/2 in the TLS ALPN handshake. Off by default: HTTP/2 changes what the raw view
-   * can faithfully reconstruct, and most SOAP stacks speak HTTP/1.1 only.
+   * Offer HTTP/2 in the TLS ALPN handshake (ADR-0024). On by default: the server picks, so a
+   * stack that speaks HTTP/1.1 only stays on it. Off pins every send to HTTP/1.1, for a server
+   * that asks for a client certificate mid-connection (renegotiation, which HTTP/2 forbids).
+   * NTLM and Kerberos always use HTTP/1.1. Replaces `allowH2`, which every saved file carried
+   * as `false` although it never turned HTTP/2 off for a direct send; that key is dropped.
    */
-  readonly allowH2: boolean;
+  readonly offerH2: boolean;
 }
 
 /** Proxy preferences, consulted for every send by `resolveProxyFor`. */
@@ -256,7 +259,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     chunkingThreshold: 0,
     socketTimeoutMs: 60_000,
     maxConnections: 100,
-    allowH2: false,
+    offerH2: true,
   }),
   proxy: Object.freeze({ mode: 'none', excludes: Object.freeze([]) }),
   ssl: Object.freeze({ minVersion: 'TLSv1.2', expiryWarningDays: 30, trustAll: false }),
@@ -410,7 +413,7 @@ export const preferencesSchema = z.object({
       chunkingThreshold: limited('http.chunkingThreshold').optional(),
       socketTimeoutMs: limited('http.socketTimeoutMs').optional(),
       maxConnections: limited('http.maxConnections').optional(),
-      allowH2: z.boolean().optional(),
+      offerH2: z.boolean().optional(),
     })
     .optional(),
   proxy: z

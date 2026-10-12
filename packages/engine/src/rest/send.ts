@@ -270,7 +270,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     ...(settings.maxSizeBytes !== undefined ? { maxSizeBytes: settings.maxSizeBytes } : {}),
     ...originCredentialsFor(applied),
     ...(settings.localAddress !== undefined ? { localAddress: settings.localAddress } : {}),
-    ...(settings.allowH2 === true ? { allowH2: true } : {}),
+    ...(settings.allowH2 !== undefined ? { allowH2: settings.allowH2 } : {}),
     ...(settings.decompress !== undefined ? { decompress: settings.decompress } : {}),
     ...(input.tls !== undefined ? { tls: input.tls } : {}),
     ...(input.proxy !== undefined ? { proxy: input.proxy } : {}),
