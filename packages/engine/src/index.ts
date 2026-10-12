@@ -638,16 +638,27 @@ export type {
 export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
 export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from './rest/response.js';
 export {
+  CLIENT_ASSERTION_TYPE,
+  DEVICE_CODE_GRANT_TYPE,
   TOKEN_REFRESH_MARGIN_MS,
   authorizationUrl,
+  buildDeviceAuthorizationRequest,
   buildTokenRequest,
+  clientAssertion,
+  clientAuthSecrets,
   needsRefresh,
   newState,
+  parseDeviceAuthorizationResponse,
   parseTokenResponse,
   pkce,
+  pollDeviceToken,
 } from './http/auth/oauth2.js';
 export type {
   AuthorizationUrlInput,
+  ClientAssertionInput,
+  ClientAuthMaterial,
+  DeviceAuthorization,
+  PollDeviceTokenInput,
   OAuth2Secrets,
   PkcePair,
   TokenGrantInput,
