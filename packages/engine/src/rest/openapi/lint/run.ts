@@ -52,10 +52,9 @@ function pointer(path: readonly (string | number)[]): string {
 }
 
 function toFinding(diagnostic: ISpectralDiagnostic, rootLocation: string, rootSource: string): LintFinding {
-  const source =
-    diagnostic.source === undefined || diagnostic.source === rootSource
-      ? rootLocation
-      : referenceLocation(diagnostic.source);
+  // Compared canonically: the runner may spell the root's path differently from how it was given.
+  const reported = diagnostic.source === undefined ? undefined : referenceLocation(diagnostic.source);
+  const source = reported === undefined || reported === referenceLocation(rootSource) ? rootLocation : reported;
   return {
     rule: String(diagnostic.code),
     severity: FROM_RUNNER[diagnostic.severity] ?? 'error',

@@ -11,7 +11,7 @@
  */
 
 import { isAbsolute } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Resolver } from '@stoplight/spectral-ref-resolver';
 import type { FetchDocument } from '../../../http/fetch-document.js';
 import { MAX_IMPORT_DOCUMENTS, classifyLocation, referencePolicyFor } from '../../../http/ref-policy.js';
@@ -25,22 +25,36 @@ export interface LintResolverOptions {
   readonly signal?: AbortSignal;
 }
 
+/** A Windows drive letter in a `file:` URL, upper-cased as Node's own paths spell it. */
+function upperDrive(href: string): string {
+  return href.replace(/^file:\/\/\/([a-z]):/, (_whole, drive: string) => `file:///${drive.toUpperCase()}:`);
+}
+
 /**
- * A reference as the runner hands it over, as an absolute location. A file root's references come as
- * plain paths (the runner was given the root's path), so a path becomes a `file:` URL.
+ * A document's location as the runner names it, as one canonical absolute location: a `file:` URL
+ * with an upper-case drive letter for anything local, the location itself otherwise. The runner
+ * hands a file back as a plain path, sometimes re-spelled (forward slashes, a lower-case drive on
+ * Windows), so every comparison and every report goes through here.
  */
 export function referenceLocation(reference: string): string {
+  if (/^file:/i.test(reference)) {
+    try {
+      return upperDrive(pathToFileURL(fileURLToPath(reference)).href);
+    } catch {
+      return reference;
+    }
+  }
   if (isAbsolute(reference) && !/^[a-z][a-z0-9+.-]*:\/\//i.test(reference)) {
-    return pathToFileURL(reference).href;
+    return upperDrive(pathToFileURL(reference).href);
   }
   return reference;
 }
 
-/** The runner's source name for a location: a path for `file:`, the location itself otherwise. */
+/** The runner's source name for a location: the native path for `file:`, the location itself otherwise. */
 export function runnerSource(location: string): string {
   if (classifyLocation(location) === 'file') {
     try {
-      return decodeURIComponent(new URL(location).pathname).replace(/^\/([a-z]:)/i, '$1');
+      return fileURLToPath(location);
     } catch {
       return location;
     }

@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { HYGIENE_RULES } from '../../../../../src/rest/openapi/lint/hygiene.js';
@@ -12,8 +14,9 @@ describe('the reference fence', () => {
   it('follows a reference inside the root folder and lints what it pulls in', async () => {
     const { fetchDocument, asked } = recordingFetch({ [REMOTE]: REMOTE_TEXT });
     const report = await lintWithRules(await fixture('multi/root.yaml'), HYGIENE_RULES, { fetchDocument });
-    const inside = pathToFileURL(`${FIXTURES}multi/paths/pets.yaml`).href;
-    expect(asked).toContain(inside);
+    // Canonical, as findings spell it: on Windows the fixture folder's drive letter may come either case.
+    const inside = referenceLocation(pathToFileURL(`${FIXTURES}multi/paths/pets.yaml`).href);
+    expect(asked.map(referenceLocation)).toContain(inside);
     expect(report.findings).toContainEqual(
       expect.objectContaining({ rule: 'operation-operationId', source: inside, path: '/get' }),
     );
@@ -64,9 +67,17 @@ describe('the reference fence', () => {
   });
 
   it('maps the runner names of documents back to locations', () => {
-    expect(referenceLocation('/tmp/a b.yaml')).toBe(pathToFileURL('/tmp/a b.yaml').href);
+    // Built from the platform's own temp folder, so the path is native everywhere (a drive on Windows).
+    const path = join(tmpdir(), 'a b.yaml');
+    const href = pathToFileURL(path).href;
+    expect(runnerSource(href)).toBe(path);
+    expect(referenceLocation(path)).toBe(referenceLocation(href));
     expect(referenceLocation(REMOTE)).toBe(REMOTE);
-    expect(runnerSource(pathToFileURL('/tmp/a b.yaml').href)).toBe('/tmp/a b.yaml');
     expect(runnerSource(REMOTE)).toBe(REMOTE);
+  });
+
+  it('spells a Windows drive letter one way, whatever case the runner used', () => {
+    expect(referenceLocation('file:///d:/a/x.yaml')).toBe(referenceLocation('file:///D:/a/x.yaml'));
+    expect(referenceLocation('file:///D:/a/x.yaml')).toMatch(/^file:\/\/\/D:/);
   });
 });
