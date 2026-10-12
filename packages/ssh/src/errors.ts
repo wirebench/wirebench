@@ -17,7 +17,10 @@ export type SshErrorCode =
   | 'sftp-not-found'
   | 'sftp-permission-denied'
   | 'sftp-exists'
-  | 'sftp-failed';
+  | 'sftp-failed'
+  | 'ssh-key-invalid'
+  | 'ssh-key-locked'
+  | 'ssh-install-failed';
 
 /** Mirrors the engine's WirebenchError shape (code, message, details) without importing it. */
 export class SshModelError extends Error {
