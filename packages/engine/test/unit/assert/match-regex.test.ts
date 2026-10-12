@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateAssertions } from '../../../src/assert/index.js';
 import type { AssertionSubject } from '../../../src/assert/model.js';
-import { matchRegexWithTimeout } from '../../../src/xpath/evaluate-async.js';
+import { matchRegexManyWithTimeout, matchRegexWithTimeout } from '../../../src/xpath/evaluate-async.js';
 
 const rest: AssertionSubject = {
   protocol: 'rest',
@@ -10,6 +10,21 @@ const rest: AssertionSubject = {
   bodyText: `{"name":"${'a'.repeat(40)}!"}`,
   bodyKind: 'json',
 };
+
+describe('matchRegexManyWithTimeout', () => {
+  it('answers one verdict per text, in order, from one worker', async () => {
+    expect(await matchRegexManyWithTimeout('^[a-z]+(?:-[a-z]+)*$', ['get-pets', 'getPets', 'a'])).toEqual({
+      kind: 'matched',
+      matches: [true, false, true],
+    });
+  });
+
+  it('reports an invalid pattern and a timeout for the whole batch', async () => {
+    expect(await matchRegexManyWithTimeout('(unclosed', ['x'])).toMatchObject({ kind: 'error', code: 'regex-invalid' });
+    const result = await matchRegexManyWithTimeout('(a+)+$', ['aa', `${'a'.repeat(40)}!`], { timeoutMs: 200 });
+    expect(result).toMatchObject({ kind: 'error', code: 'regex-timeout' });
+  });
+});
 
 describe('matchRegexWithTimeout', () => {
   it('matches and misses like RegExp.test', async () => {

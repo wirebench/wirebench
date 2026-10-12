@@ -63,6 +63,7 @@ export interface ApiChannelDeps {
     | 'restSource'
     | 'restPlanUpdate'
     | 'restApplyUpdate'
+    | 'restLint'
     | 'webhookItems'
     | 'importWebhooks'
     | 'apiDefinitionDocuments'

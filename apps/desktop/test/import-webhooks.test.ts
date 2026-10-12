@@ -90,6 +90,7 @@ beforeEach(async () => {
       restSource: (apiId) => host.kind('rest').restSource(apiId),
       restPlanUpdate: (apiId, next) => host.kind('rest').planRestUpdate(apiId, next),
       restApplyUpdate: (apiId, next, options) => host.kind('rest').applyRestUpdate(apiId, next, options),
+      restLint: (apiId) => host.kind('rest').lintApi(apiId),
       webhookItems: (apiId) => host.kind('rest').webhookItems(apiId),
       importWebhooks: (apiId, keys) => host.kind('rest').importWebhooks(apiId, keys),
       apiDefinitionDocuments: unused,

@@ -71,6 +71,7 @@ export const COMMAND_IDS = [
   'rest.newFolder',
   'rest.newRequest',
   'rest.updateDefinition',
+  'rest.lintDefinition',
   'grpc.send',
   'grpc.copyAsCommand',
   'grpc.newApi',

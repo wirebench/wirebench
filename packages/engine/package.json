@@ -111,6 +111,9 @@
   },
   "dependencies": {
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "@stoplight/spectral-core": "1.24.0",
+    "@stoplight/spectral-parsers": "1.0.5",
+    "@stoplight/spectral-ref-resolver": "1.0.5",
     "@xmldom/xmldom": "^0.9.12",
     "fontoxpath": "^3.34.0",
     "jose": "^6.2.12",

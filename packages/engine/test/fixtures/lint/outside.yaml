@@ -1,0 +1,5 @@
+get:
+  operationId: outside
+  summary: Should never be read.
+  responses:
+    '200': { description: Never. }
