@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { SshModelError } from './errors.js';
 import { forwardsSchema, isOffForm, serializeForward } from './forward-rules.js';
 import type { ForwardEntry } from './forward-rules.js';
+import { envSchema } from './host-env.js';
 import { resolveSettings } from './resolve.js';
+import { SECRET_NAME, SECRET_TOKEN } from './secret-token.js';
 import { walk } from './tree.js';
 
 export { walk };
 
-/** The name grammar of `${secret:NAME}`, shared with snippet variables (`snippets.ts`). */
-export const SECRET_NAME = /[A-Za-z_][A-Za-z0-9_]*/;
-export const SECRET_TOKEN = new RegExp(`^\\$\\{secret:(${SECRET_NAME.source})\\}$`);
+export { SECRET_NAME, SECRET_TOKEN };
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 /** The workspace id grammar, shared with `snippets.yaml`. */
 export const ENTRY_ID = ID;
@@ -56,6 +56,7 @@ const hostSchema = z.strictObject({
   tags: z.array(z.string().min(1)).default([]),
   protected: z.boolean().optional(),
   ssh: settingsSchema,
+  env: envSchema,
   forwards: forwardsSchema,
 });
 
@@ -69,6 +70,8 @@ export interface GroupEntry {
   /** Runs touching a protected host always confirm; inherited, a nearer `false` lifts it. */
   protected?: boolean | undefined;
   ssh: SshSettings;
+  /** Merged by name down the tree; a nearer level wins per variable. */
+  env?: Record<string, string> | undefined;
   forwards?: ForwardEntry[] | undefined;
   groups: GroupEntry[];
   hosts: HostEntry[];
@@ -81,6 +84,7 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
     tags: z.array(z.string().min(1)).default([]),
     protected: z.boolean().optional(),
     ssh: settingsSchema,
+    env: envSchema,
     forwards: forwardsSchema,
     groups: z.array(groupSchema).default([]),
     hosts: z.array(hostSchema).default([]),
@@ -285,6 +289,7 @@ function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   if (entry.protected !== undefined) out['protected'] = entry.protected;
   const ssh = settings(entry.ssh);
   if (Object.keys(ssh).length > 0) out['ssh'] = ssh;
+  if (entry.env !== undefined && Object.keys(entry.env).length > 0) out['env'] = { ...entry.env };
   if (entry.forwards !== undefined && entry.forwards.length > 0) out['forwards'] = entry.forwards.map(serializeForward);
   return out;
 }

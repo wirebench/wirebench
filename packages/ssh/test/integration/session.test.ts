@@ -21,8 +21,12 @@ afterEach(async () => {
   session = undefined;
   await Promise.all(open.splice(0).map((f) => f.close()));
 });
-async function fixture(password: string, allowForwardOut = false) {
-  const f = await startSshFixture({ password: { user: 'tester', password }, allowForwardOut });
+async function fixture(password: string, allowForwardOut = false, acceptEnv?: readonly string[]) {
+  const f = await startSshFixture({
+    password: { user: 'tester', password },
+    allowForwardOut,
+    ...(acceptEnv === undefined ? {} : { acceptEnv }),
+  });
   open.push(f);
   return f;
 }
@@ -50,6 +54,30 @@ describe('openSession', () => {
     session.write(Buffer.from('exit 3\n'));
     expect(await exit).toEqual({ code: 3, reason: 'exit' });
   });
+  it('sends env as env requests before the shell; a refused name still opens the shell', async () => {
+    const f = await fixture('pw', false, ['LANG']);
+    session = await openSession({
+      hops: [hop(f.port, 'pw')],
+      cols: 80,
+      rows: 24,
+      verifyHostKey: accept,
+      env: { LANG: 'C.UTF-8', APP_PROFILE: 'eu' },
+    });
+    expect(f.envRequests).toEqual([
+      { key: 'LANG', val: 'C.UTF-8', accepted: true },
+      { key: 'APP_PROFILE', val: 'eu', accepted: false },
+    ]);
+    const echoed = until(session, (t) => t.includes('still here'));
+    session.write(Buffer.from('still here'));
+    expect(await echoed).toContain('still here');
+  });
+
+  it('sends no env request without env', async () => {
+    const f = await fixture('pw');
+    session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept, env: {} });
+    expect(f.envRequests).toEqual([]);
+  });
+
   it('a connection reset ends the session as lost, not as an exit', async () => {
     const f = await fixture('pw');
     session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });

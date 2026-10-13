@@ -4,7 +4,15 @@ import { SshConnectError, dialChain, hostOf } from './dial.js';
 import type { DialOptions, HopCredentials } from './dial.js';
 
 /** After `close()`, `onExit` still fires once with `{ code: null }`. */
-export type OpenSessionOptions = DialOptions & { readonly cols: number; readonly rows: number };
+export type OpenSessionOptions = DialOptions & {
+  readonly cols: number;
+  readonly rows: number;
+  /**
+   * Sent to the target as SSH `env` requests before the shell starts, values already resolved. No reply
+   * is asked for: a server takes only the names its `AcceptEnv` allows and ignores the rest.
+   */
+  readonly env?: Readonly<Record<string, string>>;
+};
 
 export interface SshSession {
   readonly id: string;
@@ -37,16 +45,20 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
   const chain = await dialChain(options);
   try {
     const lastHop = options.hops[options.hops.length - 1] as HopCredentials;
+    const env = options.env !== undefined && Object.keys(options.env).length > 0 ? { ...options.env } : undefined;
     const channel = await new Promise<ClientChannel>((resolve, reject) =>
-      chain.client.shell({ term: 'xterm-256color', cols: options.cols, rows: options.rows }, (error, ch) =>
-        error
-          ? reject(
-              new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
-                host: hostOf(lastHop),
-                hop: options.hops.length - 1,
-              }),
-            )
-          : resolve(ch),
+      chain.client.shell(
+        { term: 'xterm-256color', cols: options.cols, rows: options.rows },
+        env === undefined ? {} : { env },
+        (error, ch) =>
+          error
+            ? reject(
+                new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
+                  host: hostOf(lastHop),
+                  hop: options.hops.length - 1,
+                }),
+              )
+            : resolve(ch),
       ),
     );
     return wrap(channel, chain.client, () => chain.endAll(), chain);
