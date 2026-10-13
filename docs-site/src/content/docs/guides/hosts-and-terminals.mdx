@@ -11,7 +11,7 @@ the command palette, or quick-open. The user, port, key and jump host are set on
 inherited by every host under it, and the credentials never leave Wirebench's main process.
 
 <Aside type="note">
-This is the first slice of the SSH area. It covers hosts and the terminal. See
+This part of the SSH area covers hosts, the terminal and files. See
 [What is not here yet](#what-is-not-here-yet) for what comes later.
 </Aside>
 
@@ -146,6 +146,123 @@ pagers, resize), and a host that is reached through a jump host is dialled hop b
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
 
+## Files
+
+A **Files** tab browses a host's files beside this machine's and copies between them over SFTP. It
+works through jump hosts exactly as the terminal does.
+
+### Opening a Files tab
+
+- **Open files** in a host's right-click menu, or **Files** in the host details panel.
+- **Files** on a terminal tab's toolbar opens the files of the host in the focused pane. **Open
+  terminal** on a Files tab's toolbar goes the other way. Each focuses the tab for that host if one is
+  already open.
+- **Open Files on Host…** in the palette, and the **Files** group in quick-open (<kbd>⌘P</kbd>).
+
+The tab is named after the host with **· Files**. It has its own SSH connection, separate from any
+terminal to the same host, so it signs in and checks the host key the same way (see
+[Host keys](#host-keys)). Like a terminal, it keeps its folders and copies while you switch to
+another tab, ends when you close it or switch workspace, and is not restored on restart.
+
+### The two panes
+
+This machine is on the left, starting in your home folder; the host is on the right, starting in the
+folder you sign in to. Drag the line between them to resize. Each pane has:
+
+- a **place picker** in its header: **This machine**, then every host by group and name. Switching a
+  pane to another host connects to it, so both panes can be hosts and you copy from one host to
+  another in the same tab;
+- **Back**, **Up**, **Refresh** and a toggle for hidden files;
+- a **path bar**: click a crumb to go there, or click the bar (<kbd>⌘L</kbd>, **Files: Go to
+  Folder…**) to type a path. <kbd>Enter</kbd> goes there, `~` is the place's home, and
+  <kbd>Escape</kbd> puts the crumbs back. A folder that can't be opened shows the reason under the bar,
+  and the pane stays where it was.
+
+The list has Name, Size, Modified and Permissions (as `rwxr-x---`) columns, folders first; click a
+header to sort, again to reverse. Click, <kbd>⇧</kbd>-click and <kbd>⌘</kbd>-click select.
+<kbd>Enter</kbd> opens a folder, <kbd>Backspace</kbd> goes up, <kbd>F2</kbd> renames in place,
+<kbd>Delete</kbd> deletes after asking, <kbd>⌘A</kbd> selects everything, and <kbd>Tab</kbd> moves to
+the other pane. The right-click menu has Open or Edit, Copy to other pane, Rename, Delete…,
+Permissions…, New folder, Copy path and Refresh, and most are also **Files:** commands in the
+palette.
+
+A rename never replaces: a name that is already taken is refused, as is a new folder that exists.
+Deleting a folder removes it with everything in it, and the confirmation says so.
+
+### Copying and conflicts
+
+- Drag a selection onto the other pane to copy it into the folder shown there, or onto a folder in
+  the other pane to copy it into that folder. **Copy to other pane** does the same from the menu.
+- Drop files from your file manager onto a host's pane to upload them there.
+- Folders are copied with everything in them. A link to a file is followed; a link to a folder is not
+  walked and shows as **Skipped**. Copying a folder into itself is refused before anything is written.
+
+When a file being copied would land on a name that is already there, the copy stops and asks, showing
+the size and modified time of both: **Skip**, **Keep both** (the copy becomes `name (1).ext`) or
+**Replace**. Tick **Do this for the other clashes** to give the same answer to the rest of that copy;
+otherwise each clash asks again. Closing the question is **Skip**. Nothing is replaced without
+**Replace**.
+
+Each file is written to `name.wirebench-part` beside the target and renamed into place when it is
+complete, so a copy that fails leaves the old file as it was and no half-written file.
+
+An upload keeps the local file's permission bits. A download gets your system's default permissions.
+
+### Cancel and retry
+
+While anything is being copied, the **Transfers** strip under the panes lists each file with its
+direction, target folder, bytes done, speed and a bar. Three files copy at a time and the rest show
+**Queued**. **Cancel** stops a file at once and removes its part file; it shows **Cancelled**. A file
+that failed shows why, for example when the connection dropped. **Retry** on a failed or cancelled
+file starts it again from the beginning: copies don't resume. **Clear done** removes the finished
+rows, and the strip's header collapses it.
+
+Closing a Files tab while files are still being copied asks first, then cancels them.
+
+### Permissions
+
+**Permissions…** on a host's file or folder opens read, write and execute boxes for owner, group and
+others, next to an octal field (`644`) kept in step with them. **Apply** changes that one entry;
+there is no recursive change, and changing the owner or group isn't supported. Permissions are
+changed on hosts only, not on this machine.
+
+### Editing a file
+
+Double-click a file on a host, press <kbd>Enter</kbd> on it, or choose **Edit**, and it opens in
+your system's default app for that kind of file. Each time you save it there, Wirebench uploads it.
+
+- A banner over the panes lists the files open in an editor with each one's state: **Waiting for a
+  save**, **Uploading…**, **Uploaded**, or why the upload failed. **Stop editing** stops uploading
+  and deletes the local copy.
+- If the file changed on the host since you opened it, the save is not uploaded and the banner asks:
+  **Overwrite** uploads your version; **Keep remote** stops watching and leaves the host's version.
+- A file over 50 MB asks first, because it is downloaded in full and each save uploads all of it.
+- The copy lives in Wirebench's own data folder, readable only by you, and is deleted when the edit
+  ends: on **Stop editing**, when you close the tab or the window, or when you switch workspace.
+  Copies left behind by a crash are deleted on the next start.
+
+### Access to this machine's files
+
+The local pane can browse, copy into, rename and delete anything your user account can, anywhere on
+the disk, like a file manager. Elsewhere, Wirebench only opens local files inside the open project
+or ones you picked in a system dialog; the Files tab is the one deliberate exception, so the folders
+you work with don't have to be granted one by one. The reasoning is in
+[ADR-0025](https://github.com/wirebench/wirebench/blob/main/docs/adr/0025-the-sftp-local-pane-reads-and-writes-any-local-path.md).
+
+That access belongs to the Files tab alone and goes when the SSH area is switched off (see
+[Switching the area off](#switching-the-area-off)). A name that comes from a host is never trusted as
+a path: a download whose name holds `/` or `\`, or is `.` or `..`, is refused, so a server can't write
+outside the folder you chose.
+
+### What Files doesn't do
+
+- Resume an interrupted copy: **Retry** starts the file again.
+- Change permissions recursively, change owner or group, or act as another user (`sudo`).
+- Drag files out of a pane onto your file manager, or copy between two folders on this machine.
+- Sync or compare folders, create links, or pack and unpack archives on the host.
+- Fall back to SCP: a server without the SFTP subsystem is refused with `sftp-unavailable`.
+- Copy files from the command line or the MCP server.
+
 ## Importing from an SSH config
 
 If your hosts are already in an OpenSSH client config, bring them in rather than typing them again.
@@ -210,7 +327,10 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   copy, and nothing stores, sends to the interface or logs a value. The interface only ever sees
   secret _names_.
 - `hosts.yaml` cannot hold a literal secret, and the host form cannot write one.
-- A window can only write to, resize or close sessions it opened itself.
+- A window can only write to, resize or close sessions it opened itself, and acts only on its own
+  Files sessions, copies and edits.
+- The Files tab's local pane reaches any file your account can; see
+  [Access to this machine's files](#access-to-this-machines-files).
 - Host keys are trusted on first use, by an explicit click, and replaced only by a separate explicit
   confirmation.
 
@@ -224,15 +344,14 @@ WIREBENCH_AREAS="ssh=off"
 ```
 
 With `ssh=off`, the Hosts item disappears from the activity bar, its commands (including
-**Connect to Host…**) and quick-open entries are gone, and the area's channels are not registered in
-the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
+**Connect to Host…** and the **Files:** commands) and quick-open entries are gone, and the area's
+channels are not registered in the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
 
 ## What is not here yet
 
-This first slice does not include:
+This part does not include:
 
 - snippets (saved commands run on one or many hosts),
-- SFTP (browsing, transferring and editing remote files),
 - port forwarding and tunnels, or sending requests through a host,
 - split or broadcast terminals,
 - audit entries for sessions,
