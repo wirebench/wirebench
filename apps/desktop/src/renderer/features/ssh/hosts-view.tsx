@@ -16,6 +16,7 @@ import { forwardCounts, useForwardsStore } from './forwarding/forwards-store.js'
 import { HostDialog } from './host-dialog.js';
 import { useHostsStore, type SshHomeView } from './hosts-store.js';
 import { ImportDialog } from './import-dialog.js';
+import { KnownHostsImportDialog } from './known-hosts-import-dialog.js';
 import { openLocalTerminal } from './local-terminal.js';
 import { refreshLayouts, useLayoutsStore } from './panes/layouts-store.js';
 import { useSnippetsStore } from './snippets/snippets-store.js';
@@ -43,6 +44,7 @@ export function HostsView() {
   const setHomeView = useHostsStore((s) => s.setHomeView);
   // Whether the fixed tab is the one in front: the entry only reads as current while it is.
   const homeShown = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
+  const knownHostsRevision = useHostsStore((s) => s.knownHostsRevision);
   const [counts, setCounts] = useState<{ keychain?: number; knownHosts?: number }>({});
   const localTerminal = useUiStore((s) => s.localTerminalEnabled);
 
@@ -65,7 +67,7 @@ export function HostsView() {
         ...(known.ok ? { knownHosts: known.value.entries.length } : {}),
       });
     })();
-  }, [homeView, homeShown, resolved]);
+  }, [homeView, homeShown, resolved, knownHostsRevision]);
 
   const countOf = (id: SshHomeView): number | undefined =>
     id === 'hosts'
@@ -133,6 +135,7 @@ export function HostsView() {
       )}
       <HostDialog />
       <ImportDialog />
+      <KnownHostsImportDialog />
     </div>
   );
 }

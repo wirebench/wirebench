@@ -55,6 +55,7 @@ import {
   registerEnabledAreaChannels,
 } from './areas.js';
 import { SshImportService } from './ssh-import.js';
+import { KnownHostsImportService } from './known-hosts-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
@@ -1378,6 +1379,12 @@ void app.whenReady().then(() => {
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
       hosts: hostsService,
       secrets: sshSecrets,
+    }),
+    knownHostsImporter: new KnownHostsImportService<WebContents>({
+      home: () => homedir(),
+      pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose a known_hosts file' }),
+      hosts: hostsService,
+      store: sshService,
     }),
   });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
