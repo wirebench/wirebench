@@ -274,6 +274,17 @@ export interface RestDefinitionRef {
   readonly auth?: DefinitionAuth;
 }
 
+/**
+ * Where an API's GraphQL schema came from (#77). The schema itself is SDL in the project, at
+ * `apis/<slug>/graphql/schema.graphql` (`rest/graphql/schema.ts`).
+ */
+export interface GraphqlSchemaRef {
+  /** The URL that was introspected, or the name of the file that was imported. */
+  readonly source: string;
+  /** When it was fetched or imported, as an ISO 8601 instant. */
+  readonly fetchedAt: string;
+}
+
 /** A REST API: a base URL, default credentials, and a tree of folders and requests. */
 export interface RestApi {
   readonly kind: 'rest';
@@ -293,6 +304,8 @@ export interface RestApi {
   /** Scripts run around every request in the API, before its folders' and its own (#334). */
   readonly scripts?: RequestScripts;
   readonly definition?: RestDefinitionRef;
+  /** Set once the API has a GraphQL schema for its GraphQL requests (#77). */
+  readonly graphqlSchema?: GraphqlSchemaRef;
   readonly folders: readonly RestFolder[];
   readonly requests: readonly RestRequestDef[];
 }

@@ -146,6 +146,8 @@ export const apiFileSchema = z.looseObject({
       auth: definitionAuthSchema.optional(),
     })
     .optional(),
+  /** Where the API's GraphQL schema came from (#77); the SDL is `graphql/schema.graphql` beside it. */
+  graphqlSchema: z.looseObject({ source: nonEmpty, fetchedAt: z.string() }).optional(),
 });
 
 /** An API document as persisted. */

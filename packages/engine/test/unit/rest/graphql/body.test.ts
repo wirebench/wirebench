@@ -75,6 +75,19 @@ describe('GraphQL body on disk', () => {
     expect(restApisOf(loaded)[0]!.requests[0]!.body).toEqual(graphql({ operationName: 'Product' }));
   });
 
+  it("round-trips the API's graphqlSchema, and leaves it out when unset", async () => {
+    const api = {
+      ...restApisOf(shop([request()]))[0]!,
+      graphqlSchema: { source: 'https://shop.test/graphql', fetchedAt: '2026-10-13T10:00:00.000Z' },
+    };
+    const project = { ...shop([]), containers: { rest: [api] } };
+    expect(projectFiles(project).get('apis/shop/api.yaml')).toContain('source: https://shop.test/graphql');
+    expect(projectFiles(shop([])).get('apis/shop/api.yaml')).not.toContain('graphqlSchema');
+    await saveProject(project, dir);
+    const { project: loaded } = await loadProject(dir);
+    expect(restApisOf(loaded)[0]!.graphqlSchema).toEqual(api.graphqlSchema);
+  });
+
   it('belongs to format 10, which has not shipped yet', () => {
     expect(FORMAT_VERSION).toBe(10);
   });

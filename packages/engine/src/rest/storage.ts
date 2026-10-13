@@ -442,6 +442,7 @@ function addApiFiles(files: Map<string, string>, api: RestApi): void {
         auth: api.auth === undefined ? undefined : authDocument(api.auth),
         scripts: scriptsDocument(api.scripts, API_SCRIPT_STEM).document,
         definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
+        graphqlSchema: api.graphqlSchema === undefined ? undefined : { ...api.graphqlSchema },
       }),
     ),
   );
@@ -494,6 +495,9 @@ export const restStorage: ProtocolStorage<RestApi> = {
               ...optional('auth', definitionAuth(parsed.definition.auth)),
             },
           }
+        : {}),
+      ...(parsed.graphqlSchema !== undefined
+        ? { graphqlSchema: { source: parsed.graphqlSchema.source, fetchedAt: parsed.graphqlSchema.fetchedAt } }
         : {}),
       folders: contents.folders,
       requests: contents.requests,
