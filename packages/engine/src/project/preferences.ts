@@ -228,6 +228,8 @@ export interface TerminalPreferences {
   readonly reconnectAttempts: number;
   /** Offer the rest of a snippet, dimmed after the cursor, when the typed line is its start; Tab accepts. */
   readonly snippetSuggestions: boolean;
+  /** The program a local terminal tab runs (#410); empty for the OS default ($SHELL, or PowerShell on Windows). */
+  readonly localShell: string;
 }
 
 /** The whole preferences document. */
@@ -313,6 +315,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     autoReconnect: true,
     reconnectAttempts: 10,
     snippetSuggestions: true,
+    localShell: '',
   }),
   shortcuts: Object.freeze({}),
 });
@@ -510,6 +513,7 @@ export const preferencesSchema = z.object({
       autoReconnect: z.boolean().optional(),
       reconnectAttempts: limited('terminal.reconnectAttempts').optional(),
       snippetSuggestions: z.boolean().optional(),
+      localShell: z.string().optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),

@@ -63,6 +63,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     autoReconnect: true,
     reconnectAttempts: 10,
     snippetSuggestions: true,
+    localShell: '',
   },
   shortcuts: {},
 };
