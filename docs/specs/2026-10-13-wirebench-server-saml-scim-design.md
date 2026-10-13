@@ -242,8 +242,8 @@ The server admin who is the last enabled server admin cannot be deactivated thro
 
 ## 4. Data
 
-Migration `identity/0014_saml-scim.sql` (the number is global; if another module lands 0014 first, this
-file is renumbered):
+Migration `sso/0014_saml-scim.sql` (the number is global; if another module lands 0014 first, this file is
+renumbered):
 
 ```sql
 create table saml_identities (
@@ -312,10 +312,12 @@ create table provisioned_memberships (
 );
 ```
 
-The migration lives in `identity/` although it references `teams`: teams-access's 0003 runs earlier in the
-global order, and the SCIM code that writes `provisioned_memberships` calls teams-access's repository
-functions rather than writing `team_members` itself. The daily identity sweep also deletes expired
-`saml_flows`.
+The migration belongs to a new `sso` module, not to `identity`. Migration versions must be contiguous for
+the modules a server runs, and an identity-only server (the identity tests boot one) cannot load a 0014
+that needs `teams` and `audit_events`. The `sso` module is registered last, after `audit-log`, as
+`licensing` is a module of its own for the same reason. The code that writes `provisioned_memberships`
+calls teams-access's repository functions rather than writing `team_members` itself. The `sso` module's
+daily sweep deletes expired `saml_flows`.
 
 Engine wire types: `FEATURES` gains `sso-provisioning`. Audit gains the actor kind `scim`, the target kinds
 `scim-token` and `scim-group`, the action group `scim`, and the actions `user.updated`,
@@ -327,14 +329,16 @@ desktop never speaks SCIM.
 
 ## 5. Interfaces between modules
 
-- `identity` owns SAML, SCIM tokens and SCIM users. SCIM groups and provisioned memberships call
-  `teams-access`'s repository (`insertMember`, `deleteMember`, `deleteGrantsInTeam`, `memberRole`) and
-  announce `accessChanged`, so live sockets re-check access as they do for a hand-made change.
+- A new `sso` module (`packages/server/src/sso/`) owns SAML, SCIM tokens, SCIM users and groups. It reuses
+  `identity`'s sessions (`signIn`), linking rules (`decideLink`) and guard, and calls `teams-access`'s
+  repository (`insertMember`, `deleteMember`, `deleteGrantsInTeam`, `memberRole`). It announces
+  `accessChanged`, so live sockets re-check access as they do for a hand-made change.
 - SCIM routes register through `registerPublic` (the server root) with their own `onRequest` hook. The
   `/api/v1` guard is untouched: a `wbscim_` token does not match the device-token pattern, so the guard
   treats it as no header, and every `/api/v1` route answers `401`.
-- No change to `modules.ts` or the bootstrap: everything is inside `identityModule()`. The parallel
-  scheduled-runs work (#343) is unaffected apart from the migration number.
+- `modules.ts` gains one line, `ssoModule()`, after `auditLogModule()`, and `ServerModule['name']` gains
+  `'sso'`. Nothing else in the bootstrap changes. The parallel scheduled-runs work (#343) touches the same
+  two lists and the migration number, and nothing else.
 
 ## 6. Security
 

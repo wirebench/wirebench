@@ -29,6 +29,7 @@ describeDb('0003_teams (§4.1)', () => {
       'ci-tokens',
       'live-updates',
       'audit-log',
+      'sso',
     ]);
   });
 

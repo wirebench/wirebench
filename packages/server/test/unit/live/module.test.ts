@@ -18,6 +18,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'ci-tokens',
       'live-updates',
       'audit-log',
+      'sso',
     ]);
   });
 

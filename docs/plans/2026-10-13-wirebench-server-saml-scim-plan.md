@@ -5,7 +5,7 @@
 **Goal:** Enterprise servers sign people in with SAML 2.0 beside local accounts and OIDC. An IdP provisions
 and deprovisions users and pushes groups over SCIM 2.0, and a server admin links those groups to teams.
 
-**Architecture:** Everything lives inside the `identity` module (`packages/server/src/identity/`), behind the
+**Architecture:** Everything lives in a new `sso` module (`packages/server/src/sso/`, ruling 11), behind the
 new `sso-provisioning` licence feature. SAML reuses the OIDC loopback flow with its own `saml_flows` table.
 One file, `identity/saml.ts`, wraps `@node-saml/node-saml` behind a `SamlProvider` interface. SCIM is a
 root-level plugin at `/scim/v2` (`registerPublic`), with its own bearer-token hook and its own error shape.
@@ -37,10 +37,11 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
   changes a role, and never disables the last enabled server admin.
 - Every sign-in, refusal and provisioning write records an audit event. `details` never carries XML,
   attributes or token secrets.
-- The migration is `identity/0014_saml-scim.sql`. If #343 merges a 0014 first, rename this file to the
-  next free number (migrations are contiguous across modules).
-- Stay inside `identity/`, `teams/repo.ts`, the engine's `server-api/`, and the desktop's account and team
-  features. No change to `modules.ts`, `serve.ts` or `server.ts` except adding redaction keys.
+- The migration is `sso/0014_saml-scim.sql`. If #343 merges a 0014 first, rename this file to the next free
+  number (migrations are contiguous across modules).
+- Stay inside `sso/`, `identity/` (only to share linking and sessions), `teams/repo.ts`, the engine's
+  `server-api/`, and the desktop's account and team features. `modules.ts` and `context.ts` gain one entry
+  each (ruling 11); `serve.ts` is untouched, and `server.ts` only gains redaction keys.
 - The renderer imports only **types** from `shared/wire-types.ts` (the CSP trap).
 - A new dependency needs `pnpm licenses:third-party`.
 - Never name the products that inspired a feature (`pnpm check:banned-terms`). IdP vendor names (Entra ID,
@@ -80,6 +81,13 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
     actor kind, the target kinds and the action group. Tasks 8, 10, 11 and 12 add their actions, each with
     `test/integration/audit-log/saml-scim.test.ts` cases. `0008_audit-log.sql` limits `actor_kind`, so
     Task 3's migration widens that check to include `scim`.
+11. **The work is a module of its own, `sso`, registered last.** Migration versions must be contiguous for
+    the modules a server runs, so an identity-only server cannot load a 0014 that names `teams` and
+    `audit_events`. Every file this plan places under `src/identity/` for SAML or SCIM lives under
+    `src/sso/` instead (`sso/saml.ts`, `sso/saml-metadata.ts`, `sso/repo.ts`, `sso/scim/…`,
+    `sso/routes/…`), and the migration is `migrations/sso/0014_saml-scim.sql`. `identity` keeps its
+    sessions, linking and guard, and `sso` calls them. `modules.ts` gains `ssoModule()` after
+    `auditLogModule()`, and `ServerModule['name']` gains `'sso'`.
 
 ## File map
 

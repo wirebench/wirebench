@@ -33,6 +33,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'ci-tokens',
       'live-updates',
       'audit-log',
+      'sso',
     ]);
   });
 

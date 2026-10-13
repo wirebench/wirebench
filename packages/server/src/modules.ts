@@ -5,6 +5,7 @@ import { hooksModule } from './hooks/module.js';
 import { identityModule } from './identity/module.js';
 import { licensingModule } from './licensing/module.js';
 import { liveModule } from './live/module.js';
+import { ssoModule } from './sso/module.js';
 import { syncModule } from './sync/module.js';
 import { teamsModule } from './teams/module.js';
 
@@ -20,6 +21,8 @@ import { teamsModule } from './teams/module.js';
  * only the routes registered after it in the shared scope.
  * audit-log comes last: its routes sit behind identity's guard and read `ctx.license`; its hook is found at
  * call time, so fire sites in earlier modules reach it.
+ * sso comes after audit-log: its migration names `teams` and `audit_events`, and its routes use identity's
+ * guard, teams-access's repository and the audit hook (saml-scim spec §5).
  */
 export const BUILTIN_MODULES: readonly ServerModule[] = [
   identityModule(),
@@ -30,4 +33,5 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   ciTokensModule(),
   liveModule(),
   auditLogModule(),
+  ssoModule(),
 ];
