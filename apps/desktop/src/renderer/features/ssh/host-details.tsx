@@ -256,6 +256,12 @@ export function HostDetails() {
                 {muted(secretState(auth.secret))}
               </Row>
             )}
+            {auth.kind === 'key' && auth.certificateSecret !== undefined && (
+              <Row label="Certificate">
+                <span className="truncate font-mono">{auth.certificateSecret}</span>
+                {muted(secretState(auth.certificateSecret))}
+              </Row>
+            )}
             {auth.kind === 'key' && auth.passphraseSecret !== undefined && (
               <Row label="Passphrase">
                 <span className="truncate font-mono">{auth.passphraseSecret}</span>

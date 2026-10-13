@@ -75,6 +75,7 @@ import {
   sftpTransferRequestSchema,
 } from './sftp-wire.js';
 import {
+  sshAttachCertificateRequestSchema,
   sshGenerateKeyRequestSchema,
   sshInstallKeyRequestSchema,
   sshInstallKeyResponseSchema,
@@ -985,6 +986,8 @@ export const channels = {
     generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
     installKey: defineChannel('ssh.installKey', sshInstallKeyRequestSchema, sshInstallKeyResponseSchema),
+    // A key's OpenSSH user certificate (#421), stored as `<secret>_cert`; it is public, so it may cross.
+    attachCertificate: defineChannel('ssh.attachCertificate', sshAttachCertificateRequestSchema, sshKeyWireSchema),
     // Snippets (#356): scripts cross with `${secret:NAME}` tokens only, never a value.
     listSnippets: defineChannel('ssh.listSnippets', z.undefined(), sshListSnippetsResponseSchema),
     saveSnippets: defineChannel('ssh.saveSnippets', sshSaveSnippetsRequestSchema, sshListSnippetsResponseSchema),
