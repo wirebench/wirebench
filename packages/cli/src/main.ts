@@ -9,6 +9,7 @@ import { mockRecordCommand } from './commands/mock-record.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
+import { sshForwardCommand } from './commands/ssh-forward.js';
 import { ExitCode } from './exit-codes.js';
 import { cliVersion } from './version.js';
 import { HELP_TEXT, HELP_TOPICS, UsageError, parseCliArgs } from './args.js';
@@ -70,6 +71,9 @@ export async function main(
       }
       case 'export': {
         return await exportCommand(args, io);
+      }
+      case 'ssh-forward': {
+        return await sshForwardCommand(args, io);
       }
     }
   } catch (error) {

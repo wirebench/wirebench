@@ -15,7 +15,8 @@ const SEPARATOR = 'w-px bg-hairline transition-colors hover:bg-accent-muted focu
 
 /**
  * A host's Files tab: this machine on the left, the host on the right through the tab's own SFTP session
- * (separate from the terminal's), opened when the tab mounts and closed when the tab goes; the transfers strip
+ * (separate from the terminal's), opened when the tab mounts and closed when the tab goes. Either pane's place
+ * picker moves it to this machine or another host, each host pane with its own session; the transfers strip
  * under both, and the conflict question over them. The tab stays mounted behind other tabs, like a terminal,
  * so switching away keeps the folders, the session and the copies. Closing it with copies running asks first.
  */
