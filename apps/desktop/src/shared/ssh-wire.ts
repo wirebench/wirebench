@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SSH_OS_IDS } from './ssh-defaults.js';
+import { SSH_MAX_PANES, SSH_OS_IDS } from './ssh-defaults.js';
 
 /**
  * Wire shapes of the SSH area. A credential is its secret NAME only: never a `${secret:NAME}` token, never a
@@ -161,6 +161,13 @@ export const sshConnectRequestSchema = z.strictObject({
 export const sshConnectResponseSchema = z.object({ sessionId: z.string() });
 /** `data` is base64: terminal bytes are not always valid UTF-8. */
 export const sshWriteRequestSchema = z.strictObject({ sessionId: z.string(), data: z.string() });
+/** One keystroke batch for every pane a broadcast reaches: at most the panes a tab holds. */
+export const sshWriteManyRequestSchema = z.strictObject({
+  sessionIds: z.array(z.string()).min(1).max(SSH_MAX_PANES),
+  data: z.string(),
+});
+/** The ids written nothing: dead, unknown or another window's. */
+export const sshWriteManyResponseSchema = z.object({ skipped: z.array(z.string()) });
 export const sshResizeRequestSchema = z.strictObject({
   sessionId: z.string(),
   cols: z.number().int().positive(),
@@ -187,6 +194,8 @@ export const sshStateEventSchema = z.object({ sessionId: z.string(), state: z.en
 
 export type SshConnectRequest = z.infer<typeof sshConnectRequestSchema>;
 export type SshWriteRequest = z.infer<typeof sshWriteRequestSchema>;
+export type SshWriteManyRequest = z.infer<typeof sshWriteManyRequestSchema>;
+export type SshWriteManyResponse = z.infer<typeof sshWriteManyResponseSchema>;
 export type SshResizeRequest = z.infer<typeof sshResizeRequestSchema>;
 export type SshCloseRequest = z.infer<typeof sshCloseRequestSchema>;
 export type SshTrustRequest = z.infer<typeof sshTrustRequestSchema>;

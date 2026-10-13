@@ -249,6 +249,7 @@
     "ssh.setSecret",
     "ssh.trustHostKey",
     "ssh.write",
+    "ssh.writeMany",
     "ssl.clearCaBundle",
     "ssl.pickCaBundle",
     "sync.abortMerge",

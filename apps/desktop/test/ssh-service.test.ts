@@ -509,6 +509,25 @@ describe('SshService', () => {
     expect(b.write).toHaveBeenCalledWith(Buffer.from('hi'));
   });
 
+  it('writeMany writes to each live owned session and skips the rest, never a foreign one (review focus 4)', async () => {
+    const a = fakeSession('sa');
+    const b = fakeSession('sb');
+    const foreign = fakeSession('sf');
+    const { service, open } = make({ known: [KEY] });
+    open.mockResolvedValueOnce(a.session).mockResolvedValueOnce(b.session).mockResolvedValueOnce(foreign.session);
+    const mine = sender(1);
+    const { sessionId: sa } = await service.connect(as(mine), CONNECT);
+    const { sessionId: sb } = await service.connect(as(mine), CONNECT);
+    const { sessionId: sf } = await service.connect(as(sender(2)), CONNECT);
+    b.pushExit(0); // closed mid-keystroke
+    expect(service.writeMany(as(mine), { sessionIds: [sa, sb, sf, 'gone'], data: 'aGk=' })).toEqual({
+      skipped: [sb, sf, 'gone'],
+    });
+    expect(a.write).toHaveBeenCalledWith(Buffer.from('hi'));
+    expect(b.write).not.toHaveBeenCalled();
+    expect(foreign.write).not.toHaveBeenCalled();
+  });
+
   it("multi-window: disposeFor keeps another window's refusal trustable", async () => {
     const { service, knownHostsFile } = make();
     const winA = sender(1);
