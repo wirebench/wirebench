@@ -47,6 +47,8 @@ export interface ResolvedHost {
     readonly jump: Provenance<string | undefined>;
     readonly keepAlive: Provenance<number>;
     readonly connectTimeout: Provenance<number>;
+    /** Whether the target's shell forwards the local agent; never a jump host's. */
+    readonly forwardAgent: Provenance<boolean>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
@@ -55,7 +57,7 @@ export interface ResolvedHost {
   readonly env: readonly ResolvedEnvVar[];
 }
 
-const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
+const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false } as const;
 
 interface Located {
   readonly host: HostEntry;
@@ -143,7 +145,7 @@ function resolveEnv(located: Located): ResolvedEnvVar[] {
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
   const out: Record<string, unknown> = {};
-  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout'] as const) {
+  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout', 'forwardAgent'] as const) {
     const { value } = pick(located, key, undefined);
     if (value !== undefined) out[key] = value;
   }
@@ -163,6 +165,7 @@ function resolveLocated(located: Located): ResolvedHost {
     jump: pick(located, 'jump', undefined),
     keepAlive: pick(located, 'keepAlive', DEFAULTS.keepAlive) as Provenance<number>,
     connectTimeout: pick(located, 'connectTimeout', DEFAULTS.connectTimeout) as Provenance<number>,
+    forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
   };
   const incomplete =
     ssh.user.value === undefined

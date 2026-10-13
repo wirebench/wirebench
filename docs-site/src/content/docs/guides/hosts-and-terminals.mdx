@@ -61,7 +61,8 @@ The rules:
 - `id` is stable and unique across the whole file, made of lowercase letters, digits and hyphens
   (`api-1`, `eu`). `name` is free text and can change; the id is what `jump` points at.
 - `ssh` on a group or a host holds `user`, `port`, `jump`, `auth`, `keepAlive` and
-  `connectTimeout` (both in seconds). Every field is optional at every level. A host must end up
+  `connectTimeout` (both in seconds), and `forwardAgent` (see [Agent forwarding](#agent-forwarding)).
+  Every field is optional at every level. A host must end up
   with a `user` and an `auth`, from itself or a group above it; otherwise connecting says which
   field is missing and where it can be set. The port defaults to 22, the keep-alive to 15 seconds
   and the connect timeout to 20 seconds.
@@ -146,6 +147,48 @@ In the host form, **Environment variables** lists the variables the groups above
 with the group they come from. **Override** copies one onto this level to change it, and **Add
 variable** adds a new one, as text or as a secret picked by name. The host details panel lists every
 variable the host ends up with and where each one comes from.
+
+## Agent forwarding
+
+Agent forwarding lets a shell on the remote host use the keys in your local SSH agent: `git pull` from a
+private repository, or `ssh` on to another server, without copying a key to the host.
+
+```yaml
+groups:
+  - id: build
+    name: Build servers
+    ssh:
+      forwardAgent: true
+    hosts:
+      - id: runner-1
+        name: runner-1
+        address: 10.0.4.2
+      - id: vault
+        name: vault
+        address: 10.0.4.9
+        ssh:
+          forwardAgent: false
+```
+
+- It is off unless a host or a group above it turns it on, and it is inherited like the other `ssh`
+  settings: **runner-1** above forwards, **vault** does not.
+- It needs an SSH agent running on your machine (`SSH_AUTH_SOCK`, or Pageant on Windows). The host can
+  still sign in with a key or a password; only the shell uses the agent.
+- Only the terminal's shell on the target host gets it. A jump host never does, and neither do Files tabs,
+  port forwards or the check that finds the host's OS.
+- If the server refuses (`AllowAgentForwarding no`) or no agent is running, the terminal opens anyway,
+  without forwarding.
+
+<Aside type="caution" title="Forward the agent only to hosts you trust">
+While you are connected, anyone with root on the remote host can use the keys in your agent, for example
+to sign in to other servers as you. An agent that asks before each use (`ssh-add -c`) limits the damage.
+</Aside>
+
+In the host form, **Forward SSH agent** shows the inherited value with its group; turn on its override
+switch to set it on this level. A warning shows while it is on. A terminal tab draws a key while the agent
+is forwarded, and a faint key whose tooltip says why when it is not (the server refused it, or no local
+agent runs); in a split tab each pane's header shows its own. The host details panel lists the setting
+with its source, and its `ssh` command gains `-A`.
 
 ## Opening a terminal
 
@@ -691,6 +734,7 @@ user, port, jump host and authentication, the lines that will not come across, a
 | `IdentityFile`                             | the key you choose for it (below)                                               |
 | `ServerAliveInterval`, `ConnectTimeout`    | keep-alive and connect timeout                                                  |
 | `SetEnv NAME=value …`                      | environment variables; the first value of a name wins                           |
+| `ForwardAgent yes` / `no`                  | [agent forwarding](#agent-forwarding); a socket path or variable is not imported |
 | `Host *` and lines before the first `Host` | settings on the new group, inherited by its hosts                               |
 
 Each alias gets the settings `ssh` itself would use: the first value found for each option, in file
@@ -711,7 +755,7 @@ does not show them; a note says so. Replace any secret among them with `${secret
 import. An entry that is not `NAME=value`, or that already holds `${secret:…}`, is skipped with a note.
 
 **What is not imported.** `Match` blocks, other `ProxyCommand`s, an `Include` inside an included file,
-and options such as `LocalForward`, `ForwardAgent` or `SendEnv` are listed by option name, file and line.
+and options such as `LocalForward` or `SendEnv` are listed by option name, file and line.
 Their values are never shown, because a config can hold credentials in unexpected places. Options
 with no meaning here (`IdentitiesOnly`, `StrictHostKeyChecking`, `UserKnownHostsFile` and a few
 others) are counted. Known-hosts files are not read here; import their keys from the **Known hosts**

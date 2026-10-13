@@ -22,6 +22,7 @@ export const sshSettingsWireSchema = z.strictObject({
   auth: sshAuthWireSchema.optional(),
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
+  forwardAgent: z.boolean().optional(),
 });
 
 const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
@@ -141,6 +142,7 @@ export const resolvedHostWireSchema = z.object({
     jump: prov(z.string().optional()),
     keepAlive: prov(z.number()),
     connectTimeout: prov(z.number()),
+    forwardAgent: prov(z.boolean()),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
@@ -179,7 +181,14 @@ export const sshConnectRequestSchema = z.strictObject({
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
 });
-export const sshConnectResponseSchema = z.object({ sessionId: z.string() });
+/**
+ * `agentForwarding` is left out when the host does not forward the agent. `on`: granted; `refused`: the
+ * server said no; `no-agent`: no local agent runs. The last two open the shell without it.
+ */
+export const sshConnectResponseSchema = z.object({
+  sessionId: z.string(),
+  agentForwarding: z.enum(['on', 'refused', 'no-agent']).optional(),
+});
 /** `data` is base64: terminal bytes are not always valid UTF-8. */
 export const sshWriteRequestSchema = z.strictObject({ sessionId: z.string(), data: z.string() });
 /** One keystroke batch for every pane a broadcast reaches: at most the panes a tab holds. */
@@ -214,6 +223,7 @@ export const sshExitEventSchema = z.object({
 export const sshStateEventSchema = z.object({ sessionId: z.string(), state: z.enum(['open', 'closed']) });
 
 export type SshConnectRequest = z.infer<typeof sshConnectRequestSchema>;
+export type SshConnectResponse = z.infer<typeof sshConnectResponseSchema>;
 export type SshWriteRequest = z.infer<typeof sshWriteRequestSchema>;
 export type SshWriteManyRequest = z.infer<typeof sshWriteManyRequestSchema>;
 export type SshWriteManyResponse = z.infer<typeof sshWriteManyResponseSchema>;
@@ -275,6 +285,7 @@ export const sshPlannedSettingsWireSchema = z.strictObject({
   auth: sshPlannedAuthWireSchema.optional(),
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
+  forwardAgent: z.boolean().optional(),
 });
 export const sshPlannedHostWireSchema = z.strictObject({
   alias: z.string(),
