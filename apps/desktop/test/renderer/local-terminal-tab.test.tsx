@@ -21,7 +21,10 @@ const xterm = vi.hoisted(() => {
     loadAddon(): void {}
     open(): void {}
     focus(): void {}
-    attachCustomKeyEventHandler(): void {}
+    keyHandler: ((event: KeyboardEvent) => boolean) | undefined;
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+      this.keyHandler = handler;
+    }
     write(data: Uint8Array): void {
       this.written.push(data);
     }
@@ -134,6 +137,44 @@ describe('the local terminal tab', () => {
     expect(useEditorsStore.getState().displayedSet).toBe('ssh');
     expect(open).toHaveBeenCalledWith({ cols: 80, rows: 24 });
     expect(screen.getByRole('tab', { name: /Local · zsh/ })).toBeDefined();
+  });
+
+  it('draws with Preferences → Terminal, restyles when it changes, and ⌘+ / ⌘0 zoom it', async () => {
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULT_PREFERENCES_WIRE,
+        terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, fontFamily: 'Fira Code', fontSize: 15, colorScheme: 'nord' },
+      },
+    });
+    await openShell();
+    const term = lastTerminal();
+    const options = () => term?.options as { fontFamily?: string; fontSize?: number; theme?: { background?: string } };
+    expect(options().fontFamily).toMatch(/^"Fira Code", /);
+    expect(options().fontSize).toBe(15);
+    expect(options().theme?.background).toBe('#2e3440');
+    act(() => {
+      usePreferencesStore.setState({
+        preferences: {
+          ...DEFAULT_PREFERENCES_WIRE,
+          terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, colorScheme: 'dracula' },
+        },
+      });
+    });
+    expect(options().theme?.background).toBe('#282a36');
+    expect(options().fontSize).toBe(13);
+    // jsdom's user agent is not a Mac's, so ⌘ here is Ctrl.
+    const press = (key: string): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key, ctrlKey: true, cancelable: true });
+      act(() => {
+        expect(term?.keyHandler?.(event)).toBe(false);
+      });
+      return event;
+    };
+    expect(press('=').defaultPrevented).toBe(true);
+    expect(options().fontSize).toBe(14);
+    press('0');
+    expect(options().fontSize).toBe(13);
+    expect(write).not.toHaveBeenCalled();
   });
 
   it('shows what the shell prints and sends what is typed', async () => {

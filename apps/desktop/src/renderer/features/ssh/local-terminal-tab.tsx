@@ -12,7 +12,8 @@ import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
-import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
+import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
+import type { TerminalAppearance } from './terminal-appearance.js';
 
 /** How long a layout change settles before the new size goes to the pty. */
 const RESIZE_DEBOUNCE_MS = 100;
@@ -51,16 +52,22 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
   const [findFocus, setFindFocus] = useState(0);
   const [findResults, setFindResults] = useState<FindResults | undefined>(undefined);
   const finder = useMemo(() => finderFor(() => search.current ?? undefined), []);
+  /** ⌘+ / ⌘− on this tab, in points over the Preferences size; lives as long as the tab. */
+  const [zoom, setZoom] = useState(0);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const prefs = usePreferencesStore((s) => s.preferences.terminal);
 
   useEffect(() => {
     const element = holder.current;
     if (element === null) return;
     const store = useLocalTerminalsStore.getState();
+    // Preferences → Terminal and this tab's zoom; a local shell has no host to override them.
+    const look = (): TerminalAppearance =>
+      terminalAppearance(usePreferencesStore.getState().preferences.terminal, undefined, zoomRef.current);
     const xterm = new Terminal({
       cursorBlink: true,
-      fontFamily: monoFontFromCss(),
-      fontSize: 13,
-      theme: themeFromCss(),
+      ...look(),
       // The find bar's match highlights are decorations, which xterm still calls proposed API.
       allowProposedApi: true,
       linkHandler: {
@@ -78,6 +85,15 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
     });
     const platform = detectPlatform();
     xterm.attachCustomKeyEventHandler((event) => {
+      // ⌘+ / ⌘− / ⌘0 size this terminal alone; neither the shell nor the app's zoom sees them.
+      const zoomed = zoomChord(event, platform);
+      if (zoomed !== undefined) {
+        if (event.type === 'keydown') {
+          event.preventDefault();
+          setZoom((z) => nextZoom(usePreferencesStore.getState().preferences.terminal.fontSize, z, zoomed));
+        }
+        return false;
+      }
       if (!isFindChord(event, platform)) return true;
       if (event.type === 'keydown') {
         event.preventDefault();
@@ -144,8 +160,9 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
         if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
       }, COPY_ON_SELECT_DEBOUNCE_MS);
     });
+    // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
     const themeWatch = new MutationObserver(() => {
-      xterm.options.theme = themeFromCss();
+      xterm.options.theme = look().theme;
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -201,6 +218,13 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
       xterm.dispose();
     };
   }, [tabId, run]);
+
+  // A change to the preferences or the zoom restyles the open terminal; a new cell size refits it.
+  useEffect(() => {
+    const current = term.current;
+    if (current === null) return;
+    if (applyAppearance(current, terminalAppearance(prefs, undefined, zoom))) refitRef.current();
+  }, [prefs, zoom]);
 
   // Coming back to the front: the holder had no size while hidden, so fit it now.
   useEffect(() => {
