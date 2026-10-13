@@ -30,4 +30,6 @@ export const PREFERENCE_LIMITS = {
   'ui.logSize': { min: 100, max: 5000, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
+  'terminal.fontSize': { min: 6, max: 72, integer: true },
+  'terminal.lineHeight': { min: 1, max: 2, integer: false },
 } as const satisfies Readonly<Record<string, PreferenceLimit>>;

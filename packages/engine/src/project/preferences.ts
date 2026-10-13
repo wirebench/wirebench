@@ -228,6 +228,13 @@ export interface TerminalPreferences {
   readonly reconnectAttempts: number;
   /** Offer the rest of a snippet, dimmed after the cursor, when the typed line is its start; Tab accepts. */
   readonly snippetSuggestions: boolean;
+  /** An installed font family, tried before the app's monospace stack; unset or empty uses the stack alone. */
+  readonly fontFamily?: string;
+  readonly fontSize: number;
+  /** A multiple of the font size. */
+  readonly lineHeight: number;
+  /** A built-in scheme id, or `app` to follow the app theme; a host or group in `hosts.yaml` may override it. */
+  readonly colorScheme: string;
 }
 
 /** The whole preferences document. */
@@ -313,6 +320,9 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     autoReconnect: true,
     reconnectAttempts: 10,
     snippetSuggestions: true,
+    fontSize: 13,
+    lineHeight: 1,
+    colorScheme: 'app',
   }),
   shortcuts: Object.freeze({}),
 });
@@ -350,6 +360,8 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'ui.logSize': { min: LOG_SIZE_MIN, max: LOG_SIZE_MAX, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
+  'terminal.fontSize': { min: 6, max: 72, integer: true },
+  'terminal.lineHeight': { min: 1, max: 2, integer: false },
 } as const satisfies Readonly<Record<string, PreferenceNumberLimit>>;
 
 /** A dotted key with an entry in {@link PREFERENCE_NUMBER_LIMITS}. */
@@ -510,6 +522,13 @@ export const preferencesSchema = z.object({
       autoReconnect: z.boolean().optional(),
       reconnectAttempts: limited('terminal.reconnectAttempts').optional(),
       snippetSuggestions: z.boolean().optional(),
+      fontFamily: z.string().optional(),
+      fontSize: limited('terminal.fontSize').optional(),
+      lineHeight: limited('terminal.lineHeight').optional(),
+      colorScheme: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]*$/)
+        .optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),

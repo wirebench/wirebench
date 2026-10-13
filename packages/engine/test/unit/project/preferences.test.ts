@@ -102,6 +102,9 @@ describe('terminal preferences', () => {
       autoReconnect: true,
       reconnectAttempts: 10,
       snippetSuggestions: true,
+      fontSize: 13,
+      lineHeight: 1,
+      colorScheme: 'app',
     });
   });
 
@@ -115,6 +118,9 @@ describe('terminal preferences', () => {
       autoReconnect: false,
       reconnectAttempts: 10,
       snippetSuggestions: false,
+      fontSize: 13,
+      lineHeight: 1,
+      colorScheme: 'app',
     });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
   });
@@ -127,6 +133,24 @@ describe('terminal preferences', () => {
   it('reads an older file without terminal.snippetSuggestions as on', () => {
     expect(mergePreferences({ terminal: { copyOnSelect: true } }).terminal.snippetSuggestions).toBe(true);
     expect(mergePreferences({}).terminal.snippetSuggestions).toBe(true);
+  });
+
+  it('reads the font family, size, line height and colour scheme, clamping the numbers', () => {
+    const merged = mergePreferences({
+      terminal: { fontFamily: 'Fira Code', fontSize: 15, lineHeight: 1.3, colorScheme: 'solarized-dark' },
+    });
+    expect(merged.terminal).toMatchObject({
+      fontFamily: 'Fira Code',
+      fontSize: 15,
+      lineHeight: 1.3,
+      colorScheme: 'solarized-dark',
+    });
+    expect(mergePreferences({ terminal: { fontSize: 200, lineHeight: 5 } }).terminal).toMatchObject({
+      fontSize: 72,
+      lineHeight: 2,
+    });
+    expect(mergePreferences({ terminal: { colorScheme: 'Not An Id' } }).terminal.colorScheme).toBe('app');
+    expect(mergePreferences({}).terminal.fontFamily).toBeUndefined();
   });
 
   it('reads and clamps terminal.reconnectAttempts', () => {
@@ -277,6 +301,8 @@ describe('numeric preference limits', () => {
     [{ ssl: { expiryWarningDays: 3651 } }, 'ssl.expiryWarningDays must be a whole number from 0 to 3650'],
     [{ terminal: { reconnectAttempts: 0 } }, 'terminal.reconnectAttempts must be a whole number from 1 to 100'],
     [{ terminal: { reconnectAttempts: 101 } }, 'terminal.reconnectAttempts must be a whole number from 1 to 100'],
+    [{ terminal: { fontSize: 5 } }, 'terminal.fontSize must be a whole number from 6 to 72'],
+    [{ terminal: { lineHeight: 2.5 } }, 'terminal.lineHeight must be a number from 1 to 2'],
   ])('refuses %j in a patch, naming the rule', (patch, message) => {
     expect(preferencesPatchProblems(patch)).toEqual([message]);
   });
