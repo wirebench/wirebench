@@ -69,8 +69,9 @@ The rules:
   behaviour.
 - `jump` names the id of another host. Chains are followed through that host's own `jump`; an
   unknown id or a loop is refused when the file is read.
-- `auth` is exactly one of `{ password }`, `{ key, passphrase? }` or `{ agent: true }`. The agent
-  option signs with your local SSH agent.
+- `auth` is exactly one of `{ password }`, `{ key, certificate?, passphrase? }` or `{ agent: true }`.
+  The agent option signs with your local SSH agent; `certificate` is the key's OpenSSH certificate
+  (see [Certificates](#certificates)).
 - `env` on a group or a host maps variable names to values; see
   [Environment variables](#environment-variables).
 
@@ -106,6 +107,42 @@ When you connect, a name resolves like any other secret in the app: a name mappe
 its source, and any other name comes from the value stored for this workspace on this machine. A
 missing value fails the connect with `secret-missing` and the name. Project secrets don't apply: a
 secret you set on a project is not visible to a host.
+
+## Certificates
+
+If your organisation runs an SSH certificate authority, the servers trust the CA instead of each
+person's key, and you sign in with your key plus the short-lived certificate the CA issued for it
+(the `-cert.pub` file `ssh-keygen -s` writes). Give the key a `certificate`, a secret holding that
+certificate line:
+
+```yaml
+ssh:
+  user: alice
+  auth:
+    key: ${secret:work_key}
+    certificate: ${secret:work_key_cert}
+```
+
+On connect Wirebench offers the certificate first and then the key alone, as `ssh` does, so a server
+that also lists the key in `authorized_keys` still lets you in. `certificate` is part of `auth`, so a
+group's key and certificate are inherited together.
+
+Before connecting, the certificate is checked against the key and the clock. A certificate outside
+its validity window fails with `ssh-cert-expired` and says when it was valid (for example
+`The certificate has expired: it was valid from 2026-10-01 09:00:00 UTC to 2026-10-01 17:00:00 UTC`);
+ask your CA for a new one. A host certificate, or a certificate issued for another key, is refused too.
+Ed25519, ECDSA and RSA keys are supported; certificates for security keys (`sk-…`) are not.
+
+**In the keychain.** A key's row has **Attach certificate…**: paste the certificate and Wirebench
+checks that it is a user certificate for that key, then stores it as the secret `<key>_cert`, next to
+`<key>_passphrase`. The row then shows the certificate's key ID, its principals (the user names it is
+valid for) and its validity window, with a badge when it has expired, is not valid yet or belongs to
+another key. When a certificate is renewed, **Replace certificate…** stores the new one under the same
+name, so every host that uses it picks it up. In the host form, choosing a key that has a `<key>_cert`
+fills in **Certificate secret** for you.
+
+Trusting servers by a host CA (`@cert-authority` in `known_hosts`) is separate from this: host keys are
+still trusted as described in [Host keys](#host-keys).
 
 ## Environment variables
 
@@ -689,6 +726,7 @@ user, port, jump host and authentication, the lines that will not come across, a
 | `Port`, `User`                             | port and user                                                                   |
 | `ProxyJump a,b`, `ProxyCommand ssh -W %h:%p a` | the jump host; a hop that names no host in the file becomes a new host        |
 | `IdentityFile`                             | the key you choose for it (below)                                               |
+| `CertificateFile`                          | the key's certificate, stored as `NAME_cert` with the key (below)               |
 | `ServerAliveInterval`, `ConnectTimeout`    | keep-alive and connect timeout                                                  |
 | `SetEnv NAME=value …`                      | environment variables; the first value of a name wins                           |
 | `Host *` and lines before the first `Host` | settings on the new group, inherited by its hosts                               |
@@ -703,6 +741,11 @@ order, across the blocks whose patterns match. `Include` is followed one level d
   as a workspace secret on this machine; the host gets `auth: { key: '${secret:NAME}' }`. An
   encrypted key also gets a `NAME_passphrase` reference; set its value in the host form.
 - **Use an existing secret** that already holds the key.
+
+A host with a `CertificateFile` shows the certificate on its key row. With a stored or existing secret
+`NAME`, the certificate file is read on **Import** and stored as `NAME_cert` (a secret of that name that
+already exists is kept), and the host gets `certificate: '${secret:NAME_cert}'`. With the agent it is
+not read.
 
 A key file is never opened unless you choose to store it, and its contents never reach the interface.
 

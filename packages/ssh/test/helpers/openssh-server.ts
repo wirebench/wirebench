@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { ChildProcess } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
@@ -15,6 +16,8 @@ import { fileURLToPath } from 'node:url';
 export interface OpenSshServer {
   readonly port: number;
   readonly user: string;
+  /** The server's host key fingerprint, as the trust prompt shows it. */
+  readonly hostKeyFingerprint: string;
   /** A certificate for `fixtures/certs/<key>.pub`, made now, for `user` (or `principals`) within `validity`. */
   certify(key: string, options?: { principals?: string; validity?: string }): string;
   /** Lets `fixtures/certs/<key>.pub` in without a certificate too (`authorized_keys`). */
@@ -24,6 +27,11 @@ export interface OpenSshServer {
 
 const SSHD = ['/usr/sbin/sshd', '/usr/local/sbin/sshd', '/opt/homebrew/sbin/sshd'];
 const FIXTURES = fileURLToPath(new URL('../fixtures/certs/', import.meta.url));
+
+/** A committed test key or certificate from `fixtures/certs` (made with ssh-keygen, used nowhere else). */
+export function certFixture(name: string): string {
+  return readFileSync(join(FIXTURES, name), 'utf8');
+}
 
 /** The `sshd` binary, or undefined where OpenSSH's server (or `ssh-keygen`) is not installed. */
 export function sshdPath(): string | undefined {
@@ -99,9 +107,11 @@ export async function startOpenSshServer(): Promise<OpenSshServer> {
   child.stderr?.on('data', (data: Buffer) => (output += data.toString('utf8')));
   await waitForPort(port, child, () => output);
   let serial = 100;
+  const hostBlob = Buffer.from(readFileSync(join(dir, 'host_ed25519.pub'), 'utf8').split(' ')[1] ?? '', 'base64');
   return {
     port,
     user,
+    hostKeyFingerprint: `SHA256:${createHash('sha256').update(hostBlob).digest('base64').replace(/=+$/, '')}`,
     certify(key, options = {}) {
       copyFileSync(join(FIXTURES, `${key}.pub`), join(dir, `${key}.pub`));
       keygen([
