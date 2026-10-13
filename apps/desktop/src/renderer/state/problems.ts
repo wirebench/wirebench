@@ -9,12 +9,13 @@ import type { ImportProblemWire, ValidationProblemWire } from '../../shared/kind
  * against its OpenAPI contract (`contract`, whose `location` is a JSON Pointer), a certificate
  * the workspace relies on nearing or past its expiry (`certificate`, whose `location` names the
  * endpoint or keystore; see `certificate-expiry.ts`), reading `hosts.yaml` (`hosts`, whose
- * `location` is the path of the offending key), a mock stub the contract does not allow (`mock`,
- * whose `location` says whether the status, a header or the body is at fault), or linting a REST
+ * `location` is the path of the offending key), reading `snippets.yaml` (`snippets`, likewise), a
+ * mock stub the contract does not allow (`mock`, whose `location` says whether the status, a
+ * header or the body is at fault), or linting a REST
  * API's cached definition (`lint`, whose `location` is a JSON Pointer into the document).
  */
 export type ProblemSource =
-  'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts' | 'mock' | 'lint';
+  'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts' | 'snippets' | 'mock' | 'lint';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';

@@ -12,6 +12,9 @@ import { resetCommands } from '../../src/renderer/lib/commands.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { writeRecent } from '../../src/renderer/features/ssh/recent-connections.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { WorkspaceWire } from '../../src/shared/wire-base.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 
 const context: CommandContext = {
@@ -33,6 +36,7 @@ const HOST = {
   address: '10.0.1.5',
   tags: ['prod'],
   path: ['prod', 'eu'],
+  protected: { value: false, from: 'default' as const },
   ssh: {} as never,
   forwards: [],
 };
@@ -65,7 +69,23 @@ describe('hosts in the palette', () => {
     render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="quick-open" />);
     expect(screen.getByText('Hosts')).toBeDefined();
     expect(screen.getByText('api-1')).toBeDefined();
-    expect(screen.getByText('10.0.1.5 · prod/eu')).toBeDefined();
+    // Once under Hosts and once under Files.
+    expect(screen.getAllByText('10.0.1.5 · prod/eu')).toHaveLength(2);
+  });
+
+  it('recent hosts come first, under their own heading; a deleted one is not listed', () => {
+    localStorage.clear();
+    useWorkspaceStore.setState({ workspace: { id: 'w1' } as WorkspaceWire });
+    useHostsStore.setState({ resolved: [HOST, { ...HOST, id: 'b', name: 'db-1', path: [] }] });
+    writeRecent('w1', [
+      { hostId: 'b', at: 2, outcome: 'connected' },
+      { hostId: 'deleted', at: 1, outcome: 'connected' },
+    ]);
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="hosts" />);
+    expect(screen.getByText('Recent')).toBeDefined();
+    const rows = screen.getAllByTestId('quick-open-host').map((row) => row.textContent);
+    expect(rows).toEqual(['db-110.0.1.5', 'api-110.0.1.5 · prod/eu']);
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('quick-open omits the hosts when the ssh area is switched off', () => {
@@ -84,6 +104,31 @@ describe('hosts in the palette', () => {
     expect(useEditorsStore.getState().tabs).toMatchObject([
       { kind: 'ssh-terminal', title: 'api-1', panes: { kind: 'pane', hostId: 'a' } },
     ]);
+  });
+
+  it('quick-open also lists each host under Files, which opens its Files tab', () => {
+    const close = vi.fn();
+    render(<CommandPalette open onOpenChange={close} context={context} mode="quick-open" />);
+    expect(screen.getByText('Files')).toBeDefined();
+    fireEvent.click(screen.getByText('api-1 · Files'));
+    expect(close).toHaveBeenCalledWith(false);
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'ssh-files:a', kind: 'ssh-files', title: 'api-1 · Files', hostId: 'a' },
+    ]);
+  });
+
+  it('the files-hosts mode lists the hosts and opens the Files tab of the one picked', () => {
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="files-hosts" />);
+    expect(screen.getByPlaceholderText('Open files on host')).toBeDefined();
+    fireEvent.click(screen.getByText('api-1 · Files'));
+    expect(useEditorsStore.getState().tabs.map((t) => t.kind)).toEqual(['ssh-files']);
+  });
+
+  it('⌘K lists Open Files on Host…, which switches to the Files picker', () => {
+    render(<Shell />);
+    fireEvent.click(screen.getByText('Open Files on Host…'));
+    expect(screen.getByPlaceholderText('Open files on host')).toBeDefined();
+    expect(screen.getByText('api-1 · Files')).toBeDefined();
   });
 
   it('the hosts mode shows no host when the ssh area is switched off', () => {

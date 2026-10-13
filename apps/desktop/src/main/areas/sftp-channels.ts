@@ -2,6 +2,7 @@ import { channels } from '../../shared/ipc.js';
 import { registerHandler } from '../ipc/register.js';
 import { localHome } from '../local-fs.js';
 import type { SftpService } from '../sftp-service.js';
+import type { TransferQueue } from '../transfers.js';
 
 /**
  * The Files tab's channels, registered with the SSH area only (`WIREBENCH_AREAS=ssh=off` leaves none). A
@@ -10,8 +11,9 @@ import type { SftpService } from '../sftp-service.js';
  */
 export function registerSftpChannels(deps: {
   sftp: Pick<SftpService, 'open' | 'close' | 'list' | 'mkdir' | 'rename' | 'remove' | 'chmod'>;
+  transfers: Pick<TransferQueue, 'copy' | 'resolve' | 'cancel' | 'retry'>;
 }): void {
-  const { sftp } = deps;
+  const { sftp, transfers } = deps;
   // Sessions belong to the window that opened them: the sender is the owner on every call.
   registerHandler(channels.sftp.open, (request, sender) => sftp.open(sender, request));
   registerHandler(channels.sftp.close, (request, sender) => {
@@ -36,4 +38,18 @@ export function registerSftpChannels(deps: {
     return {};
   });
   registerHandler(channels.sftp.localHome, () => Promise.resolve(localHome()));
+  // Copies are the window's own too: only it can answer, cancel or retry them.
+  registerHandler(channels.sftp.copy, (request, sender) => transfers.copy(sender, request));
+  registerHandler(channels.sftp.resolve, (request, sender) => {
+    transfers.resolve(sender, request);
+    return Promise.resolve({});
+  });
+  registerHandler(channels.sftp.cancel, (request, sender) => {
+    transfers.cancel(sender, request);
+    return Promise.resolve({});
+  });
+  registerHandler(channels.sftp.retry, (request, sender) => {
+    transfers.retry(sender, request);
+    return Promise.resolve({});
+  });
 }

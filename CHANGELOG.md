@@ -21,6 +21,29 @@ All notable changes to this project are documented here. The format follows
   build afterwards resets this machine's local state for it: the active environment and the local
   secret-source overrides.
 
+- **Snippets in the SSH area.** The SSH menu gains **Snippets**: the workspace's `snippets.yaml`, beside
+  `hosts.yaml`, shown as packages of snippets with a filter (⌘F) and tag chips. A snippet opens in the right
+  panel to edit its name, package, tags, description and script, whose `${…}` tokens are marked as declared
+  variables, secrets or shell text; a `${name}` the script uses can be declared as a variable in one click,
+  and **Insert secret** puts `${secret:NAME}` at the cursor (the value never enters the file). Snippets
+  duplicate, move between packages and delete; packages are created, renamed and deleted once empty. A file
+  that does not parse shows in the view and in the Problems tab. Running a snippet comes in a later release
+  (#450).
+- **Protected hosts.** A host or a group can be marked **Protected** in its form, inherited like the other
+  settings; a protected host shows a shield on its card and in its details (#450).
+- **Recent SSH connections.** The Hosts tab shows the hosts you connected to lately in a **Recent** strip
+  (when, and whether the last connect failed) with a connect button and **Clear**, and gains a
+  **Recently connected** sort; **Connect to Host…** and quick-open list recent hosts first. The list is
+  kept on this machine per workspace with only the host id, time and outcome; deleted hosts drop out and
+  renamed ones show by their new name (#408).
+- **Generate an SSH key and install it on a host.** The Keychain's **Generate key…** makes an Ed25519
+  (default), ECDSA (P-256, P-384, P-521) or RSA (4096, 3072, 2048 bits) key with an optional passphrase,
+  and stores the private key as a workspace secret (the passphrase as `NAME_passphrase`); the private key
+  never leaves the main process. A key's row shows its type and fingerprint, copies its public key in
+  OpenSSH format, and **Install on host…** (also on a host's menu as **Install public key…**) signs in as the
+  host does now and appends the key to `~/.ssh/authorized_keys`, creating `~/.ssh` (700) and the file (600)
+  when missing and skipping a key already there. It then offers to switch the host's sign-in to the key
+  (#409).
 - **Find in a terminal's scrollback.** ⌘F (Ctrl+F on Windows and Linux) in a focused SSH terminal opens a
   find bar over the output: next and previous match, match case, whole word and regular expression, and a
   match count. Matches are highlighted in the theme's colours; Escape closes the bar and returns the keys
@@ -81,6 +104,21 @@ All notable changes to this project are documented here. The format follows
   assertion and certificate client authentications; a project saved by this version cannot be opened
   by an older one, which refuses it as made by a newer Wirebench. A version-9 project opens unchanged
   (#338, #339, #348).
+
+### Fixed
+
+- **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
+  workspace a project environment applies through the workspace environment with the same slug; a
+  rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped
+  applying. A rename now keeps the slug, as a workspace environment's rename already did (#475).
+- **A sequence run inside a workspace names its environment in the report.** `wirebench run
+  --sequence -e <environment>` looked the name up only among the project's environments, so the
+  json, html and console reports left it out when the environment was the workspace's (#476).
+- **Renaming an API keeps its environment endpoint overrides.** Overrides are keyed by the API's
+  slug (`<projectSlug>/<apiSlug>` in a workspace environment), and a rename re-derives the slug, so
+  the override stopped applying and sends went to the API's own base URL. A rename of a REST,
+  WebSocket or gRPC API now moves its keys in the project's environments and in every workspace
+  environment (#477).
 
 ## [6.0.0] - 2026-10-12
 

@@ -30,8 +30,18 @@ import type {
 import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
+import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
+import { RecentSection } from './recent-section.js';
+import {
+  CopyPublicKeyButton,
+  GenerateKeyDialog,
+  InstallKeyDialog,
+  keyTypeLabel,
+  useKeyInstall,
+  useSshKeys,
+} from './ssh-keys.js';
 
 const INPUT_CLASS =
   'w-full rounded-md border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
@@ -40,7 +50,16 @@ export function SshHome() {
   const view = useHostsStore((s) => s.homeView);
   return (
     <div data-testid="ssh-home" className="h-full min-h-0 overflow-auto p-4">
-      {view === 'hosts' ? <HostsPanel /> : view === 'keychain' ? <KeychainPanel /> : <KnownHostsPanel />}
+      {view === 'hosts' ? (
+        <HostsPanel />
+      ) : view === 'snippets' ? (
+        <SnippetsPanel />
+      ) : view === 'keychain' ? (
+        <KeychainPanel />
+      ) : (
+        <KnownHostsPanel />
+      )}
+      <InstallKeyDialog />
     </div>
   );
 }
@@ -49,6 +68,7 @@ const SORT_LABELS: Readonly<Record<HostsSort, string>> = {
   name: 'Name',
   address: 'Address',
   connected: 'Connected first',
+  recent: 'Recently connected',
 };
 
 const MENU_CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
@@ -308,6 +328,8 @@ function HostsPanel() {
           ))}
         </ul>
       )}
+      {/* A search is after a host by name: the recent strip would only push the matches down. */}
+      {filter.trim() === '' && selectedTags.length === 0 && <RecentSection />}
       <HostCards prefs={prefs} onPrefs={setPrefs} />
     </div>
   );
@@ -337,10 +359,16 @@ function KeychainPanel() {
   const [names, setNames] = useState<readonly SshSecretNameWire[]>();
   // The value is write-only: it goes to main and never comes back.
   const [form, setForm] = useState<SecretForm>();
+  const [generating, setGenerating] = useState(false);
+  // Bumped with every listing, so a key stored from the form is recognised as one too.
+  const [listing, setListing] = useState(0);
+  const keys = useSshKeys(listing);
+  const openInstall = useKeyInstall((s) => s.open);
 
   const load = async (): Promise<void> => {
     const result = await ipc().ssh.secretNames(undefined);
     setNames(result.ok ? result.value.names : []);
+    setListing((n) => n + 1);
   };
   useEffect(() => {
     void load();
@@ -365,6 +393,13 @@ function KeychainPanel() {
           The passwords and private keys hosts sign in with, by name. A value is stored on this machine for the
           workspace and is never shown again.
         </p>
+        <Button
+          onClick={() => {
+            setGenerating(true);
+          }}
+        >
+          <KeyRound size={13} aria-hidden /> Generate key…
+        </Button>
         <Button
           variant="primary"
           onClick={() => {
@@ -430,6 +465,7 @@ function KeychainPanel() {
         <ul aria-label="Secrets" className="flex flex-col divide-y divide-hairline rounded-md border border-hairline">
           {names.map((secret) => {
             const users = usersOf(secret.name, resolved);
+            const key = keys.get(secret.name);
             return (
               <li
                 key={secret.name}
@@ -439,10 +475,23 @@ function KeychainPanel() {
                 <KeyRound size={15} aria-hidden="true" className="shrink-0 text-fg-subtle" />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-mono text-sm text-fg-default">{secret.name}</span>
+                  {key?.fingerprint !== undefined && (
+                    <span className="truncate font-mono text-xs text-fg-subtle">
+                      {keyTypeLabel(key.keyType)} · {key.fingerprint}
+                    </span>
+                  )}
                   <span className="truncate text-xs text-fg-subtle">
                     {users.length === 0 ? 'Not used by any host' : `Used by ${users.join(', ')}`}
                   </span>
                 </span>
+                {key?.locked === true && (
+                  <span
+                    title={`Store its passphrase as ${secret.name}_passphrase to use this key here`}
+                    className="shrink-0 rounded-full border border-status-warning px-1.5 text-xs text-status-warning"
+                  >
+                    locked key
+                  </span>
+                )}
                 {secret.external && (
                   <span className="shrink-0 rounded-full border border-hairline px-1.5 text-xs text-fg-subtle">
                     from a secret source
@@ -458,6 +507,18 @@ function KeychainPanel() {
                     no value
                   </span>
                 )}
+                {key?.publicKey !== undefined && (
+                  <>
+                    <CopyPublicKeyButton publicKey={key.publicKey} />
+                    <Button
+                      onClick={() => {
+                        openInstall({ secret: secret.name });
+                      }}
+                    >
+                      Install on host…
+                    </Button>
+                  </>
+                )}
                 <Button
                   onClick={() => {
                     setForm({ name: secret.name, fixed: true, value: '' });
@@ -470,6 +531,16 @@ function KeychainPanel() {
           })}
         </ul>
       )}
+      <GenerateKeyDialog
+        open={generating}
+        onClose={() => {
+          setGenerating(false);
+        }}
+        onGenerated={() => {
+          setGenerating(false);
+          void load();
+        }}
+      />
     </div>
   );
 }

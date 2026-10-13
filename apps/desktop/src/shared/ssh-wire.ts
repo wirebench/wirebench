@@ -45,6 +45,7 @@ export const hostEntryWireSchema = z.strictObject({
   name: z.string(),
   address: z.string(),
   tags: z.array(z.string()),
+  protected: z.boolean().optional(),
   ssh: sshSettingsWireSchema,
   forwards: z.array(forwardEntryWireSchema).optional(),
 });
@@ -54,6 +55,7 @@ export interface HostEntryWire {
   name: string;
   address: string;
   tags: string[];
+  protected?: boolean | undefined;
   ssh: SshSettingsWire;
   forwards?: ForwardEntryWire[] | undefined;
 }
@@ -61,6 +63,7 @@ export interface GroupEntryWire {
   id: string;
   name: string;
   tags: string[];
+  protected?: boolean | undefined;
   ssh: SshSettingsWire;
   forwards?: ForwardEntryWire[] | undefined;
   groups: GroupEntryWire[];
@@ -72,6 +75,7 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
     id: z.string(),
     name: z.string(),
     tags: z.array(z.string()),
+    protected: z.boolean().optional(),
     ssh: sshSettingsWireSchema,
     forwards: z.array(forwardEntryWireSchema).optional(),
     groups: z.array(groupEntryWireSchema),
@@ -111,6 +115,7 @@ export const resolvedHostWireSchema = z.object({
   address: z.string(),
   tags: z.array(z.string()),
   path: z.array(z.string()),
+  protected: prov(z.boolean()),
   ssh: z.object({
     user: prov(z.string().optional()),
     port: prov(z.number()),

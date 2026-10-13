@@ -21,6 +21,7 @@ import type {
 import { queueEnvironmentPatch } from '../features/environments/environment-queue.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { useSnippetsStore } from '../features/ssh/snippets/snippets-store.js';
 import { useDraftsStore } from './drafts.js';
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
@@ -219,6 +220,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       // `hosts.yaml` and the SSH sessions are the outgoing workspace's; main ends the sessions and sends
       // `ssh.hostsChanged`, whose refresh fills the store again.
       useHostsStore.getState().reset();
+      useSnippetsStore.getState().reset(); // likewise `snippets.yaml`, refilled on `ssh.snippetsChanged`
       // Before the reset: dropping `wsByRequest` forgets the send ids, and main would then hold
       // sockets open against a workspace nothing on screen belongs to any more. The close is
       // asked for synchronously and its promise deliberately not waited on — the shell must not

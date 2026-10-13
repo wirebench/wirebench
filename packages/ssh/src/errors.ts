@@ -16,11 +16,24 @@ export type SshErrorCode =
   | 'ssh-forward-duplicate-id'
   | 'ssh-forward-invalid'
   | 'ssh-forward-unknown'
+  | 'ssh-forward-port-in-use'
+  | 'ssh-forward-bind-failed'
+  | 'ssh-forward-refused'
+  | 'ssh-forward-gave-up'
   | 'sftp-unavailable'
   | 'sftp-not-found'
   | 'sftp-permission-denied'
   | 'sftp-exists'
-  | 'sftp-failed';
+  | 'sftp-failed'
+  | 'ssh-key-invalid'
+  | 'ssh-key-locked'
+  | 'ssh-install-failed'
+  | 'snippets-invalid'
+  | 'snippet-duplicate-id'
+  | 'snippet-variable-invalid'
+  | 'snippet-secret-invalid'
+  | 'snippet-variable-missing'
+  | 'snippet-value-invalid';
 
 /** Mirrors the engine's WirebenchError shape (code, message, details) without importing it. */
 export class SshModelError extends Error {

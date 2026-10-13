@@ -5,7 +5,7 @@
  * move, double-click or Enter connects; clicking the picked card again hides its details. The ⋯
  * menu shows on hover, right-click has the same items.
  */
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
@@ -14,6 +14,8 @@ import { GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
+import { ProtectedMark } from './protected-mark.js';
+import { lastConnectedOf, useRecentConnections } from './recent-connections.js';
 import { sessionStatus } from './session-status.js';
 
 interface Section {
@@ -46,13 +48,16 @@ function sortHosts(
   hosts: readonly HostEntryWire[],
   sort: HostsSort,
   panes: Readonly<Record<string, PaneSession>>,
+  lastConnected: ReadonlyMap<string, number>,
 ): HostEntryWire[] {
+  const last = (hostId: string): number => lastConnected.get(hostId) ?? -Infinity;
   const live = (hostId: string): boolean => hostStatusOf(panes, hostId) !== 'idle';
   const byName = (a: HostEntryWire, b: HostEntryWire): number =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
   return [...hosts].sort((a, b) => {
     if (sort === 'address') return a.address.localeCompare(b.address, undefined, { numeric: true }) || byName(a, b);
     if (sort === 'connected') return Number(live(b.id)) - Number(live(a.id)) || byName(a, b);
+    if (sort === 'recent') return last(b.id) === last(a.id) ? byName(a, b) : last(b.id) > last(a.id) ? 1 : -1;
     return byName(a, b);
   });
 }
@@ -184,7 +189,10 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
             />
           </span>
           <span className={`flex min-w-0 flex-1 ${grid ? 'flex-col' : 'items-baseline gap-3'}`}>
-            <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+              {resolved?.protected.value === true && <ProtectedMark />}
+            </span>
             <span className="truncate text-xs leading-4 text-fg-subtle">
               {osText !== undefined && <span>{osText} · </span>}
               <span className="font-mono">{targetOf(host, resolved)}</span>
@@ -239,6 +247,8 @@ export function HostCards({
   const file = useHostsStore((s) => s.file);
   const resolved = useHostsStore((s) => s.resolved);
   const panes = useHostsStore((s) => s.panes);
+  const recent = useRecentConnections();
+  const lastConnected = useMemo(() => lastConnectedOf(recent), [recent]);
   const filter = useHostsStore((s) => s.filter);
   const selectedTags = useHostsStore((s) => s.selectedTags);
   const groupFilter = useHostsStore((s) => s.groupFilter);
@@ -319,7 +329,7 @@ export function HostCards({
       ? groupFilter
       : undefined;
   const sections = sectionsOf(file, only)
-    .map((section) => ({ ...section, hosts: sortHosts(section.hosts.filter(shown), prefs.sort, panes) }))
+    .map((section) => ({ ...section, hosts: sortHosts(section.hosts.filter(shown), prefs.sort, panes, lastConnected) }))
     // The top level needs no heading when it is all there is; an empty group keeps its heading
     // (its menu is how a host gets into it) unless a filter is narrowing.
     .filter((section) =>

@@ -31,6 +31,8 @@ export interface ResolvedHost {
   readonly tags: readonly string[];
   /** Group ids, root first. */
   readonly path: readonly string[];
+  /** Whether a run touching this host confirms first; nearest wins, `false` by default. */
+  readonly protected: Provenance<boolean>;
   readonly ssh: {
     readonly user: Provenance<string | undefined>;
     readonly port: Provenance<number>;
@@ -76,6 +78,15 @@ function pick<K extends keyof SshSettings>(
     if (group.ssh[key] !== undefined) return { value: group.ssh[key], from: { group: group.id } };
   }
   return { value: fallback, from: 'default' };
+}
+
+function pickProtected(located: Located): Provenance<boolean> {
+  if (located.host.protected !== undefined) return { value: located.host.protected, from: 'host' };
+  for (let i = located.chain.length - 1; i >= 0; i -= 1) {
+    const group = located.chain[i] as GroupEntry;
+    if (group.protected !== undefined) return { value: group.protected, from: { group: group.id } };
+  }
+  return { value: false, from: 'default' };
 }
 
 /** Walks root to leaf; a re-set id keeps its first position, so new ids append. */
@@ -144,6 +155,7 @@ function resolveLocated(located: Located): ResolvedHost {
     address: located.host.address,
     tags: located.host.tags,
     path: located.chain.map((g) => g.id),
+    protected: pickProtected(located),
     ssh,
     ...(incomplete ? { incomplete } : {}),
     forwards: resolveForwards(located),

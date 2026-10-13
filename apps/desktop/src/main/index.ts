@@ -39,6 +39,7 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue, redactSecretText } from './redact.js';
 import { SecretSourcesService } from './secret-sources-service.js';
 import { projectSecretGetter, secretStoreLabel } from './secret-resolver.js';
+import { SshKeysService } from './ssh-keys.js';
 import { SshSecretsService } from './ssh-secrets.js';
 import { SecretScanSessions } from './secret-scan-session.js';
 import { TeamSecretsService } from './team-secrets-service.js';
@@ -55,9 +56,11 @@ import {
 import { SshImportService } from './ssh-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
+import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpService } from './sftp-service.js';
+import { TransferQueue } from './transfers.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
 import { enabledKindsFromEnv, kindRegistry } from './kinds/enabled-kinds.js';
@@ -187,6 +190,8 @@ interface WindowScope {
   readonly workspace: WorkspaceService;
   /** The SSH area's cached `hosts.yaml` of this window's workspace. */
   readonly hosts: HostsService;
+  /** The SSH area's cached `snippets.yaml`, beside `hosts.yaml`. */
+  readonly snippets: SnippetsService;
   /** The reopen of the last workspace this window started with; resolved at once for one opened at the picker. */
   ready: Promise<void>;
   /** Whether the window's audit server was signed in at the last account change. */
@@ -504,6 +509,8 @@ const kindsRegistry = kindRegistry(enabledKinds);
 
 /** The calling window's `hosts.yaml` (each window has its own, for its own workspace; see `createWindowScope`). */
 const hostsService = scoped(scopes, (scope) => scope.hosts);
+/** The calling window's `snippets.yaml`, cached per window like its hosts. */
+const snippetsService = scoped(scopes, (scope) => scope.snippets);
 
 /**
  * The SSH sessions, each owned by the window that opened it; hosts and secrets resolve at connect, from
@@ -527,6 +534,14 @@ const sshService = new SshService({
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
+/** The Files tab's copies, a queue per window over that window's own SFTP sessions. */
+const sftpTransfers = new TransferQueue({ sftp: sftpService, emit: emitEvent });
+/** The keychain's SSH keys: generated and opened in main, installed over the host's current sign-in. */
+const sshKeys = new SshKeysService({
+  secrets: sshSecrets,
+  connector: sshConnector,
+  secretsFor: sshConnectDeps.secretsFor,
+});
 
 /** `workspace-state.json`, one queue for every window's workspace service. */
 const workspaceState = new WorkspaceState(app.getPath('userData'));
@@ -544,12 +559,19 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   const picks = new DialogPicks(appPicks);
   // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions; a
   // rename or reload does not, and another window's sessions are its own workspace's.
-  const endSshOnSwitch = sshAreaEndsOnSwitch([sshService, sftpService], target);
+  const endSshOnSwitch = sshAreaEndsOnSwitch([sftpTransfers, sshService, sftpService], target);
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
   const hosts = windowHosts(
     () => workspace.treeDir(),
     () => {
       send(events.ssh.hostsChanged, {});
+    },
+  );
+  // `snippets.yaml` beside it, dropped on the same workspace switch.
+  const snippets = windowSnippets(
+    () => workspace.treeDir(),
+    () => {
+      send(events.ssh.snippetsChanged, {});
     },
   );
   const teamSecrets = new TeamSecretsService({
@@ -709,6 +731,9 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         hostsOnWorkspaceChange(enabledAreas, hosts, () => {
           send(events.ssh.hostsChanged, {});
         });
+        hostsOnWorkspaceChange(enabledAreas, snippets, () => {
+          send(events.ssh.snippetsChanged, {});
+        });
         // A session belongs to the workspace it was opened in; its credentials were that workspace's.
         endSshOnSwitch(snapshot?.id);
       },
@@ -741,6 +766,11 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
       onHostsFileChanged: () => {
         hostsOnFileChange(enabledAreas, hosts, () => {
           send(events.ssh.hostsChanged, {});
+        });
+      },
+      onSnippetsFileChanged: () => {
+        hostsOnFileChange(enabledAreas, snippets, () => {
+          send(events.ssh.snippetsChanged, {});
         });
       },
       onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
@@ -781,6 +811,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     audit,
     workspace,
     hosts,
+    snippets,
     ready: Promise.resolve(),
     auditSignedIn: false,
     closing: undefined,
@@ -1226,6 +1257,9 @@ void app.whenReady().then(() => {
     secrets: sshSecrets,
     ssh: sshService,
     sftp: sftpService,
+    snippets: snippetsService,
+    transfers: sftpTransfers,
+    keys: sshKeys,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
@@ -1383,6 +1417,7 @@ app.on('before-quit', (event) => {
   hooksService.dispose();
   // SSH sessions end with the app; closing never throws or waits.
   sshService.disposeAll();
+  sftpTransfers.disposeAll();
   sftpService.disposeAll();
   // A mock's port is released now; not awaited, so a server that will not close never holds up the quit.
   void mockRunner.stopAll().catch((error: unknown) => {

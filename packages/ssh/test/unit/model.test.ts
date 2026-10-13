@@ -155,4 +155,23 @@ describe('secretNameOf', () => {
     expectCode(() => secretNameOf('hunter2'), 'ssh-literal-secret');
     expectCode(() => secretNameOf('${secret:1bad}'), 'ssh-literal-secret');
   });
+  it('a file without protected serialises byte-identical to before', () => {
+    const text = serializeHostsFile(parseHostsFile(SAMPLE));
+    expect(text).not.toContain('protected');
+    expect(serializeHostsFile(parseHostsFile(text))).toBe(text);
+  });
+  it('protected on a group and a host is kept, false included, and round-trips', () => {
+    const text = `version: 1\ngroups:\n  - id: prod\n    name: Production\n    protected: true\n    hosts:\n      - id: a\n        name: a\n        address: a\n        protected: false\n`;
+    const file = parseHostsFile(text);
+    expect(file.groups[0]?.protected).toBe(true);
+    expect(file.groups[0]?.hosts[0]?.protected).toBe(false);
+    expect(serializeHostsFile(file)).toBe(text);
+  });
+  it('a protected that is not a boolean is refused with its path', () => {
+    const e = expectCode(
+      () => parseHostsFile(`version: 1\nhosts:\n  - { id: a, name: a, address: a, protected: 'yes' }\n`),
+      'ssh-hosts-invalid',
+    );
+    expect(e.details).toMatchObject({ path: 'hosts[0].protected' });
+  });
 });

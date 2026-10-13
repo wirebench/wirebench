@@ -112,12 +112,18 @@ appear as written; the filter box matches name, address and tags, and tag chips 
 Double-click a host, or press <kbd>Enter</kbd>, to connect. The right-click menu has Connect, Edit,
 Duplicate, Move to…, Delete and Copy address. A group can be deleted once it is empty.
 
+The hosts you connected to lately show in a **Recent** strip above the list, newest first, with when
+the last connect ended and whether it failed; its connect button opens the terminal again, and
+**Clear** forgets the list. The sort menu's **Recently connected** orders each section the same way.
+The list is kept on this machine per workspace and holds only the host, the time and the outcome,
+never credentials. A deleted host drops out of it, and a renamed one shows by its new name.
+
 From the keyboard:
 
 - <kbd>⌘⇧H</kbd> / <kbd>Ctrl+Shift+H</kbd> runs **Connect to Host…**: a searchable list over name,
-  address, group path and tags. <kbd>Enter</kbd> connects, or focuses the terminal if one for that
-  host is already open.
-- Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests.
+  address, group path and tags. The hosts you connected to lately come first, under **Recent**.
+  <kbd>Enter</kbd> connects, or focuses the terminal if one for that host is already open.
+- Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests, recent ones first.
 - The palette also has **Hosts: New Host…**, **Hosts: New Group…**, **Hosts: Edit Host…** and
   **Hosts: Import from SSH Config…**.
 

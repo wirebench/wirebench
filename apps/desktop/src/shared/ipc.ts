@@ -23,6 +23,7 @@ import {
   sshSetHostOsRequestSchema,
   sshWriteRequestSchema,
 } from './ssh-wire.js';
+import { sshListSnippetsResponseSchema, sshSaveSnippetsRequestSchema } from './snippets-wire.js';
 import {
   sftpChmodRequestSchema,
   sftpCloseRequestSchema,
@@ -48,6 +49,13 @@ import {
   sftpTransferEventSchema,
   sftpTransferRequestSchema,
 } from './sftp-wire.js';
+import {
+  sshGenerateKeyRequestSchema,
+  sshInstallKeyRequestSchema,
+  sshInstallKeyResponseSchema,
+  sshKeyWireSchema,
+  sshKeysResponseSchema,
+} from './ssh-keys-wire.js';
 import {
   accountAcceptInvitationRequestSchema,
   accountCancelResponseSchema,
@@ -947,6 +955,13 @@ export const channels = {
     setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
+    // Keychain keys (#409): only the public half crosses; the private key and passphrase stay in main.
+    generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
+    keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
+    installKey: defineChannel('ssh.installKey', sshInstallKeyRequestSchema, sshInstallKeyResponseSchema),
+    // Snippets (#356): scripts cross with `${secret:NAME}` tokens only, never a value.
+    listSnippets: defineChannel('ssh.listSnippets', z.undefined(), sshListSnippetsResponseSchema),
+    saveSnippets: defineChannel('ssh.saveSnippets', sshSaveSnippetsRequestSchema, sshListSnippetsResponseSchema),
   },
   // The Files tab (SSH area slice 3). Registered only while the SSH area is on; a local place is used as given.
   sftp: {
@@ -988,6 +1003,8 @@ export const events = {
   ssh: {
     /** `hosts.yaml` was written: a view re-lists. */
     hostsChanged: defineEvent('ssh.hostsChanged', z.object({})),
+    /** `snippets.yaml` was written or the workspace changed: the Snippets view re-lists. */
+    snippetsChanged: defineEvent('ssh.snippetsChanged', z.object({})),
     /** A connect detected a host's OS, or a choice changed: read `ssh.hostOs` again. */
     hostOsChanged: defineEvent('ssh.hostOsChanged', z.object({})),
     /** Terminal output (stdout and stderr), base64, to the window that opened the session only. */

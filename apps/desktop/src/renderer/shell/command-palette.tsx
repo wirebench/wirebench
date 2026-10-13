@@ -3,18 +3,24 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { CommandCategory, CommandDefinition } from '@shared/commands.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
-import { openTerminalFor } from '../features/ssh/connect.js';
+import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
+import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { useRecentConnections } from '../features/ssh/recent-connections.js';
 import type { CommandContext } from '../lib/commands.js';
 import { listCommands, runCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import type { QuickOpenEntry } from './quick-open.js';
-import { quickOpenEntries, quickOpenHostEntries } from './quick-open.js';
+import { quickOpenEntries, quickOpenHostEntries, splitRecentHosts } from './quick-open.js';
 
-/** Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts. */
-export type PaletteMode = 'commands' | 'quick-open' | 'hosts';
+/**
+ * Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts, to
+ * connect to (`hosts`), to open in another terminal tab (`new-tab-hosts`) or to open the Files tab of
+ * (`files-hosts`).
+ */
+export type PaletteMode = 'commands' | 'quick-open' | 'hosts' | 'new-tab-hosts' | 'files-hosts';
 
 export interface CommandPaletteProps {
   readonly open: boolean;
@@ -29,25 +35,36 @@ type Definition = CommandDefinition<CommandContext>;
 const GROUP_CLASS =
   '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-fg-faint [&_[cmdk-group-heading]]:uppercase';
 
-/** One host row: select connects, or brings forward the terminal already open for it. */
+/**
+ * One host row: select connects, or brings forward the terminal already open for it; a `files` row opens
+ * (or brings forward) the host's Files tab instead, and a `newTab` row always opens another terminal tab.
+ */
 function HostItem({
   entry,
   onOpenChange,
+  files = false,
+  newTab = false,
 }: {
   readonly entry: QuickOpenEntry;
   readonly onOpenChange: (open: boolean) => void;
+  readonly files?: boolean;
+  readonly newTab?: boolean;
 }) {
   return (
     <Command.Item
-      value={entry.value}
-      data-testid="quick-open-host"
+      // The Files rows of ⌘P sit beside the host rows, so their value differs and says "files".
+      value={files ? `${entry.value} files` : entry.value}
+      data-testid={files ? 'quick-open-host-files' : 'quick-open-host'}
       onSelect={() => {
         onOpenChange(false);
-        if (entry.hostId !== undefined) openTerminalFor(entry.hostId);
+        if (entry.hostId === undefined) return;
+        if (files) openFiles(entry.hostId);
+        else if (newTab) openInNewTab(entry.hostId);
+        else openTerminalFor(entry.hostId);
       }}
       className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
     >
-      <span className="truncate">{entry.label}</span>
+      <span className="truncate">{files ? filesTitle(entry.label) : entry.label}</span>
       <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
     </Command.Item>
   );
@@ -98,10 +115,30 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
     () => (sshEnabled && mode !== 'commands' ? quickOpenHostEntries(resolvedHosts) : []),
     [sshEnabled, mode, resolvedHosts],
   );
+  // The hosts connected to lately lead, under their own heading.
+  const recentConnections = useRecentConnections();
+  const { recent: recentHosts, rest: otherHosts } = useMemo(
+    () =>
+      splitRecentHosts(
+        hostEntries,
+        recentConnections.map((entry) => entry.hostId),
+      ),
+    [hostEntries, recentConnections],
+  );
   const quickOpen = mode === 'quick-open';
-  const hostsOnly = mode === 'hosts';
+  const filesPicker = mode === 'files-hosts';
+  const newTabPicker = mode === 'new-tab-hosts';
+  const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
   const picker = quickOpen || hostsOnly;
-  const title = hostsOnly ? 'Connect to host' : quickOpen ? 'Go to operation or request' : 'Command palette';
+  const title = filesPicker
+    ? 'Open files on host'
+    : newTabPicker
+      ? 'Open host in new tab'
+      : hostsOnly
+        ? 'Connect to host'
+        : quickOpen
+          ? 'Go to operation or request'
+          : 'Command palette';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -152,10 +189,36 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
                   </Command.Item>
                 ))}
-              {picker && hostEntries.length > 0 && (
+              {picker && recentHosts.length > 0 && (
+                <Command.Group heading="Recent" className={GROUP_CLASS}>
+                  {recentHosts.map((entry) => (
+                    <HostItem
+                      key={entry.key}
+                      entry={entry}
+                      onOpenChange={onOpenChange}
+                      files={filesPicker}
+                      newTab={newTabPicker}
+                    />
+                  ))}
+                </Command.Group>
+              )}
+              {picker && otherHosts.length > 0 && (
                 <Command.Group heading="Hosts" className={GROUP_CLASS}>
+                  {otherHosts.map((entry) => (
+                    <HostItem
+                      key={entry.key}
+                      entry={entry}
+                      onOpenChange={onOpenChange}
+                      files={filesPicker}
+                      newTab={newTabPicker}
+                    />
+                  ))}
+                </Command.Group>
+              )}
+              {quickOpen && hostEntries.length > 0 && (
+                <Command.Group heading="Files" className={GROUP_CLASS}>
                   {hostEntries.map((entry) => (
-                    <HostItem key={entry.key} entry={entry} onOpenChange={onOpenChange} />
+                    <HostItem key={`files:${entry.key}`} entry={entry} onOpenChange={onOpenChange} files />
                   ))}
                 </Command.Group>
               )}

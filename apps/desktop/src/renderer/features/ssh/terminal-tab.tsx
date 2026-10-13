@@ -2,17 +2,35 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
+import { Columns2, FolderOpen, Rows2 } from 'lucide-react';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import type { CommandId } from '@shared/commands.js';
+import { effectiveShortcutFor, matchesEvent, parseKeybinding } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
+import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { connectToHost, paneIsOpen, reconnectToHost } from './connect.js';
+import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
+import { HostPicker } from './panes/host-picker.js';
+import {
+  cancelSplit,
+  completeSplit,
+  focusedPaneOf,
+  focusPane,
+  forgetPaneSize,
+  notePaneSize,
+  requestSplit,
+  usePanesStore,
+} from './panes/pane-actions.js';
+import { PaneHeader } from './panes/pane-header.js';
 import { leaves, type PaneLeaf, type PaneNode } from './panes/pane-tree.js';
+import { PaneView } from './panes/pane-view.js';
 import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
 import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
@@ -68,14 +86,42 @@ function reconnectedLine(at: Date): Uint8Array {
   return encoder.encode(`\r\n\x1b[2m── reconnected ${at.toLocaleTimeString([], { hour12: false })} ──\x1b[0m\r\n`);
 }
 
+/** The pane commands whose chords a focused terminal leaves to the app instead of sending to the shell. */
+const PANE_COMMANDS: readonly CommandId[] = [
+  'ssh.splitRight',
+  'ssh.splitDown',
+  'ssh.focusPaneLeft',
+  'ssh.focusPaneRight',
+  'ssh.focusPaneUp',
+  'ssh.focusPaneDown',
+  'ssh.closePane',
+];
+
+/** Whether a keystroke is the chord of a pane command, as bound now (a rebind counts). */
+function isPaneChord(event: KeyboardEvent, platform: Platform): boolean {
+  return PANE_COMMANDS.some((id) => {
+    const chord = effectiveShortcutFor(id);
+    if (chord === undefined) return false;
+    try {
+      return matchesEvent(parseKeybinding(chord), event, platform);
+    } catch {
+      return false;
+    }
+  });
+}
+
+const TOOL_CLASS =
+  'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-sm text-fg-muted hover:bg-surface-hover hover:text-fg-default';
+
 /** Whole seconds until `at`, never below zero. */
 function secondsUntil(at: number, now: number): number {
   return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 /**
- * A terminal tab: its pane tree, laid out. The tab stays mounted while another tab is in front (the editor
- * area hides it), so only closing the tab ends its sessions.
+ * A terminal tab: its pane tree, laid out, under a toolbar that splits the focused pane or opens Files on its
+ * host. The tab stays mounted while another tab is in front (the editor area hides it), so only closing a
+ * pane, or the tab, ends a session.
  */
 export function TerminalTab({
   tabId,
@@ -90,38 +136,62 @@ export function TerminalTab({
   useEffect(() => {
     if (active) useHostsStore.getState().noteTerminalTabUsed(tabId);
   }, [active, tabId]);
-  // Keystrokes go to one pane: the first, until panes can take focus.
-  const focused = leaves(panes)[0]?.paneId;
-  return <PaneView node={panes} active={active} focused={focused} />;
-}
-
-function PaneView({
-  node,
-  active,
-  focused,
-}: {
-  readonly node: PaneNode;
-  readonly active: boolean;
-  readonly focused: string | undefined;
-}) {
-  if (node.kind === 'pane') {
-    return (
-      <TerminalPane
-        key={`${node.paneId}:${node.hostId}`}
-        pane={node}
-        active={active}
-        focused={node.paneId === focused}
-      />
-    );
-  }
+  // Re-read on every focus change; `focusedPaneOf` falls back to the first pane.
+  usePanesStore((s) => s.focused[tabId]);
+  const focused = focusedPaneOf(tabId, panes);
+  const focusedHost = leaves(panes).find((leaf) => leaf.paneId === focused)?.hostId;
+  const picker = usePanesStore((s) => (s.picker?.tabId === tabId ? s.picker : undefined));
+  const split = panes.kind === 'split';
   return (
-    <div className={`flex h-full w-full min-h-0 min-w-0 ${node.dir === 'row' ? 'flex-row' : 'flex-col'}`}>
-      <div className="min-h-0 min-w-0" style={{ flex: `${String(node.ratio)} 1 0` }}>
-        <PaneView node={node.a} active={active} focused={focused} />
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-end gap-1 border-b border-hairline px-2 py-0.5">
+        <button
+          type="button"
+          className={TOOL_CLASS}
+          onClick={() => {
+            requestSplit(tabId, 'row');
+          }}
+        >
+          <Columns2 size={13} aria-hidden="true" /> Split right
+        </button>
+        <button
+          type="button"
+          className={TOOL_CLASS}
+          onClick={() => {
+            requestSplit(tabId, 'column');
+          }}
+        >
+          <Rows2 size={13} aria-hidden="true" /> Split down
+        </button>
+        <button
+          type="button"
+          className={TOOL_CLASS}
+          onClick={() => {
+            if (focusedHost !== undefined) openFiles(focusedHost);
+          }}
+        >
+          <FolderOpen size={13} aria-hidden="true" /> Files
+        </button>
       </div>
-      <div className="min-h-0 min-w-0" style={{ flex: `${String(1 - node.ratio)} 1 0` }}>
-        <PaneView node={node.b} active={active} focused={focused} />
+      <div className="min-h-0 flex-1">
+        <PaneView
+          tabId={tabId}
+          node={panes}
+          renderPane={(pane) => (
+            <TerminalPane
+              key={`${pane.paneId}:${pane.hostId}`}
+              tabId={tabId}
+              pane={pane}
+              active={active}
+              focused={pane.paneId === focused}
+              split={split}
+            />
+          )}
+        />
       </div>
+      {picker !== undefined && (
+        <HostPicker initialHostId={picker.hostId} onPick={completeSplit} onCancel={cancelSplit} />
+      )}
     </div>
   );
 }
@@ -133,15 +203,20 @@ function PaneView({
  * Terminal) into the same terminal, so the scrollback stays.
  */
 function TerminalPane({
+  tabId,
   pane,
   active,
   focused,
+  split,
 }: {
+  readonly tabId: string;
   readonly pane: PaneLeaf;
   /** Whether the pane's tab is in front. */
   readonly active: boolean;
   /** Whether keystrokes go to this pane while its tab is in front. */
   readonly focused: boolean;
+  /** Whether the tab holds more than this pane, so it draws its header. */
+  readonly split: boolean;
 }) {
   const { paneId, hostId } = pane;
   const holder = useRef<HTMLDivElement>(null);
@@ -197,6 +272,8 @@ function TerminalPane({
     // the find bar and never reaches the shell.
     const platform = detectPlatform();
     term.attachCustomKeyEventHandler((event) => {
+      // A pane command's chord is the app's: the window's listener runs it, the shell never sees it.
+      if (isPaneChord(event, platform)) return false;
       if (!isFindChord(event, platform)) return true;
       if (event.type === 'keydown') {
         event.preventDefault();
@@ -212,7 +289,10 @@ function TerminalPane({
       }),
     );
     term.open(element);
-    if (hasSize(element)) fit.fit();
+    if (hasSize(element)) {
+      fit.fit();
+      notePaneSize(paneId, { cols: term.cols, rows: term.rows });
+    }
 
     let sent = { cols: term.cols, rows: term.rows };
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -225,6 +305,7 @@ function TerminalPane({
     const refit = (): void => {
       if (!hasSize(element)) return;
       fit.fit();
+      notePaneSize(paneId, { cols: term.cols, rows: term.rows });
       clearTimeout(timer);
       timer = setTimeout(syncSize, RESIZE_DEBOUNCE_MS);
     };
@@ -306,6 +387,7 @@ function TerminalPane({
       if (current !== undefined) endSession(paneId, current);
       target.current = undefined;
       live.current = null;
+      forgetPaneSize(paneId);
       term.dispose();
     };
   }, [paneId, hostId, nonce]);
@@ -380,7 +462,18 @@ function TerminalPane({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className={`flex h-full flex-col ${split && focused ? 'outline-1 -outline-offset-1 outline-accent' : ''}`}
+      data-testid="ssh-pane"
+      data-focused={focused ? 'true' : undefined}
+      // A click or a tab into the pane gives it the focus, as ⌘⌥ + arrow does.
+      onFocusCapture={() => {
+        focusPane(tabId, paneId);
+      }}
+      onPointerDownCapture={() => {
+        focusPane(tabId, paneId);
+      }}
+    >
       <PasteDialog
         text={heldPaste}
         onCancel={closePaste}
@@ -392,6 +485,7 @@ function TerminalPane({
           closePaste();
         }}
       />
+      {split && <PaneHeader tabId={tabId} pane={pane} focused={focused} />}
       <div className="relative min-h-0 flex-1">
         <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
         <TerminalFindBar

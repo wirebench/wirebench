@@ -116,6 +116,7 @@ import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
 import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
+import { rekeyEndpoints, renamedContainerSlugs } from './endpoint-renames.js';
 import { checkCertificates } from './certificate-expiry.js';
 import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
@@ -198,6 +199,8 @@ export const UNSAVED_RECORD_DEBOUNCE_MS = 2_000;
 
 /** The SSH hosts file, at the tree root; the workspace watcher reports it apart from the manifest. */
 const HOSTS_FILE_PATH = 'hosts.yaml';
+/** The SSH snippets file, beside `hosts.yaml`; reported apart from the manifest too. */
+const SNIPPETS_FILE_PATH = 'snippets.yaml';
 
 /**
  * What the service raises. Every project-scoped hook carries the `projectId` its host belongs
@@ -220,6 +223,8 @@ export interface WorkspaceHooks {
   readonly onWorkspaceChangedOnDisk?: (workspaceId: string, paths: readonly string[], message: string) => void;
   /** `hosts.yaml` at the tree root changed on disk (an outside edit, or this app's own save). */
   readonly onHostsFileChanged?: (workspaceId: string) => void;
+  /** `snippets.yaml` at the tree root changed on disk (an outside edit, or this app's own save). */
+  readonly onSnippetsFileChanged?: (workspaceId: string) => void;
   /** One interface of one project finished (or failed) re-importing. */
   readonly onHydration?: (
     projectId: string,
@@ -1025,7 +1030,11 @@ export class WorkspaceService implements ProjectRouter {
       // "workspace-level watcher" region below).
       open.watcher = new ProjectWatcher({
         dir: tree,
-        isManaged: (path) => isWorkspaceManagedPath(path) || isTeamSecretsPath(path) || path === HOSTS_FILE_PATH,
+        isManaged: (path) =>
+          isWorkspaceManagedPath(path) ||
+          isTeamSecretsPath(path) ||
+          path === HOSTS_FILE_PATH ||
+          path === SNIPPETS_FILE_PATH,
         isWatchedDir: (dir) =>
           isWorkspaceManagedDir(dir) || dir === TEAM_SECRETS_DIR || dir.startsWith(`${TEAM_SECRETS_DIR}/`),
         ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
@@ -1038,7 +1047,12 @@ export class WorkspaceService implements ProjectRouter {
           if (changed.includes(HOSTS_FILE_PATH)) {
             this.deps.hooks?.onHostsFileChanged?.(open.workspace.id);
           }
-          const paths = changed.filter((path) => !isTeamSecretsPath(path) && path !== HOSTS_FILE_PATH);
+          if (changed.includes(SNIPPETS_FILE_PATH)) {
+            this.deps.hooks?.onSnippetsFileChanged?.(open.workspace.id);
+          }
+          const paths = changed.filter(
+            (path) => !isTeamSecretsPath(path) && path !== HOSTS_FILE_PATH && path !== SNIPPETS_FILE_PATH,
+          );
           if (paths.length === 0 || open.held.offerWorkspace(paths)) {
             return;
           }
@@ -2909,21 +2923,59 @@ export class WorkspaceService implements ProjectRouter {
       // been queued by the watcher as an outside edit — see `candidateWorkspacePaths`. Released
       // once the write settles (`saveWorkspaceAnnounced`'s `finally`), whether it succeeded or
       // threw, so a failed save never leaves every candidate suppressed for the rest of the TTL.
-      const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
-      await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
-      this.requireStillOpen(open);
-      // Best-effort: the change is already on disk, so a failed local.yaml write must not fail it
-      // nor skip the commit and the renderer's notification. The in-memory entries are right, and
-      // `open.local` still says what the file holds, so the next persist writes them again.
-      await this.persistActiveEnvironments(open).catch(() => undefined);
-      this.requireStillOpen(open);
-      open.sync?.afterSave('workspace', commitHint);
-      this.backfillTeamSecrets();
-      this.deps.hooks?.onChanged?.(this.snapshot());
+      await this.saveChangedWorkspace(open, previousWorkspace, commitHint);
       return {
         workspace: this.requireSnapshot(),
         ...(createdEnvironmentId !== undefined ? { createdEnvironmentId } : {}),
       };
+    });
+  }
+
+  /**
+   * Writes `open.workspace` after a change from `previousWorkspace`, then this machine's active
+   * environments, then tells sync (with `commitHint` for a scope-only change) and the hooks.
+   */
+  private async saveChangedWorkspace(
+    open: OpenWorkspace,
+    previousWorkspace: Workspace,
+    commitHint?: { readonly path: string; readonly message: string },
+  ): Promise<void> {
+    const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
+    await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
+    this.requireStillOpen(open);
+    // Best-effort: the change is already on disk, so a failed local.yaml write must not fail it
+    // nor skip the commit and the renderer's notification. The in-memory entries are right, and
+    // `open.local` still says what the file holds, so the next persist writes them again.
+    await this.persistActiveEnvironments(open).catch(() => undefined);
+    this.requireStillOpen(open);
+    open.sync?.afterSave('workspace', commitHint);
+    this.backfillTeamSecrets();
+    this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  /**
+   * Moves the workspace environments' endpoint overrides for a project's renamed interfaces and
+   * APIs, keyed `<projectSlug>/<slug>`, to their new slugs (#477). Saves only when a key moved.
+   */
+  private async rekeyWorkspaceEndpoints(projectSlug: string, renames: ReadonlyMap<string, string>): Promise<void> {
+    const open = this.requireOpen();
+    await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      const previousWorkspace = open.workspace;
+      let moved = false;
+      const environments = open.workspace.environments.map((environment) => {
+        const endpoints = rekeyEndpoints(environment.endpoints, renames, `${projectSlug}/`);
+        if (endpoints === environment.endpoints) {
+          return environment;
+        }
+        moved = true;
+        return { ...environment, endpoints };
+      });
+      if (!moved) {
+        return;
+      }
+      open.workspace = { ...open.workspace, environments };
+      await this.saveChangedWorkspace(open, previousWorkspace);
     });
   }
 
@@ -3320,10 +3372,19 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  projectMutate(
+  async projectMutate(
     ...[projectId, change]: Parameters<ProjectRouter['projectMutate']>
   ): ReturnType<ProjectRouter['projectMutate']> {
-    return this.hostFor(projectId).mutate(change);
+    const host = this.hostFor(projectId);
+    const before = host.open?.project;
+    const result = await host.mutate(change);
+    const after = host.open?.project;
+    const renames = before !== undefined && after !== undefined ? renamedContainerSlugs(before, after) : new Map();
+    const slug = this.current?.entries.find((entry) => entry.projectId === projectId)?.ref.slug;
+    if (renames.size > 0 && slug !== undefined) {
+      await this.rekeyWorkspaceEndpoints(slug, renames);
+    }
+    return result;
   }
 
   /** @inheritdoc */

@@ -4,8 +4,10 @@ import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
+import { useFilesStore } from '../features/ssh/files/files-store.js';
+import { filesTitle } from '../features/ssh/files/open-files.js';
 import { leaves, titleOf } from '../features/ssh/panes/pane-tree.js';
-import { sessionStatus } from '../features/ssh/session-status.js';
+import { filesSessionStatus, sessionStatus } from '../features/ssh/session-status.js';
 import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useShallow } from 'zustand/react/shallow';
 import { entityIdOf, TAB_KINDS, tabOwner, type TabTitleContext } from '../kinds/index.js';
@@ -41,6 +43,16 @@ const TerminalTab = lazy(async () => {
   const module = await import('../features/ssh/terminal-tab.js');
   return { default: module.TerminalTab };
 });
+
+const FilesTab = lazy(async () => {
+  const module = await import('../features/ssh/files/files-tab.js');
+  return { default: module.FilesTab };
+});
+
+/** A Files tab's live title, once its host's name is known. */
+function filesLabel(name: string | undefined): string | undefined {
+  return name === undefined ? undefined : filesTitle(name);
+}
 
 /** A stable empty list, so the editor area does not rerender while no workspace is open. */
 const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
@@ -137,6 +149,9 @@ export function EditorArea() {
   const resolvedHosts = useHostsStore((state) => state.resolved);
   // Every terminal, whichever set is shown: they stay mounted so leaving Hosts never ends a session.
   const terminalTabs = allTabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.panes !== undefined);
+  // Files tabs too: each holds its own SFTP session and folder.
+  const filesTabs = allTabs.filter((tab) => tab.kind === 'ssh-files' && tab.hostId !== undefined);
+  const filesPanes = useFilesStore((state) => state.panes);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -235,6 +250,7 @@ export function EditorArea() {
     (tab.kind === 'ssh-terminal' && tab.panes !== undefined
       ? titleOf(tab.panes, (hostId) => resolvedHosts.find((host) => host.id === hostId)?.name)
       : undefined) ??
+    (tab.kind === 'ssh-files' ? filesLabel(resolvedHosts.find((host) => host.id === tab.hostId)?.name) : undefined) ??
     tab.title;
   // Only the request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean => dirtyTabs[tabs.indexOf(tab)] === true;
@@ -329,7 +345,9 @@ export function EditorArea() {
                       leaves(tab.panes).map((leaf) => leaf.paneId),
                     ),
                   )
-                : undefined;
+                : tab.kind === 'ssh-files'
+                  ? filesSessionStatus(filesPanes[tab.id])
+                  : undefined;
             return (
               // One focusable control per tab. A nested close *button* would be interactive
               // content inside a `tab` widget, which screen readers do not announce reliably, so
@@ -551,6 +569,13 @@ export function EditorArea() {
           <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
             <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
               {tab.panes !== undefined && <TerminalTab tabId={tab.id} panes={tab.panes} active={tab.id === activeId} />}
+            </Suspense>
+          </div>
+        ))}
+        {filesTabs.map((tab) => (
+          <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
+            <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading files…</p>}>
+              <FilesTab tabId={tab.id} hostId={tab.hostId ?? ''} />
             </Suspense>
           </div>
         ))}

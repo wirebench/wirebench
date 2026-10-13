@@ -9,7 +9,8 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
-import { editHost, openTerminalFor } from './connect.js';
+import { editHost, openInNewTab, openTerminalFor } from './connect.js';
+import { openFiles } from './files/open-files.js';
 import {
   ancestorsOf,
   findHost,
@@ -21,6 +22,7 @@ import {
   upsertHost,
   useHostsStore,
 } from './hosts-store.js';
+import { useKeyInstall } from './ssh-keys.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
@@ -44,7 +46,7 @@ interface MenuKit {
 const CONTEXT_KIT: MenuKit = ContextMenu;
 const DROPDOWN_KIT: MenuKit = DropdownMenu;
 
-/** Connect, Edit, Duplicate, Move to…, Copy address and Delete for `host`. */
+/** Connect, Open in new tab, Open files, Edit, Duplicate, Move to…, Copy address and Delete for `host`. */
 function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly kit: MenuKit }) {
   const { file, save } = useHostsStore();
   const parent = ancestorsOf(file, 'host', host.id).at(-1);
@@ -65,6 +67,22 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
         }}
       >
         Connect
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          openInNewTab(host.id);
+        }}
+      >
+        Open in new tab
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          openFiles(host.id);
+        }}
+      >
+        Open files
       </M.Item>
       <M.Item
         className={ITEM_CLASS}
@@ -113,6 +131,14 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
         }}
       >
         Copy address
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          useKeyInstall.getState().open({ hostId: host.id });
+        }}
+      >
+        Install public key…
       </M.Item>
       <M.Separator className="my-1 h-px bg-hairline" />
       <M.Item

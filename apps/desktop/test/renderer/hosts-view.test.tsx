@@ -9,8 +9,11 @@ const setSecret = vi.fn();
 const knownHosts = vi.fn();
 const forgetHostKey = vi.fn();
 const setHostOs = vi.fn();
+const sshKeys = vi.fn(() => Promise.resolve({ ok: true, value: { keys: [] } }));
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
-  ipc: () => ({ ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey, setHostOs } }),
+  ipc: () => ({
+    ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey, setHostOs, keys: sshKeys },
+  }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
@@ -21,6 +24,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { DEFAULT_HOSTS_PREFS, readHostsPrefs, writeHostsPrefs } from '../../src/renderer/features/ssh/hosts-prefs.js';
 import type { WorkspaceWire } from '../../src/shared/wire-base.js';
+import { readRecent, writeRecent } from '../../src/renderer/features/ssh/recent-connections.js';
 
 /** The host of the terminal tab in front (its one pane). */
 const activeTerminalHost = (): string | undefined => {
@@ -59,11 +63,21 @@ const STATE = {
       address: '10.0.0.1',
       tags: ['prod'],
       path: ['g'],
-      forwards: [],
+      protected: { value: false, from: 'default' as const },
       ssh: defaults,
+      forwards: [],
       incomplete: { field: 'user' as const },
     },
-    { id: 'b', name: 'beta', address: 'beta.example', tags: [], path: [], ssh: defaults, forwards: [] },
+    {
+      id: 'b',
+      name: 'beta',
+      address: 'beta.example',
+      tags: [],
+      path: [],
+      protected: { value: false, from: 'default' as const },
+      ssh: defaults,
+      forwards: [],
+    },
   ],
   problems: [{ code: 'ssh-bad-yaml', message: 'could not parse' }],
   loaded: true,
@@ -379,6 +393,53 @@ describe('Hosts tab view', () => {
     await userEvent.click(screen.getByRole('button', { name: 'List' }));
     expect(screen.getByRole('button', { name: 'List' }).getAttribute('aria-pressed')).toBe('true');
     expect(readHostsPrefs('w1')).toMatchObject({ layout: 'list', sort: 'connected' });
+  });
+  it('sorts by the last connect, hosts never connected to last', async () => {
+    useHostsStore.setState({
+      file: {
+        ...STATE.file,
+        groups: [],
+        hosts: [
+          { id: 'z', name: 'zed', address: '10.0.0.1', tags: [], ssh: {} },
+          { id: 'y', name: 'yak', address: '10.0.0.2', tags: [], ssh: {} },
+          { id: 'x', name: 'xray', address: '10.0.0.3', tags: [], ssh: {} },
+        ],
+      },
+    });
+    writeRecent('w1', [
+      { hostId: 'z', at: 5, outcome: 'failed' },
+      { hostId: 'y', at: 3, outcome: 'connected' },
+    ]);
+    render(<SshHome />);
+    const names = (): string[] => screen.getAllByTestId(/^host-row-/).map((el) => el.dataset['hostCard'] ?? '');
+    await userEvent.click(screen.getByRole('button', { name: /Sort by/ }));
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Recently connected' }));
+    expect(names()).toEqual(['z', 'y', 'x']);
+    expect(readHostsPrefs('w1').sort).toBe('recent');
+  });
+  it('shows no recent section before any connect', () => {
+    render(<SshHome />);
+    expect(screen.queryByRole('region', { name: 'Recent connections' })).toBeNull();
+  });
+  it('the recent section lists hosts by their current name, reconnects one and clears', async () => {
+    useEditorsStore.getState().reset();
+    writeRecent('w1', [
+      { hostId: 'b', at: Date.now() - 5 * 60_000, outcome: 'failed' },
+      { hostId: 'deleted', at: Date.now() - 6 * 60_000, outcome: 'connected' },
+      { hostId: 'a', at: Date.now() - 7 * 60_000, outcome: 'connected' },
+    ]);
+    render(<SshHome />);
+    const recent = screen.getByRole('region', { name: 'Recent connections' });
+    const rows = within(recent).getAllByRole('listitem');
+    expect(rows.map((row) => row.dataset['hostId'])).toEqual(['b', 'a']);
+    expect(rows[0]?.textContent).toContain('beta');
+    expect(rows[0]?.textContent).toContain('Failed');
+    expect(rows[0]?.textContent).toContain('5 min ago');
+    await userEvent.click(within(rows[0]!).getByRole('button', { name: 'Connect to beta' }));
+    expect(activeTerminalHost()).toBe('b');
+    await userEvent.click(within(recent).getByRole('button', { name: 'Clear recent connections' }));
+    expect(readRecent('w1')).toEqual([]);
+    expect(screen.queryByRole('region', { name: 'Recent connections' })).toBeNull();
   });
   it('arrow keys move the selection and Enter connects the selected host', async () => {
     useEditorsStore.getState().reset();

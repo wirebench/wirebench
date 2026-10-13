@@ -77,7 +77,8 @@ export interface EditorTab {
     | 'mock'
     | 'runner'
     | 'cookies'
-    | 'ssh-terminal';
+    | 'ssh-terminal'
+    | 'ssh-files';
   readonly title: string;
   /**
    * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):
@@ -113,6 +114,11 @@ export interface EditorTab {
    * a session is a moment, so the tab is never persisted.
    */
   readonly panes?: PaneNode;
+  /**
+   * Set when `kind` is `'ssh-files'`: the host this Files tab browses, over its own SFTP session. Session only,
+   * like a terminal tab.
+   */
+  readonly hostId?: string;
   /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */
   readonly sequenceId?: string;
   /** Set when `kind` is `'mock'`: the mock this tab edits and runs. */
@@ -256,6 +262,18 @@ const EMPTY_EDITORS = {
   selectedAttachments: {},
 } as const;
 
+/** Asked before a tab closes, by tab id; see {@link setCloseGuard}. */
+const closeGuards = new Map<string, () => boolean>();
+
+/**
+ * Lets a tab hold its own close (a Files tab with copies running asks first): the guard returns `true` to
+ * keep the tab open, and closes it later itself once the user agrees. `undefined` removes the guard.
+ */
+export function setCloseGuard(id: string, guard: (() => boolean) | undefined): void {
+  if (guard === undefined) closeGuards.delete(id);
+  else closeGuards.set(id, guard);
+}
+
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
   ...EMPTY_EDITORS,
   tabs: [],
@@ -309,7 +327,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   close: (id) => {
     const { tabs, activeId, activeBySet, displayedSet } = get();
     const tab = tabs.find((t) => t.id === id);
-    if (tab === undefined) {
+    if (tab === undefined || closeGuards.get(id)?.() === true) {
       return;
     }
     const tabSet = tabSetOf(tab);

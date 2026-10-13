@@ -421,6 +421,37 @@ describe('WorkspaceService manifest operations', () => {
     expect(new Set(orders).size).toBe(orders.length);
   }, 60_000);
 
+  it("rewrites the workspace environments' endpoint keys when a project's API is renamed (#477)", async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Renames');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const shop = await seedProject(dir, 'shop', 'Shop');
+    const other = await seedProject(dir, 'other', 'Other');
+    await registerProjects(dir, [shop, other]);
+
+    const service = newService();
+    await service.open(created.id);
+    const added = await service.projectMutate(shop.id, { kind: 'add-api', name: 'Orders', baseUrl: 'https://o.test' });
+    const apiId = added.createdId!;
+    const environmentId = (await service.mutate({ kind: 'add-workspace-environment', name: 'dev' }))
+      .createdEnvironmentId!;
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId,
+      // `other/Orders` is another project's API of the same slug: it must stay where it is.
+      patch: { endpoints: { 'shop/Orders': 'https://dev.o.test', 'other/Orders': 'https://other.test' } },
+    });
+
+    await service.projectMutate(shop.id, { kind: 'update-api', apiId, patch: { name: 'Purchases' } });
+
+    const expected = { 'shop/Purchases': 'https://dev.o.test', 'other/Orders': 'https://other.test' };
+    expect(service.snapshot()!.environments[0]?.endpoints).toEqual(expected);
+    const { workspace } = await loadWorkspace(dir);
+    expect(workspace.environments[0]?.endpoints).toEqual(expected);
+    await service.close();
+  }, 60_000);
+
   it('refuses a workspace id that is not a folder name', async () => {
     const service = newService({ trash: () => Promise.resolve() });
     // The picker's row id is the one workspace value that comes from the renderer: a traversal

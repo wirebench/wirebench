@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
 import { SecretReviewDialog } from '../components/secret-review-dialog.js';
@@ -41,6 +41,11 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToHosts } from '../features/ssh/hosts-store.js';
+import {
+  subscribeToSnippets,
+  useSnippetEditorShown,
+  useSnippetsStore,
+} from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
 import { TrustDialog } from '../features/ssh/trust-dialog.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
@@ -120,6 +125,12 @@ function resizePercentPanel(
  * Code slide-over), status bar. Owns the palette's open state and the one keydown listener;
  * every region below is presentational.
  */
+// Split out: its script field is Monaco, which only ever loads with an editor.
+const SnippetEditor = lazy(async () => {
+  const module = await import('../features/ssh/snippets/snippet-editor.js');
+  return { default: module.SnippetEditor };
+});
+
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>('commands');
@@ -150,6 +161,11 @@ export function AppShell() {
   }, []);
   const closeHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(false);
+  }, []);
+  // On the Snippets view it holds the snippet being edited.
+  const snippetEditorShown = useSnippetEditorShown();
+  const closeSnippetEditor = useCallback(() => {
+    useSnippetsStore.getState().closeEditor();
   }, []);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
@@ -303,6 +319,7 @@ export function AppShell() {
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
   useEffect(() => subscribeToHosts(), []);
+  useEffect(() => subscribeToSnippets(), []);
   useEffect(() => subscribeToSshEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
   useEffect(() => subscribeToAccounts(), []);
@@ -496,7 +513,7 @@ export function AppShell() {
                   unmounts completely; the rail's icon or `view.toggleCode` reopens it. */}
                 <SlideOver
                   label="Code"
-                  open={slideOver.open && !hostDetailsShown && !settingsOpen}
+                  open={slideOver.open && !hostDetailsShown && !snippetEditorShown && !settingsOpen}
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}
                   onToggle={toggleCode}
@@ -513,6 +530,18 @@ export function AppShell() {
                   onClose={closeHostDetails}
                 >
                   <HostDetails />
+                </SlideOver>
+                <SlideOver
+                  label="Snippet"
+                  open={snippetEditorShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={closeSnippetEditor}
+                  onClose={closeSnippetEditor}
+                >
+                  <Suspense fallback={null}>
+                    <SnippetEditor />
+                  </Suspense>
                 </SlideOver>
               </div>
 

@@ -5,7 +5,9 @@ import {
   createProject,
   createRequest,
   createRestRequest,
+  createWorkspaceEnvironment,
   isWirebenchError,
+  linkedEnvironment,
   soapInterfacesOf,
 } from '@wirebench/engine';
 import type { Interface, Project, RestResponseExample } from '@wirebench/engine';
@@ -283,7 +285,7 @@ describe('applyChange: environments', () => {
     expect(twice.project.environments.map((env) => env.order)).toEqual([0, 1]);
   });
 
-  it('update-environment renames (re-slugging) and replaces the endpoint/property maps whole', async () => {
+  it('update-environment renames (keeping the slug) and replaces the endpoint/property maps whole', async () => {
     const project = await withEnvironments();
     const target = project.environments[0]!;
 
@@ -298,10 +300,15 @@ describe('applyChange: environments', () => {
     );
     expect(renamed.project.environments[0]).toMatchObject({
       name: 'Staging',
-      slug: 'Staging',
+      // The slug links it to the workspace environment of the same slug (#475): a rename keeps it.
+      slug: 'Dev',
       endpoints: { Calculator: 'http://staging.test/soap' },
       properties: { who: 'me' },
     });
+
+    // The workspace environment named "Dev" still finds it, now called Staging.
+    const workspaceDev = createWorkspaceEnvironment('Dev', new Set());
+    expect(linkedEnvironment(renamed.project, workspaceDev)?.id).toBe(target.id);
 
     // A patch without a map leaves it alone; a patch with one replaces it (keys can disappear).
     const cleared = await applyChange(
@@ -313,6 +320,40 @@ describe('applyChange: environments', () => {
       endpoints: { Calculator: 'http://staging.test/soap' },
       properties: {},
     });
+  });
+
+  it("update-api's rename moves the API's endpoint override keys with its slug (#477)", async () => {
+    const withApi = await applyChange(build(), { kind: 'add-api', name: 'Shop', baseUrl: 'https://shop.test' }, deps);
+    const apiId = withApi.createdId!;
+    const withEnv = await applyChange(withApi.project, { kind: 'add-environment', name: 'Dev' }, deps);
+    const environmentId = withEnv.createdEnvironmentId!;
+    const overridden = await applyChange(
+      withEnv.project,
+      {
+        kind: 'update-environment',
+        environmentId,
+        patch: { endpoints: { Shop: 'https://dev.shop.test', Calculator: 'http://dev.test/soap' } },
+      },
+      deps,
+    );
+
+    const renamed = await applyChange(
+      overridden.project,
+      { kind: 'update-api', apiId, patch: { name: 'Store' } },
+      deps,
+    );
+    expect(renamed.project.environments[0]?.endpoints).toEqual({
+      Store: 'https://dev.shop.test',
+      Calculator: 'http://dev.test/soap',
+    });
+
+    // A change that renames nothing leaves the environments as they were.
+    const untouched = await applyChange(
+      renamed.project,
+      { kind: 'update-api', apiId, patch: { baseUrl: 'https://x.test' } },
+      deps,
+    );
+    expect(untouched.project.environments).toBe(renamed.project.environments);
   });
 
   it('set-active-environment switches and clears the active environment', async () => {

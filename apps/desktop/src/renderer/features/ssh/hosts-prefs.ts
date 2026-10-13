@@ -9,7 +9,7 @@ import { useWorkspaceStore } from '../../state/workspace.js';
 export const HOSTS_PREFS_KEY = 'wirebench.ssh.hostsView';
 
 export type HostsLayout = 'grid' | 'list';
-export type HostsSort = 'name' | 'address' | 'connected';
+export type HostsSort = 'name' | 'address' | 'connected' | 'recent';
 
 export interface HostsPrefs {
   readonly layout: HostsLayout;
@@ -24,7 +24,7 @@ export const TOP_LEVEL = '(top)';
 export const DEFAULT_HOSTS_PREFS: HostsPrefs = { layout: 'grid', sort: 'name', collapsed: [] };
 
 const LAYOUTS: readonly string[] = ['grid', 'list'];
-const SORTS: readonly string[] = ['name', 'address', 'connected'];
+const SORTS: readonly string[] = ['name', 'address', 'connected', 'recent'];
 
 function readAll(storage: Storage): Record<string, unknown> {
   try {
