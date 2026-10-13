@@ -10,3 +10,4 @@ export {
   type SessionSource,
 } from './sessions.js';
 export { parseSecureCrtXml } from './securecrt.js';
+export { parseMobaXterm } from './mobaxterm.js';
