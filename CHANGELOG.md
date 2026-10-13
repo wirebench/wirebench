@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Import trusted keys from known_hosts.** The Known hosts view (and **Hosts: Import Known Hosts…**)
+  reads `~/.ssh/known_hosts` or a chosen file and trusts its keys for the hosts in `hosts.yaml` they
+  name: plain and `[host]:port` names, comma lists, wildcard patterns with `!` negation, and hashed
+  names, which are matched against each host's address and port. The preview lists the keys to trust,
+  the keys that differ from one already trusted (kept unless you tick **Replace**, which then needs the
+  same changed-key confirmation as a connect) and what is not imported: `@cert-authority` and
+  `@revoked` lines, lines that name no host, a second key of a type a host already has, and lines that
+  cannot be read (#418).
+
 - **Session logs for SSH terminals.** A host's details gain **Session logs**: a **Log sessions** switch
   (also on a group's menu, inherited by the hosts inside) and the logs this machine kept, newest first,
   which can be searched, opened and filtered, revealed in the file manager or deleted. A log is the
@@ -29,18 +38,21 @@ All notable changes to this project are documented here. The format follows
   errors** check, even on HTTP 200. `data` that does not match the schema is a warning. Postman,
   OpenCollection and `.http` GraphQL requests now import as GraphQL, and a Postman export writes them
   back as GraphQL (#77).
+
 - **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
   and groups, merged by name down the tree so a nearer level wins for each variable; a value is
   text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the
   server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
   screen. The host form edits them and shows the inherited ones with their group, the details panel
   lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
+
 - **SSH agent forwarding per host or group.** `hosts.yaml` takes `ssh.forwardAgent: true`, inherited
   down the tree and off by default. A terminal on such a host forwards your local agent, so `git pull`
   or another `ssh` on the remote can use your keys; a jump host never gets it. The host form shows the
   inherited value and a warning while it is on, the terminal tab shows a key while the agent is
   forwarded (and says why when the server refused or no agent runs), the details panel and its `ssh`
   command show it, and importing an SSH config now maps `ForwardAgent` (#413).
+
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as

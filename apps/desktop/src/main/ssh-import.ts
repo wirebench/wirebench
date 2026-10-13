@@ -29,7 +29,7 @@ export interface SshImportFs {
   glob(pattern: string): Promise<readonly string[]>;
 }
 
-const nodeImportFs: SshImportFs = {
+export const nodeImportFs: SshImportFs = {
   realpath: (path) => realpath(path),
   stat: (path) => stat(path),
   readFile: (path) => readFile(path, 'utf8'),
@@ -57,7 +57,7 @@ export const CONFIG_MAX_BYTES = 1024 * 1024;
 export const KEY_MAX_BYTES = 64 * 1024;
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
 
-const errnoOf = (error: unknown): string => {
+export const errnoOf = (error: unknown): string => {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' ? code : 'unknown error';
 };
@@ -66,7 +66,7 @@ const errnoOf = (error: unknown): string => {
 const refusal = (code: string): Error => Object.assign(new Error(code), { code });
 
 /** The text of a regular file no bigger than `max`, read through `realpath` (a symlink is followed once). */
-async function readRegular(fs: SshImportFs, path: string, max: number): Promise<string> {
+export async function readRegular(fs: SshImportFs, path: string, max: number): Promise<string> {
   const target = await fs.realpath(path);
   const info = await fs.stat(target);
   if (!info.isFile()) throw refusal('ENOTFILE');

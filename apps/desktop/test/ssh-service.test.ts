@@ -324,6 +324,25 @@ describe('SshService', () => {
     await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
   });
 
+  it('changeKnownHosts writes what the change returns, and the written key settles a pending prompt', async () => {
+    const { service, knownHostsFile } = make();
+    const s = sender(1);
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    const result = await service.changeKnownHosts((known) => ({ entries: [...known, KEY], added: 1 }));
+    expect(result.added).toBe(1);
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([KEY]);
+    // The refusal the connect left is settled: trusting it now is unexpected, not a second write.
+    await expect(service.trust(as(s), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+  });
+
+  it('changeKnownHosts writes nothing when the change keeps every key', async () => {
+    const { service, knownHostsFile } = make();
+    await service.changeKnownHosts((known) => ({ entries: known }));
+    expect(() => readFileSync(knownHostsFile)).toThrow();
+  });
+
   it('forgetting a key that is not trusted writes nothing', async () => {
     const { service, knownHostsFile } = make();
     await service.forgetHostKey({ host: 'nowhere:22', keyType: 'ssh-ed25519' });

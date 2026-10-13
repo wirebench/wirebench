@@ -581,6 +581,32 @@ export class SshService {
     hook(sender, hostId, open);
   }
 
+  /**
+   * Rewrites the trusted host keys from what `change` makes of them, read now, in the same queue as
+   * {@link trust} so neither loses the other's entry. Every key it writes settles that host and key type
+   * for every window, as a trust does.
+   */
+  changeKnownHosts<T extends { readonly entries: readonly KnownHostEntry[] }>(
+    change: (known: readonly KnownHostEntry[]) => T,
+  ): Promise<T> {
+    const run = this.trustQueue.then(async () => {
+      const known = await readKnownHosts(this.deps.knownHostsFile);
+      const changed = change(known);
+      const written = changed.entries.filter(
+        (e) => !known.some((k) => k.host === e.host && k.keyType === e.keyType && k.fingerprint === e.fingerprint),
+      );
+      if (written.length === 0 && changed.entries.length === known.length) return changed;
+      await writeFileAtomic(nodeFs, this.deps.knownHostsFile, serializeKnownHosts(changed.entries));
+      for (const entry of written) this.refusals.settle(entry);
+      return changed;
+    });
+    this.trustQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   /** The host keys trusted on this machine, for the Known hosts view. */
   async knownHosts(): Promise<readonly KnownHostEntry[]> {
     return readKnownHosts(this.deps.knownHostsFile);
