@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
-import { ArrowLeft, ArrowUp, Eye, EyeOff, Laptop, RefreshCw, Server } from 'lucide-react';
+import { ArrowLeft, ArrowUp, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { IconButton } from '../../../components/icon-button.js';
 import { useHostsStore } from '../hosts-store.js';
@@ -10,9 +10,9 @@ import { FileList } from './file-list.js';
 import { FileMenu } from './file-menu.js';
 import { otherPaneId, useFilesStore } from './files-store.js';
 import { isFolderLike, joinPath, parentOf, visibleEntries } from './format.js';
-import { hostName } from './open-files.js';
 import { PathBar } from './path-bar.js';
 import { PermissionsDialog } from './permissions-dialog.js';
+import { PlacePicker } from './place-picker.js';
 import { RenameField } from './rename-field.js';
 import { useTransfersStore } from './transfers-store.js';
 
@@ -23,7 +23,7 @@ const DRAG_TYPE = 'application/x-wirebench-files';
 let dragging: { readonly paneId: string; readonly names: readonly string[] } | undefined;
 
 /**
- * One pane of a Files tab, this machine's or the host's: Back, Up, Refresh and the hidden-entries toggle,
+ * One pane of a Files tab, this machine's or a host's, with its place picker to switch it to another: Back, Up, Refresh and the hidden-entries toggle,
  * the path bar, a refusal under it when a folder could not be listed (the listing stays), and the list with
  * its menu: copy to the other pane, rename in place (F2), delete with confirmation (Delete), new folder,
  * permissions (on a host), copy path and refresh. Entries dragged onto the other pane, or onto a folder in
@@ -53,8 +53,12 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
   const ready = place.kind === 'local' || place.sessionId !== undefined;
   const header = (
     <div className="flex items-center gap-1.5 border-b border-hairline px-3 py-1 text-xs text-fg-subtle">
-      {local ? <Laptop size={12} aria-hidden="true" /> : <Server size={12} aria-hidden="true" />}
-      <span className="truncate">{place.kind === 'local' ? 'This machine' : hostName(place.hostId)}</span>
+      <PlacePicker
+        place={place}
+        onPick={(choice) => {
+          void store().switchPlace(paneId, choice);
+        }}
+      />
     </div>
   );
 

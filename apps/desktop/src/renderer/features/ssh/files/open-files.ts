@@ -28,8 +28,10 @@ export function openFiles(hostId: string): void {
   const editors = useEditorsStore.getState();
   const open = editors.tabs.some((t) => t.id === id);
   editors.open({ id, kind: 'ssh-files', title: filesTitle(hostName(hostId)), hostId });
-  if (open && useFilesStore.getState().panes[id]?.status === 'error') {
-    void useFilesStore.getState().connect(id, hostId);
+  // The right pane may have been switched to another host: it connects to whichever it shows.
+  const pane = useFilesStore.getState().panes[id];
+  if (open && pane?.status === 'error' && pane.place.kind === 'remote') {
+    void useFilesStore.getState().connect(id, pane.place.hostId);
   }
 }
 

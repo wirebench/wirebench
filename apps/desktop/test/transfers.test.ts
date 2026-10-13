@@ -169,7 +169,11 @@ const as = (s: ReturnType<typeof sender>) => s as unknown as WebContents;
 function make(options: { concurrency?: number; now?: () => number } = {}) {
   const local = memFs('local-fs');
   const remote = memFs('r1');
-  const sessions = new Map<string, SftpSession>([[remote.session.id, remote.session]]);
+  const other = memFs('r2');
+  const sessions = new Map<string, SftpSession>([
+    [remote.session.id, remote.session],
+    [other.session.id, other.session],
+  ]);
   const closed = new Set<(sender: WebContents, sessionId: string) => void>();
   const sftp = {
     session: (_sender: WebContents, sessionId: string) => {
@@ -197,11 +201,17 @@ function make(options: { concurrency?: number; now?: () => number } = {}) {
     sessions.delete(sessionId);
     for (const listener of closed) listener(s, sessionId);
   };
-  return { queue, local, remote, emit, transfers, stateOf, conflicts, endSession };
+  return { queue, local, remote, other, emit, transfers, stateOf, conflicts, endSession };
 }
 
 const LOCAL = { kind: 'local' } as const;
 const REMOTE = { kind: 'remote', sessionId: 'r1' } as const;
+const OTHER = { kind: 'remote', sessionId: 'r2' } as const;
+const across = (paths: string[], dir = '/in', batchId = 'b1') => ({
+  batchId,
+  from: { place: REMOTE, paths },
+  to: { place: OTHER, dir },
+});
 const upload = (paths: string[], dir = '/up', batchId = 'b1') => ({
   batchId,
   from: { place: LOCAL, paths },
@@ -439,6 +449,80 @@ describe('TransferQueue', () => {
     t.endSession('r1', as(s));
     await until(() => transferIds.every((id) => t.stateOf(id) === 'failed'));
     expect(t.transfers(transferIds[1]).at(-1)?.error?.code).toBe('ssh-session-closed');
+  });
+
+  describe('remote to remote', () => {
+    it('streams a file from one session to the other through main', async () => {
+      const t = make();
+      t.other.dirs.add('/in');
+      t.remote.dirs.add('/srv');
+      t.remote.write('/srv/report.csv', 'a,b,c', 0o600);
+      const s = sender();
+      const { transferIds } = await t.queue.copy(as(s), across(['/srv/report.csv']));
+      await until(() => t.stateOf(transferIds[0] as string) === 'done');
+      expect(t.other.text('/in/report.csv')).toBe('a,b,c');
+      expect(t.remote.text('/srv/report.csv')).toBe('a,b,c');
+      expect(t.local.files.size).toBe(0);
+      expect(t.other.parts()).toEqual([]);
+    });
+
+    it('honours a clash on the receiving host', async () => {
+      const t = make();
+      t.other.dirs.add('/in');
+      t.other.write('/in/a.txt', 'old', 0o644, 1000);
+      t.remote.write('/a.txt', 'newer', 0o644, 2000);
+      const s = sender();
+      const { transferIds } = await t.queue.copy(as(s), across(['/a.txt']));
+      const id = transferIds[0] as string;
+      await until(() => t.stateOf(id) === 'waiting');
+      expect(t.conflicts()).toHaveLength(1);
+      t.queue.resolve(as(s), { batchId: 'b1', decision: 'keep-both', applyToRest: false });
+      await until(() => t.stateOf(id) === 'done');
+      expect(t.other.text('/in/a.txt')).toBe('old');
+      expect(t.other.text('/in/a (1).txt')).toBe('newer');
+    });
+
+    it('cancel mid-stream leaves no part file on the receiving host', async () => {
+      const t = make();
+      t.other.dirs.add('/in');
+      t.remote.write('/a.txt', 'content');
+      t.remote.hold('/a.txt');
+      const s = sender();
+      const { transferIds } = await t.queue.copy(as(s), across(['/a.txt']));
+      const id = transferIds[0] as string;
+      await until(() => t.other.parts().length === 1);
+      t.queue.cancel(as(s), { transferId: id });
+      await until(() => t.stateOf(id) === 'cancelled');
+      await until(() => t.other.parts().length === 0);
+      expect(t.other.files.has('/in/a.txt')).toBe(false);
+    });
+
+    it('one session closing fails only the transfers that use it', async () => {
+      const t = make();
+      t.other.dirs.add('/in');
+      t.remote.dirs.add('/up');
+      t.remote.write('/a', 'a');
+      t.remote.hold('/a');
+      t.local.write('/b', 'b');
+      t.local.hold('/b');
+      const s = sender();
+      const between = await t.queue.copy(as(s), across(['/a']));
+      const toOther = await t.queue.copy(as(s), {
+        batchId: 'b2',
+        from: { place: LOCAL, paths: ['/b'] },
+        to: { place: OTHER, dir: '/in' },
+      });
+      const a = between.transferIds[0] as string;
+      const b = toOther.transferIds[0] as string;
+      await until(() => t.stateOf(a) === 'running' && t.stateOf(b) === 'running');
+      t.endSession('r1', as(s));
+      await until(() => t.stateOf(a) === 'failed');
+      expect(t.stateOf(b)).toBe('running');
+      t.local.release('/b');
+      await until(() => t.stateOf(b) === 'done');
+      expect(t.other.text('/in/b')).toBe('b');
+      expect(t.other.parts()).toEqual([]);
+    });
   });
 
   it('disposeFor cancels everything, removes part files and emits nothing afterwards', async () => {
