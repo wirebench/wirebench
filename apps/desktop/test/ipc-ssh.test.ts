@@ -42,6 +42,10 @@ const NO_SSH = {
 };
 const NO_HOSTS = { list: vi.fn(), save: vi.fn() };
 const NO_SNIPPETS = { list: vi.fn(), save: vi.fn() };
+const NO_LAYOUTS = {
+  layouts: { list: vi.fn(), save: vi.fn(), rename: vi.fn(), delete: vi.fn() },
+  workspaceId: () => undefined,
+};
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
 const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn() };
 const NO_SFTP = {
@@ -71,6 +75,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const host = {
@@ -97,6 +102,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const answer = (await invoke('ssh.saveHosts', { file: { ...EMPTY.file, extra: 1 } })) as { ok: boolean };
@@ -113,6 +119,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.listHosts', undefined)).toEqual({ ok: true, value: EMPTY });
@@ -129,6 +136,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.secretNames', undefined)).toEqual({
@@ -146,6 +154,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const answer = await invoke('ssh.setSecret', { name: 'DEPLOY_KEY', value: 'hunter2-value' });
@@ -168,6 +177,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const answer = await invoke('ssh.setSecret', { name: 'my password!', value: 'hunter2-value' });
@@ -184,6 +194,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const answer = (await invoke('ssh.setSecret', { name: 'A', value: 'v', extra: 1 })) as { ok: boolean };
@@ -212,6 +223,7 @@ describe('ssh channels', () => {
         keys: NO_KEYS,
         sftp: NO_SFTP,
         snippets: NO_SNIPPETS,
+        layouts: NO_LAYOUTS,
         transfers: NO_TRANSFERS,
       });
       return ssh;
@@ -270,6 +282,7 @@ describe('known hosts channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.knownHosts', undefined)).toEqual({ ok: true, value: { entries: [entry] } });
@@ -290,6 +303,7 @@ describe('known hosts channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(
@@ -316,6 +330,7 @@ describe('host OS channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.hostOs', undefined)).toEqual({ ok: true, value: { entries } });
@@ -335,6 +350,7 @@ describe('host OS channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.setHostOs', { host: 'box:22', os: 'beos' })).toMatchObject({ ok: false });
@@ -355,6 +371,7 @@ describe('ssh import channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 7 };
@@ -378,6 +395,7 @@ describe('ssh import channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.importPreview', { source: 'pick', path: '/etc/passwd' })).toMatchObject({ ok: false });
@@ -398,6 +416,7 @@ describe('ssh import channels', () => {
       keys: NO_KEYS,
       sftp,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 3 };
@@ -431,6 +450,7 @@ describe('ssh import channels', () => {
       sftp: NO_SFTP,
       transfers,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
     });
     const window = { id: 4 };
     const copy = {
@@ -467,6 +487,7 @@ describe('ssh key channels', () => {
       keys,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 4 };
@@ -505,6 +526,7 @@ describe('snippet channels', () => {
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
       snippets,
+      layouts: NO_LAYOUTS,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
     await invoke('ssh.saveSnippets', { file: EMPTY_SNIPPETS.file });
@@ -522,6 +544,7 @@ describe('snippet channels', () => {
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
       snippets: new SnippetsService({ treeDir: () => dir }),
+      layouts: NO_LAYOUTS,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };
     const refused = (await invoke('ssh.saveSnippets', {

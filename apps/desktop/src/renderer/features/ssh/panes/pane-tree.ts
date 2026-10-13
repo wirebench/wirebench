@@ -1,3 +1,5 @@
+import { SSH_MAX_PANES } from '../../../../shared/ssh-defaults.js';
+
 /**
  * The split tree an `ssh-terminal` tab holds: each leaf is a pane with its own session to a host, each
  * inner node divides its space between two children. Pure: the editors store keeps the tree, the hosts
@@ -21,7 +23,7 @@ export interface PaneLeaf {
 }
 
 /** The most panes one tab holds. */
-export const MAX_PANES = 12;
+export const MAX_PANES = SSH_MAX_PANES;
 
 const MIN_RATIO = 0.1;
 const MAX_RATIO = 0.9;

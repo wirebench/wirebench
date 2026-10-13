@@ -25,6 +25,13 @@ import {
 } from './ssh-wire.js';
 import { sshListSnippetsResponseSchema, sshSaveSnippetsRequestSchema } from './snippets-wire.js';
 import {
+  layoutDeleteRequestSchema,
+  layoutListResponseSchema,
+  layoutRenameRequestSchema,
+  layoutSaveRequestSchema,
+  layoutSaveResponseSchema,
+} from './layout-wire.js';
+import {
   sftpChmodRequestSchema,
   sftpCloseRequestSchema,
   sftpClosedEventSchema,
@@ -962,6 +969,14 @@ export const channels = {
     // Snippets (#356): scripts cross with `${secret:NAME}` tokens only, never a value.
     listSnippets: defineChannel('ssh.listSnippets', z.undefined(), sshListSnippetsResponseSchema),
     saveSnippets: defineChannel('ssh.saveSnippets', sshSaveSnippetsRequestSchema, sshListSnippetsResponseSchema),
+  },
+  // Saved terminal layouts (SSH area, panes slice 3): per machine, scoped to the calling window's workspace.
+  // Registered only while the SSH area is on.
+  layout: {
+    list: defineChannel('layout.list', z.object({}), layoutListResponseSchema),
+    save: defineChannel('layout.save', layoutSaveRequestSchema, layoutSaveResponseSchema),
+    rename: defineChannel('layout.rename', layoutRenameRequestSchema, z.object({})),
+    delete: defineChannel('layout.delete', layoutDeleteRequestSchema, z.object({})),
   },
   // The Files tab (SSH area slice 3). Registered only while the SSH area is on; a local place is used as given.
   sftp: {

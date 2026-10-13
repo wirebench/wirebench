@@ -6,6 +6,7 @@ import type { SshImportService } from '../ssh-import.js';
 import type { SshKeysService } from '../ssh-keys.js';
 import type { SshSecretsService } from '../ssh-secrets.js';
 import type { SshService } from '../ssh-service.js';
+import { registerLayoutChannels } from './layout-channels.js';
 import { registerSftpChannels } from './sftp-channels.js';
 
 export function registerSshChannels(deps: {
@@ -19,6 +20,7 @@ export function registerSshChannels(deps: {
   keys: Pick<SshKeysService, 'generate' | 'keys' | 'install'>;
   sftp: Parameters<typeof registerSftpChannels>[0]['sftp'];
   snippets: Pick<SnippetsService, 'list' | 'save'>;
+  layouts: Parameters<typeof registerLayoutChannels>[0];
   transfers: Parameters<typeof registerSftpChannels>[0]['transfers'];
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
@@ -66,4 +68,6 @@ export function registerSshChannels(deps: {
   registerHandler(channels.ssh.saveSnippets, (request) => deps.snippets.save(request.file));
   // The Files tab rides with the SSH area: off with it, so its local-path exception (spec R5) goes too.
   registerSftpChannels({ sftp: deps.sftp, transfers: deps.transfers });
+  // Saved layouts (panes slice 3) ride with the area too.
+  registerLayoutChannels(deps.layouts);
 }

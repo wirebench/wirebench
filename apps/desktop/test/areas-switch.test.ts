@@ -49,6 +49,12 @@ describe('area channels', () => {
     const names = channelsFor('');
     expect(names).toContain('ssh.connect');
     expect(names).toEqual(expect.arrayContaining(['ssh.listSnippets', 'ssh.saveSnippets']));
+    expect(names.filter((n) => n.startsWith('layout.')).sort()).toEqual([
+      'layout.delete',
+      'layout.list',
+      'layout.rename',
+      'layout.save',
+    ]);
     expect(names.filter((n) => n.startsWith('sftp.')).sort()).toEqual([
       'sftp.cancel',
       'sftp.chmod',
@@ -64,8 +70,10 @@ describe('area channels', () => {
       'sftp.retry',
     ]);
   });
-  it('with ssh=off no ssh.* or sftp.* channel exists', () => {
-    expect(channelsFor('ssh=off').filter((n) => n.startsWith('ssh.') || n.startsWith('sftp.'))).toEqual([]);
+  it('with ssh=off no ssh.*, sftp.* or layout.* channel exists', () => {
+    expect(
+      channelsFor('ssh=off').filter((n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('layout.')),
+    ).toEqual([]);
   });
 });
 

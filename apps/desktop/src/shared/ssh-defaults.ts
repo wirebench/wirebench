@@ -30,3 +30,6 @@ export const SSH_OS_IDS = [
   'freebsd',
   'windows',
 ] as const;
+
+/** The most panes one terminal tab, and so one saved layout, holds. */
+export const SSH_MAX_PANES = 12;

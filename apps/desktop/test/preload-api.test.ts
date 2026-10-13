@@ -63,6 +63,7 @@ describe('buildApi', () => {
       'hooks',
       'issuedTokens',
       'keystores',
+      'layout',
       'license',
       'log',
       'mock',
