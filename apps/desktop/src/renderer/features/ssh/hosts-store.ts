@@ -43,6 +43,8 @@ export interface PaneSession {
   hostId: string;
   sessionId?: string;
   state: 'connecting' | 'open' | 'closed';
+  /** Set when the host forwards the agent: whether its shell got it. */
+  agentForwarding?: 'on' | 'refused' | 'no-agent';
 }
 
 /** How a host (or a tab) stands, from its panes: open over connecting over idle. */

@@ -72,6 +72,7 @@ export function sshCommandOf(host: ResolvedHostWire, jumpAddress: string | undef
   const parts = ['ssh'];
   const port = host.ssh.port.value;
   if (port !== 22) parts.push('-p', String(port));
+  if (host.ssh.forwardAgent.value) parts.push('-A');
   if (jumpAddress !== undefined) parts.push('-J', jumpAddress);
   const user = host.ssh.user.value;
   parts.push(user === undefined ? host.address : `${user}@${host.address}`);
@@ -264,6 +265,12 @@ export function HostDetails() {
             )}
           </>
         )}
+      </Section>
+      <Section title="Agent">
+        <Row label="Agent forwarding">
+          <span>{host.ssh.forwardAgent.value ? 'On' : 'Off'}</span>
+          {muted(provenance(host.ssh.forwardAgent.from))}
+        </Row>
       </Section>
       <Section title="Host key">
         {keys.length === 0 ? (
