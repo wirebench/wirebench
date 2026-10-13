@@ -172,6 +172,7 @@ describe('SSH menu', () => {
       'ssh-nav-hosts',
       'ssh-nav-snippets',
       'ssh-nav-layouts',
+      'ssh-nav-forwarding',
       'ssh-nav-keychain',
       'ssh-nav-known-hosts',
     ]);
