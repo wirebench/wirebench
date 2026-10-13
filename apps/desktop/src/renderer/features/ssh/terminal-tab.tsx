@@ -16,6 +16,7 @@ import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
+import { trackPaneModes } from './terminal-modes.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { HostPicker } from './panes/host-picker.js';
 import {
@@ -342,6 +343,8 @@ function TerminalPane({
       timer = setTimeout(syncSize, RESIZE_DEBOUNCE_MS);
     };
     live.current = { term, search, refit, syncSize };
+    // A snippet run asks whether the shell turned bracketed paste on.
+    const untrackModes = trackPaneModes(paneId, () => term.modes.bracketedPasteMode);
     const observer = new ResizeObserver(refit);
     observer.observe(element);
 
@@ -403,6 +406,7 @@ function TerminalPane({
 
     return () => {
       disposed = true;
+      untrackModes();
       offWake();
       loop.cancel();
       reconnector.current = null;

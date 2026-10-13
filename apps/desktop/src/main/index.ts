@@ -530,6 +530,7 @@ const sshService = new SshService({
   ...sshConnectDeps,
   hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
   emit: emitEvent,
+  snippets: (sender: WebContents) => sshScopeOf(scopes, sender).snippets,
   refusals: sshRefusals,
   connector: sshConnector,
 });

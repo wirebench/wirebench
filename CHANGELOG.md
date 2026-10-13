@@ -27,8 +27,14 @@ All notable changes to this project are documented here. The format follows
   variables, secrets or shell text; a `${name}` the script uses can be declared as a variable in one click,
   and **Insert secret** puts `${secret:NAME}` at the cursor (the value never enters the file). Snippets
   duplicate, move between packages and delete; packages are created, renamed and deleted once empty. A file
-  that does not parse shows in the view and in the Problems tab. Running a snippet comes in a later release
-  (#450).
+  that does not parse shows in the view and in the Problems tab (#450).
+- **Run a snippet in a terminal.** **Run** and **Insert** (Insert leaves the line at the prompt) on a
+  snippet's row, in its menu and in its editor, or a double-click on the row. A run asks for the snippet's
+  variable values (remembered on this machine) and shows the terminal it will type into and the script as
+  typed; it runs at once in the terminal in front when there is nothing to ask. A value with a line break or
+  a control key is refused. `${secret:…}` values are typed by the app itself, never shown: the line starts
+  with a space so most shells keep it out of history, and the value shows as `••••` in that terminal for the
+  rest of its session. A snippet changed on disk since it was shown is not run (#451).
 - **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
   keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
   or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,

@@ -23,7 +23,13 @@ import {
   sshSetHostOsRequestSchema,
   sshWriteRequestSchema,
 } from './ssh-wire.js';
-import { sshListSnippetsResponseSchema, sshSaveSnippetsRequestSchema } from './snippets-wire.js';
+import {
+  sshListSnippetsResponseSchema,
+  sshPreviewSnippetRequestSchema,
+  sshPreviewSnippetResponseSchema,
+  sshRunSnippetRequestSchema,
+  sshSaveSnippetsRequestSchema,
+} from './snippets-wire.js';
 import {
   layoutDeleteRequestSchema,
   layoutListResponseSchema,
@@ -969,6 +975,13 @@ export const channels = {
     // Snippets (#356): scripts cross with `${secret:NAME}` tokens only, never a value.
     listSnippets: defineChannel('ssh.listSnippets', z.undefined(), sshListSnippetsResponseSchema),
     saveSnippets: defineChannel('ssh.saveSnippets', sshSaveSnippetsRequestSchema, sshListSnippetsResponseSchema),
+    // Main types the saved snippet by id, resolving its secrets itself; a preview never resolves one.
+    runSnippet: defineChannel('ssh.runSnippet', sshRunSnippetRequestSchema, z.object({})),
+    previewSnippet: defineChannel(
+      'ssh.previewSnippet',
+      sshPreviewSnippetRequestSchema,
+      sshPreviewSnippetResponseSchema,
+    ),
   },
   // Saved terminal layouts (SSH area, panes slice 3): per machine, scoped to the calling window's workspace.
   // Registered only while the SSH area is on.

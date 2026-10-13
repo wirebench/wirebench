@@ -39,6 +39,8 @@ const NO_SSH = {
   forgetHostKey: vi.fn(),
   hostOs: vi.fn(),
   setHostOs: vi.fn(),
+  runSnippet: vi.fn(),
+  previewSnippet: vi.fn(),
 };
 const NO_HOSTS = { list: vi.fn(), save: vi.fn() };
 const NO_SNIPPETS = { list: vi.fn(), save: vi.fn() };
@@ -214,6 +216,8 @@ describe('ssh channels', () => {
         forgetHostKey: vi.fn(),
         hostOs: vi.fn(),
         setHostOs: vi.fn(),
+        runSnippet: vi.fn(),
+        previewSnippet: vi.fn(),
       };
       registerSshChannels({
         hosts: NO_HOSTS,
@@ -356,6 +360,34 @@ describe('host OS channels', () => {
     expect(await invoke('ssh.setHostOs', { host: 'box:22', os: 'beos' })).toMatchObject({ ok: false });
     expect(await invoke('ssh.setHostOs', { host: 'box:22', os: null, extra: 1 })).toMatchObject({ ok: false });
     expect(ssh.setHostOs).not.toHaveBeenCalled();
+  });
+});
+
+describe('ssh snippet run channels', () => {
+  it('run and preview for the calling window; a run can only turn Enter off', async () => {
+    const runSnippet = vi.fn().mockResolvedValue(undefined);
+    const previewSnippet = vi.fn().mockResolvedValue({ text: 'echo ••••', revision: 'r' });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: { ...NO_SSH, runSnippet, previewSnippet },
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      transfers: NO_TRANSFERS,
+    });
+    const window = { id: 7 };
+    const request = { sessionId: 's1', snippetId: 'a', revision: 'r', values: { x: '1' }, bracketed: true };
+    expect(await invokeAs(window, 'ssh.runSnippet', request)).toEqual({ ok: true, value: {} });
+    expect(runSnippet).toHaveBeenCalledWith(window, request);
+    expect(await invokeAs(window, 'ssh.runSnippet', { ...request, enter: true })).toMatchObject({ ok: false });
+    expect(await invokeAs(window, 'ssh.runSnippet', { ...request, script: 'rm -rf ~' })).toMatchObject({ ok: false });
+    expect(await invokeAs(window, 'ssh.previewSnippet', { snippetId: 'a', values: {} })).toEqual({
+      ok: true,
+      value: { text: 'echo ••••', revision: 'r' },
+    });
+    expect(previewSnippet).toHaveBeenCalledWith(window, { snippetId: 'a', values: {} });
   });
 });
 

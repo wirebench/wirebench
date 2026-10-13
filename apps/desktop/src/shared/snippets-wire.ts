@@ -68,6 +68,29 @@ export const sshListSnippetsResponseSchema = z.object({
 
 export const sshSaveSnippetsRequestSchema = z.strictObject({ file: snippetsFileWireSchema });
 
+/**
+ * Types the **saved** snippet `snippetId` into a session this window owns. `revision` is the one the renderer
+ * showed; `enter` can only turn the snippet's own Enter off; `skip` is how many characters the user already
+ * typed (an inline suggestion). Values never hold a secret: secrets are resolved by main.
+ */
+export const sshRunSnippetRequestSchema = z.strictObject({
+  sessionId: z.string().min(1),
+  snippetId: z.string().min(1),
+  revision: z.string(),
+  values: z.record(z.string(), z.string()),
+  bracketed: z.boolean(),
+  enter: z.literal(false).optional(),
+  skip: z.number().int().min(0).optional(),
+});
+
+export const sshPreviewSnippetRequestSchema = z.strictObject({
+  snippetId: z.string().min(1),
+  values: z.record(z.string(), z.string()),
+});
+
+/** The expansion with every secret as `••••`, and the revision it was made from. */
+export const sshPreviewSnippetResponseSchema = z.object({ text: z.string(), revision: z.string() });
+
 export type SnippetVariableWire = z.infer<typeof snippetVariableWireSchema>;
 export type SnippetWire = z.infer<typeof snippetWireSchema>;
 export type SnippetPackageWire = z.infer<typeof snippetPackageWireSchema>;
@@ -75,3 +98,6 @@ export type SnippetsFileWire = z.infer<typeof snippetsFileWireSchema>;
 export type SnippetListItemWire = z.infer<typeof snippetListItemWireSchema>;
 export type SnippetProblemWire = z.infer<typeof snippetProblemWireSchema>;
 export type SshListSnippetsResponse = z.infer<typeof sshListSnippetsResponseSchema>;
+export type SshRunSnippetRequest = z.infer<typeof sshRunSnippetRequestSchema>;
+export type SshPreviewSnippetRequest = z.infer<typeof sshPreviewSnippetRequestSchema>;
+export type SshPreviewSnippetResponse = z.infer<typeof sshPreviewSnippetResponseSchema>;
