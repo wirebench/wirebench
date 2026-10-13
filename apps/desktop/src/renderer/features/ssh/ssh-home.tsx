@@ -555,6 +555,9 @@ function KnownHostsPanel() {
   const [entries, setEntries] = useState<readonly SshKnownHostWire[]>();
   const [error, setError] = useState<string>();
   const [forgetting, setForgetting] = useState<SshKnownHostWire>();
+  const setImportOpen = useHostsStore((s) => s.setKnownHostsImportOpen);
+  // An import writes keys from the dialog in the Hosts sidebar; the list reads again when it does.
+  const revision = useHostsStore((s) => s.knownHostsRevision);
 
   const load = async (): Promise<void> => {
     const result = await ipc().ssh.knownHosts(undefined);
@@ -567,7 +570,7 @@ function KnownHostsPanel() {
   };
   useEffect(() => {
     void load();
-  }, []);
+  }, [revision]);
 
   const forget = async (entry: SshKnownHostWire): Promise<void> => {
     const result = await ipc().ssh.forgetHostKey({ host: entry.host, keyType: entry.keyType });
@@ -577,9 +580,18 @@ function KnownHostsPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-fg-subtle">
-        The host keys you trusted on this machine. Forgetting one makes the next connection to that host ask again.
-      </p>
+      <div className="flex items-start gap-3">
+        <p className="flex-1 text-sm text-fg-subtle">
+          The host keys you trusted on this machine. Forgetting one makes the next connection to that host ask again.
+        </p>
+        <Button
+          onClick={() => {
+            setImportOpen(true);
+          }}
+        >
+          Import known hosts…
+        </Button>
+      </div>
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {error}

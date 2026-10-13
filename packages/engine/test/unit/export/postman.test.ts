@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ExportError } from '../../../src/errors.js';
 import { exportCollection } from '../../../src/export/index.js';
 import type { RestFolder, RestRequestDef } from '../../../src/rest/model.js';
+import { createRestRequest } from '../../../src/rest/model.js';
 import { apiFromPostmanCollection } from '../../../src/rest/postman/map.js';
 import { parsePostmanCollectionText } from '../../../src/rest/postman/parse.js';
 import { parsePostmanVariablesText } from '../../../src/rest/postman/variables.js';
@@ -164,5 +165,37 @@ describe('Postman export: API and folder scripts (#334)', () => {
     const imported = apiFromPostmanCollection(parsePostmanCollectionText(result.files[0]!.text), { newId });
     expect(imported.api.scripts?.pre?.text).toBe('pm.variables.set("api", "1");\n');
     expect(imported.api.folders[0]?.scripts?.post?.text).toBe('pm.test("folder", () => {});\n');
+  });
+});
+
+describe('Postman export: a GraphQL body (#77)', () => {
+  const graphql: RestRequestDef = {
+    ...createRestRequest('Product', { id: 'req-gql', slug: 'product', method: 'POST', url: '/graphql' }),
+    body: { kind: 'graphql', query: 'query P($id: ID!) { product(id: $id) { name } }', variables: '{"id": "${id}"}' },
+  };
+  const withGraphql = withRestApis(project, [
+    { ...restApisOf(project)[0]!, requests: [...restApisOf(project)[0]!.requests, graphql] },
+  ]);
+
+  it('writes mode graphql, and comes back as the same body', () => {
+    const result = exportCollection('postman', {
+      project: withGraphql,
+      target: { kind: 'container', id: restId },
+      newId,
+    });
+    const text = result.files[0]!.text;
+    expect(text).toContain('"mode": "graphql"');
+    const imported = apiFromPostmanCollection(parsePostmanCollectionText(text), { newId });
+    expect(imported.api.requests.find((r) => r.name === 'Product')?.body).toEqual(graphql.body);
+  });
+
+  it('writes the JSON it is sent as to an OpenCollection', () => {
+    const result = exportCollection('opencollection', {
+      project: withGraphql,
+      target: { kind: 'container', id: restId },
+      newId,
+    });
+    const all = result.files.map((f) => f.text).join('\n');
+    expect(all).toContain('"query":"query P($id: ID!) { product(id: $id) { name } }","variables":{"id": "{{id}}"}');
   });
 });

@@ -132,6 +132,11 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
    * a sequence step reads its subject here and records the values to mask before its rows exist.
    */
   readonly onSent?: (sent: SentRequest) => void | Promise<void>;
+  /**
+   * A send the app makes for its own use, such as fetching a GraphQL schema (#77): the request's
+   * scripts do not run, and it leaves no History entry and no HTTP Log row. It is still audited.
+   */
+  readonly quiet?: boolean;
 }
 
 /** The live events a send reports, by protocol: a SOAP send reports none. */
@@ -455,7 +460,7 @@ async function sendReserved(
 ): Promise<SendSummary> {
   const { adHoc } = options;
   // Type-checked before anything is resolved: a script that does not check never reaches the wire.
-  const scripts = await scriptsForSend(deps, adHoc === undefined ? requestId : undefined);
+  const scripts = await scriptsForSend(deps, adHoc === undefined && options.quiet !== true ? requestId : undefined);
   const located = adHoc === undefined ? savedContext(deps, requestId, options.envId) : adHocContext(deps, adHoc.input);
   const item =
     located === undefined
@@ -491,7 +496,9 @@ async function sendReserved(
     ...masks,
     ...(options.envId !== undefined ? { envId: options.envId } : {}),
   };
-  const failures = deferredSendFailure(await desktopSendHost(deps, send));
+  const desktopHost = await desktopSendHost(deps, send);
+  // A quiet send reports no failure row: its caller hears the error.
+  const failures = deferredSendFailure(options.quiet === true ? { ...desktopHost, events: {} } : desktopHost);
   const { host } = failures;
   const stepDeps = options.onScriptsRan !== undefined ? { ...deps, onScriptsRan: options.onScriptsRan } : deps;
   const sequence = options.sequence ?? sessionValuesFor(stepDeps, projectId);
@@ -539,7 +546,7 @@ async function sendReserved(
       ...recordedOf(item, masks, options),
       handshakeLogged: send.handshakeLogged === true,
     };
-    await record(deps, recorded, sent, full, summarised.unredacted);
+    if (options.quiet !== true) await record(deps, recorded, sent, full, summarised.unredacted);
     reportSend(deps, options, projectId, located, item, auditWorkspaceId, () => sentAudit(sent, full));
     // After History is written, so a result never reaches it (request-assertions spec §6).
     const own = options.checkAssertions === true && 'assertions' in item.request ? (item.request.assertions ?? []) : [];

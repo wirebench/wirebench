@@ -391,6 +391,13 @@ export function toEngineBody(body: RestBodyWire): RestBody {
       };
     case 'binary':
       return { kind: 'binary', source: body.source, contentType: body.contentType };
+    case 'graphql':
+      return {
+        kind: 'graphql',
+        query: body.query,
+        variables: body.variables,
+        ...(body.operationName !== undefined && body.operationName !== '' ? { operationName: body.operationName } : {}),
+      };
     default:
       return { kind: 'none' };
   }

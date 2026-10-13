@@ -14,6 +14,7 @@ import { encodeBody } from '../http/charset.js';
 import { mediaTypeOf } from '../http/media-type.js';
 import type { KeyValueEntry, MultipartFormPart, RawLanguage, RestBody } from './model.js';
 import { RAW_LANGUAGE_CONTENT_TYPES } from './model.js';
+import { lowerGraphqlBody } from './graphql/body.js';
 
 const CRLF = '\r\n';
 
@@ -173,6 +174,9 @@ export async function encodeRestBody(body: RestBody, options: EncodeBodyOptions 
       };
     case 'multipart':
       return encodeMultipart(body.parts, options);
+    case 'graphql':
+      // Lowered by expansion before any send gets here; encoded the same way for a caller that did not.
+      return encodeRestBody(lowerGraphqlBody(body), options);
     case 'binary': {
       const resolveFile = options.resolveFile;
       if (resolveFile === undefined) {
@@ -192,6 +196,8 @@ export function bodyLanguage(body: RestBody): RawLanguage | 'form' | undefined {
   switch (body.kind) {
     case 'raw':
       return body.language;
+    case 'graphql':
+      return 'json';
     case 'form':
     case 'multipart':
       return 'form';

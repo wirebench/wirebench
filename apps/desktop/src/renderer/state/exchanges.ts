@@ -7,6 +7,7 @@ import { openSecretSourcesDialog } from '../features/secret-sources/actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import { recordContractProblems } from '../features/rest-editor/response/contract.js';
+import { recordGraphqlProblems } from '../features/rest-editor/response/graphql.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type { EnvSendResult, ExchangeLoggedEvent } from '../../shared/wire-types.js';
 import type { GrpcExchangeSummary, GrpcLiveEvent, GrpcResponseMessageWire } from '../../shared/kinds/grpc/wire.js';
@@ -969,6 +970,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       useProblemsStore.getState().clearSource('send', requestId);
       // Nor does the last response's contract result say anything about the one on its way.
       recordContractProblems(requestId, undefined);
+      recordGraphqlProblems(requestId, undefined);
 
       // A send this one replaces must not keep streaming unseen: its state is about to be dropped.
       void get()
@@ -1033,6 +1035,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         useProblemsStore.getState().add(expansionProblems(requestId, unresolved));
       }
       recordContractProblems(requestId, result.value.contract);
+      recordGraphqlProblems(requestId, result.value.graphql);
       update((draft) => {
         draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         // The same push the SOAP path does: the HTTP Log is one list across every protocol.
@@ -1074,6 +1077,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         .cancelOpenRestSends([requestId])
         .catch(() => undefined);
       recordContractProblems(requestId, undefined);
+      recordGraphqlProblems(requestId, undefined);
       update((draft) => {
         delete draft.restByRequest[requestId];
       });

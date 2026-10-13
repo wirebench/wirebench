@@ -7,6 +7,10 @@ import {
   sshDataEventSchema,
   sshExitEventSchema,
   sshImportApplyRequestSchema,
+  sshKnownHostsImportApplyRequestSchema,
+  sshKnownHostsImportApplyResponseSchema,
+  sshKnownHostsImportPreviewRequestSchema,
+  sshKnownHostsImportPreviewResponseSchema,
   sshImportApplyResponseSchema,
   sshImportPreviewRequestSchema,
   sshImportPreviewResponseSchema,
@@ -35,6 +39,16 @@ import {
   forwardStopAllRequestSchema,
   forwardStopRequestSchema,
 } from './forward-wire.js';
+import {
+  sessionLogHostRequestSchema,
+  sessionLogListResponseSchema,
+  sessionLogReadResponseSchema,
+  sessionLogRequestSchema,
+  sessionLogSearchRequestSchema,
+  sessionLogSearchResponseSchema,
+  sessionLogSetSwitchRequestSchema,
+  sessionLogSwitchesResponseSchema,
+} from './session-log-wire.js';
 import {
   sshListSnippetsResponseSchema,
   sshPreviewSnippetRequestSchema,
@@ -981,6 +995,17 @@ export const channels = {
     setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
+    // Trusted keys from a known_hosts file (#418): the file's path never crosses.
+    knownHostsImportPreview: defineChannel(
+      'ssh.knownHostsImportPreview',
+      sshKnownHostsImportPreviewRequestSchema,
+      sshKnownHostsImportPreviewResponseSchema,
+    ),
+    knownHostsImportApply: defineChannel(
+      'ssh.knownHostsImportApply',
+      sshKnownHostsImportApplyRequestSchema,
+      sshKnownHostsImportApplyResponseSchema,
+    ),
     // Keychain keys (#409): only the public half crosses; the private key and passphrase stay in main.
     generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
@@ -1029,6 +1054,16 @@ export const channels = {
     stop: defineChannel('forward.stop', forwardStopRequestSchema, z.object({})),
     stopAll: defineChannel('forward.stopAll', forwardStopAllRequestSchema, z.object({})),
     freePort: defineChannel('forward.freePort', forwardFreePortRequestSchema, forwardFreePortResponseSchema),
+  },
+  // Session logs (#414). Registered only while the SSH area is on; each acts on the calling window's workspace.
+  sessionLog: {
+    switches: defineChannel('sessionLog.switches', z.object({}), sessionLogSwitchesResponseSchema),
+    setSwitch: defineChannel('sessionLog.setSwitch', sessionLogSetSwitchRequestSchema, z.object({})),
+    list: defineChannel('sessionLog.list', sessionLogHostRequestSchema, sessionLogListResponseSchema),
+    read: defineChannel('sessionLog.read', sessionLogRequestSchema, sessionLogReadResponseSchema),
+    search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
+    delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),
+    reveal: defineChannel('sessionLog.reveal', sessionLogRequestSchema, z.object({})),
   },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,

@@ -1,7 +1,6 @@
 # SSH area slice 4: port forwarding and split terminals — design
 
-**Issue:** #358 · **Date:** 2026-10-12 · **Status:** approved in session 2026-10-12 (design sections signed
-off, spec written from them)
+**Issue:** #358 · **Date:** 2026-10-12 · **Status:** implemented (#456–#465; the SSH area is `stable`)
 
 Builds on: the SSH area design (`docs/specs/2026-10-08-ssh-area-design.md`, slice S4 in its table, D1 feature
 stage, D2 host model and inheritance, D4 session model, amendments A1–A7), the SFTP design

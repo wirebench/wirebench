@@ -1,9 +1,11 @@
 export * from './errors.js';
 export * from './model.js';
+export * from './host-env.js';
 export * from './forward-rules.js';
 export * from './socks5.js';
 export * from './resolve.js';
 export * from './known-hosts.js';
+export * from './known-hosts-file.js';
 export * from './dial.js';
 export * from './forward.js';
 export * from './session.js';
@@ -14,3 +16,4 @@ export * from './keygen.js';
 export * from './install.js';
 export * from './snippets.js';
 export * from './stream-masker.js';
+export * from './text-log.js';

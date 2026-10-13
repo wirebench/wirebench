@@ -32,6 +32,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show WS-Security | — | — |
 | Show Hosts | — | — |
 | Show Port Forwarding | — | — |
+| Show Snippets | — | — |
 | Show Cookies | — | — |
 | Show Settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
 | Cycle Theme (Dark, Light, System) | — | — |
@@ -52,6 +53,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: New Group… | — | — |
 | Hosts: Edit Host… | — | — |
 | Hosts: Import from SSH Config… | — | — |
+| Hosts: Import Known Hosts… | — | — |
 | Connect to Host | — | — |
 | Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
 | Open Files on Host… | — | — |
@@ -69,6 +71,11 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Start Port Forward… | — | — |
 | Stop Port Forward… | — | — |
 | Stop All Port Forwards | — | — |
+| Snippets: New Snippet… | — | — |
+| Snippets: Edit Snippet… | — | — |
+| Snippets: Run Snippet | — | — |
+| Run Snippet… | — | — |
+| Terminal: Snippets… | <kbd>⌘;</kbd> | <kbd>Ctrl+;</kbd> |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |

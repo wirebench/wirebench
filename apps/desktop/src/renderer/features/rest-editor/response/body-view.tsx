@@ -19,7 +19,7 @@ import { InspectorIconButton } from '../../request-editor/inspectors/inspector-s
 import { formatBytes } from '../../../lib/format-size.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { formatRawBody } from '../body-tab.js';
-import { contractRange, setContractMarkers } from '../../../editor/markers.js';
+import { contractRange, setContractMarkers, setGraphqlResponseMarkers } from '../../../editor/markers.js';
 import { useContractRevealStore } from './contract.js';
 import { HtmlPreview } from './html-preview.js';
 import type * as Monaco from 'monaco-editor';
@@ -38,6 +38,7 @@ export interface BodyViewExchange {
   readonly language: RestExchangeSummary['language'];
   readonly decodeNote?: string | undefined;
   readonly contract?: RestExchangeSummary['contract'];
+  readonly graphql?: RestExchangeSummary['graphql'];
   readonly http: { readonly bodyBase64: string; readonly headers: Readonly<Record<string, string>> };
 }
 
@@ -125,6 +126,7 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
 
   const [editor, setEditor] = useState<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
   const problems = exchange.contract?.problems;
+  const graphql = exchange.graphql;
 
   // Markers follow the text the editor shows: a pointer lands on other lines once the body is
   // pretty-printed, so they are re-placed whenever that text (or the result) changes.
@@ -137,8 +139,9 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
     if (editor === undefined) {
       return;
     }
+    setGraphqlResponseMarkers(editor.getModel(), graphql, pretty);
     setContractMarkers(editor.getModel(), problems ?? [], pretty);
-  }, [editor, mode, pretty, problems]);
+  }, [editor, mode, pretty, problems, graphql]);
 
   const pending = useContractRevealStore((state) =>
     requestId !== undefined && state.pending?.requestId === requestId ? state.pending : undefined,

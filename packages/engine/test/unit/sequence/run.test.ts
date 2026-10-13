@@ -337,4 +337,18 @@ describe('runSequence', () => {
       scriptsOff: true,
     });
   });
+  it("fails a step on the protocol's own failed check: a GraphQL response's errors (#77)", async () => {
+    const send: SequenceStepSender = () =>
+      Promise.resolve({
+        subject: json({ errors: [{ message: 'no' }] }),
+        checks: [
+          { type: 'graphql', label: 'GraphQL errors', outcome: 'failed', expected: 'none', actual: '1 error: no' },
+        ],
+      });
+    const result = await runSequence(steps(step('login')), project(), send);
+    expect(result.steps[0]).toMatchObject({
+      outcome: 'failed',
+      assertions: [{ type: 'graphql', label: 'GraphQL errors', outcome: 'failed' }],
+    });
+  });
 });

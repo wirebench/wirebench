@@ -37,11 +37,15 @@ export function sftpServerPath(): string | undefined {
 export interface SshFixture {
   readonly port: number;
   readonly hostKey: KnownHostEntry;
+  /** The host key as a known_hosts line has it after the names: `ssh-rsa AAAA…`. */
+  readonly hostPublicKey: string;
   lastResize?: { cols: number; rows: number };
   /** SSH connections the server has accepted so far. */
   readonly connections: number;
   /** Every `tcpip-forward` global request granted, in order, and whether it was cancelled since. */
   readonly remoteForwards: { bindAddr: string; bindPort: number; cancelled: boolean }[];
+  /** Every `env` request on a session channel, in order, and whether it was accepted. */
+  readonly envRequests: { key: string; val: string; accepted: boolean }[];
   /** Resets every client's TCP connection, as a network that went away would: no exit status, no disconnect. */
   drop(): void;
   close(): Promise<void>;
@@ -69,6 +73,8 @@ export async function startSshFixture(options: {
   tcpipForward?: boolean;
   /** Refuse direct-tcpip channels and `tcpip-forward` requests, as `AllowTcpForwarding no` would. */
   refuseForward?: boolean;
+  /** Accept `env` requests only for these names, as `AcceptEnv` would; without it every name is accepted. */
+  acceptEnv?: readonly string[];
 }): Promise<SshFixture> {
   const sftp = options.sftp;
   const sftpBinary = typeof sftp === 'object' ? findSftpServer() : null;
@@ -94,7 +100,9 @@ export async function startSshFixture(options: {
       return connections;
     },
     remoteForwards: [],
+    envRequests: [],
     hostKey: { host: '', keyType: keyTypeOf(publicBlob), fingerprint: fingerprintOf(publicBlob) },
+    hostPublicKey: `${keyTypeOf(publicBlob)} ${publicBlob.toString('base64')}`,
     drop: () => {
       for (const client of clients) (client as unknown as { _sock: net.Socket })._sock.resetAndDestroy();
     },
@@ -144,6 +152,12 @@ export async function startSshFixture(options: {
         session.on('pty', (accept, _reject, info) => {
           fixture.lastResize = { cols: info.cols, rows: info.rows };
           accept();
+        });
+        session.on('env', (accept, reject, info) => {
+          const accepted = options.acceptEnv === undefined || options.acceptEnv.includes(info.key);
+          fixture.envRequests.push({ key: info.key, val: info.val, accepted });
+          if (accepted) accept?.();
+          else reject?.();
         });
         session.on('window-change', (accept, _reject, info) => {
           fixture.lastResize = { cols: info.cols, rows: info.rows };

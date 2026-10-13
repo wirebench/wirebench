@@ -4,6 +4,7 @@ import { WirebenchError, WorkspaceError, nodeFs, writeFileAtomic } from '@wirebe
 import {
   EMPTY_HOSTS_FILE,
   SshModelError,
+  envSecretName,
   listResolvedHosts,
   parseHostsFile,
   secretNameOf,
@@ -14,15 +15,18 @@ import type {
   GroupEntry,
   HostEntry,
   HostsFile,
+  ResolvedEnvVar,
   ResolvedHost,
   SshAuth,
   SshSettings,
 } from '@wirebench/ssh';
 import type {
+  EnvVarWire,
   ForwardEntryWire,
   GroupEntryWire,
   HostEntryWire,
   HostsFileWire,
+  ResolvedEnvVarWire,
   ResolvedHostWire,
   SshAuthWire,
   SshListHostsResponse,
@@ -195,22 +199,61 @@ function forwardFromWire(f: ForwardEntryWire): ForwardEntry {
     ...(f.enabled === undefined ? {} : { enabled: f.enabled }),
   };
 }
-const hostToWire = (h: HostEntry): HostEntryWire => ({ ...h, tags: [...h.tags], ssh: settingsToWire(h.ssh) });
+/** A `${secret:NAME}` value crosses as its name; anything else as text. */
+function envVarToWire(name: string, value: string): EnvVarWire {
+  const secret = envSecretName(value);
+  return secret === undefined ? { name, value } : { name, secret };
+}
+function envToWire(env: Readonly<Record<string, string>> | undefined): EnvVarWire[] | undefined {
+  return env === undefined ? undefined : Object.entries(env).map(([name, value]) => envVarToWire(name, value));
+}
+const resolvedEnvToWire = ({ name, value, from }: ResolvedEnvVar): ResolvedEnvVarWire => ({
+  ...envVarToWire(name, value),
+  from,
+});
+/** Neither the name nor the text is echoed back: either may be a value typed into the wrong field. */
+function envFromWire(env: readonly EnvVarWire[] | undefined): Record<string, string> | undefined {
+  if (env === undefined || env.length === 0) return undefined;
+  const out: Record<string, string> = {};
+  for (const variable of env) {
+    if (Object.hasOwn(out, variable.name)) {
+      throw new SshModelError('ssh-hosts-invalid', 'an environment variable is listed twice', {});
+    }
+    if ('secret' in variable) out[variable.name] = token(variable.secret);
+    else if (variable.value.includes('${secret:')) {
+      throw new SshModelError(
+        'ssh-hosts-invalid',
+        'an environment variable holds ${secret:…} as text; choose Secret',
+        {},
+      );
+    } else out[variable.name] = variable.value;
+  }
+  return out;
+}
+const hostToWire = (h: HostEntry): HostEntryWire => ({
+  ...h,
+  tags: [...h.tags],
+  ssh: settingsToWire(h.ssh),
+  env: envToWire(h.env),
+});
 const hostFromWire = (h: HostEntryWire): HostEntry => ({
   ...h,
   ssh: settingsFromWire(h.ssh),
+  env: envFromWire(h.env),
   forwards: h.forwards?.map(forwardFromWire),
 });
 const groupToWire = (g: GroupEntry): GroupEntryWire => ({
   ...g,
   tags: [...g.tags],
   ssh: settingsToWire(g.ssh),
+  env: envToWire(g.env),
   groups: g.groups.map(groupToWire),
   hosts: g.hosts.map(hostToWire),
 });
 const groupFromWire = (g: GroupEntryWire): GroupEntry => ({
   ...g,
   ssh: settingsFromWire(g.ssh),
+  env: envFromWire(g.env),
   forwards: g.forwards?.map(forwardFromWire),
   groups: g.groups.map(groupFromWire),
   hosts: g.hosts.map(hostFromWire),
@@ -231,4 +274,5 @@ const resolvedToWire = (h: ResolvedHost): ResolvedHostWire => ({
   path: [...h.path],
   ssh: { ...h.ssh, auth: { value: authToWire(h.ssh.auth.value), from: h.ssh.auth.from } },
   forwards: [...h.forwards],
+  env: h.env.map(resolvedEnvToWire),
 });

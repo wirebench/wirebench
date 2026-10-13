@@ -510,6 +510,10 @@ function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[
     return { kind: 'multipart', parts };
   }
 
+  if (body.mode === 'graphql' && body.graphql !== undefined) {
+    return { kind: 'graphql', query: body.graphql.query, variables: body.graphql.variables };
+  }
+
   if (body.mode === 'file') {
     const ctHeader = headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
     return {

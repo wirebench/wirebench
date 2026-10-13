@@ -8,6 +8,44 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Import trusted keys from known_hosts.** The Known hosts view (and **Hosts: Import Known Hosts…**)
+  reads `~/.ssh/known_hosts` or a chosen file and trusts its keys for the hosts in `hosts.yaml` they
+  name: plain and `[host]:port` names, comma lists, wildcard patterns with `!` negation, and hashed
+  names, which are matched against each host's address and port. The preview lists the keys to trust,
+  the keys that differ from one already trusted (kept unless you tick **Replace**, which then needs the
+  same changed-key confirmation as a connect) and what is not imported: `@cert-authority` and
+  `@revoked` lines, lines that name no host, a second key of a type a host already has, and lines that
+  cannot be read (#418).
+
+- **Session logs for SSH terminals.** A host's details gain **Session logs**: a **Log sessions** switch
+  (also on a group's menu, inherited by the hosts inside) and the logs this machine kept, newest first,
+  which can be searched, opened and filtered, revealed in the file manager or deleted. A log is the
+  session's output as plain text with escape sequences removed, beside a `.json` file with the host,
+  user, start, end and exit code; what a full-screen program draws is left out. Passwords, keys and
+  passphrases used to connect, and secrets typed by a snippet, are masked, and only output is written.
+  Logs and switches stay on this machine. Settings › Terminal sets the size limit for all logs (500 MB
+  by default; the oldest go first) and can keep the raw stream too (#414).
+
+- **GraphQL requests.** A REST request's body can be **GraphQL**: a query or mutation, its variables
+  and, for a document with several operations, the one to run. It goes out as the JSON body a
+  GraphQL server reads, with the API's auth, environments, History, scripts, runs and sequences. An
+  API's menu gains **New GraphQL request**, and the explorer shows `GQL` for one. **Fetch schema**
+  sends the introspection query through the request itself, and **Import schema…** reads SDL or an
+  introspection result. Either way the schema is stored in the project as
+  `apis/<api>/graphql/schema.graphql`. With a schema, the query editor completes, validates and
+  documents on hover, and the variables editor completes and type-checks the operation's variables.
+  A response's `errors` show on a chip, on the body and in Problems, and fail a run's **GraphQL
+  errors** check, even on HTTP 200. `data` that does not match the schema is a warning. Postman,
+  OpenCollection and `.http` GraphQL requests now import as GraphQL, and a Postman export writes them
+  back as GraphQL (#77).
+
+- **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
+  and groups, merged by name down the tree so a nearer level wins for each variable; a value is
+  text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the
+  server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
+  screen. The host form edits them and shows the inherited ones with their group, the details panel
+  lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
+
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as
@@ -50,6 +88,13 @@ All notable changes to this project are documented here. The format follows
   after cursor or editing keys, history recall or a paste until the next Enter, on the alternate screen
   (an editor or pager), or while disconnected. **Settings › Terminal › Suggest snippets**
   (`terminal.snippetSuggestions`, on by default) turns it off (#454).
+- **Snippets from the palette.** ⌘K **Run Snippet…** lists the snippets, matched on name, package, tags and
+  first line; Enter runs the one picked into the terminal tab in front (through the run dialog when the run
+  must ask), or opens the run dialog when no terminal is in front. ⌘P lists them under a **Snippets**
+  heading. Inside a terminal, ⌘; (Ctrl+; on Windows and Linux) opens a snippet picker over it without the
+  shell seeing the key: Enter runs the snippet there, ⌥Enter inserts it without pressing Enter, Escape returns
+  to the shell. New commands: **Show Snippets**, **Snippets: New Snippet…**, **Snippets: Edit Snippet…**,
+  **Snippets: Run Snippet** and **Terminal: Snippets…** (#453).
 - **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
   keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
   or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,
@@ -129,9 +174,11 @@ All notable changes to this project are documented here. The format follows
 
 - **Project format 10.** Auth can be a client-signed JWT (`type: jwt`), Digest (`type: digest`) or
   AWS Signature v4 (`type: aws-sigv4`), and OAuth 2 gains the password and device-code grants and the
-  assertion and certificate client authentications; a project saved by this version cannot be opened
-  by an older one, which refuses it as made by a newer Wirebench. A version-9 project opens unchanged
-  (#338, #339, #348).
+  assertion and certificate client authentications. A REST request's body can be GraphQL
+  (`kind: graphql`, with its query in `<Request>.body.graphql`), and an API can record its GraphQL
+  schema (`graphqlSchema`). A project saved by this version cannot be opened by an older one, which
+  refuses it as made by a newer Wirebench. A version-9 project opens unchanged (#338, #339, #348,
+  #77).
 
 ### Fixed
 

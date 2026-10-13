@@ -40,6 +40,12 @@ export const forwardEntryWireSchema = z.union([
   }),
 ]);
 
+/** A variable as the form edits it: literal text, or the NAME of a secret (never a token, never a value). */
+export const envVarWireSchema = z.union([
+  z.strictObject({ name: z.string(), value: z.string() }),
+  z.strictObject({ name: z.string(), secret: z.string() }),
+]);
+
 export const hostEntryWireSchema = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -47,6 +53,7 @@ export const hostEntryWireSchema = z.strictObject({
   tags: z.array(z.string()),
   protected: z.boolean().optional(),
   ssh: sshSettingsWireSchema,
+  env: z.array(envVarWireSchema).optional(),
   forwards: z.array(forwardEntryWireSchema).optional(),
 });
 
@@ -57,6 +64,7 @@ export interface HostEntryWire {
   tags: string[];
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
+  env?: EnvVarWire[] | undefined;
   forwards?: ForwardEntryWire[] | undefined;
 }
 export interface GroupEntryWire {
@@ -65,6 +73,7 @@ export interface GroupEntryWire {
   tags: string[];
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
+  env?: EnvVarWire[] | undefined;
   forwards?: ForwardEntryWire[] | undefined;
   groups: GroupEntryWire[];
   hosts: HostEntryWire[];
@@ -77,6 +86,7 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
     tags: z.array(z.string()),
     protected: z.boolean().optional(),
     ssh: sshSettingsWireSchema,
+    env: z.array(envVarWireSchema).optional(),
     forwards: z.array(forwardEntryWireSchema).optional(),
     groups: z.array(groupEntryWireSchema),
     hosts: z.array(hostEntryWireSchema),
@@ -109,6 +119,14 @@ export const resolvedForwardWireSchema = z.object({
   offBy: forwardFromWireSchema.optional(),
 });
 
+/** A variable after inheritance: text or a secret name, and the level it came from (nearest wins per name). */
+export const resolvedEnvVarWireSchema = z.object({
+  name: z.string(),
+  value: z.string().optional(),
+  secret: z.string().optional(),
+  from: forwardFromWireSchema,
+});
+
 export const resolvedHostWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -126,6 +144,7 @@ export const resolvedHostWireSchema = z.object({
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
+  env: z.array(resolvedEnvVarWireSchema),
 });
 
 export const sshListHostsResponseSchema = z.object({
@@ -141,6 +160,8 @@ export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
 export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
+export type EnvVarWire = z.infer<typeof envVarWireSchema>;
+export type ResolvedEnvVarWire = z.infer<typeof resolvedEnvVarWireSchema>;
 export type ResolvedForwardWire = z.infer<typeof resolvedForwardWireSchema>;
 export type SshProblemWire = z.infer<typeof sshProblemSchema>;
 export type SshListHostsResponse = z.infer<typeof sshListHostsResponseSchema>;
@@ -317,3 +338,55 @@ export type SshPlannedKeyWire = z.infer<typeof sshPlannedKeyWireSchema>;
 export type SshKeyChoiceWire = z.infer<typeof sshKeyChoiceWireSchema>;
 export type SshImportApplyRequest = z.infer<typeof sshImportApplyRequestSchema>;
 export type SshImportApplyResponse = z.infer<typeof sshImportApplyResponseSchema>;
+
+/**
+ * Importing trusted host keys from an OpenSSH known_hosts file (#418). As with the config import, the
+ * renderer never sends a path: `user-known-hosts` is `~/.ssh/known_hosts` resolved in main, `pick` runs the
+ * native picker. Only hosts in the window's hosts.yaml gain a key.
+ */
+export const sshKnownHostsImportPreviewRequestSchema = z.strictObject({ source: z.enum(['user-known-hosts', 'pick']) });
+export const sshKnownHostsImportRowSchema = z.strictObject({
+  /** `address:port`, as the trusted-keys store keeps it. */
+  host: z.string(),
+  keyType: z.string(),
+  fingerprint: z.string(),
+  /** The hosts.yaml names of the hosts at that address and port. */
+  names: z.array(z.string()),
+  line: z.number(),
+});
+export const sshKnownHostsImportPreviewSchema = z.strictObject({
+  previewId: z.string(),
+  /** The file read, as shown to the user. */
+  source: z.string(),
+  add: z.array(sshKnownHostsImportRowSchema),
+  /** Keys that differ from a stored one: replaced only when chosen and confirmed. */
+  conflicts: z.array(sshKnownHostsImportRowSchema.extend({ previous: z.string() })),
+  trusted: z.array(sshKnownHostsImportRowSchema),
+  skipped: z.array(
+    z.strictObject({
+      line: z.number(),
+      reason: z.enum(['cert-authority', 'revoked', 'no-host', 'duplicate', 'unreadable']),
+    }),
+  ),
+});
+export const sshKnownHostsImportPreviewResponseSchema = z.union([
+  z.strictObject({ cancelled: z.literal(true) }),
+  sshKnownHostsImportPreviewSchema,
+]);
+export const sshKnownHostsImportApplyRequestSchema = z.strictObject({
+  previewId: z.string(),
+  /** The conflicts the user chose to replace, by host and key type. */
+  replace: z.array(z.strictObject({ host: z.string(), keyType: z.string() })),
+});
+export const sshKnownHostsImportApplyResponseSchema = z.strictObject({
+  added: z.number(),
+  replaced: z.number(),
+  /** Stored keys left alone because they were not chosen for replacing. */
+  kept: z.number(),
+});
+
+export type SshKnownHostsImportPreviewRequest = z.infer<typeof sshKnownHostsImportPreviewRequestSchema>;
+export type SshKnownHostsImportPreview = z.infer<typeof sshKnownHostsImportPreviewSchema>;
+export type SshKnownHostsImportPreviewResponse = z.infer<typeof sshKnownHostsImportPreviewResponseSchema>;
+export type SshKnownHostsImportApplyRequest = z.infer<typeof sshKnownHostsImportApplyRequestSchema>;
+export type SshKnownHostsImportApplyResponse = z.infer<typeof sshKnownHostsImportApplyResponseSchema>;

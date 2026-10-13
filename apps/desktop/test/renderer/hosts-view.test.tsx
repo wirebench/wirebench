@@ -66,6 +66,7 @@ const STATE = {
       protected: { value: false, from: 'default' as const },
       ssh: defaults,
       forwards: [],
+      env: [],
       incomplete: { field: 'user' as const },
     },
     {
@@ -77,6 +78,7 @@ const STATE = {
       protected: { value: false, from: 'default' as const },
       ssh: defaults,
       forwards: [],
+      env: [],
     },
   ],
   problems: [{ code: 'ssh-bad-yaml', message: 'could not parse' }],

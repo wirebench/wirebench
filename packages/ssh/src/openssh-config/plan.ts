@@ -1,4 +1,5 @@
 import { SshModelError } from '../errors.js';
+import { ENV_NAME } from '../host-env.js';
 import type { HostsFile } from '../model.js';
 import { listResolvedHosts, resolveSettings } from '../resolve.js';
 import { walk } from '../tree.js';
@@ -30,6 +31,8 @@ export interface PlannedHost {
   readonly reason?: string;
   readonly address: string;
   readonly ssh: PlannedSettings;
+  /** From `SetEnv`, without the variables the group already sets to the same value. */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 export interface PlannedKey {
@@ -55,7 +58,12 @@ export interface SshConfigReport {
 }
 
 export interface SshConfigImportPlan {
-  readonly group: { readonly id: string; readonly name: string; readonly ssh: PlannedSettings };
+  readonly group: {
+    readonly id: string;
+    readonly name: string;
+    readonly ssh: PlannedSettings;
+    readonly env?: Readonly<Record<string, string>>;
+  };
   readonly hosts: readonly PlannedHost[];
   readonly keys: readonly PlannedKey[];
   readonly report: SshConfigReport;
@@ -82,6 +90,7 @@ const MAPPED = new Set([
   'identityfile',
   'serveraliveinterval',
   'connecttimeout',
+  'setenv',
 ]);
 /** Options with no meaning for Wirebench: counted, not reported line by line. */
 export const IGNORED_KEYWORDS = new Set([
@@ -158,7 +167,12 @@ interface Mapped {
   /** The hops as written, outermost first; `[]` for none. */
   readonly hops: readonly string[];
   readonly identity?: string;
+  readonly env?: Readonly<Record<string, string>>;
 }
+
+/** The note when `SetEnv` values were carried: they may hold what should be a secret. */
+const SETENV_NOTE =
+  'SetEnv values are written to hosts.yaml as they are; replace any secret among them with ${secret:NAME}';
 
 const intArg = (line: SshConfigLine | undefined, min: number, max: number): number | undefined => {
   const raw = line?.args[0];
@@ -230,6 +244,24 @@ function mapEffective(
     }
     if (more.length > 0) note(`${who}: only the first IdentityFile is used; ${more.length} more not carried`);
   }
+
+  // `NAME=value`; a `${secret:…}` inside would be refused by hosts.yaml, so it is skipped like a bad entry.
+  const env: Record<string, string> = {};
+  let bad = 0;
+  for (const line of eff.setEnv) {
+    for (const arg of line.args) {
+      const at = arg.indexOf('=');
+      const name = at === -1 ? '' : arg.slice(0, at);
+      const value = arg.slice(at + 1);
+      if (!ENV_NAME.test(name) || value.includes('${secret:')) bad += 1;
+      else if (!(name in env)) env[name] = value;
+    }
+  }
+  if (bad > 0) {
+    const entries = bad === 1 ? '1 SetEnv entry is' : `${bad} SetEnv entries are`;
+    note(`${who}: ${entries} not a NAME=value Wirebench can store; not imported`);
+  }
+  if (Object.keys(env).length > 0) out.env = env;
   return out;
 }
 
@@ -311,6 +343,11 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
   const groupAuth: PlannedAuth =
     all.identity !== undefined && everyone('identity') ? keyFor(all.identity, groupId) : { kind: 'agent' };
   group.auth = groupAuth;
+  // A Host * variable goes on the group when every usable host sets that name (to any value).
+  const groupEnv: Record<string, string> = {};
+  for (const [name, value] of Object.entries(all.env ?? {})) {
+    if (usable.every((x) => x.m.env?.[name] !== undefined)) groupEnv[name] = value;
+  }
 
   // Ids (M2), in document order, after the group's.
   const ids = new Map<string, { id: string; changed?: string }>();
@@ -353,6 +390,7 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
         : keyFor(m.identity, id);
     if (!sameAuth(auth, groupAuth)) ssh.auth = auth;
     if (m.identity === undefined && groupAuth.kind === 'agent') agentHosts.push(alias);
+    const env = Object.fromEntries(Object.entries(m.env ?? {}).filter(([name, value]) => groupEnv[name] !== value));
     const address = m.address as string;
     const dup = duplicateOf(address, m.port ?? group.port ?? 22, m.user ?? group.user);
     const host: PlannedHost = {
@@ -361,6 +399,7 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
       ...(dup === undefined ? {} : { duplicateOf: dup, reason: `already in hosts.yaml as ${dup}` }),
       address,
       ssh,
+      ...(Object.keys(env).length === 0 ? {} : { env }),
     };
     hosts.push(host);
     byAlias.set(alias.toLowerCase(), host);
@@ -499,9 +538,15 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
   for (const host of created) note(`${host.id} (${host.alias}) was created for a jump`);
 
   if (agentHosts.length > 0) note(`Authenticate through the SSH agent (no IdentityFile): ${agentHosts.join(', ')}`);
+  if (mapped.some(({ m }) => m.reason === undefined && m.env !== undefined)) note(SETENV_NOTE);
   const lines = reportLines(doc);
   return {
-    group: { id: groupId, name: DEFAULT_GROUP_NAME, ssh: group },
+    group: {
+      id: groupId,
+      name: DEFAULT_GROUP_NAME,
+      ssh: group,
+      ...(Object.keys(groupEnv).length === 0 ? {} : { env: groupEnv }),
+    },
     hosts: [...hosts, ...created].map(withJumps),
     keys: [...keyRows].map(([path, row]) => ({
       ref: row.ref,

@@ -19,6 +19,9 @@ import {
 import { toggleBroadcast } from '../features/ssh/panes/broadcast.js';
 import { useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
 import { leaves } from '../features/ssh/panes/pane-tree.js';
+import { startRun } from '../features/ssh/snippets/run.js';
+import { openSnippetPicker, showSnippets, snippetById } from '../features/ssh/snippets/snippet-actions.js';
+import { useSnippetsStore } from '../features/ssh/snippets/snippets-store.js';
 import { registerCommand } from '../lib/commands.js';
 import type { PaletteMode } from '../shell/command-palette.js';
 import { useUiStore } from '../state/ui.js';
@@ -48,7 +51,7 @@ function revealHosts(): void {
 
 /**
  * Registers the `ssh.*` commands of the Hosts area (the host / group dialog, a host's terminal and Files tab,
- * the panes of the terminal tab in front, and port forwards) and the `sftp.*` commands of the Files tab in front.
+ * the panes of the terminal tab in front, port forwards and snippets) and the `sftp.*` commands of the Files tab in front.
  *
  * @param openPalette - Opens the command palette in the given mode; owned by the shell.
  */
@@ -80,6 +83,16 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     run: () => {
       revealHosts();
       useHostsStore.getState().setImportOpen(true);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.importKnownHosts'),
+    run: () => {
+      // The dialog lives in the Known hosts view, which shows on the Hosts home.
+      revealHosts();
+      const hosts = useHostsStore.getState();
+      hosts.setHomeView('known-hosts');
+      hosts.setKnownHostsImportOpen(true);
     },
   });
   registerCommand({
@@ -154,6 +167,52 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     ...catalogEntry('ssh.stopAllForwards'),
     run: () => {
       void stopAllForwards();
+    },
+  });
+  registerCommand({
+    ...catalogEntry('view.showSnippets'),
+    run: () => {
+      showSnippets();
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.newSnippet'),
+    run: () => {
+      showSnippets();
+      useSnippetsStore.getState().openEditor({ mode: 'new' });
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.editSnippet'),
+    run: (_context, arg) => {
+      showSnippets();
+      if (typeof arg === 'string') useSnippetsStore.getState().openEditor({ mode: 'edit', id: arg });
+    },
+  });
+  // Named, it runs into the terminal in front (or asks first, as a row's Run does); else the palette asks which.
+  registerCommand({
+    ...catalogEntry('ssh.runSnippet'),
+    run: async (_context, arg) => {
+      if (typeof arg !== 'string') {
+        openPalette('snippets');
+        return;
+      }
+      const item = await snippetById(arg);
+      if (item !== undefined) startRun(item);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.runSnippetPalette'),
+    run: () => {
+      openPalette('snippets');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.snippetPicker'),
+    when: onTerminalTab,
+    whenScope: 'editor.terminal',
+    run: () => {
+      openSnippetPicker();
     },
   });
   registerCommand({

@@ -550,7 +550,6 @@ class Mapper {
     const body = graphql
       ? this.graphqlBody(details['body'], label, blanked)
       : this.body(details['body'], label, blanked);
-    if (graphql) this.report.note(`${label}: GraphQL was imported as an HTTP POST; GraphQL support is tracked in #77.`);
     if (blanked.size > 0) {
       this.report.warn(
         `${label}: the recorded value of ${[...blanked].join(', ')} was not imported; set it on the request.`,
@@ -713,22 +712,15 @@ class Mapper {
     }
     const graph = isRecord(body) ? body : {};
     const query = this.rewrite(str(graph['query']));
-    let variables: unknown;
+    let variables = '';
     const rawVariables = graph['variables'];
     if (typeof rawVariables === 'string' && rawVariables.trim() !== '') {
-      // Blanked before it is parsed: text that does not parse (an unquoted reference) would
-      // otherwise be embedded as one JSON string, which the blanking of the body never looks into.
-      const rewritten = blankJsonText(this.rewrite(rawVariables), blanked);
-      try {
-        variables = JSON.parse(rewritten) as unknown;
-      } catch {
-        variables = rewritten;
-      }
+      // Kept as text: it may hold an unquoted reference, which is not JSON until a send expands it.
+      variables = blankJsonText(this.rewrite(rawVariables), blanked);
     } else if (isRecord(rawVariables)) {
-      variables = this.rewriteLeaves(rawVariables);
+      variables = blankJsonText(JSON.stringify(this.rewriteLeaves(rawVariables), null, 2), blanked);
     }
-    const text = JSON.stringify({ query, ...(variables !== undefined ? { variables } : {}) });
-    return { kind: 'raw', language: 'json', contentType: 'application/json', text: blankJsonText(text, blanked) };
+    return { kind: 'graphql', query, variables };
   }
 
   /** A copy of a parsed value with every string in it rewritten. */

@@ -18,6 +18,7 @@ import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
+import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 
 /** Whether the details slide-over is in front: the Hosts tab is showing, a host is picked, and it was not put away. */
@@ -276,10 +277,28 @@ export function HostDetails() {
           ))
         )}
       </Section>
+      {host.env.length > 0 && (
+        <Section title="Environment">
+          {host.env.map((variable) => (
+            <Row key={variable.name} label={variable.name}>
+              {variable.secret === undefined ? (
+                <span className="truncate font-mono">{variable.value}</span>
+              ) : (
+                <>
+                  <span className="truncate font-mono">{variable.secret}</span>
+                  {muted(secretState(variable.secret))}
+                </>
+              )}
+              {muted(provenance(variable.from))}
+            </Row>
+          ))}
+        </Section>
+      )}
       <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
         <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
         <HostForwards hostId={host.id} />
       </section>
+      <HostSessionLogs hostId={host.id} path={host.path} groupName={groupName} refreshKey={hostStatus} />
       <Section title="Timing">
         <Row label="Keep-alive">
           <span>{host.ssh.keepAlive.value}s</span>

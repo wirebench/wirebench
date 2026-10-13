@@ -54,10 +54,18 @@ import {
   registerEnabledAreaChannels,
 } from './areas.js';
 import { SshImportService } from './ssh-import.js';
+import { KnownHostsImportService } from './known-hosts-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
+import {
+  SESSION_LOGS_DIR,
+  SESSION_LOG_SWITCHES_FILE,
+  SessionLogStore,
+  SessionLogSwitches,
+  sessionLogPlanner,
+} from './session-logs.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpEditService, sweepEditCopies } from './sftp-edit.js';
@@ -529,6 +537,18 @@ const sshConnectDeps = {
 /** Keys refused to a terminal or a Files tab: one `ssh.trust` prompt serves both. */
 const sshRefusals = new RefusalStore();
 const sshConnector = createSshConnector({ ...sshConnectDeps, refusals: sshRefusals });
+/** Session logs (#414): per-machine switches, and the logs under `userData/session-logs` within the size limit. */
+const sessionLogSwitches = new SessionLogSwitches(join(app.getPath('userData'), SESSION_LOG_SWITCHES_FILE));
+const sessionLogs = new SessionLogStore({
+  root: join(app.getPath('userData'), SESSION_LOGS_DIR),
+  limits: () => {
+    const terminal = preferencesService.get().terminal;
+    return { maxBytes: terminal.sessionLogMaxMb * 1024 * 1024, raw: terminal.sessionLogRaw };
+  },
+  log: (message) => {
+    console.warn(message);
+  },
+});
 const sshService = new SshService({
   ...sshConnectDeps,
   hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
@@ -540,6 +560,18 @@ const sshService = new SshService({
   onSessionsChange: (sender, hostId, open) => {
     forwardService.sessionsChanged(sender, hostId, open);
   },
+  sessionLog: sessionLogPlanner({
+    store: sessionLogs,
+    switches: sessionLogSwitches,
+    workspaceOf: (sender) => {
+      const workspace = sshScopeOf(scopes, sender).workspace;
+      const id = workspace.openWorkspaceId();
+      if (id === undefined) return undefined;
+      const target = workspace.auditTarget();
+      return { id, ...(target ? { server: { url: target.url, recording: target.recording } } : {}) };
+    },
+    hosts: sshConnectDeps.hosts,
+  }),
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
@@ -1302,6 +1334,14 @@ void app.whenReady().then(() => {
     transfers: sftpTransfers,
     edits: sftpEdits,
     forward: forwardService,
+    sessionLogs: {
+      logs: sessionLogs,
+      switches: sessionLogSwitches,
+      workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+      reveal: (path) => {
+        shell.showItemInFolder(path);
+      },
+    },
     keys: sshKeys,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
@@ -1309,10 +1349,18 @@ void app.whenReady().then(() => {
       hosts: hostsService,
       secrets: sshSecrets,
     }),
+    knownHostsImporter: new KnownHostsImportService<WebContents>({
+      home: () => homedir(),
+      pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose a known_hosts file' }),
+      hosts: hostsService,
+      store: sshService,
+    }),
   });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
+  // A lowered size limit, or logs from before a crash, are brought under the limit; prune never throws.
+  void sessionLogs.prune();
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then(

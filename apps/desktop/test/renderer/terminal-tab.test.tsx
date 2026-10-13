@@ -182,6 +182,8 @@ const NEW_KEY = {
 
 const runSnippet = vi.fn();
 const listSnippets = vi.fn();
+// The run dialog previews after a debounce; a preview that lands after a test ends must not throw.
+const previewSnippet = vi.fn(() => Promise.resolve({ ok: true as const, value: { text: '', revision: '' } }));
 const preferencesUpdate = vi.fn();
 const writeText = vi.fn();
 
@@ -211,7 +213,7 @@ beforeEach(() => {
     value: { file: { version: 1, packages: [], snippets: [] }, snippets: [], problems: [] },
   });
   installWirebenchApi({
-    ssh: { connect, write, resize, close, runSnippet, listSnippets },
+    ssh: { connect, write, resize, close, runSnippet, listSnippets, previewSnippet },
     preferences: { update: preferencesUpdate },
   });
   useSnippetsStore.getState().reset();
@@ -1240,7 +1242,9 @@ describe('snippet suggestions', () => {
 
   it('offers nothing while the pane broadcasts', async () => {
     const writeMany = vi.fn().mockResolvedValue({ ok: true, value: { skipped: [] } });
-    installWirebenchApi({ ssh: { connect, write, writeMany, resize, close, runSnippet, listSnippets } });
+    installWirebenchApi({
+      ssh: { connect, write, writeMany, resize, close, runSnippet, listSnippets, previewSnippet },
+    });
     const term = await mount();
     act(() => {
       useBroadcastStore.setState({
@@ -1281,5 +1285,24 @@ describe('snippet suggestions', () => {
     typeIn(term, '\r');
     typeIn(term, 'jou');
     expect(ghost()).not.toBeNull();
+  });
+
+  it('⌘; opens the snippet picker over the terminal, the shell never sees it, and Escape gives the focus back', async () => {
+    const term = await mount();
+    resetCommands();
+    registerSshCommands(vi.fn());
+    // jsdom's user agent is not a Mac's, so ⌘; here is Ctrl+;.
+    const chord = new KeyboardEvent('keydown', { key: ';', ctrlKey: true, cancelable: true });
+    expect(term.keyHandler?.(chord)).toBe(false);
+    expect(term.keyHandler?.(new KeyboardEvent('keydown', { key: ';' }))).toBe(true);
+    await act(async () => {
+      await runCommand('ssh.snippetPicker', {} as never);
+    });
+    const input = screen.getByTestId('snippet-picker-input');
+    expect(screen.getByTestId('ssh-pane').contains(input)).toBe(true);
+    const before = term.focused;
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByTestId('snippet-picker-input')).toBeNull();
+    expect(term.focused).toBeGreaterThan(before);
   });
 });

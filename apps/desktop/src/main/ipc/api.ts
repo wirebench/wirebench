@@ -76,7 +76,9 @@ export interface ApiChannelDeps {
     | 'writeImportedScripts'
     | 'importWsApi'
     | 'importGrpcApi'
-  >;
+  > &
+    // Where an imported GraphQL schema is stored (#77); optional so the import-only tests need not stub it.
+    Partial<Pick<ProjectRouter, 'setGraphqlSchema' | 'clearGraphqlSchema'>>;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel' | 'readOpenApi'>;
   /**
    * The AsyncAPI import runner — the OpenAPI service's `runAsyncApi`, so `api.cancelImport` reaches
