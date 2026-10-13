@@ -2049,6 +2049,7 @@ export const preferencesWireSchema = z.object({
     copyOnSelect: z.boolean(),
     autoReconnect: z.boolean(),
     reconnectAttempts: z.number(),
+    snippetSuggestions: z.boolean(),
   }),
   shortcuts: z.record(z.string(), z.string()),
 });

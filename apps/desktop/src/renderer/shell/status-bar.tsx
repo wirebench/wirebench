@@ -1,6 +1,7 @@
 import { Moon, Sun, SunMoon } from 'lucide-react';
 import { cycleTheme } from '../lib/theme-actions.js';
 import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
+import { RENDERER_AREAS } from '../areas/index.js';
 import { useAppVersion } from '../lib/use-app-version.js';
 import { updateStatusLabel, useUpdateStatus } from '../lib/update-status.js';
 import { formatBytes, formatDuration } from '../lib/format-size.js';
@@ -76,6 +77,7 @@ export function StatusBar() {
   const problemCount = useProblemsStore((state) => state.items.length);
   const errorCount = useProblemsStore((state) => state.items.filter((item) => item.severity === 'error').length);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
+  const enabledAreas = useUiStore((state) => state.enabledAreas);
   const sidebarVisible = useUiStore((state) => state.sidebar.visible);
   const consoleVisible = useUiStore((state) => state.console.visible);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
@@ -205,6 +207,11 @@ export function StatusBar() {
             </span>
           </>
         )}
+        {/* Each draws its own separator, and nothing at all when it has nothing to say. */}
+        {enabledAreas.map((id) => {
+          const Item = RENDERER_AREAS[id].StatusItem;
+          return Item === undefined ? null : <Item key={id} />;
+        })}
         <AccountStatusItem />
         <span aria-hidden="true" className="text-fg-faint">
           ·

@@ -1,7 +1,7 @@
 # SSH area slice 3: SFTP — design
 
-**Issue:** #357 · **Date:** 2026-10-12 · **Status:** approved in session 2026-10-12 (design sections signed off,
-spec written from them)
+**Issue:** #357 · **Date:** 2026-10-12 · **Status:** implemented 2026-10-13 (#439–#445); approved in session
+2026-10-12. R5 is recorded in [ADR-0025](../adr/0025-the-sftp-local-pane-reads-and-writes-any-local-path.md)
 
 Builds on: the SSH area design (`docs/specs/2026-10-08-ssh-area-design.md`, slice S3 in its table, the host
 model, `packages/ssh`, `SshService`, the trust prompt and the amendments A1–A7),

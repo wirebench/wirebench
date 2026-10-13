@@ -9,12 +9,17 @@ import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { usePanesStore } from '../../src/renderer/features/ssh/panes/pane-actions.js';
 import type { PaneNode } from '../../src/renderer/features/ssh/panes/pane-tree.js';
 import {
+  expandTargets,
   invalidValue,
   needsDialog,
   openTerminals,
   runInTerminal,
+  runOnTargets,
+  runSummary,
   SnippetRunError,
 } from '../../src/renderer/features/ssh/snippets/run.js';
+import { __dispatchForTest } from '../../src/renderer/features/ssh/terminal-session.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import {
   lastTargets,
   lastValues,
@@ -174,5 +179,261 @@ describe('snippets-prefs', () => {
     expect(recentSnippetIds()).toEqual([]);
     localStorage.setItem('wirebench.ssh.snippetRuns', '{not json');
     expect(lastValues('a')).toEqual({});
+  });
+});
+
+describe('several hosts (Task 11)', () => {
+  const host = (id: string, path: string[], tags: string[] = [], name = id) => ({
+    id,
+    name,
+    address: `${id}.example`,
+    tags,
+    path,
+    protected: { value: false, source: 'default' },
+  });
+  const RESOLVED = [
+    host('web', ['prod']),
+    host('db', ['prod', 'inner']),
+    host('api-1', [], ['api']),
+    host('api-4', [], ['api']),
+    host('lab', ['test']),
+  ];
+
+  /** The pane of the tab a run opened for the host (not the fixture's own tab). */
+  const openedPane = (hostId: string): string | undefined => {
+    for (const tab of useEditorsStore.getState().tabs) {
+      if (tab.id === 'ssh-terminal:t1' || tab.panes?.kind !== 'pane') continue;
+      if (tab.panes.hostId === hostId) return tab.panes.paneId;
+    }
+    return undefined;
+  };
+  const connected = (hostId: string, sessionId: string): void => {
+    const paneId = openedPane(hostId);
+    if (paneId === undefined) throw new Error(`no tab opened for ${hostId}`);
+    useHostsStore.getState().setPane(paneId, { hostId, sessionId, state: 'open' });
+  };
+  const output = (sessionId: string, text = '$ '): void => {
+    __dispatchForTest('ssh.data', { sessionId, data: btoa(text) });
+  };
+  const wroteTo = (): string[] => runSnippet.mock.calls.map((c) => (c[0] as { sessionId: string }).sessionId);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useHostsStore.setState({ resolved: RESOLVED as never, trustPrompt: null, connectFailed: {} });
+    useProblemsStore.setState({ items: [] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe('expandTargets', () => {
+    it('expands a group to its hosts and its subgroups’ hosts, a tag to every host carrying it', () => {
+      expect(expandTargets([{ kind: 'group', id: 'prod' }], RESOLVED as never).map((h) => h.id)).toEqual(['web', 'db']);
+      expect(expandTargets([{ kind: 'tag', id: 'api' }], RESOLVED as never).map((h) => h.id)).toEqual([
+        'api-1',
+        'api-4',
+      ]);
+    });
+    it('lists each host once, in tree order, and skips what no longer exists', () => {
+      const targets = [
+        { kind: 'host', id: 'api-4' },
+        { kind: 'tag', id: 'api' },
+        { kind: 'group', id: 'inner' },
+        { kind: 'host', id: 'gone' },
+      ] as const;
+      expect(expandTargets(targets, RESOLVED as never).map((h) => h.id)).toEqual(['db', 'api-1', 'api-4']);
+    });
+  });
+
+  it('reuses an open connected terminal on the host, opening nothing', async () => {
+    const report = await runOnTargets(item(), {}, [], [{ kind: 'host', id: 'db' }]);
+    expect(wroteTo()).toEqual(['s-db']);
+    expect(report).toEqual({ ok: ['db'], failed: [] });
+    expect(useEditorsStore.getState().tabs).toHaveLength(1);
+  });
+
+  it('runs a host once when it is both a chosen terminal and in a chosen group', async () => {
+    const report = await runOnTargets(
+      item(),
+      {},
+      [{ kind: 'terminal', tabId: 'ssh-terminal:t1' }],
+      [
+        { kind: 'host', id: 'db' },
+        { kind: 'group', id: 'inner' },
+      ],
+    );
+    expect(wroteTo()).toEqual(['s-db']);
+    expect(report.ok).toEqual(['db']);
+  });
+
+  it('opens a tab for a host with no terminal and writes after output then 250 ms quiet', async () => {
+    const run = runOnTargets(item(), {}, [], [{ kind: 'host', id: 'lab' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    connected('lab', 's-lab');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(runSnippet).not.toHaveBeenCalled(); // no output yet: the shell has not printed its prompt
+    output('s-lab', 'Welcome\r\n');
+    await vi.advanceTimersByTimeAsync(200);
+    output('s-lab', '$ ');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(runSnippet).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60);
+    expect(wroteTo()).toEqual(['s-lab']);
+    expect(await run).toEqual({ ok: ['lab'], failed: [] });
+  });
+
+  it('writes after 10 s when a new session never prints', async () => {
+    const run = runOnTargets(item(), {}, [], [{ kind: 'host', id: 'lab' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    connected('lab', 's-silent');
+    await vi.advanceTimersByTimeAsync(9_900);
+    expect(runSnippet).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(wroteTo()).toEqual(['s-silent']);
+    await run;
+  });
+
+  it('runs targets in parallel: a slow connect does not hold back another host', async () => {
+    const run = runOnTargets(item(), {}, [], [{ kind: 'tag', id: 'api' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    connected('api-4', 's-api-4');
+    output('s-api-4');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wroteTo()).toEqual(['s-api-4']); // api-1 is still connecting
+    connected('api-1', 's-api-1');
+    output('s-api-1');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wroteTo()).toEqual(['s-api-4', 's-api-1']);
+    expect((await run).ok).toEqual(['api-1', 'api-4']);
+  });
+
+  it('a host on the trust prompt runs after the click, and is reported failed when the prompt is dismissed', async () => {
+    const run = runOnTargets(
+      item(),
+      {},
+      [],
+      [
+        { kind: 'tag', id: 'api' },
+        { kind: 'host', id: 'lab' },
+      ],
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const prompt = { host: 'x', keyType: 'ssh-ed25519', fingerprint: 'SHA256:x' };
+    useHostsStore.getState().setTrustPrompt({ paneId: openedPane('api-1') ?? '', hostId: 'api-1', ...prompt });
+    connected('api-4', 's-api-4');
+    output('s-api-4');
+    connected('lab', 's-lab');
+    output('s-lab');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(wroteTo()).toEqual(['s-api-4', 's-lab']); // the others did not wait for the prompt
+    useHostsStore.getState().cancelTrust();
+    const report = await run;
+    expect(report.ok).toEqual(['api-4', 'lab']);
+    expect(report.failed).toEqual([{ hostId: 'api-1', message: 'The host key was not trusted' }]);
+  });
+
+  it("a host whose sign-in fails is reported with the connect's message", async () => {
+    const run = runOnTargets(item(), {}, [], [{ kind: 'host', id: 'api-4' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const paneId = openedPane('api-4') ?? '';
+    useHostsStore.getState().setPane(paneId, { hostId: 'api-4', state: 'connecting' });
+    useHostsStore.getState().setPane(paneId, undefined);
+    useHostsStore.getState().noteConnectFailed(paneId);
+    useProblemsStore.getState().add([
+      {
+        groupId: 'ssh:api-4',
+        source: 'hosts',
+        severity: 'error',
+        problem: { code: 'ssh-auth-failed', message: 'authentication failed' },
+      },
+    ]);
+    expect(await run).toEqual({ ok: [], failed: [{ hostId: 'api-4', message: 'authentication failed' }] });
+    expect(runSnippet).not.toHaveBeenCalled();
+  });
+
+  it('a terminal that reconnected gets the write on its new session; one that closed is reported failed', async () => {
+    useEditorsStore.setState({
+      tabs: [
+        ...useEditorsStore.getState().tabs,
+        {
+          id: 'ssh-terminal:t2',
+          kind: 'ssh-terminal',
+          title: 'lab',
+          panes: { kind: 'pane', paneId: 'p3', hostId: 'lab' },
+        },
+      ] as never,
+    });
+    useHostsStore.getState().setPane('p3', { hostId: 'lab', sessionId: 's-lab', state: 'open' });
+    const terminals = [
+      { kind: 'terminal', tabId: 'ssh-terminal:t1' },
+      { kind: 'terminal', tabId: 'ssh-terminal:t2', hostId: 'lab' },
+    ] as const;
+    // Between choosing and running: t1's pane reconnected, t2 was closed.
+    useHostsStore.getState().setPane('p2', { hostId: 'db', sessionId: 's-db-2', state: 'open' });
+    useEditorsStore.setState({ tabs: useEditorsStore.getState().tabs.filter((t) => t.id !== 'ssh-terminal:t2') });
+    const report = await runOnTargets(item(), {}, terminals, []);
+    expect(wroteTo()).toEqual(['s-db-2']);
+    expect(report).toEqual({ ok: ['db'], failed: [{ hostId: 'lab', message: 'The terminal was closed' }] });
+  });
+
+  it('a refusal from main fails only its own host', async () => {
+    runSnippet.mockImplementation((r: { sessionId: string }) =>
+      Promise.resolve(
+        r.sessionId === 's-db'
+          ? { ok: false, error: { code: 'secret-missing', message: 'no secret' } }
+          : { ok: true, value: {} },
+      ),
+    );
+    const run = runOnTargets(
+      item(),
+      {},
+      [],
+      [
+        { kind: 'host', id: 'db' },
+        { kind: 'host', id: 'lab' },
+      ],
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    connected('lab', 's-lab');
+    output('s-lab');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await run).toEqual({ ok: ['lab'], failed: [{ hostId: 'db', message: 'no secret' }] });
+  });
+
+  it("skips an accepted suggestion's typed start only in the terminal it came from", async () => {
+    const run = runOnTargets(
+      item(),
+      {},
+      [{ kind: 'terminal', tabId: 'ssh-terminal:t1' }],
+      [{ kind: 'host', id: 'lab' }],
+      {
+        skip: { tabId: 'ssh-terminal:t1', count: 4 },
+      },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    connected('lab', 's-lab-skip');
+    output('s-lab-skip');
+    await vi.advanceTimersByTimeAsync(300);
+    await run;
+    const calls = runSnippet.mock.calls.map((c) => c[0] as { sessionId: string; skip?: number });
+    expect(calls.find((c) => c.sessionId === 's-db')?.skip).toBe(4);
+    expect(calls.find((c) => c.sessionId === 's-lab-skip')?.skip).toBeUndefined();
+  });
+
+  it('remembers the host targets of a run', async () => {
+    await runOnTargets(item({ id: 'z' }), { x: '1' }, [], [{ kind: 'host', id: 'db' }]);
+    expect(lastTargets('z')).toEqual([{ kind: 'host', id: 'db' }]);
+    expect(lastValues('z')).toEqual({ x: '1' });
+  });
+
+  it('sums a run up in one line', () => {
+    expect(
+      runSummary({
+        ok: ['api-1', 'api-2', 'api-3'],
+        failed: [{ hostId: 'api-4', message: 'authentication failed' }],
+      }),
+    ).toBe('Ran on 3 of 4 hosts · api-4: authentication failed');
+    expect(runSummary({ ok: ['web', 'db'], failed: [] })).toBe('Ran on 2 hosts');
+    expect(runSummary({ ok: ['web'], failed: [] })).toBe('Ran on web');
   });
 });

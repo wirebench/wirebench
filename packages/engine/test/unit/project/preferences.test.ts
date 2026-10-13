@@ -95,24 +95,26 @@ describe('secrets preferences', () => {
 });
 
 describe('terminal preferences', () => {
-  it('defaults to asking before a multi-line paste, not copying on select and reconnecting 10 times', () => {
+  it('defaults to asking before a multi-line paste, not copying on select, reconnecting 10 times and suggesting', () => {
     expect(DEFAULT_PREFERENCES.terminal).toEqual({
       confirmMultilinePaste: true,
       copyOnSelect: false,
       autoReconnect: true,
       reconnectAttempts: 10,
+      snippetSuggestions: true,
     });
   });
 
   it('reads the booleans and ignores a value of the wrong type', () => {
     const merged = mergePreferences({
-      terminal: { confirmMultilinePaste: false, copyOnSelect: true, autoReconnect: false },
+      terminal: { confirmMultilinePaste: false, copyOnSelect: true, autoReconnect: false, snippetSuggestions: false },
     });
     expect(merged.terminal).toEqual({
       confirmMultilinePaste: false,
       copyOnSelect: true,
       autoReconnect: false,
       reconnectAttempts: 10,
+      snippetSuggestions: false,
     });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
   });
@@ -120,6 +122,11 @@ describe('terminal preferences', () => {
   it('a patch of one field leaves the other alone', () => {
     const merged = mergePreferences({ terminal: { copyOnSelect: true } });
     expect(merged.terminal.confirmMultilinePaste).toBe(true);
+  });
+
+  it('reads an older file without terminal.snippetSuggestions as on', () => {
+    expect(mergePreferences({ terminal: { copyOnSelect: true } }).terminal.snippetSuggestions).toBe(true);
+    expect(mergePreferences({}).terminal.snippetSuggestions).toBe(true);
   });
 
   it('reads and clamps terminal.reconnectAttempts', () => {
