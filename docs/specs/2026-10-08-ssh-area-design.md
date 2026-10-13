@@ -52,8 +52,8 @@ needs no edit when a later slice extends it.
 - Cloud inventory sync (listing instances from a cloud account) and host import from other clients.
 - Mosh, Telnet, serial. The transport is SSH; the model keeps room for a `protocol` field but S1 validates
   only `ssh`.
-- SSH agent _forwarding_ to the remote (`ForwardAgent`). Using the local agent to authenticate is in;
-  exposing it on the remote is a later ruling.
+- SSH agent _forwarding_ to the remote (`ForwardAgent`) in S1. Using the local agent to authenticate is in;
+  exposing it on the remote was ruled later (A8).
 - A loadable plugin host, manifests, sandboxing. ADR-0017's `@internal` stance holds.
 
 ## Facts this design rests on
@@ -387,6 +387,14 @@ All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs r
 - **A5. Host secrets are workspace-scoped on this machine.** Local `${secret:NAME}` values are stored per project today, and a host belongs to the workspace, not a project. SSH resolves a host's `${secret:NAME}` through the same chain as a send (environment variable, secret sources, team secrets) and then a workspace-scoped local entry (`wirebench-secret:workspace:<workspaceId>:<name>`). The host form lists names with where they resolve from and sets a local value write-only (`ssh.secretNames`, `ssh.setSecret`).
 - **A6. Credential lifetime.** A resolved password, key or passphrase is handed to the SSH client in main and stays inside that client for the session's life (the library keeps its connection settings); Wirebench's own code keeps no reference after the connect, and nothing persists, sends or logs a value. D9's 'only for the duration of the connect' reads as this.
 - **A7. Error codes and session states the D8 and D4 text lacks.** The code raises four codes D8 does not list, each a `WirebenchError` with `details` like the rest: `ssh-host-unknown`, the host id asked for (a connect, a resolve) names no host, where `ssh-jump-unknown` stays for a hop on its jump chain; `ssh-hosts-invalid`, `hosts.yaml` does not parse or fails the schema (the path inside the file in `details.path`), or `hosts.yaml` or the machine's trusted host keys file cannot be read (`details.file` and `details.errno`); `ssh-host-key-unexpected`, a trust click for a key no recent connect from that window was refused for (another window's refusal, an expired one, or an older key the host has since replaced), on which the renderer connects again so the user reviews the current key; `ssh-session-closed`, the window closed or the workspace switched while the connect was in flight, so the opened session was closed again. The `ssh.state` event carries only `'open' | 'closed'`; `connecting` is the renderer's own state, set when it asks for the connect and left when the `ssh.connect` answer arrives (`open` with the session id, or idle on a refusal); `ssh.state` then only reports a session closing.
+- **A8. Agent forwarding (owner ruling, 2026-10-13, #413).** `ssh.forwardAgent: true` on a host or a group
+  forwards the local agent to the target's shell. It is inherited like the other `ssh` fields, off by
+  default, and a nearer `false` turns an inherited `true` off. It needs a running local agent; the host can
+  sign in any way (`auth: { agent: true }` or a key or password, which then keep to their own method). Only
+  the shell channel asks: never exec, SFTP or a port forward, and never a jump host, since no shell opens on
+  one. The host form shows a warning while it is on. A server that refuses forwarding, or no local agent
+  running, still opens the shell without it, and the terminal tab shows which; the tab's key mark shows
+  when it is on. The `ssh_config` importer maps `ForwardAgent yes` and `no`.
 
 ## Docs
 

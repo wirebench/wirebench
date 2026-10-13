@@ -46,6 +46,8 @@ const settingsSchema = z
     auth: authSchema.optional(),
     keepAlive: z.number().int().min(0).optional(),
     connectTimeout: z.number().int().min(1).optional(),
+    /** Off by default; a nearer `false` turns an inherited `true` off. */
+    forwardAgent: z.boolean().optional(),
   })
   .default({});
 
@@ -279,6 +281,7 @@ function settings(ssh: SshSettings): Record<string, unknown> {
   }
   if (ssh.keepAlive !== undefined) out['keepAlive'] = ssh.keepAlive;
   if (ssh.connectTimeout !== undefined) out['connectTimeout'] = ssh.connectTimeout;
+  if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
   return out;
 }
 

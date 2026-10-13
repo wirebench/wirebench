@@ -89,6 +89,15 @@ describe('SshImportService.preview', () => {
     expect(written).toContain('LANG: C');
   });
 
+  it('ForwardAgent yes passes the channel schema and is written to the host', async () => {
+    const { service, dir } = setup({ [CONFIG]: 'Host web\n  ForwardAgent yes\nHost db\n' });
+    const preview = asPreview(await service.preview(A, { source: 'user-config' }));
+    expect(sshImportPreviewSchema.parse(preview)).toEqual(preview);
+    expect(preview.hosts.find((h) => h.alias === 'web')?.ssh.forwardAgent).toBe(true);
+    await service.apply(A, apply(preview.previewId));
+    expect(readFileSync(join(dir, 'hosts.yaml'), 'utf8').match(/forwardAgent: true/g)).toHaveLength(1);
+  });
+
   it('uses the picker for pick, and a cancelled pick is a cancellation', async () => {
     const { service, pick } = setup({ '/srv/other': 'Host a\n' });
     expect(await service.preview(A, { source: 'pick' })).toEqual({ cancelled: true });

@@ -32,6 +32,11 @@ export interface DialOptions {
     hop: { readonly address: string; readonly port: number },
     key: KnownHostEntry,
   ) => Promise<'accept' | 'reject'>;
+  /**
+   * The local agent's socket, handed to the target's client only so a shell opened on it can forward the
+   * agent ({@link openSession}). The target authenticates as it would without it; jump hosts never see it.
+   */
+  readonly forwardAgent?: string;
 }
 
 export interface DialledChain {
@@ -62,6 +67,7 @@ function connectHop(
     let rejectedKey: KnownHostEntry | undefined;
     let verifierFailed = false;
     const where = { address: hop.address, port: hop.port };
+    const forward = index === options.hops.length - 1 ? options.forwardAgent : undefined;
     const config: ConnectConfig = {
       host: hop.address,
       port: hop.port,
@@ -73,6 +79,10 @@ function connectHop(
         ? { privateKey: hop.auth.privateKey, ...(hop.auth.passphrase ? { passphrase: hop.auth.passphrase } : {}) }
         : {}),
       ...(hop.auth.kind === 'agent' ? { agent: hop.auth.socket } : {}),
+      // An agent given only to forward is never offered for auth: the hop keeps to its own method.
+      ...(forward !== undefined && hop.auth.kind !== 'agent'
+        ? { agent: forward, authHandler: ['none', hop.auth.kind === 'password' ? 'password' : 'publickey'] }
+        : {}),
       ...(sock ? { sock } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
         const entry: KnownHostEntry = {
