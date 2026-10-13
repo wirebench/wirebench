@@ -54,7 +54,13 @@ import type { ProtocolStorage } from '../protocol/module.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 import { toSignatureScheme } from '../http/webhook-signature.js';
 import { apiFileSchema, restRequestFileSchema } from './files.js';
-import { exampleBodyExtension, RAW_LANGUAGE_EXTENSIONS, restApisOf, withRestApis } from './model.js';
+import {
+  exampleBodyExtension,
+  GRAPHQL_BODY_EXTENSION,
+  RAW_LANGUAGE_EXTENSIONS,
+  restApisOf,
+  withRestApis,
+} from './model.js';
 import type { RestApi, RestBody, RestRequestDef, RestRequestSettings, RestResponseExample } from './model.js';
 
 /** A parsed `signing` key as the model holds it. */
@@ -115,6 +121,24 @@ async function loadBody(
       };
     case 'binary':
       return { kind: 'binary', source: document.source, contentType: document.contentType };
+    case 'graphql': {
+      assertPathSegment(document.file);
+      const relative = `${dir}/${document.file}`;
+      const text = await readFileIfExists(fs, abs(root, relative));
+      if (text === undefined) {
+        problems.push({
+          code: 'missing-body',
+          message: `Request "${requestName}" has no query file; loaded with an empty query`,
+          file: relative,
+        });
+      }
+      return {
+        kind: 'graphql',
+        query: text === undefined ? '' : text.toString('utf8'),
+        variables: document.variables ?? '',
+        ...optional('operationName', document.operationName),
+      };
+    }
     default:
       return { kind: 'none' };
   }
@@ -214,7 +238,7 @@ export function restRequestReader(fs: FsLike, root: string, problems: ProjectPro
     assertSupportedKind(document, relative);
     const parsed = parseFile(restRequestFileSchema, document, relative);
     unclaimed.delete(fileName);
-    if (parsed.body.kind === 'raw') {
+    if (parsed.body.kind === 'raw' || parsed.body.kind === 'graphql') {
       unclaimed.delete(parsed.body.file);
     }
     const slug = fileName.slice(0, -REQUEST_SUFFIX.length);
@@ -321,6 +345,19 @@ function bodyDocument(
       };
     case 'binary':
       return { document: { kind: 'binary', source: { ...body.source }, contentType: body.contentType } };
+    case 'graphql': {
+      const name = restBodyFileName(requestSlug, GRAPHQL_BODY_EXTENSION);
+      assertPathSegment(name);
+      return {
+        document: compact({
+          kind: 'graphql',
+          file: name,
+          variables: body.variables.trim() === '' ? undefined : body.variables,
+          operationName: body.operationName,
+        }),
+        file: [name, body.query],
+      };
+    }
     default:
       return { document: { kind: 'none' } };
   }

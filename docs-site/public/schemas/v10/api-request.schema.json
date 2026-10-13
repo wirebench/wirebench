@@ -194,6 +194,17 @@
               },
               "required": ["kind", "source", "contentType"],
               "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string", "const": "graphql" },
+                "file": { "type": "string", "minLength": 1 },
+                "variables": { "type": "string" },
+                "operationName": { "type": "string" }
+              },
+              "required": ["kind", "file"],
+              "additionalProperties": {}
             }
           ]
         },

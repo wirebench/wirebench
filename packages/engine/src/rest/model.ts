@@ -69,6 +69,9 @@ export const RAW_LANGUAGE_EXTENSIONS: Readonly<Record<RawLanguage, string>> = Ob
   javascript: 'js',
 });
 
+/** The extension a GraphQL body's query is stored under, beside its request file (#77). */
+export const GRAPHQL_BODY_EXTENSION = 'graphql';
+
 /**
  * One part of a `multipart/form-data` body: either inline text or a file. Distinct from the SOAP
  * transport's `MultipartPart`, which is a MIME part of an already-built message.
@@ -111,7 +114,19 @@ export type RestBody =
     }
   | { readonly kind: 'form'; readonly fields: readonly KeyValueEntry[] }
   | { readonly kind: 'multipart'; readonly parts: readonly MultipartFormPart[] }
-  | { readonly kind: 'binary'; readonly source: AttachmentSource; readonly contentType: string };
+  | { readonly kind: 'binary'; readonly source: AttachmentSource; readonly contentType: string }
+  | {
+      /**
+       * A GraphQL operation (#77): sent as the JSON `{query, variables, operationName}` body the
+       * GraphQL-over-HTTP convention expects. The query lives in a sibling `.body.graphql` file.
+       */
+      readonly kind: 'graphql';
+      readonly query: string;
+      /** The variables as JSON text, edited as such; `''` for none. */
+      readonly variables: string;
+      /** Which operation of a document holding several to run; absent lets the server pick. */
+      readonly operationName?: string;
+    };
 
 /** The body a freshly created request starts with. */
 export const NO_BODY: RestBody = Object.freeze({ kind: 'none' });

@@ -13,7 +13,7 @@ checks as Problems and a failing run check on `errors`.
   `pnpm licenses:third-party` after adding them.
 - No renderer value import of `graphql`, of the engine root, or of zod wire modules in eagerly loaded code.
 - New persisted fields are optional and omitted when unset (saves stay byte-identical).
-- Project format 11. Run `tsc -b` before `pnpm schemas:project`.
+- Project format stays 10 (unreleased). Run `tsc -b` before `pnpm schemas:project` to regenerate the v10 schemas.
 - IPC channel names are pinned in `ipc-names.json`.
 - Run `pnpm --filter desktop build` after touching main-process strings.
 - Commits are made as Mohammed Naami, with no trailers. Never name another product as the inspiration.
@@ -22,13 +22,13 @@ checks as Problems and a failing run check on `errors`.
 
 ### Task 1: The GraphQL body in the model and on disk
 
-**Files:** `packages/engine/src/rest/{model,files,storage}.ts`, `project/model.ts` (format 11), and tests.
+**Files:** `packages/engine/src/rest/{model,files,storage}.ts`, `project/model.ts` (format note), and tests.
 
 - [ ] `RestBody` gains `{ kind: 'graphql'; query: string; variables: string; operationName?: string }`.
 - [ ] Files schema arm `{ kind: 'graphql', file, variables?, operationName? }`, where `file` is a path segment.
   Load reads the sibling file; a missing file is a `missing-body` problem with an empty query.
 - [ ] Save writes `<slug>.body.graphql`, and writes `variables` only when it is not blank.
-- [ ] `FORMAT_VERSION = 11`, with the history note. The v11 JSON Schemas are generated, and v10 goes back to its released content.
+- [ ] Format 10's history note names the GraphQL body. The v10 JSON Schemas are regenerated.
 - [ ] Tests: a round trip, the sibling file name, empty variables omitted, a missing file, and a path-traversal file refused.
 
 ### Task 2: Expansion and lowering to JSON
@@ -113,4 +113,4 @@ and tests.
 ### Task 10: e2e, docs and changelog
 
 - [ ] An e2e spec against the fixture server's GraphQL endpoint (add a tiny one if none exists).
-- [ ] The docs-site page for GraphQL requests, the project-format reference (format 11), `CHANGELOG.md` and the roadmap item 17.
+- [ ] The docs-site page for GraphQL requests, the project-format reference (format 10), `CHANGELOG.md` and the roadmap item 17.

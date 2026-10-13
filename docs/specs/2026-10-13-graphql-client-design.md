@@ -43,15 +43,16 @@ and fails a run. Subscriptions are #99 and stay out: they wait for a streaming t
 - `RestApi.graphqlSchema?: { source: string; fetchedAt: string }`. `source` is the URL that was
   introspected, or the file name that was imported. Omitted when unset, so an API without one saves
   byte-identical.
-- **Format 11.** A 6.0 build would refuse the `graphql` body arm when it parses the request, so it must
-  refuse the project as too new rather than fail on a request. The v11 JSON Schemas are generated, and v10
-  goes back to its released content.
+- **Format 10.** Format 10 (the new auth types) has not shipped yet, so the `graphql` arm joins it
+  instead of raising the format again. A 6.0 build (format 9) refuses the project as too new rather
+  than failing on the request. The v10 JSON Schemas are regenerated.
 
 ## Sending
 
-- **Expansion.** `${…}` references expand in the query as written, with no escaping, because a reference
-  in a query is meant to splice text in. Variables expand with JSON escaping when the request's
-  *escape properties* setting is on, the same rule as a raw JSON body. `operationName` expands as written.
+- **Expansion.** `${…}` references expand in the query and the variables with the JSON escaping a raw
+  JSON body gets: on when the request's *escape properties* setting is on, and always for a Sequence
+  value (ADR-0015). A GraphQL string literal escapes as a JSON one does. `operationName` expands as
+  written.
 - **Lowering.** Right after expansion, the body becomes a raw JSON body:
   `{"query": …, "variables": …, "operationName": …}`. `variables` is left out when blank and
   `operationName` when absent. Variables that do not parse as JSON after expansion refuse the send in the prepare
@@ -123,7 +124,7 @@ and fails a run. Subscriptions are #99 and stay out: they wait for a streaming t
 
 ## Testing
 
-- Engine unit tests for the model round-trip, storage (sibling file, byte-identical saves, format 11),
+- Engine unit tests for the model round-trip, storage (sibling file, byte-identical saves),
   expansion and lowering, invalid variables, introspection-to-SDL, import of SDL and JSON, the response
   check, the run check, the secret scan, and the importers and the Postman export.
 - Desktop unit tests for the mutations, the introspection and import channels, the assist channel, the
