@@ -1,5 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import ssh2 from 'ssh2';
+import { describe, expect, it, vi } from 'vitest';
 import {
   SSH_KEY_BITS,
   describePrivateKey,
@@ -9,6 +10,22 @@ import {
 } from '../../src/index.js';
 
 const LINE = /^[a-z0-9@.-]+ [A-Za-z0-9+/]+={0,2}( .+)?$/;
+
+// A pair as ssh2 1.17 makes it when the Ed25519 public key starts with a zero byte: the byte is dropped, so
+// the key fields say 31 and 63 bytes and nothing reads the private key back. Made by ssh2, never used anywhere.
+const SHORT_ED25519 = {
+  private: [
+    '-----BEGIN OPENSSH PRIVATE KEY-----',
+    'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMgAAAAtz',
+    'c2gtZWQyNTUxOQAAAB+kOIHV2N2g4Ujjfrcg3Y/1BSolil0+DHGWXsuPI8vsAAAA',
+    'iK5MdUKuTHVCAAAAC3NzaC1lZDI1NTE5AAAAH6Q4gdXY3aDhSON+tyDdj/UFKiWK',
+    'XT4McZZey48jy+wAAAA/x1fexB9KqFEDGx5PFbHGd2f/ytDpDocW1daAJWCNYrWk',
+    'OIHV2N2g4Ujjfrcg3Y/1BSolil0+DHGWXsuPI8vsAAAAAAECAwQFBgc=',
+    '-----END OPENSSH PRIVATE KEY-----',
+    '',
+  ].join('\n'),
+  public: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAH6Q4gdXY3aDhSON+tyDdj/UFKiWKXT4McZZey48jy+w=',
+};
 
 // RSA and encrypted keys are CPU-bound (prime search, bcrypt): slow on a loaded machine.
 describe('generateKey', { timeout: 30_000 }, () => {
@@ -25,6 +42,24 @@ describe('generateKey', { timeout: 30_000 }, () => {
       fingerprint: key.fingerprint,
       publicKey: key.publicKey,
     });
+  });
+
+  it('throws away an Ed25519 pair whose public key lost its leading zero byte and makes another', async () => {
+    expect(() => describePrivateKey(SHORT_ED25519.private)).toThrow(
+      expect.objectContaining({ code: 'ssh-key-invalid' }),
+    );
+    const make = vi.spyOn(ssh2.utils, 'generateKeyPair').mockImplementationOnce((...args: unknown[]) => {
+      const done = args.at(-1) as (error: Error | null, keys: typeof SHORT_ED25519) => void;
+      done(null, SHORT_ED25519);
+    });
+    try {
+      const key = await generateKey({ algorithm: 'ed25519' });
+      expect(make).toHaveBeenCalledTimes(2);
+      expect(key.publicKey).not.toBe(SHORT_ED25519.public);
+      expect(describePrivateKey(key.privateKey).publicKey).toBe(key.publicKey);
+    } finally {
+      make.mockRestore();
+    }
   });
 
   it.each([
