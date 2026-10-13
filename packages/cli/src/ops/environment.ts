@@ -1,14 +1,19 @@
-import { appliesToProject, isProtectedEnvironment } from '@wirebench/engine';
+import {
+  appliesToProject,
+  isProtectedEnvironment,
+  isWirebenchError,
+  pickEnvironment as pickInEngine,
+  projectIdOf,
+} from '@wirebench/engine';
 import type { Environment, Project, RunWorkspace, WorkspaceEnvironment } from '@wirebench/engine';
 import type { Gates } from './context.js';
 import { OpsError } from './errors.js';
 
+export { projectIdOf };
+
 /**
- * The environment by name first, then by slug or id; required as soon as there is any in scope.
- * Inside a workspace the environments are the workspace's, as in the app: a project environment
- * applies through the workspace environment of the same slug, never on its own. With a `projectId`
- * only the environments that apply to that project match; a name that exists but is out of scope
- * fails `environment-out-of-scope`, listing the ones in scope. Shared with `wirebench run`.
+ * The environment by name first, then by slug or id; required as soon as there is any in scope. The
+ * engine's pick (shared with a server running a schedule), its refusals as `OpsError`s.
  */
 export function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
   environments: readonly E[],
@@ -16,59 +21,14 @@ export function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
   wanted: string | undefined,
   projectId?: string,
 ): E | undefined {
-  const matches = (e: E): boolean =>
-    wanted !== undefined && (e.name === wanted || e.slug === wanted || e.id === wanted);
-  const inScope =
-    projectId === undefined
-      ? environments
-      : environments.filter((e) => appliesToProject(e as WorkspaceEnvironment, projectId));
-  if (inScope.length === 0) {
-    if (wanted !== undefined) {
-      if (environments.some(matches)) {
-        throw outOfScope(wanted, []);
-      }
-      // Scoped to a project, an empty list may only mean none applies to it, not that none exists.
-      const none = projectId === undefined ? `this ${owner} defines none` : 'no environment applies to this project';
-      throw new OpsError('environment-not-found', `unknown environment "${wanted}": ${none}`, {
-        environment: wanted,
-      });
+  try {
+    return pickInEngine(environments, owner, wanted, projectId);
+  } catch (error) {
+    if (isWirebenchError(error)) {
+      throw new OpsError(error.code, error.message, error.details);
     }
-    return undefined;
+    throw error;
   }
-  const names = inScope.map((e) => e.name).join(', ');
-  if (wanted === undefined) {
-    throw new OpsError('environment-required', `an environment is required (--env <name>); environments: ${names}`);
-  }
-  const found = inScope.find((e) => e.name === wanted) ?? inScope.find((e) => e.slug === wanted || e.id === wanted);
-  if (found === undefined) {
-    const hidden = environments.find((e) => e.name === wanted) ?? environments.find(matches);
-    if (hidden !== undefined) {
-      throw outOfScope(
-        hidden.name,
-        inScope.map((e) => e.name),
-      );
-    }
-    throw new OpsError('environment-not-found', `unknown environment "${wanted}"; environments: ${names}`, {
-      environment: wanted,
-    });
-  }
-  return found;
-}
-
-function outOfScope(name: string, inScope: readonly string[]): OpsError {
-  const available = inScope.length === 0 ? 'none apply to it' : `environments for it: ${inScope.join(', ')}`;
-  return new OpsError(
-    'environment-out-of-scope',
-    `the environment "${name}" does not apply to this project; ${available}`,
-    {
-      environment: name,
-    },
-  );
-}
-
-/** The id the workspace gives the project at `projectSlug`, the key of an environment's scope. */
-export function projectIdOf(workspace: RunWorkspace): string | undefined {
-  return workspace.workspace.projects.find((ref) => ref.slug === workspace.projectSlug)?.id;
 }
 
 /**

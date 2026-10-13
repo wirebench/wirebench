@@ -121,6 +121,14 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN` | no | — | Sent as `Authorization: Bearer …` with each HTTPS batch. Refused with a syslog URL. Never logged. |
 | `WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE` | no | — | A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified. |
 | `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` | no | — | Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 bytes, kept outside the database and never changed. Unset, nothing is sealed. Never logged. |
+| `WIREBENCH_SERVER_SCHEDULES_ENABLED` | no | `true` | Run scheduled runs (Enterprise): the scheduler and the schedules API. False, neither exists. |
+| `WIREBENCH_SERVER_SCHEDULES_SECRET_KEY` | no | — | Encrypts schedule secrets and alert URLs at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, they are refused. Never logged. |
+| `WIREBENCH_SERVER_SCHEDULES_CONCURRENCY` | no | `2` | Scheduled runs that execute at once across the server (1–16); the rest wait their turn. |
+| `WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` | no | `90` | Scheduled runs and their results older than this many days are deleted (1–3650). |
+| `WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB` | no | `50` | The most of a workspace a scheduled run writes to disk to run it (1–1024); a larger one errors. |
+| `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
+| `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Never logged. |
+| `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL. |
 {/* config:end */}
 {/* prettier-ignore-end */}
 
