@@ -51,7 +51,8 @@ import { PaneView } from './panes/pane-view.js';
 import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
 import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
-import { monoFontFromCss, themeFromCss } from './terminal-theme.js';
+import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
+import type { TerminalAppearance, TerminalOverride } from './terminal-appearance.js';
 
 /** How long a layout change settles before the new size goes to the remote pty. */
 const RESIZE_DEBOUNCE_MS = 100;
@@ -91,6 +92,17 @@ function broadcastReceivers(tabId: string, paneId: string): string[] | undefined
   const broadcast = broadcastOf(tabId);
   if (!broadcast.on || !broadcast.ticked.has(paneId)) return undefined;
   return receiversFor(broadcast, paneId, openSessions());
+}
+
+/** What hosts.yaml sets for a host's terminal (its own level or a group's), read now. */
+function overrideOf(hostId: string): TerminalOverride {
+  const terminal = useHostsStore.getState().resolved.find((host) => host.id === hostId)?.terminal;
+  return { scheme: terminal?.scheme.value, fontSize: terminal?.fontSize.value };
+}
+
+/** The size a host's terminal starts from before its own zoom: the host or group's, else the preferences'. */
+function baseFontSize(hostId: string): number {
+  return overrideOf(hostId).fontSize ?? usePreferencesStore.getState().preferences.terminal.fontSize;
 }
 
 function hasSize(element: HTMLElement): boolean {
@@ -344,16 +356,24 @@ function TerminalPane({
   const [reconnect, setReconnect] = useState<ReconnectState>({ kind: 'idle' });
   /** Ticks once a second while a reconnect waits, for the countdown. */
   const [now, setNow] = useState(() => Date.now());
+  /** ⌘+ / ⌘− on this pane, in points over its size; lives as long as the pane. */
+  const [zoom, setZoom] = useState(0);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  // How the terminal looks: Preferences → Terminal, the host or group's override, this pane's zoom.
+  const prefs = usePreferencesStore((s) => s.preferences.terminal);
+  const hostScheme = useHostsStore((s) => s.resolved.find((h) => h.id === hostId)?.terminal?.scheme.value);
+  const hostFontSize = useHostsStore((s) => s.resolved.find((h) => h.id === hostId)?.terminal?.fontSize.value);
 
   // The terminal and the connect, once per mount and again per Reconnect.
   useEffect(() => {
     const element = holder.current;
     if (element === null) return;
+    const look = (): TerminalAppearance =>
+      terminalAppearance(usePreferencesStore.getState().preferences.terminal, overrideOf(hostId), zoomRef.current);
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: monoFontFromCss(),
-      fontSize: 13,
-      theme: themeFromCss(),
+      ...look(),
       // The find bar's match highlights are decorations, which xterm still calls proposed API; without it
       // every search throws and the count never comes.
       allowProposedApi: true,
@@ -381,6 +401,15 @@ function TerminalPane({
     });
     term.attachCustomKeyEventHandler((event) => {
       if (suggestions.handleKey(event)) return false;
+      // ⌘+ / ⌘− / ⌘0 size this terminal alone; neither the shell nor the app's zoom sees them.
+      const zoomed = zoomChord(event, platform);
+      if (zoomed !== undefined) {
+        if (event.type === 'keydown') {
+          event.preventDefault();
+          setZoom((z) => nextZoom(baseFontSize(hostId), z, zoomed));
+        }
+        return false;
+      }
       // A pane command's chord is the app's: the window's listener runs it, the shell never sees it.
       if (isPaneChord(event, platform)) return false;
       if (!isFindChord(event, platform)) return true;
@@ -480,8 +509,9 @@ function TerminalPane({
         if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
       }, COPY_ON_SELECT_DEBOUNCE_MS);
     });
+    // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
     const themeWatch = new MutationObserver(() => {
-      term.options.theme = themeFromCss();
+      term.options.theme = look().theme;
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -530,6 +560,14 @@ function TerminalPane({
       term.dispose();
     };
   }, [tabId, paneId, hostId, nonce]);
+
+  // A change to the preferences, the host's override or the zoom restyles the open terminal; a new cell size refits it.
+  useEffect(() => {
+    const current = live.current;
+    if (current === null) return;
+    const look = terminalAppearance(prefs, { scheme: hostScheme, fontSize: hostFontSize }, zoom);
+    if (applyAppearance(current.term, look)) current.refit();
+  }, [prefs, hostScheme, hostFontSize, zoom]);
 
   // Attach to the pane's session once the store has one: from the connect above, or from the trust prompt.
   useEffect(() => {
