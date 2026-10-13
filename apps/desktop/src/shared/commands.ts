@@ -29,6 +29,8 @@ export const COMMAND_IDS = [
   'ssh.connectPalette',
   'ssh.openFiles',
   'ssh.openInNewTab',
+  'ssh.openLayout',
+  'ssh.saveLayout',
   'ssh.splitRight',
   'ssh.splitDown',
   'ssh.focusPaneLeft',

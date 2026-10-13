@@ -35,6 +35,13 @@ All notable changes to this project are documented here. The format follows
   a control key is refused. `${secret:…}` values are typed by the app itself, never shown: the line starts
   with a space so most shells keep it out of history, and the value shows as `••••` in that terminal for the
   rest of its session. A snippet changed on disk since it was shown is not run (#451).
+- **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
+  keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
+  or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,
+  **Rename** and **Delete**, and ⌘K **Open Layout…** and ⌘P list them too. Opening one connects every pane in
+  one tab titled by the layout. A pane whose host has left `hosts.yaml` says so and offers **Remove pane**, and
+  saving again leaves it out. Layouts are kept on this machine per workspace (`ssh-layouts.json` in the app's
+  data folder), never in the workspace, sync or a team (#463).
 - **Protected hosts.** A host or a group can be marked **Protected** in its form, inherited like the other
   settings; a protected host shows a shield on its card and in its details (#450).
 - **Recent SSH connections.** The Hosts tab shows the hosts you connected to lately in a **Recent** strip

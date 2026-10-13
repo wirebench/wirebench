@@ -7,14 +7,16 @@
  * palette does the fuzzy matching itself (cmdk's own filter) over each entry's `value`.
  */
 
+import type { LayoutWire } from '../../shared/layout-wire.js';
 import type { ResolvedHostWire } from '../../shared/ssh-wire.js';
+import { layoutHosts, layoutPaneCount } from '../features/ssh/panes/open-layout.js';
 import type { InterfaceSummary, RequestWire } from '../../shared/kinds/soap/wire.js';
 
 /** One quick-open row. */
 export interface QuickOpenEntry {
   /** `request:<id>` or `operation:<interfaceId>/<binding>/<name>` — unique, and a React key. */
   readonly key: string;
-  readonly kind: 'request' | 'operation' | 'host';
+  readonly kind: 'request' | 'operation' | 'host' | 'layout';
   /** What the row shows: the request name, or the operation name. */
   readonly label: string;
   /** The breadcrumb under it: `project › interface › binding › operation`. */
@@ -25,6 +27,8 @@ export interface QuickOpenEntry {
   readonly requestId?: string;
   /** Set for `host`: the host whose terminal to open. */
   readonly hostId?: string;
+  /** Set for `layout`: the saved layout to open. */
+  readonly layoutId?: string;
   /** Set for `operation`: what a new request needs. */
   readonly interfaceId?: string;
   readonly bindingName?: string;
@@ -138,4 +142,29 @@ export function splitRecentHosts(
   const recent = recentIds.flatMap((id) => byHost.get(id) ?? []).slice(0, limit);
   const picked = new Set(recent);
   return { recent, rest: entries.filter((entry) => !picked.has(entry)) };
+}
+
+/**
+ * The saved layouts as quick-open rows: the name, with its hosts and pane count under it. The match covers the
+ * name and the host names.
+ *
+ * @param layouts - The open workspace's layouts.
+ * @param nameOf - A host id's name.
+ */
+export function quickOpenLayoutEntries(
+  layouts: readonly LayoutWire[],
+  nameOf: (hostId: string) => string,
+): readonly QuickOpenEntry[] {
+  return layouts.map((layout) => {
+    const hosts = layoutHosts(layout.root).map(nameOf);
+    const count = layoutPaneCount(layout.root);
+    return {
+      key: `layout:${layout.id}`,
+      kind: 'layout',
+      label: layout.name,
+      detail: `${hosts.join(', ')} · ${String(count)} ${count === 1 ? 'pane' : 'panes'}`,
+      value: [layout.name, ...hosts].join(' '),
+      layoutId: layout.id,
+    };
+  });
 }

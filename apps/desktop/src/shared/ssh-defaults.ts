@@ -31,5 +31,7 @@ export const SSH_OS_IDS = [
   'windows',
 ] as const;
 
+/** The most panes one terminal tab, and so one saved layout, holds. */
+export const SSH_MAX_PANES = 12;
 /** At most this many `forward.state` events a second per forward for connection-count changes. */
 export const FORWARD_EVENTS_PER_SECOND = 4;

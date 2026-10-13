@@ -97,6 +97,9 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
 import { registerEditorCommands } from '../../src/renderer/commands/register-editor-commands.js';
 import { registerSshCommands } from '../../src/renderer/commands/register-ssh-commands.js';
+import { openLayout } from '../../src/renderer/features/ssh/panes/open-layout.js';
+import { useLayoutsStore } from '../../src/renderer/features/ssh/panes/layouts-store.js';
+import type { LayoutWire } from '../../src/shared/layout-wire.js';
 import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { usePanesStore } from '../../src/renderer/features/ssh/panes/pane-actions.js';
 import { leaves, type PaneNode } from '../../src/renderer/features/ssh/panes/pane-tree.js';
@@ -925,6 +928,50 @@ describe('split panes', () => {
     });
     expect(useEditorsStore.getState().tabs).toEqual([]);
     expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
+  });
+
+  it('a layout pane whose host left hosts.yaml says so, never connects, and Remove pane drops it', async () => {
+    useHostsStore.setState({ loaded: true });
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    const layout: LayoutWire = {
+      id: 'L1',
+      name: 'Prod',
+      root: {
+        kind: 'split',
+        dir: 'row',
+        ratio: 0.5,
+        a: { kind: 'pane', host: 'a' },
+        b: { kind: 'pane', host: 'gone' },
+      },
+    };
+    useLayoutsStore.setState({ layouts: [layout], loaded: true });
+    act(() => {
+      openLayout(layout);
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <EditorArea />
+      </TooltipPrimitive.Provider>,
+    );
+    await waitFor(() => {
+      expect(sessionOn('a')?.state).toBe('open');
+    });
+    expect(screen.getByTestId('ssh-pane-missing').textContent).toContain('Host gone is no longer in hosts.yaml');
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Prod')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove pane' }));
+    expect(leaves(tree()).map((leaf) => leaf.hostId)).toEqual(['a']);
+    expect(screen.queryByTestId('ssh-pane-missing')).toBeNull();
+  });
+
+  it('deleting the host of a connected pane keeps its terminal', async () => {
+    useHostsStore.setState({ loaded: true });
+    await mount();
+    act(() => {
+      useHostsStore.setState({ resolved: [resolvedHost('b', 'beta')] });
+    });
+    expect(screen.queryByTestId('ssh-pane-missing')).toBeNull();
+    expect(screen.getByTestId('ssh-terminal')).toBeDefined();
   });
 
   it('Open in new tab opens a second tab for the same host', async () => {

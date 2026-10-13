@@ -51,6 +51,12 @@ describe('area channels', () => {
     expect(names).toEqual(
       expect.arrayContaining(['ssh.listSnippets', 'ssh.saveSnippets', 'ssh.runSnippet', 'ssh.previewSnippet']),
     );
+    expect(names.filter((n) => n.startsWith('layout.')).sort()).toEqual([
+      'layout.delete',
+      'layout.list',
+      'layout.rename',
+      'layout.save',
+    ]);
     expect(names.filter((n) => n.startsWith('sftp.')).sort()).toEqual([
       'sftp.cancel',
       'sftp.chmod',
@@ -73,9 +79,11 @@ describe('area channels', () => {
         .sort(),
     ).toEqual(['forward.freePort', 'forward.list', 'forward.start', 'forward.stop', 'forward.stopAll']);
   });
-  it('with ssh=off no ssh.*, sftp.* or forward.* channel exists', () => {
+  it('with ssh=off no ssh.*, sftp.*, forward.* or layout.* channel exists', () => {
     expect(
-      channelsFor('ssh=off').filter((n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('forward.')),
+      channelsFor('ssh=off').filter(
+        (n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('forward.') || n.startsWith('layout.'),
+      ),
     ).toEqual([]);
   });
 });

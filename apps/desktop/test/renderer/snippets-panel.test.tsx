@@ -171,6 +171,7 @@ describe('SSH menu', () => {
     expect(items.map((b) => b.dataset['testid'])).toEqual([
       'ssh-nav-hosts',
       'ssh-nav-snippets',
+      'ssh-nav-layouts',
       'ssh-nav-keychain',
       'ssh-nav-known-hosts',
     ]);

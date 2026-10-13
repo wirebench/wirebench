@@ -44,6 +44,10 @@ const NO_SSH = {
 };
 const NO_HOSTS = { list: vi.fn(), save: vi.fn() };
 const NO_SNIPPETS = { list: vi.fn(), save: vi.fn() };
+const NO_LAYOUTS = {
+  layouts: { list: vi.fn(), save: vi.fn(), rename: vi.fn(), delete: vi.fn() },
+  workspaceId: () => undefined,
+};
 const NO_FORWARD = {
   list: vi.fn(),
   start: vi.fn(),
@@ -81,6 +85,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -108,6 +113,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -125,6 +131,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -152,6 +159,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward,
       transfers: NO_TRANSFERS,
     });
@@ -176,6 +184,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -194,6 +203,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -217,6 +227,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -234,6 +245,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -265,6 +277,7 @@ describe('ssh channels', () => {
         keys: NO_KEYS,
         sftp: NO_SFTP,
         snippets: NO_SNIPPETS,
+        layouts: NO_LAYOUTS,
         forward: NO_FORWARD,
         transfers: NO_TRANSFERS,
       });
@@ -324,6 +337,7 @@ describe('known hosts channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -345,6 +359,7 @@ describe('known hosts channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -372,6 +387,7 @@ describe('host OS channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -392,6 +408,7 @@ describe('host OS channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -413,6 +430,7 @@ describe('ssh snippet run channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -442,6 +460,7 @@ describe('ssh import channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -466,6 +485,7 @@ describe('ssh import channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -487,6 +507,7 @@ describe('ssh import channels', () => {
       keys: NO_KEYS,
       sftp,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -521,6 +542,7 @@ describe('ssh import channels', () => {
       sftp: NO_SFTP,
       transfers,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
     });
     const window = { id: 4 };
@@ -558,6 +580,7 @@ describe('ssh key channels', () => {
       keys,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
@@ -597,6 +620,7 @@ describe('snippet channels', () => {
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
       snippets,
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
@@ -615,6 +639,7 @@ describe('snippet channels', () => {
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
       snippets: new SnippetsService({ treeDir: () => dir }),
+      layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };

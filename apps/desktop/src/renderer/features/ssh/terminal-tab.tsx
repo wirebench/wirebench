@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { Columns2, FolderOpen, Rows2 } from 'lucide-react';
+import { Columns2, FolderOpen, LayoutPanelLeft, Rows2 } from 'lucide-react';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandId } from '@shared/commands.js';
@@ -29,7 +29,10 @@ import {
   requestSplit,
   usePanesStore,
 } from './panes/pane-actions.js';
+import { useLayoutsStore } from './panes/layouts-store.js';
+import { MissingHostPane } from './panes/missing-host-pane.js';
 import { PaneHeader } from './panes/pane-header.js';
+import { SaveLayoutDialog } from './panes/save-layout-dialog.js';
 import { leaves, type PaneLeaf, type PaneNode } from './panes/pane-tree.js';
 import { PaneView } from './panes/pane-view.js';
 import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
@@ -143,6 +146,15 @@ export function TerminalTab({
   const focusedHost = leaves(panes).find((leaf) => leaf.paneId === focused)?.hostId;
   const picker = usePanesStore((s) => (s.picker?.tabId === tabId ? s.picker : undefined));
   const split = panes.kind === 'split';
+  // A pane whose host left `hosts.yaml` (a layout saved before) shows so instead of connecting; known only once
+  // read. A pane that already has a session keeps its terminal: deleting the host does not end it.
+  const knownHosts = useHostsStore((s) => (s.loaded ? s.resolved : undefined));
+  const paneSessions = useHostsStore((s) => s.panes);
+  const missing = (pane: PaneLeaf): boolean =>
+    knownHosts !== undefined &&
+    paneSessions[pane.paneId] === undefined &&
+    !knownHosts.some((host) => host.id === pane.hostId);
+  const saving = useLayoutsStore((s) => s.savingTabId === tabId);
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-end gap-1 border-b border-hairline px-2 py-0.5">
@@ -173,23 +185,43 @@ export function TerminalTab({
         >
           <FolderOpen size={13} aria-hidden="true" /> Files
         </button>
+        <button
+          type="button"
+          className={TOOL_CLASS}
+          onClick={() => {
+            useLayoutsStore.getState().setSavingTabId(tabId);
+          }}
+        >
+          <LayoutPanelLeft size={13} aria-hidden="true" /> Save layout…
+        </button>
       </div>
       <div className="min-h-0 flex-1">
         <PaneView
           tabId={tabId}
           node={panes}
-          renderPane={(pane) => (
-            <TerminalPane
-              key={`${pane.paneId}:${pane.hostId}`}
-              tabId={tabId}
-              pane={pane}
-              active={active}
-              focused={pane.paneId === focused}
-              split={split}
-            />
-          )}
+          renderPane={(pane) =>
+            missing(pane) ? (
+              <MissingHostPane key={`${pane.paneId}:missing`} tabId={tabId} pane={pane} />
+            ) : (
+              <TerminalPane
+                key={`${pane.paneId}:${pane.hostId}`}
+                tabId={tabId}
+                pane={pane}
+                active={active}
+                focused={pane.paneId === focused}
+                split={split}
+              />
+            )
+          }
         />
       </div>
+      <SaveLayoutDialog
+        tabId={tabId}
+        open={saving}
+        onOpenChange={(open) => {
+          if (!open) useLayoutsStore.getState().setSavingTabId(undefined);
+        }}
+      />
       {picker !== undefined && (
         <HostPicker initialHostId={picker.hostId} onPick={completeSplit} onCancel={cancelSplit} />
       )}

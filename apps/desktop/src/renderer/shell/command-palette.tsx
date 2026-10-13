@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { CommandCategory, CommandDefinition } from '@shared/commands.js';
@@ -6,6 +6,8 @@ import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
 import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { refreshLayouts, useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
+import { openLayout } from '../features/ssh/panes/open-layout.js';
 import { useRecentConnections } from '../features/ssh/recent-connections.js';
 import type { CommandContext } from '../lib/commands.js';
 import { listCommands, runCommand } from '../lib/commands.js';
@@ -13,14 +15,14 @@ import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import type { QuickOpenEntry } from './quick-open.js';
-import { quickOpenEntries, quickOpenHostEntries, splitRecentHosts } from './quick-open.js';
+import { quickOpenEntries, quickOpenHostEntries, quickOpenLayoutEntries, splitRecentHosts } from './quick-open.js';
 
 /**
  * Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts, to
  * connect to (`hosts`), to open in another terminal tab (`new-tab-hosts`) or to open the Files tab of
- * (`files-hosts`).
+ * (`files-hosts`), or only the saved terminal layouts (`layouts`).
  */
-export type PaletteMode = 'commands' | 'quick-open' | 'hosts' | 'new-tab-hosts' | 'files-hosts';
+export type PaletteMode = 'commands' | 'quick-open' | 'hosts' | 'new-tab-hosts' | 'files-hosts' | 'layouts';
 
 export interface CommandPaletteProps {
   readonly open: boolean;
@@ -112,8 +114,21 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const resolvedHosts = useHostsStore((state) => state.resolved);
   const hostEntries = useMemo(
-    () => (sshEnabled && mode !== 'commands' ? quickOpenHostEntries(resolvedHosts) : []),
+    () => (sshEnabled && mode !== 'commands' && mode !== 'layouts' ? quickOpenHostEntries(resolvedHosts) : []),
     [sshEnabled, mode, resolvedHosts],
+  );
+  // The saved layouts: ⌘P lists them under their own heading, and Open Layout… lists only them.
+  const layoutsWanted = sshEnabled && (mode === 'quick-open' || mode === 'layouts');
+  useEffect(() => {
+    if (open && layoutsWanted) refreshLayouts();
+  }, [open, layoutsWanted]);
+  const layouts = useLayoutsStore((state) => state.layouts);
+  const layoutEntries = useMemo(
+    () =>
+      layoutsWanted
+        ? quickOpenLayoutEntries(layouts, (hostId) => resolvedHosts.find((host) => host.id === hostId)?.name ?? hostId)
+        : [],
+    [layoutsWanted, layouts, resolvedHosts],
   );
   // The hosts connected to lately lead, under their own heading.
   const recentConnections = useRecentConnections();
@@ -128,17 +143,20 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const quickOpen = mode === 'quick-open';
   const filesPicker = mode === 'files-hosts';
   const newTabPicker = mode === 'new-tab-hosts';
+  const layoutsPicker = mode === 'layouts';
   const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
-  const picker = quickOpen || hostsOnly;
-  const title = filesPicker
-    ? 'Open files on host'
-    : newTabPicker
-      ? 'Open host in new tab'
-      : hostsOnly
-        ? 'Connect to host'
-        : quickOpen
-          ? 'Go to operation or request'
-          : 'Command palette';
+  const picker = quickOpen || hostsOnly || layoutsPicker;
+  const title = layoutsPicker
+    ? 'Open layout'
+    : filesPicker
+      ? 'Open files on host'
+      : newTabPicker
+        ? 'Open host in new tab'
+        : hostsOnly
+          ? 'Connect to host'
+          : quickOpen
+            ? 'Go to operation or request'
+            : 'Command palette';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -153,7 +171,15 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           <Command
             key={mode}
             loop
-            label={hostsOnly ? 'Hosts' : quickOpen ? 'Operations, requests and hosts' : 'Commands'}
+            label={
+              layoutsPicker
+                ? 'Layouts'
+                : hostsOnly
+                  ? 'Hosts'
+                  : quickOpen
+                    ? 'Operations, requests and hosts'
+                    : 'Commands'
+            }
           >
             <Command.Input
               autoFocus
@@ -163,11 +189,13 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             />
             <Command.List className="max-h-[320px] overflow-auto p-1">
               <Command.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">
-                {hostsOnly
-                  ? 'No matching host.'
-                  : quickOpen
-                    ? 'No matching operation or request.'
-                    : 'No matching command.'}
+                {layoutsPicker
+                  ? 'No matching layout.'
+                  : hostsOnly
+                    ? 'No matching host.'
+                    : quickOpen
+                      ? 'No matching operation or request.'
+                      : 'No matching command.'}
               </Command.Empty>
               {quickOpen &&
                 entries.map((entry) => (
@@ -212,6 +240,26 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                       files={filesPicker}
                       newTab={newTabPicker}
                     />
+                  ))}
+                </Command.Group>
+              )}
+              {layoutEntries.length > 0 && (
+                <Command.Group heading="Layouts" className={GROUP_CLASS}>
+                  {layoutEntries.map((entry) => (
+                    <Command.Item
+                      key={entry.key}
+                      value={`${entry.value} layout`}
+                      data-testid="quick-open-layout"
+                      onSelect={() => {
+                        onOpenChange(false);
+                        const layout = layouts.find((each) => each.id === entry.layoutId);
+                        if (layout !== undefined) openLayout(layout);
+                      }}
+                      className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                    >
+                      <span className="truncate">{entry.label}</span>
+                      <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
+                    </Command.Item>
                   ))}
                 </Command.Group>
               )}

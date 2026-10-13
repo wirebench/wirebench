@@ -135,6 +135,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Open Host in New Tab…',
     category: 'Hosts',
   },
+  'ssh.openLayout': {
+    id: 'ssh.openLayout',
+    label: 'Open Layout…',
+    category: 'Hosts',
+  },
+  'ssh.saveLayout': {
+    id: 'ssh.saveLayout',
+    label: 'Terminal: Save Layout…',
+    category: 'Hosts',
+  },
   'ssh.splitRight': {
     id: 'ssh.splitRight',
     label: 'Terminal: Split Right',

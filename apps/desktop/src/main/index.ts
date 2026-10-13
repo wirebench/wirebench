@@ -57,6 +57,7 @@ import { SshImportService } from './ssh-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
+import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpService } from './sftp-service.js';
@@ -1279,6 +1280,10 @@ void app.whenReady().then(() => {
     ssh: sshService,
     sftp: sftpService,
     snippets: snippetsService,
+    layouts: {
+      layouts: new LayoutStore(join(app.getPath('userData'), LAYOUTS_FILE)),
+      workspaceId: () => scopes.callerOrOnly()?.workspace.openWorkspaceId(),
+    },
     transfers: sftpTransfers,
     forward: forwardService,
     keys: sshKeys,

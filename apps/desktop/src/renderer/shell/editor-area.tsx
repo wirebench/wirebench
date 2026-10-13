@@ -6,7 +6,9 @@ import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.
 import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
 import { useFilesStore } from '../features/ssh/files/files-store.js';
 import { filesTitle } from '../features/ssh/files/open-files.js';
-import { leaves, titleOf } from '../features/ssh/panes/pane-tree.js';
+import { useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
+import { terminalTitleOf } from '../features/ssh/panes/open-layout.js';
+import { leaves } from '../features/ssh/panes/pane-tree.js';
 import { filesSessionStatus, sessionStatus } from '../features/ssh/session-status.js';
 import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useShallow } from 'zustand/react/shallow';
@@ -147,6 +149,7 @@ export function EditorArea() {
   );
   const paneSessions = useHostsStore((state) => state.panes);
   const resolvedHosts = useHostsStore((state) => state.resolved);
+  const layouts = useLayoutsStore((state) => state.layouts);
   // Every terminal, whichever set is shown: they stay mounted so leaving Hosts never ends a session.
   const terminalTabs = allTabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.panes !== undefined);
   // Files tabs too: each holds its own SFTP session and folder.
@@ -248,7 +251,11 @@ export function EditorArea() {
   const labelFor = (tab: (typeof tabs)[number]): string =>
     liveTitles[tabs.indexOf(tab)] ??
     (tab.kind === 'ssh-terminal' && tab.panes !== undefined
-      ? titleOf(tab.panes, (hostId) => resolvedHosts.find((host) => host.id === hostId)?.name)
+      ? terminalTitleOf(
+          { panes: tab.panes, layoutId: tab.layoutId },
+          layouts,
+          (hostId) => resolvedHosts.find((host) => host.id === hostId)?.name,
+        )
       : undefined) ??
     (tab.kind === 'ssh-files' ? filesLabel(resolvedHosts.find((host) => host.id === tab.hostId)?.name) : undefined) ??
     tab.title;
