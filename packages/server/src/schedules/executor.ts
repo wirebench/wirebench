@@ -37,7 +37,7 @@ import {
   type Workspace,
 } from '@wirebench/engine';
 import type { FastifyBaseLogger } from 'fastify';
-import { recordAudit, type Database, type ServerHooks } from '../context.js';
+import { announce, recordAudit, type Database, type ServerHooks } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { materialise, type Materialised } from './materialise.js';
 import { RunStopped, type RunReason } from './outcome.js';
@@ -262,8 +262,8 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
     await snapshot?.dispose();
   }
 
-  await env.db.transaction(async (tx) => {
-    if (!(await repo.finishRun(tx, runId, { ...outcome, commit, environment, at: env.now() }))) return;
+  const stored = await env.db.transaction(async (tx) => {
+    if (!(await repo.finishRun(tx, runId, { ...outcome, commit, environment, at: env.now() }))) return false;
     const { summary } = outcome;
     await recordAudit(env.hooks, tx, {
       actor: { kind: 'system' },
@@ -282,5 +282,14 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
           : {}),
       },
     });
+    return true;
   });
+  // After the commit; a run a cancel ended was announced by the cancel.
+  if (stored) {
+    announce(
+      env.hooks.scheduleRunFinished,
+      { workspaceId: schedule.workspaceId, scheduleId: schedule.id, runId, status: outcome.status },
+      env.log,
+    );
+  }
 }

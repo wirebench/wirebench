@@ -97,6 +97,7 @@ describe('serverHooks and ServerModule (live-updates §5.1, §14)', () => {
       captureReceived: [],
       hooksChanged: [],
       licenseChanged: [],
+      scheduleRunFinished: [],
     });
     one.headMoved.push(() => undefined);
     one.accessChanged.push(() => undefined);

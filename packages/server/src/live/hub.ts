@@ -17,7 +17,14 @@ import {
   type LiveServerMessage,
   type WorkspaceRole,
 } from '@wirebench/engine';
-import type { AccessChanged, CaptureReceived, HeadMoved, HooksChanged, SessionEnded } from '../context.js';
+import type {
+  AccessChanged,
+  CaptureReceived,
+  HeadMoved,
+  HooksChanged,
+  ScheduleRunFinished,
+  SessionEnded,
+} from '../context.js';
 import type { Effective } from '../teams/roles.js';
 import { LIVE_TOO_MANY_SUBSCRIPTIONS } from './errors.js';
 
@@ -227,6 +234,19 @@ export class LiveHub {
   hooksChanged(event: HooksChanged): void {
     if (this.closed) return;
     this.deliver(this.byWorkspace.get(event.workspaceId) ?? [], { type: 'hooks', workspaceId: event.workspaceId });
+  }
+
+  /** `schedule-run` to every subscriber of the workspace: one of its scheduled runs ended (scheduled-runs §3.5). */
+  scheduleRunFinished(event: ScheduleRunFinished): void {
+    if (this.closed) return;
+    const { workspaceId, scheduleId, runId, status } = event;
+    this.deliver(this.byWorkspace.get(workspaceId) ?? [], {
+      type: 'schedule-run',
+      workspaceId,
+      scheduleId,
+      runId,
+      status,
+    });
   }
 
   /** Shutdown (§3.3, §5.1): closes every socket `1001` and clears the indexes. Later calls are no-ops. */

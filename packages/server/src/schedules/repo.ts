@@ -405,3 +405,28 @@ export async function cancelRun(db: Querier, runId: string, at: Date): Promise<'
   );
   return rows.rows[0]?.previous;
 }
+
+/**
+ * Up to `limit` finished runs queued before `cutoff`, oldest first, with their results (retention,
+ * scheduled-runs spec §3.6). A queued or running run is never deleted. Returns how many.
+ */
+export async function deleteRunsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+  const result = await db.query(
+    `delete from schedule_runs where id in (
+       select id from schedule_runs where queued_at < $1 and status not in ('queued', 'running')
+       order by queued_at limit $2)`,
+    [cutoff, limit],
+  );
+  return result.rowCount ?? 0;
+}
+
+/** Up to `limit` alert deliveries that are done (delivered or dead) and were created before `cutoff`. */
+export async function deleteOutboxBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+  const result = await db.query(
+    `delete from schedule_alert_outbox where id in (
+       select id from schedule_alert_outbox where state <> 'pending' and created_at < $1
+       order by created_at limit $2)`,
+    [cutoff, limit],
+  );
+  return result.rowCount ?? 0;
+}

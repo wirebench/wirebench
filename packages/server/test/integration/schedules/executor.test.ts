@@ -180,4 +180,18 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
     expect(JSON.stringify(errors)).toContain('git broke');
     expect(JSON.stringify(errors)).not.toContain(API_KEY);
   });
+
+  it('announces the outcome after the commit, and not for a run a cancel already ended', async () => {
+    const heard: unknown[] = [];
+    c.h.hooks.scheduleRunFinished.push((event) => heard.push(event));
+    const files = await workspaceSnapshot([probe('Ok', `${server.url}/ok`)]);
+    const { scheduleId, runId } = await seedRun(c);
+    await executeRun(executorEnv(c, files, tmpRoot), runId, never);
+    expect(heard).toEqual([{ workspaceId: c.workspaceId, scheduleId, runId, status: 'passed' }]);
+
+    const cancelled = await seedRun(c);
+    await c.h.db.query("update schedule_runs set status = 'cancelled' where id = $1", [cancelled.runId]);
+    await executeRun(executorEnv(c, files, tmpRoot), cancelled.runId, never);
+    expect(heard).toHaveLength(1);
+  });
 });

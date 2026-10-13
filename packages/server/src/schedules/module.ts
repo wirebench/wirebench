@@ -11,7 +11,9 @@ import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { realTimer } from '../live/module.js';
 import { TMP_DIR } from '../repos/repo-store.js';
+import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
+import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
 import { scheduleRunRoutes } from './run-routes.js';
 import { scheduleRoutes } from './routes.js';
 import { Scheduler, type SchedulerEnv } from './scheduler.js';
@@ -24,13 +26,15 @@ export const SCHEDULES_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/
 export const SCHEDULES_TMP_DIR = 'schedules';
 
 const MIB = 1024 * 1024;
+/** Delivered and dead alert deliveries are kept this long, for a look at what went out. */
+export const OUTBOX_MAX_AGE_DAYS = 7;
 
 export interface SchedulesOptions {
   /** Injected clock: timestamps, the next run and the scheduler. */
   readonly now?: () => Date;
   /** Injected timers: the scheduler's tick and each run's deadline. */
   readonly setTimer?: SetTimer;
-  /** `false` keeps the scheduler from passing on its own; tests drive it through `onScheduler`. */
+  /** `false` keeps the scheduler and the sweepers from passing on their own; tests drive them. */
   readonly startScheduler?: boolean;
   /** Runs a claimed run; the executor by default. A test seam. */
   readonly execute?: SchedulerEnv['execute'];
@@ -94,8 +98,35 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
           cancel: (runId) => scheduler.cancel(runId),
         },
       })(app);
-      if (options.startScheduler !== false) scheduler.start();
-      app.addHook('onClose', () => scheduler.stop());
+      // Retention (§3.6): runs past the maximum age with their results, and finished deliveries after a week.
+      const sweepers = [
+        new CaptureSweeper({
+          db: ctx.db,
+          maxAgeDays: settings.maxAgeDays,
+          now,
+          setTimer,
+          log: ctx.log,
+          deleteBefore: deleteRunsBefore,
+          label: 'schedule run sweep',
+        }),
+        new CaptureSweeper({
+          db: ctx.db,
+          maxAgeDays: OUTBOX_MAX_AGE_DAYS,
+          now,
+          setTimer,
+          log: ctx.log,
+          deleteBefore: deleteOutboxBefore,
+          label: 'schedule alert sweep',
+        }),
+      ];
+      if (options.startScheduler !== false) {
+        scheduler.start();
+        for (const sweeper of sweepers) sweeper.start();
+      }
+      app.addHook('onClose', async () => {
+        await scheduler.stop();
+        await Promise.all(sweepers.map((sweeper) => sweeper.stop()));
+      });
     },
   };
 }

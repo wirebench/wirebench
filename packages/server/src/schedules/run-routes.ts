@@ -16,7 +16,14 @@ import {
   type ScheduleRunPage,
 } from '@wirebench/engine';
 import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify';
-import { auditSource, recordAudit, type Database, type LicenseService, type ServerHooks } from '../context.js';
+import {
+  announce,
+  auditSource,
+  recordAudit,
+  type Database,
+  type LicenseService,
+  type ServerHooks,
+} from '../context.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
@@ -155,7 +162,7 @@ export const scheduleRunRoutes =
       async (request, reply) => {
         const { workspaceId } = request.workspaceAccess!;
         const { scheduleId, runId } = request.params as { readonly scheduleId: string; readonly runId: string };
-        await db.transaction(async (tx) => {
+        const scheduleRowId = await db.transaction(async (tx) => {
           const schedule = await repo.scheduleById(tx, workspaceId, scheduleId);
           if (schedule === undefined) throw scheduleNotFound();
           if ((await repo.runById(tx, schedule.id, runId)) === undefined) throw runNotFound();
@@ -168,10 +175,16 @@ export const scheduleRunRoutes =
             workspaceId,
             details: { name: schedule.name, runId, was: previous },
           });
+          return schedule.id;
         });
         // After the commit, so the executor finds the run no longer running and keeps the cancel. A run
         // on another server sends on until it ends or reaches its deadline, but its outcome stays cancelled.
         env.runs.cancel(runId);
+        announce(
+          env.hooks.scheduleRunFinished,
+          { workspaceId, scheduleId: scheduleRowId, runId, status: 'cancelled' },
+          request.log,
+        );
         return reply.code(204).send();
       },
     );
