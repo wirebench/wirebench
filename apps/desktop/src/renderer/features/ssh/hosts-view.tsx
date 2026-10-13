@@ -6,14 +6,17 @@ import {
   Server,
   ShieldCheck,
   SquareTerminal,
+  Terminal,
   type LucideIcon,
 } from 'lucide-react';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
+import { useUiStore } from '../../state/ui.js';
 import { forwardCounts, useForwardsStore } from './forwarding/forwards-store.js';
 import { HostDialog } from './host-dialog.js';
 import { useHostsStore, type SshHomeView } from './hosts-store.js';
 import { ImportDialog } from './import-dialog.js';
+import { openLocalTerminal } from './local-terminal.js';
 import { refreshLayouts, useLayoutsStore } from './panes/layouts-store.js';
 import { useSnippetsStore } from './snippets/snippets-store.js';
 
@@ -41,6 +44,7 @@ export function HostsView() {
   // Whether the fixed tab is the one in front: the entry only reads as current while it is.
   const homeShown = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
   const [counts, setCounts] = useState<{ keychain?: number; knownHosts?: number }>({});
+  const localTerminal = useUiStore((s) => s.localTerminalEnabled);
 
   useEffect(() => {
     void refresh();
@@ -112,6 +116,21 @@ export function HostsView() {
           })}
         </ul>
       </nav>
+      {localTerminal && (
+        <div className="mt-2 border-t border-hairline pt-2">
+          <button
+            type="button"
+            data-testid="ssh-new-local-terminal"
+            onClick={() => {
+              openLocalTerminal();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-muted hover:bg-surface-raised"
+          >
+            <Terminal size={15} aria-hidden="true" className="shrink-0" />
+            <span className="flex-1 text-left">New local terminal</span>
+          </button>
+        </div>
+      )}
       <HostDialog />
       <ImportDialog />
     </div>

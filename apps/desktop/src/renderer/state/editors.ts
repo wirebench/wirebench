@@ -78,7 +78,8 @@ export interface EditorTab {
     | 'runner'
     | 'cookies'
     | 'ssh-terminal'
-    | 'ssh-files';
+    | 'ssh-files'
+    | 'local-terminal';
   readonly title: string;
   /**
    * Which area's tab set this tab joins, when its kind alone does not say (see `tab-sets.ts`):

@@ -75,6 +75,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Snippets: Run Snippet | — | — |
 | Run Snippet… | — | — |
 | Terminal: Snippets… | <kbd>⌘;</kbd> | <kbd>Ctrl+;</kbd> |
+| Terminal: New Local Terminal | <kbd>⌘⌥T</kbd> | <kbd>Ctrl+Alt+T</kbd> |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |

@@ -245,6 +245,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Hosts',
     shortcut: 'Mod+Semicolon',
   },
+  'ssh.newLocalTerminal': {
+    id: 'ssh.newLocalTerminal',
+    label: 'Terminal: New Local Terminal',
+    category: 'Hosts',
+    shortcut: 'Mod+Alt+T',
+  },
   'sftp.refresh': {
     id: 'sftp.refresh',
     label: 'Files: Refresh',

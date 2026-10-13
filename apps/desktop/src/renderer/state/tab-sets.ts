@@ -26,6 +26,7 @@ export function tabSetOf(tab: TabSetSubject): TabSet {
   switch (tab.kind) {
     case 'ssh-terminal':
     case 'ssh-files':
+    case 'local-terminal':
       return 'ssh';
     case 'environment':
       return 'environments';

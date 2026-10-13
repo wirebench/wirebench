@@ -49,6 +49,7 @@ export const COMMAND_IDS = [
   'ssh.runSnippet',
   'ssh.runSnippetPalette',
   'ssh.snippetPicker',
+  'ssh.newLocalTerminal',
   'sftp.refresh',
   'sftp.newFolder',
   'sftp.rename',
