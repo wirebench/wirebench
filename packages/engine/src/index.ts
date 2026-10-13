@@ -170,6 +170,7 @@ export {
   ProtoError,
   GrpcError,
   WsError,
+  McpError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';

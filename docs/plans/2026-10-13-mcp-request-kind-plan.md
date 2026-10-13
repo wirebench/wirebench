@@ -68,23 +68,23 @@ tests.
 **Files:** new `mcp/{jsonrpc,session,transport,stdio,limits}.ts`, test fixture
 `test/fixtures/mcp/stdio-server.mjs` (SDK `McpServer` over stdio), tests.
 
-- [ ] `McpTransport` interface: `start`, `send(message)`, `close`, and `onMessage` / `onClose` /
+- [x] `McpWireTransport` interface (`McpTransport` is the saved configuration in `model.ts`): `start`, `send(message)`, `close`, and `onMessage` / `onClose` /
   `onError`. A recorder wraps it and records each message: direction, `at`, size, id, method, and any
   warnings from the SDK's `JSONRPCMessageSchema`.
-- [ ] stdio:
+- [x] stdio:
   - `spawn` with no shell, under the env allowlist, from `cwd` resolved against the project folder;
   - newline-delimited JSON;
   - stderr capped at 64 KiB;
   - shutdown: end stdin, then `SIGTERM` after 2 s, then `SIGKILL` 2 s later;
   - an early exit fails with `mcp-server-exited`, giving the code and the stderr tail.
-- [ ] Session steps:
+- [x] Session steps:
   - `initialize`, then the version and capability check (`mcp-capability-missing`,
     `mcp-protocol-unsupported`);
   - `notifications/initialized`, then the operation, then close;
   - one deadline, with `notifications/cancelled` when it passes (`mcp-timeout`);
   - a server request is answered `-32601` and recorded;
   - messages over 4 MiB fail (`mcp-message-too-large`), and the exchange keeps at most 1,000 messages.
-- [ ] Tests against the fixture:
+- [x] Tests against the fixture:
   - list tools, call a tool, and call a tool with `isError`;
   - the server sends a `roots/list` request;
   - a server that never answers (the timeout);

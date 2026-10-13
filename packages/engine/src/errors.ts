@@ -167,6 +167,18 @@ export class WsError extends WirebenchError {
   }
 }
 
+/**
+ * An MCP session that could not complete (#79): the server process, the connection, the
+ * handshake, a limit or the deadline. A JSON-RPC error the server answered is not one of these:
+ * it is the operation's result.
+ */
+export class McpError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'McpError';
+  }
+}
+
 /** Thrown when a value fails validation against a schema or business rule. */
 export class ValidationError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {
