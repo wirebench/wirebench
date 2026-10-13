@@ -91,4 +91,51 @@ describeDb('SCIM audit events', () => {
     expect(actor.rows[0]!.actor_token_id).toBe(token.id);
     await expectNoSecretsInAudit(h.db);
   });
+  it('records scim.group_created, scim.group_updated and scim.group_deleted against the group', async () => {
+    const token = (
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/scim-tokens',
+        headers: admin.headers,
+        payload: { name: 'Groups' },
+      })
+    ).json<{ token: string }>();
+    const headers = { authorization: `Bearer ${token.token}`, 'content-type': 'application/scim+json' };
+    const created = await h.app.inject({
+      method: 'POST',
+      url: '/scim/v2/Groups',
+      headers,
+      payload: JSON.stringify({ displayName: 'Engineering' }),
+    });
+    const { id } = created.json<{ id: string }>();
+    await h.app.inject({
+      method: 'PATCH',
+      url: `/scim/v2/Groups/${id}`,
+      headers,
+      payload: JSON.stringify({
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'replace', path: 'displayName', value: 'Platform' }],
+      }),
+    });
+    await h.app.inject({ method: 'DELETE', url: `/scim/v2/Groups/${id}`, headers });
+    expect(await rows('scim.group_created')).toEqual([
+      {
+        actor_kind: 'scim',
+        target_kind: 'scim-group',
+        target_id: id,
+        details: { displayName: 'Engineering', membersAdded: 0 },
+      },
+    ]);
+    expect(await rows('scim.group_updated')).toEqual([
+      {
+        actor_kind: 'scim',
+        target_kind: 'scim-group',
+        target_id: id,
+        details: { displayName: 'Platform', fields: ['displayName'], membersAdded: 0, membersRemoved: 0 },
+      },
+    ]);
+    expect(await rows('scim.group_deleted')).toEqual([
+      { actor_kind: 'scim', target_kind: 'scim-group', target_id: id, details: { displayName: 'Platform' } },
+    ]);
+  });
 });

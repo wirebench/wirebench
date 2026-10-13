@@ -455,3 +455,60 @@ export async function otherEnabledServerAdmins(db: Querier, exceptId: string): P
     ).rows[0]!.n,
   );
 }
+
+// ---- groups as SCIM resources ----------------------------------------------------------------
+
+export type ScimGroupFilter = { readonly attribute: 'displayName' | 'externalId'; readonly value: string };
+
+/** One page of groups by name, and how many match in all. `offset` is zero-based. */
+export async function listScimGroupPage(
+  db: Querier,
+  filter: ScimGroupFilter | undefined,
+  offset: number,
+  limit: number,
+): Promise<{ readonly total: number; readonly groups: readonly ScimGroupRow[] }> {
+  const where =
+    filter === undefined
+      ? { sql: '', params: [] as unknown[] }
+      : filter.attribute === 'externalId'
+        ? { sql: 'where g.external_id = $1', params: [filter.value] }
+        : { sql: 'where lower(g.display_name) = lower($1)', params: [filter.value] };
+  const total = Number(
+    (await db.query<{ n: string }>(`select count(*) as n from scim_groups g ${where.sql}`, where.params)).rows[0]!.n,
+  );
+  const n = where.params.length;
+  const groups = (
+    await db.query(
+      `select ${GROUP_COLUMNS} from scim_groups g ${where.sql} order by lower(g.display_name), g.id offset $${String(n + 1)} limit $${String(n + 2)}`,
+      [...where.params, offset, limit],
+    )
+  ).rows.map((row) => dated<ScimGroupRow>(row, GROUP_DATES));
+  return { total, groups };
+}
+
+/** Members of each of `groupIds` with their email, for the `members[].display` a SCIM group carries. */
+export async function groupMembersWithEmail(
+  db: Querier,
+  groupIds: readonly string[],
+): Promise<ReadonlyMap<string, readonly { readonly id: string; readonly email: string }[]>> {
+  const out = new Map<string, { id: string; email: string }[]>(groupIds.map((id) => [id, []]));
+  if (groupIds.length === 0) return out;
+  const rows = (
+    await db.query<{ groupId: string; id: string; email: string }>(
+      `select m.group_id as "groupId", u.id, u.email from scim_group_members m join users u on u.id = m.user_id
+       where m.group_id = any($1) order by u.email_lower`,
+      [[...groupIds]],
+    )
+  ).rows;
+  for (const row of rows) out.get(row.groupId)!.push({ id: row.id, email: row.email });
+  return out;
+}
+
+/** Which of `ids` are not users, sorted. */
+export async function unknownUserIds(db: Querier, ids: readonly string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const known = new Set(
+    (await db.query<{ id: string }>('select id from users where id = any($1)', [[...ids]])).rows.map((row) => row.id),
+  );
+  return ids.filter((id) => !known.has(id)).sort();
+}
