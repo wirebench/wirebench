@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
+  and groups, merged by name down the tree so a nearer level wins for each variable; a value is
+  text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the
+  server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
+  screen. The host form edits them and shows the inherited ones with their group, the details panel
+  lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as

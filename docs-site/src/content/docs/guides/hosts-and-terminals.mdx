@@ -71,6 +71,8 @@ The rules:
   unknown id or a loop is refused when the file is read.
 - `auth` is exactly one of `{ password }`, `{ key, passphrase? }` or `{ agent: true }`. The agent
   option signs with your local SSH agent.
+- `env` on a group or a host maps variable names to values; see
+  [Environment variables](#environment-variables).
 
 ## Inheritance
 
@@ -104,6 +106,46 @@ When you connect, a name resolves like any other secret in the app: a name mappe
 its source, and any other name comes from the value stored for this workspace on this machine. A
 missing value fails the connect with `secret-missing` and the name. Project secrets don't apply: a
 secret you set on a project is not visible to a host.
+
+## Environment variables
+
+A group or a host can set environment variables for the shells it opens: a locale, a terminal
+setting, an application profile, a proxy.
+
+```yaml
+groups:
+  - id: prod
+    name: Production
+    env:
+      LANG: en_US.UTF-8
+      APP_PROFILE: prod
+      API_TOKEN: '${secret:prod_api_token}'
+    hosts:
+      - id: api-1
+        name: api-1
+        address: 10.0.1.5
+        env:
+          LANG: C.UTF-8
+```
+
+- Variables merge by name down the tree, and a nearer level wins for each variable. **api-1** above
+  gets `LANG=C.UTF-8` from itself and `APP_PROFILE` and `API_TOKEN` from **Production**.
+- A name is letters, digits and underscores, not starting with a digit. A value is text, or a whole
+  `${secret:NAME}` token that resolves when you connect, like a password. A token inside other text is
+  refused, so it is never sent as written.
+- The variables are sent as SSH `env` requests when a terminal opens, before the shell starts. A
+  server keeps only the names its `AcceptEnv` setting allows and ignores the rest, and the terminal
+  opens either way. OpenSSH accepts no names by default; many Linux distributions allow
+  `AcceptEnv LANG LC_*`. Add the names you need to the server's `sshd_config`, or set them in the
+  shell's startup files instead.
+- Only the target host's shell gets them: not a jump host, not a Files tab, and not a port forward.
+- A value read from a secret is masked in the terminal like a snippet's secret, so `env` or
+  `echo $API_TOKEN` shows dots.
+
+In the host form, **Environment variables** lists the variables the groups above pass down, greyed
+with the group they come from. **Override** copies one onto this level to change it, and **Add
+variable** adds a new one, as text or as a secret picked by name. The host details panel lists every
+variable the host ends up with and where each one comes from.
 
 ## Opening a terminal
 
@@ -281,6 +323,7 @@ user, port, jump host and authentication, the lines that will not come across, a
 | `ProxyJump a,b`, `ProxyCommand ssh -W %h:%p a` | the jump host; a hop that names no host in the file becomes a new host        |
 | `IdentityFile`                             | the key you choose for it (below)                                               |
 | `ServerAliveInterval`, `ConnectTimeout`    | keep-alive and connect timeout                                                  |
+| `SetEnv NAME=value …`                      | environment variables; the first value of a name wins                           |
 | `Host *` and lines before the first `Host` | settings on the new group, inherited by its hosts                               |
 
 Each alias gets the settings `ssh` itself would use: the first value found for each option, in file
@@ -295,6 +338,10 @@ order, across the blocks whose patterns match. `Include` is followed one level d
 - **Use an existing secret** that already holds the key.
 
 A key file is never opened unless you choose to store it, and its contents never reach the interface.
+
+**Environment variables.** `SetEnv` values are written to `hosts.yaml` as they are, and the dialog
+does not show them; a note says so. Replace any secret among them with `${secret:NAME}` after the
+import. An entry that is not `NAME=value`, or that already holds `${secret:…}`, is skipped with a note.
 
 **What is not imported.** `Match` blocks, other `ProxyCommand`s, an `Include` inside an included file,
 and options such as `LocalForward`, `ForwardAgent` or `SendEnv` are listed by option name, file and line.
