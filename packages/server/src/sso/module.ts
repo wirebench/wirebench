@@ -12,6 +12,7 @@ import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
 import * as repo from './repo.js';
 import { authSamlRoutes } from './routes/auth-saml.js';
 import { scimTokenRoutes } from './routes/scim-tokens.js';
+import { scimPlugin } from './scim/plugin.js';
 import { loadIdpMetadata, type IdpMetadata } from './saml-metadata.js';
 import { samlProvider } from './saml.js';
 
@@ -35,6 +36,8 @@ export async function sweepSso(db: ServerContext['db'], now: Date): Promise<void
 
 export function ssoModule(options: SsoOptions = {}): ServerModule {
   const now = options.now ?? (() => new Date());
+  /** Built in `register`; the SCIM scope, mounted at the root afterwards, shares it. */
+  let shared: SsoEnv | undefined;
   return {
     name: 'sso',
     migrationsDir: SSO_MIGRATIONS_DIR,
@@ -67,6 +70,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
         urls,
         saml,
       };
+      shared = env;
       authSamlRoutes(env)(app);
       scimTokenRoutes(env)(app);
 
@@ -80,6 +84,11 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           clearInterval(timer);
         });
       }
+    },
+
+    async registerPublic(root: FastifyInstance): Promise<void> {
+      // Beside `/api/v1`, never inside it: a SCIM token must not reach the device-token routes (§6.2).
+      await root.register(scimPlugin(shared!), { prefix: '/scim/v2' });
     },
   };
 }

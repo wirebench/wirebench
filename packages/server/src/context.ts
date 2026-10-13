@@ -116,6 +116,8 @@ export function permissiveLicense(): LicenseService {
 export type AuditActorInput =
   | { readonly kind: 'user'; readonly userId: string; readonly email: string; readonly tokenId?: string }
   | { readonly kind: 'ci-token'; readonly tokenId: string; readonly workspaceId: string }
+  /** A SCIM token's write (saml-scim spec §3.5). */
+  | { readonly kind: 'scim'; readonly tokenId: string }
   | { readonly kind: 'system' }
   | { readonly kind: 'anonymous' };
 
