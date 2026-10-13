@@ -11,6 +11,7 @@ import { RateLimiter } from '../identity/rate-limit.js';
 import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
 import * as repo from './repo.js';
 import { authSamlRoutes } from './routes/auth-saml.js';
+import { scimTokenRoutes } from './routes/scim-tokens.js';
 import { loadIdpMetadata, type IdpMetadata } from './saml-metadata.js';
 import { samlProvider } from './saml.js';
 
@@ -67,6 +68,7 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
         saml,
       };
       authSamlRoutes(env)(app);
+      scimTokenRoutes(env)(app);
 
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {

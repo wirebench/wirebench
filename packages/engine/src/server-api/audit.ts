@@ -54,6 +54,8 @@ export const AUDIT_ACTIONS = [
   'desktop.request_sent',
   'desktop.run_finished',
   'desktop.events_dropped',
+  'scim.token_created',
+  'scim.token_revoked',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;

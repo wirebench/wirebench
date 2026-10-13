@@ -10,6 +10,9 @@ export type ServerCommand =
   | { readonly command: 'admin-license-install'; readonly file: string }
   | { readonly command: 'admin-license-show' }
   | { readonly command: 'admin-license-remove' }
+  | { readonly command: 'admin-scim-token-create'; readonly name: string }
+  | { readonly command: 'admin-scim-token-list' }
+  | { readonly command: 'admin-scim-token-revoke'; readonly id: string }
   | {
       readonly command: 'admin-audit-export';
       readonly from?: string;
@@ -45,6 +48,10 @@ Usage:
                                     Install a license file (replaces any installed license)
   wirebench-server admin license show
   wirebench-server admin license remove
+  wirebench-server admin scim-token create <name>
+                                    Create a SCIM token for the identity provider (printed once)
+  wirebench-server admin scim-token list
+  wirebench-server admin scim-token revoke <id>
   wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
                                     Write the audit log as NDJSON to stdout
   wirebench-server admin audit verify [--head <seq>:<hex>] [--json]
@@ -164,6 +171,19 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
               return { command: 'admin-license-remove' };
             default:
               throw new UsageError('usage: wirebench-server admin license install <file> | show | remove');
+          }
+        case 'scim-token':
+          switch (third) {
+            case 'create':
+              if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-token create <name>');
+              return { command: 'admin-scim-token-create', name: fourth };
+            case 'list':
+              return { command: 'admin-scim-token-list' };
+            case 'revoke':
+              if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-token revoke <id>');
+              return { command: 'admin-scim-token-revoke', id: fourth };
+            default:
+              throw new UsageError('usage: wirebench-server admin scim-token create <name> | list | revoke <id>');
           }
         default:
           throw new UsageError(`unknown admin command "${second ?? ''}"; try --help`);
