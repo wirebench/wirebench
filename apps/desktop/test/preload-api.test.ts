@@ -73,6 +73,7 @@ describe('buildApi', () => {
       'pathForFile',
       'preferences',
       'project',
+      'provisioning',
       'request',
       'runner',
       'script',

@@ -50,6 +50,12 @@ function fakeClient(overrides: Partial<Record<keyof ServerClient, unknown>> = {}
       expiresAt: '2026-09-24T12:10:00.000Z',
     }),
     completeOidc: vi.fn().mockResolvedValue({ token: TOKEN, user: USER }),
+    startSaml: vi.fn().mockResolvedValue({
+      flowId: 'saml-flow-1',
+      authorizationUrl: 'https://idp.test/saml/sso?SAMLRequest=x',
+      expiresAt: '2026-09-24T12:10:00.000Z',
+    }),
+    completeSaml: vi.fn().mockResolvedValue({ token: TOKEN, user: USER }),
     signOut: vi.fn().mockResolvedValue(undefined),
     me: vi.fn().mockResolvedValue({ user: USER, methods: { local: true, oidc: [] } }),
     lookupInvitation: vi.fn().mockResolvedValue({ email: 'alice@example.com', methods: { local: true, oidc: false } }),
@@ -213,6 +219,43 @@ describe('AccountService', () => {
     expect(s2.cancelSignIn()).toEqual({ cancelled: true });
     await expect(pending2).rejects.toMatchObject({ code: 'account-sign-in-cancelled' });
     expect(s2.cancelSignIn()).toEqual({ cancelled: false });
+  });
+
+  it('SAML: the same loopback flow on the SAML start and complete paths, never the OIDC ones', async () => {
+    const client = fakeClient();
+    const loopback = fakeLoopback();
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const s = service(client, fakeSecrets(), loopback, openExternal);
+    const pending = s.startSaml({ url: URL_A });
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledWith('https://idp.test/saml/sso?SAMLRequest=x'));
+    loopback.answer({ flow: 'saml-flow-1', grant: 'G'.repeat(43) });
+    expect((await pending).email).toBe('alice@example.com');
+    const completeBody = (client.completeSaml as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as { flowId: string };
+    expect(completeBody.flowId).toBe('saml-flow-1');
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- expect() reads the mock fn, never calls it unbound
+    expect(client.startOidc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['saml-signature', 'identity-saml-refused', "The identity provider's response was not accepted."],
+    ['saml-in-response-to', 'identity-saml-refused', "The identity provider's response was not accepted."],
+    [
+      'identity-saml-no-email',
+      'identity-saml-no-email',
+      'The identity provider did not send an email address for this account.',
+    ],
+    [
+      'licensing-feature-required',
+      'licensing-feature-required',
+      'SAML sign-in needs an Enterprise license on this server.',
+    ],
+  ])('SAML: the loopback error %s becomes %s', async (error, code, message) => {
+    const loopback = fakeLoopback();
+    const s = service(fakeClient(), fakeSecrets(), loopback);
+    const pending = s.startSaml({ url: URL_A });
+    await vi.waitFor(() => expect(loopback.start).toHaveBeenCalled());
+    loopback.answer({ flow: 'saml-flow-1', error });
+    await expect(pending).rejects.toMatchObject({ code, message });
   });
 
   it('OIDC: an unrecognised loopback error code does not pass through verbatim', async () => {

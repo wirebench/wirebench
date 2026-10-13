@@ -178,6 +178,16 @@ import {
   licenseRemoveResponseWireSchema,
   licenseRequestWireSchema,
   licenseStateWireSchema,
+  provisioningRequestWireSchema,
+  samlInfoWireSchema,
+  scimGroupLinkRequestWireSchema,
+  scimGroupsListResponseWireSchema,
+  scimGroupSummaryWireSchema,
+  scimTokenCreatedWireSchema,
+  scimTokenCreateRequestWireSchema,
+  scimTokenRevokeRequestWireSchema,
+  scimTokenRevokeResponseWireSchema,
+  scimTokensListResponseWireSchema,
   logExportHarResponseSchema,
   logResendRequestSchema,
   mockCheckResponseSchema,
@@ -496,6 +506,8 @@ export const channels = {
     signInLocal: defineChannel('account.signInLocal', accountSignInLocalRequestSchema, accountResponseSchema),
     /** Resolves when the browser hand-off has completed; `cancelSignIn` ends it early. */
     startOidc: defineChannel('account.startOidc', accountStartOidcRequestSchema, accountResponseSchema),
+    /** The SAML hand-off (saml-scim spec §3.7): the same request and loopback as OIDC. */
+    startSaml: defineChannel('account.startSaml', accountStartOidcRequestSchema, accountResponseSchema),
     cancelSignIn: defineChannel('account.cancelSignIn', z.undefined(), accountCancelResponseSchema),
     lookupInvitation: defineChannel(
       'account.lookupInvitation',
@@ -582,6 +594,31 @@ export const channels = {
     get: defineChannel('license.get', licenseRequestWireSchema, licenseStateWireSchema),
     install: defineChannel('license.install', licenseInstallRequestWireSchema, licenseStateWireSchema),
     remove: defineChannel('license.remove', licenseRequestWireSchema, licenseRemoveResponseWireSchema),
+  },
+  /** SAML and SCIM settings of a server (saml-scim spec §3.7): server admins on Enterprise; main adds the token. */
+  provisioning: {
+    info: defineChannel('provisioning.info', provisioningRequestWireSchema, samlInfoWireSchema),
+    listTokens: defineChannel(
+      'provisioning.listTokens',
+      provisioningRequestWireSchema,
+      scimTokensListResponseWireSchema,
+    ),
+    createToken: defineChannel(
+      'provisioning.createToken',
+      scimTokenCreateRequestWireSchema,
+      scimTokenCreatedWireSchema,
+    ),
+    revokeToken: defineChannel(
+      'provisioning.revokeToken',
+      scimTokenRevokeRequestWireSchema,
+      scimTokenRevokeResponseWireSchema,
+    ),
+    listGroups: defineChannel(
+      'provisioning.listGroups',
+      provisioningRequestWireSchema,
+      scimGroupsListResponseWireSchema,
+    ),
+    linkGroup: defineChannel('provisioning.linkGroup', scimGroupLinkRequestWireSchema, scimGroupSummaryWireSchema),
   },
   /** The server's audit log (audit-log spec §3.6): server admins on Enterprise; main adds the token and picks the export file. */
   audit: {
