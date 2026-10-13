@@ -8,7 +8,7 @@ const CONTENT_CLASS = 'z-50 min-w-48 rounded-md border border-hairline bg-surfac
 export interface FileMenuActions {
   /** How many entries the menu acts on. */
   readonly count: number;
-  /** One folder (or link to one) selected: Open lists it. Otherwise the item reads Edit, which waits for #444. */
+  /** One folder (or link to one) selected: Open lists it. Otherwise the item reads Edit (a host's file only). */
   readonly folder: boolean;
   /** This machine's pane: permissions are changed on a host only. */
   readonly local: boolean;
@@ -36,7 +36,7 @@ export function FileMenu({
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={CONTENT_CLASS} data-testid="files-menu">
-          <ContextMenu.Item className={ITEM_CLASS} disabled={!(one && a.folder)} onSelect={a.open}>
+          <ContextMenu.Item className={ITEM_CLASS} disabled={!(one && (a.folder || !a.local))} onSelect={a.open}>
             {a.count > 0 && !a.folder ? 'Edit' : 'Open'}
           </ContextMenu.Item>
           <ContextMenu.Item className={ITEM_CLASS} disabled={a.count === 0} onSelect={a.copyToOtherPane}>

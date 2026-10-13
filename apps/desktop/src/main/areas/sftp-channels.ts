@@ -1,6 +1,7 @@
 import { channels } from '../../shared/ipc.js';
 import { registerHandler } from '../ipc/register.js';
 import { localHome } from '../local-fs.js';
+import type { SftpEditService } from '../sftp-edit.js';
 import type { SftpService } from '../sftp-service.js';
 import type { TransferQueue } from '../transfers.js';
 
@@ -12,8 +13,9 @@ import type { TransferQueue } from '../transfers.js';
 export function registerSftpChannels(deps: {
   sftp: Pick<SftpService, 'open' | 'close' | 'list' | 'mkdir' | 'rename' | 'remove' | 'chmod'>;
   transfers: Pick<TransferQueue, 'copy' | 'resolve' | 'cancel' | 'retry'>;
+  edits: Pick<SftpEditService, 'edit' | 'reply' | 'end'>;
 }): void {
-  const { sftp, transfers } = deps;
+  const { sftp, transfers, edits } = deps;
   // Sessions belong to the window that opened them: the sender is the owner on every call.
   registerHandler(channels.sftp.open, (request, sender) => sftp.open(sender, request));
   registerHandler(channels.sftp.close, (request, sender) => {
@@ -51,5 +53,15 @@ export function registerSftpChannels(deps: {
   registerHandler(channels.sftp.retry, (request, sender) => {
     transfers.retry(sender, request);
     return Promise.resolve({});
+  });
+  // Edits are the window's own too: only it can answer or end them.
+  registerHandler(channels.sftp.edit, (request, sender) => edits.edit(sender, request));
+  registerHandler(channels.sftp.editReply, async (request, sender) => {
+    await edits.reply(sender, request);
+    return {};
+  });
+  registerHandler(channels.sftp.endEdit, async (request, sender) => {
+    await edits.end(sender, request);
+    return {};
   });
 }

@@ -4,6 +4,7 @@
  * click open the same one.
  */
 import { useEditorsStore } from '../../../state/editors.js';
+import { useEditsStore } from './edits-store.js';
 import { otherPaneId, useFilesStore } from './files-store.js';
 import { isFolderLike, joinPath } from './format.js';
 import { useTransfersStore } from './transfers-store.js';
@@ -66,12 +67,16 @@ export const fileActions = {
     const text = entries.length === 0 ? pane.path : entries.map((e) => joinPath(pane.path, e.name)).join('\n');
     void navigator.clipboard.writeText(text).catch(() => undefined);
   },
-  /** Opens the one selected folder. */
+  /** Opens the one selected folder, or edits the one selected file of a host in the system editor. */
   open(tabId: string): void {
     const pane = useFilesStore.getState().panes[tabId];
     const [entry, ...more] = selectedEntries(tabId);
-    if (pane === undefined || entry === undefined || more.length > 0 || !isFolderLike(entry)) return;
-    void useFilesStore.getState().navigate(tabId, joinPath(pane.path, entry.name), { push: true });
+    if (pane === undefined || entry === undefined || more.length > 0) return;
+    if (isFolderLike(entry)) {
+      void useFilesStore.getState().navigate(tabId, joinPath(pane.path, entry.name), { push: true });
+    } else if (pane.place.kind === 'remote') {
+      void useEditsStore.getState().start(tabId, entry.name);
+    }
   },
   toggleHidden(): void {
     const store = useFilesStore.getState();

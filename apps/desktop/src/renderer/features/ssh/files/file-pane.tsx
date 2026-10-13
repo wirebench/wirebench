@@ -5,6 +5,7 @@ import { Button } from '../../../components/button.js';
 import { IconButton } from '../../../components/icon-button.js';
 import { useHostsStore } from '../hosts-store.js';
 import { DeleteDialog } from './delete-dialog.js';
+import { useEditsStore } from './edits-store.js';
 import { fileActions } from './file-actions.js';
 import { FileList } from './file-list.js';
 import { FileMenu } from './file-menu.js';
@@ -26,7 +27,8 @@ let dragging: { readonly paneId: string; readonly names: readonly string[] } | u
  * One pane of a Files tab, this machine's or a host's, with its place picker to switch it to another: Back, Up, Refresh and the hidden-entries toggle,
  * the path bar, a refusal under it when a folder could not be listed (the listing stays), and the list with
  * its menu: copy to the other pane, rename in place (F2), delete with confirmation (Delete), new folder,
- * permissions (on a host), copy path and refresh. Entries dragged onto the other pane, or onto a folder in
+ * permissions (on a host), copy path and refresh. Enter or a double click on a host's file edits it in the
+ * system editor. Entries dragged onto the other pane, or onto a folder in
  * it, are copied there; files dropped from the OS onto a host's pane are uploaded. Tab moves to the other
  * pane.
  */
@@ -236,6 +238,7 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
             }}
             onOpen={(entry) => {
               if (isFolderLike(entry)) void navigate(joinPath(pane.path, entry.name));
+              else if (!local) void useEditsStore.getState().start(paneId, entry.name);
             }}
             onUp={() => {
               void store().up(paneId);
