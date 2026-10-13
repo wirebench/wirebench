@@ -107,6 +107,7 @@ describe('terminal preferences', () => {
       colorScheme: 'app',
       sessionLogMaxMb: 500,
       sessionLogRaw: false,
+      localShell: '',
     });
   });
 
@@ -125,6 +126,7 @@ describe('terminal preferences', () => {
       colorScheme: 'app',
       sessionLogMaxMb: 500,
       sessionLogRaw: false,
+      localShell: '',
     });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
   });
@@ -163,6 +165,14 @@ describe('terminal preferences', () => {
     });
     expect(mergePreferences({ terminal: { colorScheme: 'Not An Id' } }).terminal.colorScheme).toBe('app');
     expect(mergePreferences({}).terminal.fontFamily).toBeUndefined();
+  });
+
+  it('reads terminal.localShell, empty (the OS default) when missing or not a string', () => {
+    expect(mergePreferences({ terminal: { localShell: '/usr/local/bin/fish' } }).terminal.localShell).toBe(
+      '/usr/local/bin/fish',
+    );
+    expect(mergePreferences({}).terminal.localShell).toBe('');
+    expect(mergePreferences({ terminal: { localShell: 42 } }).terminal.localShell).toBe('');
   });
 
   it('reads and clamps terminal.reconnectAttempts', () => {

@@ -45,7 +45,7 @@ needs no edit when a later slice extends it.
 ## Non-goals
 
 - Snippets, SFTP, port forwarding, workspaces, a local terminal, and sending requests through a host: later
-  slices.
+  slices. (The local terminal shipped with #410.)
 - Session logs or recordings of terminal output. Whether a terminal session is logged is an audit decision
   (desktop activity lineage) taken when S2 adds scripted runs. S1 records only that a session opened and
   closed.

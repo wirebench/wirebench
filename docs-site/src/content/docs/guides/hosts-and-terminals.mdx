@@ -70,8 +70,9 @@ The rules:
   behaviour.
 - `jump` names the id of another host. Chains are followed through that host's own `jump`; an
   unknown id or a loop is refused when the file is read.
-- `auth` is exactly one of `{ password }`, `{ key, passphrase? }` or `{ agent: true }`. The agent
-  option signs with your local SSH agent.
+- `auth` is exactly one of `{ password }`, `{ key, certificate?, passphrase? }` or `{ agent: true }`.
+  The agent option signs with your local SSH agent; `certificate` is the key's OpenSSH certificate
+  (see [Certificates](#certificates)).
 - `env` on a group or a host maps variable names to values; see
   [Environment variables](#environment-variables).
 
@@ -107,6 +108,42 @@ When you connect, a name resolves like any other secret in the app: a name mappe
 its source, and any other name comes from the value stored for this workspace on this machine. A
 missing value fails the connect with `secret-missing` and the name. Project secrets don't apply: a
 secret you set on a project is not visible to a host.
+
+## Certificates
+
+If your organisation runs an SSH certificate authority, the servers trust the CA instead of each
+person's key, and you sign in with your key plus the short-lived certificate the CA issued for it
+(the `-cert.pub` file `ssh-keygen -s` writes). Give the key a `certificate`, a secret holding that
+certificate line:
+
+```yaml
+ssh:
+  user: alice
+  auth:
+    key: ${secret:work_key}
+    certificate: ${secret:work_key_cert}
+```
+
+On connect Wirebench offers the certificate first and then the key alone, as `ssh` does, so a server
+that also lists the key in `authorized_keys` still lets you in. `certificate` is part of `auth`, so a
+group's key and certificate are inherited together.
+
+Before connecting, the certificate is checked against the key and the clock. A certificate outside
+its validity window fails with `ssh-cert-expired` and says when it was valid (for example
+`The certificate has expired: it was valid from 2026-10-01 09:00:00 UTC to 2026-10-01 17:00:00 UTC`);
+ask your CA for a new one. A host certificate, or a certificate issued for another key, is refused too.
+Ed25519, ECDSA and RSA keys are supported; certificates for security keys (`sk-…`) are not.
+
+**In the keychain.** A key's row has **Attach certificate…**: paste the certificate and Wirebench
+checks that it is a user certificate for that key, then stores it as the secret `<key>_cert`, next to
+`<key>_passphrase`. The row then shows the certificate's key ID, its principals (the user names it is
+valid for) and its validity window, with a badge when it has expired, is not valid yet or belongs to
+another key. When a certificate is renewed, **Replace certificate…** stores the new one under the same
+name, so every host that uses it picks it up. In the host form, choosing a key that has a `<key>_cert`
+fills in **Certificate secret** for you.
+
+Trusting servers by a host CA (`@cert-authority` in `known_hosts`) is separate from this: host keys are
+still trusted as described in [Host keys](#host-keys).
 
 ## Environment variables
 
@@ -266,6 +303,23 @@ pagers, resize), and a host that is reached through a jump host is dialled hop b
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
+
+## Local terminal
+
+**Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>), or **New local terminal**
+at the foot of the SSH sidebar, opens a tab with a shell on this machine, for the `git`, `curl` or
+build you run next to the remote sessions. It sits with the SSH terminals and behaves like one: the
+same colours, the multi-line paste prompt, copy on select and <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd> find.
+
+- On macOS and Linux it runs your login shell (`$SHELL`), so it reads your profile. On Windows it runs
+  PowerShell 7 when it is installed, otherwise Windows PowerShell. **Preferences → Terminal → Local
+  shell** runs another program instead, such as `/bin/bash`, `cmd.exe` or `wsl.exe`.
+- It starts in the workspace's folder when the workspace is shared from a folder of yours (a git clone
+  or a synced folder), and in your home folder otherwise.
+- When the shell exits, the tab shows **Shell ended (code N)** with **Restart**. Closing the tab, or
+  switching to another workspace, ends the shell.
+- A local terminal holds one shell: it does not split, join a layout or take broadcast input.
+- `WIREBENCH_AREAS=local-terminal=off` removes it while keeping SSH; `ssh=off` removes both.
 
 ## Files
 
@@ -768,6 +822,7 @@ user, port, jump host and authentication, the lines that will not come across, a
 | `Port`, `User`                             | port and user                                                                   |
 | `ProxyJump a,b`, `ProxyCommand ssh -W %h:%p a` | the jump host; a hop that names no host in the file becomes a new host        |
 | `IdentityFile`                             | the key you choose for it (below)                                               |
+| `CertificateFile`                          | the key's certificate, stored as `NAME_cert` with the key (below)               |
 | `ServerAliveInterval`, `ConnectTimeout`    | keep-alive and connect timeout                                                  |
 | `SetEnv NAME=value …`                      | environment variables; the first value of a name wins                           |
 | `ForwardAgent yes` / `no`                  | [agent forwarding](#agent-forwarding); a socket path or variable is not imported |
@@ -783,6 +838,11 @@ order, across the blocks whose patterns match. `Include` is followed one level d
   as a workspace secret on this machine; the host gets `auth: { key: '${secret:NAME}' }`. An
   encrypted key also gets a `NAME_passphrase` reference; set its value in the host form.
 - **Use an existing secret** that already holds the key.
+
+A host with a `CertificateFile` shows the certificate on its key row. With a stored or existing secret
+`NAME`, the certificate file is read on **Import** and stored as `NAME_cert` (a secret of that name that
+already exists is kept), and the host gets `certificate: '${secret:NAME_cert}'`. With the agent it is
+not read.
 
 A key file is never opened unless you choose to store it, and its contents never reach the interface.
 
@@ -905,6 +965,13 @@ its quick-open entries, the Port forwarding, Layouts and Snippets views (with **
 suggestions) and the status bar item are gone, and the area's
 channels are not registered in the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
 
+The local terminal goes with the area. To keep SSH and remove only the local terminal (its command, its
+sidebar entry and its channels), set `local-terminal=off`:
+
+```sh
+WIREBENCH_AREAS="local-terminal=off"
+```
+
 ## What is not here yet
 
 This part does not include:
@@ -914,7 +981,7 @@ This part does not include:
 - sending requests through a host or a forward,
 - agent, X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
-- a local terminal, SSH agent forwarding to the remote, or session recording with replay.
+- SSH agent forwarding to the remote, or session recording with replay.
 
 ## Related
 

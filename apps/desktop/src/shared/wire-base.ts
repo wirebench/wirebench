@@ -2056,6 +2056,7 @@ export const preferencesWireSchema = z.object({
     colorScheme: z.string(),
     sessionLogMaxMb: z.number(),
     sessionLogRaw: z.boolean(),
+    localShell: z.string(),
   }),
   shortcuts: z.record(z.string(), z.string()),
 });

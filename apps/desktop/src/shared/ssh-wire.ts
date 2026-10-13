@@ -11,7 +11,13 @@ export const sshProblemSchema = z.object({ code: z.string(), message: z.string()
 
 export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('password'), secret: z.string() }),
-  z.strictObject({ kind: z.literal('key'), secret: z.string(), passphraseSecret: z.string().optional() }),
+  z.strictObject({
+    kind: z.literal('key'),
+    secret: z.string(),
+    /** The secret holding the key's OpenSSH user certificate (#421); by convention `<secret>_cert`. */
+    certificateSecret: z.string().optional(),
+    passphraseSecret: z.string().optional(),
+  }),
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
@@ -314,6 +320,8 @@ export const sshPlannedHostWireSchema = z.strictObject({
 export const sshPlannedKeyWireSchema = z.strictObject({
   ref: z.string(),
   display: z.string(),
+  /** The key's `CertificateFile`, shown the same way; stored as `<secret>_cert` with a stored or existing key. */
+  certificate: z.string().optional(),
   hosts: z.array(z.string()),
   proposedSecret: z.string(),
 });

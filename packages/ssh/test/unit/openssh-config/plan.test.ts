@@ -239,6 +239,45 @@ describe('keys (M4)', () => {
   });
 });
 
+describe('certificates (#421)', () => {
+  it('carries CertificateFile with its key: a key with another certificate is another row', async () => {
+    const p = await plan(
+      'Host a\n  IdentityFile ~/.ssh/id\n  CertificateFile ~/.ssh/id-cert.pub\nHost b\n  IdentityFile ~/.ssh/id\n',
+    );
+    expect(p.keys).toEqual([
+      {
+        ref: 'k1',
+        path: '/home/u/.ssh/id',
+        display: '~/.ssh/id',
+        certificate: { path: '/home/u/.ssh/id-cert.pub', display: '~/.ssh/id-cert.pub' },
+        hosts: ['a'],
+        proposedSecret: 'ssh_key_id',
+      },
+      { ref: 'k2', path: '/home/u/.ssh/id', display: '~/.ssh/id', hosts: ['b'], proposedSecret: 'ssh_key_id_2' },
+    ]);
+    expect(p.report.skipped.map((s) => s.keyword)).not.toContain('certificatefile');
+  });
+  it('puts a key and certificate every host shares on the group', async () => {
+    const p = await plan('Host a b\nHost *\n  IdentityFile ~/.ssh/id\n  CertificateFile ~/.ssh/id-cert.pub\n');
+    expect(p.group.ssh.auth).toEqual({ kind: 'key', ref: 'k1' });
+    expect(p.keys[0]?.certificate?.display).toBe('~/.ssh/id-cert.pub');
+    expect(host(p, 'a').ssh.auth).toBeUndefined();
+  });
+  it('notes a certificate it cannot use', async () => {
+    const p = await plan(
+      'Host a\n  CertificateFile ~/.ssh/c-cert.pub\nHost b\n  IdentityFile ~/.ssh/k\n  CertificateFile ~/.ssh/%r\n',
+    );
+    expect(p.keys).toHaveLength(1);
+    expect(p.keys[0]?.certificate).toBeUndefined();
+    expect(p.report.notes).toEqual(
+      expect.arrayContaining([
+        'a: CertificateFile without an IdentityFile is not imported',
+        'b: CertificateFile ~/.ssh/%r could not be resolved to a file; the key is used without it',
+      ]),
+    );
+  });
+});
+
 describe('jumps (M5, M6)', () => {
   it('maps ProxyJump to an alias and a recognised ProxyCommand', async () => {
     const p = await plan(

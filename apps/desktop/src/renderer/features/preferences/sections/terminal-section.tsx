@@ -6,6 +6,7 @@ import {
   TextSetting,
 } from '../../../components/settings-grid.js';
 import { useInstalledMonospaceFonts } from '../../../lib/installed-fonts.js';
+import { detectPlatform } from '../../../lib/platform.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 import { APP_SCHEME_ID, schemeLabel, TERMINAL_SCHEMES } from '../../ssh/terminal-schemes.js';
@@ -63,8 +64,8 @@ function FontFamilySetting({
 /**
  * Preferences → Terminal: how a terminal looks (a host or group in hosts.yaml may override the scheme and
  * size), what it does with a paste and with a selection, whether it suggests snippets while the user types,
- * whether a session the network dropped reconnects on its own, and how much room session logs take on this
- * machine.
+ * whether a session the network dropped reconnects on its own, how much room session logs take on this machine,
+ * and which shell a local terminal runs.
  */
 export function TerminalSection({ preferences, update }: SectionProps) {
   const terminal = preferences.terminal;
@@ -198,6 +199,23 @@ export function TerminalSection({ preferences, update }: SectionProps) {
             update({ terminal: { sessionLogRaw } });
           }}
           hint="Also keep each log's output as the terminal received it, colours and escape sequences included, beside the plain text."
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Local terminal">
+        <TextSetting
+          label="Local shell"
+          setting="terminal.localShell"
+          value={terminal.localShell}
+          trim
+          monospace
+          placeholder={
+            detectPlatform() === 'win' ? 'PowerShell 7, else Windows PowerShell' : 'Your login shell ($SHELL)'
+          }
+          testId="terminal-local-shell"
+          onCommit={(localShell) => {
+            update({ terminal: { localShell } });
+          }}
+          hint="The program a new local terminal runs, such as /bin/bash, cmd.exe or wsl.exe. Empty runs the default; on macOS and Linux it starts as a login shell."
         />
       </SettingsGroup>
     </>

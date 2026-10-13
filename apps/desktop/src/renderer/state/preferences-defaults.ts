@@ -68,6 +68,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     colorScheme: 'app',
     sessionLogMaxMb: 500,
     sessionLogRaw: false,
+    localShell: '',
   },
   shortcuts: {},
 };
