@@ -46,7 +46,7 @@ export async function schedulesHarness(
     env: { WIREBENCH_SERVER_SCHEDULES_SECRET_KEY: SCHEDULES_KEY, ...options.env },
     extra: (clock) =>
       options.modules?.(clock, timers) ?? [
-        schedulesModule(),
+        schedulesModule({ now: () => clock.now }),
         auditLogModule({ now: () => clock.now, setTimer: timers.setTimer }),
       ],
   });
