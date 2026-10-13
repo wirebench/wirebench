@@ -57,6 +57,12 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   accounts: { showInStatusBar: true },
   secrets: { sourceCacheSeconds: 300 },
   mocks: { listenOnAllInterfaces: false },
-  terminal: { confirmMultilinePaste: true, copyOnSelect: false, autoReconnect: true, reconnectAttempts: 10 },
+  terminal: {
+    confirmMultilinePaste: true,
+    copyOnSelect: false,
+    autoReconnect: true,
+    reconnectAttempts: 10,
+    snippetSuggestions: true,
+  },
   shortcuts: {},
 };

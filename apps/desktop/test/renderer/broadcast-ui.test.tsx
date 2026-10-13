@@ -37,6 +37,11 @@ const xterm = vi.hoisted(() => {
     onBinary() {
       return { dispose: () => undefined };
     }
+    // What the snippet suggestions read; none are offered here (no snippets).
+    buffer = { active: { type: 'normal', cursorX: 0 } };
+    onWriteParsed() {
+      return { dispose: () => undefined };
+    }
     dispose(): void {}
     /** What xterm does on a keystroke. */
     type(text: string): void {
