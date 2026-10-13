@@ -218,9 +218,19 @@ importers:
       '@wirebench/engine':
         specifier: workspace:*
         version: link:../engine
+      ssh2:
+        specifier: 1.17.0
+        version: 1.17.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.6.1
         version: 4.6.1
+    devDependencies:
+      '@wirebench/ssh':
+        specifier: workspace:*
+        version: link:../ssh
 
   packages/engine:
     dependencies:
