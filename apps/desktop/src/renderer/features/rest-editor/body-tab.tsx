@@ -234,6 +234,20 @@ export function BodyTab({
     set(next);
   };
 
+  const escapeToggle = (
+    <label className="flex items-center gap-1.5 text-xs text-fg-muted">
+      <input
+        type="checkbox"
+        data-testid="rest-body-escape"
+        checked={settings.escapeProperties ?? false}
+        onChange={(event) => {
+          onChange({ settings: { ...settings, escapeProperties: event.target.checked } });
+        }}
+      />
+      Escape substituted values
+    </label>
+  );
+
   return (
     <div data-testid="rest-body" className="flex h-full min-h-0 flex-col gap-2 p-3">
       <div className="flex shrink-0 items-center gap-2">
@@ -301,19 +315,11 @@ export function BodyTab({
             >
               Format
             </Button>
-            <label className="flex items-center gap-1.5 text-xs text-fg-muted">
-              <input
-                type="checkbox"
-                data-testid="rest-body-escape"
-                checked={settings.escapeProperties ?? false}
-                onChange={(event) => {
-                  onChange({ settings: { ...settings, escapeProperties: event.target.checked } });
-                }}
-              />
-              Escape substituted values
-            </label>
+            {escapeToggle}
           </>
         )}
+        {/* A GraphQL body's references expand with the same escaping a raw JSON body's do (#77). */}
+        {body.kind === 'graphql' && escapeToggle}
       </div>
 
       {body.kind === 'none' && <p className="text-sm text-fg-subtle">This request sends no body.</p>}

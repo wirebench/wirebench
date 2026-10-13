@@ -273,6 +273,15 @@ describe('the GraphQL body kind', () => {
     });
   });
 
+  it('offers the same escaping a raw JSON body has', async () => {
+    const patches: RestRequestPatchWire[] = [];
+    render(<Host initial={{ kind: 'graphql', query: '', variables: '' }} onPatch={(patch) => patches.push(patch)} />);
+
+    await userEvent.click(screen.getByTestId('rest-body-escape'));
+
+    expect(patches).toEqual([{ settings: { escapeProperties: true } }]);
+  });
+
   it('labels the schema by where it came from', () => {
     expect(schemaLabel(undefined)).toBe('No schema');
     expect(schemaLabel({ source: 'schema.graphql', fetchedAt: 'not a date' })).toBe('Schema from schema.graphql');
