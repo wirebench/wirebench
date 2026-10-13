@@ -184,6 +184,28 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('sets the session log size limit and the raw switch from the Terminal section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+    const limit = screen.getByLabelText<HTMLInputElement>('Session logs size limit');
+    expect(limit.value).toBe('500');
+    fireEvent.change(limit, { target: { value: '2000' } });
+    fireEvent.keyDown(limit, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { sessionLogMaxMb: 2000 } } });
+    });
+
+    const raw = screen.getByRole('switch', { name: 'Keep raw output' });
+    expect(raw.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(raw);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { sessionLogRaw: true } } });
+    });
+  });
+
   it('refuses a secret source cache lifetime above 3600 seconds, saying why, until it is fixed', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
