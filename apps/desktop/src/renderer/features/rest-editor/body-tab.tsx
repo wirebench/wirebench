@@ -20,7 +20,8 @@ import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { useProjectStore } from '../../state/project.js';
+import { selectApiOf, useProjectStore } from '../../state/project.js';
+import { GraphqlBody } from './graphql-body.js';
 import { JsonFormView } from './json-form-view.js';
 import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
 import type { KeyValueWire } from '../../../shared/wire-base.js';
@@ -33,6 +34,7 @@ const KINDS = [
   { id: 'form', label: 'Form' },
   { id: 'multipart', label: 'Multipart' },
   { id: 'binary', label: 'Binary' },
+  { id: 'graphql', label: 'GraphQL' },
 ] as const;
 
 type BodyKind = RestBodyWire['kind'];
@@ -55,6 +57,8 @@ function emptyBody(kind: BodyKind): RestBodyWire {
       return { kind: 'multipart', parts: [] };
     case 'binary':
       return { kind: 'binary', source: { kind: 'path', path: '' }, contentType: 'application/octet-stream' };
+    case 'graphql':
+      return { kind: 'graphql', query: '', variables: '' };
   }
 }
 
@@ -172,6 +176,8 @@ export function BodyTab({
   });
   // Which lookup is the newest, so an answer overtaken by a later one is dropped.
   const latest = useRef(0);
+  // The API whose GraphQL schema a GraphQL body is checked against; none for a webhook item.
+  const api = useProjectStore((state) => selectApiOf(state, requestId));
   // The request the shown schema was looked up for.
   const answeredFor = useRef<string | undefined>(undefined);
 
@@ -218,8 +224,29 @@ export function BodyTab({
     if (kind === body.kind) {
       return;
     }
-    set(drafts[kind] ?? emptyBody(kind));
+    const next = drafts[kind] ?? emptyBody(kind);
+    // A GraphQL request is a POST: a GET or HEAD would carry no body (#77).
+    if (kind === 'graphql' && (method === 'GET' || method === 'HEAD')) {
+      setDrafts((current) => ({ ...current, [next.kind]: next }));
+      onChange({ body: next, method: 'POST' });
+      return;
+    }
+    set(next);
   };
+
+  const escapeToggle = (
+    <label className="flex items-center gap-1.5 text-xs text-fg-muted">
+      <input
+        type="checkbox"
+        data-testid="rest-body-escape"
+        checked={settings.escapeProperties ?? false}
+        onChange={(event) => {
+          onChange({ settings: { ...settings, escapeProperties: event.target.checked } });
+        }}
+      />
+      Escape substituted values
+    </label>
+  );
 
   return (
     <div data-testid="rest-body" className="flex h-full min-h-0 flex-col gap-2 p-3">
@@ -288,19 +315,11 @@ export function BodyTab({
             >
               Format
             </Button>
-            <label className="flex items-center gap-1.5 text-xs text-fg-muted">
-              <input
-                type="checkbox"
-                data-testid="rest-body-escape"
-                checked={settings.escapeProperties ?? false}
-                onChange={(event) => {
-                  onChange({ settings: { ...settings, escapeProperties: event.target.checked } });
-                }}
-              />
-              Escape substituted values
-            </label>
+            {escapeToggle}
           </>
         )}
+        {/* A GraphQL body's references expand with the same escaping a raw JSON body's do (#77). */}
+        {body.kind === 'graphql' && escapeToggle}
       </div>
 
       {body.kind === 'none' && <p className="text-sm text-fg-subtle">This request sends no body.</p>}
@@ -360,6 +379,19 @@ export function BodyTab({
       {body.kind === 'multipart' && <MultipartParts body={body} onSet={set} />}
 
       {body.kind === 'binary' && <BinaryBody body={body} onSet={set} />}
+
+      {body.kind === 'graphql' && (
+        <GraphqlBody
+          requestId={requestId}
+          apiId={api?.id}
+          schema={api?.graphqlSchema}
+          body={body}
+          onSet={set}
+          onSend={onSend}
+          onSave={onSave}
+          attachVariables={attachVariables}
+        />
+      )}
     </div>
   );
 }

@@ -34,6 +34,8 @@ export function computedContentType(body: RestBodyWire): string | undefined {
       return 'multipart/form-data; boundary=…';
     case 'binary':
       return body.contentType;
+    case 'graphql':
+      return 'application/json';
   }
 }
 

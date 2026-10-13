@@ -383,6 +383,7 @@ export class RunnerService {
           ...(sent.origin !== undefined ? { origin: sent.origin } : {}),
           ...(sent.script !== undefined ? { script: sent.script } : {}),
           ...(sent.scriptsOff === true ? { scriptsOff: true } : {}),
+          ...(sent.checks !== undefined ? { checks: sent.checks } : {}),
         };
       } catch (error) {
         return { error: errorOf(error) };

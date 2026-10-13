@@ -280,7 +280,12 @@ export function redactAssertions(
   let next = 0;
   return results.map((result) => {
     let own: StepAssertion | undefined;
-    if (result.type !== 'callback' && result.type !== 'script' && result.type !== 'baseline') {
+    if (
+      result.type !== 'callback' &&
+      result.type !== 'script' &&
+      result.type !== 'baseline' &&
+      result.type !== 'graphql'
+    ) {
       own = immediate[next];
       next += 1;
     }

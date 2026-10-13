@@ -68,7 +68,8 @@ dropped `http-client.private.env.json` is private; pasted JSON is read as the pu
 | A response handler file, `> ./handler.js` | Not copied. The notes name the file | Copy it into the project yourself if you want to keep it |
 | Output redirects, `>>` and `>>!` | Ignored. The notes count them | Nothing: Wirebench keeps the response in [History](/wirebench/docs/guides/history/) |
 | Any other `# @directive` | Ignored. The notes name it. On a `WEBSOCKET` request every directive is ignored | Set the equivalent request setting by hand, if there is one |
-| `GRAPHQL` and `GRPC` requests | Skipped. A warning names the line | Import the service's `.proto` for gRPC |
+| `GRAPHQL` requests | A `POST` with a [GraphQL body](/wirebench/docs/guides/graphql/). A JSON object after a blank line becomes its variables. A `< file` query is not read: a note says so | |
+| `GRPC` requests | Skipped. A warning names the line | Import the service's `.proto` |
 | A WebSocket message read from a file, `< ./path` | Not imported. The notes name the file | Paste the message into a saved message |
 | `{{$dotenv NAME}}`, `{{$uuid}}` and other `{{$…}}` dynamic variables | Kept as written, and nothing generates a value. One warning names them all | Replace each with a property, or with a value a script sets |
 | A request-chaining reference, `{{login.response.body.token}}` | Kept as written. A warning lists each one | Capture the value with a script, or a [sequence](/wirebench/docs/guides/sequences/) transfer |

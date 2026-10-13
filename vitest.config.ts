@@ -122,6 +122,10 @@ export default defineConfig({
           environment: 'jsdom',
           setupFiles: ['apps/desktop/test/renderer/setup.ts'],
         },
+        // `graphql` sends a bare import to its development build but a deep one (`graphql/language`,
+        // as the language service uses) to the plain build: two copies, and a schema built by one
+        // fails the other's realm check. Without the `development` condition both get the plain one.
+        resolve: { conditions: ['module', 'browser'] },
       },
       {
         test: {

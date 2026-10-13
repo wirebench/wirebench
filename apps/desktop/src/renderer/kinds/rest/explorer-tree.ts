@@ -12,6 +12,7 @@ function restRequestNode(api: RestApiWire, request: RestRequestWire): ExplorerNo
     requestId: request.id,
     apiId: api.id,
     method: request.method,
+    ...(request.body.kind === 'graphql' ? { graphql: true as const } : {}),
     ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
     ...(request.orphaned === true ? { orphaned: true } : {}),
   };

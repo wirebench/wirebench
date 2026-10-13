@@ -115,4 +115,8 @@ import 'monaco-editor/languages/definitions/xml/register.js';
 import 'monaco-editor/languages/definitions/typescript/register.js';
 import 'monaco-editor/languages/definitions/javascript/register.js';
 
+// A GraphQL body's query (#77): the Monarch grammar only. Completion, hover and diagnostics come
+// from main's language service (`graphql-language.ts`).
+import 'monaco-editor/languages/definitions/graphql/register.js';
+
 export { monaco };

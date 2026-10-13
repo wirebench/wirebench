@@ -320,15 +320,8 @@ function parseRequest(raw: string | Record_, ctx: ParseContext): PostmanRequest 
 
   const method = asString(raw['method'])?.toUpperCase() ?? 'GET';
   const url = parseUrl(raw['url'], ctx);
-  let header = parseHeaders(raw['header'], ctx);
+  const header = parseHeaders(raw['header'], ctx);
   const body = isRecord(raw['body']) ? parseBody(raw['body'], ctx) : undefined;
-  if (
-    isRecord(raw['body']) &&
-    raw['body']['mode'] === 'graphql' &&
-    !header.some((h) => h.disabled !== true && h.key.toLowerCase() === 'content-type')
-  ) {
-    header = [...header, { key: 'Content-Type', value: 'application/json' }];
-  }
   const auth = isRecord(raw['auth']) ? parseAuth(raw['auth'], ctx) : undefined;
   const description = extractDescription(raw['description']);
 
@@ -549,28 +542,22 @@ function parseBody(raw: Record_, ctx: ParseContext): PostmanBody {
 
   if (mode === 'graphql') {
     const gql = isRecord(raw['graphql']) ? raw['graphql'] : {};
-    const query = asString(gql['query']) ?? '';
-    const variables = parseGraphqlVariables(gql['variables']);
-    const graphqlJson = JSON.stringify({ query, variables });
+    const variables = gql['variables'];
     return {
-      mode: 'raw',
-      raw: tv(ctx, graphqlJson),
-      options: { raw: { language: 'json' } },
+      mode: 'graphql',
+      graphql: {
+        query: tv(ctx, asString(gql['query']) ?? ''),
+        // Kept as text: it may hold a reference in a value position, which is not JSON until a send.
+        variables: isRecord(variables)
+          ? tv(ctx, JSON.stringify(variables, null, 2))
+          : typeof variables === 'string'
+            ? tv(ctx, variables)
+            : '',
+      },
     };
   }
 
   return { mode: 'raw', raw: '' };
-}
-
-function parseGraphqlVariables(raw: unknown): unknown {
-  if (isRecord(raw)) return raw;
-  if (typeof raw !== 'string' || raw.trim() === '') return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 /**

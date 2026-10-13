@@ -37,6 +37,7 @@ export default defineConfig({
             { label: 'SOAP and WSDL', slug: 'guides/soap-wsdl' },
             { label: 'WS-Trust tokens', slug: 'guides/ws-trust' },
             { label: 'REST', slug: 'guides/rest-client' },
+            { label: 'GraphQL', slug: 'guides/graphql' },
             { label: 'gRPC', slug: 'guides/grpc' },
             { label: 'WebSocket', slug: 'guides/websocket' },
             { label: 'AsyncAPI contracts', slug: 'guides/asyncapi' },

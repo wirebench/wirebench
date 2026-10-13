@@ -60,6 +60,12 @@ export const restBodySchema = z.union([
   z.looseObject({ kind: z.literal('form'), fields: z.array(keyValueEntrySchema).default([]) }),
   z.looseObject({ kind: z.literal('multipart'), parts: z.array(multipartPartSchema).default([]) }),
   z.looseObject({ kind: z.literal('binary'), source: attachmentSourceSchema, contentType: z.string() }),
+  z.looseObject({
+    kind: z.literal('graphql'),
+    file: nonEmpty,
+    variables: z.string().optional(),
+    operationName: z.string().optional(),
+  }),
 ]);
 
 const restSettingsSchema = z.looseObject({
@@ -140,6 +146,8 @@ export const apiFileSchema = z.looseObject({
       auth: definitionAuthSchema.optional(),
     })
     .optional(),
+  /** Where the API's GraphQL schema came from (#77); the SDL is `graphql/schema.graphql` beside it. */
+  graphqlSchema: z.looseObject({ source: nonEmpty, fetchedAt: z.string() }).optional(),
 });
 
 /** An API document as persisted. */

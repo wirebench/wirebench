@@ -26,9 +26,10 @@ const JSON_LANGUAGE_ID = 'json';
 /**
  * The languages an editor may ask for. `text` is Monaco's built-in plaintext; `html` falls back to
  * it, because this build carries no grammar for it and a body in it is rare enough that a missing
- * colour beats another bundled language. `typescript` and `javascript` are grammars only (#63).
+ * colour beats another bundled language. `typescript` and `javascript` are grammars only (#63), as is
+ * `graphql` (#77).
  */
-export type EditorLanguage = 'xml' | 'json' | 'text' | 'html' | 'javascript' | 'typescript';
+export type EditorLanguage = 'xml' | 'json' | 'text' | 'html' | 'javascript' | 'typescript' | 'graphql';
 
 /** The Monaco language id for one of ours. */
 export function monacoLanguageId(language: EditorLanguage): string {
@@ -39,6 +40,7 @@ export function monacoLanguageId(language: EditorLanguage): string {
       return JSON_LANGUAGE_ID;
     case 'javascript':
     case 'typescript':
+    case 'graphql':
       return language;
     default:
       return 'plaintext';

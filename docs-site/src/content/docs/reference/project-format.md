@@ -26,10 +26,12 @@ my-service/
   apis/<Api>/
     api.yaml                  # kind: rest, baseUrl, auth (refs only), settings, definition ref
     api.pre.ts                # the API's scripts, run for every request in it (format 9)
+    graphql/schema.graphql     # the API's GraphQL schema as SDL, when it has one (format 10)
     definition/                # the imported OpenAPI document, byte-exact, plus manifest.yaml
     requests/
       <Request>.request.yaml  # kind: rest, method, url, path params, query, headers, body, auth
       <Request>.body.json     # a raw body, in a file of its own language (.json/.xml/.txt/…)
+      <Request>.body.graphql  # a GraphQL body's query; its variables stay in the YAML (format 10)
       <Request>.examples/     # the request's response examples, one <id>.body.<ext> each (format 7)
       <Request>.pre.ts        # the request's scripts, as for SOAP (.js when imported from Postman)
       <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
@@ -220,8 +222,11 @@ The project format is currently **version 10**:
    their scripts in `api.pre.ts`, `interface.pre.ts` or `folder.pre.ts` beside them; a version-8
    project migrates unchanged.
 10. **Version 10** — REST and SOAP auth can be Digest (`type: digest`) or AWS Signature v4
-    (`type: aws-sigv4`), and REST, gRPC and WebSocket auth can be a client-signed JWT (`type: jwt`);
-    a version-9 project migrates unchanged.
+    (`type: aws-sigv4`), and REST, gRPC and WebSocket auth can be a client-signed JWT (`type: jwt`).
+    A REST request's body can be GraphQL (`kind: graphql`), with its query in
+    `<Request>.body.graphql` and its `variables` and `operationName` in the request file. An API can
+    record where its GraphQL schema came from (`graphqlSchema: { source, fetchedAt }`), with the
+    schema in `graphql/schema.graphql` beside `api.yaml`. A version-9 project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it
