@@ -201,3 +201,85 @@ export async function lastRunsOf(db: Querier, scheduleIds: readonly string[]): P
   ).rows;
   return new Map(rows.map((raw) => [text(raw['scheduleId']) ?? '', runOf(raw)]));
 }
+
+export interface NewRun {
+  readonly id: string;
+  readonly scheduleId: string;
+  readonly trigger: ScheduleRunTrigger;
+  /** `queued` to run it; `skipped` records a fire that could not run (an overlap). */
+  readonly status: 'queued' | 'running' | 'skipped';
+  readonly reason?: string;
+  readonly at: Date;
+}
+
+export async function insertRun(db: Querier, run: NewRun): Promise<void> {
+  const finished = run.status === 'skipped' ? run.at : null;
+  const started = run.status === 'running' ? run.at : null;
+  await db.query(
+    `insert into schedule_runs (id, schedule_id, trigger, status, reason, queued_at, started_at, finished_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [run.id, run.scheduleId, run.trigger, run.status, run.reason ?? null, run.at, started, finished],
+  );
+}
+
+/** A run with the schedule it belongs to, whichever workspace that is: the scheduler's read. */
+export async function runWithSchedule(
+  db: Querier,
+  runId: string,
+): Promise<{ readonly run: ScheduleRun; readonly schedule: ScheduleRow } | undefined> {
+  const raw = (await db.query<Raw>(`select ${RUN_COLUMNS} from schedule_runs r where r.id = $1`, [runId])).rows[0];
+  if (raw === undefined) return undefined;
+  const run = runOf(raw);
+  const schedule = (await db.query<Raw>(`${SELECT} where s.id = $1`, [run.scheduleId])).rows[0];
+  return schedule === undefined ? undefined : { run, schedule: rowOf(schedule) };
+}
+
+export interface FinishedRun {
+  readonly status: Exclude<ScheduleRunStatus, 'queued' | 'running'>;
+  readonly reason: string | null;
+  readonly commit: string | null;
+  readonly environment: string | null;
+  readonly summary: ScheduleRunSummary | null;
+  /** Masked json-report requests, in run order. */
+  readonly results: readonly unknown[];
+  readonly at: Date;
+}
+
+/**
+ * Ends a running run and stores its results. False when the run was no longer running: a cancel
+ * got there first, and that outcome stands.
+ */
+export async function finishRun(db: Querier, runId: string, finished: FinishedRun): Promise<boolean> {
+  const updated = await db.query(
+    `update schedule_runs set status = $2, reason = $3, commit_id = $4, environment = $5, summary = $6,
+       finished_at = $7
+     where id = $1 and status = 'running'`,
+    [
+      runId,
+      finished.status,
+      finished.reason,
+      finished.commit,
+      finished.environment,
+      finished.summary === null ? null : JSON.stringify(finished.summary),
+      finished.at,
+    ],
+  );
+  if (updated.rowCount !== 1) return false;
+  if (finished.results.length > 0) {
+    await db.query(
+      `insert into schedule_results (run_id, ordinal, result)
+       select $1, ordinality - 1, value from jsonb_array_elements($2::jsonb) with ordinality`,
+      [runId, JSON.stringify(finished.results)],
+    );
+  }
+  return true;
+}
+
+/** A run's stored results, in order. */
+export async function resultsOf(db: Querier, runId: string): Promise<unknown[]> {
+  const rows = await db.query<{ result: unknown }>(
+    'select result from schedule_results where run_id = $1 order by ordinal',
+    [runId],
+  );
+  return rows.rows.map((row) => row.result);
+}
