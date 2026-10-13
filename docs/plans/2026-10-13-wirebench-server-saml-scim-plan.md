@@ -26,7 +26,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
   Entra ID signs only the assertion by default; the assertion signature is the one that matters),
   `validateInResponseTo: 'always'`, `audience` set, and clock skew from configuration (default 120 s,
   max 300 s). node-saml 5.1 checks neither `SubjectConfirmationData/@Recipient` nor the response's
-  `Destination`, so `saml.ts` checks both itself. SHA-1 signatures are refused. The ACS body is capped at 256 KiB.
+  `Destination`, and applies `idpIssuer` to logout messages only, so `saml.ts` checks all three itself. SHA-1 signatures are refused. The ACS body is capped at 256 KiB.
 - SP-initiated only. A response without `InResponseTo`, or with another flow's, is refused.
 - SAML never creates an account except by accepting an open invitation. SCIM creates accounts.
 - SCIM tokens: `wbscim_` + base64url(32 bytes), SHA-256 stored, constant-time compare, shown once. They work
