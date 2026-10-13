@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import type {
+  EnvVarWire,
   ForwardEntryWire,
   GroupEntryWire,
   HostsFileWire,
@@ -11,6 +12,7 @@ import type {
 import { ipc } from '../../state/ipc-client.js';
 import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
+import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
@@ -96,6 +98,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const [ssh, setSsh] = useState<SshSettingsWire>(existing?.ssh ?? {});
   const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
   const [forwards, setForwards] = useState<ForwardEntryWire[]>(existing?.forwards ?? []);
+  const [env, setEnv] = useState<EnvVarWire[]>(existing?.env ?? []);
   const [failed, setFailed] = useState(false);
   // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
   const osKey = (): string =>
@@ -116,7 +119,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     .filter((t) => t !== '');
   const authReady = ssh.auth === undefined || ssh.auth.kind === 'agent' || ssh.auth.secret !== '';
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
-  const valid = name.trim() !== '' && (!isHost || address.trim() !== '') && authReady && forwardsReady;
+  const envReady = envProblem(env) === undefined;
+  const valid = name.trim() !== '' && (!isHost || address.trim() !== '') && authReady && forwardsReady && envReady;
 
   const submit = async (): Promise<void> => {
     const id = existing?.id ?? freeId(file, slug(name));
@@ -124,6 +128,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     const guard = protectedHere === undefined ? {} : { protected: protectedHere };
     // No rules left writes no `forwards` key.
     const ownForwards = forwards.length === 0 ? {} : { forwards };
+    const ownEnv = env.length === 0 ? {} : { env };
     const next = isHost
       ? upsertHost(
           file,
@@ -134,13 +139,24 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             tags: tagList,
             ...guard,
             ssh: clean,
+            ...ownEnv,
             ...ownForwards,
           },
           parent,
         )
       : upsertGroup(
           file,
-          { id, name: name.trim(), tags: tagList, ...guard, ssh: clean, ...ownForwards, groups: [], hosts: [] },
+          {
+            id,
+            name: name.trim(),
+            tags: tagList,
+            ...guard,
+            ssh: clean,
+            ...ownEnv,
+            ...ownForwards,
+            groups: [],
+            hosts: [],
+          },
           parent,
         );
     if (!(await save(next))) {
@@ -282,6 +298,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         onChange={set('connectTimeout')}
       />
       <HostAuthSection value={ssh.auth} inherited={inheritedFrom(chain, 'auth')} onChange={set('auth')} />
+      <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
       <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
       {failed && problems[0] !== undefined && (
         <p role="alert" className="text-sm text-status-danger">

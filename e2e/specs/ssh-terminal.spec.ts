@@ -154,4 +154,15 @@ test('WIREBENCH_AREAS=ssh=off hides the area and its commands', async () => {
   // The list has settled once the empty state shows; only then is "no option" more than "not yet rendered".
   await expect(page.getByText('No matching command.')).toBeVisible();
   await expect(page.getByRole('option', { name: /Connect to Host/ })).toHaveCount(0);
+
+  // Nor are the Port forwarding and Layouts views, their commands, or the status bar's forwarding item.
+  for (const command of ['Show Port Forwarding', 'Open Layout']) {
+    await page.getByTestId('command-palette-input').fill(command);
+    await expect(page.getByText('No matching command.')).toBeVisible();
+  }
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('ssh-nav-forwarding')).toHaveCount(0);
+  await expect(page.getByTestId('ssh-nav-layouts')).toHaveCount(0);
+  await expect(page.getByTestId('status-bar')).toBeVisible();
+  await expect(page.getByTestId('status-bar-forwards')).toHaveCount(0);
 });

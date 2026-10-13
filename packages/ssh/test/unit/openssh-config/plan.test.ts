@@ -65,7 +65,7 @@ describe('report (P3, P8)', () => {
         'Host a',
         '  IdentitiesOnly yes',
         '  LocalForward 8080 MARKER-1:80',
-        '  SetEnv TOKEN=MARKER-2',
+        '  SendEnv MARKER-2',
         '  ProxyCommand nc -X MARKER-3 %h %p',
         'Host b',
         '  IdentitiesOnly yes',
@@ -77,7 +77,7 @@ describe('report (P3, P8)', () => {
     expect(p.report.ignored).toEqual([{ keyword: 'identitiesonly', count: 2 }]);
     expect(p.report.skipped).toEqual([
       { file: '~/.ssh/config', line: 3, keyword: 'localforward', why: 'not imported' },
-      { file: '~/.ssh/config', line: 4, keyword: 'setenv', why: 'not imported' },
+      { file: '~/.ssh/config', line: 4, keyword: 'sendenv', why: 'not imported' },
       {
         file: '~/.ssh/config',
         line: 5,
@@ -87,6 +87,44 @@ describe('report (P3, P8)', () => {
       { file: '~/.ssh/config', line: 8, keyword: 'match', why: 'Match block not applied (1 line)' },
     ]);
     expect(JSON.stringify(p)).not.toMatch(/MARKER/);
+  });
+});
+
+describe('SetEnv', () => {
+  it('maps every NAME=value of every line; the first value of a name wins', async () => {
+    const p = await plan('Host a\n  SetEnv LANG=C.UTF-8 APP_PROFILE=eu\n  SetEnv APP_PROFILE=us EMPTY= "MSG=a b"\n');
+    expect(host(p, 'a').env).toEqual({ LANG: 'C.UTF-8', APP_PROFILE: 'eu', EMPTY: '', MSG: 'a b' });
+    expect(p.report.skipped).toEqual([]);
+    expect(p.report.notes).toContain(
+      'SetEnv values are written to hosts.yaml as they are; replace any secret among them with ${secret:NAME}',
+    );
+  });
+  it('puts a Host * variable every host shares on the group; a host keeps the ones that differ', async () => {
+    const p = await plan('Host a\n  SetEnv APP=a\nHost b\nHost *\n  SetEnv APP=all LANG=C\n');
+    expect(p.group.env).toEqual({ APP: 'all', LANG: 'C' });
+    expect(host(p, 'a').env).toEqual({ APP: 'a' });
+    expect(host(p, 'b').env).toBeUndefined();
+    const file = merged(p);
+    expect(resolveHost(file, 'a').env.map((v) => [v.name, v.value])).toEqual([
+      ['APP', 'a'],
+      ['LANG', 'C'],
+    ]);
+    expect(resolveHost(file, 'b').env.map((v) => [v.name, v.value])).toEqual([
+      ['APP', 'all'],
+      ['LANG', 'C'],
+    ]);
+  });
+  it('skips an entry that is not NAME=value or holds a secret token, with a note that never quotes it', async () => {
+    const p = await plan('Host a\n  SetEnv BAD-NAME=MARKER-1 NOEQUALS GOOD=1 "T=\${secret:MARKER2}"\n');
+    expect(host(p, 'a').env).toEqual({ GOOD: '1' });
+    expect(p.report.notes).toContain('a: 3 SetEnv entries are not a NAME=value Wirebench can store; not imported');
+    expect(JSON.stringify(p.report)).not.toMatch(/MARKER/);
+  });
+  it('writes no env when there is no SetEnv', async () => {
+    const p = await plan('Host a\n  User u\n');
+    expect(host(p, 'a').env).toBeUndefined();
+    expect(p.group.env).toBeUndefined();
+    expect(p.report.notes.some((n) => n.includes('SetEnv'))).toBe(false);
   });
 });
 

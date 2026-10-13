@@ -8,6 +8,7 @@
  */
 
 import type { LayoutWire } from '../../shared/layout-wire.js';
+import type { SnippetListItemWire } from '../../shared/snippets-wire.js';
 import type { ResolvedHostWire } from '../../shared/ssh-wire.js';
 import { layoutHosts, layoutPaneCount } from '../features/ssh/panes/open-layout.js';
 import type { InterfaceSummary, RequestWire } from '../../shared/kinds/soap/wire.js';
@@ -16,7 +17,7 @@ import type { InterfaceSummary, RequestWire } from '../../shared/kinds/soap/wire
 export interface QuickOpenEntry {
   /** `request:<id>` or `operation:<interfaceId>/<binding>/<name>` — unique, and a React key. */
   readonly key: string;
-  readonly kind: 'request' | 'operation' | 'host' | 'layout';
+  readonly kind: 'request' | 'operation' | 'host' | 'layout' | 'snippet';
   /** What the row shows: the request name, or the operation name. */
   readonly label: string;
   /** The breadcrumb under it: `project › interface › binding › operation`. */
@@ -29,6 +30,8 @@ export interface QuickOpenEntry {
   readonly hostId?: string;
   /** Set for `layout`: the saved layout to open. */
   readonly layoutId?: string;
+  /** Set for `snippet`: the saved snippet to run. */
+  readonly snippetId?: string;
   /** Set for `operation`: what a new request needs. */
   readonly interfaceId?: string;
   readonly bindingName?: string;
@@ -167,4 +170,21 @@ export function quickOpenLayoutEntries(
       layoutId: layout.id,
     };
   });
+}
+
+/**
+ * The saved snippets as rows, in list order: the name, with its package and first line under it. The match
+ * covers name, package, tags and first line; ⌘K's snippets mode, ⌘P and the terminal picker all use it.
+ *
+ * @param items - The snippets store's list.
+ */
+export function quickOpenSnippetEntries(items: readonly SnippetListItemWire[]): readonly QuickOpenEntry[] {
+  return items.map((item) => ({
+    key: `snippet:${item.id}`,
+    kind: 'snippet',
+    label: item.name,
+    detail: item.packageName === undefined ? item.firstLine : `${item.packageName} · ${item.firstLine}`,
+    value: [item.name, item.packageName ?? '', ...item.tags, item.firstLine].filter((part) => part !== '').join(' '),
+    snippetId: item.id,
+  }));
 }
