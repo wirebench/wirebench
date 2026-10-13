@@ -9,6 +9,7 @@ import type { SshSecretsService } from '../ssh-secrets.js';
 import type { SshService } from '../ssh-service.js';
 import { registerLayoutChannels } from './layout-channels.js';
 import { registerForwardChannels } from './forward-channels.js';
+import { registerSessionLogChannels } from './session-log-channels.js';
 import { registerSftpChannels } from './sftp-channels.js';
 
 export function registerSshChannels(deps: {
@@ -37,6 +38,7 @@ export function registerSshChannels(deps: {
   transfers: Parameters<typeof registerSftpChannels>[0]['transfers'];
   edits: Parameters<typeof registerSftpChannels>[0]['edits'];
   forward: Parameters<typeof registerForwardChannels>[0]['forward'] & Pick<ForwardService, 'hostsChanged'>;
+  sessionLogs: Parameters<typeof registerSessionLogChannels>[0];
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
   registerHandler(channels.ssh.saveHosts, async (request, sender) => {
@@ -98,4 +100,6 @@ export function registerSshChannels(deps: {
   registerLayoutChannels(deps.layouts);
   // Forwards ride with the area too: off with it, no `forward.*` channel exists.
   registerForwardChannels({ forward: deps.forward });
+  // Session logs too: off with the area, no `sessionLog.*` channel exists.
+  registerSessionLogChannels(deps.sessionLogs);
 }
