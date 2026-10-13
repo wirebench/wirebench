@@ -170,6 +170,20 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('turns snippet suggestions off from the Terminal section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+    const suggest = screen.getByRole('switch', { name: 'Suggest snippets' });
+    expect(suggest.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(suggest);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { snippetSuggestions: false } } });
+    });
+  });
+
   it('refuses a secret source cache lifetime above 3600 seconds, saying why, until it is fixed', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });

@@ -139,7 +139,11 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
       // One terminal: a refusal stays in the dialog, so the user can fix the values and run again.
       setRunning(true);
       try {
-        await runInTerminal(onlyTerminal.tabId, item, values, insert ? { enter: false } : {});
+        await runInTerminal(onlyTerminal.tabId, item, values, {
+          ...(insert ? { enter: false as const } : {}),
+          // What the user typed is in the terminal the suggestion came from, not in another one.
+          ...(request.skip !== undefined && onlyTerminal.tabId === request.tabId ? { skip: request.skip } : {}),
+        });
         closeRunDialog();
         showTerminal(onlyTerminal.tabId);
       } catch (cause) {
@@ -156,7 +160,12 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
       tabId: t.tabId,
       hostId: t.hostId,
     }));
-    runOnTargets(item, values, terminalTargets, hostTargets, insert ? { enter: false } : {})
+    runOnTargets(item, values, terminalTargets, hostTargets, {
+      ...(insert ? { enter: false as const } : {}),
+      ...(request.skip !== undefined && request.tabId !== undefined
+        ? { skip: { tabId: request.tabId, count: request.skip } }
+        : {}),
+    })
       .then((report) => {
         showToast(runSummary(report));
       })

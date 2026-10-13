@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, LayoutPanelLeft, Server, ShieldCheck, SquareTerminal, type LucideIcon } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  KeyRound,
+  LayoutPanelLeft,
+  Server,
+  ShieldCheck,
+  SquareTerminal,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
+import { forwardCounts, useForwardsStore } from './forwarding/forwards-store.js';
 import { HostDialog } from './host-dialog.js';
 import { useHostsStore, type SshHomeView } from './hosts-store.js';
 import { ImportDialog } from './import-dialog.js';
@@ -12,6 +21,7 @@ const ENTRIES: readonly { readonly id: SshHomeView; readonly label: string; read
   { id: 'hosts', label: 'Hosts', icon: Server },
   { id: 'snippets', label: 'Snippets', icon: SquareTerminal },
   { id: 'layouts', label: 'Layouts', icon: LayoutPanelLeft },
+  { id: 'forwarding', label: 'Port forwarding', icon: ArrowLeftRight },
   { id: 'keychain', label: 'Keychain', icon: KeyRound },
   { id: 'known-hosts', label: 'Known hosts', icon: ShieldCheck },
 ];
@@ -25,6 +35,7 @@ export function HostsView() {
   const resolved = useHostsStore((s) => s.resolved);
   const snippetCount = useSnippetsStore((s) => s.snippets.length);
   const layoutCount = useLayoutsStore((s) => (s.loaded ? s.layouts.length : undefined));
+  const runningForwards = useForwardsStore((s) => forwardCounts(s.byKey).running);
   const homeView = useHostsStore((s) => s.homeView);
   const setHomeView = useHostsStore((s) => s.setHomeView);
   // Whether the fixed tab is the one in front: the entry only reads as current while it is.
@@ -59,9 +70,11 @@ export function HostsView() {
         ? snippetCount
         : id === 'layouts'
           ? layoutCount
-          : id === 'keychain'
-            ? counts.keychain
-            : counts.knownHosts;
+          : id === 'forwarding'
+            ? runningForwards
+            : id === 'keychain'
+              ? counts.keychain
+              : counts.knownHosts;
 
   const open = (id: SshHomeView): void => {
     setHomeView(id);

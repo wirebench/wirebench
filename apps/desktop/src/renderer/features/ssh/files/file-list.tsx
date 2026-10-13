@@ -25,7 +25,7 @@ export interface FileListProps {
   readonly sort: PaneSort;
   readonly onSort: (sort: PaneSort) => void;
   readonly onSelect: (names: readonly string[]) => void;
-  /** Enter or a double click: a folder (or a link to one) opens; a file does nothing yet. */
+  /** Enter or a double click: a folder (or a link to one) opens; a host's file is edited in the system editor. */
   readonly onOpen: (entry: SftpEntryWire) => void;
   /** Backspace. */
   readonly onUp: () => void;

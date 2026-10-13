@@ -261,14 +261,15 @@ function failureMessage(hostId: string, sawPrompt: boolean): string {
  * Runs the snippet on terminals and hosts (spec D6): groups and tags expand to their hosts, each host runs once
  * (a chosen terminal counts for its host), a host reuses its most recently focused open terminal or opens a new
  * tab through the usual connect path. A new session is written to once it printed and went quiet. Targets run
- * in parallel; one that fails, or that main refuses, is in the report and holds back no other.
+ * in parallel; one that fails, or that main refuses, is in the report and holds back no other. `skip` is what
+ * the user already typed into one terminal (an accepted suggestion): only that terminal skips it.
  */
 export async function runOnTargets(
   item: SnippetListItemWire,
   values: Record<string, string>,
   terminals: readonly TerminalTarget[],
   hosts: readonly HostTarget[],
-  opts: { enter?: false } = {},
+  opts: { enter?: false; skip?: { readonly tabId: string; readonly count: number } } = {},
 ): Promise<RunReport> {
   const jobs: { hostId: string; tabId: string; fresh: boolean }[] = [];
   const failed: { hostId: string; message: string }[] = [];
@@ -299,7 +300,9 @@ export async function runOnTargets(
         const sessionId = pane === undefined ? undefined : useHostsStore.getState().panes[pane.paneId]?.sessionId;
         if (sessionId !== undefined) await whenReady(sessionId);
       }
-      await runInTerminal(job.tabId, item, values, enter);
+      // An accepted suggestion's typed start is only in the terminal it came from.
+      const skip = opts.skip?.tabId === job.tabId ? { skip: opts.skip.count } : {};
+      await runInTerminal(job.tabId, item, values, { ...enter, ...skip });
     }),
   );
   const ok: string[] = [];
@@ -320,6 +323,8 @@ export interface RunRequest {
   /** `variables`: only the values for the terminal in front; `dialog`: values, target and preview. */
   readonly mode: 'variables' | 'dialog';
   readonly tabId?: string;
+  /** Characters already typed into `tabId` (an accepted suggestion); only a run into that tab skips them. */
+  readonly skip?: number;
 }
 
 export const useRunDialogStore = create<{ request: RunRequest | null }>(() => ({ request: null }));
@@ -329,10 +334,11 @@ export function closeRunDialog(): void {
 }
 
 /**
- * Run (or Insert, with `enter: false`) from a row, the editor or a command: into the terminal in front at
- * once when nothing needs asking (spec R6), else through the run dialog. `ask` always shows the dialog.
+ * Run (or Insert, with `enter: false`) from a row, the editor, a command or an accepted suggestion: into the
+ * terminal in front at once when nothing needs asking (spec R6), else through the run dialog. `ask` always
+ * shows the dialog; `skip` is how much of the snippet the user already typed into the terminal in front.
  */
-export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?: boolean } = {}): void {
+export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?: boolean; skip?: number } = {}): void {
   const front = activeTerminal();
   const terminal = front === undefined ? undefined : openTerminals().find((t) => t.tabId === front.tabId);
   const mode = needsDialog(item, {
@@ -341,8 +347,9 @@ export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?:
     anyProtected: terminal?.protected === true,
   });
   const enter = opts.enter === false ? { enter: false as const } : {};
+  const skip = opts.skip === undefined || terminal === undefined ? {} : { skip: opts.skip };
   if (opts.ask !== true && mode === 'none' && terminal !== undefined) {
-    runInTerminal(terminal.tabId, item, {}, enter).catch((error: unknown) => {
+    runInTerminal(terminal.tabId, item, {}, { ...enter, ...skip }).catch((error: unknown) => {
       showToast(`${item.name}: ${messageOf(error)}`);
     });
     return;
@@ -353,6 +360,7 @@ export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?:
       ...enter,
       mode: opts.ask !== true && mode === 'variables' ? 'variables' : 'dialog',
       ...(terminal === undefined ? {} : { tabId: terminal.tabId }),
+      ...skip,
     },
   });
 }

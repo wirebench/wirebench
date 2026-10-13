@@ -400,6 +400,26 @@ describe('several hosts (Task 11)', () => {
     expect(await run).toEqual({ ok: ['lab'], failed: [{ hostId: 'db', message: 'no secret' }] });
   });
 
+  it("skips an accepted suggestion's typed start only in the terminal it came from", async () => {
+    const run = runOnTargets(
+      item(),
+      {},
+      [{ kind: 'terminal', tabId: 'ssh-terminal:t1' }],
+      [{ kind: 'host', id: 'lab' }],
+      {
+        skip: { tabId: 'ssh-terminal:t1', count: 4 },
+      },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    connected('lab', 's-lab-skip');
+    output('s-lab-skip');
+    await vi.advanceTimersByTimeAsync(300);
+    await run;
+    const calls = runSnippet.mock.calls.map((c) => c[0] as { sessionId: string; skip?: number });
+    expect(calls.find((c) => c.sessionId === 's-db')?.skip).toBe(4);
+    expect(calls.find((c) => c.sessionId === 's-lab-skip')?.skip).toBeUndefined();
+  });
+
   it('remembers the host targets of a run', async () => {
     await runOnTargets(item({ id: 'z' }), { x: '1' }, [], [{ kind: 'host', id: 'db' }]);
     expect(lastTargets('z')).toEqual([{ kind: 'host', id: 'db' }]);

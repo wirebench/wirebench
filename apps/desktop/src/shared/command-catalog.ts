@@ -94,6 +94,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Show Hosts',
     category: 'View',
   },
+  'view.showForwarding': {
+    id: 'view.showForwarding',
+    label: 'Show Port Forwarding',
+    category: 'View',
+  },
   'ssh.newHost': {
     id: 'ssh.newHost',
     label: 'Hosts: New Host…',
@@ -190,6 +195,21 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   'ssh.closePane': {
     id: 'ssh.closePane',
     label: 'Terminal: Close Pane',
+    category: 'Hosts',
+  },
+  'ssh.startForward': {
+    id: 'ssh.startForward',
+    label: 'Start Port Forward…',
+    category: 'Hosts',
+  },
+  'ssh.stopForward': {
+    id: 'ssh.stopForward',
+    label: 'Stop Port Forward…',
+    category: 'Hosts',
+  },
+  'ssh.stopAllForwards': {
+    id: 'ssh.stopAllForwards',
+    label: 'Stop All Port Forwards',
     category: 'Hosts',
   },
   'sftp.refresh': {

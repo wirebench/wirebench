@@ -42,6 +42,12 @@ export interface GeneratedKey extends SshKeyInfo {
 const KDF_ROUNDS = 16;
 
 /**
+ * ssh2 drops every leading zero byte of an Ed25519 public key, so about one pair in 256 comes out with a
+ * 31-byte key that neither ssh2 nor OpenSSH reads back. Such a pair is thrown away and another made.
+ */
+const ED25519_ATTEMPTS = 8;
+
+/**
  * A new key pair in OpenSSH format. Asynchronous because an RSA key takes a noticeable time to make and the
  * desktop calls this from its main process.
  *
@@ -62,14 +68,24 @@ export async function generateKey(options: GenerateKeyOptions): Promise<Generate
     ...(comment === '' ? {} : { comment }),
     ...(passphrase === '' ? {} : { passphrase, cipher: 'aes256-ctr', rounds: KDF_ROUNDS }),
   };
-  const pair = await new Promise<{ private: string; public: string }>((resolve, reject) => {
-    utils.generateKeyPair(options.algorithm, settings as never, (error, keys) => {
-      // The library message is not forwarded: it can describe the options, passphrase included.
-      if (error) reject(new SshModelError('ssh-key-invalid', 'The key could not be generated'));
-      else resolve(keys);
+  for (let attempt = 1; ; attempt++) {
+    const pair = await new Promise<{ private: string; public: string }>((resolve, reject) => {
+      utils.generateKeyPair(options.algorithm, settings as never, (error, keys) => {
+        // The library message is not forwarded: it can describe the options, passphrase included.
+        if (error) reject(new SshModelError('ssh-key-invalid', 'The key could not be generated'));
+        else resolve(keys);
+      });
     });
-  });
-  return { privateKey: pair.private, ...describePublicKey(pair.public) };
+    const info = describePublicKey(pair.public);
+    if (options.algorithm !== 'ed25519' || isWholeEd25519(info)) return { privateKey: pair.private, ...info };
+    if (attempt === ED25519_ATTEMPTS) throw new SshModelError('ssh-key-invalid', 'The key could not be generated');
+  }
+}
+
+/** True when the public blob is the 4-byte-length type name followed by a 32-byte key. */
+function isWholeEd25519(info: SshKeyInfo): boolean {
+  const blob = Buffer.from(info.publicKey.split(' ')[1] ?? '', 'base64');
+  return blob.length === 4 + 'ssh-ed25519'.length + 4 + 32 && blob.readUInt32BE(4 + 'ssh-ed25519'.length) === 32;
 }
 
 /** True when `text` looks like a private key in a format ssh2 reads (OpenSSH, PKCS#1, PKCS#8 or SEC1 PEM). */

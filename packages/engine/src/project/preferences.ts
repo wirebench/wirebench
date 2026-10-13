@@ -226,6 +226,8 @@ export interface TerminalPreferences {
   readonly autoReconnect: boolean;
   /** How many reconnect attempts a dropped session gets before the tab gives up. */
   readonly reconnectAttempts: number;
+  /** Offer the rest of a snippet, dimmed after the cursor, when the typed line is its start; Tab accepts. */
+  readonly snippetSuggestions: boolean;
 }
 
 /** The whole preferences document. */
@@ -310,6 +312,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     copyOnSelect: false,
     autoReconnect: true,
     reconnectAttempts: 10,
+    snippetSuggestions: true,
   }),
   shortcuts: Object.freeze({}),
 });
@@ -506,6 +509,7 @@ export const preferencesSchema = z.object({
       copyOnSelect: z.boolean().optional(),
       autoReconnect: z.boolean().optional(),
       reconnectAttempts: limited('terminal.reconnectAttempts').optional(),
+      snippetSuggestions: z.boolean().optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
