@@ -48,6 +48,9 @@ export interface XEnvironment {
 /** A body as a request carries it; the writers read it through this name so they import no protocol folder. */
 export type XBody = RestBody;
 
+/** A GraphQL body as the JSON it is sent as, its variables as written: for an exporter with no GraphQL body of its own. */
+export { lowerGraphqlBodyText } from '../rest/graphql/body.js';
+
 /** A recorded response, with the kind its body is by its content type. */
 export type XExample = RestResponseExample & { readonly bodyKind: 'json' | 'xml' | 'html' | 'text' };
 
@@ -375,6 +378,13 @@ class TreeBuilder {
         return { kind: 'multipart', parts: body.parts.map((part) => this.part(part, label)) };
       case 'binary':
         return { ...body, source: this.source(body.source, label) };
+      case 'graphql':
+        return {
+          ...body,
+          query: this.ctx.mustache(body.query),
+          variables: this.ctx.mustache(body.variables),
+          ...(body.operationName !== undefined ? { operationName: this.ctx.mustache(body.operationName) } : {}),
+        };
     }
   }
 

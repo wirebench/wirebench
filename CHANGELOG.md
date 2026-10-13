@@ -17,6 +17,19 @@ All notable changes to this project are documented here. The format follows
   `@revoked` lines, lines that name no host, a second key of a type a host already has, and lines that
   cannot be read (#418).
 
+- **GraphQL requests.** A REST request's body can be **GraphQL**: a query or mutation, its variables
+  and, for a document with several operations, the one to run. It goes out as the JSON body a
+  GraphQL server reads, with the API's auth, environments, History, scripts, runs and sequences. An
+  API's menu gains **New GraphQL request**, and the explorer shows `GQL` for one. **Fetch schema**
+  sends the introspection query through the request itself, and **Import schema…** reads SDL or an
+  introspection result. Either way the schema is stored in the project as
+  `apis/<api>/graphql/schema.graphql`. With a schema, the query editor completes, validates and
+  documents on hover, and the variables editor completes and type-checks the operation's variables.
+  A response's `errors` show on a chip, on the body and in Problems, and fail a run's **GraphQL
+  errors** check, even on HTTP 200. `data` that does not match the schema is a warning. Postman,
+  OpenCollection and `.http` GraphQL requests now import as GraphQL, and a Postman export writes them
+  back as GraphQL (#77).
+
 - **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
   and groups, merged by name down the tree so a nearer level wins for each variable; a value is
   text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the
@@ -152,9 +165,11 @@ All notable changes to this project are documented here. The format follows
 
 - **Project format 10.** Auth can be a client-signed JWT (`type: jwt`), Digest (`type: digest`) or
   AWS Signature v4 (`type: aws-sigv4`), and OAuth 2 gains the password and device-code grants and the
-  assertion and certificate client authentications; a project saved by this version cannot be opened
-  by an older one, which refuses it as made by a newer Wirebench. A version-9 project opens unchanged
-  (#338, #339, #348).
+  assertion and certificate client authentications. A REST request's body can be GraphQL
+  (`kind: graphql`, with its query in `<Request>.body.graphql`), and an API can record its GraphQL
+  schema (`graphqlSchema`). A project saved by this version cannot be opened by an older one, which
+  refuses it as made by a newer Wirebench. A version-9 project opens unchanged (#338, #339, #348,
+  #77).
 
 ### Fixed
 

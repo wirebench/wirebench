@@ -31,6 +31,23 @@ function* bodyTargets(request: RestRequestDef, path: string): Generator<ScanTarg
     }
     return;
   }
+  if (body.kind === 'graphql') {
+    // The query and the variables, by name: field 0 and field 1 keep the two apart for a move.
+    const parts = [
+      { field: 0, name: 'query', text: body.query, contentType: 'application/graphql' },
+      { field: 1, name: 'variables', text: body.variables, contentType: 'application/json' },
+    ];
+    for (const part of parts) {
+      if (part.text === '') continue;
+      yield {
+        location: { kind: 'rest-body', requestId: request.id, field: part.field, name: part.name },
+        label: `${path}${SEP}GraphQL ${part.name}`,
+        text: part.text,
+        context: { contentType: part.contentType },
+      };
+    }
+    return;
+  }
   const fields: readonly (KeyValueEntry | { readonly kind: 'file' })[] =
     body.kind === 'form' ? body.fields : body.kind === 'multipart' ? body.parts : [];
   for (let field = 0; field < fields.length; field++) {
@@ -62,6 +79,12 @@ function* scanTargets(project: Project): Generator<ScanTarget> {
 function rewriteBody(rw: SecretRewriter, requestId: string, body: RestBody): RestBody {
   if (body.kind === 'raw') {
     return patch(body, { text: rw.text({ kind: 'rest-body', requestId }, body.text) });
+  }
+  if (body.kind === 'graphql') {
+    return patch(body, {
+      query: rw.text({ kind: 'rest-body', requestId, field: 0, name: 'query' }, body.query),
+      variables: rw.text({ kind: 'rest-body', requestId, field: 1, name: 'variables' }, body.variables),
+    });
   }
   // Built in the key order the scan uses: the location's JSON is the rewriter's key.
   const field = <E extends KeyValueEntry | { readonly kind: 'file' }>(entry: E, index: number): E =>

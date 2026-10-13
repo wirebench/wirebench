@@ -80,10 +80,10 @@ importers guide. It takes a picked or dropped file, or pasted YAML.
 
 ### GraphQL items
 
-A GraphQL item becomes an HTTP `POST` request with a raw JSON body, `{"query": …, "variables": …}`,
-and the content type `application/json`. Variables written as a string are parsed; when they do
-not parse, they are kept as a string. Each GraphQL request gets a note. URL, headers, auth and
-settings come across as for an HTTP item.
+A GraphQL item becomes an HTTP `POST` request with a [GraphQL body](/wirebench/docs/guides/graphql/):
+its query, and its variables as JSON text. Variables written as an object are written out as
+JSON; variables written as a string are kept as written, even when they do not parse. URL, headers,
+auth and settings come across as for an HTTP item.
 
 ### gRPC items
 

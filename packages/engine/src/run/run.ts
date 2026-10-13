@@ -279,6 +279,8 @@ export interface SentRequest {
   readonly script?: SentScripts;
   /** True when the request has scripts and they are switched off. */
   readonly scriptsOff?: boolean;
+  /** Checks the protocol made of the response itself: a GraphQL request's errors (#77). */
+  readonly checks?: readonly AssertionResult[];
 }
 
 /** What a run's sender may change for one request. */
@@ -539,7 +541,7 @@ async function runOne(
       own,
       options.defaultSlaMs !== undefined ? { defaultSlaMs: options.defaultSlaMs } : {},
     );
-    const checked = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
+    const checked = [...immediate, ...callbacks, ...(sent.checks ?? []), ...scriptAssertions(script?.tests ?? [])];
     // `--update-baseline` writes only for a request its own checks did not error (#217).
     const ownOutcome = script?.error === undefined ? outcomeOf(checked) : 'errored';
     const compared =

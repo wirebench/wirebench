@@ -232,6 +232,26 @@ export const explorerActions = {
       });
   },
 
+  /** A new request at the root of the API: a POST with an empty GraphQL body (#77). */
+  newGraphqlRequest(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    const store = useProjectStore.getState();
+    void store
+      .addRestRequest(apiId, undefined, 'New GraphQL request')
+      .then(async (requestId) => {
+        await store.updateRestRequest(requestId, {
+          method: 'POST',
+          body: { kind: 'graphql', query: '', variables: '' },
+        });
+        openRestRequestTab(requestId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New request failed');
+      });
+  },
+
   openRestRequest(requestId: string | undefined): void {
     if (requestId !== undefined) {
       openRestRequestTab(requestId);

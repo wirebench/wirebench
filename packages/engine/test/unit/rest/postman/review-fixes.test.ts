@@ -51,7 +51,7 @@ describe('Postman importer review fixes', () => {
     expect(mapped.projectProperties.variables.map((v) => v.name)).toEqual(['token', 'folderVar']);
   });
 
-  it('4: embeds GraphQL variables as an object and adds a JSON content type', () => {
+  it('4: imports a GraphQL body with its variables as written (#77)', () => {
     const { api } = importDoc({
       item: [
         {
@@ -73,12 +73,9 @@ describe('Postman importer review fixes', () => {
       ],
     });
     const [good, bad] = api.requests;
-    expect(good?.body.kind === 'raw' && JSON.parse(good.body.text)).toEqual({
-      query: 'query { a }',
-      variables: { id: 1 },
-    });
-    expect(good?.headers).toContainEqual({ name: 'Content-Type', value: 'application/json', enabled: true });
-    expect(bad?.body.kind === 'raw' && JSON.parse(bad.body.text)).toEqual({ query: 'q', variables: {} });
+    expect(good?.body).toEqual({ kind: 'graphql', query: 'query { a }', variables: '{"id": 1}' });
+    expect(good?.headers).toEqual([]);
+    expect(bad?.body).toEqual({ kind: 'graphql', query: 'q', variables: '{' });
   });
 
   it('5: throws postman-too-deep for 10k nested folders instead of overflowing the stack', async () => {

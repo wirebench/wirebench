@@ -1,6 +1,6 @@
 import type * as Monaco from 'monaco-editor';
 import { pointerRange } from '@wirebench/engine/json';
-import type { RestContractResultWire } from '../../shared/kinds/rest/wire.js';
+import type { GraphqlCheckWire, RestContractResultWire } from '../../shared/kinds/rest/wire.js';
 import type { ValidationProblemWire } from '../../shared/kinds/soap/wire.js';
 
 /**
@@ -179,4 +179,49 @@ export function setContractMarkers(
     return;
   }
   monaco.editor.setModelMarkers(model, CONTRACT_MARKER_OWNER, contractMarkerData(problems, text));
+}
+
+/** The `setModelMarkers` owner a GraphQL response's markers are filed under (#77). */
+export const GRAPHQL_RESPONSE_MARKER_OWNER = 'wirebench-graphql-response';
+
+/**
+ * Converts a GraphQL check into markers against `text`: each entry of `errors` an error, each place
+ * the `data` does not match the operation a warning.
+ */
+export function graphqlResponseMarkerData(
+  check: GraphqlCheckWire | undefined,
+  text: string,
+): Monaco.editor.IMarkerData[] {
+  if (check === undefined) {
+    return [];
+  }
+  return [
+    ...check.errors.map((error) => ({
+      severity: SEVERITY.error,
+      message: error.message,
+      code: 'graphql-error',
+      source: 'graphql',
+      ...contractRange(text, error.pointer),
+    })),
+    ...check.problems.map((problem) => ({
+      severity: SEVERITY.warning,
+      message: problem.message,
+      code: 'graphql-schema',
+      source: 'graphql',
+      ...contractRange(text, problem.pointer),
+    })),
+  ];
+}
+
+/** Replaces the GraphQL markers on `model` with those of `check` located in `text`. */
+export function setGraphqlResponseMarkers(
+  model: Monaco.editor.ITextModel | null | undefined,
+  check: GraphqlCheckWire | undefined,
+  text: string,
+  monaco: MarkerApi | undefined = markerApi,
+): void {
+  if (model === null || model === undefined || typeof monaco?.editor?.setModelMarkers !== 'function') {
+    return;
+  }
+  monaco.editor.setModelMarkers(model, GRAPHQL_RESPONSE_MARKER_OWNER, graphqlResponseMarkerData(check, text));
 }

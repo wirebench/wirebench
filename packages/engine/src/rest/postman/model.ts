@@ -91,6 +91,8 @@ export interface PostmanBody {
   readonly urlencoded?: readonly PostmanUrlEncodedParam[];
   readonly formdata?: readonly PostmanFormDataParam[];
   readonly file?: { readonly src?: string; readonly content?: string };
+  /** A `graphql` body: its query and its variables as JSON text, references already translated. */
+  readonly graphql?: { readonly query: string; readonly variables: string };
 }
 
 export interface PostmanRequest {
