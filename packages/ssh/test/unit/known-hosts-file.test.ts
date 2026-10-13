@@ -194,3 +194,14 @@ describe('applyKnownHostsFileImport', () => {
     expect(result.added).toBe(5);
   });
 });
+
+describe('hostFieldMatches patterns', () => {
+  it('treats only * and ? as special, and backtracks over *', () => {
+    expect(hostFieldMatches('a.b', 'axb')).toBe(false);
+    expect(hostFieldMatches('[a]:22*', '[a]:2222')).toBe(true);
+    expect(hostFieldMatches('*a*b', 'xaxab')).toBe(true);
+    expect(hostFieldMatches('*a*b', 'xaxa')).toBe(false);
+    expect(hostFieldMatches('**', 'anything')).toBe(true);
+    expect(hostFieldMatches('a?', 'a')).toBe(false);
+  });
+});

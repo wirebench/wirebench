@@ -64,14 +64,34 @@ export function knownHostsNameFor(address: string, port: number): string {
   return port === 22 ? name : `[${name}]:${port}`;
 }
 
-const wildcard = (pattern: string): RegExp =>
-  new RegExp(
-    `^${pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*')
-      .replace(/\?/g, '.')}$`,
-    's',
-  );
+/**
+ * Whether `name` matches a pattern where `*` is any run of characters and `?` any one, as OpenSSH's
+ * `match_pattern` does: greedy with one backtrack point (at most pattern × name steps). No pattern becomes a RegExp.
+ */
+function globMatches(pattern: string, name: string): boolean {
+  let p = 0;
+  let n = 0;
+  let star = -1;
+  let resume = 0;
+  while (n < name.length) {
+    if (p < pattern.length && (pattern[p] === '?' || pattern[p] === name[n])) {
+      p += 1;
+      n += 1;
+    } else if (p < pattern.length && pattern[p] === '*') {
+      star = p;
+      resume = n;
+      p += 1;
+    } else if (star !== -1) {
+      p = star + 1;
+      resume += 1;
+      n = resume;
+    } else {
+      return false;
+    }
+  }
+  while (pattern[p] === '*') p += 1;
+  return p === pattern.length;
+}
 
 function hashedMatches(field: string, name: string): boolean {
   const parts = field.split('|');
@@ -93,7 +113,7 @@ export function hostFieldMatches(field: string, name: string): boolean {
   for (const raw of field.toLowerCase().split(',')) {
     const negated = raw.startsWith('!');
     const pattern = negated ? raw.slice(1) : raw;
-    if (pattern === '' || !wildcard(pattern).test(name)) continue;
+    if (pattern === '' || !globMatches(pattern, name)) continue;
     if (negated) return false;
     matched = true;
   }
