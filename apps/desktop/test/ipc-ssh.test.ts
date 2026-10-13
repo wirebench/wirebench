@@ -577,6 +577,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -816,6 +817,7 @@ describe('session log channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
