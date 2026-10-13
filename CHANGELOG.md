@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Local terminal.** **Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>, or
+  **New local terminal** in the SSH sidebar) opens a tab with a shell on this machine, beside the SSH
+  terminals: your login shell on macOS and Linux, PowerShell 7 (else Windows PowerShell) on Windows,
+  or the program **Preferences → Terminal → Local shell** names. It starts in a shared workspace's
+  own folder, otherwise in your home folder. It keeps the SSH terminal's theme, paste guard, copy on
+  select and find, and shows **Shell ended (code N)** with **Restart**. `WIREBENCH_AREAS=ssh=off`
+  removes it with the SSH area, and `WIREBENCH_AREAS=local-terminal=off` removes it alone (#410).
 - **GraphQL requests.** A REST request's body can be **GraphQL**: a query or mutation, its variables
   and, for a document with several operations, the one to run. It goes out as the JSON body a
   GraphQL server reads, with the API's auth, environments, History, scripts, runs and sequences. An
