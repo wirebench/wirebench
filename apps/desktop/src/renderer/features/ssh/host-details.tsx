@@ -12,6 +12,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
+import { HostForwards } from './forwarding/forwarding-view.js';
 import { HostForm } from './host-dialog.js';
 import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
@@ -275,6 +276,10 @@ export function HostDetails() {
           ))
         )}
       </Section>
+      <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
+        <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
+        <HostForwards hostId={host.id} />
+      </section>
       <Section title="Timing">
         <Row label="Keep-alive">
           <span>{host.ssh.keepAlive.value}s</span>

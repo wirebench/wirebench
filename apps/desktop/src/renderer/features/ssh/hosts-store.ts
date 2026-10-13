@@ -68,7 +68,7 @@ export function hostStatusOf(panes: Readonly<Record<string, PaneSession>>, hostI
 }
 
 /** What the SSH area's fixed first tab shows, picked from the area's menu. */
-export type SshHomeView = 'hosts' | 'snippets' | 'layouts' | 'keychain' | 'known-hosts';
+export type SshHomeView = 'hosts' | 'snippets' | 'layouts' | 'forwarding' | 'keychain' | 'known-hosts';
 
 interface HostsState {
   /** Stays across workspaces, like the filter: it is where the user was, not workspace data. */
