@@ -26,6 +26,11 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_OIDC_CLIENT_SECRET` | no | — | Client secret registered at the issuer. Required with the issuer. Never logged. |
 | `WIREBENCH_SERVER_OIDC_SCOPES` | no | `openid email profile` | Scopes requested from the issuer, space-separated. |
 | `WIREBENCH_SERVER_OIDC_DISPLAY_NAME` | no | `OIDC` | The label of the *Continue with …* button in the app. |
+| `WIREBENCH_SERVER_SAML_IDP_METADATA` | no | — | The SAML identity provider’s metadata: an https:// URL or an absolute file path. Setting it turns SAML sign-in on (Enterprise). Read at start-up. |
+| `WIREBENCH_SERVER_SAML_DISPLAY_NAME` | no | `SSO` | The label of the SAML *Continue with …* button in the app. |
+| `WIREBENCH_SERVER_SAML_EMAIL_ATTRIBUTE` | no | — | The assertion attribute that carries the email. Unset: the usual email claim names, then an email-format NameID. |
+| `WIREBENCH_SERVER_SAML_NAME_ATTRIBUTE` | no | — | The assertion attribute that carries the display name. Unset: the usual name claim names. |
+| `WIREBENCH_SERVER_SAML_CLOCK_SKEW_SECONDS` | no | `120` | Clock skew allowed on a SAML assertion’s validity window, in seconds (0–300). |
 | `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` | no | `30` | A device token unused for this long expires. |
 | `WIREBENCH_SERVER_TOKEN_MAX_DAYS` | no | `180` | A device token older than this expires whatever its use. |
 | `WIREBENCH_SERVER_INVITATION_DAYS` | no | `7` | How long an invitation or password-reset link stays valid. |
