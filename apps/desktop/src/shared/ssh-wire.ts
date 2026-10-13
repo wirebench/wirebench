@@ -338,3 +338,55 @@ export type SshPlannedKeyWire = z.infer<typeof sshPlannedKeyWireSchema>;
 export type SshKeyChoiceWire = z.infer<typeof sshKeyChoiceWireSchema>;
 export type SshImportApplyRequest = z.infer<typeof sshImportApplyRequestSchema>;
 export type SshImportApplyResponse = z.infer<typeof sshImportApplyResponseSchema>;
+
+/**
+ * Importing trusted host keys from an OpenSSH known_hosts file (#418). As with the config import, the
+ * renderer never sends a path: `user-known-hosts` is `~/.ssh/known_hosts` resolved in main, `pick` runs the
+ * native picker. Only hosts in the window's hosts.yaml gain a key.
+ */
+export const sshKnownHostsImportPreviewRequestSchema = z.strictObject({ source: z.enum(['user-known-hosts', 'pick']) });
+export const sshKnownHostsImportRowSchema = z.strictObject({
+  /** `address:port`, as the trusted-keys store keeps it. */
+  host: z.string(),
+  keyType: z.string(),
+  fingerprint: z.string(),
+  /** The hosts.yaml names of the hosts at that address and port. */
+  names: z.array(z.string()),
+  line: z.number(),
+});
+export const sshKnownHostsImportPreviewSchema = z.strictObject({
+  previewId: z.string(),
+  /** The file read, as shown to the user. */
+  source: z.string(),
+  add: z.array(sshKnownHostsImportRowSchema),
+  /** Keys that differ from a stored one: replaced only when chosen and confirmed. */
+  conflicts: z.array(sshKnownHostsImportRowSchema.extend({ previous: z.string() })),
+  trusted: z.array(sshKnownHostsImportRowSchema),
+  skipped: z.array(
+    z.strictObject({
+      line: z.number(),
+      reason: z.enum(['cert-authority', 'revoked', 'no-host', 'duplicate', 'unreadable']),
+    }),
+  ),
+});
+export const sshKnownHostsImportPreviewResponseSchema = z.union([
+  z.strictObject({ cancelled: z.literal(true) }),
+  sshKnownHostsImportPreviewSchema,
+]);
+export const sshKnownHostsImportApplyRequestSchema = z.strictObject({
+  previewId: z.string(),
+  /** The conflicts the user chose to replace, by host and key type. */
+  replace: z.array(z.strictObject({ host: z.string(), keyType: z.string() })),
+});
+export const sshKnownHostsImportApplyResponseSchema = z.strictObject({
+  added: z.number(),
+  replaced: z.number(),
+  /** Stored keys left alone because they were not chosen for replacing. */
+  kept: z.number(),
+});
+
+export type SshKnownHostsImportPreviewRequest = z.infer<typeof sshKnownHostsImportPreviewRequestSchema>;
+export type SshKnownHostsImportPreview = z.infer<typeof sshKnownHostsImportPreviewSchema>;
+export type SshKnownHostsImportPreviewResponse = z.infer<typeof sshKnownHostsImportPreviewResponseSchema>;
+export type SshKnownHostsImportApplyRequest = z.infer<typeof sshKnownHostsImportApplyRequestSchema>;
+export type SshKnownHostsImportApplyResponse = z.infer<typeof sshKnownHostsImportApplyResponseSchema>;
