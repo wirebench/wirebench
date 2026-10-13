@@ -750,7 +750,8 @@ import. An entry that is not `NAME=value`, or that already holds `${secret:…}`
 and options such as `LocalForward`, `ForwardAgent` or `SendEnv` are listed by option name, file and line.
 Their values are never shown, because a config can hold credentials in unexpected places. Options
 with no meaning here (`IdentitiesOnly`, `StrictHostKeyChecking`, `UserKnownHostsFile` and a few
-others) are counted. Known-hosts files are not imported: host keys are still trusted on first use.
+others) are counted. Known-hosts files are not read here; import their keys from the **Known hosts**
+view (see [Importing known_hosts](#importing-known_hosts)).
 
 **Existing hosts.** Every import adds one new group, named "SSH config" by default, and never changes
 a host or group you already have. A host with the same address, port and user as an existing one is
@@ -802,6 +803,29 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   **Replace key and connect**. A changed key can mean the machine was reinstalled, or that something
   is in the way; find out which before you replace it.
 
+The **Known hosts** view lists the trusted keys; **Forget** one and the next connection asks again.
+
+### Importing known_hosts
+
+Hosts you already reach with `ssh` are usually in its `known_hosts` file. In the **Known hosts** view,
+choose **Import known hosts…** (or run **Hosts: Import Known Hosts…**), then **Read ~/.ssh/known_hosts**
+or **Choose a file…**. Nothing is written until you confirm the preview.
+
+Only the hosts in `hosts.yaml` gain a key. Each host is looked up the way `ssh` does it: by its address
+on port 22, or as `[address]:port` on any other port. A line matches through a comma list of names, a
+pattern with `*` and `?` (a matching `!pattern` excludes the host), or a hashed name (`|1|…`, written
+by `HashKnownHosts`), which is checked against each host's address.
+
+The preview shows:
+
+- **Keys to trust**: hosts with no trusted key of that type yet.
+- **Different from a trusted key**: the stored and the file's fingerprint side by side. The stored
+  key stays unless you tick **Replace**; replacing then asks you to tick **I understand these keys
+  changed**, as a changed key does on connect.
+- **Not imported**, by line: `@cert-authority` lines (they trust a signing key, not a host key),
+  `@revoked` lines, lines that name no host in `hosts.yaml`, a second key of a type a host already
+  got from an earlier line, and lines that are not a key Wirebench can read.
+
 ## Security notes
 
 - A password, key or passphrase is read only in the main process, when you connect. It is handed to
@@ -816,8 +840,8 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   forwarded byte is logged.
 - The Files tab's local pane reaches any file your account can; see
   [Access to this machine's files](#access-to-this-machines-files).
-- Host keys are trusted on first use, by an explicit click, and replaced only by a separate explicit
-  confirmation.
+- Host keys are trusted on first use, by an explicit click, or imported from a known_hosts file you
+  choose after reviewing them, and replaced only by a separate explicit confirmation.
 - A snippet's secret is read and typed by the main process, only into a script saved in `snippets.yaml` and
   only into a terminal the same window opened; the interface never receives the value. Its output is masked
   as described in [Secrets in snippets](#secrets-in-snippets), with the limits listed there.
