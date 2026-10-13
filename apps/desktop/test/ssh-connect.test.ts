@@ -116,6 +116,7 @@ describe('createSshConnector', () => {
       ...deps,
       hostOsFile: join(mkdtempSync(join(tmpdir(), 'wb-connect-os-')), 'ssh-host-os.json'),
       emit: vi.fn(),
+      snippets: () => ({ current: () => undefined, list: vi.fn() }),
       refusals,
       connector,
     });

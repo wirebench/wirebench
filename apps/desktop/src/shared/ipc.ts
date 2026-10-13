@@ -23,7 +23,13 @@ import {
   sshSetHostOsRequestSchema,
   sshWriteRequestSchema,
 } from './ssh-wire.js';
-import { sshListSnippetsResponseSchema, sshSaveSnippetsRequestSchema } from './snippets-wire.js';
+import {
+  sshListSnippetsResponseSchema,
+  sshPreviewSnippetRequestSchema,
+  sshPreviewSnippetResponseSchema,
+  sshRunSnippetRequestSchema,
+  sshSaveSnippetsRequestSchema,
+} from './snippets-wire.js';
 import {
   sftpChmodRequestSchema,
   sftpCloseRequestSchema,
@@ -962,6 +968,13 @@ export const channels = {
     // Snippets (#356): scripts cross with `${secret:NAME}` tokens only, never a value.
     listSnippets: defineChannel('ssh.listSnippets', z.undefined(), sshListSnippetsResponseSchema),
     saveSnippets: defineChannel('ssh.saveSnippets', sshSaveSnippetsRequestSchema, sshListSnippetsResponseSchema),
+    // Main types the saved snippet by id, resolving its secrets itself; a preview never resolves one.
+    runSnippet: defineChannel('ssh.runSnippet', sshRunSnippetRequestSchema, z.object({})),
+    previewSnippet: defineChannel(
+      'ssh.previewSnippet',
+      sshPreviewSnippetRequestSchema,
+      sshPreviewSnippetResponseSchema,
+    ),
   },
   // The Files tab (SSH area slice 3). Registered only while the SSH area is on; a local place is used as given.
   sftp: {
