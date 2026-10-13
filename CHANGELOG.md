@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Import trusted keys from known_hosts.** The Known hosts view (and **Hosts: Import Known Hosts…**)
+  reads `~/.ssh/known_hosts` or a chosen file and trusts its keys for the hosts in `hosts.yaml` they
+  name: plain and `[host]:port` names, comma lists, wildcard patterns with `!` negation, and hashed
+  names, which are matched against each host's address and port. The preview lists the keys to trust,
+  the keys that differ from one already trusted (kept unless you tick **Replace**, which then needs the
+  same changed-key confirmation as a connect) and what is not imported: `@cert-authority` and
+  `@revoked` lines, lines that name no host, a second key of a type a host already has, and lines that
+  cannot be read (#418).
+
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as

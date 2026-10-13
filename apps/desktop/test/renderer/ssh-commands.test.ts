@@ -37,6 +37,13 @@ describe('ssh commands', () => {
     expect(useUiStore.getState().sidebar.view).toBe('ssh');
     expect(useHostsStore.getState().importOpen).toBe(true);
   });
+  it('ssh.importKnownHosts shows the Known hosts view and opens its import dialog', async () => {
+    useHostsStore.setState({ knownHostsImportOpen: false, homeView: 'hosts' });
+    await runCommand('ssh.importKnownHosts', {} as never);
+    expect(useUiStore.getState().sidebar.view).toBe('ssh');
+    expect(useHostsStore.getState().homeView).toBe('known-hosts');
+    expect(useHostsStore.getState().knownHostsImportOpen).toBe(true);
+  });
   it('ssh.connect with a host id opens its terminal tab', async () => {
     useEditorsStore.getState().reset();
     useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });

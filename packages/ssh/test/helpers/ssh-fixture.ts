@@ -37,6 +37,8 @@ export function sftpServerPath(): string | undefined {
 export interface SshFixture {
   readonly port: number;
   readonly hostKey: KnownHostEntry;
+  /** The host key as a known_hosts line has it after the names: `ssh-rsa AAAA…`. */
+  readonly hostPublicKey: string;
   lastResize?: { cols: number; rows: number };
   /** SSH connections the server has accepted so far. */
   readonly connections: number;
@@ -95,6 +97,7 @@ export async function startSshFixture(options: {
     },
     remoteForwards: [],
     hostKey: { host: '', keyType: keyTypeOf(publicBlob), fingerprint: fingerprintOf(publicBlob) },
+    hostPublicKey: `${keyTypeOf(publicBlob)} ${publicBlob.toString('base64')}`,
     drop: () => {
       for (const client of clients) (client as unknown as { _sock: net.Socket })._sock.resetAndDestroy();
     },
