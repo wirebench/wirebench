@@ -153,6 +153,7 @@ describe('ids (M2)', () => {
   it('slugs aliases', () => {
     expect(slugId('Web.Prod_1')).toBe('web-prod-1');
     expect(slugId('!!!')).toBe('host');
+    expect(slugId(`-${'-'.repeat(50_000)}a${'.'.repeat(50_000)}`)).toBe('a');
   });
   it('suffixes clashes with existing ids and within the import, and the group id', async () => {
     const p = await plan('Host Web web.\nHost WEB-\n', EXISTING);

@@ -126,12 +126,13 @@ export const IGNORED_KEYWORDS = new Set([
 
 /** `Web.Prod_1` → `web-prod-1`; nothing usable → `host`. */
 export function slugId(alias: string): string {
-  return (
-    alias
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'host'
-  );
+  const dashed = alias.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  // Trimmed by index: an anchored `-+$` is slow on a long run of dashes.
+  let start = 0;
+  let end = dashed.length;
+  while (start < end && dashed[start] === '-') start += 1;
+  while (end > start && dashed[end - 1] === '-') end -= 1;
+  return dashed.slice(start, end) || 'host';
 }
 
 export function unique(base: string, taken: Set<string>, joiner: string): string {
