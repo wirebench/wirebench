@@ -32,6 +32,7 @@ const NO_SECRETS = { names: vi.fn(), set: vi.fn() };
 const NO_SSH = {
   connect: vi.fn(),
   write: vi.fn(),
+  writeMany: vi.fn(),
   resize: vi.fn(),
   close: vi.fn(),
   trust: vi.fn(),
@@ -259,6 +260,7 @@ describe('ssh channels', () => {
       const ssh = {
         connect: vi.fn().mockResolvedValue({ sessionId: 's1' }),
         write: vi.fn(),
+        writeMany: vi.fn().mockReturnValue({ skipped: ['s2'] }),
         resize: vi.fn(),
         close: vi.fn(),
         trust: vi.fn().mockResolvedValue(undefined),
@@ -293,6 +295,19 @@ describe('ssh channels', () => {
       const ssh = register();
       expect(await invokeAs(window, 'ssh.write', { sessionId: 's1', data: 'aGk=' })).toEqual({ ok: true, value: {} });
       expect(ssh.write).toHaveBeenCalledWith(window, { sessionId: 's1', data: 'aGk=' });
+    });
+    it('ssh.writeMany', async () => {
+      const ssh = register();
+      const request = { sessionIds: ['s1', 's2'], data: 'aGk=' };
+      expect(await invokeAs(window, 'ssh.writeMany', request)).toEqual({ ok: true, value: { skipped: ['s2'] } });
+      expect(ssh.writeMany).toHaveBeenCalledWith(window, request);
+    });
+    it('ssh.writeMany refuses no ids and more than a tab holds', async () => {
+      const ssh = register();
+      const ids = Array.from({ length: 13 }, (_, i) => `s${String(i)}`);
+      expect(await invokeAs(window, 'ssh.writeMany', { sessionIds: ids, data: 'aGk=' })).toMatchObject({ ok: false });
+      expect(await invokeAs(window, 'ssh.writeMany', { sessionIds: [], data: 'aGk=' })).toMatchObject({ ok: false });
+      expect(ssh.writeMany).not.toHaveBeenCalled();
     });
     it('ssh.resize', async () => {
       const ssh = register();

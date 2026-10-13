@@ -9,18 +9,22 @@ export interface PasteDialogProps {
   readonly onConfirm: (dontAskAgain: boolean) => void;
   /** Cancel, Escape or a click outside: nothing is sent. */
   readonly onCancel: () => void;
+  /** How many panes a broadcast takes the paste to; above one, the dialog says so and offers no "Don't ask again". */
+  readonly receivers?: number | undefined;
 }
 
 /**
  * Asks before a multi-line paste reaches the shell. Shows the first lines, how many more there are, and a
  * "Don't ask again" box. Paste is the default button; Cancel closes without sending.
  */
-export function PasteDialog({ text, onConfirm, onCancel }: PasteDialogProps) {
+export function PasteDialog(props: PasteDialogProps) {
   // Keyed so a later paste starts with the box unticked.
-  return <PasteDialogBody key={text ?? ''} text={text} onConfirm={onConfirm} onCancel={onCancel} />;
+  return <PasteDialogBody key={props.text ?? ''} {...props} />;
 }
 
-function PasteDialogBody({ text, onConfirm, onCancel }: PasteDialogProps) {
+function PasteDialogBody({ text, onConfirm, onCancel, receivers = 1 }: PasteDialogProps) {
+  const broadcast = receivers > 1;
+  const panes = `${String(receivers)} panes`;
   const [dontAsk, setDontAsk] = useState(false);
   const pasteButton = useRef<HTMLButtonElement>(null);
   const preview = text === null ? undefined : pastePreview(text);
@@ -42,9 +46,13 @@ function PasteDialogBody({ text, onConfirm, onCancel }: PasteDialogProps) {
             pasteButton.current?.focus();
           }}
         >
-          <Dialog.Title className="text-md font-medium text-fg-default">Paste multiple lines?</Dialog.Title>
+          <Dialog.Title className="text-md font-medium text-fg-default">
+            {broadcast ? `Paste to ${panes}?` : 'Paste multiple lines?'}
+          </Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-fg-subtle">
-            A pasted script runs line by line in the shell.
+            {broadcast
+              ? `Broadcast is on: the paste goes to all ${panes} at once.`
+              : 'A pasted script runs line by line in the shell.'}
           </Dialog.Description>
           {preview !== undefined && (
             <div className="mt-2">
@@ -61,16 +69,18 @@ function PasteDialogBody({ text, onConfirm, onCancel }: PasteDialogProps) {
               )}
             </div>
           )}
-          <label className="mt-3 flex items-center gap-2 text-sm text-fg-default">
-            <input
-              type="checkbox"
-              checked={dontAsk}
-              onChange={(e) => {
-                setDontAsk(e.target.checked);
-              }}
-            />
-            Don&apos;t ask again
-          </label>
+          {!broadcast && (
+            <label className="mt-3 flex items-center gap-2 text-sm text-fg-default">
+              <input
+                type="checkbox"
+                checked={dontAsk}
+                onChange={(e) => {
+                  setDontAsk(e.target.checked);
+                }}
+              />
+              Don&apos;t ask again
+            </label>
+          )}
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
@@ -84,7 +94,7 @@ function PasteDialogBody({ text, onConfirm, onCancel }: PasteDialogProps) {
               type="button"
               className="rounded bg-accent px-3 py-1.5 text-sm text-fg-on-accent"
               onClick={() => {
-                onConfirm(dontAsk);
+                onConfirm(!broadcast && dontAsk);
               }}
             >
               Paste

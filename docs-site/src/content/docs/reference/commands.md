@@ -57,6 +57,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Open Host in New Tab… | — | — |
 | Open Layout… | — | — |
 | Terminal: Save Layout… | — | — |
+| Terminal: Toggle Broadcast Input | — | — |
 | Terminal: Split Right | <kbd>⌘D</kbd> | <kbd>Ctrl+D</kbd> |
 | Terminal: Split Down | <kbd>⌘⇧D</kbd> | <kbd>Ctrl+Shift+D</kbd> |
 | Terminal: Focus Pane Left | <kbd>⌘⌥←</kbd> | <kbd>Ctrl+Alt+Left</kbd> |
