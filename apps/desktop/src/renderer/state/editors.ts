@@ -114,6 +114,8 @@ export interface EditorTab {
    * a session is a moment, so the tab is never persisted.
    */
   readonly panes?: PaneNode;
+  /** Set on an `ssh-terminal` tab opened from (or saved as) a layout: its title, and what Save layout… updates. */
+  readonly layoutId?: string;
   /**
    * Set when `kind` is `'ssh-files'`: the host this Files tab browses, over its own SFTP session. Session only,
    * like a terminal tab.

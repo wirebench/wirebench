@@ -10,6 +10,7 @@ import {
   moveFocus,
   requestSplit,
 } from '../features/ssh/panes/pane-actions.js';
+import { useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
 import { registerCommand } from '../lib/commands.js';
 import type { PaletteMode } from '../shell/command-palette.js';
 import { useUiStore } from '../state/ui.js';
@@ -94,6 +95,21 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
       // From the palette there is no host to name yet, so it asks which one.
       if (typeof arg === 'string') openInNewTab(arg);
       else openPalette('new-tab-hosts');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.openLayout'),
+    run: () => {
+      openPalette('layouts');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.saveLayout'),
+    when: onTerminalTab,
+    whenScope: 'editor.terminal',
+    run: () => {
+      const active = activeTerminal();
+      if (active !== undefined) useLayoutsStore.getState().setSavingTabId(active.tabId);
     },
   });
   for (const [id, dir] of [
