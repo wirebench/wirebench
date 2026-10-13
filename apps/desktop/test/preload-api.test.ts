@@ -66,6 +66,7 @@ describe('buildApi', () => {
       'keystores',
       'layout',
       'license',
+      'localTerminal',
       'log',
       'mock',
       'oauth2',

@@ -26,6 +26,15 @@ import {
   sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
+  localTerminalCloseRequestSchema,
+  localTerminalDataEventSchema,
+  localTerminalExitEventSchema,
+  localTerminalOpenRequestSchema,
+  localTerminalOpenResponseSchema,
+  localTerminalResizeRequestSchema,
+  localTerminalWriteRequestSchema,
+} from './local-terminal-wire.js';
+import {
   forwardFreePortRequestSchema,
   forwardFreePortResponseSchema,
   forwardListRequestSchema,
@@ -424,7 +433,12 @@ export const channels = {
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
     /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
-    areas: defineChannel('app.areas', z.undefined(), z.object({ enabled: z.array(z.string()) })),
+    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area.
+    areas: defineChannel(
+      'app.areas',
+      z.undefined(),
+      z.object({ enabled: z.array(z.string()), localTerminal: z.boolean() }),
+    ),
     /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`); the renderer shows the rest as placeholders. */
     kinds: defineChannel('app.kinds', z.undefined(), z.object({ enabled: z.array(z.string()) })),
     /**
@@ -996,6 +1010,14 @@ export const channels = {
       sshPreviewSnippetResponseSchema,
     ),
   },
+  // The local terminal tab (#410): a shell on this machine. Registered only while the SSH area is on and
+  // `WIREBENCH_AREAS` leaves `local-terminal` on.
+  localTerminal: {
+    open: defineChannel('localTerminal.open', localTerminalOpenRequestSchema, localTerminalOpenResponseSchema),
+    write: defineChannel('localTerminal.write', localTerminalWriteRequestSchema, z.object({})),
+    resize: defineChannel('localTerminal.resize', localTerminalResizeRequestSchema, z.object({})),
+    close: defineChannel('localTerminal.close', localTerminalCloseRequestSchema, z.object({})),
+  },
   // Saved terminal layouts (SSH area, panes slice 3): per machine, scoped to the calling window's workspace.
   // Registered only while the SSH area is on.
   layout: {
@@ -1067,6 +1089,12 @@ export const events = {
     state: defineEvent('ssh.state', sshStateEventSchema),
     /** The machine woke from sleep: a terminal waiting to reconnect tries at once. To every window. */
     resumed: defineEvent('ssh.resumed', z.object({})),
+  },
+  localTerminal: {
+    /** The local shell's output, base64, to the window that opened it only. */
+    data: defineEvent('localTerminal.data', localTerminalDataEventSchema),
+    /** The local shell ended on its own; the session id is gone. */
+    exit: defineEvent('localTerminal.exit', localTerminalExitEventSchema),
   },
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),

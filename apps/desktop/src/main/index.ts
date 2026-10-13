@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
@@ -49,6 +49,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import {
   enabledAreasFromEnv,
+  localTerminalFromEnv,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
@@ -59,6 +60,8 @@ import { windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
 import { SshService, forwardResume } from './ssh-service.js';
+import { localShell, localShellCwd, localShellEnv } from './local-shell.js';
+import { LocalTerminalService } from './local-terminal-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpEditService, sweepEditCopies } from './sftp-edit.js';
 import { SftpService } from './sftp-service.js';
@@ -501,6 +504,8 @@ const secretScans = scoped(scopes, (scope) => scope.secretScans);
 
 /** The areas `WIREBENCH_AREAS` leaves switched on (see `areas.ts`). */
 const enabledAreas = enabledAreasFromEnv();
+/** Whether the local terminal tab (#410) is on: with the SSH area, unless `local-terminal=off`. */
+const localTerminalOn = localTerminalFromEnv();
 
 /**
  * The kinds `WIREBENCH_KINDS` leaves switched on (see `kinds/enabled-kinds.ts`), and the engine
@@ -540,6 +545,30 @@ const sshService = new SshService({
   onSessionsChange: (sender, hostId, open) => {
     forwardService.sessionsChanged(sender, hostId, open);
   },
+});
+/**
+ * The local terminal tabs' shells (#410), owned per window like the SSH terminals. The pty binding is native and
+ * loads at the first tab, so a machine it does not load on only loses this tab.
+ */
+const localTerminals = new LocalTerminalService({
+  load: async () => {
+    const pty = await import('@lydell/node-pty');
+    return pty.spawn;
+  },
+  emit: emitEvent,
+  shell: () =>
+    localShell({
+      platform: process.platform,
+      env: process.env,
+      preference: preferencesService.get().terminal.localShell,
+      exists: existsSync,
+    }),
+  cwd: (sender) => {
+    const workspace = sshScopeOf(scopes, sender).workspace;
+    const tree = workspace.openWorkspaceId() === undefined ? undefined : workspace.treeDir();
+    return localShellCwd({ tree, userData: app.getPath('userData'), home: homedir(), platform: process.platform });
+  },
+  env: () => localShellEnv(process.env),
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
@@ -592,7 +621,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions and forwards; a
   // rename or reload does not, and another window's sessions are its own workspace's.
   const endSshOnSwitch = sshAreaEndsOnSwitch(
-    [sftpTransfers, sftpEdits, sshService, sftpService, forwardService],
+    [sftpTransfers, sftpEdits, sshService, sftpService, forwardService, localTerminals],
     target,
   );
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
@@ -905,6 +934,7 @@ void app.whenReady().then(() => {
     },
     enabledAreas,
     enabledKinds,
+    localTerminalOn,
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
@@ -1303,6 +1333,7 @@ void app.whenReady().then(() => {
     edits: sftpEdits,
     forward: forwardService,
     keys: sshKeys,
+    localTerminal: localTerminalOn ? localTerminals : undefined,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
