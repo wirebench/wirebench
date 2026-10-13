@@ -11,10 +11,12 @@ import {
   FolderPlus,
   KeyRound,
   MoreHorizontal,
+  Play,
   Plus,
   Search,
   ShieldAlert,
   SquareTerminal,
+  TextCursorInput,
   Variable,
 } from 'lucide-react';
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../../components/button.js';
@@ -30,6 +32,7 @@ import {
   removeSnippet,
   renamePackage,
 } from './snippet-edit.js';
+import { startRun } from './run.js';
 import { filterSnippets, useSnippetsStore } from './snippets-store.js';
 
 const INPUT_CLASS =
@@ -275,7 +278,7 @@ function SnippetRow({ item }: { readonly item: SnippetListItemWire }) {
     <li
       data-snippet-id={item.id}
       data-testid={`snippet-item-${item.id}`}
-      className={`flex items-center pr-2 ${selected ? 'bg-accent-muted' : 'hover:bg-surface-raised'}`}
+      className={`group flex items-center pr-2 ${selected ? 'bg-accent-muted' : 'hover:bg-surface-raised'}`}
     >
       <button
         type="button"
@@ -283,6 +286,9 @@ function SnippetRow({ item }: { readonly item: SnippetListItemWire }) {
         aria-current={selected ? 'true' : undefined}
         onClick={() => {
           openEditor({ mode: 'edit', id: item.id });
+        }}
+        onDoubleClick={() => {
+          startRun(item);
         }}
         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
       >
@@ -296,6 +302,30 @@ function SnippetRow({ item }: { readonly item: SnippetListItemWire }) {
           {item.confirm && <Marker label="Always confirms" icon={ShieldAlert} />}
         </span>
       </button>
+      <span className="flex shrink-0 items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+        <button
+          type="button"
+          aria-label={`Run ${item.name}`}
+          title="Run"
+          className={ICON_BUTTON_CLASS}
+          onClick={() => {
+            startRun(item);
+          }}
+        >
+          <Play size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label={`Insert ${item.name}`}
+          title="Insert (without pressing Enter)"
+          className={ICON_BUTTON_CLASS}
+          onClick={() => {
+            startRun(item, { enter: false });
+          }}
+        >
+          <TextCursorInput size={14} aria-hidden="true" />
+        </button>
+      </span>
       <SnippetMenu item={item} />
     </li>
   );
@@ -306,7 +336,7 @@ function scriptOf(file: SnippetsFileWire, id: string): string | undefined {
   return [...file.packages.flatMap((p) => p.snippets), ...file.snippets].find((s) => s.id === id)?.script;
 }
 
-/** Edit, Duplicate, Move to package…, Copy script and Delete (after asking) for one snippet. */
+/** Run…, Insert, Edit, Duplicate, Move to package…, Copy script and Delete (after asking) for one snippet. */
 function SnippetMenu({ item }: { readonly item: SnippetListItemWire }) {
   const packages = useSnippetsStore((s) => s.file.packages);
   const openEditor = useSnippetsStore((s) => s.openEditor);
@@ -326,6 +356,23 @@ function SnippetMenu({ item }: { readonly item: SnippetListItemWire }) {
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
+            <DropdownMenu.Item
+              className={MENU_ITEM_CLASS}
+              onSelect={() => {
+                startRun(item, { ask: true });
+              }}
+            >
+              Run…
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={MENU_ITEM_CLASS}
+              onSelect={() => {
+                startRun(item, { enter: false });
+              }}
+            >
+              Insert
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
             <DropdownMenu.Item
               className={MENU_ITEM_CLASS}
               onSelect={() => {

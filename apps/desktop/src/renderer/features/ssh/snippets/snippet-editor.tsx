@@ -8,11 +8,13 @@ import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { Plus, X } from 'lucide-react';
 import { Button } from '../../../components/button.js';
+import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { CodeEditor } from '../../../editor/code-editor.js';
 import type { SshSecretNameWire } from '../../../../shared/ssh-wire.js';
 import type { SnippetVariableWire, SnippetWire, SnippetsFileWire } from '../../../../shared/snippets-wire.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { INPUT_CLASS } from '../inherited-field.js';
+import { startRun } from './run.js';
 import { addPackage, freeSnippetId, scriptTokens, undeclaredTokens, upsertSnippet } from './snippet-edit.js';
 import { useSnippetsStore } from './snippets-store.js';
 
@@ -122,6 +124,21 @@ function SnippetForm(props: {
   const [confirm, setConfirm] = useState(snippet?.confirm ?? false);
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  /** A Run or Insert waiting for the user to save the edits first: a run types the saved snippet. */
+  const [pendingRun, setPendingRun] = useState<{ enter?: false }>();
+  const snapshot = JSON.stringify([
+    name,
+    packageChoice,
+    newPackage,
+    tags,
+    description,
+    script,
+    variables.map((v) => [v.name, v.label, v.default]),
+    enter,
+    confirm,
+  ]);
+  const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
+  const dirty = snapshot !== savedSnapshot;
   const [secretNames, setSecretNames] = useState<readonly SshSecretNameWire[]>([]);
   const [newSecret, setNewSecret] = useState<{ name: string; value: string; error?: string }>();
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor>(null);
@@ -192,7 +209,8 @@ function SnippetForm(props: {
   const canSave =
     name.trim() !== '' && script.trim() !== '' && (packageChoice !== NEW_PACKAGE || newPackage.trim() !== '');
 
-  const submit = async (): Promise<void> => {
+  /** Saves the form; whether it was saved. */
+  const submit = async (): Promise<boolean> => {
     let next = file;
     let packageId: string | undefined = packageChoice === NO_PACKAGE ? undefined : packageChoice;
     if (packageChoice === NEW_PACKAGE) {
@@ -230,14 +248,28 @@ function SnippetForm(props: {
       const answer = await save(upsertSnippet(next, packageId, edited));
       if (!answer.ok) {
         setError(answer.error.message);
-        return;
+        return false;
       }
+      setSavedSnapshot(snapshot);
       openEditor({ mode: 'edit', id });
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Runs the saved snippet by id, as it is in the list now. */
+  const runSaved = (id: string, opts: { enter?: false }): void => {
+    const item = useSnippetsStore.getState().snippets.find((x) => x.id === id);
+    if (item !== undefined) startRun(item, opts);
+  };
+  const run = (opts: { enter?: false }): void => {
+    if (snippet === undefined) return;
+    if (dirty) setPendingRun(opts);
+    else runSaved(snippet.id, opts);
   };
 
   const setVariable = (key: number, patch: Partial<Omit<VariableRow, 'key'>>): void => {
@@ -482,11 +514,47 @@ function SnippetForm(props: {
         </p>
       )}
       <div className="flex justify-end gap-2">
+        {snippet !== undefined && (
+          <>
+            <Button
+              onClick={() => {
+                run({});
+              }}
+            >
+              Run
+            </Button>
+            <Button
+              onClick={() => {
+                run({ enter: false });
+              }}
+            >
+              Insert
+            </Button>
+          </>
+        )}
         <Button onClick={closeEditor}>Close</Button>
         <Button variant="primary" type="submit" disabled={!canSave || saving}>
           Save
         </Button>
       </div>
+      <ConfirmDialog
+        open={pendingRun !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setPendingRun(undefined);
+        }}
+        title="Save changes first?"
+        description="A run types the saved snippet. Save your changes, then run it."
+        confirmLabel="Save and run"
+        onConfirm={() => {
+          const opts = pendingRun ?? {};
+          if (snippet === undefined || !canSave) return;
+          submit()
+            .then((saved) => {
+              if (saved) runSaved(snippet.id, opts);
+            })
+            .catch(() => undefined); // submit shows its own error
+        }}
+      />
     </form>
   );
 }

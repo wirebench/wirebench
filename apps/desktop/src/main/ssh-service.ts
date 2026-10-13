@@ -1,10 +1,27 @@
 import { readFile } from 'node:fs/promises';
 import type { WebContents } from 'electron';
 import type { z } from 'zod';
-import { WirebenchError, nodeFs, writeFileAtomic } from '@wirebench/engine';
-import { detectOs, openSession, rememberKnownHost, serializeKnownHosts } from '@wirebench/ssh';
-import type { KnownHostEntry, SshSession } from '@wirebench/ssh';
+import { WirebenchError, nodeFs, secretPseudoRef, writeFileAtomic } from '@wirebench/engine';
+import {
+  createStreamMasker,
+  detectOs,
+  expandSnippet,
+  findSnippet,
+  listSnippets,
+  openSession,
+  previewSnippet,
+  rememberKnownHost,
+  serializeKnownHosts,
+  snippetRevision,
+  snippetSecrets,
+} from '@wirebench/ssh';
+import type { KnownHostEntry, Snippet, SnippetListItem, SshSession, StreamMasker } from '@wirebench/ssh';
 import { events } from '../shared/ipc.js';
+import type {
+  SshPreviewSnippetRequest,
+  SshPreviewSnippetResponse,
+  SshRunSnippetRequest,
+} from '../shared/snippets-wire.js';
 import type { IpcEvent } from '../shared/ipc.js';
 import { sshHostOsResponseSchema } from '../shared/ssh-wire.js';
 import type {
@@ -17,6 +34,8 @@ import type {
   SshTrustRequest,
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
+import { asWirebenchError } from './hosts-service.js';
+import type { SnippetsService } from './snippets-service.js';
 import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
 import type { SshConnectDeps, SshConnector } from './ssh-connect.js';
 
@@ -24,6 +43,8 @@ export interface SshServiceDeps extends SshConnectDeps {
   /** `userData/ssh-host-os.json`: per machine, the OS each server was found or chosen to run. */
   readonly hostOsFile: string;
   readonly emit: (target: WebContents, event: IpcEvent<z.ZodType>, payload: unknown) => void;
+  /** The window's `snippets.yaml`: a run types only a snippet saved there. */
+  readonly snippets: (sender: WebContents) => Pick<SnippetsService, 'current' | 'list'>;
   /** Tests inject a fake. */
   readonly open?: typeof openSession;
   /** Milliseconds; tests inject a clock. */
@@ -41,6 +62,31 @@ export interface SshServiceDeps extends SshConnectDeps {
 const OS_PROBE = 'cat /etc/os-release 2>/dev/null || uname -s 2>/dev/null || ver';
 /** Milliseconds the probe may take before the host is left unlabelled. */
 const OS_PROBE_TIMEOUT_MS = 5000;
+/** Milliseconds of quiet after which a held tail that may start a secret is shown as it is (spec D5). */
+const MASK_HOLD_MS = 150;
+
+const PASTE_START = '\x1b[200~';
+const PASTE_END = '\x1b[201~';
+
+/**
+ * The text a snippet run writes (spec D4 steps 2–4): the first `skip` characters dropped, a leading space
+ * when asked, lines joined by `\r` as a paste is, wrapped as a bracketed paste when the shell turned it on,
+ * then `\r` for Enter.
+ *
+ * @throws WirebenchError `snippet-prefix-mismatch` when `skip` reaches past the snippet's literal start
+ */
+export function frameSnippet(
+  text: string,
+  opts: { leadingSpace: boolean; bracketed: boolean; enter: boolean; skip: number; literalStart: string },
+): string {
+  if (opts.skip > opts.literalStart.length || !text.startsWith(opts.literalStart.slice(0, opts.skip))) {
+    throw new WirebenchError('snippet-prefix-mismatch', 'What was typed is not the start of this snippet');
+  }
+  let body = (opts.leadingSpace ? ' ' : '') + text.slice(opts.skip).replace(/\n/g, '\r');
+  // An end marker inside the text would end the paste early and run the rest line by line.
+  if (opts.bracketed) body = PASTE_START + body.split(PASTE_END).join('') + PASTE_END;
+  return opts.enter ? `${body}\r` : body;
+}
 
 /**
  * Calls `onSwitch` when the open workspace id differs from the last one seen (closing counts), and not for
@@ -80,6 +126,8 @@ export function forwardResume(
 interface Live {
   readonly session: SshSession;
   readonly sender: WebContents;
+  /** Masks the secret values a snippet typed into this session, for the session's life. */
+  readonly masker: StreamMasker;
   readonly stop: () => void;
 }
 
@@ -159,10 +207,26 @@ export class SshService {
       throw closed();
     }
     const sessionId = session.id;
-    const offData = session.onData((data) => {
+    // Everything the renderer sees passes the masker: the screen, scrollback, find and a reconnect replay.
+    const masker = createStreamMasker();
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const send = (data: Uint8Array): void => {
+      if (data.length === 0) return;
       this.deps.emit(sender, events.ssh.data, { sessionId, data: Buffer.from(data).toString('base64') });
+    };
+    const release = (): void => {
+      clearTimeout(quiet);
+      quiet = undefined;
+      send(masker.flush());
+    };
+    const offData = session.onData((data) => {
+      clearTimeout(quiet);
+      send(masker.push(data));
+      // A prompt that happens to end like the start of a secret must not stay hidden.
+      quiet = masker.holding ? setTimeout(release, MASK_HOLD_MS) : undefined;
     });
     const offExit = session.onExit((exit) => {
+      release();
       this.deps.emit(sender, events.ssh.exit, {
         sessionId,
         code: exit.code,
@@ -174,7 +238,9 @@ export class SshService {
     this.live.set(sessionId, {
       session,
       sender,
+      masker,
       stop: () => {
+        clearTimeout(quiet);
         offData();
         offExit();
       },
@@ -246,6 +312,82 @@ export class SshService {
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */
   write(sender: WebContents, request: SshWriteRequest): void {
     this.owned(sender, request.sessionId).session.write(Buffer.from(request.data, 'base64'));
+  }
+
+  /**
+   * Types the saved snippet `snippetId` into a session this window owns (spec D4). Every refusal comes
+   * before anything is written. The secret values go to the session's masker before the write and nowhere
+   * else: never into an answer, an event or an error.
+   *
+   * @throws WirebenchError `ssh-session-unknown` | `workspace-not-open` | `snippet-unknown` | `snippet-changed` |
+   *   `secret-missing` | `snippet-variable-missing` | `snippet-value-invalid` | `snippet-prefix-mismatch`
+   */
+  async runSnippet(sender: WebContents, request: SshRunSnippetRequest): Promise<void> {
+    this.owned(sender, request.sessionId);
+    // Taken now, so the secrets are those of the workspace the run began in.
+    const getSecret = this.deps.secretsFor(sender);
+    const { snippet, item } = await this.savedSnippet(sender, request.snippetId);
+    if (item.revision !== request.revision) {
+      throw new WirebenchError('snippet-changed', `The snippet "${snippet.name}" changed since it was shown`, {
+        details: { snippet: snippet.id },
+      });
+    }
+    const secrets: Record<string, string> = {};
+    for (const name of snippetSecrets(snippet.script)) {
+      const value = await getSecret(secretPseudoRef(name));
+      if (value === undefined) {
+        throw new WirebenchError('secret-missing', `The secret "${name}" is not on this machine`, {
+          details: { name },
+        });
+      }
+      secrets[name] = value;
+    }
+    let expansion: ReturnType<typeof expandSnippet>;
+    try {
+      expansion = expandSnippet(snippet, request.values, secrets);
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
+    const skip = request.skip ?? 0;
+    const text = frameSnippet(expansion.text, {
+      leadingSpace: item.secrets.length > 0 && skip === 0,
+      bracketed: request.bracketed,
+      enter: request.enter === false ? false : snippet.enter,
+      skip,
+      literalStart: item.literalStart,
+    });
+    // The session may have closed while the secrets were read.
+    const live = this.owned(sender, request.sessionId);
+    live.masker.add(expansion.secretValues);
+    live.session.write(Buffer.from(text, 'utf8'));
+  }
+
+  /**
+   * The saved snippet expanded with every secret as `••••`, and its revision: what the run dialog shows.
+   * Never resolves a secret.
+   *
+   * @throws WirebenchError `workspace-not-open` | `snippet-unknown` | `snippet-variable-missing` | `snippet-value-invalid`
+   */
+  async previewSnippet(sender: WebContents, request: SshPreviewSnippetRequest): Promise<SshPreviewSnippetResponse> {
+    const { snippet } = await this.savedSnippet(sender, request.snippetId);
+    try {
+      return { text: previewSnippet(snippet, request.values), revision: snippetRevision(snippet) };
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
+  }
+
+  /** @throws WirebenchError `workspace-not-open` | `snippet-unknown` */
+  private async savedSnippet(sender: WebContents, id: string): Promise<{ snippet: Snippet; item: SnippetListItem }> {
+    const service = this.deps.snippets(sender);
+    await service.list(); // reads the file when nothing is cached for the open workspace
+    const file = service.current();
+    const snippet = file ? findSnippet(file, id) : undefined;
+    const item = file ? listSnippets(file).find((i) => i.id === id) : undefined;
+    if (!snippet || !item) {
+      throw new WirebenchError('snippet-unknown', `No saved snippet "${id}"`, { details: { snippet: id } });
+    }
+    return { snippet, item };
   }
 
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */

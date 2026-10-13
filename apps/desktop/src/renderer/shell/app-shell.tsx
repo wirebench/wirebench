@@ -47,6 +47,7 @@ import {
   useSnippetsStore,
 } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
+import { SnippetRunDialog } from '../features/ssh/snippets/run-dialog.js';
 import { TrustDialog } from '../features/ssh/trust-dialog.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
@@ -584,6 +585,7 @@ export function AppShell() {
       <SecretSourcesApproveDialog />
       {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
       {sshEnabled && <TrustDialog />}
+      {sshEnabled && <SnippetRunDialog />}
       <CollectionExportReportDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
