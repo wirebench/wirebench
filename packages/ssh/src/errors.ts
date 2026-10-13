@@ -13,6 +13,7 @@ export type SshErrorCode =
   | 'ssh-session-unknown'
   | 'ssh-config-empty'
   | 'ssh-import-stale'
+  | 'ssh-import-unreadable'
   | 'ssh-forward-duplicate-id'
   | 'ssh-forward-invalid'
   | 'ssh-forward-unknown'

@@ -78,21 +78,41 @@ export function applySshConfigImport(
   };
 
   const wanted = new Set(choices.importDuplicates);
-  const hosts: HostEntry[] = plan.hosts
-    .filter(
-      (h) => h.status === 'new' || h.status === 'created-for-jump' || (h.status === 'duplicate' && wanted.has(h.id)),
-    )
-    .map((h) => ({
-      id: h.id,
-      name: h.alias,
-      address: h.address,
-      tags: [],
-      ssh: settings(h.ssh, false),
-      ...(h.env === undefined ? {} : { env: { ...h.env } }),
-    }));
+  const chosen = plan.hosts.filter(
+    (h) => h.status === 'new' || h.status === 'created-for-jump' || (h.status === 'duplicate' && wanted.has(h.id)),
+  );
+  const entryOf = (h: (typeof chosen)[number]): HostEntry => ({
+    id: h.id,
+    name: h.alias,
+    address: h.address,
+    tags: [...(h.tags ?? [])],
+    ssh: settings(h.ssh, false),
+    ...(h.env === undefined ? {} : { env: { ...h.env } }),
+    ...(h.forwards === undefined || h.forwards.length === 0 ? {} : { forwards: h.forwards.map((f) => ({ ...f })) }),
+  });
+
+  // Folders become subgroups, parents first; a folder left with no host below it is not written.
+  const folders = new Map<string, GroupEntry>();
+  for (const f of plan.folders ?? []) {
+    folders.set(f.id, { id: f.id, name: f.name, tags: [], ssh: {}, groups: [], hosts: [] });
+  }
+  const hosts: HostEntry[] = [];
+  for (const h of chosen) {
+    const folder = h.folder === undefined ? undefined : folders.get(h.folder);
+    (folder?.hosts ?? hosts).push(entryOf(h));
+  }
+  const groups: GroupEntry[] = [];
+  const isEmpty = (g: GroupEntry): boolean => g.hosts.length === 0 && g.groups.every(isEmpty);
+  for (const f of [...(plan.folders ?? [])].reverse()) {
+    const entry = folders.get(f.id) as GroupEntry;
+    if (isEmpty(entry)) continue;
+    const parent = f.parent === undefined ? undefined : folders.get(f.parent);
+    (parent?.groups ?? groups).unshift(entry);
+  }
+  const written = walk({ version: 1, groups, hosts }).map((i) => i.entry.id);
 
   const taken = new Set(walk(existing).map((i) => i.entry.id));
-  const clash = [plan.group.id, ...hosts.map((h) => h.id)].find((id) => taken.has(id));
+  const clash = [plan.group.id, ...written].find((id) => taken.has(id));
   if (clash !== undefined) {
     throw new SshModelError(
       'ssh-import-stale',
@@ -108,7 +128,7 @@ export function applySshConfigImport(
     tags: [],
     ssh: settings(plan.group.ssh, true),
     ...(plan.group.env === undefined ? {} : { env: { ...plan.group.env } }),
-    groups: [],
+    groups,
     hosts,
   };
   // The round trip is the model's full validation: ids, jumps, cycles, secret tokens.

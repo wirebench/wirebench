@@ -10,6 +10,7 @@ export {
   planSshConfigImport,
   DEFAULT_GROUP_NAME,
   type PlannedAuth,
+  type PlannedFolder,
   type PlannedHost,
   type PlannedKey,
   type PlannedSettings,
