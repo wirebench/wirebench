@@ -1,7 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type { HistoryContract, HistorySseRow, HistoryWsFrame } from '../../../src/project/history.js';
 import type { RestContractResult } from '../../../src/rest/contract-check.js';
-import type { SseRow } from '../../../src/rest/sse.js';
+import type { SseRow } from '../../../src/http/sse.js';
 import type { WsFrame } from '../../../src/ws/model.js';
 
 // History restates the record shapes the protocols own, so `project/history.ts` names no protocol

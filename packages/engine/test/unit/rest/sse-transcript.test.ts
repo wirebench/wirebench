@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SseRow } from '../../../src/rest/sse.js';
+import type { SseRow } from '../../../src/http/sse.js';
 import { SSE_HISTORY_LIMITS, capSseRows, createSseRowStore } from '../../../src/rest/sse-transcript.js';
 
 const ev = (index: number, size = 10): SseRow => ({

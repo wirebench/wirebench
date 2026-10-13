@@ -731,8 +731,8 @@ export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, Res
 export { previewRestHeaders } from './rest/header-preview.js';
 export { headersOfRows, isOmitted, restHeaderRows } from './rest/request-headers.js';
 export type { RestHeaderLayers, RestHeaderRow, RestHeaderSource, RestHeaderState } from './rest/request-headers.js';
-export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
-export type { SseParser, SseRow } from './rest/sse.js';
+export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './http/sse.js';
+export type { SseParser, SseRow } from './http/sse.js';
 export {
   capSseRows,
   createSseRowStore,

@@ -5,7 +5,7 @@
 import type { CapLimits } from '../http/transcript-cap.js';
 import { capByEnds, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '../http/transcript-cap.js';
 import type { HistorySse } from '../project/history.js';
-import type { SseRow } from './sse.js';
+import type { SseRow } from '../http/sse.js';
 
 export const SSE_MEMORY_ROWS = 10_000;
 export const SSE_MEMORY_BYTES = 33_554_432;

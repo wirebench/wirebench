@@ -1,7 +1,8 @@
 /**
  * An in-house parser for the `text/event-stream` format (the WHATWG event-stream rules), browser-safe
  * and dependency-free so it can be shared between the desktop send path and the renderer's own
- * decoding needs. Re-exported from `rest/browser.ts`, so this module must not import from `node:*`.
+ * decoding needs. It lives in core so the REST and MCP modules can share it (ADR-0017 rule 1). It is
+ * re-exported from `rest/browser.ts`, so this module must not import from `node:*`.
  *
  * A stream arrives as arbitrary byte chunks — a line, a field, even a single UTF-8 code point can be
  * split across chunk boundaries — and the parser has to produce the same rows regardless of how the

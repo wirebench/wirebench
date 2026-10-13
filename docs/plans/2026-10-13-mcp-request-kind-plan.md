@@ -36,9 +36,9 @@ Each task leaves `pnpm check` green.
 
 **Files:** `packages/engine/src/rest/sse.ts` → `http/sse.ts`, importers, tests.
 
-- [ ] Move `createSseParser`, `isEventStream` and `SseRow`. REST imports them from `http/`.
+- [x] Move `createSseParser`, `isEventStream` and `SseRow`. REST imports them from `http/`.
   `project/history.ts`'s type import follows.
-- [ ] Engine-layers check green. No behaviour change. The existing SSE tests move with the file.
+- [x] Engine-layers check green. No behaviour change. The existing SSE tests move with the file.
 
 ### Task 2: Model, storage and the registered module
 

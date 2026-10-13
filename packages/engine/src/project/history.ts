@@ -84,7 +84,7 @@ export interface HistoryWsFrame {
 }
 
 /**
- * One server-sent event stream row as History keeps it: the REST module's `SseRow`, restated for the
+ * One server-sent event stream row as History keeps it: core's `SseRow`, restated for the
  * same reason as {@link HistoryWsFrame}.
  */
 export type HistorySseRow =
