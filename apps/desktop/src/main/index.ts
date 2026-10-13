@@ -60,6 +60,8 @@ import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpService } from './sftp-service.js';
+import { ForwardService } from './forward-service.js';
+import { createForwardBinds } from './forward-binds.js';
 import { TransferQueue } from './transfers.js';
 import { registerKerberosChannels, setUpKerberos } from './kerberos.js';
 import { clearAttachmentsTmp } from './kinds/soap/channels/attachments.js';
@@ -536,6 +538,18 @@ const sshService = new SshService({
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
 /** The Files tab's copies, a queue per window over that window's own SFTP sessions. */
 const sftpTransfers = new TransferQueue({ sftp: sftpService, emit: emitEvent });
+/** Port forwards, owned per window, one connection per window and host through the same connector. */
+const forwardService = new ForwardService({
+  hosts: sshConnectDeps.hosts,
+  connector: sshConnector,
+  binds: createForwardBinds(join(app.getPath('userData'), 'ssh-forward-binds.json'), {
+    report: (message) => {
+      console.warn(`[forward] ${message}`);
+    },
+  }),
+  workspaceIdOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+  emit: emitEvent,
+});
 /** The keychain's SSH keys: generated and opened in main, installed over the host's current sign-in. */
 const sshKeys = new SshKeysService({
   secrets: sshSecrets,
@@ -557,9 +571,9 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     emitEvent(target, event, payload);
   };
   const picks = new DialogPicks(appPicks);
-  // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions; a
+  // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions and forwards; a
   // rename or reload does not, and another window's sessions are its own workspace's.
-  const endSshOnSwitch = sshAreaEndsOnSwitch([sftpTransfers, sshService, sftpService], target);
+  const endSshOnSwitch = sshAreaEndsOnSwitch([sftpTransfers, sshService, sftpService, forwardService], target);
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
   const hosts = windowHosts(
     () => workspace.treeDir(),
@@ -767,6 +781,8 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
         hostsOnFileChange(enabledAreas, hosts, () => {
           send(events.ssh.hostsChanged, {});
         });
+        // An edit on disk may have changed a running forward's rule.
+        void forwardService.hostsChanged(target);
       },
       onSnippetsFileChanged: () => {
         hostsOnFileChange(enabledAreas, snippets, () => {
@@ -1259,6 +1275,7 @@ void app.whenReady().then(() => {
     sftp: sftpService,
     snippets: snippetsService,
     transfers: sftpTransfers,
+    forward: forwardService,
     keys: sshKeys,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
@@ -1419,6 +1436,8 @@ app.on('before-quit', (event) => {
   sshService.disposeAll();
   sftpTransfers.disposeAll();
   sftpService.disposeAll();
+  // Forward listeners close with the app; not awaited, so a socket that will not close never holds up the quit.
+  void forwardService.disposeAll();
   // A mock's port is released now; not awaited, so a server that will not close never holds up the quit.
   void mockRunner.stopAll().catch((error: unknown) => {
     console.warn('[mock] stopping the mocks on quit failed', error instanceof Error ? error.message : String(error));
