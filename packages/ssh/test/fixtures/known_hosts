@@ -1,0 +1,15 @@
+# known_hosts fixture: every key here was generated for this test and guards nothing.
+
+plain.example.com,192.0.2.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkkhXbJ97x8Tj1gby0rDZaHuAitc9GASuajfe+AItng old-laptop
+[port.example.com]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGbrtjulJvMkCVHTF4WuMAjZjnSW7G2uWlH/6TPmOThi
+|1|l4D68XqeF5+1+Nk7XeJS++uI6Js=|ceCy9Fw90tNXsIDs9jbSu4mKbdY= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK8Op9N20uNfdx+SWAYKHE10v/NmBJ+rqJwGVRub4QHS
+|1|GAuA5wqpZqw7+0fKBx6n3J/qkUc=|fdxgQpfjPeWHzzwLOCbTC9ujubA= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICoutNs2PVIRCT5+u9isw3onFcu+fCFlQ3qyH1gbHPSV
+*.wild.example.com,!secret.wild.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJx23DVYNLqoqNnntRf5e79prGdNRHkvLfL/vxj2zyV3
+PLAIN.example.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKId9IRl7/2WUqqAXkAamQrSCZsy+/ZRr+XJr1S9Yd9ID6lGbiZFPrXsEMLPe64mYQ0pPplZN+EbfpNVFaJv23c=
+@cert-authority *.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkkhXbJ97x8Tj1gby0rDZaHuAitc9GASuajfe+AItng
+@revoked plain.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGbrtjulJvMkCVHTF4WuMAjZjnSW7G2uWlH/6TPmOThi
+unrelated.example.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkkhXbJ97x8Tj1gby0rDZaHuAitc9GASuajfe+AItng
+this line is broken
+plain.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGbrtjulJvMkCVHTF4WuMAjZjnSW7G2uWlH/6TPmOThi
+	
+mismatch.example.com ssh-rsa AAAAC3NzaC1lZDI1NTE5AAAAIFkkhXbJ97x8Tj1gby0rDZaHuAitc9GASuajfe+AItng
