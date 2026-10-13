@@ -55,6 +55,8 @@ function emptyBody(kind: BodyKind): RestBodyWire {
       return { kind: 'multipart', parts: [] };
     case 'binary':
       return { kind: 'binary', source: { kind: 'path', path: '' }, contentType: 'application/octet-stream' };
+    case 'graphql':
+      return { kind: 'graphql', query: '', variables: '' };
   }
 }
 

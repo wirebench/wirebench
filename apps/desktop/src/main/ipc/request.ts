@@ -948,6 +948,13 @@ function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
       return { kind: 'multipart', parts: body.parts.map((part) => ({ ...part })) };
     case 'binary':
       return { kind: 'binary', source: { ...body.source }, contentType: body.contentType };
+    case 'graphql':
+      return {
+        kind: 'graphql',
+        query: body.query,
+        variables: body.variables,
+        ...(body.operationName !== undefined ? { operationName: body.operationName } : {}),
+      };
     default:
       return { kind: 'none' };
   }

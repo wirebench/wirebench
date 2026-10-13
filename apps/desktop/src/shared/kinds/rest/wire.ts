@@ -112,6 +112,13 @@ export const restBodyWireSchema = z.union([
     ),
   }),
   z.object({ kind: z.literal('binary'), source: attachmentSourceWireSchema, contentType: z.string() }),
+  /** A GraphQL operation (#77): its query, its variables as JSON text (`''` for none), the operation to run. */
+  z.object({
+    kind: z.literal('graphql'),
+    query: z.string(),
+    variables: z.string(),
+    operationName: z.string().optional(),
+  }),
 ]);
 export type RestBodyWire = z.infer<typeof restBodyWireSchema>;
 
@@ -227,6 +234,8 @@ export const restApiWireSchema = z.object({
       auth: authConfigWireSchema.optional(),
     })
     .optional(),
+  /** Where the API's GraphQL schema came from, when it has one (#77). */
+  graphqlSchema: z.object({ source: z.string(), fetchedAt: z.string() }).optional(),
 });
 export type RestApiWire = z.infer<typeof restApiWireSchema>;
 
@@ -353,6 +362,24 @@ export const restContractResultSchema = z.object({
 });
 export type RestContractResultWire = z.infer<typeof restContractResultSchema>;
 
+/**
+ * A GraphQL response checked (#77), the engine's `GraphqlCheckResult`: every entry of its `errors`
+ * array, and where its `data` does not match the operation and the API's schema. `schema` says how
+ * far the data check got.
+ */
+export const graphqlCheckWireSchema = z.object({
+  schema: z.enum(['checked', 'no-schema', 'no-query', 'skipped', 'not-graphql']),
+  errors: z.array(
+    z.object({
+      message: z.string(),
+      path: z.array(z.union([z.string(), z.number()])).optional(),
+      pointer: z.string(),
+    }),
+  ),
+  problems: z.array(z.object({ pointer: z.string(), message: z.string() })),
+});
+export type GraphqlCheckWire = z.infer<typeof graphqlCheckWireSchema>;
+
 export const restExchangeSummarySchema = z.object({
   /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
   assertions: z.array(requestAssertionResultWireSchema).optional(),
@@ -380,6 +407,8 @@ export const restExchangeSummarySchema = z.object({
    * a stream, a non-JSON body, or a request whose API has no cached definition.
    */
   contract: restContractResultSchema.optional(),
+  /** A GraphQL request's response, checked; absent for any other request (#77). */
+  graphql: graphqlCheckWireSchema.optional(),
   /** What the request's scripts did; absent when it has none, or they are switched off. */
   script: scriptResultWireSchema.optional(),
   /** Set when the request has scripts and they are switched off, so none ran. */
