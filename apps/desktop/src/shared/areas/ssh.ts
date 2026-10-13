@@ -2,7 +2,7 @@ import type { AreaModule } from '../area-module.js';
 
 export const sshArea = {
   id: 'ssh',
-  feature: { id: 'ssh', title: 'SSH', default: true, stage: 'experimental', requires: [] },
+  feature: { id: 'ssh', title: 'SSH', default: true, stage: 'stable', requires: [] },
   rail: { label: 'Hosts', icon: 'TerminalSquare', command: 'view.showHosts', order: 60, testId: 'activity-hosts' },
   copy: {
     title: 'Hosts',
