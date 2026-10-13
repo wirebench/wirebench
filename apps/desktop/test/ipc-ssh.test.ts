@@ -375,6 +375,7 @@ describe('ssh snippet run channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 7 };
