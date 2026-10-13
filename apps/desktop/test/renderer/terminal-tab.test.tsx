@@ -43,8 +43,57 @@ const xterm = vi.hoisted(() => {
       this.selectionListeners.push(listener);
       return { dispose: () => undefined };
     }
-    onData() {
+    dataListeners: ((data: string) => void)[] = [];
+    parsedListeners: (() => void)[] = [];
+    buffer = { active: { type: 'normal' as 'normal' | 'alternate', cursorX: 0 } };
+    modes = { bracketedPasteMode: false };
+    decorations: { options: Record<string, unknown>; element: HTMLElement; disposed: boolean }[] = [];
+    onData(listener: (data: string) => void) {
+      this.dataListeners.push(listener);
+      return {
+        dispose: () => {
+          this.dataListeners = this.dataListeners.filter((l) => l !== listener);
+        },
+      };
+    }
+    /** What a keystroke does: xterm's onData, before the shell's echo. */
+    type(data: string): void {
+      for (const listener of this.dataListeners) listener(data);
+    }
+    /** The shell echoes what was typed: the cursor moves on and xterm reports the write parsed. */
+    echo(text: string): void {
+      this.buffer.active.cursorX += text.length;
+      for (const listener of this.parsedListeners) listener();
+    }
+    onWriteParsed(listener: () => void) {
+      this.parsedListeners.push(listener);
       return { dispose: () => undefined };
+    }
+    registerMarker() {
+      return { line: 0, dispose: () => undefined };
+    }
+    registerDecoration(options: Record<string, unknown>) {
+      const element = document.createElement('div');
+      document.body.appendChild(element);
+      const entry = { options, element, disposed: false };
+      this.decorations.push(entry);
+      const onDispose: (() => void)[] = [];
+      return {
+        element,
+        onRender: (listener: (el: HTMLElement) => void) => {
+          listener(element);
+          return { dispose: () => undefined };
+        },
+        onDispose: (listener: () => void) => {
+          onDispose.push(listener);
+          return { dispose: () => undefined };
+        },
+        dispose: () => {
+          entry.disposed = true;
+          element.remove();
+          for (const listener of onDispose) listener();
+        },
+      };
     }
     onBinary() {
       return { dispose: () => undefined };
@@ -112,6 +161,9 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { SnippetRunDialog } from '../../src/renderer/features/ssh/snippets/run-dialog.js';
+import { useSnippetsStore } from '../../src/renderer/features/ssh/snippets/snippets-store.js';
+import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
 
 const connect = vi.fn();
 const write = vi.fn();
@@ -127,6 +179,8 @@ const NEW_KEY = {
   },
 };
 
+const runSnippet = vi.fn();
+const listSnippets = vi.fn();
 const preferencesUpdate = vi.fn();
 const writeText = vi.fn();
 
@@ -148,9 +202,18 @@ beforeEach(() => {
   );
   writeText.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-  for (const fn of [connect, write, resize, close]) fn.mockReset();
+  for (const fn of [connect, write, resize, close, runSnippet, listSnippets]) fn.mockReset();
   close.mockResolvedValue({ ok: true, value: {} });
-  installWirebenchApi({ ssh: { connect, write, resize, close }, preferences: { update: preferencesUpdate } });
+  runSnippet.mockResolvedValue({ ok: true, value: {} });
+  listSnippets.mockResolvedValue({
+    ok: true,
+    value: { file: { version: 1, packages: [], snippets: [] }, snippets: [], problems: [] },
+  });
+  installWirebenchApi({
+    ssh: { connect, write, resize, close, runSnippet, listSnippets },
+    preferences: { update: preferencesUpdate },
+  });
+  useSnippetsStore.getState().reset();
   useEditorsStore.getState().reset();
   useHostsStore.setState({
     file: { version: 1, groups: [], hosts: [{ id: 'a', name: 'alpha', address: 'a.example', tags: [], ssh: {} }] },
@@ -980,5 +1043,225 @@ describe('split panes', () => {
       await runCommand('ssh.openInNewTab', {} as never, 'a');
     });
     expect(useEditorsStore.getState().tabs.filter((t) => t.kind === 'ssh-terminal')).toHaveLength(2);
+  });
+});
+
+describe('snippet suggestions', () => {
+  const snippet = (over: Partial<SnippetListItemWire>): SnippetListItemWire => ({
+    id: 'x',
+    name: 'X',
+    tags: [],
+    firstLine: 'x',
+    literalStart: 'x',
+    variables: [],
+    secrets: [],
+    enter: true,
+    confirm: false,
+    lineCount: 1,
+    revision: 'rev',
+    ...over,
+  });
+  const TAIL = snippet({
+    id: 'tail',
+    name: 'Tail a service',
+    firstLine: 'journalctl -u ${service} -n ${lines} -f',
+    literalStart: 'journalctl -u ',
+    variables: [{ name: 'service' }, { name: 'lines', default: '50' }],
+  });
+  const DISK = snippet({ id: 'disk', name: 'Disk', firstLine: 'df -h /', literalStart: 'df -h /' });
+
+  /** An open session on host a, with the run dialog mounted as the shell mounts it. */
+  async function mount(items: SnippetListItemWire[] = [TAIL, DISK]) {
+    useSnippetsStore.setState({ snippets: items, loaded: true });
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(
+      <>
+        <EditorArea />
+        <SnippetRunDialog />
+      </>,
+    );
+    await waitFor(() => {
+      expect(sessionOn('a')?.state).toBe('open');
+    });
+    const term = lastTerminal();
+    if (term === undefined) throw new Error('no terminal');
+    return term;
+  }
+  /** Types and echoes, the way a shell with echo on answers keystrokes. */
+  const typeIn = (term: InstanceType<typeof xterm.FakeTerminal>, text: string): void => {
+    act(() => {
+      term.type(text);
+      term.echo(text);
+    });
+  };
+  const ghost = () => screen.queryByTestId('snippet-ghost');
+  const tab = () => new KeyboardEvent('keydown', { key: 'Tab', cancelable: true });
+
+  it('shows the rest of the first line and the name after the cursor; the next key moves or removes it', async () => {
+    const term = await mount();
+    typeIn(term, 'jou');
+    expect(ghost()?.textContent).toContain('rnalctl -u ${service} -n ${lines} -f');
+    expect(ghost()?.textContent).toContain('Tail a service');
+    expect(term.decorations.at(-1)?.options['x']).toBe(3);
+
+    act(() => {
+      term.type('r');
+    });
+    expect(ghost()).toBeNull();
+    act(() => {
+      term.echo('r');
+    });
+    expect(ghost()?.textContent).toContain('nalctl -u ${service}');
+    expect(term.decorations.at(-1)?.options['x']).toBe(4);
+
+    typeIn(term, 'x');
+    expect(ghost()).toBeNull();
+  });
+
+  it('Tab with a ghost opens the variables form, then types the rest without Enter', async () => {
+    const term = await mount();
+    typeIn(term, 'jou');
+    const event = tab();
+    let passed = true;
+    act(() => {
+      passed = term.keyHandler?.(event) ?? true;
+    });
+    // The shell never sees the Tab.
+    expect(passed).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(ghost()).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('service'), { target: { value: 'api' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    await waitFor(() => {
+      expect(runSnippet).toHaveBeenCalledTimes(1);
+    });
+    expect(runSnippet.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: 's1',
+      snippetId: 'tail',
+      values: { service: 'api', lines: '50' },
+      enter: false,
+      skip: 3,
+    });
+  });
+
+  it('Tab on a snippet with nothing to ask types it at once', async () => {
+    const term = await mount();
+    typeIn(term, 'df ');
+    act(() => {
+      term.keyHandler?.(tab());
+    });
+    await waitFor(() => {
+      expect(runSnippet).toHaveBeenCalledTimes(1);
+    });
+    expect(runSnippet.mock.calls[0]?.[0]).toMatchObject({ snippetId: 'disk', enter: false, skip: 3 });
+    expect(screen.queryByTestId('snippet-run-dialog')).toBeNull();
+  });
+
+  it('Tab without a ghost goes to the shell', async () => {
+    const term = await mount();
+    typeIn(term, 'zz');
+    expect(term.keyHandler?.(tab())).toBe(true);
+    expect(runSnippet).not.toHaveBeenCalled();
+  });
+
+  it('confirm: true asks in the dialog first', async () => {
+    const term = await mount([{ ...DISK, confirm: true }]);
+    typeIn(term, 'df ');
+    act(() => {
+      term.keyHandler?.(tab());
+    });
+    expect(screen.getByTestId('snippet-run-dialog')).toBeTruthy();
+    expect(runSnippet).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    await waitFor(() => {
+      expect(runSnippet).toHaveBeenCalledTimes(1);
+    });
+    expect(runSnippet.mock.calls[0]?.[0]).toMatchObject({ snippetId: 'disk', enter: false, skip: 3 });
+  });
+
+  it('a protected host asks in the dialog first', async () => {
+    useHostsStore.setState({
+      resolved: [
+        {
+          id: 'a',
+          name: 'alpha',
+          address: 'a.example',
+          path: [],
+          tags: [],
+          protected: { value: true },
+          ssh: { user: {}, port: { value: 22 }, auth: {}, jump: {} },
+        } as unknown as ResolvedHostWire,
+      ],
+    });
+    const term = await mount();
+    typeIn(term, 'df ');
+    act(() => {
+      term.keyHandler?.(tab());
+    });
+    expect(screen.getByTestId('snippet-run-protected')).toBeTruthy();
+    expect(runSnippet).not.toHaveBeenCalled();
+  });
+
+  it('a ghost drawn before an editor took the screen leaves Tab to the shell', async () => {
+    const term = await mount();
+    typeIn(term, 'jou');
+    expect(ghost()).not.toBeNull();
+    term.buffer.active.type = 'alternate';
+    expect(term.keyHandler?.(tab())).toBe(true);
+    expect(ghost()).toBeNull();
+    expect(runSnippet).not.toHaveBeenCalled();
+  });
+
+  it('offers nothing on the alternate screen', async () => {
+    const term = await mount();
+    term.buffer.active.type = 'alternate';
+    typeIn(term, 'jou');
+    expect(ghost()).toBeNull();
+    expect(term.keyHandler?.(tab())).toBe(true);
+  });
+
+  it('offers nothing while disconnected', () => {
+    useSnippetsStore.setState({ snippets: [TAIL], loaded: true });
+    connect.mockReturnValueOnce(new Promise(() => undefined));
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    const term = lastTerminal();
+    if (term === undefined) throw new Error('no terminal');
+    typeIn(term, 'jou');
+    expect(ghost()).toBeNull();
+  });
+
+  it('offers nothing with the preference off', async () => {
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULT_PREFERENCES_WIRE,
+        terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, snippetSuggestions: false },
+      },
+    });
+    const term = await mount();
+    typeIn(term, 'jou');
+    expect(ghost()).toBeNull();
+  });
+
+  it('a paste makes the line unknown until Enter', async () => {
+    const term = await mount();
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'jou' } });
+    act(() => {
+      screen.getByTestId('ssh-terminal').dispatchEvent(event);
+      // xterm's own paste listener turns it into data at once.
+      term.type('jou');
+      term.echo('jou');
+    });
+    expect(ghost()).toBeNull();
+    typeIn(term, '\r');
+    typeIn(term, 'jou');
+    expect(ghost()).not.toBeNull();
   });
 });

@@ -75,7 +75,11 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
     setRunning(true);
     setError(undefined);
     try {
-      await runInTerminal(chosen.tabId, item, values, insert ? { enter: false } : {});
+      await runInTerminal(chosen.tabId, item, values, {
+        ...(insert ? { enter: false as const } : {}),
+        // What the user typed is in the terminal the suggestion came from, not in another one.
+        ...(request.skip !== undefined && chosen.tabId === request.tabId ? { skip: request.skip } : {}),
+      });
       closeRunDialog();
       showTerminal(chosen.tabId);
     } catch (cause) {

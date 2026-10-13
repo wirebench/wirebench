@@ -35,6 +35,15 @@ All notable changes to this project are documented here. The format follows
   a control key is refused. `${secret:…}` values are typed by the app itself, never shown: the line starts
   with a space so most shells keep it out of history, and the value shows as `••••` in that terminal for the
   rest of its session. A snippet changed on disk since it was shown is not run (#451).
+
+- **Snippet suggestions in the terminal.** Typing the start of a snippet's first line (three characters or
+  more, case exact) shows the rest of that line dimmed after the cursor, with the snippet's name and `Tab`
+  at the right edge; when several match, the one run most recently wins. **Tab** completes it without
+  pressing Enter, asking for the snippet's variables first (and in the run dialog for a protected host or a
+  snippet that asks to confirm); Tab without a suggestion reaches the shell as before. Nothing is suggested
+  after cursor or editing keys, history recall or a paste until the next Enter, on the alternate screen
+  (an editor or pager), or while disconnected. **Settings › Terminal › Suggest snippets**
+  (`terminal.snippetSuggestions`, on by default) turns it off (#454).
 - **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
   keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
   or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,

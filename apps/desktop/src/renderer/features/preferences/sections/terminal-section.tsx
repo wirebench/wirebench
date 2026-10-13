@@ -4,8 +4,8 @@ import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js
 import type { SectionProps } from './section-props.js';
 
 /**
- * Preferences → Terminal: what the SSH terminal does with a paste and with a selection, and whether a
- * session the network dropped reconnects on its own.
+ * Preferences → Terminal: what the SSH terminal does with a paste and with a selection, whether it suggests
+ * snippets while the user types, and whether a session the network dropped reconnects on its own.
  */
 export function TerminalSection({ preferences, update }: SectionProps) {
   const terminal = preferences.terminal;
@@ -29,6 +29,17 @@ export function TerminalSection({ preferences, update }: SectionProps) {
             update({ terminal: { copyOnSelect } });
           }}
           hint="Put the selection on the clipboard as soon as it is made."
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Snippets">
+        <BooleanSetting
+          label="Suggest snippets"
+          setting="terminal.snippetSuggestions"
+          value={terminal.snippetSuggestions}
+          onChange={(snippetSuggestions) => {
+            update({ terminal: { snippetSuggestions } });
+          }}
+          hint="While you type the start of a snippet's first line, show the rest dimmed after the cursor; Tab completes it without pressing Enter."
         />
       </SettingsGroup>
       <SettingsGroup title="Connection">

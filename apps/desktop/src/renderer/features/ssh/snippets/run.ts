@@ -129,6 +129,8 @@ export interface RunRequest {
   /** `variables`: only the values for the terminal in front; `dialog`: values, target and preview. */
   readonly mode: 'variables' | 'dialog';
   readonly tabId?: string;
+  /** Characters already typed into `tabId` (an accepted suggestion); only a run into that tab skips them. */
+  readonly skip?: number;
 }
 
 export const useRunDialogStore = create<{ request: RunRequest | null }>(() => ({ request: null }));
@@ -140,10 +142,11 @@ export function closeRunDialog(): void {
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
- * Run (or Insert, with `enter: false`) from a row, the editor or a command: into the terminal in front at
- * once when nothing needs asking (spec R6), else through the run dialog. `ask` always shows the dialog.
+ * Run (or Insert, with `enter: false`) from a row, the editor, a command or an accepted suggestion: into the
+ * terminal in front at once when nothing needs asking (spec R6), else through the run dialog. `ask` always
+ * shows the dialog; `skip` is how much of the snippet the user already typed into the terminal in front.
  */
-export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?: boolean } = {}): void {
+export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?: boolean; skip?: number } = {}): void {
   const front = activeTerminal();
   const terminal = front === undefined ? undefined : openTerminals().find((t) => t.tabId === front.tabId);
   const mode = needsDialog(item, {
@@ -152,8 +155,9 @@ export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?:
     anyProtected: terminal?.protected === true,
   });
   const enter = opts.enter === false ? { enter: false as const } : {};
+  const skip = opts.skip === undefined || terminal === undefined ? {} : { skip: opts.skip };
   if (opts.ask !== true && mode === 'none' && terminal !== undefined) {
-    runInTerminal(terminal.tabId, item, {}, enter).catch((error: unknown) => {
+    runInTerminal(terminal.tabId, item, {}, { ...enter, ...skip }).catch((error: unknown) => {
       showToast(`${item.name}: ${messageOf(error)}`);
     });
     return;
@@ -164,6 +168,7 @@ export function startRun(item: SnippetListItemWire, opts: { enter?: false; ask?:
       ...enter,
       mode: opts.ask !== true && mode === 'variables' ? 'variables' : 'dialog',
       ...(terminal === undefined ? {} : { tabId: terminal.tabId }),
+      ...skip,
     },
   });
 }

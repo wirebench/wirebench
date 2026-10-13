@@ -17,6 +17,7 @@ import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { trackPaneModes } from './terminal-modes.js';
+import { attachSnippetSuggestions } from './snippets/ghost.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { HostPicker } from './panes/host-picker.js';
 import {
@@ -58,6 +59,8 @@ interface Live {
   readonly refit: () => void;
   /** Tells the session the terminal's size now, when it differs from what it was last told. */
   readonly syncSize: () => void;
+  /** Tells the snippet suggestions the next input is a paste. */
+  readonly markPaste: () => void;
 }
 
 const encoder = new TextEncoder();
@@ -304,7 +307,10 @@ function TerminalPane({
     // xterm sees keys only while it has focus, so the find chord is the focused terminal's alone; it opens
     // the find bar and never reaches the shell.
     const platform = detectPlatform();
+    // Inline snippet suggestions: fed what the user types, Tab accepts a ghost.
+    const suggestions = attachSnippetSuggestions(term, { connected: () => target.current !== undefined });
     term.attachCustomKeyEventHandler((event) => {
+      if (suggestions.handleKey(event)) return false;
       // A pane command's chord is the app's: the window's listener runs it, the shell never sees it.
       if (isPaneChord(event, platform)) return false;
       if (!isFindChord(event, platform)) return true;
@@ -342,7 +348,15 @@ function TerminalPane({
       clearTimeout(timer);
       timer = setTimeout(syncSize, RESIZE_DEBOUNCE_MS);
     };
-    live.current = { term, search, refit, syncSize };
+    live.current = {
+      term,
+      search,
+      refit,
+      syncSize,
+      markPaste: () => {
+        suggestions.markPaste();
+      },
+    };
     // A snippet run asks whether the shell turned bracketed paste on.
     const untrackModes = trackPaneModes(paneId, () => term.modes.bracketedPasteMode);
     const observer = new ResizeObserver(refit);
@@ -353,6 +367,7 @@ function TerminalPane({
       if (id !== undefined) void ipc().ssh.write({ sessionId: id, data: bytesToBase64(bytes) });
     };
     const input = term.onData((text) => {
+      suggestions.input(text);
       send(encoder.encode(text));
     });
     // Some mouse reports are raw bytes, one per char code.
@@ -363,7 +378,10 @@ function TerminalPane({
     // preferences are read per paste, so "Don't ask again" and the Preferences toggle take effect at once.
     const onPaste = (event: ClipboardEvent): void => {
       const text = event.clipboardData?.getData('text') ?? '';
-      if (guardPaste(text, usePreferencesStore.getState().preferences.terminal) === 'send') return;
+      if (guardPaste(text, usePreferencesStore.getState().preferences.terminal) === 'send') {
+        suggestions.markPaste();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       setHeldPaste(text);
@@ -407,6 +425,7 @@ function TerminalPane({
     return () => {
       disposed = true;
       untrackModes();
+      suggestions.dispose();
       offWake();
       loop.cancel();
       reconnector.current = null;
@@ -516,7 +535,10 @@ function TerminalPane({
         onConfirm={(dontAskAgain) => {
           // term.paste keeps bracketed-paste mode and newline handling the same as an unguarded paste, and
           // fires no DOM paste event, so the guard cannot catch it again.
-          if (heldPaste !== null) live.current?.term.paste(heldPaste);
+          if (heldPaste !== null) {
+            live.current?.markPaste();
+            live.current?.term.paste(heldPaste);
+          }
           if (dontAskAgain) void usePreferencesStore.getState().update({ terminal: { confirmMultilinePaste: false } });
           closePaste();
         }}
