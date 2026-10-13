@@ -13,6 +13,7 @@ import type { SsoEnv } from '../env.js';
 import * as repo from '../repo.js';
 import { discoveryRoutes } from './discovery.js';
 import { scimError, toScimError } from './errors.js';
+import { userRoutes } from './users.js';
 
 export const SCIM_MEDIA_TYPE = 'application/scim+json';
 /** Far above any real SCIM body; a group with thousands of members fits. */
@@ -135,5 +136,6 @@ export const scimPlugin =
     });
 
     discoveryRoutes(env)(scim);
+    userRoutes(env)(scim);
     await Promise.resolve();
   };

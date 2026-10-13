@@ -21,6 +21,7 @@ export const AUDIT_ACTIONS = [
   'user.admin_granted',
   'user.admin_revoked',
   'user.password_reset_issued',
+  'user.updated',
   'team.created',
   'team.renamed',
   'team.deleted',

@@ -56,4 +56,39 @@ describeDb('SCIM audit events', () => {
     ]);
     await expectNoSecretsInAudit(h.db);
   });
+  it('records user.updated as the SCIM token, with the changed field names only', async () => {
+    const token = (
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/scim-tokens',
+        headers: admin.headers,
+        payload: { name: 'IdP' },
+      })
+    ).json<{ id: string; token: string }>();
+    const headers = { authorization: `Bearer ${token.token}`, 'content-type': 'application/scim+json' };
+    const created = await h.app.inject({
+      method: 'POST',
+      url: '/scim/v2/Users',
+      headers,
+      payload: JSON.stringify({ userName: 'ada@example.com', displayName: 'Ada' }),
+    });
+    const { id } = created.json<{ id: string }>();
+    await h.app.inject({
+      method: 'PATCH',
+      url: `/scim/v2/Users/${id}`,
+      headers,
+      payload: JSON.stringify({
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'replace', path: 'displayName', value: 'Ada Lovelace' }],
+      }),
+    });
+    expect(await rows('user.updated')).toEqual([
+      { actor_kind: 'scim', target_kind: 'user', target_id: id, details: { fields: ['displayName'] } },
+    ]);
+    const actor = await h.db.query<{ actor_token_id: string }>(
+      "select actor_token_id from audit_events where action = 'user.updated'",
+    );
+    expect(actor.rows[0]!.actor_token_id).toBe(token.id);
+    await expectNoSecretsInAudit(h.db);
+  });
 });

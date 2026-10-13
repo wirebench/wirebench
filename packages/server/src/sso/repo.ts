@@ -375,3 +375,83 @@ export async function claimGrantedSamlFlow(db: Querier, id: string, grantHash: s
 export async function deleteExpiredSamlFlows(db: Querier, now: Date): Promise<number> {
   return (await db.query('delete from saml_flows where expires_at < $1', [now])).rowCount ?? 0;
 }
+
+// ---- users as SCIM resources -----------------------------------------------------------------
+
+/** A Wirebench user with what SCIM adds: its `externalId` and when SCIM last wrote it. */
+export interface ScimUserView {
+  readonly id: string;
+  readonly email: string;
+  readonly displayName: string;
+  readonly serverAdmin: boolean;
+  readonly createdAt: string;
+  readonly disabledAt: string | null;
+  readonly externalId: string | null;
+  readonly updatedAt: string | null;
+}
+
+const VIEW_COLUMNS =
+  'u.id, u.email, u.display_name as "displayName", u.server_admin as "serverAdmin", u.created_at as "createdAt", ' +
+  'u.disabled_at as "disabledAt", s.external_id as "externalId", s.updated_at as "updatedAt"';
+const VIEW_FROM = 'users u left join scim_users s on s.user_id = u.id';
+const VIEW_DATES = ['createdAt', 'disabledAt', 'updatedAt'];
+
+export type ScimUserFilter =
+  | { readonly attribute: 'userName' | 'emails.value'; readonly value: string }
+  | { readonly attribute: 'externalId'; readonly value: string };
+
+export async function scimUserView(db: Querier, id: string): Promise<ScimUserView | undefined> {
+  const row = (await db.query(`select ${VIEW_COLUMNS} from ${VIEW_FROM} where u.id = $1`, [id])).rows[0];
+  return row === undefined ? undefined : dated<ScimUserView>(row, VIEW_DATES);
+}
+
+/** One page of users in creation order, and how many match in all. `offset` is zero-based. */
+export async function listScimUserViews(
+  db: Querier,
+  filter: ScimUserFilter | undefined,
+  offset: number,
+  limit: number,
+): Promise<{ readonly total: number; readonly users: readonly ScimUserView[] }> {
+  const where =
+    filter === undefined
+      ? { sql: '', params: [] as unknown[] }
+      : filter.attribute === 'externalId'
+        ? { sql: 'where s.external_id = $1', params: [filter.value] }
+        : { sql: 'where u.email_lower = lower($1)', params: [filter.value.trim()] };
+  const total = Number(
+    (await db.query<{ n: string }>(`select count(*) as n from ${VIEW_FROM} ${where.sql}`, where.params)).rows[0]!.n,
+  );
+  const n = where.params.length;
+  const users = (
+    await db.query(
+      `select ${VIEW_COLUMNS} from ${VIEW_FROM} ${where.sql} order by u.created_at, u.id offset $${String(n + 1)} limit $${String(n + 2)}`,
+      [...where.params, offset, limit],
+    )
+  ).rows.map((row) => dated<ScimUserView>(row, VIEW_DATES));
+  return { total, users };
+}
+
+/** The email (both columns) of `id`. The caller has checked no other user holds it. */
+export async function setUserEmail(db: Querier, id: string, email: string): Promise<void> {
+  await db.query('update users set email = $2, email_lower = $3 where id = $1', [
+    id,
+    email.trim(),
+    email.trim().toLowerCase(),
+  ]);
+}
+
+export async function setUserDisplayName(db: Querier, id: string, displayName: string): Promise<void> {
+  await db.query('update users set display_name = $2 where id = $1', [id, displayName]);
+}
+
+/** Enabled server admins other than `exceptId`: SCIM must never disable the last one (§3.5). */
+export async function otherEnabledServerAdmins(db: Querier, exceptId: string): Promise<number> {
+  return Number(
+    (
+      await db.query<{ n: string }>(
+        'select count(*) as n from users where server_admin and disabled_at is null and id <> $1',
+        [exceptId],
+      )
+    ).rows[0]!.n,
+  );
+}
