@@ -51,7 +51,7 @@ describe('projectRowActions', () => {
         environments: [
           { id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
         ],
-        activeEnvironmentId: 'we-dev',
+        activeEnvironments: { p1: 'we-dev' },
       }),
     });
 
@@ -70,7 +70,7 @@ describe('projectRowActions', () => {
         environments: [
           { id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
         ],
-        activeEnvironmentId: 'we-dev',
+        activeEnvironments: { p1: 'we-dev' },
       }),
     });
 

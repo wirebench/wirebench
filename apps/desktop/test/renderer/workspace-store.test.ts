@@ -342,7 +342,7 @@ describe('useWorkspaceStore', () => {
     const environment = { id: 'e1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] };
     const setActiveEnvironment = vi.fn().mockResolvedValue({
       ok: true,
-      value: { workspace: workspaceWire({ environments: [environment], activeEnvironmentId: 'e1' }) },
+      value: { workspace: workspaceWire({ environments: [environment], activeEnvironments: { p1: 'e1' } }) },
     });
     const mutate = vi.fn().mockResolvedValue({
       ok: true,
@@ -355,11 +355,11 @@ describe('useWorkspaceStore', () => {
     ).resolves.toEqual({
       createdEnvironmentId: 'e1',
     });
-    await useWorkspaceStore.getState().setActiveEnvironment('e1');
+    await useWorkspaceStore.getState().setActiveEnvironment('p1', 'e1');
 
     expect(mutate).toHaveBeenCalledWith({ change: { kind: 'add-workspace-environment', name: 'dev' } });
-    expect(setActiveEnvironment).toHaveBeenCalledWith({ environmentId: 'e1' });
-    expect(useWorkspaceStore.getState().workspace?.activeEnvironmentId).toBe('e1');
+    expect(setActiveEnvironment).toHaveBeenCalledWith({ projectId: 'p1', environmentId: 'e1' });
+    expect(useWorkspaceStore.getState().workspace?.activeEnvironments).toEqual({ p1: 'e1' });
   });
 
   it('setWorkspacePropertyEnabled sends the toggle through mutate', async () => {
@@ -492,7 +492,7 @@ describe('useWorkspaceStore stale replies', () => {
       (): Promise<unknown> =>
         useWorkspaceStore.getState().mutate({ kind: 'set-workspace-property', name: 'a', value: 'b' }),
     ],
-    ['setActiveEnvironment', (): Promise<unknown> => useWorkspaceStore.getState().setActiveEnvironment('e1')],
+    ['setActiveEnvironment', (): Promise<unknown> => useWorkspaceStore.getState().setActiveEnvironment('p1', 'e1')],
   ])('drops a %s reply that lands after the workspace closed', async (_name, start) => {
     const pending = deferred();
     installWirebenchApi({

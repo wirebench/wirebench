@@ -80,6 +80,7 @@ export function workspaceFiles(workspace: Workspace): WorkspaceFiles {
           disabled: disabledList(environment.disabledProperties, environment.properties),
           color: environment.color,
           protected: environment.protected === true ? true : undefined,
+          projects: environment.projects !== undefined ? [...environment.projects] : undefined,
         }),
       ),
     );

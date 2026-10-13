@@ -6,10 +6,17 @@ import { IconButton } from '../../components/icon-button.js';
 import { openCookiesTab } from '../cookies/cookie-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useUiStore } from '../../state/ui.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { selectActiveEnvironmentId, useWorkspaceStore } from '../../state/workspace.js';
+import { useCurrentProjectId } from '../../state/workspace-tabs.js';
 import { useGridNavigation, type GridRowProps } from '../../lib/grid-navigation.js';
-import type { WorkspaceEnvironmentWire } from '../../../shared/wire-base.js';
-import { duplicateEnvironment, nextEnvironmentName, openEnvironmentTab } from './environment-actions.js';
+import { activeBlocker, scopeChips } from '../../state/environment-scope.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../../shared/wire-base.js';
+import {
+  duplicateEnvironment,
+  nextEnvironmentName,
+  openEnvironmentTab,
+  setProjectEnvironment,
+} from './environment-actions.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -65,6 +72,11 @@ const FIXED_ROWS = 2;
 
 /** A stable empty list, so the view does not rerender while no workspace is open. */
 const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
+
+/** Stable empty projects, for the same reason. */
+const NO_PROJECTS: readonly WorkspaceProjectWire[] = [];
+
+const CHIP_CLASS = 'shrink-0 rounded bg-surface-raised px-1 text-[10px] leading-4 text-fg-subtle';
 
 /**
  * The Globals and Workspace rows: fixed scopes, opened by a click. No context menu — *Open* was
@@ -143,11 +155,18 @@ function EnvironmentRow({
   onFinishRename,
   onDelete,
 }: EnvironmentRowProps) {
-  const setActiveEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
+  const projectId = useCurrentProjectId();
+  const projects = useWorkspaceStore((state) => state.workspace?.projects ?? NO_PROJECTS);
   const ref = useRevealWhenOpen(open);
+  const chips = scopeChips(environment, projects);
+  // Deactivating stays possible whatever the scope; activating needs a project it applies to.
+  const blocker = active ? undefined : activeBlocker(environment, projectId, projects);
 
+  // For the current project (#468), like the title-bar switcher.
   const setActive = (): void => {
-    void setActiveEnvironment(active ? null : environment.id);
+    if (projectId !== undefined && blocker === undefined) {
+      void setProjectEnvironment(projectId, active ? null : environment.id);
+    }
   };
 
   return (
@@ -179,7 +198,9 @@ function EnvironmentRow({
             <button
               type="button"
               aria-label={active ? `Deactivate ${environment.name}` : `Set ${environment.name} active`}
-              className="flex size-4 shrink-0 items-center justify-center"
+              disabled={blocker !== undefined}
+              title={blocker}
+              className="flex size-4 shrink-0 items-center justify-center disabled:cursor-default"
               onClick={(event) => {
                 event.stopPropagation();
                 setActive();
@@ -211,7 +232,14 @@ function EnvironmentRow({
             ) : (
               <span className="min-w-0 flex-1 truncate">{environment.name}</span>
             )}
-            {!active && !renaming && (
+            {chips !== undefined &&
+              !renaming &&
+              chips.map((chip, index) => (
+                <span key={`${String(index)}:${chip}`} data-testid="environment-scope-chip" className={CHIP_CLASS}>
+                  {chip}
+                </span>
+              ))}
+            {!active && !renaming && blocker === undefined && (
               <button
                 type="button"
                 className="hidden shrink-0 text-xs text-fg-subtle hover:text-fg-default group-hover:inline"
@@ -239,7 +267,11 @@ function EnvironmentRow({
           {/* No *Open*: a click on the row already does that. What is left splits in two —
               which environment resolves on Send, then the entries that copy, rename or destroy
               this one, kept away from anything reached for by reflex. */}
-          <ContextMenu.Item className={ITEM_CLASS} onSelect={setActive}>
+          <ContextMenu.Item
+            className={`${ITEM_CLASS} data-[disabled]:cursor-default data-[disabled]:text-fg-subtle`}
+            disabled={blocker !== undefined}
+            onSelect={setActive}
+          >
             {active ? 'Deactivate' : 'Set active'}
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-hairline" />
@@ -270,7 +302,8 @@ function EnvironmentRow({
  */
 export function EnvironmentsView() {
   const environments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
-  const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const currentProject = useCurrentProjectId();
+  const activeId = useWorkspaceStore((state) => selectActiveEnvironmentId(state, currentProject));
   const hasWorkspace = useWorkspaceStore((state) => state.workspace !== null);
   const mutate = useWorkspaceStore((state) => state.mutate);
   // `collapseSidebar`, not `toggleSidebar`: this button is only ever reachable while the sidebar

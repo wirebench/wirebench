@@ -2618,6 +2618,11 @@ export const workspaceEnvironmentWireSchema = z.object({
   color: z.string().optional(),
   /** True asks before every send under this environment (#345); absent means false. */
   protected: z.boolean().optional(),
+  /**
+   * The project ids this environment applies to, as the file holds them (#468); absent means every
+   * project. `[]` applies to none. Ids this machine does not know are kept.
+   */
+  projects: z.array(z.string().min(1)).optional(),
 });
 export type WorkspaceEnvironmentWire = z.infer<typeof workspaceEnvironmentWireSchema>;
 
@@ -2632,8 +2637,8 @@ export const workspaceWireSchema = z.object({
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabled: z.array(z.string()),
   environments: z.array(workspaceEnvironmentWireSchema),
-  /** The environment endpoints/properties resolve against, or absent when none is active. */
-  activeEnvironmentId: z.string().optional(),
+  /** Each project's active environment (#468), keyed by project id; a project with no entry has none. */
+  activeEnvironments: z.record(z.string(), z.string()),
   projects: z.array(workspaceProjectWireSchema),
   share: workspaceShareWireSchema.optional(),
 });
@@ -2654,6 +2659,8 @@ export const workspaceEnvironmentPatchSchema = z.object({
   /** A palette name or `#rrggbb`; `null` takes the colour off. */
   color: z.string().refine(isEnvironmentColor, 'not a palette name or #rrggbb').nullable().optional(),
   protected: z.boolean().optional(),
+  /** Replaces the scope (#468); `null` applies the environment to every project again. */
+  projects: z.array(z.string().min(1)).nullable().optional(),
 });
 export type WorkspaceEnvironmentPatchWire = z.infer<typeof workspaceEnvironmentPatchSchema>;
 
@@ -2667,7 +2674,12 @@ export const workspaceChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('set-workspace-property'), name: z.string(), value: z.string() }),
   z.object({ kind: z.literal('remove-workspace-property'), name: z.string() }),
   z.object({ kind: z.literal('set-workspace-property-enabled'), name: z.string(), enabled: z.boolean() }),
-  z.object({ kind: z.literal('add-workspace-environment'), name: z.string() }),
+  z.object({
+    kind: z.literal('add-workspace-environment'),
+    name: z.string(),
+    /** The new environment's scope (#468): project ids it applies to. Absent = every project. */
+    projects: z.array(z.string().min(1)).optional(),
+  }),
   z.object({
     kind: z.literal('update-workspace-environment'),
     environmentId: z.string(),
@@ -2783,8 +2795,14 @@ export const workspaceExportCollectionResponseSchema = z.object({
 });
 export type WorkspaceExportCollectionResponse = z.infer<typeof workspaceExportCollectionResponseSchema>;
 
-/** Request for `workspace.setActiveEnvironment`; `null` deactivates. */
-export const workspaceSetActiveEnvironmentRequestSchema = z.object({ environmentId: z.string().nullable() });
+/**
+ * Request for `workspace.setActiveEnvironment`: the project whose active environment changes (#468),
+ * and the environment, or `null` to deactivate.
+ */
+export const workspaceSetActiveEnvironmentRequestSchema = z.object({
+  projectId: z.string().min(1),
+  environmentId: z.string().nullable(),
+});
 
 /** Request for `workspace.mutate`. */
 export const workspaceMutateRequestSchema = z.object({ change: workspaceChangeSchema });

@@ -134,6 +134,7 @@ async function loadEnvironments(
       disabledProperties: parsed.disabled ?? [],
       ...(parsed.color !== undefined ? { color: parsed.color } : {}),
       ...(parsed.protected === true ? { protected: true } : {}),
+      ...(parsed.projects !== undefined ? { projects: parsed.projects } : {}),
     });
   }
   return environments.sort(byOrder);
@@ -211,6 +212,7 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
     disabledProperties: manifest.disabled ?? [],
     ...(Object.keys(parsedSources.sources).length > 0 ? { secretSources: parsedSources.sources } : {}),
     ...(isNonMappingSecretSources(manifest.secretSources) ? { secretSourcesRaw: manifest.secretSources } : {}),
+    activeEnvironments: {},
     projects,
     environments: await loadEnvironments(fs, root, problems),
   };

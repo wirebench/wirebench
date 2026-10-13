@@ -58,6 +58,28 @@ function errorResult(envId: string, envName: string, error: unknown): EnvSendRes
   };
 }
 
+/**
+ * Why `envId` is not offered for `requestId`, when it is a workspace environment that does not apply
+ * to the request's project (#468): the router's own `environment-out-of-scope` refusal and the
+ * environment's name. `undefined` when the id names no environment at all.
+ */
+function scopeRefusal(
+  deps: Pick<RequestChannelDeps, 'project'>,
+  requestId: string,
+  envId: string,
+): { readonly name: string; readonly error: WirebenchError } | undefined {
+  try {
+    deps.project.runContextFor?.(requestId, envId);
+    return undefined;
+  } catch (error) {
+    if (!isWirebenchError(error) || error.code !== 'environment-out-of-scope') {
+      return undefined;
+    }
+    const name = error.details?.['environmentName'];
+    return { name: typeof name === 'string' ? name : envId, error };
+  }
+}
+
 /** Sends one environment's child; throws what a single send would throw. */
 async function sendOne(
   sendDeps: SendThroughEngineDeps,
@@ -133,6 +155,10 @@ export async function sendToEnvironments(
       request.environmentIds.map(async (envId) => {
         const envName = nameOf(envId);
         if (envName === undefined) {
+          const refused = scopeRefusal(deps, request.requestId, envId);
+          if (refused !== undefined) {
+            return errorResult(envId, refused.name, refused.error);
+          }
           return errorResult(
             envId,
             envId,

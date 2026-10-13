@@ -324,7 +324,16 @@ async function wireOf(root: string, id: string): Promise<WorkspaceWire> {
   const dir = workspaceDir(root, id);
   const { tree } = await resolveWorkspaceTree(dir);
   const { workspace } = await loadWorkspace(tree);
-  return { id: workspace.id, name: workspace.name, dir, properties: {}, disabled: [], environments: [], projects: [] };
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    dir,
+    properties: {},
+    disabled: [],
+    environments: [],
+    activeEnvironments: {},
+    projects: [],
+  };
 }
 
 interface Harness {

@@ -1051,7 +1051,8 @@ void app.whenReady().then(() => {
     },
     projectDirs: openProjectDirs,
     picks: dialogPicks,
-    ensureWorkspaceEnvironments: async (names) => await workspaceService.ensureEnvironments(names),
+    ensureWorkspaceEnvironments: async (names, projectId) =>
+      await workspaceService.ensureEnvironments(names, projectId),
   });
   /** A Globals change, told to every window and to every window's current-values overlay. */
   const onGlobalsChanged = (state: ReturnType<GlobalProperties['get']>): void => {

@@ -62,7 +62,7 @@ describe('EnvPickerDialog', () => {
 describe('sendToEnvironmentsBlocker', () => {
   it('blocks only with fewer than two environments, naming where they are missing', () => {
     expect(sendToEnvironmentsBlocker(1, false)).toMatch(/two or more environments in this project/);
-    expect(sendToEnvironmentsBlocker(1, true)).toMatch(/two or more environments in this workspace/);
+    expect(sendToEnvironmentsBlocker(1, true)).toMatch(/two or more environments for this project/);
     expect(sendToEnvironmentsBlocker(0, true)).toBeDefined();
     expect(sendToEnvironmentsBlocker(2, false)).toBeUndefined();
     expect(sendToEnvironmentsBlocker(3, true)).toBeUndefined();
@@ -92,7 +92,10 @@ describe('the environments *Send to environments…* offers', () => {
       projectOf: { r1: 'p1' },
     });
     useWorkspaceStore.setState({
-      workspace: workspaceWire({ environments: [wsEnv('wtest', 1), wsEnv('wdev', 0)], activeEnvironmentId: 'wdev' }),
+      workspace: workspaceWire({
+        environments: [wsEnv('wtest', 1), wsEnv('wdev', 0)],
+        activeEnvironments: { p1: 'wdev', p2: 'wtest' },
+      }),
     });
     expect(currentBlocker('r1')).toBeUndefined();
     const { result } = renderHook(() => useMultiEnvState('r1'));
@@ -101,9 +104,38 @@ describe('the environments *Send to environments…* offers', () => {
     expect(result.current.blocker).toBeUndefined();
   });
 
+  it("lists only the environments that apply to the request's project, and that project's active one (#468)", () => {
+    useProjectStore.setState({ projectOf: { r1: 'p1', r2: 'p2' } });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [
+          wsEnv('wall', 2),
+          { ...wsEnv('wp1', 1), projects: ['p1'] },
+          { ...wsEnv('wp2', 0), projects: ['p2'] },
+          { ...wsEnv('wnone', 0), projects: [] },
+        ],
+        activeEnvironments: { p1: 'wp1', p2: 'wp2' },
+      }),
+    });
+    const { result: first } = renderHook(() => useMultiEnvState('r1'));
+    expect(first.current.environments.map((environment) => environment.id)).toEqual(['wp1', 'wall']);
+    expect(first.current.activeId).toBe('wp1');
+    const { result: second } = renderHook(() => useMultiEnvState('r2'));
+    expect(second.current.environments.map((environment) => environment.id)).toEqual(['wp2', 'wall']);
+    expect(second.current.activeId).toBe('wp2');
+    expect(currentBlocker('r1')).toBeUndefined();
+
+    // One applicable environment is not enough, however many the workspace holds.
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ environments: [wsEnv('wall', 0), { ...wsEnv('wp2', 1), projects: ['p2'] }] }),
+    });
+    expect(currentBlocker('r1')).toMatch(/for this project/);
+    expect(currentBlocker('r2')).toBeUndefined();
+  });
+
   it('blocks inside a workspace with fewer than two workspace environments', () => {
     useProjectStore.setState({ projectOf: { r1: 'p1' } });
     useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [wsEnv('wdev', 0)] }) });
-    expect(currentBlocker('r1')).toMatch(/in this workspace/);
+    expect(currentBlocker('r1')).toMatch(/for this project/);
   });
 });

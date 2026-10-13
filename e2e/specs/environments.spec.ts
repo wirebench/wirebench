@@ -69,6 +69,9 @@ test.describe('environments', () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, imported);
+    // The switcher acts for the project of the last focused request (#468); until one has been
+    // focused it shows "No project" and offers nothing.
+    await openFirstRequest(page);
 
     // --- add `uat` via the sidebar Environments view -------------------------
     await openEnvironmentsView(page);
@@ -126,6 +129,8 @@ test.describe('environments', () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, imported);
+    // The switcher below acts for the last focused request's project (#468).
+    await openFirstRequest(page);
 
     // --- a workspace-level value, and an environment value that shadows it --
     await openEnvironmentsView(page);

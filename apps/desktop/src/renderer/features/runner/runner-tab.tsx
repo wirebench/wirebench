@@ -16,7 +16,8 @@ import {
 import { useHistoryStore } from '../../state/history.js';
 import { useRunnerStore } from '../../state/runner.js';
 import { useUiStore } from '../../state/ui.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useProjectStore } from '../../state/project.js';
+import { useActiveEnvironment } from '../../state/workspace.js';
 import type { RunnerRequestResult, RunnerSettings, RunnerState, RunnerSummary } from '../../../shared/runner-wire.js';
 
 const OUTCOME_TONE: Record<RunnerRequestResult['outcome'], string> = {
@@ -234,10 +235,9 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
   const run = useRunnerStore((store) => store.runs[targetId]);
   const history = useRunnerStore((store) => store.history[targetId]);
   const viewing = useRunnerStore((store) => store.viewing[targetId]);
-  const environment = useWorkspaceStore((store) => {
-    const workspace = store.workspace;
-    return workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId)?.name;
-  });
+  // The run resolves under its target's project's active environment (#468).
+  const projectId = useProjectStore((store) => store.projectOf[targetId]);
+  const environment = useActiveEnvironment(projectId)?.name;
 
   useEffect(() => {
     const store = useRunnerStore.getState();

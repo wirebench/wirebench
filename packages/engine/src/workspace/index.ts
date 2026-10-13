@@ -74,6 +74,11 @@ export type {
 export { reidentifyProject } from './reidentify.js';
 
 export {
+  activeEnvironmentFor,
+  appliesToProject,
+  assertEnvironmentInScope,
+  environmentsForProject,
+  workspaceForProject,
   resolveWorkspaceApiBaseUrl,
   isProtectedEnvironment,
   linkedEnvironment,
@@ -81,5 +86,5 @@ export {
   resolveWorkspaceScopes,
 } from './environments.js';
 
-export { commitMessage, describeTreePath } from './commit-message.js';
+export { commitMessage, describeTreePath, scopeChangeMessage } from './commit-message.js';
 export type { TreeChange, TreeEntity, TreeEntityKind } from './commit-message.js';

@@ -16,7 +16,7 @@ import { GrpcDefinitionCard } from './grpc-definition-card.js';
 import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironment } from '../../state/workspace.js';
 import type { AuthConfigWire } from '../../../shared/wire-base.js';
 
 export interface GrpcApiTabProps {
@@ -35,8 +35,8 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
   const projectId = useProjectStore((state) => state.projectOf[apiId]);
   const project = useProjectStore((state) => (projectId === undefined ? undefined : state.projects[projectId]));
   const updateGrpcApi = useProjectStore((state) => state.updateGrpcApi);
-  const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments);
-  const activeWorkspaceEnvironmentId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  // The API's own project's active workspace environment (#468), whichever project is current.
+  const workspaceEnvironment = useActiveEnvironment(projectId);
   const openImportDialog = useUiStore((state) => state.openImportDialog);
 
   if (api === undefined) {
@@ -44,9 +44,6 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
   }
 
   const projectEnvironment = project?.environments.find((candidate) => candidate.id === project.activeEnvironmentId);
-  const workspaceEnvironment = workspaceEnvironments?.find(
-    (candidate) => candidate.id === activeWorkspaceEnvironmentId,
-  );
   const effective = effectiveBaseUrl({
     api: { slug: api.slug, baseUrl: api.target },
     projectOverride: projectEnvironment?.endpoints[api.slug],

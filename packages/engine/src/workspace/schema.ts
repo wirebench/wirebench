@@ -74,12 +74,29 @@ export const workspaceEnvironmentFileSchema = z.looseObject({
   color: z.string().optional(),
   /** True asks before every send under this environment; absent means false. */
   protected: z.boolean().optional(),
+  /**
+   * Ids of the projects this environment applies to. Absent means every project; `[]` means none.
+   * An id naming no project in the workspace is kept, not dropped (the project may be re-added).
+   * Parsed leniently: a hand edit or merge that leaves this key malformed must not skip the whole
+   * file, because the next save would then delete it. Null or a non-list reads as absent; empty,
+   * non-string and repeated ids are dropped.
+   */
+  projects: z.unknown().optional().transform(lenientProjectIds),
 });
+
+function lenientProjectIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return [...new Set(ids)];
+}
 
 /** `local.yaml`: machine-local state, never part of the shared tree. See `local-state.ts`. */
 export const workspaceLocalStateSchema = z.object({
-  version: z.union([z.literal(1), z.literal(2)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  /** Version 1 and 2 only: the one active environment, before each project kept its own. */
   activeEnvironmentId: z.string().optional(),
+  /** Version 3: project id to the id of that project's active environment. */
+  activeEnvironments: z.record(z.string(), z.string()).optional(),
   secretSources: z.unknown().optional(),
   /** Validated apart in `local-state.ts`, so a malformed approval is dropped alone. */
   secretSourcesApproved: z.unknown().optional(),

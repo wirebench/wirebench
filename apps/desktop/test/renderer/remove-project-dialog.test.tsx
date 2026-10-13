@@ -4,7 +4,7 @@ import { RemoveProjectDialog } from '../../src/renderer/features/workspace/remov
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceProjectWire } from '../../src/shared/wire-base.js';
+import type { WorkspaceEnvironmentWire, WorkspaceProjectWire } from '../../src/shared/wire-base.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
@@ -20,11 +20,33 @@ function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjec
   };
 }
 
+/** A workspace environment, scoped to `projects` when given (#468). */
+function environment(id: string, name: string, order: number, projects?: string[]): WorkspaceEnvironmentWire {
+  return {
+    id,
+    name,
+    slug: id,
+    order,
+    endpoints: {},
+    properties: {},
+    disabled: [],
+    ...(projects !== undefined ? { projects } : {}),
+  };
+}
+
 /** Opens the dialog on `project` and returns the `workspace.removeProject` spy. */
-function open(project: WorkspaceProjectWire): ReturnType<typeof vi.fn> {
+function open(
+  project: WorkspaceProjectWire,
+  others: { readonly projects?: WorkspaceProjectWire[]; readonly environments?: WorkspaceEnvironmentWire[] } = {},
+): ReturnType<typeof vi.fn> {
   const removeProject = vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } });
   installWirebenchApi({ workspace: { removeProject } });
-  useWorkspaceStore.setState({ workspace: workspaceWire({ projects: [project] }) });
+  useWorkspaceStore.setState({
+    workspace: workspaceWire({
+      projects: [project, ...(others.projects ?? [])],
+      environments: others.environments ?? [],
+    }),
+  });
   useUiStore.getState().requestRemoveProject(project.id);
   render(<RemoveProjectDialog />);
   return removeProject;
@@ -77,5 +99,34 @@ describe('RemoveProjectDialog', () => {
 
     await waitFor(() => expect(removeProject).toHaveBeenCalled());
     expect(removeProject).toHaveBeenCalledWith({ projectId: 'p2', deleteFiles: false });
+  });
+
+  it('names the environments the removal leaves with no project (#468)', () => {
+    open(wireProject(), {
+      projects: [wireProject({ id: 'p2', name: 'Crm', slug: 'Crm' })],
+      environments: [
+        environment('e1', 'Dev', 0),
+        environment('e2', 'Calculator sandbox', 2, ['p1']),
+        environment('e3', 'Shared QA', 3, ['p1', 'p2']),
+        environment('e4', 'Calculator mock', 1, ['p1']),
+      ],
+    });
+    expect(screen.getByTestId('remove-project-orphaned-environments').textContent).toBe(
+      '“Calculator mock” and “Calculator sandbox” will apply to no project. They are kept, shown as No project.',
+    );
+  });
+
+  it('names one such environment in the singular', () => {
+    open(wireProject({ source: 'linked', dir: '/elsewhere' }), {
+      environments: [environment('e2', 'Calculator sandbox', 0, ['p1'])],
+    });
+    expect(screen.getByTestId('remove-project-orphaned-environments').textContent).toBe(
+      '“Calculator sandbox” will apply to no project. It is kept, shown as No project.',
+    );
+  });
+
+  it('says nothing about environments when none is left without a project', () => {
+    open(wireProject(), { environments: [environment('e1', 'Dev', 0)] });
+    expect(screen.queryByTestId('remove-project-orphaned-environments')).toBeNull();
   });
 });

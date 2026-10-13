@@ -101,7 +101,7 @@ describe('DetailsInspector', () => {
             disabled: [],
           },
         ],
-        activeEnvironmentId: 'env-1',
+        activeEnvironments: { p1: 'env-1' },
         projects: [{ id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal', dir: '/tmp/demo', status: 'ready' }],
       },
     } as never);

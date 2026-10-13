@@ -126,6 +126,8 @@ test.describe('multi-environment send', () => {
     launched = await launchApp();
     const page = launched.window;
     await createProjectWithCalculator(page, dev);
+    // The switcher acts for the last focused request's project (#468).
+    await openFirstRequest(page);
 
     await addEnvironment(page, 'dev', 'Endpoint override for Calculator', `${dev.url}/soap`);
     await addEnvironment(page, 'test', 'Endpoint override for Calculator', `${testServer.url}/soap`);

@@ -189,6 +189,8 @@ export class SyncService {
    */
   private deferredTeamSecretsMessage: string | undefined;
   private identityPending: PendingCommit | undefined;
+  /** The last save's commit-message hint (see {@link afterSave}); cleared by the next save or commit. */
+  private messageHint: { readonly path: string; readonly message: string } | undefined;
   /** The automatic commit held for possible secrets, run once they are reviewed (`status.held`). */
   private secretHold: SecretHold | undefined;
   private readonly offScanChange: (() => void) | undefined;
@@ -300,8 +302,16 @@ export class SyncService {
    * A save wrote files into the tree. With `commitOnSave`, schedules one commit
    * {@link SAVE_COMMIT_DEBOUNCE_MS} after the last of a burst of saves (trailing), then a push
    * when `pushOnSave` is on and a remote is set.
+   *
+   * `hint` names the one file this save changed and a better subject for it than the generated one
+   * (an environment's scope change, #468). The commit uses it only when that file is all it commits;
+   * a later save without a hint withdraws it.
    */
-  afterSave(reason: 'manual' | 'autosave' | 'workspace'): void {
+  afterSave(
+    reason: 'manual' | 'autosave' | 'workspace',
+    hint?: { readonly path: string; readonly message: string },
+  ): void {
+    this.messageHint = hint;
     if (this.stopped || !this.canSync() || !this.deps.settings().commitOnSave) {
       return;
     }
@@ -744,7 +754,15 @@ export class SyncService {
     if (changes.length === 0 && explicit === undefined) {
       return false;
     }
-    const { committed } = await this.backend.commit(explicit ?? commitMessage(changes, { autosave: options.autosave }));
+    const hint = this.messageHint;
+    this.messageHint = undefined;
+    const hinted =
+      hint !== undefined && changes.length === 1 && changes[0]?.status === 'modified' && changes[0].path === hint.path
+        ? hint.message
+        : undefined;
+    const { committed } = await this.backend.commit(
+      explicit ?? hinted ?? commitMessage(changes, { autosave: options.autosave }),
+    );
     return committed;
   }
 

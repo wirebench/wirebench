@@ -549,6 +549,33 @@ describe('SyncService — afterSave', () => {
     expect(h.backend.commits.at(-1)).toBe(commitMessage([requestChange]));
   });
 
+  it('uses a save’s message hint when its file is the only change, and the generated one otherwise', async () => {
+    const scopeChange: TreeChange = { path: 'environments/qa.yaml', status: 'modified' };
+    const hint = { path: 'environments/qa.yaml', message: 'Scope environment QA to Billing' };
+    const h = harness({ autoFetchSeconds: 0 });
+
+    h.backend.changes = [scopeChange];
+    h.service.afterSave('workspace', hint);
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.backend.commits).toEqual(['Scope environment QA to Billing']);
+
+    // Another file in the same commit: the hint no longer describes it.
+    h.backend.changes = [scopeChange, requestChange];
+    h.service.afterSave('workspace', hint);
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.backend.commits.at(-1)).toBe(commitMessage([scopeChange, requestChange]));
+
+    // A later save without a hint withdraws it, even for the same file.
+    h.backend.changes = [scopeChange];
+    h.service.afterSave('workspace', hint);
+    h.service.afterSave('workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.backend.commits.at(-1)).toBe(commitMessage([scopeChange]));
+  });
+
   it('does not push without a remote, or when pushOnSave is off', async () => {
     const noRemote = harness({ autoFetchSeconds: 0 });
     noRemote.backend.current = status({ remote: undefined });

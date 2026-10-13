@@ -11,9 +11,10 @@ import {
   summarizeSoapOperations,
   validateJsonSchema,
 } from '@wirebench/engine';
-import type { JsonSchemaObject, Project } from '@wirebench/engine';
+import type { JsonSchemaObject, Project, RunWorkspace } from '@wirebench/engine';
 import type { OpName } from '../args-ops.js';
 import type { Gates } from './context.js';
+import { gateNamesInScope } from './environment.js';
 import { OpsError, toOpsError } from './errors.js';
 import { restRef, soapRef } from './operation-refs.js';
 import type { ResolvedOperation } from './operation-refs.js';
@@ -199,7 +200,7 @@ export interface ToolSchema {
 const ENVIRONMENT_PROPERTY: JsonSchemaObject = {
   type: 'string',
   minLength: 1,
-  description: 'The environment to send under, by name; required when the project defines any',
+  description: 'The environment to send under, by name; required when any environment applies to the project',
 };
 
 const ALLOW_PROTECTED_PROPERTY: JsonSchemaObject = {
@@ -261,6 +262,7 @@ export function describeTool(
   resolved: ResolvedOperation,
   gates: Gates,
   cookies: readonly string[],
+  workspace?: RunWorkspace,
 ): string {
   const parts: string[] = [];
   const documentation = documentationOf(resolved)?.trim();
@@ -271,11 +273,16 @@ export function describeTool(
     parts.push(`Through the binding ${entry.binding}.`);
   }
   const where = `${resolved.kind === 'soap' ? 'the interface' : 'the API'} "${entry.container.name}"`;
+  const gateNames = gates.environments !== undefined ? gateNamesInScope(gates.environments, workspace) : undefined;
   const environments =
-    gates.environments !== undefined ? `, and one of the environments ${gates.environments.join(', ')}` : '';
+    gateNames === undefined
+      ? '.'
+      : gateNames.length === 0
+        ? '. No environment this server allows (--env) applies to this project.'
+        : `, and one of the environments ${gateNames.join(', ')}.`;
   parts.push(
     `Sends a real ${resolved.kind === 'soap' ? 'SOAP' : 'REST'} request through ${where}, with its endpoint, ` +
-      `auth and secrets, and records it in History. Needs --allow-send${environments}.`,
+      `auth and secrets, and records it in History. Needs --allow-send${environments}`,
   );
   if (cookies.length > 0) {
     parts.push(`The operation needs the cookie parameter(s) ${cookies.join(', ')}, which this tool cannot set.`);
@@ -394,6 +401,8 @@ export interface ContractToolSet {
 export interface DeriveOptions {
   readonly projectDir: string;
   readonly gates: Gates;
+  /** The workspace the project sits in: descriptions list only the `--env` names that apply to it. */
+  readonly workspace?: RunWorkspace;
   /** `--tools`: the containers to serve, by name or slug. Absent: all; empty: none. */
   readonly containers?: readonly string[];
   readonly cap?: number;
@@ -453,7 +462,7 @@ export async function deriveContractTools(project: Project, options: DeriveOptio
       ref: entry.ref,
       kind: entry.kind,
       container: entry.container.name,
-      description: describeTool(entry, resolved, options.gates, schema.cookies),
+      description: describeTool(entry, resolved, options.gates, schema.cookies, options.workspace),
       inputSchema: schema.inputSchema,
       environmentKey: schema.environmentKey,
     });

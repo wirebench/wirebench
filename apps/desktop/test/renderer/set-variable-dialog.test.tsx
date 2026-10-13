@@ -9,6 +9,7 @@ import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { RequestVariables } from '../../src/renderer/editor/variable-assist.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 
 afterEach(() => {
   cleanup();
@@ -67,6 +68,34 @@ describe('SetVariableDialog', () => {
     expect(setProjectProperty).toHaveBeenCalledWith('p1', 'token', 'abc123');
     // The environment's `token` would shadow the project's: the reference names the scope.
     expect(onCreated).toHaveBeenCalledWith('${#Project#token}');
+  });
+
+  it("inside a workspace, offers the request's own project's active environment (#468)", () => {
+    const env = (id: string, name: string) => ({
+      id,
+      name,
+      slug: name,
+      order: 0,
+      endpoints: {},
+      properties: {},
+      disabled: [],
+    });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [env('w-dev', 'dev'), env('w-qa', 'qa')],
+        activeEnvironments: { p1: 'w-qa', p2: 'w-dev' },
+      }),
+    });
+    render(
+      <SetVariableDialog selected="v" projectId="p1" variables={variables} onClose={vi.fn()} onCreated={vi.fn()} />,
+    );
+    const scope = screen.getByRole('combobox', { name: 'Variable scope' });
+    expect([...scope.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'Environment (qa)',
+      'Project (Shop)',
+      'Workspace',
+      'Globals',
+    ]);
   });
 
   it('hands back the shorthand when nothing nearer defines the name', async () => {

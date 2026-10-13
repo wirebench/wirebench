@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentsView } from '../../src/renderer/features/environments/environments-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -35,10 +35,16 @@ function setUp(
     setActiveEnvironment: vi.fn().mockResolvedValue(undefined),
   };
   useWorkspaceStore.setState({
+    // `p1` is the current project (#468); the view shows and toggles its active environment.
     workspace: workspaceWire({
+      projects: [
+        { id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' },
+        { id: 'p2', name: 'Crm', slug: 'crm', source: 'internal', dir: '/tmp/c', status: 'ready' },
+      ],
       environments: patch.environments ?? [dev, uat],
-      activeEnvironmentId: patch.activeEnvironmentId ?? 'e1',
+      activeEnvironments: { p1: patch.activeEnvironmentId ?? 'e1' },
     }),
+    lastProjectId: 'p1',
     ...actions,
   });
   render(
@@ -56,7 +62,7 @@ describe('EnvironmentsView', () => {
 
   afterEach(() => {
     cleanup();
-    useWorkspaceStore.setState({ workspace: null });
+    useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
   });
 
   it('lists Globals, Workspace, then the environments in order, with the active one marked', () => {
@@ -100,7 +106,7 @@ describe('EnvironmentsView', () => {
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[2]!);
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Deactivate' }));
     await waitFor(() => {
-      expect(setActiveEnvironment).toHaveBeenCalledWith(null);
+      expect(setActiveEnvironment).toHaveBeenCalledWith('p1', null);
     });
   });
 
@@ -109,8 +115,56 @@ describe('EnvironmentsView', () => {
     const uatRow = screen.getAllByTestId('environment-row')[3]!;
     fireEvent.click(uatRow.querySelector('button[aria-label="Set uat active"]')!);
     await waitFor(() => {
-      expect(setActiveEnvironment).toHaveBeenCalledWith('e2');
+      expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e2');
     });
+  });
+
+  it('chips a scoped environment with its projects, and an empty scope as No project (#468)', () => {
+    setUp({
+      environments: [
+        dev,
+        { ...uat, projects: ['p2', 'p1'] },
+        { ...uat, id: 'e3', name: 'old', order: 2, projects: [] },
+        { ...uat, id: 'e4', name: 'theirs', order: 3, projects: ['p-not-pulled'] },
+      ],
+    });
+    const chips = (row: HTMLElement) =>
+      within(row)
+        .queryAllByTestId('environment-scope-chip')
+        .map((chip) => chip.textContent);
+    const rows = screen.getAllByTestId('environment-row');
+    expect(chips(rows[2]!)).toEqual([]);
+    // In the workspace's project order.
+    expect(chips(rows[3]!)).toEqual(['Billing', 'Crm']);
+    expect(chips(rows[4]!)).toEqual(['No project']);
+    // An id this machine does not know is ignored on read.
+    expect(chips(rows[5]!)).toEqual(['No project']);
+  });
+
+  it("disables setting active an environment out of the current project's scope, with a tooltip", async () => {
+    const { setActiveEnvironment } = setUp({ environments: [dev, { ...uat, projects: ['p2'] }] });
+    const uatRow = screen.getAllByTestId('environment-row')[3]!;
+    const check = uatRow.querySelector<HTMLButtonElement>('button[aria-label="Set uat active"]')!;
+    expect(check.disabled).toBe(true);
+    expect(check.getAttribute('title')).toBe('uat does not apply to Billing');
+    fireEvent.click(check);
+    fireEvent.contextMenu(uatRow);
+    const item = await screen.findByRole('menuitem', { name: 'Set active' });
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(item);
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
+  });
+
+  it('disables setting active while there is no current project', () => {
+    const { setActiveEnvironment } = setUp();
+    act(() => {
+      useWorkspaceStore.setState({ lastProjectId: undefined });
+    });
+    const uatRow = screen.getAllByTestId('environment-row')[3]!;
+    const check = uatRow.querySelector<HTMLButtonElement>('button[aria-label="Set uat active"]')!;
+    expect(check.disabled).toBe(true);
+    fireEvent.click(check);
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
   });
 
   it('opens an environment editor tab on a single click', () => {
@@ -195,7 +249,7 @@ describe('EnvironmentsView', () => {
       return Promise.resolve({ createdEnvironmentId: 'e3' });
     });
     useWorkspaceStore.setState({
-      workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e1' }),
+      workspace: workspaceWire({ environments: [dev, uat], activeEnvironments: { p1: 'e1' } }),
       mutate,
       setActiveEnvironment: vi.fn().mockResolvedValue(undefined),
     });

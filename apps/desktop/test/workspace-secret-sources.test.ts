@@ -356,12 +356,15 @@ describe('setLocalSecretSources', () => {
 
   it('keeps the active environment when local secret sources are written', async () => {
     const { service, dir } = await openFixtureWorkspace();
+    const { projectId } = await service.addProject('Calc');
     const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
-    await service.setActiveEnvironment(createdEnvironmentId as string);
+    await service.setActiveEnvironment({ projectId, environmentId: createdEnvironmentId as string });
     await service.setLocalSecretSources({ name: 'db', entry: { kind: 'none' } });
-    const local = await localFile(dir);
-    expect(local).toContain('activeEnvironmentId');
-    expect(local).toContain('kind: none');
+    expect(await loadLocalState(dir)).toEqual({
+      version: 3,
+      activeEnvironments: { [projectId]: createdEnvironmentId },
+      secretSources: { db: { kind: 'none' } },
+    });
   });
 
   it('refuses an invalid override without writing', async () => {
@@ -403,16 +406,17 @@ describe('queueing and the change hook', () => {
       },
     };
     const { service, dir } = await openFixtureWorkspace({ fs });
+    const { projectId } = await service.addProject('Calc');
     const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
     armed = true;
-    const activating = service.setActiveEnvironment(createdEnvironmentId as string);
+    const activating = service.setActiveEnvironment({ projectId, environmentId: createdEnvironmentId as string });
     const writing = service.setLocalSecretSources({ name: 'api', entry: { kind: '1password', ref: 'op://a/b/c' } });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(service.secretSourcesState().entries).toEqual([]);
     open();
     await Promise.all([activating, writing]);
     const local = await loadLocalState(dir);
-    expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
+    expect(local.activeEnvironments).toEqual({ [projectId]: createdEnvironmentId });
     expect(Object.keys(local.secretSources ?? {})).toEqual(['api']);
   });
 

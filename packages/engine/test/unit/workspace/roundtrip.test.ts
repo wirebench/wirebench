@@ -223,6 +223,63 @@ describe('workspace environment colour and protection', () => {
   });
 });
 
+describe('workspace environment project scope', () => {
+  it('round-trips an absent scope, an empty one and two ids, keeping an unknown id', async () => {
+    const dir = await tempWorkspaceDir();
+    const base = sampleWorkspace();
+    const [first, second] = base.environments;
+    const workspace: Workspace = {
+      ...base,
+      environments: [
+        { ...first!, projects: ['gone-project', base.projects[0]!.id] },
+        { ...second!, projects: [] },
+        { ...second!, id: 'ENV-ALL', slug: 'all', order: 2 },
+      ],
+    };
+    await saveWorkspace(workspace, dir);
+
+    expect((await readBytes(dir, `environments/${first!.slug}.yaml`)).toString('utf8')).toContain(
+      `projects:\n  - gone-project\n  - ${base.projects[0]!.id}\n`,
+    );
+    expect((await readBytes(dir, `environments/${second!.slug}.yaml`)).toString('utf8')).toContain('projects: []\n');
+    expect((await readBytes(dir, 'environments/all.yaml')).toString('utf8')).not.toContain('projects');
+
+    const { workspace: loaded, problems } = await loadWorkspace(dir);
+    expect(problems).toEqual([]);
+    expect(loaded.environments.map((e) => e.projects)).toEqual([['gone-project', base.projects[0]!.id], [], undefined]);
+    expect(loaded.environments[2]).not.toHaveProperty('projects');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it.each([
+    ['null', 'projects: null\n', undefined],
+    ['a scalar', 'projects: billing\n', undefined],
+    ['a mapping', 'projects: { a: 1 }\n', undefined],
+    ['one empty id', 'projects:\n  - ""\n', []],
+    ['empty, repeated and non-string ids', "projects:\n  - a\n  - ''\n  - a\n  - 7\n  - b\n", ['a', 'b']],
+  ])('keeps the environment when a hand edit leaves projects as %s', async (_label, line, expected) => {
+    const dir = await tempWorkspaceDir();
+    await saveWorkspace(sampleWorkspace(), dir);
+    const file = join(dir, 'environments', 'dev.yaml');
+    await writeFile(file, (await readFile(file, 'utf8')) + line);
+
+    const { workspace: loaded, problems } = await loadWorkspace(dir);
+    expect(problems).toEqual([]);
+    const dev = loaded.environments.find((e) => e.slug === 'dev');
+    expect(dev).toMatchObject({
+      name: 'dev',
+      properties: { region: 'local' },
+      endpoints: { 'CountryInfo/CountryInfoSoap': 'http://localhost:8080/country' },
+      disabledProperties: ['region'],
+    });
+    if (expected === undefined) expect(dev).not.toHaveProperty('projects');
+    else expect(dev?.projects).toEqual(expected);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe('loadWorkspace', () => {
   it('round-trips a workspace to a deep-equal model, activeEnvironmentId aside (it is never saved)', async () => {
     const dir = await tempWorkspaceDir();

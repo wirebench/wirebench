@@ -38,13 +38,53 @@ whichever scope defines it first.
    with a default name.
 2. Click the name to rename it, or right-click the row and choose **Rename**. Press
    <kbd>Enter</kbd> to commit, <kbd>Escape</kbd> to cancel.
-3. To make it the one requests use, open the environment switcher in the status bar and choose it
+3. To make it the one requests use, open the environment switcher in the title bar and choose it
    from the list.
 
 </Steps>
 
-Only one environment is active at a time. The status bar always shows which one, and every open
-request tab picks it up immediately — there's no per-tab environment.
+Each project has one active environment of its own. The switcher is labelled with the project it
+acts for, the project of the request tab you last focused, and every request tab of that project
+picks the choice up immediately. Moving to a tab of another project shows that project's own
+choice, or **No environment** if it has none; there's no per-tab environment. Before any request
+tab has been focused the switcher reads **No project** and is disabled.
+
+## Choose which projects an environment applies to
+
+A workspace environment applies to every project by default. When a workspace holds several
+projects, narrow it so a project is offered only the environments meant for it: a `Billing
+sandbox` that a CRM request can never pick by accident.
+
+<Steps>
+
+1. Open the environment's page. Under the name, **Applies to** reads **All projects** or
+   **Selected projects**.
+2. Choose **Selected projects**. A list of the workspace's projects appears with every one ticked,
+   so nothing drops out until you clear a box.
+3. Clear the projects it should not apply to.
+
+</Steps>
+
+- The switcher lists two groups: **All projects** for the environments that apply everywhere, then
+  a group named after the current project for the environments scoped to it. **Next environment**
+  cycles through the same list.
+- The Environments view shows the project names as small chips on a scoped environment.
+- The **Active** toggle and a row's activate button act for the current project, and are disabled
+  with a tooltip when the environment does not apply to it.
+- The **Endpoints** table lists only the interfaces of the projects in scope. Overrides you typed
+  for a project that leaves the scope stay saved and come back when the project is added again.
+- Narrowing a scope drops the active choice of any project that is left out. Removing an
+  environment does the same.
+- Duplicating an environment keeps its scope. When a linked project brings environments of its own
+  they are created scoped to that project, and one that already exists in the workspace gains the
+  project in its scope.
+- Removing a project from the workspace removes it from every scope. An environment left with no
+  project is kept, shown as **No project**, and the removal dialog names it first, so nothing you
+  typed is lost. Choose **Selected projects** again to give it projects.
+
+The scope is saved in the environment's file as `projects`, a list of project ids; an environment
+without it applies to every project. A teammate on an older build sees a scoped environment as
+applying to every project, and if they edit it the scope is lost.
 
 ## Colour an environment and protect it
 
@@ -152,9 +192,9 @@ instead of switching the active environment between sends. This works for SOAP a
 
 </Steps>
 
-The environments offered are the workspace's — the same ones the environment switcher lists and
-that decide where a normal send goes. A project's own environment takes part only through the
-workspace environment it is linked to. With fewer than two workspace environments the action is
+The environments offered are the workspace's that apply to the request's project — the same ones the
+environment switcher lists and that decide where a normal send goes. A project's own environment takes part only through the
+workspace environment it is linked to. With fewer than two such environments the action is
 unavailable, and its tooltip says why.
 
 Each environment gets the request exactly as a normal send with that environment active would
@@ -178,6 +218,20 @@ The results open in a **Compare** tab:
 Every individual send is also recorded in **History** and the **HTTP Log**, one entry per
 environment — closing the Compare tab loses nothing. A History entry reads
 `<request> · <environment>`; in the HTTP Log, tell the rows apart by the URL each one went to.
+
+## On the command line
+
+`wirebench run`, `wirebench call` and the MCP server pick an environment with `--env <name>` (MCP:
+the `environment` argument), and they follow the same scopes as the app.
+
+- Only environments that apply to the project can be picked. Naming one that exists but is scoped
+  to other projects exits with code 2 and `environment-out-of-scope`, and the message lists the
+  environments that do apply: `the environment "Billing sandbox" does not apply to this project;
+  environments for it: Shared`.
+- `--env` is required only when at least one environment applies to the project. A project whose
+  scoped environments all belong to other projects runs without it, and a missing `--env` on a
+  project that has some exits with `environment-required`.
+- The command line never reads the app's active environment, so it is always chosen explicitly.
 
 ## Related
 

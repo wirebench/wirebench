@@ -13,7 +13,7 @@ import type {
 export function workspaceWire(
   patch: {
     readonly environments?: readonly WorkspaceEnvironmentWire[];
-    readonly activeEnvironmentId?: string;
+    readonly activeEnvironments?: Readonly<Record<string, string>>;
     readonly projects?: readonly WorkspaceProjectWire[];
     readonly properties?: Readonly<Record<string, string>>;
     readonly disabled?: readonly string[];
@@ -29,7 +29,7 @@ export function workspaceWire(
     properties: { ...patch.properties },
     disabled: [...(patch.disabled ?? [])],
     environments: [...(patch.environments ?? [])],
-    ...(patch.activeEnvironmentId !== undefined ? { activeEnvironmentId: patch.activeEnvironmentId } : {}),
+    activeEnvironments: { ...patch.activeEnvironments },
     projects: [...(patch.projects ?? [])],
     ...(patch.share !== undefined ? { share: patch.share } : {}),
   };

@@ -50,6 +50,7 @@ const WORKSPACE: WorkspaceWire = {
   properties: {},
   disabled: [],
   environments: [],
+  activeEnvironments: {},
   projects: [
     {
       id: 'p1',
@@ -511,10 +512,19 @@ describe('workspace.* channels', () => {
     expect(service.locateProject).toHaveBeenCalledWith('p1', SENDER);
   });
 
-  it('setActiveEnvironment accepts an id or null', async () => {
-    await invoke('workspace.setActiveEnvironment', { environmentId: 'e1' });
-    await invoke('workspace.setActiveEnvironment', { environmentId: null });
-    expect(service.setActiveEnvironment.mock.calls).toEqual([['e1'], [null]]);
+  it('setActiveEnvironment accepts an id or null for a project', async () => {
+    await invoke('workspace.setActiveEnvironment', { projectId: 'p1', environmentId: 'e1' });
+    await invoke('workspace.setActiveEnvironment', { projectId: 'p1', environmentId: null });
+    expect(service.setActiveEnvironment.mock.calls).toEqual([
+      [{ projectId: 'p1', environmentId: 'e1' }],
+      [{ projectId: 'p1', environmentId: null }],
+    ]);
+  });
+
+  it('setActiveEnvironment refuses a request that names no project (#468)', async () => {
+    expect((await invoke('workspace.setActiveEnvironment', { environmentId: 'e1' })).ok).toBe(false);
+    expect((await invoke('workspace.setActiveEnvironment', { projectId: '', environmentId: null })).ok).toBe(false);
+    expect(service.setActiveEnvironment).not.toHaveBeenCalled();
   });
 
   it('mutate forwards the change and passes the created id through', async () => {
@@ -524,6 +534,13 @@ describe('workspace.* channels', () => {
       value: { workspace: WORKSPACE, createdEnvironmentId: 'e1' },
     });
     expect(service.mutate).toHaveBeenCalledWith(change);
+  });
+
+  it('refuses a scope patch holding an empty project id before the service sees it', async () => {
+    const change = { kind: 'update-workspace-environment', environmentId: 'e1', patch: { projects: ['p1', ''] } };
+    const reply = await invoke('workspace.mutate', { change });
+    expect(reply.ok).toBe(false);
+    expect(service.mutate).not.toHaveBeenCalled();
   });
 
   it('refuses a malformed change before the service sees it', async () => {
@@ -710,7 +727,7 @@ describe('project.* channels', () => {
         target: { projectId: 'p1' },
         source: { kind: 'file', path: fixture },
       });
-      expect(ensureWorkspaceEnvironments).toHaveBeenCalledWith(['Default', 'Staging']);
+      expect(ensureWorkspaceEnvironments).toHaveBeenCalledWith(['Default', 'Staging'], 'p1');
       expect(result).toMatchObject({
         ok: true,
         value: {

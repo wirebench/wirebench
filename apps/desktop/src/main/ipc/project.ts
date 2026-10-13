@@ -37,10 +37,10 @@ export interface ProjectChannelDeps {
   readonly picks: ReadPicks;
   /**
    * Adds the workspace environments an import's project environments need in order to be switched
-   * to, answering with the names it added. See `WorkspaceService.ensureEnvironments`. Optional so the
-   * tests of the other channels need not build one.
+   * to, scoped to the importing project, answering with the names it added. See
+   * `WorkspaceService.ensureEnvironments`. Optional so the tests of the other channels need not build one.
    */
-  readonly ensureWorkspaceEnvironments?: (names: readonly string[]) => Promise<readonly string[]>;
+  readonly ensureWorkspaceEnvironments?: (names: readonly string[], projectId: string) => Promise<readonly string[]>;
 }
 
 /**
@@ -148,7 +148,7 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     }
     // An imported project environment only takes effect through the workspace environment of the
     // same name, so any the workspace lacks are added — otherwise they could never be switched to.
-    const added = (await deps.ensureWorkspaceEnvironments?.(imported.environmentNames)) ?? [];
+    const added = (await deps.ensureWorkspaceEnvironments?.(imported.environmentNames, projectId)) ?? [];
     const report = {
       ...imported.report,
       items: [

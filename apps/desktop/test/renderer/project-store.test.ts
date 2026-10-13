@@ -399,15 +399,21 @@ describe('selectRequestEndpoint', () => {
 
     // Active: the override keyed `<projectSlug>/<interfaceSlug>` wins, and says where it came from.
     useWorkspaceStore.setState({
-      workspace: workspaceWire({ environments: [environment], activeEnvironmentId: 'env-1', projects }),
+      workspace: workspaceWire({ environments: [environment], activeEnvironments: { 'proj-1': 'env-1' }, projects }),
     });
     expect(resolve('req-1')).toEqual({ url: 'http://dev.test/soap', source: 'workspace-environment' });
+
+    // Active for another project only (#468): this request's project has none, so nothing applies.
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ environments: [environment], activeEnvironments: { 'proj-2': 'env-1' }, projects }),
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://custom.test/soap', source: 'request-custom' });
 
     // An environment with no override for this project's interface falls through.
     useWorkspaceStore.setState({
       workspace: workspaceWire({
         environments: [{ ...environment, endpoints: { 'Other/Calculator': 'http://other.test/soap' } }],
-        activeEnvironmentId: 'env-1',
+        activeEnvironments: { 'proj-1': 'env-1' },
         projects,
       }),
     });
@@ -451,7 +457,11 @@ describe('selectRequestEndpoint', () => {
       ],
     });
     useWorkspaceStore.setState({
-      workspace: workspaceWire({ environments: [workspaceEnvironment], activeEnvironmentId: 'env-1', projects }),
+      workspace: workspaceWire({
+        environments: [workspaceEnvironment],
+        activeEnvironments: { 'proj-1': 'env-1' },
+        projects,
+      }),
     });
     expect(resolve('req-1')).toEqual({ url: 'http://linked-dev.test/soap', source: 'environment' });
 

@@ -102,7 +102,7 @@ describe('WsApiTab', () => {
       workspace: {
         ...workspaceWire(),
         environments: [environment({ chat: 'wss://ws.test' }, 'ws-env')],
-        activeEnvironmentId: 'ws-env',
+        activeEnvironments: { p1: 'ws-env' },
       },
     });
     mount();

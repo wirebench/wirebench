@@ -20,7 +20,7 @@ import { useKeybindings } from '../lib/keybindings.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
-import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
+import { rememberFocusedProject, rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToCertificateExpiry } from '../state/certificate-expiry.js';
 import { syncTabSetsWithSidebar } from '../state/tab-set-sync.js';
@@ -331,6 +331,8 @@ export function AppShell() {
   useEffect(() => subscribeToCertificateExpiry(), []);
   // Each activity-bar area shows its own set of editor tabs.
   useEffect(() => syncTabSetsWithSidebar(), []);
+  // The current project (#468) outlives focusing a tab that names none.
+  useEffect(() => rememberFocusedProject(), []);
   useEffect(() => subscribeToCurrentValues(), []);
   useEffect(() => subscribeToScriptValues(), []);
   useEffect(() => subscribeToPreferences(), []);

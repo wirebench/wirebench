@@ -49,4 +49,14 @@ describe('duplicateEnvironment', () => {
       patch: { endpoints: prod.endpoints, properties: prod.properties },
     });
   });
+
+  it('keeps the scope, unknown project ids included', async () => {
+    const mutate = setUp({ ...prod, projects: ['p1', 'p-not-here'] });
+    await duplicateEnvironment('e1');
+    expect(mutate).toHaveBeenLastCalledWith({
+      kind: 'update-workspace-environment',
+      environmentId: 'e2',
+      patch: { endpoints: prod.endpoints, properties: prod.properties, projects: ['p1', 'p-not-here'] },
+    });
+  });
 });

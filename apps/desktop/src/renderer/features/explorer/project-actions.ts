@@ -2,6 +2,7 @@ import { showToast } from '../../components/toast.js';
 import { openEnvironmentTab } from '../environments/environment-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useProjectStore } from '../../state/project.js';
+import { activeEnvironmentFor } from '../../state/environment-scope.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
@@ -59,15 +60,15 @@ export const projectRowActions = {
   /**
    * Opens a **linked** project's own environments editor. A linked project keeps its per-project
    * environments (they win over the workspace's on a shared slug), so the tab opens on the one
-   * linked by slug to the workspace's active environment, else the project's first. A project
+   * linked by slug to the project's active workspace environment, else the project's first. A project
    * with no environments of its own gets one, named after the active workspace environment so
    * the slugs line up, because there is otherwise nothing to open.
    */
   async projectEnvironments(projectId: string): Promise<void> {
     const store = useProjectStore.getState();
     const environments = store.projects[projectId]?.environments ?? [];
-    const workspace = useWorkspaceStore.getState().workspace;
-    const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
+    // This project's own active workspace environment (#468).
+    const active = activeEnvironmentFor(useWorkspaceStore.getState().workspace, projectId);
     const match = environments.find((candidate) => candidate.slug === active?.slug) ?? environments[0];
     if (match !== undefined) {
       openEnvironmentTab({ kind: 'environment', id: match.id });

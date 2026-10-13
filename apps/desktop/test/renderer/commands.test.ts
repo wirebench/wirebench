@@ -20,7 +20,9 @@ function workspace(environments: readonly WorkspaceEnvironmentWire[]): Workspace
     properties: {},
     disabled: [],
     environments: [...environments],
-    projects: [],
+    activeEnvironments: {},
+    // `p1` is the current project in the environment commands below (#468).
+    projects: [{ id: 'p1', name: 'Billing', slug: 'billing', source: 'internal', dir: '/tmp/b', status: 'ready' }],
   };
 }
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
@@ -140,10 +142,18 @@ describe('environment commands', () => {
     resetCommands();
     registerShellCommands(vi.fn());
     useUiStore.setState({ envSwitcherOpen: false });
+    useWorkspaceStore.setState({ lastProjectId: 'p1' });
   });
 
   afterEach(() => {
-    useWorkspaceStore.setState({ workspace: null });
+    useWorkspaceStore.setState({ workspace: null, lastProjectId: undefined });
+  });
+
+  it('is unavailable while there is no current project (#468)', () => {
+    useWorkspaceStore.setState({ workspace: workspace([]), lastProjectId: undefined });
+    expect(listCommands(context).some((command) => command.id === 'env.switch')).toBe(false);
+    useWorkspaceStore.setState({ lastProjectId: 'p1' });
+    expect(listCommands(context).some((command) => command.id === 'env.switch')).toBe(true);
   });
 
   it('opens the switcher dropdown with no argument', async () => {
@@ -161,8 +171,21 @@ describe('environment commands', () => {
       setActiveEnvironment,
     });
     await runCommand('env.switch', context, 'uat');
-    expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
+    expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e1');
     expect(useUiStore.getState().envSwitcherOpen).toBe(false);
+  });
+
+  it("does not switch to a named environment out of the current project's scope (#468)", async () => {
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      workspace: workspace([
+        { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [], projects: ['p2'] },
+      ]),
+      setActiveEnvironment,
+    });
+    await runCommand('env.switch', context, 'uat');
+    expect(setActiveEnvironment).not.toHaveBeenCalled();
+    expect(useUiStore.getState().envSwitcherOpen).toBe(true);
   });
 
   it('cycles to the next environment, and is unavailable without any', async () => {
@@ -176,7 +199,19 @@ describe('environment commands', () => {
       ]),
     });
     await runCommand('env.next', context);
-    expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
+    expect(setActiveEnvironment).toHaveBeenCalledWith('p1', 'e1');
+  });
+
+  it('is unavailable when nothing applies to the current project, or there is no current project (#468)', () => {
+    const uat = { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [] };
+    useWorkspaceStore.setState({ workspace: workspace([{ ...uat, projects: ['p2'] }]) });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
+
+    useWorkspaceStore.setState({ workspace: workspace([uat]), lastProjectId: undefined });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
+
+    useWorkspaceStore.setState({ lastProjectId: 'p1' });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(true);
   });
 });
 

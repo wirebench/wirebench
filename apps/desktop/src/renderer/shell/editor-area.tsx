@@ -18,7 +18,8 @@ import { tabsInSet, type TabSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore, type ProjectStore } from '../state/project.js';
 import { useWebhooksStore } from '../state/webhooks.js';
-import { useWorkspaceStore } from '../state/workspace.js';
+import { useActiveEnvironment, useWorkspaceStore } from '../state/workspace.js';
+import { useCurrentProjectId } from '../state/workspace-tabs.js';
 import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
 import { environmentColorCss } from '../../shared/environment-colors.js';
 
@@ -104,12 +105,8 @@ export function EditorArea() {
   const move = useEditorsStore((state) => state.move);
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   // The active environment's colour bands the top of the strip (#345): where a send goes, in view.
-  const envColor = useWorkspaceStore((state) =>
-    environmentColorCss(
-      state.workspace?.environments.find((environment) => environment.id === state.workspace?.activeEnvironmentId)
-        ?.color,
-    ),
-  );
+  // The current project's (#468): the strip belongs to no one request.
+  const envColor = environmentColorCss(useActiveEnvironment(useCurrentProjectId())?.color);
   const enabledKinds = useUiStore((state) => state.enabledKinds);
   const catchUrls = useWebhooksStore((state) => state.hooks);
   // Each tab's live name and unsaved state, read through its kind's row in `TAB_KINDS`: renames

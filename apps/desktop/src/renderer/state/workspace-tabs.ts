@@ -8,6 +8,7 @@
 
 import { entityIdOf, TAB_KINDS, tabOwner, type TabContribution } from '../kinds/index.js';
 import { kindLabel } from '../kinds/placeholders.js';
+import type { WorkspaceWire } from '../../shared/wire-base.js';
 import type { PersistedTab } from './ui-state.js';
 import { useEditorsStore, type EditorTab } from './editors.js';
 import { useProjectStore } from './project.js';
@@ -110,4 +111,79 @@ export function rememberOpenWorkspaceTabs(): void {
   if (workspaceId !== undefined) {
     saveWorkspaceTabs(workspaceId);
   }
+}
+
+/** The project `tab`'s entity belongs to, or `undefined` for a tab that names none (Settings, SSH, a workspace environment). */
+export function projectOfTab(
+  tab: EditorTab | undefined,
+  projectOf: Readonly<Record<string, string>>,
+): string | undefined {
+  const contribution = tab === undefined ? undefined : TAB_KINDS[tab.kind];
+  const entityId = tab === undefined || contribution === undefined ? undefined : entityIdOf(tab, contribution);
+  return entityId !== undefined && Object.hasOwn(projectOf, entityId) ? projectOf[entityId] : undefined;
+}
+
+/** The focused tab, if any. */
+function focusedTab(editors: {
+  readonly tabs: readonly EditorTab[];
+  readonly activeId: string | undefined;
+}): EditorTab | undefined {
+  return editors.activeId === undefined ? undefined : editors.tabs.find((tab) => tab.id === editors.activeId);
+}
+
+/** `lastProjectId` while it still names a project of the open workspace. */
+function lastProjectOf(state: {
+  readonly workspace: WorkspaceWire | null;
+  readonly lastProjectId?: string | undefined;
+}): string | undefined {
+  const last = state.lastProjectId;
+  return last !== undefined && state.workspace?.projects.some((project) => project.id === last) === true
+    ? last
+    : undefined;
+}
+
+/**
+ * The current project (#468), read outside React: the focused tab's project, else the last project
+ * a focused tab had (see {@link rememberFocusedProject}). `undefined` before any project tab was focused.
+ */
+export function currentProjectId(): string | undefined {
+  const focused = projectOfTab(focusedTab(useEditorsStore.getState()), useProjectStore.getState().projectOf);
+  return focused ?? lastProjectOf(useWorkspaceStore.getState());
+}
+
+/** {@link currentProjectId}, kept current: what the title-bar switcher acts on. */
+export function useCurrentProjectId(): string | undefined {
+  const tab = useEditorsStore((state) => focusedTab(state));
+  const focused = useProjectStore((state) => projectOfTab(tab, state.projectOf));
+  const last = useWorkspaceStore(lastProjectOf);
+  return focused ?? last;
+}
+
+/**
+ * Records the focused tab's project as the workspace store's `lastProjectId` whenever it changes, so
+ * the current project survives focusing a tab with none. Started once by the shell; returns the stop.
+ */
+export function rememberFocusedProject(): () => void {
+  const record = (): void => {
+    const focused = projectOfTab(focusedTab(useEditorsStore.getState()), useProjectStore.getState().projectOf);
+    if (focused !== undefined && focused !== useWorkspaceStore.getState().lastProjectId) {
+      useWorkspaceStore.setState({ lastProjectId: focused });
+    }
+  };
+  record();
+  const offEditors = useEditorsStore.subscribe((state, previous) => {
+    if (state.activeId !== previous.activeId || state.tabs !== previous.tabs) record();
+  });
+  const offProject = useProjectStore.subscribe((state, previous) => {
+    if (state.projectOf !== previous.projectOf) record();
+  });
+  // A workspace (re)opening clears `lastProjectId`; the tab focused then is the new one's.
+  const offWorkspace = useWorkspaceStore.subscribe((state, previous) => {
+    if (state.workspace !== previous.workspace) record();
+  });
+  return () => {
+    offEditors();
+    offProject();
+    offWorkspace();
+  };
 }

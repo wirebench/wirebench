@@ -2,13 +2,16 @@ import { catalogEntry } from '@shared/command-catalog.js';
 import { checkForUpdates } from '../lib/update-status.js';
 import { getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
+import { setProjectEnvironment } from '../features/environments/environment-actions.js';
 import { projectActions } from '../features/project/project-actions.js';
 import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from '../state/ipc-client.js';
 import { useProjectStore } from '../state/project.js';
+import { switcherEnvironments } from '../state/environment-scope.js';
 import { useWorkspaceStore } from '../state/workspace.js';
+import { currentProjectId } from '../state/workspace-tabs.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { activeGrpcRequestId, activeRequestId, activeRestRequestId, activeWsRequestId, ui } from './command-helpers.js';
 
@@ -88,16 +91,19 @@ export function registerProjectCommands(): void {
 
   registerCommand({
     ...catalogEntry('env.switch'),
-    when: () => useWorkspaceStore.getState().workspace !== null,
+    // Needs a current project (#468): the switcher is disabled without one.
+    when: () => useWorkspaceStore.getState().workspace !== null && currentProjectId() !== undefined,
     whenScope: 'project',
     // With no argument this opens the status bar's dropdown, which is where the choice lives.
     // The palette can also pass an environment name or id to switch straight to it.
     run: (_context, arg) => {
-      if (typeof arg === 'string') {
-        const environments = useWorkspaceStore.getState().workspace?.environments ?? [];
-        const match = environments.find((env) => env.id === arg || env.name === arg);
+      // A name or id switches the current project (#468), among the environments that apply to it.
+      const workspace = useWorkspaceStore.getState().workspace;
+      const projectId = currentProjectId();
+      if (typeof arg === 'string' && workspace !== null && projectId !== undefined) {
+        const match = switcherEnvironments(workspace, projectId).find((env) => env.id === arg || env.name === arg);
         if (match !== undefined) {
-          void useWorkspaceStore.getState().setActiveEnvironment(match.id);
+          void setProjectEnvironment(projectId, match.id);
           return;
         }
       }
@@ -106,7 +112,12 @@ export function registerProjectCommands(): void {
   });
   registerCommand({
     ...catalogEntry('env.next'),
-    when: () => (useWorkspaceStore.getState().workspace?.environments.length ?? 0) > 0,
+    // Available only when it can do something: a current project with an environment that applies to it.
+    when: () => {
+      const workspace = useWorkspaceStore.getState().workspace;
+      const projectId = currentProjectId();
+      return workspace !== null && projectId !== undefined && switcherEnvironments(workspace, projectId).length > 0;
+    },
     whenScope: 'project.environments',
     run: () => {
       void cycleEnvironment(1);

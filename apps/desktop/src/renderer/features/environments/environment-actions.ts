@@ -1,3 +1,4 @@
+import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -53,6 +54,20 @@ function environmentById(
   const projectId = projectStore.projectOf[environmentId];
   const owningProjectName = workspace?.projects.find((candidate) => candidate.id === projectId)?.name ?? 'this project';
   return { name: projectEnvironment.name, owningProjectName };
+}
+
+/**
+ * Sets `projectId`'s active environment (#468), `null` for none, and reports a refusal as a toast
+ * instead of rejecting: every caller is a click or a key, with nothing above it to catch. Main
+ * refuses an environment that no longer applies to the project (`environment-out-of-scope`), which
+ * a scope edit from another window or a pull can cause between the render and the click.
+ */
+export async function setProjectEnvironment(projectId: string, environmentId: string | null): Promise<void> {
+  try {
+    await useWorkspaceStore.getState().setActiveEnvironment(projectId, environmentId);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Could not switch the environment');
+  }
 }
 
 /**
@@ -113,8 +128,8 @@ function flagsOf(environment: { readonly color?: string | undefined; readonly pr
 
 /**
  * Copies an environment: a new one named `<name> (copy)`, then a patch carrying the original's
- * endpoints, properties (both maps replace wholesale), colour and protection. Returns the new
- * environment's id.
+ * endpoints, properties (both maps replace wholesale), colour and protection, and a workspace
+ * environment's scope (#468). Returns the new environment's id.
  */
 export async function duplicateEnvironment(environmentId: string): Promise<string | undefined> {
   const workspace = useWorkspaceStore.getState();
@@ -134,6 +149,7 @@ export async function duplicateEnvironment(environmentId: string): Promise<strin
         endpoints: { ...fromWorkspace.endpoints },
         properties: { ...fromWorkspace.properties },
         ...flagsOf(fromWorkspace),
+        ...(fromWorkspace.projects !== undefined ? { projects: [...fromWorkspace.projects] } : {}),
       },
     });
     return createdEnvironmentId;

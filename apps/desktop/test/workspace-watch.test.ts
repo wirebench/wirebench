@@ -10,6 +10,7 @@ import {
   createProject,
   createWorkspace,
   createWorkspaceEnvironment,
+  loadLocalState,
   loadWorkspace,
   nodeFs,
   saveProject,
@@ -463,6 +464,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
 
   it('serialises mutate and setActiveEnvironment behind an in-flight reload, so neither loses the other', async () => {
     const { workspace, tree } = await seedWorkspace('Team');
+    const alphaId = workspace.projects[0]?.id as string;
 
     // Wraps `loadWorkspace` (used only by the watcher's reload, `open()`, `list()` and rename's
     // "not open" branch — never by `mutate`/`setActiveEnvironment`, which only ever call
@@ -510,7 +512,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
         if (createdId === undefined) {
           throw new Error('expected mutate to report createdEnvironmentId');
         }
-        return service.setActiveEnvironment(createdId).then(() => createdId);
+        return service.setActiveEnvironment({ projectId: alphaId, environmentId: createdId }).then(() => createdId);
       });
 
       // Gives the unfixed code every chance to run `mutate` and `setActiveEnvironment` to
@@ -528,7 +530,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
 
       const finalSnapshot = service.snapshot();
       expect(finalSnapshot?.environments.map((environment) => environment.id)).toContain(createdId);
-      expect(finalSnapshot?.activeEnvironmentId).toBe(createdId);
+      expect(finalSnapshot?.activeEnvironments).toEqual({ [alphaId]: createdId });
 
       const { workspace: onDisk } = await loadWorkspace(tree);
       expect(onDisk.environments.map((environment) => environment.id)).toContain(createdId);
@@ -783,4 +785,133 @@ describe('WorkspaceService — workspace-level watcher', () => {
     expect(recorded.changed.length).toBe(before);
     expect(recorded.onDisk.length).toBe(beforeOnDisk);
   });
+});
+
+describe('WorkspaceService — per-project active environments over a reload (#468)', () => {
+  /**
+   * {@link seedWorkspace} plus a second project, Beta, and two environments: `Dev`, scoped to Alpha,
+   * and `QA`, for every project.
+   */
+  async function seedScoped(): Promise<{
+    workspace: Workspace;
+    tree: string;
+    alpha: string;
+    beta: string;
+    dev: string;
+    qa: string;
+  }> {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const alpha = workspace.projects[0]!.id;
+    const second = createProject('Beta');
+    await saveProject(second, workspaceProjectDir(tree, 'beta'));
+    const taken = new Set<string>();
+    const dev = { ...createWorkspaceEnvironment('Dev', taken), projects: [alpha] };
+    taken.add(dev.slug);
+    const qa = createWorkspaceEnvironment('QA', taken, { order: 1 });
+    const seeded: Workspace = {
+      ...workspace,
+      projects: [...workspace.projects, { id: second.id, slug: 'beta', source: 'internal' }],
+      environments: [dev, qa],
+    };
+    await saveWorkspace(seeded, tree);
+    return { workspace: seeded, tree, alpha, beta: second.id, dev: dev.id, qa: qa.id };
+  }
+
+  it('keeps scope and entry when a project’s slug changes on disk, since both key on its id', async () => {
+    const { workspace, tree, alpha, beta, dev, qa } = await seedScoped();
+    const { service } = newService();
+    await service.open(workspace.id);
+    await service.setActiveEnvironment({ projectId: alpha, environmentId: dev });
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    await settle();
+
+    await rename(join(tree, 'projects', 'alpha'), join(tree, 'projects', 'alpha-renamed'));
+    await saveWorkspace(
+      {
+        ...workspace,
+        projects: workspace.projects.map((ref) => (ref.id === alpha ? { ...ref, slug: 'alpha-renamed' } : ref)),
+      },
+      tree,
+    );
+
+    await vi.waitFor(() => {
+      const row = service.snapshot()?.projects.find((p) => p.id === alpha);
+      expect(row?.slug).toBe('alpha-renamed');
+      expect(row?.status).toBe('ready');
+    }, WAIT_OPTIONS);
+    const snapshot = service.snapshot();
+    expect(snapshot?.activeEnvironments).toEqual({ [alpha]: dev, [beta]: qa });
+    expect(snapshot?.environments.find((environment) => environment.id === dev)?.projects).toEqual([alpha]);
+
+    await service.close();
+  }, 20_000);
+
+  it('a pull that deletes a project’s active environment drops the entry in memory, without an error', async () => {
+    const { workspace, tree, alpha, beta, dev, qa } = await seedScoped();
+    const { service, recorded } = newService();
+    await service.open(workspace.id);
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    await service.setActiveEnvironment({ projectId: alpha, environmentId: dev });
+    await settle();
+
+    await saveWorkspace({ ...workspace, environments: workspace.environments.filter((e) => e.id !== dev) }, tree);
+
+    await vi.waitFor(() => {
+      expect(service.snapshot()?.environments.map((e) => e.id)).toEqual([qa]);
+    }, WAIT_OPTIONS);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [beta]: qa });
+    expect(recorded.onDisk).toEqual([]);
+    // A reload does not write the drop: a pull caught half-way (an environment file not yet
+    // written) must not lose this machine's pick for good. local.yaml still holds it…
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [alpha]: dev, [beta]: qa },
+    });
+    // …until the next write of the active environments, which carries the in-memory map.
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [beta]: qa },
+    });
+
+    await service.close();
+  }, 20_000);
+
+  it('a pull that narrows a scope drops, in memory, the entry of the project it leaves out', async () => {
+    const { workspace, tree, alpha, beta, qa } = await seedScoped();
+    const { service, recorded } = newService();
+    await service.open(workspace.id);
+    await service.setActiveEnvironment({ projectId: alpha, environmentId: qa });
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [alpha]: qa, [beta]: qa });
+    await settle();
+
+    await saveWorkspace(
+      {
+        ...workspace,
+        environments: workspace.environments.map((e) => (e.id === qa ? { ...e, projects: [beta] } : e)),
+      },
+      tree,
+    );
+
+    await vi.waitFor(() => {
+      expect(service.snapshot()?.environments.find((e) => e.id === qa)?.projects).toEqual([beta]);
+    }, WAIT_OPTIONS);
+    expect(service.snapshot()?.activeEnvironments).toEqual({ [beta]: qa });
+    expect(recorded.onDisk).toEqual([]);
+    // A reload does not write the drop: a pull caught half-way (an environment file not yet
+    // written) must not lose this machine's pick for good. local.yaml still holds it…
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [alpha]: qa, [beta]: qa },
+    });
+    // …until the next write of the active environments, which carries the in-memory map.
+    await service.setActiveEnvironment({ projectId: beta, environmentId: qa });
+    expect(await loadLocalState(workspaceDir(root, workspace.id))).toEqual({
+      version: 3,
+      activeEnvironments: { [beta]: qa },
+    });
+
+    await service.close();
+  }, 20_000);
 });

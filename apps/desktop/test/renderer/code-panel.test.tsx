@@ -222,6 +222,7 @@ describe('CodePanel', () => {
     const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: COMMAND } });
     installWirebenchApi({ request: { curl } });
     openRequestTab();
+    useProjectStore.setState({ projectOf: { 'req-1': 'p1' } });
     render(<CodePanel />);
     await waitFor(() => {
       expect(curl).toHaveBeenCalledTimes(1);
@@ -237,7 +238,8 @@ describe('CodePanel', () => {
         environments: [
           { id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
         ],
-        activeEnvironmentId: 'env-1',
+        // The request's own project's (#468).
+        activeEnvironments: { p1: 'env-1' },
         projects: [],
       },
     });

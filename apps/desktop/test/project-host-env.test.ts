@@ -140,8 +140,14 @@ function workspaceEnv(id: string, order: number, slug: string, url: string, tena
   };
 }
 
-/** Opens the host inside a workspace with two environments, `wdev` active. */
-function insideWorkspace(slug: string): { workspace: () => Workspace } {
+/**
+ * Opens the host inside a workspace, as project `p1`, with two environments and `wdev` active for
+ * `p1`. `extra` adds environments; `active` replaces the per-project map.
+ */
+function insideWorkspace(
+  slug: string,
+  options: { extra?: WorkspaceEnvironment[]; active?: Record<string, string> } = {},
+): { workspace: () => Workspace } {
   const workspace: Workspace = {
     formatVersion: 4,
     id: 'ws',
@@ -149,15 +155,29 @@ function insideWorkspace(slug: string): { workspace: () => Workspace } {
     createdAt: '2026-09-22T00:00:00.000Z',
     properties: {},
     disabledProperties: [],
-    projects: [],
-    activeEnvironmentId: 'wdev',
+    projects: [
+      { id: 'p1', slug: 'proj', source: 'internal' },
+      { id: 'p2', slug: 'other', source: 'internal' },
+    ],
+    activeEnvironments: options.active ?? { p1: 'wdev' },
     environments: [
       workspaceEnv('wtest', 1, slug, 'https://wtest.example', 'beta'),
       workspaceEnv('wdev', 0, slug, 'https://wdev.example', 'alpha'),
+      ...(options.extra ?? []),
     ],
   };
-  host.setWorkspaceContext(() => ({ workspace, projectSlug: 'proj' }));
+  host.setWorkspaceContext(() => ({ workspace, projectSlug: 'proj', projectId: 'p1' }));
   return { workspace: () => workspace };
+}
+
+/** A REST request whose path expands `${tenant}`, on an API with a default base URL. */
+async function restRequest(): Promise<{ requestId: string; apiSlug: string }> {
+  await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
+  const api = restApisOf(host.model()!)[0] as RestApi;
+  await host.mutate({ kind: 'add-rest-request', apiId: api.id });
+  const requestId = (restApisOf(host.model()!)[0] as RestApi).requests[0]?.id as string;
+  await host.mutate({ kind: 'update-rest-request', requestId, patch: { url: '/pets/${tenant}' } });
+  return { requestId, apiSlug: api.slug };
 }
 
 describe('ProjectHost under a named workspace environment', () => {
@@ -177,7 +197,7 @@ describe('ProjectHost under a named workspace environment', () => {
     expect(host.scopesFor('wtest').env).toEqual({ tenant: 'beta' });
     expect(host.scopesFor().env).toEqual({ tenant: 'alpha' });
 
-    expect(ws.workspace().activeEnvironmentId).toBe('wdev');
+    expect(ws.workspace().activeEnvironments).toEqual({ p1: 'wdev' });
     expect(target(await restSend(requestId))).toBe(before);
     expect(host.sendEnvironments()).toEqual({
       environments: [
@@ -211,7 +231,79 @@ describe('ProjectHost under a named workspace environment', () => {
     expect((await soapInput(requestId, 'wtest'))?.endpoint).toBe('https://wtest.example');
     expect((await soapInput(requestId))?.endpoint).toBe('https://wdev.example');
     expect(host.kind('soap').endpointFor(requestId, 'no-such-env')).toBeUndefined();
-    expect(ws.workspace().activeEnvironmentId).toBe('wdev');
+    expect(ws.workspace().activeEnvironments).toEqual({ p1: 'wdev' });
+  });
+});
+
+describe('ProjectHost inside a workspace with project-scoped environments (#468)', () => {
+  it("resolves under its own project's active environment, never another project's", async () => {
+    const { requestId, apiSlug } = await restRequest();
+    // p2 picked wtest; p1 has no entry: p1 resolves under no environment at all.
+    insideWorkspace(apiSlug, { active: { p2: 'wtest' } });
+    expect(target(await restSend(requestId))).toBe('https://api.default/pets/${tenant}');
+    expect(host.runContextFor(requestId)?.environmentId).toBeUndefined();
+    expect(host.sendEnvironments().activeId).toBeUndefined();
+
+    insideWorkspace(apiSlug, { active: { p1: 'wtest', p2: 'wdev' } });
+    expect(target(await restSend(requestId))).toBe('https://wtest.example/pets/beta');
+    expect(host.runContextFor(requestId)?.environmentId).toBe('wtest');
+    expect(host.scopesFor().env).toEqual({ tenant: 'beta' });
+    expect(host.sendEnvironments().activeId).toBe('wtest');
+  });
+
+  it('offers only the environments that apply to the project, in order', async () => {
+    const { apiSlug } = await restRequest();
+    insideWorkspace(apiSlug, {
+      extra: [
+        { ...workspaceEnv('wmine', 2, apiSlug, 'https://wmine.example', 'gamma'), projects: ['p1', 'p2'] },
+        { ...workspaceEnv('wother', 3, apiSlug, 'https://wother.example', 'delta'), projects: ['p2'] },
+        { ...workspaceEnv('wnone', 4, apiSlug, 'https://wnone.example', 'eps'), projects: [] },
+      ],
+    });
+    expect(host.sendEnvironments()).toEqual({
+      environments: [
+        { id: 'wdev', name: 'WDEV' },
+        { id: 'wtest', name: 'WTEST' },
+        { id: 'wmine', name: 'WMINE' },
+      ],
+      activeId: 'wdev',
+    });
+  });
+
+  it('refuses an explicit environment that does not apply to the project', async () => {
+    const { requestId, apiSlug } = await restRequest();
+    insideWorkspace(apiSlug, {
+      extra: [{ ...workspaceEnv('wother', 2, apiSlug, 'https://wother.example', 'delta'), projects: ['p2'] }],
+    });
+    const outOfScope: unknown = expect.objectContaining({
+      code: 'environment-out-of-scope',
+      details: { environmentName: 'WOTHER', projectId: 'p1' },
+    });
+    expect(() => host.runContextFor(requestId, 'wother')).toThrow(outOfScope);
+    expect(() => host.scopesFor('wother')).toThrow(outOfScope);
+    await expect(restSend(requestId, 'wother')).rejects.toThrow(outOfScope);
+  });
+
+  it('treats an active entry whose environment no longer applies as no environment', async () => {
+    const { requestId, apiSlug } = await restRequest();
+    insideWorkspace(apiSlug, {
+      extra: [{ ...workspaceEnv('wother', 2, apiSlug, 'https://wother.example', 'delta'), projects: ['p2'] }],
+      active: { p1: 'wother' },
+    });
+    expect(host.runContextFor(requestId)?.environmentId).toBeUndefined();
+    expect(target(await restSend(requestId))).toBe('https://api.default/pets/${tenant}');
+  });
+
+  it('checks the certificates of the endpoints of in-scope environments only', async () => {
+    const { apiSlug } = await restRequest();
+    insideWorkspace(apiSlug, {
+      extra: [
+        { ...workspaceEnv('wmine', 2, apiSlug, 'https://wmine.example', 'gamma'), projects: ['p1'] },
+        { ...workspaceEnv('wother', 3, apiSlug, 'https://wother.example', 'delta'), projects: ['p2'] },
+      ],
+    });
+    const hosts = (await host.certificateSources()).endpoints.map((endpoint) => endpoint.host).sort();
+    expect(hosts).toEqual(['api.default', 'wdev.example', 'wmine.example', 'wtest.example']);
   });
 });
 
@@ -237,11 +329,16 @@ describe('ProjectHost for the send host', () => {
 
     const active = host.runContextFor(requestId);
     expect(active?.environmentId).toBe('wdev');
-    expect(active?.workspace).toEqual({ workspace: ws.workspace(), projectSlug: 'proj' });
+    expect(active?.workspace).toEqual({
+      workspace: { ...ws.workspace(), activeEnvironmentId: 'wdev' },
+      projectSlug: 'proj',
+      projectId: 'p1',
+    });
     const named = host.runContextFor(requestId, 'wtest');
     expect(named?.environmentId).toBe('wtest');
     expect(named?.workspace?.workspace.activeEnvironmentId).toBe('wtest');
-    expect(ws.workspace().activeEnvironmentId).toBe('wdev');
+    expect(ws.workspace().activeEnvironments).toEqual({ p1: 'wdev' });
+    expect(ws.workspace().activeEnvironmentId).toBeUndefined();
   });
 
   it('lends no trust anchors and no identity when nothing is configured', async () => {

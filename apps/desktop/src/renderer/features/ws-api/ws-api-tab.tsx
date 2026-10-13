@@ -12,7 +12,7 @@ import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useActiveEnvironment } from '../../state/workspace.js';
 import type { AuthConfigWire } from '../../../shared/wire-base.js';
 import { AsyncApiDefinitionCard } from './asyncapi-definition-card.js';
 
@@ -32,17 +32,14 @@ export function WsApiTab({ apiId }: WsApiTabProps) {
   const projectId = useProjectStore((state) => state.projectOf[apiId]);
   const project = useProjectStore((state) => (projectId === undefined ? undefined : state.projects[projectId]));
   const updateWsApi = useProjectStore((state) => state.updateWsApi);
-  const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments);
-  const activeWorkspaceEnvironmentId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  // The API's own project's active workspace environment (#468), whichever project is current.
+  const workspaceEnvironment = useActiveEnvironment(projectId);
 
   if (api === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This API is no longer in the project.</p>;
   }
 
   const projectEnvironment = project?.environments.find((candidate) => candidate.id === project.activeEnvironmentId);
-  const workspaceEnvironment = workspaceEnvironments?.find(
-    (candidate) => candidate.id === activeWorkspaceEnvironmentId,
-  );
   const effective = effectiveBaseUrl({
     api: { slug: api.slug, baseUrl: api.url },
     projectOverride: projectEnvironment?.endpoints[api.slug],
