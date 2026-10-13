@@ -152,7 +152,8 @@ export function ProblemsView() {
                     type="button"
                     data-testid="problem-row"
                     onClick={() => {
-                      if (source === 'contract') {
+                      // A GraphQL problem is located by JSON Pointer too, and revealed the same way.
+                      if (source === 'contract' || source === 'graphql') {
                         revealContractProblem(requestId, problem.location ?? '');
                         return;
                       }

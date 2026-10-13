@@ -10,6 +10,7 @@ import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js'
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
 import type { RestLiveState } from '../../../state/exchanges.js';
 import { ContractChip } from './contract-chip.js';
+import { GraphqlChip } from './graphql-chip.js';
 
 /** The colour class for a status code, by its class. */
 export function statusToneClass(status: number): string {
@@ -122,6 +123,7 @@ export function StatusLine({ exchange, error, sending = false, live }: StatusLin
           <ContractChip result={exchange.contract} />
         </>
       )}
+      {exchange.graphql !== undefined && <GraphqlChip check={exchange.graphql} />}
     </p>
   );
 }

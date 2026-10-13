@@ -190,6 +190,7 @@ describe('explorerMenuItems on a REST row', () => {
       'Open',
       'New folder',
       'New request',
+      'New GraphQL request',
       'Import cURL…',
       'Run…',
       'Export as Postman Collection…',
@@ -202,7 +203,7 @@ describe('explorerMenuItems on a REST row', () => {
   it('offers Update Definition… only on an API that records a definition', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
-      ['Open', 'New folder', 'New request', 'Import cURL…'],
+      ['Open', 'New folder', 'New request', 'New GraphQL request', 'Import cURL…'],
       ['Run…'],
       ['Update Definition…', 'Import webhooks…', 'New Mock', 'Lint Definition'],
       ['Export as Postman Collection…', 'Export as OpenCollection…'],
