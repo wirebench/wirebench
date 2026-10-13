@@ -283,3 +283,71 @@ export async function resultsOf(db: Querier, runId: string): Promise<unknown[]> 
   );
   return rows.rows.map((row) => row.result);
 }
+
+/**
+ * The enabled schedules whose next fire is due, locked for the caller's transaction. `skip locked`: a
+ * schedule another server is firing is left to it.
+ */
+export async function claimDueSchedules(
+  tx: Querier,
+  now: Date,
+  limit: number,
+): Promise<{ readonly id: string; readonly cron: string; readonly timeZone: string }[]> {
+  const rows = await tx.query<{ id: string; cron: string; timeZone: string }>(
+    `select id, cron, time_zone as "timeZone" from schedules
+     where enabled and next_run_at <= $1
+     order by next_run_at, id
+     limit $2
+     for update skip locked`,
+    [now, limit],
+  );
+  return rows.rows;
+}
+
+/** Whether the schedule has a run queued or running. */
+export async function hasOpenRun(db: Querier, scheduleId: string): Promise<boolean> {
+  const rows = await db.query(
+    "select 1 from schedule_runs where schedule_id = $1 and status in ('queued', 'running') limit 1",
+    [scheduleId],
+  );
+  return rows.rows.length > 0;
+}
+
+export async function setNextRunAt(db: Querier, id: string, at: Date | null): Promise<void> {
+  await db.query('update schedules set next_run_at = $2 where id = $1', [id, at]);
+}
+
+/** Up to `limit` queued runs, oldest first, marked running; `skip locked` leaves others' claims alone. */
+export async function claimQueuedRuns(tx: Querier, limit: number, at: Date): Promise<string[]> {
+  const rows = await tx.query<{ id: string; queuedAt: Date }>(
+    `update schedule_runs set status = 'running', started_at = $2
+     where id in (
+       select id from schedule_runs where status = 'queued'
+       order by queued_at, id
+       limit $1
+       for update skip locked
+     )
+     returning id, queued_at as "queuedAt"`,
+    [limit, at],
+  );
+  // `returning` keeps no order: oldest first again.
+  return [...rows.rows]
+    .sort((a, b) => a.queuedAt.getTime() - b.queuedAt.getTime() || (a.id < b.id ? -1 : 1))
+    .map((row) => row.id);
+}
+
+/**
+ * Every run still `running` a minute past its schedule's deadline: the server running it would have
+ * aborted it by then, so that server is gone. It ends `errored` with reason `interrupted`. A deadline,
+ * not "every running run", because servers sharing a database each run their own. Returns how many.
+ */
+export async function interruptStaleRuns(db: Querier, now: Date): Promise<number> {
+  const result = await db.query(
+    `update schedule_runs r set status = 'errored', reason = 'interrupted', finished_at = $1
+     from schedules s
+     where s.id = r.schedule_id and r.status = 'running'
+       and r.started_at + make_interval(mins => (s.options->>'timeoutMinutes')::int + 1) < $1`,
+    [now],
+  );
+  return result.rowCount ?? 0;
+}
