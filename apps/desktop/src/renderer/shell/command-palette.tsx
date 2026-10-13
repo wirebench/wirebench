@@ -8,6 +8,9 @@ import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { refreshLayouts, useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
 import { openLayout } from '../features/ssh/panes/open-layout.js';
+import { routeOf } from '../features/ssh/forwarding/forward-format.js';
+import { startForward, stopForward } from '../features/ssh/forwarding/forward-actions.js';
+import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useRecentConnections } from '../features/ssh/recent-connections.js';
 import type { CommandContext } from '../lib/commands.js';
 import { listCommands, runCommand } from '../lib/commands.js';
@@ -20,9 +23,11 @@ import { quickOpenEntries, quickOpenHostEntries, quickOpenLayoutEntries, splitRe
 /**
  * Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts, to
  * connect to (`hosts`), to open in another terminal tab (`new-tab-hosts`) or to open the Files tab of
- * (`files-hosts`), or only the saved terminal layouts (`layouts`).
+ * (`files-hosts`), or only the saved terminal layouts (`layouts`), or the port forwards to start (every rule that
+ * is on, `start-forward`) or to stop (every one this window runs or has failed, `stop-forward`).
  */
-export type PaletteMode = 'commands' | 'quick-open' | 'hosts' | 'new-tab-hosts' | 'files-hosts' | 'layouts';
+export type PaletteMode =
+  'commands' | 'quick-open' | 'hosts' | 'new-tab-hosts' | 'files-hosts' | 'layouts' | 'start-forward' | 'stop-forward';
 
 export interface CommandPaletteProps {
   readonly open: boolean;
@@ -114,7 +119,10 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const resolvedHosts = useHostsStore((state) => state.resolved);
   const hostEntries = useMemo(
-    () => (sshEnabled && mode !== 'commands' && mode !== 'layouts' ? quickOpenHostEntries(resolvedHosts) : []),
+    () =>
+      sshEnabled && (mode === 'quick-open' || mode === 'hosts' || mode === 'new-tab-hosts' || mode === 'files-hosts')
+        ? quickOpenHostEntries(resolvedHosts)
+        : [],
     [sshEnabled, mode, resolvedHosts],
   );
   // The saved layouts: ⌘P lists them under their own heading, and Open Layout… lists only them.
@@ -130,6 +138,35 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
         : [],
     [layoutsWanted, layouts, resolvedHosts],
   );
+  // Start port forward… lists every rule that is on as `host · rule`; Stop port forward… what this window has.
+  const forwardStates = useForwardsStore((state) => state.byKey);
+  const forwardEntries = useMemo(() => {
+    if (!sshEnabled) return [];
+    const nameOf = (hostId: string): string => resolvedHosts.find((host) => host.id === hostId)?.name ?? hostId;
+    if (mode === 'start-forward') {
+      return resolvedHosts.flatMap((host) =>
+        host.forwards
+          .filter((forward) => forward.enabled)
+          .map((forward) => ({
+            key: `${host.id}/${forward.rule.id}`,
+            hostId: host.id,
+            ruleId: forward.rule.id,
+            label: `${host.name} · ${forward.rule.id}`,
+            detail: routeOf(forward.rule),
+          })),
+      );
+    }
+    if (mode === 'stop-forward') {
+      return Object.entries(forwardStates).map(([key, state]) => ({
+        key,
+        hostId: state.hostId,
+        ruleId: state.ruleId,
+        label: `${nameOf(state.hostId)} · ${state.ruleId}`,
+        detail: `${state.status.state} on ${String(state.port)}`,
+      }));
+    }
+    return [];
+  }, [sshEnabled, mode, resolvedHosts, forwardStates]);
   // The hosts connected to lately lead, under their own heading.
   const recentConnections = useRecentConnections();
   const { recent: recentHosts, rest: otherHosts } = useMemo(
@@ -144,19 +181,24 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const filesPicker = mode === 'files-hosts';
   const newTabPicker = mode === 'new-tab-hosts';
   const layoutsPicker = mode === 'layouts';
+  const forwardPicker = mode === 'start-forward' || mode === 'stop-forward';
   const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
-  const picker = quickOpen || hostsOnly || layoutsPicker;
-  const title = layoutsPicker
-    ? 'Open layout'
-    : filesPicker
-      ? 'Open files on host'
-      : newTabPicker
-        ? 'Open host in new tab'
-        : hostsOnly
-          ? 'Connect to host'
-          : quickOpen
-            ? 'Go to operation or request'
-            : 'Command palette';
+  const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker;
+  const title = forwardPicker
+    ? mode === 'start-forward'
+      ? 'Start port forward'
+      : 'Stop port forward'
+    : layoutsPicker
+      ? 'Open layout'
+      : filesPicker
+        ? 'Open files on host'
+        : newTabPicker
+          ? 'Open host in new tab'
+          : hostsOnly
+            ? 'Connect to host'
+            : quickOpen
+              ? 'Go to operation or request'
+              : 'Command palette';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -172,13 +214,15 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             key={mode}
             loop
             label={
-              layoutsPicker
-                ? 'Layouts'
-                : hostsOnly
-                  ? 'Hosts'
-                  : quickOpen
-                    ? 'Operations, requests and hosts'
-                    : 'Commands'
+              forwardPicker
+                ? 'Port forwards'
+                : layoutsPicker
+                  ? 'Layouts'
+                  : hostsOnly
+                    ? 'Hosts'
+                    : quickOpen
+                      ? 'Operations, requests and hosts'
+                      : 'Commands'
             }
           >
             <Command.Input
@@ -189,13 +233,15 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             />
             <Command.List className="max-h-[320px] overflow-auto p-1">
               <Command.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">
-                {layoutsPicker
-                  ? 'No matching layout.'
-                  : hostsOnly
-                    ? 'No matching host.'
-                    : quickOpen
-                      ? 'No matching operation or request.'
-                      : 'No matching command.'}
+                {forwardPicker
+                  ? 'No matching forward.'
+                  : layoutsPicker
+                    ? 'No matching layout.'
+                    : hostsOnly
+                      ? 'No matching host.'
+                      : quickOpen
+                        ? 'No matching operation or request.'
+                        : 'No matching command.'}
               </Command.Empty>
               {quickOpen &&
                 entries.map((entry) => (
@@ -259,6 +305,26 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     >
                       <span className="truncate">{entry.label}</span>
                       <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
+              {forwardEntries.length > 0 && (
+                <Command.Group heading="Port forwards" className={GROUP_CLASS}>
+                  {forwardEntries.map((entry) => (
+                    <Command.Item
+                      key={entry.key}
+                      value={`${entry.label} ${entry.detail}`}
+                      data-testid="palette-forward"
+                      onSelect={() => {
+                        onOpenChange(false);
+                        if (mode === 'start-forward') void startForward(entry.hostId, entry.ruleId);
+                        else void stopForward(entry.hostId, entry.ruleId);
+                      }}
+                      className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                    >
+                      <span className="truncate">{entry.label}</span>
+                      <span className="truncate font-mono text-xs text-fg-subtle">{entry.detail}</span>
                     </Command.Item>
                   ))}
                 </Command.Group>

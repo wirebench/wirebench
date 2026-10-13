@@ -31,6 +31,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show History | <kbd>⌘⇧Y</kbd> | <kbd>Ctrl+Shift+Y</kbd> |
 | Show WS-Security | — | — |
 | Show Hosts | — | — |
+| Show Port Forwarding | — | — |
 | Show Cookies | — | — |
 | Show Settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
 | Cycle Theme (Dark, Light, System) | — | — |
@@ -64,6 +65,9 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Terminal: Focus Pane Above | <kbd>⌘⌥↑</kbd> | <kbd>Ctrl+Alt+Up</kbd> |
 | Terminal: Focus Pane Below | <kbd>⌘⌥↓</kbd> | <kbd>Ctrl+Alt+Down</kbd> |
 | Terminal: Close Pane | — | — |
+| Start Port Forward… | — | — |
+| Stop Port Forward… | — | — |
+| Stop All Port Forwards | — | — |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |

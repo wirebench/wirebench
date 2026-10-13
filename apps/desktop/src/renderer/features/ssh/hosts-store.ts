@@ -409,14 +409,16 @@ export function upsertGroup(file: HostsFileWire, group: GroupEntryWire, parentGr
       ...file,
       groups: mapGroups(file.groups, (g) => {
         if (g.id !== group.id) return g;
-        const { protected: dropped, ...rest } = g;
+        const { protected: dropped, forwards: droppedForwards, ...rest } = g;
         void dropped;
+        void droppedForwards;
         return {
           ...rest,
           name: group.name,
           tags: group.tags,
           ...(group.protected === undefined ? {} : { protected: group.protected }),
           ssh: group.ssh,
+          ...(group.forwards === undefined ? {} : { forwards: group.forwards }),
         };
       }),
     };

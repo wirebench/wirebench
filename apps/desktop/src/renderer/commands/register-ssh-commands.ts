@@ -2,6 +2,12 @@ import { catalogEntry } from '@shared/command-catalog.js';
 import { editHost, openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
 import { activeFilesPane, fileActions } from '../features/ssh/files/file-actions.js';
 import { openFiles } from '../features/ssh/files/open-files.js';
+import {
+  showForwarding,
+  startForward,
+  stopAllForwards,
+  stopForward,
+} from '../features/ssh/forwarding/forward-actions.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import {
   activeTerminal,
@@ -25,6 +31,13 @@ function onTerminalTab(): boolean {
   return activeTerminal() !== undefined;
 }
 
+/** A forward named as `hostId/ruleId`, as menus pass it; anything else asks in the palette. */
+function forwardArg(arg: unknown): { hostId: string; ruleId: string } | undefined {
+  if (typeof arg !== 'string') return undefined;
+  const [hostId, ruleId, ...rest] = arg.split('/');
+  return hostId && ruleId && rest.length === 0 ? { hostId, ruleId } : undefined;
+}
+
 /** The dialog lives in the Hosts view, so a command that opens it first makes that view visible. */
 function revealHosts(): void {
   const { sidebar, showSidebarView } = useUiStore.getState();
@@ -33,7 +46,7 @@ function revealHosts(): void {
 
 /**
  * Registers the `ssh.*` commands of the Hosts area (the host / group dialog, a host's terminal and Files tab,
- * and the panes of the terminal tab in front) and the `sftp.*` commands of the Files tab in front.
+ * the panes of the terminal tab in front, and port forwards) and the `sftp.*` commands of the Files tab in front.
  *
  * @param openPalette - Opens the command palette in the given mode; owned by the shell.
  */
@@ -110,6 +123,35 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     run: () => {
       const active = activeTerminal();
       if (active !== undefined) useLayoutsStore.getState().setSavingTabId(active.tabId);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('view.showForwarding'),
+    run: () => {
+      showForwarding();
+    },
+  });
+  // From a menu the argument names the forward as `hostId/ruleId`; from the palette it asks which one.
+  registerCommand({
+    ...catalogEntry('ssh.startForward'),
+    run: (_context, arg) => {
+      const named = forwardArg(arg);
+      if (named === undefined) openPalette('start-forward');
+      else void startForward(named.hostId, named.ruleId);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.stopForward'),
+    run: (_context, arg) => {
+      const named = forwardArg(arg);
+      if (named === undefined) openPalette('stop-forward');
+      else void stopForward(named.hostId, named.ruleId);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.stopAllForwards'),
+    run: () => {
+      void stopAllForwards();
     },
   });
   for (const [id, dir] of [
