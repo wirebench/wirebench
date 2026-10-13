@@ -10,8 +10,7 @@ export async function addPasswordHost(
   fixture: SshFixture,
   options: { readonly name: string; readonly beforeSave?: (dialog: Locator) => Promise<void> },
 ): Promise<void> {
-  await page.getByTestId('activity-hosts').click();
-  await page.getByTestId('ssh-nav-hosts').click();
+  await showSshNav(page, 'hosts');
   await page.getByRole('button', { name: 'New host' }).click();
   const dialog = page.getByTestId('host-dialog');
   await expect(dialog).toBeVisible();
@@ -30,6 +29,16 @@ export async function addPasswordHost(
   await options.beforeSave?.(dialog);
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
+}
+
+/**
+ * Opens an entry of the SSH menu (`hosts`, `snippets`, …). The activity button toggles the sidebar, so it is
+ * clicked only while the menu is not showing.
+ */
+export async function showSshNav(page: Page, entry: string): Promise<void> {
+  const item = page.getByTestId(`ssh-nav-${entry}`);
+  if (!(await item.isVisible())) await page.getByTestId('activity-hosts').click();
+  await item.click();
 }
 
 /** Accepts the first-use host key prompt, which a connect or a forward start opens for a new host. */

@@ -11,7 +11,7 @@ the command palette, or quick-open. The user, port, key and jump host are set on
 inherited by every host under it, and the credentials never leave Wirebench's main process.
 
 <Aside type="note">
-This part of the SSH area covers hosts, terminals and split terminals, files and port forwarding. See
+This part of the SSH area covers hosts, terminals and split terminals, files, port forwarding and snippets. See
 [What is not here yet](#what-is-not-here-yet) for what comes later.
 </Aside>
 
@@ -536,6 +536,185 @@ until you stop it. It reads the trusted host keys of the desktop app on this mac
 and a network bind needs `--allow-network-bind`. See the
 [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-ssh-forward).
 
+## Snippets
+
+A snippet is a command, or a short script, that your team types again and again: restart a service, follow
+a log, call a health check with a token. Keep it once in the workspace and run it in the terminal in front of
+you, or on several hosts, a group or a tag at once. A run types the script into each terminal as if you had
+typed it, so you see everything it does.
+
+### The snippets file
+
+Snippets live in `snippets.yaml`, beside `hosts.yaml`, and travel with the workspace the same way. A missing
+file means no snippets. There is no per-machine store: keep personal snippets in a personal workspace.
+
+```yaml
+version: 1
+packages:
+  - id: deploy
+    name: Deploy
+    snippets:
+      - id: restart-api
+        name: Restart API
+        tags: [deploy]
+        script: sudo systemctl restart api
+        confirm: true
+      - id: tail-log
+        name: Tail service log
+        description: Follows a unit's journal
+        tags: [logs]
+        variables:
+          - name: service
+            default: api
+          - name: lines
+            label: Lines to show
+            default: '200'
+        script: journalctl -u ${service} -n ${lines} -f
+snippets:
+  - id: call-health
+    name: Health with token
+    script: |
+      curl -s -H "Authorization: Bearer ${secret:api_token}" https://localhost/health
+      echo
+```
+
+The rules:
+
+- `version` is `1`, and keys Wirebench doesn't know are refused, as in `hosts.yaml`.
+- Snippets sit in **packages**, one level deep, or at the top level (shown as **No package**). `id`s follow
+  the host id rules and are unique across the whole file, packages and snippets together; `name` is free text.
+- A snippet has a `script` and a `name`, and optionally a `description`, `tags`, `variables`, `enter`
+  (default `true`) and `confirm` (default `false`).
+- A file that doesn't parse is shown in the Snippets view and in the Problems tab (source **snippets**); the
+  rest of the workspace still opens.
+
+### The Snippets view
+
+**Snippets** is in the SSH menu, under Hosts, with its count (**Show Snippets** in the palette). Packages are
+sections you can fold, then **No package**. The filter box (<kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>) matches name,
+description, script, tags and package, and tag chips narrow the list. Each row shows the first line of the
+script and marks a snippet that has variables, uses a secret or always confirms.
+
+- Hover a row for **Run** and **Insert** (Insert types the script without pressing <kbd>Enter</kbd>).
+  Double-click runs it.
+- Click a row to edit it in the right panel. The script editor marks declared variables, secrets and the
+  `${…}` text left to the shell in three styles. **Insert secret…** adds `${secret:NAME}` from the known
+  names, or stores a new value first. A run always types the _saved_ snippet, so **Run** with unsaved changes
+  asks to save first.
+- The row menu has Run…, Insert, Edit, Duplicate, Move to package…, Copy script and Delete. **New snippet**
+  has **New package** beside it; a package can be renamed, and deleted once it is empty.
+
+### Variables
+
+A snippet declares its variables under `variables`, each with a `name` (letters, digits and `_`, not starting
+with a digit, and not `secret`), an optional `label` for the form and an optional `default`. In the script,
+`${service}` is replaced only when `service` is declared. Every other `${…}`, `$HOME` or `$(…)` reaches the
+shell untouched, so shell variables keep working:
+
+```sh
+journalctl -u ${service} -n ${lines} -f   # declared: replaced by Wirebench
+echo "$HOME ${PATH}"                      # not declared: left to the shell
+```
+
+When the script holds a `${name}` that isn't declared, the editor offers **Declare `${name}` as a variable**.
+
+A run asks for the values, filled with the last values you used on this machine, else the defaults. Values
+are inserted as written, without quoting: the script is responsible for its own quotes. A value can't hold a
+line break or another control character, so a value can never type a second command.
+
+### Secrets in snippets
+
+`${secret:NAME}` in a script is resolved like a host's secret: from an external secret manager mapped to that
+name, else from the value stored for this workspace on this machine. A missing value stops the run with
+`secret-missing` and the name, before anything is typed.
+
+- **Typed by the app.** The value is read and typed by Wirebench's main process. The interface, the run
+  dialog's preview and every error only ever see the name, and the preview shows `••••`.
+- **Masked on screen.** From the first run that uses it, the value is replaced with `••••` in everything that
+  terminal shows, for the rest of the session: the echo of the command, a program printing it back, the
+  scrollback, find, and what a reconnect replays.
+- **Kept out of history, mostly.** A line holding a secret is typed with a leading space. bash with
+  `HISTCONTROL=ignorespace` (or `ignoreboth`) and zsh with `HIST_IGNORE_SPACE` leave such lines out of their
+  history; other shells, and those without the option, keep them. The run dialog says so.
+
+Masking has limits:
+
+- A very short value (a few characters) is masked everywhere it appears in that session, including in output
+  that has nothing to do with the secret. Wirebench can't warn you, because the interface never learns the
+  value's length.
+- A shell that redraws a long line in pieces, moving the cursor inside the value, can show parts of it.
+- A program that transforms the value (base64, hex, URL encoding) prints something that is not masked.
+
+### Running a snippet
+
+- **In the terminal in front:** a snippet without variables runs at once. A snippet with variables first
+  shows a small form for them.
+- **Run…** (the row menu, or **Run** while no terminal is in front) opens the run dialog: the variables, the
+  open terminals to tick (the one you used last is ticked), **Add host, group or tag**, the script as it will
+  be typed, and every protected host it reaches. The button says **Run on 3 hosts** when it reaches more
+  than one.
+- **Hosts, groups and tags.** A chip for a group or a tag shows the hosts it expands to when the run starts.
+  A host with a connected terminal reuses the one you used last; the others get a new terminal tab, which
+  connects with the usual host key prompt and sign-in and is typed into once the shell is quiet for a moment
+  (at most 10 seconds after connecting).
+- One message at the end says how it went, for example **Ran on 3 of 4 hosts · api-4: authentication
+  failed**. A host that fails doesn't stop the others.
+- The script you confirmed is the one typed: if another window or a pull changed the snippet meanwhile, the
+  run is refused with `snippet-changed` and nothing is typed.
+
+A multi-line script is sent as one block when the shell supports it (bracketed paste), so a line that waits
+for input, such as a `sudo` password prompt, can't swallow the lines after it. Each terminal receives the
+script once; to keep typing into several terminals, use [Broadcast input](#broadcast-input).
+
+The values you used last and the hosts you picked last are remembered per snippet on this machine. Secret
+values never are.
+
+### Confirmation, protected hosts, Enter
+
+A run asks first, in the run dialog, when it reaches two or more hosts, when it reaches a **protected** host,
+or when the snippet has `confirm: true` (**Always confirm** in the editor). A run into one unprotected
+terminal goes straight in.
+
+Mark a group or a host protected with the **Protected** switch in the host dialog, or `protected: true` in
+`hosts.yaml`. It is inherited like the `ssh` fields, so a nearer `protected: false` lifts a group's flag:
+
+```yaml
+groups:
+  - id: prod
+    name: Production
+    protected: true
+```
+
+A protected host shows a shield in the Hosts view, and the run dialog names it with where the flag comes
+from: **api-1 is protected (from Production)**.
+
+`enter: false` (**Press Enter** off in the editor) types the script and leaves it at the prompt, so you read
+it and press <kbd>Enter</kbd> yourself. **Insert** does the same for one run of any snippet.
+
+### From the keyboard
+
+- <kbd>⌘K</kbd> → **Run Snippet…** opens a list of snippets, matched on name, package, tags and first line.
+  <kbd>Enter</kbd> runs the snippet into the terminal in front (through the run dialog when it must ask),
+  or opens the run dialog when no terminal is in front.
+- Quick-open (<kbd>⌘P</kbd>) lists snippets under **Snippets**, beside operations, requests and hosts.
+- <kbd>⌘;</kbd> / <kbd>Ctrl+;</kbd> inside a terminal (**Terminal: Snippets…**) opens a picker over that
+  terminal. <kbd>Enter</kbd> runs into it, <kbd>⌥Enter</kbd> / <kbd>Alt+Enter</kbd> inserts.
+- The palette also has **Snippets: New Snippet…**, **Snippets: Edit Snippet…** and **Snippets: Run
+  Snippet**.
+
+### Suggestions while you type
+
+When what you have typed on the command line is the start of a snippet's first line (three characters or
+more, up to its first `${`), the rest of that line shows dimmed after the cursor, with the snippet's name and
+**Tab**. <kbd>Tab</kbd> completes it without pressing <kbd>Enter</kbd>: a snippet with variables asks for them
+first, a multi-line snippet is typed whole so you see all of it, and a protected host or `confirm: true` still
+asks. Any other key carries on as usual, and <kbd>Tab</kbd> goes to the shell when no suggestion shows.
+
+Wirebench follows only what you type, so a suggestion goes away and stays away until the next
+<kbd>Enter</kbd> once you move the cursor, recall history, paste or press <kbd>Tab</kbd> yourself. None shows
+in a full-screen program (an editor, a pager), in a disconnected terminal or while the pane broadcasts.
+**Preferences → Terminal → Snippets → Suggest snippets** turns them off.
+
 ## Importing from an SSH config
 
 If your hosts are already in an OpenSSH client config, bring them in rather than typing them again.
@@ -586,6 +765,38 @@ a host or group you already have. A host with the same address, port and user as
 skipped (you can import it anyway), and an id that is taken gets a suffix (`web-2`). Importing the
 same file again adds only the hosts that are new.
 
+## Session logs
+
+A session log keeps what a terminal printed, so you can look back after the tab is closed: what a
+migration reported, or what was run on a production host. Logging is off until you turn it on.
+
+**Turning it on.** In a host's details, **Session logs** has a **Log sessions** switch. On a group,
+right-click it and tick **Log sessions**: every host in the group, and in the groups inside it, is
+logged unless a nearer group or the host itself says otherwise. The details show where a host's
+setting comes from, and **Follow group** drops the host's own switch. The switches are kept on this
+machine, never in `hosts.yaml`, so a shared workspace cannot turn logging on for someone else.
+
+**What is written.** Only the output, as plain text: colours and other escape sequences are removed,
+a line a progress bar rewrote is kept as it last looked, and what a full-screen program (an editor, a
+pager, `top`) draws is replaced by one line saying it was not logged. What you type reaches a log only
+as the host echoes it, so a password typed at a prompt that does not echo is never in one. Every
+password, key and passphrase used to connect, and every secret a snippet typed, is masked as `••••`.
+**Keep raw output** in Settings › Terminal also keeps the stream as the terminal received it, with
+the same masking.
+
+**Where logs live.** In Wirebench's data folder on this machine, under `session-logs/`, one folder per
+workspace and host. Each log is a `.log` text file with a `.json` file beside it that records the
+host, address, user, start, end and exit code. All logs together stay under **Session logs size
+limit** (Settings › Terminal, 500 MB by default): past it the oldest logs are deleted first. A log a
+session is still writing is never deleted.
+
+**Reading them.** The host's details list its logs, newest first, with how the session ended and the
+size. **Search logs** finds the logs that contain some text and shows the first line that matches;
+open a log to read it, filtered to the lines that contain your text. Each log can also be revealed in
+the file manager, or deleted.
+
+Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.
+
 ## Host keys
 
 Wirebench keeps the host keys it has trusted in `ssh-known-hosts.json` in its own data folder, per
@@ -603,8 +814,8 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
 
 - A password, key or passphrase is read only in the main process, when you connect. It is handed to
   the SSH client and stays inside that client for the life of the session; Wirebench keeps no other
-  copy, and nothing stores, sends to the interface or logs a value. The interface only ever sees
-  secret _names_.
+  copy, and nothing stores, sends to the interface or logs a value; a [session log](#session-logs)
+  masks it. The interface only ever sees secret _names_.
 - `hosts.yaml` cannot hold a literal secret, and the host form cannot write one.
 - A window can only write to, resize or close sessions it opened itself, and acts only on its own
   Files sessions, copies, edits and forwards.
@@ -615,6 +826,9 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   [Access to this machine's files](#access-to-this-machines-files).
 - Host keys are trusted on first use, by an explicit click, and replaced only by a separate explicit
   confirmation.
+- A snippet's secret is read and typed by the main process, only into a script saved in `snippets.yaml` and
+  only into a terminal the same window opened; the interface never receives the value. Its output is masked
+  as described in [Secrets in snippets](#secrets-in-snippets), with the limits listed there.
 
 ## Switching the area off
 
@@ -627,18 +841,20 @@ WIREBENCH_AREAS="ssh=off"
 
 With `ssh=off`, the Hosts item disappears from the activity bar, its commands (including
 **Connect to Host…**, the **Files:** and **Terminal:** commands and the port forwarding commands),
-its quick-open entries, the Port forwarding and Layouts views and the status bar item are gone, and the area's
+its quick-open entries, the Port forwarding, Layouts and Snippets views (with **Run Snippet…** and the snippet
+suggestions) and the status bar item are gone, and the area's
 channels are not registered in the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
 
 ## What is not here yet
 
 This part does not include:
 
-- snippets (saved commands run on one or many hosts),
+- running a snippet in the background on many hosts with a table of results, or running snippets from the
+  command line or the MCP server,
 - sending requests through a host or a forward,
 - agent, X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
-- a local terminal, SSH agent forwarding to the remote, or session recording.
+- a local terminal, SSH agent forwarding to the remote, or session recording with replay.
 
 ## Related
 
