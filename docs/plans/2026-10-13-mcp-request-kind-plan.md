@@ -116,14 +116,14 @@ tests.
 
 **Files:** new `mcp/operation.ts`, `mcp/exchange.ts`, `mcp/check.ts`, tests.
 
-- [ ] Build each operation's params, and validate each result against the SDK's schema for it. A
+- [x] Build each operation's params, and validate each result against the SDK's schema for it. A
   mismatch is a warning.
-- [ ] `McpExchange` as the spec gives it. `mcpSubject(exchange)` gives the body, headers and status.
-- [ ] `checkMcpResult` (the "MCP result" check): fails on a JSON-RPC error or `isError: true`.
-- [ ] Catalogue checks:
+- [x] `McpExchange` as the spec gives it. `mcpSubject(exchange)` gives the body, headers and status.
+- [x] `checkMcpResult` (the "MCP result" check): fails on a JSON-RPC error or `isError: true`.
+- [x] Catalogue checks:
   - the arguments against `inputSchema` (warning);
   - `structuredContent` against `outputSchema` (warning), through `json/schema-validate.ts`.
-- [ ] Tests for each operation, each failure, and each warning.
+- [x] Tests for each operation, each failure, and each warning.
 
 ### Task 7: Run facet: expansion, auth, approval and send
 

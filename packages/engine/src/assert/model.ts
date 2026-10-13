@@ -178,9 +178,10 @@ export interface AssertionSubject {
 export interface AssertionResult {
   /**
    * `script` for a test a post-response script recorded (#63); `baseline` for the runner's `--baseline`
-   * (#36); `graphql` for the check a GraphQL request's response gets (#77).
+   * (#36); `graphql` for the check a GraphQL request's response gets (#77); `mcp` for the "MCP result"
+   * check of an MCP request (#79).
    */
-  readonly type: StepAssertion['type'] | 'script' | 'baseline' | 'graphql';
+  readonly type: StepAssertion['type'] | 'script' | 'baseline' | 'graphql' | 'mcp';
   readonly label: string;
   readonly outcome: 'passed' | 'failed' | 'errored';
   readonly expected?: string;
