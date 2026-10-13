@@ -108,9 +108,9 @@ tests.
 
 **Files:** new `mcp/sse-transport.ts`, a test helper using the SDK's `SSEServerTransport`, tests.
 
-- [ ] A `GET` opens the stream, and the `endpoint` event gives the POST URL. An endpoint with another
+- [x] A `GET` opens the stream, and the `endpoint` event gives the POST URL. An endpoint with another
   origin fails (`mcp-endpoint-origin`). Answers arrive on the stream. On close, the stream is aborted.
-- [ ] Tests: a round trip, a cross-origin endpoint, a stream that closes before `endpoint`.
+- [x] Tests: a round trip, a cross-origin endpoint, a stream that closes before `endpoint`.
 
 ### Task 6: Operations, the exchange and the result check
 
