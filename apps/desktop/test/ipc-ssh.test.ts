@@ -159,6 +159,7 @@ describe('ssh channels', () => {
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
       forward,
       transfers: NO_TRANSFERS,
     });
