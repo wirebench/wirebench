@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { sftpServerPath, startSshFixture, type SshFixture } from '@wirebench/ssh/test-helpers';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
+import { runCommand } from '../helpers/palette.js';
 import { createWorkspace } from '../helpers/project.js';
 
 let launched: LaunchedApp | undefined;
@@ -45,10 +46,10 @@ async function goTo(of: Locator, path: string): Promise<void> {
   await expect(input).toBeHidden();
 }
 
-/** Right-clicks `target` and picks `item` from the pane's menu. */
-async function menu(page: Page, target: Locator, item: string): Promise<void> {
-  await target.click({ button: 'right' });
-  await page.getByTestId('files-menu').getByRole('menuitem', { name: item, exact: true }).click();
+/** Clicks `target` (selecting it and making its pane the active one), then runs a Files command on it. */
+async function command(page: Page, target: Locator, name: string): Promise<void> {
+  await target.click();
+  await runCommand(page, name);
 }
 
 // The fixture's SFTP subsystem is OpenSSH's sftp-server. Linux CI must have it, so there a missing one fails
@@ -91,7 +92,7 @@ test('Files: new folder, copy both ways, rename, chmod, cancel a large copy, cro
   await expect(dialog).toBeHidden();
 
   // Open files from the host card: the Files tab's own connection asks to trust the key, as a terminal does.
-  await page.getByTestId('host-row-box').click({ button: 'right' });
+  await page.getByTestId('host-row-box').getByRole('button', { name: 'More actions for box' }).click();
   await page.getByRole('menuitem', { name: 'Open files', exact: true }).click();
   const trust = page.getByTestId('trust-dialog');
   await expect(trust).toBeVisible({ timeout: 30_000 });
@@ -108,7 +109,7 @@ test('Files: new folder, copy both ways, rename, chmod, cancel a large copy, cro
   await expect(row(local, 'a.txt')).toBeVisible();
 
   // New folder makes `New folder` and renames it in place.
-  await menu(page, remote.getByTestId('files-list'), 'New folder');
+  await command(page, row(remote, 'big.bin'), 'Files: New Folder');
   const naming = remote.getByTestId('files-rename');
   await expect(naming).toBeVisible();
   await naming.fill('up');
@@ -133,7 +134,7 @@ test('Files: new folder, copy both ways, rename, chmod, cancel a large copy, cro
   await expect(row(remote, 'a.txt')).toHaveCount(0);
 
   // Permissions… 600: the column reads rw-------.
-  await menu(page, row(remote, 'b.txt'), 'Permissions…');
+  await command(page, row(remote, 'b.txt'), 'Files: Permissions');
   const permissions = page.getByTestId('files-permissions');
   await expect(permissions).toBeVisible();
   await permissions.getByLabel('Octal mode').fill('600');
@@ -143,7 +144,7 @@ test('Files: new folder, copy both ways, rename, chmod, cancel a large copy, cro
   expect(statSync(join(remoteRoot, 'up', 'b.txt')).mode & 0o777).toBe(0o600);
 
   // Copy it back to this machine: the bytes on disk are the ones uploaded.
-  await menu(page, row(remote, 'b.txt'), 'Copy to other pane');
+  await command(page, row(remote, 'b.txt'), 'Files: Copy to Other Pane');
   await expect(transfer('b.txt')).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
   await expect(row(local, 'b.txt')).toBeVisible();
   expect(readFileSync(join(localDir, 'b.txt')).equals(bytes)).toBe(true);
@@ -151,7 +152,7 @@ test('Files: new folder, copy both ways, rename, chmod, cancel a large copy, cro
   // A large copy cancelled while it runs ends Cancelled and leaves no part file behind.
   await remote.getByRole('button', { name: 'Back' }).click();
   await expect(row(remote, 'big.bin')).toBeVisible();
-  await menu(page, row(remote, 'big.bin'), 'Copy to other pane');
+  await command(page, row(remote, 'big.bin'), 'Files: Copy to Other Pane');
   const big = transfer('big.bin');
   await expect(big).toHaveAttribute('data-state', 'running', { timeout: 30_000 });
   await big.getByRole('button', { name: 'Cancel', exact: true }).click();
