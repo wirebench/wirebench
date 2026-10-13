@@ -9,11 +9,14 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/cli/package.json packages/cli/package.json
 COPY packages/engine/package.json packages/engine/package.json
+COPY packages/ssh/package.json packages/ssh/package.json
 RUN pnpm install --frozen-lockfile --filter @wirebench/cli...
 
 COPY . .
 RUN pnpm --filter @wirebench/cli... build
 RUN pnpm deploy --filter @wirebench/cli --prod /out
+# `@wirebench/ssh` is private and a dev dependency: the image carries the CLI's own copy, as the npm package does.
+RUN node packages/cli/scripts/vendor-ssh.mjs /out
 
 FROM node:24-bookworm-slim AS runtime
 ARG VERSION

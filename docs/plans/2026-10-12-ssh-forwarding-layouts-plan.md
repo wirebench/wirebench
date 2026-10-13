@@ -473,8 +473,14 @@ modify `apps/desktop/src/renderer/features/ssh/host-dialog.tsx`,
 `packages/cli/src/ssh-known-hosts.ts`, `packages/cli/test/unit/args-ssh.test.ts`,
 `packages/cli/test/unit/ssh-forward.test.ts`, `packages/cli/test/integration/ssh-forward.test.ts`; modify
 `packages/cli/src/args.ts` (command `ssh-forward`, help topic `ssh`), `packages/cli/src/main.ts`,
-`packages/cli/package.json` (`"@wirebench/ssh": "workspace:*"`), `packages/cli/tsconfig.json` (project
-reference), the CLI reference page under `site/` (find it with `grep -rl "wirebench mock record" site`).
+`packages/cli/package.json`, `packages/cli/tsconfig.json` (project reference), the CLI reference page
+(`docs/cli.md`).
+
+**Packaging (owner's call, #460):** `@wirebench/ssh` stays private, so the published CLI cannot depend on it.
+The CLI imports it as `#ssh`: `imports` maps that to `@wirebench/ssh` (a dev dependency) in the workspace, and
+`publishConfig.imports` to `./dist/vendor/ssh/index.js`, which `packages/cli/scripts/vendor-ssh.mjs` fills from
+`packages/ssh/dist` at `prepack`. `ssh2` and `yaml` become CLI dependencies. The container image runs the same
+script on its `pnpm deploy` output, which applies neither `prepack` nor `publishConfig`.
 
 **Interfaces:**
 

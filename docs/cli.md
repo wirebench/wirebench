@@ -113,6 +113,9 @@ wirebench mock check <path> [mock…] [--json]
 wirebench mock record <path> <mock> --target <url>
                        Records a mock's stubs from live traffic: see "wirebench mock record" below.
 
+wirebench ssh forward <host> [rule…]
+                       Opens a host's port forwarding rules until stopped: see "wirebench ssh forward" below.
+
 wirebench --version | --help
 ```
 
@@ -997,6 +1000,49 @@ Ctrl-C stops the recording, adds what was kept to the mock and saves the project
 - Exit codes: 0 when the recording ran, whether or not anything was kept (with nothing kept, the project
   is not written). 2 for a usage error, an unknown mock or `--from`, or a target that is not an http or
   https URL. 3 when the recorder cannot start (`mock-port-in-use`, `mock-definition-missing`, …).
+
+## `wirebench ssh forward`
+
+```text
+wirebench ssh forward <host> [rule…] [--workspace <dir>] [--port <rule>=<n>]… [--host-key SHA256:<b64>]…
+                      [--known-hosts <file>] [--allow-network-bind] [--no-secret-sources]
+                      [--trust-secret-sources | --trust-secret-sources-hash <h>] [--json] [-q]
+```
+
+Opens a host's port forwarding rules from the workspace's `hosts.yaml` (#460): the same tunnels the app
+opens, over the same jump chain, in a terminal session or a pipeline step. It runs until `SIGINT` (Ctrl-C) or
+`SIGTERM`, then stops every rule and exits 0.
+
+```console
+$ wirebench ssh forward db-1 pg
+pg  127.0.0.1:5432 → localhost:5432 via db-1
+```
+
+- **Workspace.** The nearest `workspace.yaml` above the current folder, or `--workspace <dir>`. Its
+  `hosts.yaml` is read as the app reads it: a group's rules apply to its hosts, a nearer rule of the same id
+  replaces a farther one, and `enabled: false` switches one off.
+- **Rules.** Those named, or every rule switched on for the host when none is named. `autoStart` means
+  nothing here. `--port <rule>=<n>` listens on another port for that run; a port already in use is
+  refused, never moved.
+- **Secrets.** As `wirebench run` resolves them: `WIREBENCH_SECRET_<NAME>` for `${secret:NAME}`, then the
+  workspace's secret sources under the same trust flags. The app's own secrets are not read. An agent host
+  uses `SSH_AUTH_SOCK` (Pageant on Windows).
+- **Host keys.** Every hop's key is checked against the app's trusted keys file, `ssh-known-hosts.json` in
+  its data folder (`--known-hosts <file>` names another). The file is only read, never written. A key it
+  does not hold, or one that changed, refuses the run and prints the hop, the key type and the fingerprint;
+  `--host-key <fingerprint>` accepts that exact key, on any hop, for that one run.
+- **Network binds.** A rule listening on anything but loopback (`127.0.0.0/8`, `::1`, `localhost`) is
+  refused unless `--allow-network-bind` is given.
+- **Output.** One line per rule on stdout when it listens. When the connection drops, the listeners keep
+  their ports and the host is dialled again on the app's schedule (1, 2, 4, 8 and 16 seconds, then every 30,
+  ten attempts); each attempt is reported on stderr. `--json` prints one JSON object per status change
+  instead, `{"rule": "pg", "state": "running", "listening": {…}, "connections": 0}`. `-q` prints only errors.
+- **Exit codes.** 0 when stopped by a signal. 2 for a usage problem: no workspace, a `hosts.yaml` that does
+  not parse, an unknown host, an unknown or switched-off rule, a host with no user or authentication, a
+  network bind without the flag. 3 for a missing secret (`secret-missing`), no agent, an untrusted host
+  key (`ssh-host-key-new`, `ssh-host-key-changed`), a port in use or a bind that fails, a rule the host
+  refuses (`ssh-forward-refused`), or reconnecting that gives up (`ssh-forward-gave-up`). When one rule fails
+  to start, the others are stopped.
 
 ## Contract diff
 
