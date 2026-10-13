@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
-import { SSH_SECRET_NAME_PATTERN } from '../../../shared/ssh-defaults.js';
+import {
+  SSH_IMPORT_FORMATS,
+  SSH_IMPORT_FORMAT_INFO,
+  SSH_SECRET_NAME_PATTERN,
+  type SshImportFormat,
+} from '../../../shared/ssh-defaults.js';
 import type {
   SshImportPreview,
   SshKeyChoiceWire,
@@ -40,7 +45,18 @@ function choiceOf(draft: KeyDraft): SshKeyChoiceWire {
   return { kind: 'agent' };
 }
 
-/** The "Import from SSH config" dialog: pick the file, read the report, choose per key, import. */
+/** Where each format's file comes from, shown under the format choice. */
+const FORMAT_HELP: Readonly<Record<SshImportFormat, string>> = {
+  'ssh-config': 'Hosts from an OpenSSH client config.',
+  putty:
+    'Sessions from a registry export: run reg export HKCU\\Software\\SimonTatham\\PuTTY\\Sessions putty.reg on the Windows machine. Wirebench never reads the registry itself.',
+  securecrt: 'Sessions from an XML settings export (Tools → Export Settings). Session folders become subgroups.',
+  mobaxterm:
+    'Sessions from a .mobaconf configuration export or a .mxtsessions sessions export. Bookmark folders become subgroups.',
+  csv: 'One host per row. The first row names the columns: name, address, port, user, group, tags, key, jump; only address is required. group is a path such as Production/Web.',
+};
+
+/** The "Import hosts" dialog: pick the format and file, read the report, choose per key, import. */
 export function ImportDialog() {
   const open = useHostsStore((s) => s.importOpen);
   const setImportOpen = useHostsStore((s) => s.setImportOpen);
@@ -57,7 +73,7 @@ export function ImportDialog() {
           data-testid="ssh-import-dialog"
           className="fixed top-1/2 left-1/2 flex max-h-[85vh] w-[46rem] max-w-[95vw] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-auto rounded-md bg-surface-raised p-4 shadow-lg"
         >
-          <Dialog.Title className="text-md font-medium text-fg-default">Import from SSH config</Dialog.Title>
+          <Dialog.Title className="text-md font-medium text-fg-default">Import hosts</Dialog.Title>
           {open && <ImportBody />}
         </Dialog.Content>
       </Dialog.Portal>
@@ -67,6 +83,7 @@ export function ImportDialog() {
 
 function ImportBody() {
   const [step, setStep] = useState<Step>({ kind: 'choose' });
+  const [format, setFormat] = useState<SshImportFormat>('ssh-config');
   const [names, setNames] = useState<readonly SshSecretNameWire[]>([]);
 
   useEffect(() => {
@@ -79,7 +96,7 @@ function ImportBody() {
 
   const preview = async (source: 'user-config' | 'pick'): Promise<void> => {
     setStep({ kind: 'busy' });
-    const result = await ipc().ssh.importPreview({ source });
+    const result = await ipc().ssh.importPreview({ source, format });
     if (!result.ok) {
       setStep({ kind: 'choose', message: result.error.message });
       return;
@@ -105,25 +122,47 @@ function ImportBody() {
   return (
     <div className="flex flex-col gap-3 text-sm text-fg-default">
       <Dialog.Description className="text-fg-subtle">
-        Hosts from an OpenSSH client config are added to a new group in hosts.yaml. You see what will be imported before
-        anything is written.
+        Hosts are added to one new group in hosts.yaml. You see what will be imported before anything is written, and
+        passwords are never imported.
       </Dialog.Description>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-fg-subtle">Source</span>
+        <select
+          aria-label="Source"
+          className={`${INPUT_CLASS} w-80`}
+          value={format}
+          disabled={step.kind === 'busy'}
+          onChange={(e) => {
+            setFormat(e.target.value as SshImportFormat);
+          }}
+        >
+          {SSH_IMPORT_FORMATS.map((f) => (
+            <option key={f} value={f}>
+              {SSH_IMPORT_FORMAT_INFO[f].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-xs text-fg-subtle">{FORMAT_HELP[format]}</p>
       {step.kind === 'choose' && step.message !== undefined && (
         <p role="alert" className="rounded border border-status-danger px-2 py-1">
           {step.message}
         </p>
       )}
       <div className="flex gap-2">
+        {format === 'ssh-config' && (
+          <Button
+            variant="primary"
+            disabled={step.kind === 'busy'}
+            onClick={() => {
+              void preview('user-config');
+            }}
+          >
+            Read ~/.ssh/config
+          </Button>
+        )}
         <Button
-          variant="primary"
-          disabled={step.kind === 'busy'}
-          onClick={() => {
-            void preview('user-config');
-          }}
-        >
-          Read ~/.ssh/config
-        </Button>
-        <Button
+          variant={format === 'ssh-config' ? 'secondary' : 'primary'}
           disabled={step.kind === 'busy'}
           onClick={() => {
             void preview('pick');
@@ -167,6 +206,9 @@ function Report(props: {
     if (draft?.kind === 'existing') return `key → ${draft.existing || '?'}`;
     return `SSH agent (${key?.display ?? 'key'})`;
   };
+  const hasFolders = preview.hosts.some((h) => h.folder !== undefined);
+  const hasTags = preview.hosts.some((h) => h.tags !== undefined);
+  const hasForwards = preview.hosts.some((h) => h.forwards !== undefined);
   const statusLabel = (host: SshPlannedHostWire): string =>
     host.status === 'new'
       ? 'new'
@@ -217,12 +259,15 @@ function Report(props: {
         <thead className="text-fg-subtle">
           <tr>
             <th className="py-1">Host</th>
+            {hasFolders && <th>Folder</th>}
             <th>Id</th>
             <th>Address</th>
             <th>User</th>
             <th>Port</th>
             <th>Jump</th>
             <th>Authentication</th>
+            {hasTags && <th>Tags</th>}
+            {hasForwards && <th>Forwards</th>}
             <th>Status</th>
           </tr>
         </thead>
@@ -230,6 +275,7 @@ function Report(props: {
           {preview.hosts.map((h) => (
             <tr key={h.id} className="border-t border-hairline">
               <td className="py-1">{h.alias}</td>
+              {hasFolders && <td>{h.folder ?? '—'}</td>}
               <td className="font-mono">
                 {h.id}
                 {h.idChangedFrom !== undefined && <span className="ml-1 text-fg-subtle">(changed)</span>}
@@ -239,6 +285,8 @@ function Report(props: {
               <td>{String(h.ssh.port ?? preview.group.ssh.port ?? 22)}</td>
               <td>{h.ssh.jump ?? '—'}</td>
               <td>{h.status === 'skipped' ? '—' : authLabel(h)}</td>
+              {hasTags && <td>{h.tags?.join(', ') ?? '—'}</td>}
+              {hasForwards && <td>{h.forwards === undefined ? '—' : String(h.forwards)}</td>}
               <td>
                 {statusLabel(h)}
                 {h.status === 'duplicate' && (

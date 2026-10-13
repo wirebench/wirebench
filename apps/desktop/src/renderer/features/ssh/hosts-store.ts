@@ -94,7 +94,7 @@ interface HostsState {
   filter: string;
   selectedTags: readonly string[];
   dialog: HostsDialog;
-  /** Whether the "Import from SSH config" dialog is open. */
+  /** Whether the "Import hosts" dialog is open. */
   importOpen: boolean;
   /** The session per terminal pane id; a pane absent from the record is idle. */
   panes: Readonly<Record<string, PaneSession>>;

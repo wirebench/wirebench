@@ -121,7 +121,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'ssh.importConfig': {
     id: 'ssh.importConfig',
-    label: 'Hosts: Import from SSH Config…',
+    label: 'Hosts: Import Hosts…',
     category: 'Hosts',
   },
   'ssh.connect': {

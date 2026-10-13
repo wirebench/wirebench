@@ -52,7 +52,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: New Host… | — | — |
 | Hosts: New Group… | — | — |
 | Hosts: Edit Host… | — | — |
-| Hosts: Import from SSH Config… | — | — |
+| Hosts: Import Hosts… | — | — |
 | Connect to Host | — | — |
 | Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
 | Open Files on Host… | — | — |

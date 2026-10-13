@@ -1305,7 +1305,7 @@ void app.whenReady().then(() => {
     keys: sshKeys,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
-      pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
+      pick: (sender, options) => pickFile(sender, dialogPicks, options),
       hosts: hostsService,
       secrets: sshSecrets,
     }),

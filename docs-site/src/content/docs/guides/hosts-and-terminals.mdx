@@ -167,7 +167,7 @@ From the keyboard:
   <kbd>Enter</kbd> connects, or focuses the terminal if one for that host is already open.
 - Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests, recent ones first.
 - The palette also has **Hosts: New Host…**, **Hosts: New Group…**, **Hosts: Edit Host…** and
-  **Hosts: Import from SSH Config…**.
+  **Hosts: Import Hosts…**.
 
 The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
 pagers, resize), and a host that is reached through a jump host is dialled hop by hop.
@@ -672,11 +672,21 @@ Wirebench follows only what you type, so a suggestion goes away and stays away u
 in a full-screen program (an editor, a pager), in a disconnected terminal or while the pane broadcasts.
 **Preferences → Terminal → Snippets → Suggest snippets** turns them off.
 
-## Importing from an SSH config
+## Importing hosts
 
-If your hosts are already in an OpenSSH client config, bring them in rather than typing them again.
-Run **Hosts: Import from SSH Config…** (or **Import…** in the Hosts view), then choose **Read
-~/.ssh/config** or **Choose a file…**. Many SSH clients can write their hosts in this format.
+If your hosts are already listed somewhere, bring them in rather than typing them again. Run
+**Hosts: Import Hosts…** (or **Import hosts…** in the Hosts view), pick what to import from, then choose
+the file:
+
+- **OpenSSH config**: **Read ~/.ssh/config** or **Choose a file…**. Many SSH clients can write their
+  hosts in this format.
+- **PuTTY sessions (.reg)**, **SecureCRT sessions (.xml)**, **MobaXterm sessions (.mobaconf,
+  .mxtsessions)** and **CSV**: **Choose a file…**. See [Session lists and CSV](#session-lists-and-csv).
+
+Every source goes through the same preview, key choices and rules below. **Passwords are never
+imported** from any file, even when it holds them; the notes say how many were left behind.
+
+### From an SSH config
 
 Before anything is written, the dialog shows what the import will do: every host with its address,
 user, port, jump host and authentication, the lines that will not come across, and notes. Choose
@@ -716,10 +726,53 @@ Their values are never shown, because a config can hold credentials in unexpecte
 with no meaning here (`IdentitiesOnly`, `StrictHostKeyChecking`, `UserKnownHostsFile` and a few
 others) are counted. Known-hosts files are not imported: host keys are still trusted on first use.
 
-**Existing hosts.** Every import adds one new group, named "SSH config" by default, and never changes
-a host or group you already have. A host with the same address, port and user as an existing one is
-skipped (you can import it anyway), and an id that is taken gets a suffix (`web-2`). Importing the
-same file again adds only the hosts that are new.
+**Existing hosts.** Every import adds one new group, named after the source ("SSH config", "PuTTY",
+"CSV" and so on) by default, and never changes a host or group you already have. A host with the same
+address, port and user as an existing one is skipped (you can import it anyway), and an id that is
+taken gets a suffix (`web-2`). Importing the same file again adds only the hosts that are new.
+
+### Session lists and CSV
+
+Sessions saved in another SSH client come across as hosts. Folders in the source become subgroups
+inside the import's one new group, and only SSH sessions are read: a Telnet, serial or other session is
+listed under **Not imported**.
+
+| Source                                                                                                    | How to get the file                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PuTTY                                                                                                     | On the Windows machine: `reg export HKCU\Software\SimonTatham\PuTTY\Sessions putty.reg`. Wirebench reads only the exported file, never the registry. |
+| SecureCRT                                                                                                 | **Tools → Export Settings**, as XML.                                                                                                                |
+| MobaXterm                                                                                                 | The `.mobaconf` configuration export, or a `.mxtsessions` sessions export.                                                                          |
+| CSV                                                                                                       | Any spreadsheet saved as CSV (comma- or semicolon-separated) with the header row below.                                                             |
+
+Each session's host name, port, user and key file are carried. A jump host comes from PuTTY's SSH
+proxy, a SecureCRT session firewall or a MobaXterm SSH gateway: when it names another session (or the
+same address, port and user), the host jumps through that session; otherwise the hop becomes a new
+host. Port forwards in PuTTY and SecureCRT sessions become the host's [forwarding rules](#port-forwarding).
+A key file goes through the same key choices as above, starting at the SSH agent; a PuTTY `.ppk` key
+has to be converted to OpenSSH format first, and a path that does not exist on this computer (such as
+`C:\Users\…` on a Mac) leaves the host on the agent, with a note.
+
+**CSV columns.** The first row names the columns, in any order and case. Only `address` is required.
+
+```csv
+name,address,port,user,group,tags,key,jump
+bastion,bastion.example.com,2222,ops,Edge,"edge, prod",,
+web 1,web1.example.com,,deploy,Production/Web,prod,~/.ssh/id_ed25519,bastion
+```
+
+| Column    | Meaning                                                                         |
+| --------- | ------------------------------------------------------------------------------- |
+| `name`    | the host's name; without one, the address                                       |
+| `address` | host name or IP address                                                         |
+| `port`    | 1–65535; empty means 22                                                         |
+| `user`    | login user                                                                      |
+| `group`   | folder path inside the new group, such as `Production/Web`                      |
+| `tags`    | tags separated by commas or semicolons                                          |
+| `key`     | path to a private key file, offered in the key choices                          |
+| `jump`    | another row's name, or `user@host:port`                                         |
+
+Other columns are counted and left out; a `password` or `passphrase` column is never read into
+Wirebench.
 
 ## Host keys
 

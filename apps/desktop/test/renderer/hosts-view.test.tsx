@@ -464,7 +464,7 @@ describe('Hosts tab view', () => {
   it('New host ▾ offers a group and the SSH config import', async () => {
     render(<SshHome />);
     await userEvent.click(screen.getByRole('button', { name: 'More ways to add' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Import from SSH config/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Import hosts/ }));
     expect(useHostsStore.getState().importOpen).toBe(true);
   });
   it('Mod+F focuses the search', () => {
@@ -476,7 +476,7 @@ describe('Hosts tab view', () => {
     useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
     render(<SshHome />);
     expect(screen.getByText('Add your first host')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Import from SSH config' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Import hosts' })).toBeDefined();
   });
 });
 

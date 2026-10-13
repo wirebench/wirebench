@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SSH_MAX_PANES, SSH_OS_IDS } from './ssh-defaults.js';
+import { SSH_IMPORT_FORMATS, SSH_MAX_PANES, SSH_OS_IDS } from './ssh-defaults.js';
 
 /**
  * Wire shapes of the SSH area. A credential is its secret NAME only: never a `${secret:NAME}` token, never a
@@ -258,11 +258,15 @@ export type SshDetectedOsWire = z.infer<typeof sshDetectedOsSchema>;
 export type SshHostOsWire = z.infer<typeof sshHostOsSchema>;
 
 /**
- * Importing hosts from an OpenSSH client config. The renderer never sends a path: `user-config` is
- * `~/.ssh/config` resolved in main, `pick` runs the native picker. Key rows travel by an opaque `ref`;
- * their paths stay in main, and a key's contents never cross.
+ * Importing hosts from an OpenSSH client config or another client's session list (`format`, default
+ * `ssh-config`). The renderer never sends a path: `user-config` is `~/.ssh/config` resolved in main (an
+ * OpenSSH config only), `pick` runs the native picker. Key rows travel by an opaque `ref`; their paths stay
+ * in main, and a key's contents never cross.
  */
-export const sshImportPreviewRequestSchema = z.strictObject({ source: z.enum(['user-config', 'pick']) });
+export const sshImportPreviewRequestSchema = z.strictObject({
+  source: z.enum(['user-config', 'pick']),
+  format: z.enum(SSH_IMPORT_FORMATS).optional(),
+});
 
 export const sshPlannedAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
@@ -285,6 +289,11 @@ export const sshPlannedHostWireSchema = z.strictObject({
   reason: z.string().optional(),
   address: z.string(),
   ssh: sshPlannedSettingsWireSchema,
+  /** The source folder it lands in, as `Production / Web`; a subgroup of the import's group. */
+  folder: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  /** How many port forwards come with it. */
+  forwards: z.number().optional(),
 });
 /** No `path`: a key row is named by `ref` and shown by `display` (`~/.ssh/id_ed25519`). */
 export const sshPlannedKeyWireSchema = z.strictObject({

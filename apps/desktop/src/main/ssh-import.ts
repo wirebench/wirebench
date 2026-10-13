@@ -4,14 +4,23 @@ import { WirebenchError } from '@wirebench/engine';
 import {
   EMPTY_HOSTS_FILE,
   applySshConfigImport,
+  decodeSessionFile,
   displayPath,
   loadSshConfig,
+  parseHostsCsv,
+  parseMobaXterm,
+  parsePuttyReg,
+  parseSecureCrtXml,
   pathsFor,
+  planSessionImport,
   planSshConfigImport,
+  type SessionFormat,
+  type SessionSource,
   type SshConfigImportPlan,
   type SshConfigIo,
   type SshKeyChoice,
 } from '@wirebench/ssh';
+import { SSH_IMPORT_FORMAT_INFO, type SshImportFormat } from '../shared/ssh-defaults.js';
 import type {
   SshImportApplyRequest,
   SshImportApplyResponse,
@@ -26,6 +35,8 @@ export interface SshImportFs {
   realpath(path: string): Promise<string>;
   stat(path: string): Promise<{ isFile(): boolean; size: number }>;
   readFile(path: string): Promise<string>;
+  /** For a session list, whose encoding is read from its byte order mark. */
+  readBytes(path: string): Promise<Uint8Array>;
   glob(pattern: string): Promise<readonly string[]>;
 }
 
@@ -33,6 +44,7 @@ const nodeImportFs: SshImportFs = {
   realpath: (path) => realpath(path),
   stat: (path) => stat(path),
   readFile: (path) => readFile(path, 'utf8'),
+  readBytes: (path) => readFile(path),
   glob: async (pattern) => {
     const out: string[] = [];
     for await (const entry of glob(pattern)) out.push(entry);
@@ -40,11 +52,36 @@ const nodeImportFs: SshImportFs = {
   },
 };
 
+/** What the picker shows for a format. */
+export interface SshImportPick {
+  readonly title: string;
+  readonly filters?: readonly { readonly name: string; readonly extensions: readonly string[] }[];
+}
+
+const SESSION_PARSERS: Readonly<Record<SessionFormat, (text: string) => SessionSource>> = {
+  putty: parsePuttyReg,
+  securecrt: parseSecureCrtXml,
+  mobaxterm: parseMobaXterm,
+  csv: parseHostsCsv,
+};
+
+export function pickFor(format: SshImportFormat): SshImportPick {
+  if (format === 'ssh-config') return { title: 'Choose an SSH config file' };
+  const { label, extensions } = SSH_IMPORT_FORMAT_INFO[format];
+  return {
+    title: `Choose a file of ${label}`,
+    filters: [
+      { name: label, extensions },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  };
+}
+
 /** `S` is the caller's handle: a `WebContents` in the app, any object with an `id` in tests. */
 export interface SshImportDeps<S extends { readonly id: number }> {
   readonly home: () => string;
   /** The native open-file picker; records the pick. `undefined` when cancelled. */
-  readonly pick: (sender: S) => Promise<string | undefined>;
+  readonly pick: (sender: S, options: SshImportPick) => Promise<string | undefined>;
   /** The calling window's hosts file. */
   readonly hosts: Pick<HostsService, 'invalidate' | 'list' | 'current' | 'replace'>;
   /** The calling window's workspace-scoped secrets. */
@@ -74,6 +111,15 @@ async function readRegular(fs: SshImportFs, path: string, max: number): Promise<
   return fs.readFile(target);
 }
 
+/** `readRegular` for bytes. */
+async function readRegularBytes(fs: SshImportFs, path: string, max: number): Promise<Uint8Array> {
+  const target = await fs.realpath(path);
+  const info = await fs.stat(target);
+  if (!info.isFile()) throw refusal('ENOTFILE');
+  if (info.size > max) throw refusal('EFBIG');
+  return fs.readBytes(target);
+}
+
 const PRIVATE_KEY = /^-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----/;
 
 /** Whether a private key is encrypted: a PEM header, a PKCS#8 wrapper, or an OpenSSH key whose cipher is not `none`. */
@@ -97,8 +143,8 @@ interface Preview {
 }
 
 /**
- * Imports hosts from an OpenSSH client config (spec 2026-10-09). A preview reads the config and plans, per
- * window; an apply reads only the key files the user chose to store, stores them as workspace secrets and
+ * Imports hosts from an OpenSSH client config (spec 2026-10-09) or a session list another client exported
+ * (PuTTY, SecureCRT, MobaXterm, CSV). A preview reads the file and plans, per window; an apply reads only the key files the user chose to store, stores them as workspace secrets and
  * writes `hosts.yaml`. Paths and key text stay in main; nothing here quotes a config line or a key.
  */
 export class SshImportService<S extends { readonly id: number } = { readonly id: number }> {
@@ -113,33 +159,56 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
 
   async preview(sender: S, request: SshImportPreviewRequest): Promise<SshImportPreviewResponse> {
     const home = this.deps.home();
+    const format = request.format ?? 'ssh-config';
+    if (request.source === 'user-config' && format !== 'ssh-config') {
+      throw new WirebenchError('ssh-import-unreadable', 'Only an OpenSSH config is read from ~/.ssh/config');
+    }
     const path =
-      request.source === 'user-config' ? pathsFor(home).join(home, '.ssh', 'config') : await this.deps.pick(sender);
+      request.source === 'user-config'
+        ? pathsFor(home).join(home, '.ssh', 'config')
+        : await this.deps.pick(sender, pickFor(format));
     if (path === undefined) return { cancelled: true };
     const shown = displayPath(path, home);
-
-    const io: SshConfigIo = {
-      home,
-      readFile: (file) => readRegular(this.fs, file, CONFIG_MAX_BYTES),
-      glob: (pattern) => this.fs.glob(pattern),
-    };
-    let document;
-    try {
-      document = await loadSshConfig(path, io);
-    } catch (error) {
+    const unreadable = (error: unknown): WirebenchError => {
       const errno = errnoOf(error);
-      throw new WirebenchError('ssh-config-unreadable', `${shown} could not be read (${errno})`, {
+      return new WirebenchError('ssh-config-unreadable', `${shown} could not be read (${errno})`, {
         details: { file: shown, errno },
       });
-    }
+    };
 
     const existing = await this.currentHosts();
     const names = (await this.deps.secrets.names()).map((n) => n.name);
     let plan: SshConfigImportPlan;
-    try {
-      plan = planSshConfigImport({ document, existing, existingSecretNames: names });
-    } catch (error) {
-      throw asWirebenchError(error);
+    if (format === 'ssh-config') {
+      const io: SshConfigIo = {
+        home,
+        readFile: (file) => readRegular(this.fs, file, CONFIG_MAX_BYTES),
+        glob: (pattern) => this.fs.glob(pattern),
+      };
+      let document;
+      try {
+        document = await loadSshConfig(path, io);
+      } catch (error) {
+        throw unreadable(error);
+      }
+      try {
+        plan = planSshConfigImport({ document, existing, existingSecretNames: names });
+      } catch (error) {
+        throw asWirebenchError(error);
+      }
+    } else {
+      let text: string;
+      try {
+        text = decodeSessionFile(await readRegularBytes(this.fs, path, CONFIG_MAX_BYTES));
+      } catch (error) {
+        throw unreadable(error);
+      }
+      try {
+        const source = SESSION_PARSERS[format](text);
+        plan = planSessionImport({ source, file: shown, home, existing, existingSecretNames: names });
+      } catch (error) {
+        throw asWirebenchError(error);
+      }
     }
     this.prune();
     const id = randomUUID();
@@ -149,9 +218,15 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
       source: shown,
       // `SetEnv` values stay in main (one may hold a secret); the report notes that they are imported.
       group: { id: plan.group.id, name: plan.group.name, ssh: plan.group.ssh },
-      hosts: plan.hosts.map(({ env, ...host }) => {
+      hosts: plan.hosts.map(({ env, folder, tags, forwards, ...host }) => {
         void env;
-        return host;
+        const path = plan.folders?.find((f) => f.id === folder)?.path;
+        return {
+          ...host,
+          ...(path === undefined ? {} : { folder: path }),
+          ...(tags === undefined ? {} : { tags: [...tags] }),
+          ...(forwards === undefined ? {} : { forwards: forwards.length }),
+        };
       }),
       keys: plan.keys.map(({ ref, display, hosts, proposedSecret }) => ({
         ref,

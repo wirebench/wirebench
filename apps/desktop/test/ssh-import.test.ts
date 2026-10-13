@@ -43,6 +43,11 @@ function fakeFs(files: Record<string, Entry>): SshImportFs & { reads: string[] }
         reads.push(path);
         return get(path) as string;
       }),
+    readBytes: (path) =>
+      Promise.resolve().then(() => {
+        reads.push(path);
+        return Buffer.from(get(path) as string);
+      }),
     glob: () => Promise.resolve([]),
   };
 }
@@ -213,6 +218,71 @@ describe('SshImportService.apply', () => {
       ),
     ).rejects.toMatchObject({ code: 'ssh-key-unreadable', details: { stored: ['ka'] } });
     expect(() => readFileSync(join(dir, 'hosts.yaml'))).toThrow();
+  });
+});
+
+describe('SshImportService session lists', () => {
+  const REG = [
+    'Windows Registry Editor Version 5.00',
+    '',
+    '[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\web]',
+    '"HostName"="web.example.com"',
+    '"UserName"="deploy"',
+    '"PortForwardings"="L8080=localhost:80"',
+    '"ProxyMethod"=dword:00000002',
+    '"ProxyPassword"="MARKER-PASSWORD"',
+    '',
+  ].join('\r\n');
+  const CSV = 'name,address,group,tags,password\ndb,db.example.com,Prod/Data,"prod, db",MARKER-PASSWORD\n';
+
+  it("picks with the format's filters and refuses ~/.ssh/config for a session list", async () => {
+    const { service, pick } = setup({});
+    await service.preview(A, { source: 'pick', format: 'putty' });
+    expect(pick).toHaveBeenCalledWith(A, {
+      title: 'Choose a file of PuTTY sessions (.reg)',
+      filters: [
+        { name: 'PuTTY sessions (.reg)', extensions: ['reg'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    await expect(service.preview(A, { source: 'user-config', format: 'csv' })).rejects.toMatchObject({
+      code: 'ssh-import-unreadable',
+    });
+  });
+
+  it('reads a UTF-16 registry export and never carries a password into the preview or hosts.yaml', async () => {
+    const { service, pick, dir, fs } = setup({});
+    const bytes = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(REG, 'utf16le')]);
+    fs.readBytes = () => Promise.resolve(bytes);
+    fs.stat = () => Promise.resolve({ isFile: () => true, size: bytes.length });
+    fs.realpath = (path) => Promise.resolve(path);
+    pick.mockResolvedValueOnce('/home/u/putty.reg');
+    const preview = asPreview(await service.preview(A, { source: 'pick', format: 'putty' }));
+    expect(sshImportPreviewSchema.parse(preview)).toEqual(preview);
+    expect(preview.group.name).toBe('PuTTY');
+    expect(preview.hosts).toEqual([
+      expect.objectContaining({ id: 'web', address: 'web.example.com', ssh: { user: 'deploy' }, forwards: 1 }),
+    ]);
+    expect(preview.report.notes).toContain(
+      'Saved passwords in 1 session were not imported: passwords are never imported',
+    );
+    expect(JSON.stringify(preview)).not.toContain('MARKER-PASSWORD');
+    await service.apply(A, { ...apply(preview.previewId), groupName: 'PuTTY' });
+    const written = readFileSync(join(dir, 'hosts.yaml'), 'utf8');
+    expect(written).toContain('target: localhost:80');
+    expect(written).not.toContain('MARKER-PASSWORD');
+  });
+
+  it("shows a CSV row's folder and tags, and writes the folders as subgroups of the one new group", async () => {
+    const { service, pick, dir } = setup({ '/home/u/hosts.csv': CSV });
+    pick.mockResolvedValueOnce('/home/u/hosts.csv');
+    const preview = asPreview(await service.preview(A, { source: 'pick', format: 'csv' }));
+    expect(preview.source).toBe('~/hosts.csv');
+    expect(preview.hosts[0]).toMatchObject({ id: 'db', folder: 'Prod / Data', tags: ['prod', 'db'] });
+    await service.apply(A, { ...apply(preview.previewId), groupName: 'Spreadsheet' });
+    const written = readFileSync(join(dir, 'hosts.yaml'), 'utf8');
+    expect(written).toMatch(/name: Spreadsheet[\s\S]*name: Prod[\s\S]*name: Data[\s\S]*address: db.example.com/);
+    expect(written).not.toContain('MARKER-PASSWORD');
   });
 });
 
