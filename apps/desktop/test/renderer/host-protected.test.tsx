@@ -51,6 +51,7 @@ const RESOLVED: ResolvedHostWire[] = [
     protected: { value: true, from: { group: 'prod' } },
     ssh: defaults,
     forwards: [],
+    env: [],
   },
   {
     id: 'dev',
@@ -61,6 +62,7 @@ const RESOLVED: ResolvedHostWire[] = [
     protected: { value: false, from: 'default' },
     ssh: defaults,
     forwards: [],
+    env: [],
   },
 ];
 

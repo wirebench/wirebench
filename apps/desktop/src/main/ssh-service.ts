@@ -215,14 +215,20 @@ export class SshService {
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const hops = await this.connector.prepareHops(sender, request.hostId, stale);
+    const { hops, env, secrets } = await this.connector.prepareShell(sender, request.hostId, stale);
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
     const startLog = await this.deps.sessionLog?.(sender, { hostId: request.hostId, hops }).catch(() => undefined);
     let session: SshSession;
     try {
-      session = await (this.deps.open ?? openSession)({ hops, cols: request.cols, rows: request.rows, verifyHostKey });
+      session = await (this.deps.open ?? openSession)({
+        hops,
+        cols: request.cols,
+        rows: request.rows,
+        verifyHostKey,
+        ...(Object.keys(env).length === 0 ? {} : { env }),
+      });
     } catch (error) {
       // A refused key is forgotten with the window, as its sessions are.
       if ((error as { code?: unknown }).code === 'ssh-host-key-new' && !stale()) this.watch(sender);
@@ -235,7 +241,9 @@ export class SshService {
     const sessionId = session.id;
     // Everything the renderer sees passes the masker: the screen, scrollback, find and a reconnect replay.
     const masker = createStreamMasker();
-    // The log is written what the screen is shown, so a snippet's secret is masked in it too.
+    // A variable read from a secret is masked too, should the shell print it (`env`, `echo $TOKEN`).
+    masker.add(secrets);
+    // The log is written what the screen is shown, so a snippet's or a variable's secret is masked in it too.
     let log: SessionLogWriter | undefined;
     try {
       log = startLog?.(sessionId);

@@ -277,6 +277,23 @@ export function HostDetails() {
           ))
         )}
       </Section>
+      {host.env.length > 0 && (
+        <Section title="Environment">
+          {host.env.map((variable) => (
+            <Row key={variable.name} label={variable.name}>
+              {variable.secret === undefined ? (
+                <span className="truncate font-mono">{variable.value}</span>
+              ) : (
+                <>
+                  <span className="truncate font-mono">{variable.secret}</span>
+                  {muted(secretState(variable.secret))}
+                </>
+              )}
+              {muted(provenance(variable.from))}
+            </Row>
+          ))}
+        </Section>
+      )}
       <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
         <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
         <HostForwards hostId={host.id} />

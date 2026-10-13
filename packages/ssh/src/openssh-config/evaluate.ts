@@ -38,23 +38,27 @@ export function blockMatches(patterns: readonly string[], alias: string): boolea
   return positive;
 }
 
-/** What `ssh` would use: the first line per keyword; every `IdentityFile`, in order. */
+/** What `ssh` would use: the first line per keyword; every `IdentityFile` and `SetEnv`, in order. */
 export interface Effective {
   readonly values: ReadonlyMap<string, SshConfigLine>;
   readonly identityFiles: readonly SshConfigLine[];
+  /** Every `SetEnv`, in order: the first value of each name wins, as in `ssh`. */
+  readonly setEnv: readonly SshConfigLine[];
 }
 
 function collect(doc: SshConfigDocument, applies: (block: SshConfigBlock) => boolean): Effective {
   const values = new Map<string, SshConfigLine>();
   const identityFiles: SshConfigLine[] = [];
+  const setEnv: SshConfigLine[] = [];
   for (const block of doc.blocks) {
     if (block.kind === 'match' || !applies(block)) continue;
     for (const line of block.lines) {
       if (line.keyword === 'identityfile') identityFiles.push(line);
+      else if (line.keyword === 'setenv') setEnv.push(line);
       else if (!values.has(line.keyword)) values.set(line.keyword, line);
     }
   }
-  return { values, identityFiles };
+  return { values, identityFiles, setEnv };
 }
 
 /** The effective settings for one alias. `Match` blocks never apply. */

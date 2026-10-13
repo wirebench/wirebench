@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   Logs and switches stay on this machine. Settings › Terminal sets the size limit for all logs (500 MB
   by default; the oldest go first) and can keep the raw stream too (#414).
 
+- **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
+  and groups, merged by name down the tree so a nearer level wins for each variable; a value is
+  text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the
+  server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
+  screen. The host form edits them and shows the inherited ones with their group, the details panel
+  lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as
@@ -59,6 +65,13 @@ All notable changes to this project are documented here. The format follows
   after cursor or editing keys, history recall or a paste until the next Enter, on the alternate screen
   (an editor or pager), or while disconnected. **Settings › Terminal › Suggest snippets**
   (`terminal.snippetSuggestions`, on by default) turns it off (#454).
+- **Snippets from the palette.** ⌘K **Run Snippet…** lists the snippets, matched on name, package, tags and
+  first line; Enter runs the one picked into the terminal tab in front (through the run dialog when the run
+  must ask), or opens the run dialog when no terminal is in front. ⌘P lists them under a **Snippets**
+  heading. Inside a terminal, ⌘; (Ctrl+; on Windows and Linux) opens a snippet picker over it without the
+  shell seeing the key: Enter runs the snippet there, ⌥Enter inserts it without pressing Enter, Escape returns
+  to the shell. New commands: **Show Snippets**, **Snippets: New Snippet…**, **Snippets: Edit Snippet…**,
+  **Snippets: Run Snippet** and **Terminal: Snippets…** (#453).
 - **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
   keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
   or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,

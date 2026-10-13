@@ -82,7 +82,14 @@ export function applySshConfigImport(
     .filter(
       (h) => h.status === 'new' || h.status === 'created-for-jump' || (h.status === 'duplicate' && wanted.has(h.id)),
     )
-    .map((h) => ({ id: h.id, name: h.alias, address: h.address, tags: [], ssh: settings(h.ssh, false) }));
+    .map((h) => ({
+      id: h.id,
+      name: h.alias,
+      address: h.address,
+      tags: [],
+      ssh: settings(h.ssh, false),
+      ...(h.env === undefined ? {} : { env: { ...h.env } }),
+    }));
 
   const taken = new Set(walk(existing).map((i) => i.entry.id));
   const clash = [plan.group.id, ...hosts.map((h) => h.id)].find((id) => taken.has(id));
@@ -100,6 +107,7 @@ export function applySshConfigImport(
     name,
     tags: [],
     ssh: settings(plan.group.ssh, true),
+    ...(plan.group.env === undefined ? {} : { env: { ...plan.group.env } }),
     groups: [],
     hosts,
   };

@@ -17,6 +17,7 @@ const CHORD_KEY_NAMES: Readonly<Record<string, string>> = {
   arrowdown: 'Down',
   ' ': 'Space',
   ',': 'Comma',
+  ';': 'Semicolon',
   '.': 'Period',
   '/': 'Slash',
   '\\': 'Backslash',

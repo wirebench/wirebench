@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { WebContents } from 'electron';
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
-import { checkKnownHost, jumpChain, parseKnownHosts, secretNameOf } from '@wirebench/ssh';
+import { checkKnownHost, envSecretName, jumpChain, parseKnownHosts, secretNameOf } from '@wirebench/ssh';
 import type { DialOptions, HopCredentials, HostsFile, KnownHostEntry, ResolvedHost } from '@wirebench/ssh';
 import { asWirebenchError } from './hosts-service.js';
 import type { HostsService } from './hosts-service.js';
@@ -105,6 +105,15 @@ export interface SshConnector {
    */
   prepareHops(sender: WebContents, hostId: string, abandoned?: () => boolean): Promise<HopCredentials[]>;
   /**
+   * {@link prepareHops}, plus the target's environment variables with their secrets read (same getter, same
+   * order: credentials first). `secrets` lists the values that came from secrets, for the terminal's masker.
+   */
+  prepareShell(
+    sender: WebContents,
+    hostId: string,
+    abandoned?: () => boolean,
+  ): Promise<{ hops: HopCredentials[]; env: Record<string, string>; secrets: string[] }>;
+  /**
    * Checks the machine's known hosts (read now, once per connect) and records a refusal that sender may
    * then trust.
    *
@@ -186,20 +195,22 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
   };
 
   /** In order, so the first missing secret is the one named; an agent without a socket fails here too. */
+  const secretValue = async (token: string, getSecret: GetSecret): Promise<string> => {
+    const name = secretNameOf(token);
+    const ref = secretPseudoRef(name);
+    const found = await getSecret(ref);
+    if (found === undefined) {
+      throw new WirebenchError(
+        'secret-missing',
+        `The secret "${name}" is not on this machine — set it from the host's form (Hosts).`,
+        { details: { ref, name } },
+      );
+    }
+    return found;
+  };
+
   const credentialsFor = async (chain: readonly ResolvedHost[], getSecret: GetSecret): Promise<HopCredentials[]> => {
-    const value = async (token: string): Promise<string> => {
-      const name = secretNameOf(token);
-      const ref = secretPseudoRef(name);
-      const found = await getSecret(ref);
-      if (found === undefined) {
-        throw new WirebenchError(
-          'secret-missing',
-          `The secret "${name}" is not on this machine — set it from the host's form (Hosts).`,
-          { details: { ref, name } },
-        );
-      }
-      return found;
-    };
+    const value = (token: string): Promise<string> => secretValue(token, getSecret);
     const hops: HopCredentials[] = [];
     for (const hop of chain) {
       const auth = hop.ssh.auth.value;
@@ -227,13 +238,40 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     return hops;
   };
 
+  /** Only the target's: a jump host's shell is never opened. */
+  const envFor = async (
+    target: ResolvedHost,
+    getSecret: GetSecret,
+  ): Promise<{ env: Record<string, string>; secrets: string[] }> => {
+    const env: Record<string, string> = {};
+    const secrets: string[] = [];
+    for (const variable of target.env) {
+      if (envSecretName(variable.value) === undefined) env[variable.name] = variable.value;
+      else {
+        const found = await secretValue(variable.value, getSecret);
+        env[variable.name] = found;
+        secrets.push(found);
+      }
+    }
+    return { env, secrets };
+  };
+
+  const prepare = async (sender: WebContents, hostId: string, abandoned: () => boolean) => {
+    // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
+    const getSecret = deps.secretsFor(sender);
+    const chain = await chainFor(sender, hostId);
+    if (abandoned()) throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
+    return { chain, getSecret, hops: await credentialsFor(chain, getSecret) };
+  };
+
   return {
     async prepareHops(sender, hostId, abandoned = () => false) {
-      // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
-      const getSecret = deps.secretsFor(sender);
-      const chain = await chainFor(sender, hostId);
-      if (abandoned()) throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-      return credentialsFor(chain, getSecret);
+      return (await prepare(sender, hostId, abandoned)).hops;
+    },
+
+    async prepareShell(sender, hostId, abandoned = () => false) {
+      const { chain, getSecret, hops } = await prepare(sender, hostId, abandoned);
+      return { hops, ...(await envFor(chain[chain.length - 1] as ResolvedHost, getSecret)) };
     },
 
     async verifierFor(sender) {

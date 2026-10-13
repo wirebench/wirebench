@@ -1282,4 +1282,23 @@ describe('snippet suggestions', () => {
     typeIn(term, 'jou');
     expect(ghost()).not.toBeNull();
   });
+
+  it('⌘; opens the snippet picker over the terminal, the shell never sees it, and Escape gives the focus back', async () => {
+    const term = await mount();
+    resetCommands();
+    registerSshCommands(vi.fn());
+    // jsdom's user agent is not a Mac's, so ⌘; here is Ctrl+;.
+    const chord = new KeyboardEvent('keydown', { key: ';', ctrlKey: true, cancelable: true });
+    expect(term.keyHandler?.(chord)).toBe(false);
+    expect(term.keyHandler?.(new KeyboardEvent('keydown', { key: ';' }))).toBe(true);
+    await act(async () => {
+      await runCommand('ssh.snippetPicker', {} as never);
+    });
+    const input = screen.getByTestId('snippet-picker-input');
+    expect(screen.getByTestId('ssh-pane').contains(input)).toBe(true);
+    const before = term.focused;
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByTestId('snippet-picker-input')).toBeNull();
+    expect(term.focused).toBeGreaterThan(before);
+  });
 });

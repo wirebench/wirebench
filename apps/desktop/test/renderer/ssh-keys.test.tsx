@@ -61,6 +61,7 @@ const RESOLVED = [
     protected: { value: false, from: 'default' as const },
     ssh: defaults,
     forwards: [],
+    env: [],
   },
 ];
 const KEY = {
