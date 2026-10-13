@@ -13,7 +13,7 @@ import {
   type ScheduleRun,
 } from '@wirebench/engine';
 import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify';
-import type { Database, LicenseService, ServerHooks } from '../context.js';
+import { auditSource, recordAudit, type Database, type LicenseService, type ServerHooks } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
@@ -138,6 +138,22 @@ export const scheduleRoutes =
               createdBy: request.caller!.id,
               at: env.now(),
             });
+            await recordAudit(env.hooks, tx, {
+              ...auditSource(request),
+              action: 'schedule.created',
+              target: { kind: 'schedule', id },
+              workspaceId,
+              details: {
+                name: input.name,
+                cron,
+                timeZone: input.timeZone,
+                project: input.target.project,
+                environment: input.target.environment ?? null,
+                enabled: input.enabled,
+                allowProtected: input.options.allowProtected,
+                insecureTls: input.options.insecureTls,
+              },
+            });
           });
         } catch (error) {
           throw nameTaken(error, input.name);
@@ -194,17 +210,33 @@ export const scheduleRoutes =
                 : row.nextRunAt === null
                   ? null
                   : new Date(row.nextRunAt);
+            const options = update.options ?? row.options;
             await repo.updateSchedule(tx, {
               id: row.id,
               name: update.name ?? row.name,
               cron,
               timeZone,
               target: update.target ?? row.target,
-              options: update.options ?? row.options,
+              options,
               alerts,
               enabled,
               nextRunAt,
               at: env.now(),
+            });
+            // The switches that widen what a run may do are named whenever they change.
+            const switched = {
+              ...(enabled !== row.enabled ? { enabled } : {}),
+              ...(options.allowProtected !== row.options.allowProtected
+                ? { allowProtected: options.allowProtected }
+                : {}),
+              ...(options.insecureTls !== row.options.insecureTls ? { insecureTls: options.insecureTls } : {}),
+            };
+            await recordAudit(env.hooks, tx, {
+              ...auditSource(request),
+              action: 'schedule.updated',
+              target: { kind: 'schedule', id: row.id },
+              workspaceId,
+              details: { name: update.name ?? row.name, fields: Object.keys(update).sort(), ...switched },
             });
           });
         } catch (error) {
@@ -219,9 +251,19 @@ export const scheduleRoutes =
       '/workspaces/:workspaceId/schedules/:scheduleId',
       { preHandler: writer, schema: { params: scheduleParams } },
       async (request, reply) => {
+        const { workspaceId } = request.workspaceAccess!;
         const { scheduleId } = request.params as { readonly scheduleId: string };
-        const name = await repo.deleteSchedule(db, request.workspaceAccess!.workspaceId, scheduleId);
-        if (name === undefined) throw scheduleNotFound();
+        await db.transaction(async (tx) => {
+          const name = await repo.deleteSchedule(tx, workspaceId, scheduleId);
+          if (name === undefined) throw scheduleNotFound();
+          await recordAudit(env.hooks, tx, {
+            ...auditSource(request),
+            action: 'schedule.deleted',
+            target: { kind: 'schedule', id: scheduleId },
+            workspaceId,
+            details: { name },
+          });
+        });
         return reply.code(204).send();
       },
     );
@@ -245,6 +287,14 @@ export const scheduleRoutes =
           if (row === undefined) throw scheduleNotFound();
           const merged = mergeSecrets(env.settings, row.secrets, input);
           await repo.setScheduleSecrets(tx, row.id, merged.secrets, env.now());
+          // Names only: a value never reaches the audit log.
+          await recordAudit(env.hooks, tx, {
+            ...auditSource(request),
+            action: 'schedule.secrets_set',
+            target: { kind: 'schedule', id: row.id },
+            workspaceId,
+            details: { name: row.name, added: merged.added, changed: merged.changed, removed: merged.removed },
+          });
         });
         const row = await repo.scheduleById(db, workspaceId, scheduleId);
         return viewOf(row!);
