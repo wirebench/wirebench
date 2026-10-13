@@ -57,6 +57,12 @@ const NO_FORWARD = {
   freePort: vi.fn(),
   hostsChanged: vi.fn(() => Promise.resolve()),
 };
+const NO_SESSION_LOGS = {
+  logs: { list: vi.fn(), read: vi.fn(), search: vi.fn(), remove: vi.fn(), pathOf: vi.fn() },
+  switches: { all: vi.fn(), set: vi.fn() },
+  workspaceOf: (): string | undefined => undefined,
+  reveal: vi.fn(),
+};
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
 const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn() };
 const NO_SFTP = {
@@ -90,6 +96,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -120,6 +127,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -140,6 +148,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -170,6 +179,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -197,6 +207,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -218,6 +229,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -244,6 +256,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -264,6 +277,7 @@ describe('ssh channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -299,6 +313,7 @@ describe('ssh channels', () => {
         snippets: NO_SNIPPETS,
         layouts: NO_LAYOUTS,
         forward: NO_FORWARD,
+        sessionLogs: NO_SESSION_LOGS,
         transfers: NO_TRANSFERS,
         edits: NO_EDITS,
       });
@@ -374,6 +389,7 @@ describe('known hosts channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -398,6 +414,7 @@ describe('known hosts channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -428,6 +445,7 @@ describe('host OS channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -451,6 +469,7 @@ describe('host OS channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -475,6 +494,7 @@ describe('ssh snippet run channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -507,6 +527,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -534,6 +555,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -590,6 +612,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -628,6 +651,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     const window = { id: 4 };
     const copy = {
@@ -667,6 +691,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     const window = { id: 4 };
     const request = { sessionId: 's1', path: '/etc/app.conf', confirmedLarge: true };
@@ -701,6 +726,7 @@ describe('ssh key channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -744,6 +770,7 @@ describe('snippet channels', () => {
       snippets,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
     await invoke('ssh.saveSnippets', { file: EMPTY_SNIPPETS.file });
@@ -765,6 +792,7 @@ describe('snippet channels', () => {
       snippets: new SnippetsService({ treeDir: () => dir }),
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };
     const refused = (await invoke('ssh.saveSnippets', {
@@ -777,5 +805,59 @@ describe('snippet channels', () => {
     };
     expect(stray.ok).toBe(false);
     expect(stray.error.code).not.toBe('snippets-invalid');
+  });
+});
+
+describe('session log channels', () => {
+  const window = { id: 9 };
+  function register(sessionLogs: Parameters<typeof registerSshChannels>[0]['sessionLogs']) {
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
+      sessionLogs,
+      transfers: NO_TRANSFERS,
+      edits: NO_EDITS,
+    });
+  }
+
+  it('act on the calling window’s workspace, and refuse when none is open', async () => {
+    const logs = { ...NO_SESSION_LOGS.logs, list: vi.fn().mockResolvedValue([]) };
+    const switches = {
+      all: vi.fn().mockResolvedValue({ 'host:web': true }),
+      set: vi.fn().mockResolvedValue(undefined),
+    };
+    const workspaceOf = vi.fn((sender: { id: number }) => (sender.id === 9 ? 'ws-1' : undefined));
+    register({ ...NO_SESSION_LOGS, logs, switches, workspaceOf });
+    expect(await invokeAs(window, 'sessionLog.switches', {})).toEqual({
+      ok: true,
+      value: { switches: { 'host:web': true } },
+    });
+    await invokeAs(window, 'sessionLog.setSwitch', { target: { kind: 'group', id: 'prod' }, on: null });
+    expect(switches.set).toHaveBeenCalledWith('ws-1', { kind: 'group', id: 'prod' }, null);
+    await invokeAs(window, 'sessionLog.list', { hostId: 'web' });
+    expect(logs.list).toHaveBeenCalledWith('ws-1', 'web');
+    expect(await invokeAs({ id: 3 }, 'sessionLog.list', { hostId: 'web' })).toMatchObject({
+      ok: false,
+      error: { code: 'workspace-not-open' },
+    });
+  });
+
+  it('reveal the file main found for the log, never a path the renderer names', async () => {
+    const logs = { ...NO_SESSION_LOGS.logs, pathOf: vi.fn().mockResolvedValue('/data/session-logs/ws-1/web/x.log') };
+    const reveal = vi.fn();
+    register({ ...NO_SESSION_LOGS, logs, reveal, workspaceOf: () => 'ws-1' });
+    await invokeAs(window, 'sessionLog.reveal', { hostId: 'web', id: '20261013T183000Z-aaaaaaaa' });
+    expect(logs.pathOf).toHaveBeenCalledWith('ws-1', 'web', '20261013T183000Z-aaaaaaaa');
+    expect(reveal).toHaveBeenCalledWith('/data/session-logs/ws-1/web/x.log');
+    expect(await invokeAs(window, 'sessionLog.reveal', { hostId: 'web', id: 'x', path: '/etc' })).toMatchObject({
+      ok: false,
+    });
   });
 });

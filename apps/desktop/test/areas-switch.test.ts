@@ -82,10 +82,30 @@ describe('area channels', () => {
         .sort(),
     ).toEqual(['forward.freePort', 'forward.list', 'forward.start', 'forward.stop', 'forward.stopAll']);
   });
-  it('with ssh=off no ssh.*, sftp.*, forward.* or layout.* channel exists', () => {
+  it('the SSH area registers its sessionLog.* channels', () => {
+    expect(
+      channelsFor('')
+        .filter((n) => n.startsWith('sessionLog.'))
+        .sort(),
+    ).toEqual([
+      'sessionLog.delete',
+      'sessionLog.list',
+      'sessionLog.read',
+      'sessionLog.reveal',
+      'sessionLog.search',
+      'sessionLog.setSwitch',
+      'sessionLog.switches',
+    ]);
+  });
+  it('with ssh=off no ssh.*, sftp.*, forward.*, layout.* or sessionLog.* channel exists', () => {
     expect(
       channelsFor('ssh=off').filter(
-        (n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('forward.') || n.startsWith('layout.'),
+        (n) =>
+          n.startsWith('ssh.') ||
+          n.startsWith('sftp.') ||
+          n.startsWith('forward.') ||
+          n.startsWith('layout.') ||
+          n.startsWith('sessionLog.'),
       ),
     ).toEqual([]);
   });

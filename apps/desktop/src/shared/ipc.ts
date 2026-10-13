@@ -40,6 +40,16 @@ import {
   forwardStopRequestSchema,
 } from './forward-wire.js';
 import {
+  sessionLogHostRequestSchema,
+  sessionLogListResponseSchema,
+  sessionLogReadResponseSchema,
+  sessionLogRequestSchema,
+  sessionLogSearchRequestSchema,
+  sessionLogSearchResponseSchema,
+  sessionLogSetSwitchRequestSchema,
+  sessionLogSwitchesResponseSchema,
+} from './session-log-wire.js';
+import {
   sshListSnippetsResponseSchema,
   sshPreviewSnippetRequestSchema,
   sshPreviewSnippetResponseSchema,
@@ -1044,6 +1054,16 @@ export const channels = {
     stop: defineChannel('forward.stop', forwardStopRequestSchema, z.object({})),
     stopAll: defineChannel('forward.stopAll', forwardStopAllRequestSchema, z.object({})),
     freePort: defineChannel('forward.freePort', forwardFreePortRequestSchema, forwardFreePortResponseSchema),
+  },
+  // Session logs (#414). Registered only while the SSH area is on; each acts on the calling window's workspace.
+  sessionLog: {
+    switches: defineChannel('sessionLog.switches', z.object({}), sessionLogSwitchesResponseSchema),
+    setSwitch: defineChannel('sessionLog.setSwitch', sessionLogSetSwitchRequestSchema, z.object({})),
+    list: defineChannel('sessionLog.list', sessionLogHostRequestSchema, sessionLogListResponseSchema),
+    read: defineChannel('sessionLog.read', sessionLogRequestSchema, sessionLogReadResponseSchema),
+    search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
+    delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),
+    reveal: defineChannel('sessionLog.reveal', sessionLogRequestSchema, z.object({})),
   },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,

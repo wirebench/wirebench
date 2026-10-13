@@ -722,6 +722,38 @@ a host or group you already have. A host with the same address, port and user as
 skipped (you can import it anyway), and an id that is taken gets a suffix (`web-2`). Importing the
 same file again adds only the hosts that are new.
 
+## Session logs
+
+A session log keeps what a terminal printed, so you can look back after the tab is closed: what a
+migration reported, or what was run on a production host. Logging is off until you turn it on.
+
+**Turning it on.** In a host's details, **Session logs** has a **Log sessions** switch. On a group,
+right-click it and tick **Log sessions**: every host in the group, and in the groups inside it, is
+logged unless a nearer group or the host itself says otherwise. The details show where a host's
+setting comes from, and **Follow group** drops the host's own switch. The switches are kept on this
+machine, never in `hosts.yaml`, so a shared workspace cannot turn logging on for someone else.
+
+**What is written.** Only the output, as plain text: colours and other escape sequences are removed,
+a line a progress bar rewrote is kept as it last looked, and what a full-screen program (an editor, a
+pager, `top`) draws is replaced by one line saying it was not logged. What you type reaches a log only
+as the host echoes it, so a password typed at a prompt that does not echo is never in one. Every
+password, key and passphrase used to connect, and every secret a snippet typed, is masked as `••••`.
+**Keep raw output** in Settings › Terminal also keeps the stream as the terminal received it, with
+the same masking.
+
+**Where logs live.** In Wirebench's data folder on this machine, under `session-logs/`, one folder per
+workspace and host. Each log is a `.log` text file with a `.json` file beside it that records the
+host, address, user, start, end and exit code. All logs together stay under **Session logs size
+limit** (Settings › Terminal, 500 MB by default): past it the oldest logs are deleted first. A log a
+session is still writing is never deleted.
+
+**Reading them.** The host's details list its logs, newest first, with how the session ended and the
+size. **Search logs** finds the logs that contain some text and shows the first line that matches;
+open a log to read it, filtered to the lines that contain your text. Each log can also be revealed in
+the file manager, or deleted.
+
+Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.
+
 ## Host keys
 
 Wirebench keeps the host keys it has trusted in `ssh-known-hosts.json` in its own data folder, per
@@ -762,8 +794,8 @@ The preview shows:
 
 - A password, key or passphrase is read only in the main process, when you connect. It is handed to
   the SSH client and stays inside that client for the life of the session; Wirebench keeps no other
-  copy, and nothing stores, sends to the interface or logs a value. The interface only ever sees
-  secret _names_.
+  copy, and nothing stores, sends to the interface or logs a value; a [session log](#session-logs)
+  masks it. The interface only ever sees secret _names_.
 - `hosts.yaml` cannot hold a literal secret, and the host form cannot write one.
 - A window can only write to, resize or close sessions it opened itself, and acts only on its own
   Files sessions, copies, edits and forwards.
@@ -802,7 +834,7 @@ This part does not include:
 - sending requests through a host or a forward,
 - agent, X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
-- a local terminal, SSH agent forwarding to the remote, or session recording.
+- a local terminal, SSH agent forwarding to the remote, or session recording with replay.
 
 ## Related
 

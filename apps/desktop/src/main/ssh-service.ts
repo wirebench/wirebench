@@ -15,7 +15,14 @@ import {
   snippetRevision,
   snippetSecrets,
 } from '@wirebench/ssh';
-import type { KnownHostEntry, Snippet, SnippetListItem, SshSession, StreamMasker } from '@wirebench/ssh';
+import type {
+  HopCredentials,
+  KnownHostEntry,
+  Snippet,
+  SnippetListItem,
+  SshSession,
+  StreamMasker,
+} from '@wirebench/ssh';
 import { events } from '../shared/ipc.js';
 import type {
   SshPreviewSnippetRequest,
@@ -37,6 +44,7 @@ import type {
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
 import { asWirebenchError } from './hosts-service.js';
+import type { SessionLogWriter, StartSessionLog } from './session-logs.js';
 import type { SnippetsService } from './snippets-service.js';
 import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
 import type { SshConnectDeps, SshConnector } from './ssh-connect.js';
@@ -63,6 +71,15 @@ export interface SshServiceDeps extends SshConnectDeps {
    * port forwards start with a host's first terminal and stop with its last (spec R2).
    */
   readonly onSessionsChange?: (sender: WebContents, hostId: string, open: number) => void;
+  /**
+   * Session logs (#414): asked once per connect, before the session opens, with the hops and their
+   * credentials; answers how to start the log, or `undefined` when the host is not logged. A failure here
+   * opens the session unlogged.
+   */
+  readonly sessionLog?: (
+    sender: WebContents,
+    request: { readonly hostId: string; readonly hops: readonly HopCredentials[] },
+  ) => Promise<StartSessionLog | undefined>;
 }
 
 /** The command the OS probe runs: `os-release` on Linux, `uname -s` on the BSDs and macOS, `ver` on Windows. */
@@ -202,6 +219,7 @@ export class SshService {
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
+    const startLog = await this.deps.sessionLog?.(sender, { hostId: request.hostId, hops }).catch(() => undefined);
     let session: SshSession;
     try {
       session = await (this.deps.open ?? openSession)({
@@ -225,9 +243,17 @@ export class SshService {
     const masker = createStreamMasker();
     // A variable read from a secret is masked too, should the shell print it (`env`, `echo $TOKEN`).
     masker.add(secrets);
+    // The log is written what the screen is shown, so a snippet's or a variable's secret is masked in it too.
+    let log: SessionLogWriter | undefined;
+    try {
+      log = startLog?.(sessionId);
+    } catch {
+      log = undefined;
+    }
     let quiet: ReturnType<typeof setTimeout> | undefined;
     const send = (data: Uint8Array): void => {
       if (data.length === 0) return;
+      log?.push(data);
       this.deps.emit(sender, events.ssh.data, { sessionId, data: Buffer.from(data).toString('base64') });
     };
     const release = (): void => {
@@ -243,6 +269,8 @@ export class SshService {
     });
     const offExit = session.onExit((exit) => {
       release();
+      void log?.end({ code: exit.code, reason: exit.reason, ...(exit.signal ? { signal: exit.signal } : {}) });
+      log = undefined;
       this.deps.emit(sender, events.ssh.exit, {
         sessionId,
         code: exit.code,
@@ -260,6 +288,11 @@ export class SshService {
         clearTimeout(quiet);
         offData();
         offExit();
+        // Closed by the window (or its going): the screen is gone, but what the masker held belongs in the log.
+        if (log) {
+          log.push(masker.flush());
+          void log.end(undefined);
+        }
       },
     });
     this.watch(sender);
