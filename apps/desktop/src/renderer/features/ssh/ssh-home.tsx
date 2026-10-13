@@ -37,6 +37,8 @@ import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
 import { RecentSection } from './recent-section.js';
 import {
+  AttachCertificateDialog,
+  CertificateSummary,
   CopyPublicKeyButton,
   GenerateKeyDialog,
   InstallKeyDialog,
@@ -341,13 +343,16 @@ function HostsPanel() {
   );
 }
 
-/** The names of the hosts that sign in with secret `name`: as their password, key or key passphrase. */
+/** The names of the hosts that sign in with secret `name`: as their password, key, key passphrase or certificate. */
 function usersOf(name: string, hosts: readonly ResolvedHostWire[]): string[] {
   return hosts
     .filter((host) => {
       const auth = host.ssh.auth.value;
       if (auth === undefined || auth.kind === 'agent') return false;
-      return auth.secret === name || (auth.kind === 'key' && auth.passphraseSecret === name);
+      return (
+        auth.secret === name ||
+        (auth.kind === 'key' && (auth.passphraseSecret === name || auth.certificateSecret === name))
+      );
     })
     .map((host) => host.name);
 }
@@ -366,6 +371,7 @@ function KeychainPanel() {
   // The value is write-only: it goes to main and never comes back.
   const [form, setForm] = useState<SecretForm>();
   const [generating, setGenerating] = useState(false);
+  const [attaching, setAttaching] = useState<string>();
   // Bumped with every listing, so a key stored from the form is recognised as one too.
   const [listing, setListing] = useState(0);
   const keys = useSshKeys(listing);
@@ -486,6 +492,10 @@ function KeychainPanel() {
                       {keyTypeLabel(key.keyType)} · {key.fingerprint}
                     </span>
                   )}
+                  {key?.certificate !== undefined && <CertificateSummary certificate={key.certificate} />}
+                  {key?.certificateError !== undefined && (
+                    <span className="truncate text-xs text-status-danger">{key.certificateError}</span>
+                  )}
                   <span className="truncate text-xs text-fg-subtle">
                     {users.length === 0 ? 'Not used by any host' : `Used by ${users.join(', ')}`}
                   </span>
@@ -523,6 +533,13 @@ function KeychainPanel() {
                     >
                       Install on host…
                     </Button>
+                    <Button
+                      onClick={() => {
+                        setAttaching(secret.name);
+                      }}
+                    >
+                      {key.certificate === undefined ? 'Attach certificate…' : 'Replace certificate…'}
+                    </Button>
                   </>
                 )}
                 <Button
@@ -536,6 +553,18 @@ function KeychainPanel() {
             );
           })}
         </ul>
+      )}
+      {attaching !== undefined && (
+        <AttachCertificateDialog
+          secret={attaching}
+          onClose={() => {
+            setAttaching(undefined);
+          }}
+          onAttached={() => {
+            setAttaching(undefined);
+            void load();
+          }}
+        />
       )}
       <GenerateKeyDialog
         open={generating}

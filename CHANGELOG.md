@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **SSH certificates.** A key sign-in in `hosts.yaml` can carry its OpenSSH user certificate:
+  `auth: { key, certificate, passphrase? }`, the certificate being a `${secret:NAME}`, inherited with
+  the rest of `auth`. On connect the certificate is offered first, then the key alone; an expired or
+  not-yet-valid certificate fails before connecting with `ssh-cert-expired` and its validity window.
+  The keychain gains **Attach certificate…** on a key, stores it as `<key>_cert`, and shows its key ID,
+  principals and validity, with a badge when it has expired or belongs to another key. The host form
+  picks up a key's certificate with the key, `wirebench ssh forward` signs in with it too, and importing
+  an SSH config maps `CertificateFile` (#421).
 - **Import trusted keys from known_hosts.** The Known hosts view (and **Hosts: Import Known Hosts…**)
   reads `~/.ssh/known_hosts` or a chosen file and trusts its keys for the hosts in `hosts.yaml` they
   name: plain and `[host]:port` names, comma lists, wildcard patterns with `!` negation, and hashed

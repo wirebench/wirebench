@@ -240,6 +240,7 @@
     "snapshot.remove",
     "snapshot.setIgnore",
     "snapshot.write",
+    "ssh.attachCertificate",
     "ssh.close",
     "ssh.connect",
     "ssh.forgetHostKey",

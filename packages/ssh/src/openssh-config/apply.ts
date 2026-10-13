@@ -26,6 +26,8 @@ export interface SshConfigImportChoices {
   readonly keys: Readonly<Record<string, SshKeyChoice>>;
   /** Refs of stored keys found to be encrypted: their hosts get a `<secret>_passphrase` reference. */
   readonly encrypted?: readonly string[];
+  /** Refs whose `CertificateFile` was stored as `<secret>_cert`: their hosts get a `certificate` reference. */
+  readonly certified?: readonly string[];
 }
 
 function token(name: string): string {
@@ -52,16 +54,21 @@ export function applySshConfigImport(
     if (!refs.has(ref)) throw new SshModelError('ssh-hosts-invalid', `No key row "${ref}" in this import`);
   }
   const encrypted = new Set(choices.encrypted ?? []);
+  const certified = new Set(choices.certified ?? []);
 
   const authOf = (auth: PlannedAuth | undefined): SshAuth | undefined => {
     if (auth === undefined) return undefined;
     if (auth.kind === 'agent') return { kind: 'agent' };
     const choice = choices.keys[auth.ref] ?? { kind: 'agent' };
     if (choice.kind === 'agent') return { kind: 'agent' };
-    const key = token(choice.secret);
-    return choice.kind === 'store' && encrypted.has(auth.ref)
-      ? { kind: 'key', key, passphrase: token(`${choice.secret}_passphrase`) }
-      : { kind: 'key', key };
+    return {
+      kind: 'key',
+      key: token(choice.secret),
+      ...(certified.has(auth.ref) ? { certificate: token(`${choice.secret}_cert`) } : {}),
+      ...(choice.kind === 'store' && encrypted.has(auth.ref)
+        ? { passphrase: token(`${choice.secret}_passphrase`) }
+        : {}),
+    };
   };
   const groupAuth = authOf(plan.group.ssh.auth);
   const settings = (ssh: PlannedSettings, isGroup: boolean): HostEntry['ssh'] => {

@@ -230,6 +230,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
             ? {
                 kind: 'key',
                 privateKey: await value(auth.key),
+                ...(auth.certificate ? { certificate: await value(auth.certificate) } : {}),
                 ...(auth.passphrase ? { passphrase: await value(auth.passphrase) } : {}),
               }
             : { kind: 'agent', socket: requireAgent(hop) };

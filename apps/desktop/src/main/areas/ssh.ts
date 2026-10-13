@@ -33,7 +33,7 @@ export function registerSshChannels(deps: {
   >;
   importer: Pick<SshImportService, 'preview' | 'apply'>;
   knownHostsImporter: Pick<KnownHostsImportService, 'preview' | 'apply'>;
-  keys: Pick<SshKeysService, 'generate' | 'keys' | 'install'>;
+  keys: Pick<SshKeysService, 'generate' | 'keys' | 'install' | 'attachCertificate'>;
   sftp: Parameters<typeof registerSftpChannels>[0]['sftp'];
   snippets: Pick<SnippetsService, 'list' | 'save'>;
   layouts: Parameters<typeof registerLayoutChannels>[0];
@@ -95,6 +95,7 @@ export function registerSshChannels(deps: {
   registerHandler(channels.ssh.generateKey, (request) => deps.keys.generate(request));
   registerHandler(channels.ssh.keys, async (_request, sender) => ({ keys: await deps.keys.keys(sender) }));
   registerHandler(channels.ssh.installKey, (request, sender) => deps.keys.install(sender, request));
+  registerHandler(channels.ssh.attachCertificate, (request, sender) => deps.keys.attachCertificate(sender, request));
   registerHandler(channels.ssh.listSnippets, () => deps.snippets.list());
   registerHandler(channels.ssh.saveSnippets, (request) => deps.snippets.save(request.file));
   registerHandler(channels.ssh.runSnippet, async (request, sender) => {

@@ -153,6 +153,7 @@ function authToWire(auth: SshAuth | undefined): SshAuthWire | undefined {
   return {
     kind: 'key',
     secret: secretNameOf(auth.key),
+    ...(auth.certificate ? { certificateSecret: secretNameOf(auth.certificate) } : {}),
     ...(auth.passphrase ? { passphraseSecret: secretNameOf(auth.passphrase) } : {}),
   };
 }
@@ -176,6 +177,7 @@ function authFromWire(auth: SshAuthWire | undefined): SshAuth | undefined {
   return {
     kind: 'key',
     key: token(auth.secret),
+    ...(auth.certificateSecret ? { certificate: token(auth.certificateSecret) } : {}),
     ...(auth.passphraseSecret ? { passphrase: token(auth.passphraseSecret) } : {}),
   };
 }
