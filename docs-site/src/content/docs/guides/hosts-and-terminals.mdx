@@ -147,6 +147,42 @@ with the group they come from. **Override** copies one onto this level to change
 variable** adds a new one, as text or as a secret picked by name. The host details panel lists every
 variable the host ends up with and where each one comes from.
 
+## Terminal colours and font size
+
+A group or a host can give its terminals their own colour scheme and font size, so production does not
+look like staging:
+
+```yaml
+groups:
+  - id: prod
+    name: Production
+    terminal:
+      scheme: red
+      fontSize: 15
+    hosts:
+      - id: api-1
+        name: api-1
+        address: 10.0.1.5
+        terminal:
+          fontSize: 18
+```
+
+- Each field comes from the nearest level that sets it, then from Settings → Terminal. **api-1** above
+  draws on the red background at 18 px.
+- `scheme` is a built-in scheme's id: `app` (follow the app theme), `red`, `amber`, `green`,
+  `solarized-dark`, `solarized-light`, `dracula`, `nord`, `gruvbox-dark`, `one-dark` or
+  `tomorrow-night`. An id this version does not know (a file from a newer version) is passed over for
+  the next level's scheme, not refused.
+- `fontSize` is a whole number from 6 to 72.
+- The font family and line height are set only in Settings → Terminal, for every terminal.
+
+In the host form, **Terminal** shows the scheme and size this level inherits and where they come from: a
+group, or Preferences. Pick a scheme, or switch **Override Font size** on, to set them here. The host
+details panel lists them when `hosts.yaml` sets them.
+
+**⌘+** and **⌘−** (Ctrl on Windows and Linux) make the focused terminal's text bigger or smaller, and
+**⌘0** puts it back. The zoom applies to that pane only and lasts until it closes; nothing is saved.
+
 ## Opening a terminal
 
 Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts
