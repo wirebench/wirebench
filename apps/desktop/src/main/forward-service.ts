@@ -165,7 +165,11 @@ export class ForwardService {
     this.emitNow(instance);
     try {
       const link = await this.linkFor(sender, host.id);
-      if (this.instances.get(key) !== instance) return;
+      // Stopped, or its window went, while the connection was prepared: nothing may be left open.
+      if (this.instances.get(key) !== instance) {
+        this.closeIfIdle(sender.id, host.id);
+        return;
+      }
       await link.connection.start(rule, request.port === undefined ? undefined : { port });
     } catch (error) {
       const refusal = this.deps.connector.refusalError(sender, error);
@@ -212,11 +216,25 @@ export class ForwardService {
     throw new WirebenchError('ssh-forward-port-in-use', `No port above ${near} is free`, { details: { port: near } });
   }
 
-  /** A terminal session to `hostId` opened or closed in that window; `open` is how many are open now. */
+  /**
+   * A terminal session to `hostId` opened or closed in that window; `open` is how many are open now. The
+   * host's first starts its on `autoStart` rules as `auto`; its last stops every `auto` one, leaving those
+   * started by hand (spec R2). Nothing here ever reaches the terminal: a refusal shows on the rule.
+   */
   sessionsChanged(sender: WebContents, hostId: string, open: number): void {
     const key = keyOf(sender.id, hostId);
+    const before = this.sessions.get(key) ?? 0;
     if (open > 0) this.sessions.set(key, open);
     else this.sessions.delete(key);
+    if (before === 0 && open > 0) {
+      void this.autoStart(sender, hostId);
+    } else if (before > 0 && open === 0) {
+      for (const instance of [...this.instances.values()]) {
+        if (instance.sender.id === sender.id && instance.hostId === hostId && instance.origin === 'auto') {
+          void this.end(instance).catch(() => undefined);
+        }
+      }
+    }
   }
 
   /** Re-reads that window's rules (after `ssh.saveHosts` or an edit on disk): marks `changed` / `removed`. */
@@ -271,6 +289,49 @@ export class ForwardService {
     const instance = this.instances.get(keyOf(sender.id, hostId, ruleId));
     if (instance?.rule.type !== 'local' || instance.status.state !== 'running') return undefined;
     return { ...instance.status.listening };
+  }
+
+  private async autoStart(sender: WebContents, hostId: string): Promise<void> {
+    let host: ResolvedHost;
+    try {
+      host = await this.resolve(sender, hostId);
+    } catch {
+      return; // the terminal connected, so this is a hosts.yaml edit since; nothing to start
+    }
+    const due = host.forwards.filter(
+      (f) => f.enabled && f.rule.autoStart && !this.isLiveAt(keyOf(sender.id, hostId, f.rule.id)),
+    );
+    await Promise.all(
+      due.map((f) =>
+        this.start(sender, { hostId, ruleId: f.rule.id }, 'auto').catch((error: unknown) => {
+          this.autoFailed(sender, host, f.rule, error);
+        }),
+      ),
+    );
+  }
+
+  /** A refusal before the table entry (a clash, an unconfirmed bind) still shows on the rule, as failed. */
+  private autoFailed(sender: WebContents, host: ResolvedHost, rule: ForwardRule, error: unknown): void {
+    const key = keyOf(sender.id, host.id, rule.id);
+    if (this.instances.has(key) || sender.isDestroyed()) return;
+    const instance: Instance = {
+      sender,
+      hostId: host.id,
+      hostName: host.name,
+      rule,
+      port: rule.port,
+      origin: 'auto',
+      status: { state: 'failed', error: errorWire(error) },
+      lastEmitAt: 0,
+    };
+    this.instances.set(key, instance);
+    this.watch(sender);
+    this.emitNow(instance);
+  }
+
+  private isLiveAt(key: string): boolean {
+    const instance = this.instances.get(key);
+    return instance !== undefined && isLive(instance);
   }
 
   /** A live instance under `key` answers the start: by hand, an `auto` one becomes `manual`. */

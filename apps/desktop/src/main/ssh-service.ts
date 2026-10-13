@@ -35,6 +35,11 @@ export interface SshServiceDeps extends SshConnectDeps {
   readonly refusals?: RefusalStore;
   /** The chain, credential and host key path (built over {@link refusals} when not given). */
   readonly connector?: SshConnector;
+  /**
+   * Told after a session opens or closes, with how many of that window's sessions to the host are open now;
+   * port forwards start with a host's first terminal and stop with its last (spec R2).
+   */
+  readonly onSessionsChange?: (sender: WebContents, hostId: string, open: number) => void;
 }
 
 /** The command the OS probe runs: `os-release` on Linux, `uname -s` on the BSDs and macOS, `ver` on Windows. */
@@ -80,6 +85,7 @@ export function forwardResume(
 interface Live {
   readonly session: SshSession;
   readonly sender: WebContents;
+  readonly hostId: string;
   readonly stop: () => void;
 }
 
@@ -174,6 +180,7 @@ export class SshService {
     this.live.set(sessionId, {
       session,
       sender,
+      hostId: request.hostId,
       stop: () => {
         offData();
         offExit();
@@ -181,6 +188,7 @@ export class SshService {
     });
     this.watch(sender);
     this.deps.emit(sender, events.ssh.state, { sessionId, state: 'open' });
+    this.sessionsChanged(sender, request.hostId);
     const target = hops[hops.length - 1];
     if (target) void this.probeOs(sender, session, `${target.address}:${target.port}`);
     return { sessionId };
@@ -357,6 +365,16 @@ export class SshService {
     live.stop();
     this.live.delete(sessionId);
     if (!live.sender.isDestroyed()) this.deps.emit(live.sender, events.ssh.state, { sessionId, state: 'closed' });
+    this.sessionsChanged(live.sender, live.hostId);
+  }
+
+  /** Tells the hook how many of that window's sessions to the host are open now. */
+  private sessionsChanged(sender: WebContents, hostId: string): void {
+    const hook = this.deps.onSessionsChange;
+    if (!hook) return;
+    let open = 0;
+    for (const live of this.live.values()) if (live.sender.id === sender.id && live.hostId === hostId) open += 1;
+    hook(sender, hostId, open);
   }
 
   /** The host keys trusted on this machine, for the Known hosts view. */

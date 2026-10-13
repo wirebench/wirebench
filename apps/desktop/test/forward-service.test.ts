@@ -3,7 +3,14 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { WebContents } from 'electron';
-import { ForwardError, SshConnectError, parseHostsFile } from '@wirebench/ssh';
+import {
+  FORWARD_RECONNECT_ATTEMPTS,
+  FORWARD_RECONNECT_DELAYS_MS,
+  FORWARD_RECONNECT_MAX_DELAY_MS,
+  ForwardError,
+  SshConnectError,
+  parseHostsFile,
+} from '@wirebench/ssh';
 import type {
   DialOptions,
   ForwardConnection,
@@ -17,6 +24,8 @@ import { createForwardBinds } from '../src/main/forward-binds.js';
 import { ForwardService } from '../src/main/forward-service.js';
 import type { ForwardServiceDeps } from '../src/main/forward-service.js';
 import { RefusalStore, createSshConnector } from '../src/main/ssh-connect.js';
+import { RECONNECT_DELAYS_MS, RECONNECT_MAX_DELAY_MS } from '../src/renderer/features/ssh/reconnect.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../src/renderer/state/preferences-defaults.js';
 import { events } from '../src/shared/ipc.js';
 import type { ForwardStateWire } from '../src/shared/forward-wire.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
@@ -178,6 +187,8 @@ const states = (emit: ReturnType<typeof make>['emit'], target?: Sender): Forward
     .map(([, , payload]) => payload as ForwardStateWire);
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+/** Long enough for an auto start (hosts read, known hosts read, fake dial) to settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
 describe('ForwardService start, stop, list', () => {
   it('starts a rule, telling only its window starting then running', async () => {
@@ -420,6 +431,21 @@ describe('ForwardService rule edits and lifetime', () => {
     await service.start(as(two), { hostId: 'a', ruleId: 'pg' });
   });
 
+  it('a forward stopped while its connection is prepared leaves no connection open', async () => {
+    const { service, connections, emit } = make();
+    const one = sender(1);
+    let stopped: Promise<void> | undefined;
+    // Stopped the moment the start is taken, before its connection is ready.
+    emit.mockImplementation((_target, _event, payload) => {
+      if ((payload as ForwardStateWire).status.state === 'starting') stopped ??= service.stop(as(one), 'a', 'pg');
+    });
+    await service.start(as(one), { hostId: 'a', ruleId: 'pg' });
+    await stopped;
+    expect(service.list(as(one))).toEqual([]);
+    expect(connections[0]?.start).not.toHaveBeenCalled();
+    expect(connections[0]?.close).toHaveBeenCalled();
+  });
+
   it('a window closing stops its forwards', async () => {
     const { service, connections } = make();
     const one = sender(1);
@@ -475,5 +501,99 @@ describe('ForwardService rule edits and lifetime', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('ForwardService auto-start with terminals', () => {
+  it("the host's first session starts its autoStart rules as auto; a second starts nothing more", async () => {
+    const { service } = make();
+    const one = sender(1);
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    const listed = service.list(as(one));
+    expect(listed.map((f) => [f.ruleId, f.origin]).sort()).toEqual([
+      ['auto', 'auto'],
+      ['socks', 'auto'],
+    ]);
+    service.sessionsChanged(as(one), 'a', 2);
+    await settle();
+    expect(service.list(as(one))).toHaveLength(2);
+  });
+
+  it('the last close stops auto instances and leaves manual ones running', async () => {
+    const { service } = make();
+    const one = sender(1);
+    await service.start(as(one), { hostId: 'a', ruleId: 'pg' });
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    service.sessionsChanged(as(one), 'a', 0);
+    await settle();
+    expect(service.list(as(one)).map((f) => f.ruleId)).toEqual(['pg']);
+  });
+
+  it('starting an auto rule by hand makes it manual, and it outlives the terminals', async () => {
+    const { service } = make();
+    const one = sender(1);
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    await service.start(as(one), { hostId: 'a', ruleId: 'auto' });
+    expect(service.list(as(one)).find((f) => f.ruleId === 'auto')?.origin).toBe('manual');
+    service.sessionsChanged(as(one), 'a', 0);
+    await settle();
+    expect(service.list(as(one)).map((f) => f.ruleId)).toEqual(['auto']);
+  });
+
+  it('an auto rule stopped by hand stays stopped until the next first session', async () => {
+    const { service } = make();
+    const one = sender(1);
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    await service.stop(as(one), 'a', 'auto');
+    service.sessionsChanged(as(one), 'a', 2);
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    expect(service.list(as(one)).map((f) => f.ruleId)).toEqual(['socks']);
+    service.sessionsChanged(as(one), 'a', 0);
+    await settle();
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    expect(
+      service
+        .list(as(one))
+        .map((f) => f.ruleId)
+        .sort(),
+    ).toEqual(['auto', 'socks']);
+  });
+
+  it('an auto start refused leaves the rule failed and throws nothing', async () => {
+    const { service } = make();
+    const one = sender(1);
+    const two = sender(2);
+    // Another window holds 7000.
+    await service.start(as(two), { hostId: 'b', ruleId: 'grafana', port: 7000 });
+    service.sessionsChanged(as(one), 'a', 1);
+    await settle();
+    const auto = service.list(as(one)).find((f) => f.ruleId === 'auto');
+    expect(auto).toMatchObject({
+      origin: 'auto',
+      status: { state: 'failed', error: { code: 'ssh-forward-port-in-use' } },
+    });
+    expect(service.list(as(one)).find((f) => f.ruleId === 'socks')?.status.state).toBe('running');
+  });
+
+  it('sessions of another window do not start this window’s forwards', async () => {
+    const { service } = make();
+    service.sessionsChanged(as(sender(2)), 'a', 1);
+    await settle();
+    expect(service.list(as(sender(1)))).toEqual([]);
+  });
+});
+
+describe('ForwardService reconnect schedule', () => {
+  it("is the terminal's: the same waits, maximum and attempt limit", () => {
+    expect(FORWARD_RECONNECT_DELAYS_MS).toEqual(RECONNECT_DELAYS_MS);
+    expect(FORWARD_RECONNECT_MAX_DELAY_MS).toBe(RECONNECT_MAX_DELAY_MS);
+    // The terminal's limit is a preference; its default is the forwards' fixed limit.
+    expect(FORWARD_RECONNECT_ATTEMPTS).toBe(DEFAULT_PREFERENCES_WIRE.terminal.reconnectAttempts);
   });
 });

@@ -533,6 +533,10 @@ const sshService = new SshService({
   emit: emitEvent,
   refusals: sshRefusals,
   connector: sshConnector,
+  // A host's autoStart forwards start with its first terminal in a window and stop with its last.
+  onSessionsChange: (sender, hostId, open) => {
+    forwardService.sessionsChanged(sender, hostId, open);
+  },
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
