@@ -932,7 +932,7 @@ describe('the .http channels', () => {
     expect(wsCall?.[0]).toBe('p1');
     expect(wsCall?.[1].api.name).toBe('api (WebSocket)');
     expect(response.apiIds).toEqual(['api-1', 'ws-1']);
-    expect(response.counts).toEqual({ requests: 4, websocket: 1, skipped: 1, scripts: 1 });
+    expect(response.counts).toEqual({ requests: 5, websocket: 1, skipped: 0, scripts: 1 });
     expect(deps.router.writeImportedScripts).toHaveBeenCalledWith('p1', [
       { path: 'imported-scripts/api/createpet.handler.js', source: 'client.global.set("petId", response.body.id);' },
     ]);

@@ -11,6 +11,7 @@ import type { CollectionExportFile } from './model.js';
 import type { WrittenFiles } from './postman.js';
 import type { ExportContext } from './shared.js';
 import { uniqueFileStem } from './shared.js';
+import { lowerGraphqlBodyText } from './tree.js';
 import type { XBody, XCollection, XFolder, XGrpc, XHttp, XItem, XScripts, XVariable, XWebSocket } from './tree.js';
 
 type Json = Record<string, unknown>;
@@ -267,6 +268,8 @@ class OcWriter {
       headers.push({ name: 'Content-Type', value: type, enabled: true });
       this.ctx.report.note(`${label}: its body's content type was written as a Content-Type header.`);
     };
+    // A GraphQL body goes out as the JSON it is sent as, its variables as written.
+    if (body.kind === 'graphql') return this.body(lowerGraphqlBodyText(body), headers, label);
     switch (body.kind) {
       case 'none':
         return undefined;

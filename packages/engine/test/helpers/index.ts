@@ -16,6 +16,7 @@ export {
   type RecordedRequest,
 } from './test-soap-server.js';
 export {
+  GRAPHQL_SDL,
   startTestRestServer,
   type TestRestServer,
   type TestRestServerDocument,

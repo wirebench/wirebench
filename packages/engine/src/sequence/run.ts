@@ -48,6 +48,8 @@ export interface SequenceStepSent {
   readonly script?: SentScripts;
   /** True when the step's request has scripts and they are switched off. */
   readonly scriptsOff?: boolean;
+  /** Checks the protocol made of the response itself: a GraphQL request's errors (#77). */
+  readonly checks?: readonly AssertionResult[];
 }
 
 /** A step the host could not send. */
@@ -314,7 +316,7 @@ async function runStep(
     subject,
     stepAssertions.filter((assertion) => !isCallbackAssertion(assertion)),
   );
-  const assertions = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
+  const assertions = [...immediate, ...callbacks, ...(sent.checks ?? []), ...scriptAssertions(script?.tests ?? [])];
   transferError ??= script?.error;
   const outcome: SequenceOutcome =
     transferError !== undefined || assertions.some((a) => a.outcome === 'errored')

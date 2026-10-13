@@ -245,6 +245,7 @@ export class SequenceRunner {
       // The step's scripts hand their values to the run, not to the project's session (#63).
       let ran: SentScripts | undefined;
       let described: { subject: AssertionSubject; origin?: string } | undefined;
+      let checks: SentRequest['checks'];
       // Refused as it always was, before anything is prepared.
       if (resolved.selected.kind === 'soap' && deps.requests.project.endpointFor(requestId) === undefined) {
         return { error: { code: 'no-endpoint', message: 'No endpoint resolves for this request' } };
@@ -266,6 +267,7 @@ export class SequenceRunner {
           },
           onSent: async (sent) => {
             described = describe(sent);
+            checks = sent.checks;
             // Before the step's own log row and History entry exist: record what must be masked in them.
             for (const transfer of resolved.step.transfers) {
               const found = await extractTransfer(described.subject, transfer);
@@ -288,6 +290,7 @@ export class SequenceRunner {
         return {
           ...described,
           ...(ran !== undefined ? { script: ran } : {}),
+          ...(checks !== undefined ? { checks } : {}),
           ...('scriptsOff' in summary && summary.scriptsOff === true ? { scriptsOff: true } : {}),
         };
       } catch (error) {

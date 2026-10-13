@@ -8,7 +8,13 @@ import { useProjectStore } from '../../state/project.js';
 import type { KindExplorer } from '../renderer-kind.js';
 
 function RestGutter({ node }: { readonly node: ExplorerNode }) {
-  return node.method === undefined ? null : (
+  if (node.method === undefined) {
+    return null;
+  }
+  // A GraphQL request reads `GQL`; its title still names the method it goes out with.
+  return node.graphql === true ? (
+    <MethodBadge method="GQL" title={`GraphQL (${node.method}) ${node.label}`} compact className="w-auto" />
+  ) : (
     <MethodBadge method={node.method} title={`${node.method} ${node.label}`} compact className="w-auto" />
   );
 }
@@ -38,6 +44,11 @@ export const restExplorer: KindExplorer = {
             { key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) },
             { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
             { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
+            {
+              key: 'new-graphql-request',
+              label: 'New GraphQL request',
+              run: () => explorerActions.newGraphqlRequest(apiId),
+            },
             { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
           ],
           // Only an API imported from a definition has one to read again, and one to import webhooks

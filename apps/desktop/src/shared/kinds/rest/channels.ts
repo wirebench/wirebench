@@ -45,7 +45,18 @@ import {
   requestSendToEnvironmentsRequestSchema,
   restExchangeSummarySchema,
   restLiveEventSchema,
+  apiGraphqlSchemaRequestSchema,
+  apiImportGraphqlSchemaRequestSchema,
+  graphqlSchemaRefWireSchema,
+  requestGraphqlCompleteRequestSchema,
+  requestGraphqlCompleteResponseSchema,
+  requestGraphqlDiagnosticsRequestSchema,
+  requestGraphqlDiagnosticsResponseSchema,
+  requestGraphqlHoverRequestSchema,
+  requestGraphqlHoverResponseSchema,
+  requestGraphqlIntrospectRequestSchema,
 } from './wire.js';
+import { z } from 'zod';
 
 /** REST's IPC channels, by the group each sits in; `ipc.ts` spreads them into `channels`. */
 export const restChannels = {
@@ -86,6 +97,34 @@ export const restChannels = {
       'request.restBodySchema',
       requestRestBodySchemaRequestSchema,
       requestRestBodySchemaResponseSchema,
+    ),
+    /**
+     * Sends the standard introspection query through a GraphQL request as edited — its URL, headers,
+     * auth and environment, but not its scripts — and stores the answer as its API's schema (#77).
+     * Leaves no History entry and no HTTP Log row.
+     */
+    graphqlIntrospect: defineChannel(
+      'request.graphqlIntrospect',
+      requestGraphqlIntrospectRequestSchema,
+      graphqlSchemaRefWireSchema,
+    ),
+    /** The GraphQL editor's markers for its query and variables, from the API's schema. */
+    graphqlDiagnostics: defineChannel(
+      'request.graphqlDiagnostics',
+      requestGraphqlDiagnosticsRequestSchema,
+      requestGraphqlDiagnosticsResponseSchema,
+    ),
+    /** Completion at the caret of the GraphQL editor's query or variables. */
+    graphqlComplete: defineChannel(
+      'request.graphqlComplete',
+      requestGraphqlCompleteRequestSchema,
+      requestGraphqlCompleteResponseSchema,
+    ),
+    /** Hover documentation in the GraphQL editor's query. */
+    graphqlHover: defineChannel(
+      'request.graphqlHover',
+      requestGraphqlHoverRequestSchema,
+      requestGraphqlHoverResponseSchema,
     ),
   },
   api: {
@@ -129,6 +168,14 @@ export const restChannels = {
       apiRestApplyUpdateRequestSchema,
       apiRestApplyUpdateResponseSchema,
     ),
+    /** Reads a GraphQL schema file the person picks (SDL or an introspection result) into the API (#77). */
+    importGraphqlSchema: defineChannel(
+      'api.importGraphqlSchema',
+      apiImportGraphqlSchemaRequestSchema,
+      graphqlSchemaRefWireSchema,
+    ),
+    /** Removes the API's GraphQL schema. */
+    clearGraphqlSchema: defineChannel('api.clearGraphqlSchema', apiGraphqlSchemaRequestSchema, z.object({})),
     /** Lints a REST API's cached definition with the built-in and project rule sets; findings go to Problems. */
     restLint: defineChannel('api.restLint', apiRestLintRequestSchema, apiRestLintResponseSchema),
     /** An API's webhooks and callbacks, for the *Import webhooks…* picker. */

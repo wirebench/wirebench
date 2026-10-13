@@ -35,10 +35,11 @@ describe('mapHttpFile', () => {
       'createPet',
       'Upload',
       'GET /env/${#System#HOME}',
+      'GRAPHQL /graphql',
     ]);
     expect(list?.url).toBe('${host}/pets');
     expect(list?.query).toEqual([entry('limit', '10'), entry('sort', 'name')]);
-    expect(mapped.counts).toEqual({ requests: 4, websocket: 1, skipped: 1 });
+    expect(mapped.counts).toEqual({ requests: 5, websocket: 1, skipped: 0 });
   });
 
   it('turns @variables into project properties, first definition kept', () => {
@@ -79,17 +80,30 @@ describe('mapHttpFile', () => {
     );
   });
 
-  it('puts WEBSOCKET requests in a WebSocket API, skips GRAPHQL, and reports chaining but not a mapped dynamic variable', () => {
+  it('maps a GRAPHQL request to a POST with a GraphQL body (#77)', () => {
+    const graph = mapped.rest.requests[4];
+    expect(graph).toMatchObject({ method: 'POST', url: 'https://example.com/graphql' });
+    expect(graph?.body).toEqual({ kind: 'graphql', query: 'query { pets { id } }', variables: '' });
+  });
+
+  it('reads the variables after a blank line, and leaves a query file unread', () => {
+    const [withVariables, fromFile] = mapText(
+      'GRAPHQL https://x/g\n\nquery P($id: ID!) {\n  pet(id: $id) { name }\n}\n\n{\n  "id": "{{petId}}"\n}\n\n###\nGRAPHQL https://x/g\n\n< ./q.graphql',
+    ).rest.requests;
+    expect(withVariables?.body).toEqual({
+      kind: 'graphql',
+      query: 'query P($id: ID!) {\n  pet(id: $id) { name }\n}',
+      variables: '{\n  "id": "${petId}"\n}',
+    });
+    expect(fromFile?.body).toEqual({ kind: 'graphql', query: '', variables: '' });
+  });
+
+  it('puts WEBSOCKET requests in a WebSocket API, and reports chaining but not a mapped dynamic variable', () => {
     expect(mapped.websocket?.name).toBe('api (WebSocket)');
     expect(mapped.websocket?.requests[0]).toMatchObject({ url: 'wss://example.com/ws' });
     expect(mapped.websocket?.requests[0]?.messages[0]?.content).toBe('{"hello": "world"}');
     expect(upload?.url).toContain('{{createPet.response.body.$.id}}');
-    expect(mapped.report.warnings).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('GRAPHQL request at line'),
-        expect.stringContaining('createPet.response'),
-      ]),
-    );
+    expect(mapped.report.warnings).toEqual(expect.arrayContaining([expect.stringContaining('createPet.response')]));
     expect(mapped.report.warnings.join('\n')).not.toContain('Dynamic variables');
     expect(mapped.report.notes).toEqual(expect.arrayContaining([expect.stringContaining('output redirect')]));
     expect(mapped.report.notes).toEqual(

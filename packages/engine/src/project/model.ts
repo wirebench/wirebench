@@ -29,7 +29,8 @@ import type { JwtAlgorithm } from '../http/auth/jwt-algorithms.js';
  * 6 shipped in 3.1.0. 7 added `examples` on a REST request: recorded responses kept beside it (#64).
  * 8 added Kerberos auth (`type: kerberos`), so an older build refuses such a project as too new.
  * 9 added `scripts` on an API, a SOAP interface and a REST or gRPC folder (#334), which an older
- * build would drop and send without. 10 added the `aws-sigv4` and `digest` auth types (#339).
+ * build would drop and send without. 10 added the `aws-sigv4` and `digest` auth types (#339), and,
+ * before it shipped, the `graphql` REST body and an API's `graphqlSchema` (#77).
  * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
  * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.
  */

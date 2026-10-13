@@ -90,6 +90,8 @@ export interface ExplorerNode {
   readonly folderId?: string;
   /** Set on `rest-request` nodes: the HTTP method its badge shows. */
   readonly method?: string;
+  /** Set on `rest-request` nodes whose body is GraphQL (#77): the badge reads `GQL`. */
+  readonly graphql?: true;
   /** Set on `grpc-request` nodes: the streaming shape its badge shows. */
   readonly methodKind?: GrpcMethodKindWire;
   /**

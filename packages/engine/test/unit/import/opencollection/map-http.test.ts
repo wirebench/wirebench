@@ -32,6 +32,11 @@ function only(text: string, rootDir?: string): { request: RestRequestDef; mapped
   return { request, mapped };
 }
 
+function variablesOf(body: RestBody): string {
+  if (body.kind !== 'graphql') throw new Error(`expected a GraphQL body, got ${body.kind}`);
+  return body.variables;
+}
+
 function rawText(body: RestBody): string {
   if (body.kind !== 'raw') throw new Error(`not raw: ${body.kind}`);
   return body.text;
@@ -70,13 +75,12 @@ describe('mapOpenCollection — HTTP', () => {
     expect(mapped.report.notes).toEqual(expect.arrayContaining([expect.stringContaining('empty')]));
   });
 
-  it('turns a GraphQL item into a JSON POST with a note', () => {
+  it('turns a GraphQL item into a POST with a GraphQL body (#77)', () => {
     const graph = mapped.rest!.requests.find((r) => r.name === 'Graph')!;
     expect(graph.method).toBe('POST');
     expect(graph.url).toBe('${baseUrl}/graphql');
-    expect(graph.body).toMatchObject({ kind: 'raw', language: 'json', contentType: 'application/json' });
-    expect(JSON.parse(rawText(graph.body))).toEqual({ query: '{ pets { id } }', variables: {} });
-    expect(mapped.report.notes).toEqual(expect.arrayContaining([expect.stringContaining('#77')]));
+    expect(graph.body).toEqual({ kind: 'graphql', query: '{ pets { id } }', variables: '{}' });
+    expect(mapped.report.notes).not.toEqual(expect.arrayContaining([expect.stringContaining('GraphQL')]));
   });
 
   it('maps examples to response examples', () => {
@@ -527,8 +531,9 @@ describe('mapOpenCollection — bodies and settings', () => {
 `),
     );
     const [g1, g2] = m.rest!.requests;
-    expect(JSON.parse(rawText(g1!.body))).toEqual({ query: '{ a }', variables: 'not json' });
-    expect(JSON.parse(rawText(g2!.body))).toEqual({ query: '{ a }', variables: { password: '', id: '${id}' } });
+    expect(g1!.body).toEqual({ kind: 'graphql', query: '{ a }', variables: 'not json' });
+    expect(g2!.body).toMatchObject({ kind: 'graphql', query: '{ a }' });
+    expect(JSON.parse(variablesOf(g2!.body))).toEqual({ password: '', id: '${id}' });
   });
 });
 
@@ -539,7 +544,7 @@ describe('mapOpenCollection — fix round 1', () => {
     graphql: { url: "https://h/q", body: { query: "{ a }", variables: '{"token":"sekret123","id":{{id}}}' } }
 `),
     );
-    expect(JSON.parse(rawText(request.body))).toEqual({ query: '{ a }', variables: '{"token":"","id":${id}}' });
+    expect(request.body).toEqual({ kind: 'graphql', query: '{ a }', variables: '{"token":"","id":${id}}' });
     expect(JSON.stringify(mapped)).not.toContain('sekret123');
     expect(mapped.report.warnings).toContain('G: the recorded value of token was not imported; set it on the request.');
   });
@@ -554,9 +559,12 @@ describe('mapOpenCollection — fix round 1', () => {
         variables: { id: "{{id}}", trace: "{{$randomJobTitle}}", auth: { password: sekret456 }, list: ["{{x}}"] }
 `),
     );
-    expect(JSON.parse(rawText(request.body))).toEqual({
-      query: '{ a }',
-      variables: { id: '${id}', trace: '{{$randomJobTitle}}', auth: '', list: ['${x}'] },
+    expect(request.body).toMatchObject({ kind: 'graphql', query: '{ a }' });
+    expect(JSON.parse(variablesOf(request.body))).toEqual({
+      id: '${id}',
+      trace: '{{$randomJobTitle}}',
+      auth: '',
+      list: ['${x}'],
     });
     expect(JSON.stringify(mapped)).not.toContain('sekret456');
     expect(mapped.report.warnings).toEqual(

@@ -117,6 +117,9 @@ export type RequestChannelProject = Pick<
       | 'proxyFor'
       // Read to split an imported cURL URL against the API's own base URL.
       | 'projectSnapshot'
+      // The GraphQL editor's schema, and where a fetched one is stored (#77).
+      | 'graphqlSchemaFor'
+      | 'setGraphqlSchema'
       // Read by *Send to environments…* to name and validate the environments asked for.
       | 'sendEnvironments'
       | 'restMeta'
@@ -948,6 +951,13 @@ function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
       return { kind: 'multipart', parts: body.parts.map((part) => ({ ...part })) };
     case 'binary':
       return { kind: 'binary', source: { ...body.source }, contentType: body.contentType };
+    case 'graphql':
+      return {
+        kind: 'graphql',
+        query: body.query,
+        variables: body.variables,
+        ...(body.operationName !== undefined ? { operationName: body.operationName } : {}),
+      };
     default:
       return { kind: 'none' };
   }

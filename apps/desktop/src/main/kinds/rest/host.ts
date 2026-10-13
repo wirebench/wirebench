@@ -6,8 +6,14 @@
 
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { GraphQLSchema } from 'graphql';
 import {
   apiDefinitionDir,
+  cachedGraphqlSchema,
+  readGraphqlSchema,
+  removeGraphqlSchema,
+  withRestApis,
+  writeGraphqlSchema,
   applyRestUpdate,
   applyWebhookUpdate,
   createCachedApiFetch,
@@ -37,6 +43,7 @@ import {
 import type {
   AuthConfig,
   DefinitionAuth,
+  GraphqlSchemaRef,
   JsonSchema,
   LintReport,
   OpenApiDocument,
@@ -122,12 +129,14 @@ export class RestHost implements KindHostHooks {
   /** A parsed definition belongs to the project's cache folder; a reopen reads it again. */
   close(): void {
     this.openApiDocuments.clear();
+    this.graphqlSchemas.clear();
   }
 
   /** The parsed definition belongs to the API's cache folder, which the removal takes with it. */
   afterChange(change: ProjectChange): void {
     if (change.kind === 'remove-api') {
       this.openApiDocuments.delete(change.apiId);
+      this.graphqlSchemas.delete(change.apiId);
     }
   }
 
@@ -670,6 +679,74 @@ export class RestHost implements KindHostHooks {
       );
     }
     return api as RestApi & { readonly definition: NonNullable<RestApi['definition']> };
+  }
+
+  /**
+   * Each API's GraphQL schema, built from its stored SDL once per session (#77); dropped when the
+   * schema is replaced or cleared, and on close. An API with no schema, or one that no longer builds,
+   * holds `undefined`.
+   */
+  private readonly graphqlSchemas = new Map<string, Promise<GraphQLSchema | undefined>>();
+
+  /** The API's GraphQL schema, for the editor's completion and validation; `undefined` when it has none. */
+  graphqlSchemaFor(apiId: string): Promise<GraphQLSchema | undefined> {
+    const kept = this.graphqlSchemas.get(apiId);
+    if (kept !== undefined) return kept;
+    const api = this.requireApi(apiId);
+    const loading = readGraphqlSchema(this.core.require().dir, api.slug).then((sdl) =>
+      sdl === undefined ? undefined : cachedGraphqlSchema(sdl),
+    );
+    this.graphqlSchemas.set(apiId, loading);
+    // A read that failed is not remembered as "no schema": the next ask reads again.
+    loading.catch(() => this.graphqlSchemas.delete(apiId));
+    return loading;
+  }
+
+  /**
+   * Stores `sdl` as the API's GraphQL schema and records where it came from, then saves: the schema
+   * file first, so a project that names a schema always has one.
+   */
+  async setGraphqlSchema(apiId: string, sdl: string, source: string): Promise<GraphqlSchemaRef> {
+    const open = this.core.require();
+    const api = this.requireApi(apiId);
+    await writeGraphqlSchema(open.dir, api.slug, sdl);
+    this.graphqlSchemas.delete(apiId);
+    const graphqlSchema: GraphqlSchemaRef = { source, fetchedAt: new Date().toISOString() };
+    await this.replaceApi({ ...api, graphqlSchema }, 'graphql-schema');
+    return graphqlSchema;
+  }
+
+  /** Removes the API's GraphQL schema, its file and its record; an API with none is left as it is. */
+  async clearGraphqlSchema(apiId: string): Promise<void> {
+    const open = this.core.require();
+    const api = this.requireApi(apiId);
+    this.graphqlSchemas.delete(apiId);
+    if (api.graphqlSchema !== undefined) {
+      const cleared: RestApi = { ...api };
+      delete (cleared as { graphqlSchema?: GraphqlSchemaRef }).graphqlSchema;
+      await this.replaceApi(cleared, 'graphql-schema');
+    }
+    await removeGraphqlSchema(open.dir, api.slug);
+  }
+
+  /** The open project with `api` in place of the API of its id, saved and announced. */
+  private async replaceApi(api: RestApi, reason: string): Promise<void> {
+    const open = this.core.require();
+    const priorProject = open.project;
+    const priorDirty = open.dirty;
+    open.project = withRestApis(
+      open.project,
+      restApisOf(open.project).map((candidate) => (candidate.id === api.id ? api : candidate)),
+    );
+    open.dirty = true;
+    try {
+      await this.core.save({ reason });
+    } catch (error) {
+      open.project = priorProject;
+      open.dirty = priorDirty;
+      throw error;
+    }
+    this.core.emitChanged();
   }
 
   /** The open project's API with `apiId`, or a `not-found` error. */

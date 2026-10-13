@@ -23,6 +23,8 @@ function impliedContentType(input: RestSendInput): string | undefined {
       return 'application/x-www-form-urlencoded';
     case 'binary':
       return body.contentType;
+    case 'graphql':
+      return 'application/json';
     default:
       return undefined;
   }
