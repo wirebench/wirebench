@@ -7,6 +7,10 @@ import {
   sshDataEventSchema,
   sshExitEventSchema,
   sshImportApplyRequestSchema,
+  sshKnownHostsImportApplyRequestSchema,
+  sshKnownHostsImportApplyResponseSchema,
+  sshKnownHostsImportPreviewRequestSchema,
+  sshKnownHostsImportPreviewResponseSchema,
   sshImportApplyResponseSchema,
   sshImportPreviewRequestSchema,
   sshImportPreviewResponseSchema,
@@ -981,6 +985,17 @@ export const channels = {
     setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
+    // Trusted keys from a known_hosts file (#418): the file's path never crosses.
+    knownHostsImportPreview: defineChannel(
+      'ssh.knownHostsImportPreview',
+      sshKnownHostsImportPreviewRequestSchema,
+      sshKnownHostsImportPreviewResponseSchema,
+    ),
+    knownHostsImportApply: defineChannel(
+      'ssh.knownHostsImportApply',
+      sshKnownHostsImportApplyRequestSchema,
+      sshKnownHostsImportApplyResponseSchema,
+    ),
     // Keychain keys (#409): only the public half crosses; the private key and passphrase stay in main.
     generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),

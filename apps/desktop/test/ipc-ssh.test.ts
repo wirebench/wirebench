@@ -84,6 +84,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -113,6 +114,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -132,6 +134,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -161,6 +164,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -187,6 +191,7 @@ describe('ssh channels', () => {
       secrets: { names, set: vi.fn() },
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -207,6 +212,7 @@ describe('ssh channels', () => {
       secrets: { names: vi.fn(), set },
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -232,6 +238,7 @@ describe('ssh channels', () => {
       secrets: service,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -251,6 +258,7 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -285,6 +293,7 @@ describe('ssh channels', () => {
         secrets: NO_SECRETS,
         ssh,
         importer: NO_IMPORT,
+        knownHostsImporter: NO_IMPORT,
         keys: NO_KEYS,
         sftp: NO_SFTP,
         snippets: NO_SNIPPETS,
@@ -359,6 +368,7 @@ describe('known hosts channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -382,6 +392,7 @@ describe('known hosts channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -411,6 +422,7 @@ describe('host OS channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -433,6 +445,7 @@ describe('host OS channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -456,6 +469,7 @@ describe('ssh snippet run channels', () => {
       secrets: NO_SECRETS,
       ssh: { ...NO_SSH, runSnippet, previewSnippet },
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -487,6 +501,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: { preview, apply },
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -513,6 +528,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: { preview, apply: vi.fn() },
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -523,6 +539,38 @@ describe('ssh import channels', () => {
     });
     expect(await invoke('ssh.importPreview', { source: 'pick', path: '/etc/passwd' })).toMatchObject({ ok: false });
     expect(preview).not.toHaveBeenCalled();
+  });
+
+  it('known_hosts channels pass the calling window and refuse a path', async () => {
+    const preview = vi.fn().mockResolvedValue({ cancelled: true });
+    const apply = vi.fn().mockResolvedValue({ added: 0, replaced: 0, kept: 0 });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      knownHostsImporter: { preview, apply },
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
+      transfers: NO_TRANSFERS,
+      edits: NO_EDITS,
+    });
+    const window = { id: 7 };
+    expect(await invokeAs(window, 'ssh.knownHostsImportPreview', { source: 'user-known-hosts' })).toEqual({
+      ok: true,
+      value: { cancelled: true },
+    });
+    expect(preview).toHaveBeenCalledWith(window, { source: 'user-known-hosts' });
+    const request = { previewId: 'p', replace: [{ host: 'a:22', keyType: 'ssh-ed25519' }] };
+    await invokeAs(window, 'ssh.knownHostsImportApply', request);
+    expect(apply).toHaveBeenCalledWith(window, request);
+    expect(
+      await invoke('ssh.knownHostsImportPreview', { source: 'pick', path: '/home/u/.ssh/known_hosts' }),
+    ).toMatchObject({ ok: false });
+    expect(preview).toHaveBeenCalledTimes(1);
   });
 
   it('sftp channels act for the sender, who owns the session', async () => {
@@ -536,6 +584,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp,
       snippets: NO_SNIPPETS,
@@ -571,6 +620,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers,
@@ -609,6 +659,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
@@ -644,6 +695,7 @@ describe('ssh key channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
@@ -684,6 +736,7 @@ describe('snippet channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
@@ -704,6 +757,7 @@ describe('snippet channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,

@@ -237,6 +237,8 @@
     "ssh.installKey",
     "ssh.keys",
     "ssh.knownHosts",
+    "ssh.knownHostsImportApply",
+    "ssh.knownHostsImportPreview",
     "ssh.listHosts",
     "ssh.listSnippets",
     "ssh.previewSnippet",
