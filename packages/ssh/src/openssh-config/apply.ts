@@ -74,6 +74,7 @@ export function applySshConfigImport(
       ...(auth === undefined || sameAsGroup ? {} : { auth }),
       ...(ssh.keepAlive === undefined ? {} : { keepAlive: ssh.keepAlive }),
       ...(ssh.connectTimeout === undefined ? {} : { connectTimeout: ssh.connectTimeout }),
+      ...(ssh.forwardAgent === undefined ? {} : { forwardAgent: ssh.forwardAgent }),
     };
   };
 

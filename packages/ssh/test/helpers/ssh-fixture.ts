@@ -44,6 +44,8 @@ export interface SshFixture {
   readonly remoteForwards: { bindAddr: string; bindPort: number; cancelled: boolean }[];
   /** Every `env` request on a session channel, in order, and whether it was accepted. */
   readonly envRequests: { key: string; val: string; accepted: boolean }[];
+  /** Every `auth-agent-req@openssh.com` on a session channel, in order, and whether it was granted. */
+  readonly agentRequests: { accepted: boolean }[];
   /** Resets every client's TCP connection, as a network that went away would: no exit status, no disconnect. */
   drop(): void;
   close(): Promise<void>;
@@ -73,6 +75,8 @@ export async function startSshFixture(options: {
   refuseForward?: boolean;
   /** Accept `env` requests only for these names, as `AcceptEnv` would; without it every name is accepted. */
   acceptEnv?: readonly string[];
+  /** Refuse agent forwarding requests, as `AllowAgentForwarding no` would; without it they are granted. */
+  refuseAgentForwarding?: boolean;
 }): Promise<SshFixture> {
   const sftp = options.sftp;
   const sftpBinary = typeof sftp === 'object' ? findSftpServer() : null;
@@ -99,6 +103,7 @@ export async function startSshFixture(options: {
     },
     remoteForwards: [],
     envRequests: [],
+    agentRequests: [],
     hostKey: { host: '', keyType: keyTypeOf(publicBlob), fingerprint: fingerprintOf(publicBlob) },
     drop: () => {
       for (const client of clients) (client as unknown as { _sock: net.Socket })._sock.resetAndDestroy();
@@ -153,6 +158,12 @@ export async function startSshFixture(options: {
         session.on('env', (accept, reject, info) => {
           const accepted = options.acceptEnv === undefined || options.acceptEnv.includes(info.key);
           fixture.envRequests.push({ key: info.key, val: info.val, accepted });
+          if (accepted) accept?.();
+          else reject?.();
+        });
+        session.on('auth-agent', (accept, reject) => {
+          const accepted = options.refuseAgentForwarding !== true;
+          fixture.agentRequests.push({ accepted });
           if (accepted) accept?.();
           else reject?.();
         });

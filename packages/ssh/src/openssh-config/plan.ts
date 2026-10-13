@@ -18,6 +18,7 @@ export interface PlannedSettings {
   readonly auth?: PlannedAuth;
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
+  readonly forwardAgent?: boolean;
 }
 
 export interface PlannedHost {
@@ -91,6 +92,7 @@ const MAPPED = new Set([
   'serveraliveinterval',
   'connecttimeout',
   'setenv',
+  'forwardagent',
 ]);
 /** Options with no meaning for Wirebench: counted, not reported line by line. */
 export const IGNORED_KEYWORDS = new Set([
@@ -164,6 +166,7 @@ interface Mapped {
   readonly port?: number;
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
+  readonly forwardAgent?: boolean;
   /** The hops as written, outermost first; `[]` for none. */
   readonly hops: readonly string[];
   readonly identity?: string;
@@ -217,6 +220,12 @@ function mapEffective(
 
   const timeout = intArg(eff.values.get('connecttimeout'), 1, 2 ** 31 - 1);
   if (timeout !== undefined) out.connectTimeout = timeout;
+
+  // `ssh` also takes a socket path or an environment variable here; only yes and no have a meaning in Wirebench.
+  const forward = eff.values.get('forwardagent')?.args[0]?.toLowerCase();
+  if (forward === 'yes') out.forwardAgent = true;
+  else if (forward === 'no') out.forwardAgent = false;
+  else if (forward !== undefined) note(`${who}: ForwardAgent is not yes or no; not imported`);
 
   // ProxyJump and ProxyCommand exclude each other: the first one obtained wins, as in `ssh`.
   const keys = [...eff.values.keys()];
@@ -340,6 +349,7 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
   if (all.port !== undefined && everyone('port')) group.port = all.port;
   if (all.keepAlive !== undefined && everyone('keepAlive')) group.keepAlive = all.keepAlive;
   if (all.connectTimeout !== undefined && everyone('connectTimeout')) group.connectTimeout = all.connectTimeout;
+  if (all.forwardAgent === true && everyone('forwardAgent')) group.forwardAgent = true;
   const groupAuth: PlannedAuth =
     all.identity !== undefined && everyone('identity') ? keyFor(all.identity, groupId) : { kind: 'agent' };
   group.auth = groupAuth;
@@ -383,6 +393,9 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
     if (m.keepAlive !== undefined && m.keepAlive !== group.keepAlive) ssh.keepAlive = m.keepAlive;
     if (m.connectTimeout !== undefined && m.connectTimeout !== group.connectTimeout) {
       ssh.connectTimeout = m.connectTimeout;
+    }
+    if (m.forwardAgent !== undefined && m.forwardAgent !== (group.forwardAgent ?? false)) {
+      ssh.forwardAgent = m.forwardAgent;
     }
     const auth: PlannedAuth =
       m.identity === undefined || (groupAuth.kind === 'key' && m.identity === all.identity)
