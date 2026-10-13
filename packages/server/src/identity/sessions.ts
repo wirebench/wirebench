@@ -13,7 +13,7 @@ export function publicUser(user: repo.UserRow): ServerUser {
 
 /** The token is returned here and nowhere else (§3.5); the row keeps only its hash. */
 export async function issueToken(
-  env: IdentityEnv,
+  env: Pick<IdentityEnv, 'ctx' | 'now'>,
   user: repo.UserRow,
   deviceName: string,
   db: Querier = env.ctx.db,
@@ -34,9 +34,9 @@ const deviceLabel = (name: string): string => name.trim().slice(0, MAX_DEVICE_NA
 
 /** The token and its `auth.signed_in` event (audit-log §3.2), committed together. */
 export async function signIn(
-  env: IdentityEnv,
+  env: Pick<IdentityEnv, 'ctx' | 'now'>,
   user: repo.UserRow,
-  method: 'local' | 'oidc',
+  method: 'local' | 'oidc' | 'saml',
   deviceName: string,
   source: AuditSource,
 ): Promise<SignInResponse> {

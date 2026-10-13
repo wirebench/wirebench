@@ -7,7 +7,12 @@
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
+import { RateLimiter } from '../identity/rate-limit.js';
+import { samlSettings, ssoUrls, type SsoEnv } from './env.js';
 import * as repo from './repo.js';
+import { authSamlRoutes } from './routes/auth-saml.js';
+import { loadIdpMetadata, type IdpMetadata } from './saml-metadata.js';
+import { samlProvider } from './saml.js';
 
 export const SSO_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/sso/', import.meta.url));
 
@@ -18,6 +23,8 @@ export interface SsoOptions {
   readonly now?: () => Date;
   /** How often expired SAML flows are swept; `0` disables the timer (tests). Default daily. */
   readonly sweepIntervalMs?: number;
+  /** IdP metadata instead of reading `WIREBENCH_SERVER_SAML_IDP_METADATA` (tests). */
+  readonly metadata?: IdpMetadata;
 }
 
 /** The daily sweep: SAML flows nobody finished. */
@@ -31,6 +38,36 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
     name: 'sso',
     migrationsDir: SSO_MIGRATIONS_DIR,
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
+      const urls = ssoUrls(ctx.config.publicUrl);
+      const settings = samlSettings(ctx.config);
+      let saml: SsoEnv['saml'];
+      if (settings !== undefined) {
+        // Read once at start-up; a failure is a start-up failure (exit 2 through serve.ts).
+        const metadata =
+          options.metadata ??
+          (await loadIdpMetadata(settings.metadataSource, { allowInsecure: ctx.config.allowInsecurePublicUrl }));
+        saml = {
+          provider: samlProvider(metadata, {
+            entityId: urls.entityId,
+            acsUrl: urls.acsUrl,
+            clockSkewMs: settings.clockSkewMs,
+          }),
+          claims: {
+            ...(settings.emailAttribute !== undefined ? { emailAttribute: settings.emailAttribute } : {}),
+            ...(settings.nameAttribute !== undefined ? { nameAttribute: settings.nameAttribute } : {}),
+          },
+        };
+        ctx.meta.setSignInMethods({ saml: true, samlDisplayName: settings.displayName });
+      }
+      const env: SsoEnv = {
+        ctx,
+        now,
+        limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
+        urls,
+        saml,
+      };
+      authSamlRoutes(env)(app);
+
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {
@@ -41,7 +78,6 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           clearInterval(timer);
         });
       }
-      await Promise.resolve();
     },
   };
 }

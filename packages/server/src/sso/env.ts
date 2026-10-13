@@ -1,4 +1,7 @@
 import type { ServerConfig } from '../config.js';
+import type { ServerContext } from '../context.js';
+import type { RateLimiter } from '../identity/rate-limit.js';
+import type { SamlClaimSettings, SamlProvider } from './saml.js';
 
 /** The URLs an IdP is given (saml-scim spec §3.1, §3.5), derived from the public URL alone. */
 export interface SsoUrls {
@@ -35,4 +38,13 @@ export function samlSettings(config: ServerConfig): SamlSettings | undefined {
     ...(config.samlEmailAttribute !== undefined ? { emailAttribute: config.samlEmailAttribute } : {}),
     ...(config.samlNameAttribute !== undefined ? { nameAttribute: config.samlNameAttribute } : {}),
   };
+}
+
+/** What the `sso` routes share: the context, the clock, the limiter, the URLs, and SAML when configured. */
+export interface SsoEnv {
+  readonly ctx: ServerContext;
+  readonly now: () => Date;
+  readonly limiter: RateLimiter;
+  readonly urls: SsoUrls;
+  readonly saml: { readonly provider: SamlProvider; readonly claims: SamlClaimSettings } | undefined;
 }
