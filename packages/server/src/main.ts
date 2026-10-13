@@ -51,6 +51,10 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     case 'admin-license-remove':
     case 'admin-audit-export':
     case 'admin-audit-verify':
+    case 'admin-schedules-list':
+    case 'admin-schedules-enable':
+    case 'admin-schedules-disable':
+    case 'admin-schedules-runs':
       return runAdmin(command, io);
     case 'serve': {
       try {

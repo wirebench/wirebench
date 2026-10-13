@@ -23,6 +23,10 @@ export type ServerCommand =
       readonly head?: { readonly seq: bigint; readonly hash: string };
       readonly json: boolean;
     }
+  | { readonly command: 'admin-schedules-list'; readonly workspace?: string }
+  | { readonly command: 'admin-schedules-enable'; readonly id: string }
+  | { readonly command: 'admin-schedules-disable'; readonly id: string }
+  | { readonly command: 'admin-schedules-runs'; readonly id: string; readonly limit: number }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -49,6 +53,11 @@ Usage:
                                     Write the audit log as NDJSON to stdout
   wirebench-server admin audit verify [--head <seq>:<hex>] [--json]
                                     Check the audit log's chain; exit 1 when a link is broken
+  wirebench-server admin schedules list [--workspace <id>]
+  wirebench-server admin schedules enable <id>
+  wirebench-server admin schedules disable <id>
+  wirebench-server admin schedules runs <id> [--limit <n>]
+                                    A schedule's runs as NDJSON, newest first (default 50, at most 200)
   wirebench-server --version
   wirebench-server --help
 
@@ -66,7 +75,11 @@ const OPTIONS = {
   workspace: { type: 'string' },
   head: { type: 'string' },
   json: { type: 'boolean' },
+  limit: { type: 'string' },
 } as const;
+
+const SCHEDULES_USAGE =
+  'usage: wirebench-server admin schedules list [--workspace <id>] | enable <id> | disable <id> | runs <id> [--limit <n>]';
 
 const AUDIT_USAGE =
   'usage: wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]' +
@@ -99,10 +112,17 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
     throw new UsageError('--no-admin only applies to admin invite');
   }
   const isAuditExport = word === 'admin' && second === 'audit' && third === 'export';
-  for (const key of ['from', 'to', 'action', 'workspace'] as const) {
+  for (const key of ['from', 'to', 'action'] as const) {
     if (parsed.values[key] !== undefined && !isAuditExport) {
       throw new UsageError(`--${key} applies to admin audit export only`);
     }
+  }
+  const isSchedulesList = word === 'admin' && second === 'schedules' && third === 'list';
+  if (parsed.values.workspace !== undefined && !isAuditExport && !isSchedulesList) {
+    throw new UsageError('--workspace applies to admin audit export and admin schedules list only');
+  }
+  if (parsed.values.limit !== undefined && !(word === 'admin' && second === 'schedules' && third === 'runs')) {
+    throw new UsageError('--limit applies to admin schedules runs only');
   }
   const isAuditVerify = word === 'admin' && second === 'audit' && third === 'verify';
   for (const key of ['head', 'json'] as const) {
@@ -153,6 +173,28 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
             ...(parsed.values.workspace !== undefined ? { workspace: parsed.values.workspace } : {}),
           };
         }
+        case 'schedules':
+          switch (third) {
+            case 'list':
+              return {
+                command: 'admin-schedules-list',
+                ...(parsed.values.workspace !== undefined ? { workspace: parsed.values.workspace } : {}),
+              };
+            case 'enable':
+            case 'disable':
+              if (fourth === undefined) throw new UsageError(SCHEDULES_USAGE);
+              return { command: third === 'enable' ? 'admin-schedules-enable' : 'admin-schedules-disable', id: fourth };
+            case 'runs': {
+              if (fourth === undefined) throw new UsageError(SCHEDULES_USAGE);
+              const limit = parsed.values.limit === undefined ? 50 : Number(parsed.values.limit);
+              if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+                throw new UsageError('--limit must be a whole number from 1 to 200');
+              }
+              return { command: 'admin-schedules-runs', id: fourth, limit };
+            }
+            default:
+              throw new UsageError(SCHEDULES_USAGE);
+          }
         case 'license':
           switch (third) {
             case 'install':

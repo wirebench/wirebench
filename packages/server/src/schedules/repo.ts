@@ -430,3 +430,34 @@ export async function deleteOutboxBefore(db: Querier, cutoff: Date, limit: numbe
   );
   return result.rowCount ?? 0;
 }
+
+/** Every schedule, or a workspace's, ordered by workspace then name: the operator's view. */
+export async function allSchedules(db: Querier, workspaceId?: string): Promise<ScheduleRow[]> {
+  const rows =
+    workspaceId === undefined
+      ? await db.query<Raw>(`${SELECT} order by s.workspace_id, lower(s.name), s.id`)
+      : await db.query<Raw>(`${SELECT} where s.workspace_id = $1 order by lower(s.name), s.id`, [workspaceId]);
+  return rows.rows.map(rowOf);
+}
+
+/** One schedule by id, whatever its workspace; `forUpdate` locks it for the transaction. */
+export async function scheduleAnywhere(db: Querier, id: string, forUpdate = false): Promise<ScheduleRow | undefined> {
+  const lock = forUpdate ? ' for update of s' : '';
+  const raw = (await db.query<Raw>(`${SELECT} where s.id = $1${lock}`, [id])).rows[0];
+  return raw === undefined ? undefined : rowOf(raw);
+}
+
+export async function setEnabled(
+  db: Querier,
+  id: string,
+  enabled: boolean,
+  nextRunAt: Date | null,
+  at: Date,
+): Promise<void> {
+  await db.query('update schedules set enabled = $2, next_run_at = $3, updated_at = $4 where id = $1', [
+    id,
+    enabled,
+    nextRunAt,
+    at,
+  ]);
+}
