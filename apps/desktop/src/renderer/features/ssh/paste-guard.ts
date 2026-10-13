@@ -8,9 +8,15 @@ function withoutTrailingNewline(text: string): string {
 
 /**
  * Whether a paste goes straight to the shell or waits for a yes. A pasted script runs line by line,
- * so text with a line break inside it asks first (when the preference is on).
+ * so text with a line break inside it asks first (when the preference is on). A paste a broadcast takes to
+ * more than one pane always asks, whatever the preference says.
  */
-export function guardPaste(text: string, prefs: { readonly confirmMultilinePaste: boolean }): 'send' | 'ask' {
+export function guardPaste(
+  text: string,
+  prefs: { readonly confirmMultilinePaste: boolean },
+  receivers = 1,
+): 'send' | 'ask' {
+  if (receivers > 1) return 'ask';
   if (!prefs.confirmMultilinePaste) return 'send';
   return /[\r\n]/.test(withoutTrailingNewline(text)) ? 'ask' : 'send';
 }

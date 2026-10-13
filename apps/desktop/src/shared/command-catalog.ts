@@ -150,6 +150,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Terminal: Save Layout…',
     category: 'Hosts',
   },
+  'ssh.toggleBroadcast': {
+    id: 'ssh.toggleBroadcast',
+    label: 'Terminal: Toggle Broadcast Input',
+    category: 'Hosts',
+  },
   'ssh.splitRight': {
     id: 'ssh.splitRight',
     label: 'Terminal: Split Right',

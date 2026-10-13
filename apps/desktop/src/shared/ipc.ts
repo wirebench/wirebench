@@ -21,6 +21,8 @@ import {
   sshForgetHostKeyRequestSchema,
   sshHostOsResponseSchema,
   sshSetHostOsRequestSchema,
+  sshWriteManyRequestSchema,
+  sshWriteManyResponseSchema,
   sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
@@ -969,6 +971,7 @@ export const channels = {
     setSecret: defineChannel('ssh.setSecret', sshSetSecretRequestSchema, z.object({})),
     connect: defineChannel('ssh.connect', sshConnectRequestSchema, sshConnectResponseSchema),
     write: defineChannel('ssh.write', sshWriteRequestSchema, z.object({})),
+    writeMany: defineChannel('ssh.writeMany', sshWriteManyRequestSchema, sshWriteManyResponseSchema),
     resize: defineChannel('ssh.resize', sshResizeRequestSchema, z.object({})),
     close: defineChannel('ssh.close', sshCloseRequestSchema, z.object({})),
     trustHostKey: defineChannel('ssh.trustHostKey', sshTrustRequestSchema, z.object({})),

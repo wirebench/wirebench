@@ -32,6 +32,7 @@ export const COMMAND_IDS = [
   'ssh.openInNewTab',
   'ssh.openLayout',
   'ssh.saveLayout',
+  'ssh.toggleBroadcast',
   'ssh.splitRight',
   'ssh.splitDown',
   'ssh.focusPaneLeft',
