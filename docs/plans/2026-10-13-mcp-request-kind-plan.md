@@ -96,12 +96,12 @@ tests.
 **Files:** new `mcp/http-transport.ts`, test helper `test/helpers/mcp-http-server.ts` (the SDK's
 `McpServer` with `StreamableHTTPServerTransport` on a local port), tests.
 
-- [ ] Each message is a `POST` through `sendHttp`, with the `Accept` header, and the session-id and
+- [x] Each message is a `POST` through `sendHttp`, with the `Accept` header, and the session-id and
   protocol-version headers after `initialize`. A JSON response and an event-stream response (through
   `http/sse.ts`) are both read. `202` is accepted. On close, `DELETE` (a `405` is fine).
-- [ ] Each HTTP call is recorded: method, URL, status, headers, timings. TLS, proxy and client
+- [x] Each HTTP call is recorded: method, URL, status, headers, timings. TLS, proxy and client
   certificates come from the settings, as REST's do.
-- [ ] Tests: a JSON-response server, an SSE-response server, a session id carried over, an HTTP 4xx or
+- [x] Tests: a JSON-response server, an SSE-response server, a session id carried over, an HTTP 4xx or
   5xx on initialize (`mcp-http-status`), and `DELETE` on close.
 
 ### Task 5: Legacy HTTP+SSE transport

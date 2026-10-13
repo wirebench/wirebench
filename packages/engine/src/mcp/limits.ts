@@ -20,3 +20,6 @@ export const MCP_STDIO_KILL_GRACE_MS = 2_000;
 
 /** How long the `notifications/cancelled` sent when the deadline passes may take before the session closes anyway. */
 export const MCP_CANCEL_NOTICE_MS = 500;
+
+/** How long closing an HTTP session may take: the `DELETE` that ends it, and calls still finishing. */
+export const MCP_HTTP_CLOSE_MS = 2_000;
