@@ -32,6 +32,8 @@ import type {
   SshOsId,
   SshResizeRequest,
   SshTrustRequest,
+  SshWriteManyRequest,
+  SshWriteManyResponse,
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
 import { asWirebenchError } from './hosts-service.js';
@@ -320,6 +322,21 @@ export class SshService {
   /** @throws WirebenchError `ssh-session-unknown` for a foreign or dead session. */
   write(sender: WebContents, request: SshWriteRequest): void {
     this.owned(sender, request.sessionId).session.write(Buffer.from(request.data, 'base64'));
+  }
+
+  /**
+   * Writes `data` to each session this window owns and has live; the rest come back in `skipped` and are
+   * written nothing, so a broadcast never reaches another window's session.
+   */
+  writeMany(sender: WebContents, request: SshWriteManyRequest): SshWriteManyResponse {
+    const bytes = Buffer.from(request.data, 'base64');
+    const skipped: string[] = [];
+    for (const sessionId of request.sessionIds) {
+      const live = this.live.get(sessionId);
+      if (live?.sender.id === sender.id) live.session.write(bytes);
+      else skipped.push(sessionId);
+    }
+    return { skipped };
   }
 
   /**

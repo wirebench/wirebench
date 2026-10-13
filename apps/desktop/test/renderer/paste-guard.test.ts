@@ -18,3 +18,8 @@ it('previews the first five lines and counts the rest', () => {
   expect(pastePreview('1\n2\n3\n4\n5')).toEqual({ lines: ['1', '2', '3', '4', '5'], remaining: 0 });
   expect(pastePreview('1\r\n2\r3\n4\n5\n6\n7\n8\n')).toEqual({ lines: ['1', '2', '3', '4', '5'], remaining: 3 });
 });
+
+it('a paste that reaches more than one pane always asks, the preference and one line notwithstanding', () => {
+  expect(guardPaste('uptime', { confirmMultilinePaste: false }, 3)).toBe('ask');
+  expect(guardPaste('uptime', { confirmMultilinePaste: true }, 1)).toBe('send');
+});
