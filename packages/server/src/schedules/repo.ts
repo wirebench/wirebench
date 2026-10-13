@@ -351,3 +351,57 @@ export async function interruptStaleRuns(db: Querier, now: Date): Promise<number
   );
   return result.rowCount ?? 0;
 }
+
+/** A page of a schedule's runs, newest first, after the `(queuedAt, id)` cursor when given. */
+export async function runsPage(
+  db: Querier,
+  scheduleId: string,
+  input: {
+    readonly status?: ScheduleRunStatus;
+    readonly after?: { readonly queuedAt: string; readonly id: string };
+    readonly limit: number;
+  },
+): Promise<ScheduleRun[]> {
+  const params: unknown[] = [scheduleId, input.limit];
+  const where = ['r.schedule_id = $1'];
+  if (input.status !== undefined) {
+    params.push(input.status);
+    where.push(`r.status = $${params.length}`);
+  }
+  if (input.after !== undefined) {
+    params.push(input.after.queuedAt, input.after.id);
+    where.push(`(r.queued_at, r.id) < ($${params.length - 1}::timestamptz, $${params.length})`);
+  }
+  const rows = await db.query<Raw>(
+    `select ${RUN_COLUMNS} from schedule_runs r where ${where.join(' and ')}
+     order by r.queued_at desc, r.id desc limit $2`,
+    params,
+  );
+  return rows.rows.map(runOf);
+}
+
+/** One run of the schedule. */
+export async function runById(db: Querier, scheduleId: string, runId: string): Promise<ScheduleRun | undefined> {
+  const raw = (
+    await db.query<Raw>(`select ${RUN_COLUMNS} from schedule_runs r where r.id = $1 and r.schedule_id = $2`, [
+      runId,
+      scheduleId,
+    ])
+  ).rows[0];
+  return raw === undefined ? undefined : runOf(raw);
+}
+
+/**
+ * Ends a queued or running run as `cancelled`. Returns the status it had, or `undefined` when it had
+ * already finished (or does not exist).
+ */
+export async function cancelRun(db: Querier, runId: string, at: Date): Promise<'queued' | 'running' | undefined> {
+  const rows = await db.query<{ previous: 'queued' | 'running' }>(
+    `update schedule_runs r set status = 'cancelled', reason = 'cancelled', finished_at = $2
+     from (select id, status as previous from schedule_runs where id = $1 for update) old
+     where r.id = old.id and old.previous in ('queued', 'running')
+     returning old.previous`,
+    [runId, at],
+  );
+  return rows.rows[0]?.previous;
+}

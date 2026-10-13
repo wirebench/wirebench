@@ -25,5 +25,7 @@ export const scheduleLimit = (): WirebenchError =>
 export const runNotFound = (): WirebenchError => problem('schedules-run-not-found', 'That run was not found.', 404);
 export const runFinished = (): WirebenchError =>
   problem('schedules-run-finished', 'That run has already finished.', 409);
+export const runOpen = (): WirebenchError =>
+  problem('schedules-run-open', 'A run of this schedule is still queued or running.', 409);
 export const cursorInvalid = (): WirebenchError =>
   problem('schedules-cursor-invalid', 'That page cursor is not one this server gave out.', 400);
