@@ -49,6 +49,8 @@ import {
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
 import { SnippetRunDialog } from '../features/ssh/snippets/run-dialog.js';
 import { TrustDialog } from '../features/ssh/trust-dialog.js';
+import { ForwardPrompts } from '../features/ssh/forwarding/bind-confirm-dialog.js';
+import { subscribeToForwards } from '../features/ssh/forwarding/forwards-store.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
 import { subscribeToWebhooks } from '../state/webhooks.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
@@ -320,6 +322,8 @@ export function AppShell() {
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
   useEffect(() => subscribeToHosts(), []);
+  // The `forward.*` channels exist only while the SSH area is on.
+  useEffect(() => (sshEnabled ? subscribeToForwards() : undefined), [sshEnabled]);
   useEffect(() => subscribeToSnippets(), []);
   useEffect(() => subscribeToSshEvents(), []);
   useEffect(() => subscribeToWebhooks(), []);
@@ -585,6 +589,7 @@ export function AppShell() {
       <SecretSourcesApproveDialog />
       {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
       {sshEnabled && <TrustDialog />}
+      {sshEnabled && <ForwardPrompts />}
       {sshEnabled && <SnippetRunDialog />}
       <CollectionExportReportDialog />
       <ToastViewport />

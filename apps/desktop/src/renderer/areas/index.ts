@@ -8,6 +8,7 @@ import { HistoryView } from '../features/history/history-view.js';
 import { SearchView } from '../features/search/search-view.js';
 import type { PaletteMode } from '../shell/command-palette.js';
 import { registerSshCommands } from '../commands/register-ssh-commands.js';
+import { SshStatusItem } from '../features/ssh/forwarding/ssh-status-item.js';
 import { HostsView } from '../features/ssh/hosts-view.js';
 import { WssSection } from '../features/wss/wss-section.js';
 
@@ -15,6 +16,8 @@ export interface RendererArea {
   readonly View: ComponentType;
   /** Commands the area owns beyond `view.show*`; called by `registerShellCommands` for enabled areas. */
   readonly registerCommands?: (openPalette: (mode?: PaletteMode) => void) => void;
+  /** What the area shows in the status bar, if anything; rendered only while the area is on. */
+  readonly StatusItem?: ComponentType;
 }
 
 export const AREA_ICONS: Readonly<Record<AreaModule['rail']['icon'], LucideIcon>> = {
@@ -32,5 +35,5 @@ export const RENDERER_AREAS: Readonly<Record<AreaId, RendererArea>> = {
   search: { View: SearchView },
   history: { View: HistoryView },
   wss: { View: WssSection },
-  ssh: { View: HostsView, registerCommands: registerSshCommands },
+  ssh: { View: HostsView, registerCommands: registerSshCommands, StatusItem: SshStatusItem },
 };

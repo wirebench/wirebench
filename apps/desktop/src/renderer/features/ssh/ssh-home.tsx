@@ -30,6 +30,7 @@ import type {
 import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
+import { ForwardingPanel } from './forwarding/forwarding-view.js';
 import { LayoutsPanel } from './panes/layouts-view.js';
 import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
@@ -57,6 +58,8 @@ export function SshHome() {
         <SnippetsPanel />
       ) : view === 'layouts' ? (
         <LayoutsPanel />
+      ) : view === 'forwarding' ? (
+        <ForwardingPanel />
       ) : view === 'keychain' ? (
         <KeychainPanel />
       ) : (
