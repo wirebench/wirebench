@@ -25,9 +25,13 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
+// Removing a fresh `npm install` is slow on Windows: tens of thousands of files, each deleted on its
+// own, can take longer than the default ten seconds of a hook.
+const CLEANUP_TIMEOUT_MS = 120_000;
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
+}, CLEANUP_TIMEOUT_MS);
 
 /**
  * Runs `tar` in `cwd` with the tarball as a relative path: the GNU tar on Windows
