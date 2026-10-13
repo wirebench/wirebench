@@ -364,7 +364,10 @@ function TerminalPane({
     // the find bar and never reaches the shell.
     const platform = detectPlatform();
     // Inline snippet suggestions: fed what the user types, Tab accepts a ghost.
-    const suggestions = attachSnippetSuggestions(term, { connected: () => target.current !== undefined });
+    // Not while this pane broadcasts: the typed start went to every ticked pane, a completion would not.
+    const suggestions = attachSnippetSuggestions(term, {
+      connected: () => target.current !== undefined && broadcastReceivers(tabId, paneId) === undefined,
+    });
     term.attachCustomKeyEventHandler((event) => {
       if (suggestions.handleKey(event)) return false;
       // A pane command's chord is the app's: the window's listener runs it, the shell never sees it.

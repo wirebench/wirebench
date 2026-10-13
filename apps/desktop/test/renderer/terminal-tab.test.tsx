@@ -161,6 +161,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useBroadcastStore } from '../../src/renderer/features/ssh/panes/broadcast.js';
 import { SnippetRunDialog } from '../../src/renderer/features/ssh/snippets/run-dialog.js';
 import { useSnippetsStore } from '../../src/renderer/features/ssh/snippets/snippets-store.js';
 import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
@@ -1235,6 +1236,23 @@ describe('snippet suggestions', () => {
     if (term === undefined) throw new Error('no terminal');
     typeIn(term, 'jou');
     expect(ghost()).toBeNull();
+  });
+
+  it('offers nothing while the pane broadcasts', async () => {
+    const writeMany = vi.fn().mockResolvedValue({ ok: true, value: { skipped: [] } });
+    installWirebenchApi({ ssh: { connect, write, writeMany, resize, close, runSnippet, listSnippets } });
+    const term = await mount();
+    act(() => {
+      useBroadcastStore.setState({
+        tabs: { [terminalTab()]: { on: true, ticked: new Set([paneIdOn('a') ?? '']), missed: 0 } },
+      });
+    });
+    typeIn(term, 'jou');
+    expect(ghost()).toBeNull();
+    expect(writeMany).toHaveBeenCalled();
+    act(() => {
+      useBroadcastStore.setState({ tabs: {} });
+    });
   });
 
   it('offers nothing with the preference off', async () => {
