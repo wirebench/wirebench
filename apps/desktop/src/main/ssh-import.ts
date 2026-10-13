@@ -6,6 +6,7 @@ import {
   applySshConfigImport,
   displayPath,
   loadSshConfig,
+  looksLikeCertificate,
   pathsFor,
   planSshConfigImport,
   type SshConfigImportPlan,
@@ -153,9 +154,10 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
         void env;
         return host;
       }),
-      keys: plan.keys.map(({ ref, display, hosts, proposedSecret }) => ({
+      keys: plan.keys.map(({ ref, display, certificate, hosts, proposedSecret }) => ({
         ref,
         display,
+        ...(certificate === undefined ? {} : { certificate: certificate.display }),
         hosts: [...hosts],
         proposedSecret,
       })),
@@ -203,11 +205,36 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
       texts.set(choice.secret, text);
     }
 
+    // A used key's CertificateFile is stored as `<secret>_cert`; a secret of that name already there is kept.
+    const certified: string[] = [];
+    const taken = new Set((await this.deps.secrets.names()).map((n) => n.name));
+    for (const { ref, choice } of request.keys) {
+      const certificate = plan.keys.find((k) => k.ref === ref)?.certificate;
+      if (choice.kind === 'agent' || certificate === undefined) continue;
+      certified.push(ref);
+      const name = `${choice.secret}_cert`;
+      if (taken.has(name) || texts.has(name)) continue;
+      let text: string;
+      try {
+        text = await readRegular(this.fs, certificate.path, KEY_MAX_BYTES);
+      } catch (error) {
+        throw new WirebenchError('ssh-key-unreadable', `${certificate.display} could not be read (${errnoOf(error)})`, {
+          details: { file: certificate.display },
+        });
+      }
+      if (!looksLikeCertificate(text)) {
+        throw new WirebenchError('ssh-key-unreadable', `${certificate.display} is not an OpenSSH certificate`, {
+          details: { file: certificate.display },
+        });
+      }
+      texts.set(name, text.trim());
+    }
+
     let merged;
     try {
       merged = applySshConfigImport(
         plan,
-        { groupName: request.groupName, importDuplicates: request.importDuplicates, keys, encrypted },
+        { groupName: request.groupName, importDuplicates: request.importDuplicates, keys, encrypted, certified },
         existing,
       );
     } catch (error) {

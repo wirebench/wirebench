@@ -296,6 +296,8 @@ export const sshPlannedHostWireSchema = z.strictObject({
 export const sshPlannedKeyWireSchema = z.strictObject({
   ref: z.string(),
   display: z.string(),
+  /** The key's `CertificateFile`, shown the same way; stored as `<secret>_cert` with a stored or existing key. */
+  certificate: z.string().optional(),
   hosts: z.array(z.string()),
   proposedSecret: z.string(),
 });
