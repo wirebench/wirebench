@@ -117,6 +117,9 @@ export type RequestChannelProject = Pick<
       | 'proxyFor'
       // Read to split an imported cURL URL against the API's own base URL.
       | 'projectSnapshot'
+      // The GraphQL editor's schema, and where a fetched one is stored (#77).
+      | 'graphqlSchemaFor'
+      | 'setGraphqlSchema'
       // Read by *Send to environments…* to name and validate the environments asked for.
       | 'sendEnvironments'
       | 'restMeta'
