@@ -96,6 +96,10 @@ interface HostsState {
   dialog: HostsDialog;
   /** Whether the "Import hosts" dialog is open. */
   importOpen: boolean;
+  /** Whether the "Import known hosts" dialog (Known hosts view) is open. */
+  knownHostsImportOpen: boolean;
+  /** Bumped when an import wrote trusted host keys: the views that list or count them read again. */
+  knownHostsRevision: number;
   /** The session per terminal pane id; a pane absent from the record is idle. */
   panes: Readonly<Record<string, PaneSession>>;
   /** A host's status, derived from its panes. */
@@ -119,6 +123,8 @@ interface HostsState {
   openDialog: (dialog: HostsDialog) => void;
   closeDialog: () => void;
   setImportOpen: (open: boolean) => void;
+  setKnownHostsImportOpen: (open: boolean) => void;
+  knownHostsChanged: () => void;
   /** Takes main's answer to an import's apply: the reloaded file, as after a save. */
   applyImported: (result: SshListHostsResponse) => void;
   /** `undefined` removes the pane's entry (idle). */
@@ -148,6 +154,7 @@ const WORKSPACE_STATE = {
   loaded: false,
   dialog: null,
   importOpen: false,
+  knownHostsImportOpen: false,
   panes: {},
   trustPrompt: null,
   reconnectNonce: {},
@@ -160,6 +167,7 @@ const WORKSPACE_STATE = {
 export const useHostsStore = create<HostsState>()((set, get) => ({
   ...WORKSPACE_STATE,
   homeView: 'hosts',
+  knownHostsRevision: 0,
   setHomeView: (homeView) => {
     set({ homeView });
   },
@@ -214,6 +222,12 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   },
   setImportOpen: (importOpen) => {
     set({ importOpen });
+  },
+  setKnownHostsImportOpen: (knownHostsImportOpen) => {
+    set({ knownHostsImportOpen });
+  },
+  knownHostsChanged: () => {
+    set({ knownHostsRevision: get().knownHostsRevision + 1 });
   },
   applyImported: (result) => {
     apply({ ok: true, value: result });

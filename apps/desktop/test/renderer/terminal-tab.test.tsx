@@ -182,6 +182,8 @@ const NEW_KEY = {
 
 const runSnippet = vi.fn();
 const listSnippets = vi.fn();
+// The run dialog previews after a debounce; a preview that lands after a test ends must not throw.
+const previewSnippet = vi.fn(() => Promise.resolve({ ok: true as const, value: { text: '', revision: '' } }));
 const preferencesUpdate = vi.fn();
 const writeText = vi.fn();
 
@@ -211,7 +213,7 @@ beforeEach(() => {
     value: { file: { version: 1, packages: [], snippets: [] }, snippets: [], problems: [] },
   });
   installWirebenchApi({
-    ssh: { connect, write, resize, close, runSnippet, listSnippets },
+    ssh: { connect, write, resize, close, runSnippet, listSnippets, previewSnippet },
     preferences: { update: preferencesUpdate },
   });
   useSnippetsStore.getState().reset();
@@ -1240,7 +1242,9 @@ describe('snippet suggestions', () => {
 
   it('offers nothing while the pane broadcasts', async () => {
     const writeMany = vi.fn().mockResolvedValue({ ok: true, value: { skipped: [] } });
-    installWirebenchApi({ ssh: { connect, write, writeMany, resize, close, runSnippet, listSnippets } });
+    installWirebenchApi({
+      ssh: { connect, write, writeMany, resize, close, runSnippet, listSnippets, previewSnippet },
+    });
     const term = await mount();
     act(() => {
       useBroadcastStore.setState({
