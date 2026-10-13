@@ -15,6 +15,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
+import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
@@ -309,6 +310,13 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         onChange={set('connectTimeout')}
       />
       <HostAuthSection value={ssh.auth} inherited={inheritedFrom(chain, 'auth')} onChange={set('auth')} />
+      <AgentForwardingSection
+        override={ssh.forwardAgent}
+        inherited={inheritedForwardAgent(chain)}
+        onChange={(next) => {
+          setSsh((prev) => withField(prev, 'forwardAgent', next));
+        }}
+      />
       <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
       <HostTerminalSection own={terminal} inherited={inheritedTerminal(chain, terminalPrefs)} onChange={setTerminal} />
       <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />

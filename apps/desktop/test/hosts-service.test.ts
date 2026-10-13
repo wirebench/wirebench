@@ -241,6 +241,31 @@ groups:
     ]);
     expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toContain('protected: true');
   });
+
+  it('forwardAgent crosses the wire both ways and is resolved with its source, off by default', async () => {
+    const d = dir();
+    const service = new HostsService({ treeDir: () => d });
+    const saved = await service.save({
+      version: 1,
+      groups: [
+        {
+          id: 'ops',
+          name: 'ops',
+          tags: [],
+          ssh: { forwardAgent: true },
+          groups: [],
+          hosts: [{ id: 'a', name: 'a', address: 'x', tags: [], ssh: {} }],
+        },
+      ],
+      hosts: [{ id: 'b', name: 'b', address: 'y', tags: [], ssh: {} }],
+    });
+    expect(saved.file.groups[0]?.ssh.forwardAgent).toBe(true);
+    expect(sshListHostsResponseSchema.parse(saved)).toEqual(saved);
+    expect(saved.resolved.map((h) => [h.id, h.ssh.forwardAgent])).toEqual([
+      ['a', { value: true, from: { group: 'ops' } }],
+      ['b', { value: false, from: 'default' }],
+    ]);
+  });
 });
 
 describe('HostsService env', () => {
