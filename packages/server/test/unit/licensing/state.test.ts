@@ -83,7 +83,7 @@ describe('licenseState (licensing spec §3.3)', () => {
 describe('grantedFeatures (licensing spec §2)', () => {
   it('grants nothing on Team and every known feature on Enterprise', () => {
     expect(grantedFeatures(PAYLOAD)).toEqual([]);
-    expect(grantedFeatures({ ...PAYLOAD, edition: 'enterprise' })).toEqual(['audit-log']);
+    expect(grantedFeatures({ ...PAYLOAD, edition: 'enterprise' })).toEqual(['audit-log', 'scheduled-runs']);
   });
 
   it('grants exactly an explicit list, whatever the edition, ignoring names it does not know', () => {

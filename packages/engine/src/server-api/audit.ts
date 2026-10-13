@@ -54,6 +54,10 @@ export const AUDIT_ACTIONS = [
   'desktop.request_sent',
   'desktop.run_finished',
   'desktop.events_dropped',
+  'schedule.created',
+  'schedule.updated',
+  'schedule.deleted',
+  'schedule.secrets_set',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -70,6 +74,7 @@ export const AUDIT_ACTION_GROUPS = [
   'license',
   'audit',
   'desktop',
+  'schedule',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
@@ -85,6 +90,7 @@ export const AUDIT_TARGET_KINDS = [
   'hook',
   'ci-token',
   'license',
+  'schedule',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 

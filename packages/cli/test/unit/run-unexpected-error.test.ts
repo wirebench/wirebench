@@ -1,5 +1,5 @@
 /**
- * The one output path the integration leak tests cannot reach: `runRequests` itself throwing after
+ * The one output path the integration leak tests cannot reach: the run itself (`runSuite`) throwing after
  * the run has obtained an access token. `main` prints the error's message to stderr, so the
  * message must come out masked with that token, not just with the environment's secrets.
  */
@@ -14,7 +14,7 @@ const TOKEN = 'access-token-fetched-mid-run-9d2a';
 
 vi.mock('@wirebench/engine', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@wirebench/engine')>()),
-  runRequests: (_selected: unknown, context: RunContext) => {
+  runSuite: (context: RunContext) => {
     context.host.onSecretValue?.(TOKEN);
     return Promise.reject(new Error(`socket closed while sending Authorization: Bearer ${TOKEN}`));
   },

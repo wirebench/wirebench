@@ -31,6 +31,7 @@ export const ACTION_GROUPS = [
   'license',
   'audit',
   'desktop',
+  'schedule',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -44,6 +45,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   license: 'License',
   audit: 'Audit log',
   desktop: 'Desktop activity',
+  schedule: 'Schedules',
 };
 
 export function actionLabel(action: string): string {
@@ -98,6 +100,8 @@ export function targetLabel(event: {
       return `CI token ${str(d['name']) ?? ''}`.trim();
     case 'license':
       return 'License';
+    case 'schedule':
+      return `Schedule ${str(d['name']) ?? ''}`.trim();
     default:
       return event.target.kind;
   }

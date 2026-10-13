@@ -95,6 +95,11 @@ export interface RunContext {
    * built-in four with every feature on (`defaultRegistry()`).
    */
   readonly registry?: ProtocolRegistry;
+  /**
+   * The `${#System#…}` scope. Absent: the process environment, as on a developer's machine. A server
+   * running a schedule supplies its own (an empty one), so a project never reads the server's variables.
+   */
+  readonly system?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -113,12 +118,12 @@ export function scopesFor(context: RunContext): PropertyScopes {
   );
   const scopes =
     workspace === undefined
-      ? resolveScopes(project, environmentId, globals, process.env)
+      ? resolveScopes(project, environmentId, globals, context.system ?? process.env)
       : resolveWorkspaceScopes({
           workspace: withActiveEnvironment(workspace, environmentId),
           project,
           globals,
-          system: process.env,
+          system: context.system ?? process.env,
         });
   const report = context.host.onSecretValue;
   const reported = report !== undefined ? withSystemValuesReported(scopes, report) : scopes;

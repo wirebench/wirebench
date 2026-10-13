@@ -306,6 +306,7 @@ export interface ServerModule {
     | 'webhook-capture'
     | 'ci-tokens'
     | 'live-updates'
+    | 'scheduled-runs'
     | 'audit-log';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
