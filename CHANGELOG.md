@@ -26,6 +26,12 @@ All notable changes to this project are documented here. The format follows
   server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
   screen. The host form edits them and shows the inherited ones with their group, the details panel
   lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
+- **SSH agent forwarding per host or group.** `hosts.yaml` takes `ssh.forwardAgent: true`, inherited
+  down the tree and off by default. A terminal on such a host forwards your local agent, so `git pull`
+  or another `ssh` on the remote can use your keys; a jump host never gets it. The host form shows the
+  inherited value and a warning while it is on, the terminal tab shows a key while the agent is
+  forwarded (and says why when the server refused or no agent runs), the details panel and its `ssh`
+  command show it, and importing an SSH config now maps `ForwardAgent` (#413).
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as
