@@ -122,9 +122,12 @@ export function detachTerminal(sessionId: string): void {
 }
 
 /** Feeds an event as main would send it; tests only. */
-export function __dispatchForTest(name: 'ssh.data' | 'ssh.exit', payload: unknown): void {
+export function __dispatchForTest(
+  name: 'ssh.data' | 'ssh.exit' | 'localTerminal.data' | 'localTerminal.exit',
+  payload: unknown,
+): void {
   const event = payload as { sessionId: string; data?: string; code?: number | null; reason?: SessionEndReason };
-  if (name === 'ssh.data') onData(event.sessionId, base64ToBytes(event.data ?? ''));
+  if (name === 'ssh.data' || name === 'localTerminal.data') onData(event.sessionId, base64ToBytes(event.data ?? ''));
   else onExit(event.sessionId, event.code ?? null, event.reason ?? 'exit');
 }
 
@@ -153,6 +156,13 @@ export function subscribeToSshEvents(): () => void {
     }) as Listener),
     window.wirebench.on('ssh.exit', ((event: ExitEvent) => {
       onExit(event.sessionId, event.code, event.reason);
+    }) as Listener),
+    // A local terminal's shell (#410) prints and ends the same way; its ids never clash with an SSH session's.
+    window.wirebench.on('localTerminal.data', ((event: DataEvent) => {
+      onData(event.sessionId, base64ToBytes(event.data));
+    }) as Listener),
+    window.wirebench.on('localTerminal.exit', ((event: { sessionId: string; code: number | null }) => {
+      onExit(event.sessionId, event.code, 'exit');
     }) as Listener),
     window.wirebench.on('ssh.resumed', reconnectNow),
     window.wirebench.on('ssh.state', ((event: StateEvent) => {

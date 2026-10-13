@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
+    "@lydell/node-pty": "1.1.0",
     "@wirebench/engine": "workspace:*",
     "@wirebench/ssh": "workspace:*",
     "@xterm/addon-search": "0.16.0",

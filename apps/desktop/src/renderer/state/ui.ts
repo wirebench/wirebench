@@ -131,6 +131,9 @@ export interface UiStore extends UiSnapshot {
   /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`). Transient — answered by main. */
   readonly enabledAreas: readonly AreaId[];
   readonly setEnabledAreas: (ids: readonly AreaId[]) => void;
+  /** Whether this run has the local terminal tab on (#410; `WIREBENCH_AREAS`). Transient — answered by main. */
+  readonly localTerminalEnabled: boolean;
+  readonly setLocalTerminalEnabled: (enabled: boolean) => void;
   /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`). Transient — answered by main. */
   readonly enabledKinds: readonly KindId[];
   readonly setEnabledKinds: (ids: readonly KindId[]) => void;
@@ -301,6 +304,10 @@ export const useUiStore = create<UiStore>((set, get) => {
       if (first !== undefined && !ids.includes(get().sidebar.view)) {
         get().setSidebarView(first);
       }
+    },
+    localTerminalEnabled: true,
+    setLocalTerminalEnabled: (enabled) => {
+      set({ localTerminalEnabled: enabled });
     },
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,

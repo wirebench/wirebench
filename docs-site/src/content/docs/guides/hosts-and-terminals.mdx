@@ -268,6 +268,23 @@ pagers, resize), and a host that is reached through a jump host is dialled hop b
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
 
+## Local terminal
+
+**Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>), or **New local terminal**
+at the foot of the SSH sidebar, opens a tab with a shell on this machine, for the `git`, `curl` or
+build you run next to the remote sessions. It sits with the SSH terminals and behaves like one: the
+same colours, the multi-line paste prompt, copy on select and <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd> find.
+
+- On macOS and Linux it runs your login shell (`$SHELL`), so it reads your profile. On Windows it runs
+  PowerShell 7 when it is installed, otherwise Windows PowerShell. **Preferences → Terminal → Local
+  shell** runs another program instead, such as `/bin/bash`, `cmd.exe` or `wsl.exe`.
+- It starts in the workspace's folder when the workspace is shared from a folder of yours (a git clone
+  or a synced folder), and in your home folder otherwise.
+- When the shell exits, the tab shows **Shell ended (code N)** with **Restart**. Closing the tab, or
+  switching to another workspace, ends the shell.
+- A local terminal holds one shell: it does not split, join a layout or take broadcast input.
+- `WIREBENCH_AREAS=local-terminal=off` removes it while keeping SSH; `ssh=off` removes both.
+
 ## Files
 
 A **Files** tab browses a host's files beside this machine's and copies between them over SFTP. It
@@ -912,6 +929,13 @@ its quick-open entries, the Port forwarding, Layouts and Snippets views (with **
 suggestions) and the status bar item are gone, and the area's
 channels are not registered in the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
 
+The local terminal goes with the area. To keep SSH and remove only the local terminal (its command, its
+sidebar entry and its channels), set `local-terminal=off`:
+
+```sh
+WIREBENCH_AREAS="local-terminal=off"
+```
+
 ## What is not here yet
 
 This part does not include:
@@ -921,7 +945,7 @@ This part does not include:
 - sending requests through a host or a forward,
 - agent, X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
-- a local terminal, SSH agent forwarding to the remote, or session recording with replay.
+- SSH agent forwarding to the remote, or session recording with replay.
 
 ## Related
 

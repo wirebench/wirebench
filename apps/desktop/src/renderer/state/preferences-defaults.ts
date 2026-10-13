@@ -65,6 +65,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     snippetSuggestions: true,
     sessionLogMaxMb: 500,
     sessionLogRaw: false,
+    localShell: '',
   },
   shortcuts: {},
 };

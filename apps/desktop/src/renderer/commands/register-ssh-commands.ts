@@ -9,6 +9,7 @@ import {
   stopForward,
 } from '../features/ssh/forwarding/forward-actions.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { openLocalTerminal } from '../features/ssh/local-terminal.js';
 import {
   activeTerminal,
   closePane,
@@ -56,6 +57,15 @@ function revealHosts(): void {
  * @param openPalette - Opens the command palette in the given mode; owned by the shell.
  */
 export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): void {
+  // The local terminal (#410) rides with the area, and `WIREBENCH_AREAS=local-terminal=off` drops it on its own.
+  if (useUiStore.getState().localTerminalEnabled) {
+    registerCommand({
+      ...catalogEntry('ssh.newLocalTerminal'),
+      run: () => {
+        openLocalTerminal();
+      },
+    });
+  }
   registerCommand({
     ...catalogEntry('ssh.newHost'),
     run: () => {
