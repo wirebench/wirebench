@@ -92,6 +92,34 @@ function headerValue(headers: readonly KeyValueEntry[], name: string): string | 
   return headers.find((h) => h.name.toLowerCase() === name)?.value;
 }
 
+/**
+ * A `GRAPHQL` request's body: the query, then, after a blank line, an optional JSON object of
+ * variables. A `< file` body is not read: the query is left empty and noted.
+ */
+function graphqlBody(
+  request: HttpFileRequest,
+  ctx: HttpRewriteContext,
+  label: string,
+  report: ReportBuilder,
+  blanked: Set<string>,
+): RestBody {
+  const body = request.body;
+  if (body === undefined) return { kind: 'graphql', query: '', variables: '' };
+  if (body.kind === 'file') {
+    report.note(`${label}: the query file ${body.path} was not imported; paste the query into the request.`);
+    return { kind: 'graphql', query: '', variables: '' };
+  }
+  const text = rewriteHttpValue(body.text, ctx);
+  const split = /\n[ \t]*\n(?=[ \t]*\{)/g;
+  let at = -1;
+  for (let match = split.exec(text); match !== null; match = split.exec(text)) at = match.index;
+  const tail = at < 0 ? '' : text.slice(at).trim();
+  if (at >= 0 && tail.endsWith('}')) {
+    return { kind: 'graphql', query: text.slice(0, at).trim(), variables: blankJsonText(tail, blanked) };
+  }
+  return { kind: 'graphql', query: text.trim(), variables: '' };
+}
+
 /** The request body, from its `Content-Type`. Literal credential values in JSON, XML and form bodies are blanked. */
 function mapBody(
   request: HttpFileRequest,
@@ -203,9 +231,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
     urls.set(request, { ...splitUrl(url), ...userinfo });
   }
 
-  const restRequests = parsed.requests.filter(
-    (r) => r.method !== 'WEBSOCKET' && r.method !== 'GRAPHQL' && r.method !== 'GRPC',
-  );
+  const restRequests = parsed.requests.filter((r) => r.method !== 'WEBSOCKET' && r.method !== 'GRPC');
   const candidates = restRequests.map((r) => baseCandidate(urls.get(r)?.path ?? ''));
   const first = candidates[0];
   const baseUrl = first !== undefined && candidates.every((c) => c === first) ? first : '';
@@ -219,11 +245,6 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
   let skipped = 0;
 
   for (const request of parsed.requests) {
-    if (request.method === 'GRAPHQL') {
-      report.warn(`The GRAPHQL request at line ${request.line} was skipped: GraphQL support is tracked in #77.`);
-      skipped += 1;
-      continue;
-    }
     if (request.method === 'GRPC') {
       report.warn(
         `The GRPC request at line ${request.line} was skipped: a gRPC request needs a definition; import its .proto.`,
@@ -292,7 +313,10 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
         }),
       );
     } else {
-      const body = mapBody(request, headerValue(headers, 'content-type'), options, ctx, label, report, blanked);
+      const graphql = request.method === 'GRAPHQL';
+      const body = graphql
+        ? graphqlBody(request, ctx, label, report, blanked)
+        : mapBody(request, headerValue(headers, 'content-type'), options, ctx, label, report, blanked);
       const slug = uniqueSlug(name, restSlugs);
       restSlugs.add(slug);
       rest.push(
@@ -300,7 +324,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
           newId,
           order: rest.length,
           slug,
-          method: request.method,
+          method: graphql ? 'POST' : request.method,
           url: cutBase(url, baseUrl),
           query,
           headers,

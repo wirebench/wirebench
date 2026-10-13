@@ -1,0 +1,100 @@
+---
+title: GraphQL
+description: Send GraphQL queries and mutations over HTTP, with completion and validation from the service's schema, errors shown as Problems, and runs that fail on them.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A GraphQL request in Wirebench is a REST request whose body is **GraphQL**: a query or mutation, its
+variables, and optionally the name of the operation to run. It goes out as the JSON
+`{"query": …, "variables": …, "operationName": …}` body a GraphQL server reads, as an HTTP `POST`.
+Because it is an ordinary REST request, it has the API's auth, environments, History, the HTTP Log,
+scripts, assertions, runs, sequences and *Copy as command* without anything more to set up.
+
+Subscriptions are not supported yet.
+
+## Create a GraphQL request
+
+<Steps>
+
+1. In the explorer, right-click a REST API and choose **New GraphQL request**. Or open any REST
+   request and choose **GraphQL** on its **Body** tab: a `GET` request becomes a `POST`.
+
+2. Set the URL to the service's GraphQL endpoint, for example `${baseUrl}/graphql`.
+
+3. Write the query in the **Query** editor and its variables, as a JSON object, in the
+   **Variables** editor below it.
+
+4. Press **Send**.
+
+</Steps>
+
+The explorer shows `GQL` in place of the method for a request whose body is GraphQL.
+
+When the query holds more than one operation, pick the one to run in the **Operation** list; the
+request sends its name as `operationName`. With a single operation the list is hidden and no name is
+sent.
+
+### Properties and secrets
+
+`${…}` references work in the query, the variables and the operation name, as they do in a raw JSON
+body. When the request's **Escape properties** setting is on, a substituted value is escaped as a JSON
+string, which is also how a GraphQL string escapes. A reference can stand in a value position of the
+variables, such as `{"id": ${petId}}`: the variables only have to be valid JSON once every reference is
+expanded. Variables that are still not a JSON object refuse the send, with
+`graphql-variables-invalid`.
+
+## The schema
+
+The schema gives the editor its completion, validation and hover documentation, and lets Wirebench
+check each response's `data`. A schema belongs to the API, so every GraphQL request in the API
+shares it. It is stored in the project as SDL, in `apis/<api>/graphql/schema.graphql`, so it is
+committed and reviewed like the rest of the project.
+
+- **Fetch schema** on the **Body** tab sends the standard introspection query to the request's URL,
+  with its headers, auth and environment, and stores the answer. The request's scripts do not run
+  for it, and it is not recorded in History. A server that refuses introspection is reported with
+  its own message, and the stored schema is kept.
+- **Import schema…** reads an SDL file (`.graphql`, `.graphqls`, `.gql`) or an introspection
+  result (`.json`, with or without the `data` wrapper).
+- **Clear** removes the schema.
+
+With no schema, the query editor still marks syntax errors.
+
+## Completion and validation
+
+With a schema, the **Query** editor completes fields, arguments, types, fragments and directives,
+marks what the schema does not allow, and shows a field's or type's description on hover. The
+**Variables** editor completes the variables the operation declares, and marks a required variable
+that is missing, a variable the operation does not declare, and a value of the wrong type.
+
+## Responses, errors and Problems
+
+Every response to a GraphQL request is checked:
+
+- Each entry of its `errors` array becomes an error in the **Problems** view, with the server's
+  message and the error's `path`.
+- When the API has a schema, its `data` is checked against the operation that was sent. A field
+  that is missing or was not selected, `null` where the schema says non-null, a value of the wrong
+  scalar or enum type, or a list where none was expected is a warning in **Problems**, marked in the
+  response body where it happened. Nulls and gaps are expected where a field failed with an error.
+
+A chip above the response says how it went: **No GraphQL errors**, **2 GraphQL errors** or
+**Schema mismatch**.
+
+<Aside type="note">
+Checking `data` is skipped for a response over 1 MiB, and at most 50 problems are kept per response.
+</Aside>
+
+## Runs and sequences
+
+In a run, a sequence or `wirebench run`, a GraphQL request gets a check named **GraphQL errors**. It
+fails when the response carries errors, even on HTTP 200, and its *actual* value lists the first
+messages. It is not one of the request's own assertions, so `--require-assertions` still asks for
+one. A mismatch between `data` and the schema does not fail a run.
+
+## What is sent where
+
+After expansion the body is the JSON it is sent as, so a pre-request script, History, the HTTP Log,
+*Copy as command* and code generation all see an `application/json` body. A Postman export writes a
+GraphQL body back as a GraphQL body; every other export writes the JSON.

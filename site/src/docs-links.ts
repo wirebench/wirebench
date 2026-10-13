@@ -5,6 +5,7 @@ export const DOCS_LINKS = {
   soapWsdl: 'guides/soap-wsdl',
   wsTrust: 'guides/ws-trust',
   restClient: 'guides/rest-client',
+  graphql: 'guides/graphql',
   grpc: 'guides/grpc',
   websocket: 'guides/websocket',
   asyncapi: 'guides/asyncapi',

@@ -38,7 +38,7 @@ folders — see [Collection v3 folders](#collection-v3-folders) below.
 | An `x-www-form-urlencoded` body | A form body | |
 | A `form-data` body | A multipart body. File fields keep the file path | |
 | A binary file body | A binary body pointing at the same path | |
-| A GraphQL body | A raw JSON body holding `query` and `variables`, with `Content-Type: application/json` | |
+| A GraphQL body | A [GraphQL body](/wirebench/docs/guides/graphql/) with the same query and variables. An export writes it back as a GraphQL body | |
 | Saved responses | Request examples, with credential headers and values masked and cookies dropped; a body past 256 KB is cut | [Examples](/wirebench/docs/guides/rest-client/) |
 | `followRedirects` and `maxRedirects` request settings | The request's redirect settings | |
 
