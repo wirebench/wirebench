@@ -34,6 +34,7 @@ export function registerSshChannels(deps: {
   snippets: Pick<SnippetsService, 'list' | 'save'>;
   layouts: Parameters<typeof registerLayoutChannels>[0];
   transfers: Parameters<typeof registerSftpChannels>[0]['transfers'];
+  edits: Parameters<typeof registerSftpChannels>[0]['edits'];
   forward: Parameters<typeof registerForwardChannels>[0]['forward'] & Pick<ForwardService, 'hostsChanged'>;
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
@@ -90,7 +91,7 @@ export function registerSshChannels(deps: {
   });
   registerHandler(channels.ssh.previewSnippet, (request, sender) => deps.ssh.previewSnippet(sender, request));
   // The Files tab rides with the SSH area: off with it, so its local-path exception (spec R5) goes too.
-  registerSftpChannels({ sftp: deps.sftp, transfers: deps.transfers });
+  registerSftpChannels({ sftp: deps.sftp, transfers: deps.transfers, edits: deps.edits });
   // Saved layouts (panes slice 3) ride with the area too.
   registerLayoutChannels(deps.layouts);
   // Forwards ride with the area too: off with it, no `forward.*` channel exists.

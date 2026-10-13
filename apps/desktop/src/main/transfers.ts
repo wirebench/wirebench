@@ -131,7 +131,7 @@ interface ErrorWire {
 }
 
 /** A failure as the event carries it: a code, a message and details; never a file's content. */
-function errorWire(error: unknown): ErrorWire {
+export function errorWire(error: unknown): ErrorWire {
   let known = asWirebenchError(error);
   const errno = (known as NodeJS.ErrnoException | null)?.code;
   if (!(known instanceof WirebenchError) && typeof errno === 'string' && /^E[A-Z]+$/.test(errno)) {

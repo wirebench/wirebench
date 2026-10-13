@@ -60,6 +60,7 @@ import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
 import { SshService, forwardResume } from './ssh-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
+import { SftpEditService, sweepEditCopies } from './sftp-edit.js';
 import { SftpService } from './sftp-service.js';
 import { ForwardService } from './forward-service.js';
 import { createForwardBinds } from './forward-binds.js';
@@ -544,6 +545,17 @@ const sshService = new SshService({
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
 /** The Files tab's copies, a queue per window over that window's own SFTP sessions. */
 const sftpTransfers = new TransferQueue({ sftp: sftpService, emit: emitEvent });
+/** Where an edited remote file's copy lives while the system editor has it; swept at start-up. */
+const sftpEditRoot = join(app.getPath('userData'), 'sftp-edit');
+/** The Files tab's edits in the system editor, uploaded on save, owned per window over its own sessions. */
+const sftpEdits = new SftpEditService({
+  sftp: sftpService,
+  emit: emitEvent,
+  root: sftpEditRoot,
+  openPath: (path) => shell.openPath(path),
+  // Copies a crash left behind go before the first edit makes a new one.
+  swept: sweepEditCopies(sftpEditRoot),
+});
 /** Port forwards, owned per window, one connection per window and host through the same connector. */
 const forwardService = new ForwardService({
   hosts: sshConnectDeps.hosts,
@@ -579,7 +591,10 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   const picks = new DialogPicks(appPicks);
   // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions and forwards; a
   // rename or reload does not, and another window's sessions are its own workspace's.
-  const endSshOnSwitch = sshAreaEndsOnSwitch([sftpTransfers, sshService, sftpService, forwardService], target);
+  const endSshOnSwitch = sshAreaEndsOnSwitch(
+    [sftpTransfers, sftpEdits, sshService, sftpService, forwardService],
+    target,
+  );
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
   const hosts = windowHosts(
     () => workspace.treeDir(),
@@ -1285,6 +1300,7 @@ void app.whenReady().then(() => {
       workspaceId: () => scopes.callerOrOnly()?.workspace.openWorkspaceId(),
     },
     transfers: sftpTransfers,
+    edits: sftpEdits,
     forward: forwardService,
     keys: sshKeys,
     importer: new SshImportService<WebContents>({
@@ -1445,6 +1461,8 @@ app.on('before-quit', (event) => {
   // SSH sessions end with the app; closing never throws or waits.
   sshService.disposeAll();
   sftpTransfers.disposeAll();
+  // The copies go with their edits; not awaited, and start-up sweeps whatever a quit leaves.
+  void sftpEdits.disposeAll();
   sftpService.disposeAll();
   // Forward listeners close with the app; not awaited, so a socket that will not close never holds up the quit.
   void forwardService.disposeAll();
