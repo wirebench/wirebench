@@ -53,8 +53,10 @@ All notable changes to this project are documented here. The format follows
 - **Snippets from the palette.** ⌘K **Run Snippet…** lists the snippets, matched on name, package, tags and
   first line; Enter runs the one picked into the terminal tab in front (through the run dialog when the run
   must ask), or opens the run dialog when no terminal is in front. ⌘P lists them under a **Snippets**
-  heading. New commands: **Show Snippets**, **Snippets: New Snippet…**, **Snippets: Edit Snippet…** and
-  **Snippets: Run Snippet** (#453).
+  heading. Inside a terminal, ⌘; (Ctrl+; on Windows and Linux) opens a snippet picker over it without the
+  shell seeing the key: Enter runs the snippet there, ⌥Enter inserts it without pressing Enter, Escape returns
+  to the shell. New commands: **Show Snippets**, **Snippets: New Snippet…**, **Snippets: Edit Snippet…**,
+  **Snippets: Run Snippet** and **Terminal: Snippets…** (#453).
 - **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
   keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
   or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,
