@@ -18,6 +18,7 @@ export function registerSshChannels(deps: {
     SshService,
     | 'connect'
     | 'write'
+    | 'writeMany'
     | 'resize'
     | 'close'
     | 'trust'
@@ -54,6 +55,7 @@ export function registerSshChannels(deps: {
     deps.ssh.write(sender, request);
     return Promise.resolve({});
   });
+  registerHandler(channels.ssh.writeMany, (request, sender) => Promise.resolve(deps.ssh.writeMany(sender, request)));
   registerHandler(channels.ssh.resize, (request, sender) => {
     deps.ssh.resize(sender, request);
     return Promise.resolve({});

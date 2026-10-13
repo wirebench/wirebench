@@ -10,7 +10,9 @@ import {
   moveFocus,
   requestSplit,
 } from '../features/ssh/panes/pane-actions.js';
+import { toggleBroadcast } from '../features/ssh/panes/broadcast.js';
 import { useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
+import { leaves } from '../features/ssh/panes/pane-tree.js';
 import { registerCommand } from '../lib/commands.js';
 import type { PaletteMode } from '../shell/command-palette.js';
 import { useUiStore } from '../state/ui.js';
@@ -110,6 +112,20 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     run: () => {
       const active = activeTerminal();
       if (active !== undefined) useLayoutsStore.getState().setSavingTabId(active.tabId);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.toggleBroadcast'),
+    when: onTerminalTab,
+    whenScope: 'editor.terminal',
+    run: () => {
+      const active = activeTerminal();
+      if (active !== undefined) {
+        toggleBroadcast(
+          active.tabId,
+          leaves(active.panes).map((leaf) => leaf.paneId),
+        );
+      }
     },
   });
   for (const [id, dir] of [

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import { Columns2, FolderOpen, LayoutPanelLeft, Rows2 } from 'lucide-react';
+import { Columns2, FolderOpen, LayoutPanelLeft, Radio, Rows2 } from 'lucide-react';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { CommandId } from '@shared/commands.js';
@@ -19,6 +19,16 @@ import { guardPaste } from './paste-guard.js';
 import { trackPaneModes } from './terminal-modes.js';
 import { attachSnippetSuggestions } from './snippets/ghost.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
+import { BroadcastBanner } from './panes/broadcast-banner.js';
+import {
+  broadcastOf,
+  noteWriteMany,
+  pruneBroadcast,
+  receiversFor,
+  stopBroadcast,
+  toggleBroadcast,
+  useTabBroadcast,
+} from './panes/broadcast.js';
 import { HostPicker } from './panes/host-picker.js';
 import {
   cancelSplit,
@@ -64,6 +74,22 @@ interface Live {
 }
 
 const encoder = new TextEncoder();
+
+/** Each pane's session while it is open; a pane connecting, reconnecting or ended receives nothing. */
+function openSessions(): Record<string, string | undefined> {
+  const sessions: Record<string, string | undefined> = {};
+  for (const [paneId, pane] of Object.entries(useHostsStore.getState().panes)) {
+    if (pane.state === 'open') sessions[paneId] = pane.sessionId;
+  }
+  return sessions;
+}
+
+/** The sessions a broadcast takes a pane's input to, or `undefined` when it goes to the pane alone. */
+function broadcastReceivers(tabId: string, paneId: string): string[] | undefined {
+  const broadcast = broadcastOf(tabId);
+  if (!broadcast.on || !broadcast.ticked.has(paneId)) return undefined;
+  return receiversFor(broadcast, paneId, openSessions());
+}
 
 function hasSize(element: HTMLElement): boolean {
   return element.clientWidth > 0 && element.clientHeight > 0;
@@ -158,6 +184,19 @@ export function TerminalTab({
     paneSessions[pane.paneId] === undefined &&
     !knownHosts.some((host) => host.id === pane.hostId);
   const saving = useLayoutsStore((s) => s.savingTabId === tabId);
+  const paneIds = leaves(panes).map((leaf) => leaf.paneId);
+  const paneKey = paneIds.join(' ');
+  const broadcasting = useTabBroadcast(tabId).on;
+  // A closed pane leaves the ticks; one pane left ends the broadcast, and so does closing the tab.
+  useEffect(() => {
+    pruneBroadcast(tabId, paneKey.split(' '));
+  }, [tabId, paneKey]);
+  useEffect(
+    () => () => {
+      stopBroadcast(tabId);
+    },
+    [tabId],
+  );
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-end gap-1 border-b border-hairline px-2 py-0.5">
@@ -181,6 +220,20 @@ export function TerminalTab({
         </button>
         <button
           type="button"
+          className={`${TOOL_CLASS} disabled:cursor-not-allowed disabled:opacity-50 ${
+            broadcasting ? 'bg-status-danger/15 text-fg-default' : ''
+          }`}
+          aria-pressed={broadcasting}
+          disabled={!split}
+          title={split ? undefined : 'Broadcast needs two or more panes'}
+          onClick={() => {
+            toggleBroadcast(tabId, paneIds);
+          }}
+        >
+          <Radio size={13} aria-hidden="true" className={broadcasting ? 'text-status-danger' : undefined} /> Broadcast
+        </button>
+        <button
+          type="button"
           className={TOOL_CLASS}
           onClick={() => {
             if (focusedHost !== undefined) openFiles(focusedHost);
@@ -198,6 +251,7 @@ export function TerminalTab({
           <LayoutPanelLeft size={13} aria-hidden="true" /> Save layout…
         </button>
       </div>
+      <BroadcastBanner tabId={tabId} paneIds={paneIds} />
       <div className="min-h-0 flex-1">
         <PaneView
           tabId={tabId}
@@ -266,9 +320,11 @@ function TerminalPane({
   // The last connect ended with no session (refused, failed, or the trust prompt dismissed).
   const failed = useHostsStore((s) => s.connectFailed[paneId] === true) && session === undefined;
   const sessionId = session?.sessionId;
+  const broadcast = useTabBroadcast(tabId);
+  const receiving = broadcast.on && broadcast.ticked.has(paneId);
   const [exit, setExit] = useState<{ sessionId: string; code: number | null } | undefined>(undefined);
-  /** A multi-line paste held for the user's yes; xterm never saw it. */
-  const [heldPaste, setHeldPaste] = useState<string | null>(null);
+  /** A paste held for the user's yes; xterm never saw it. `receivers` above one: a broadcast takes it there. */
+  const [heldPaste, setHeldPaste] = useState<{ text: string; receivers: number } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findFocus, setFindFocus] = useState(0);
   const [findResults, setFindResults] = useState<FindResults | undefined>(undefined);
@@ -364,7 +420,20 @@ function TerminalPane({
 
     const send = (bytes: Uint8Array): void => {
       const id = target.current;
-      if (id !== undefined) void ipc().ssh.write({ sessionId: id, data: bytesToBase64(bytes) });
+      if (id === undefined) return;
+      const data = bytesToBase64(bytes);
+      const receivers = broadcastReceivers(tabId, paneId);
+      if (receivers === undefined) {
+        void ipc().ssh.write({ sessionId: id, data });
+        return;
+      }
+      // One call per keystroke batch keeps the panes in step; main writes nothing to a session not ours.
+      void ipc()
+        .ssh.writeMany({ sessionIds: receivers, data })
+        .then((result) => {
+          if (result.ok) noteWriteMany(tabId, result.value.skipped.length);
+        })
+        .catch(() => undefined);
     };
     const input = term.onData((text) => {
       suggestions.input(text);
@@ -378,13 +447,14 @@ function TerminalPane({
     // preferences are read per paste, so "Don't ask again" and the Preferences toggle take effect at once.
     const onPaste = (event: ClipboardEvent): void => {
       const text = event.clipboardData?.getData('text') ?? '';
-      if (guardPaste(text, usePreferencesStore.getState().preferences.terminal) === 'send') {
+      const receivers = broadcastReceivers(tabId, paneId)?.length ?? 1;
+      if (guardPaste(text, usePreferencesStore.getState().preferences.terminal, receivers) === 'send') {
         suggestions.markPaste();
         return;
       }
       event.preventDefault();
       event.stopPropagation();
-      setHeldPaste(text);
+      setHeldPaste({ text, receivers });
     };
     element.addEventListener('paste', onPaste, true);
     let copyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -445,7 +515,7 @@ function TerminalPane({
       forgetPaneSize(paneId);
       term.dispose();
     };
-  }, [paneId, hostId, nonce]);
+  }, [tabId, paneId, hostId, nonce]);
 
   // Attach to the pane's session once the store has one: from the connect above, or from the trust prompt.
   useEffect(() => {
@@ -518,9 +588,16 @@ function TerminalPane({
 
   return (
     <div
-      className={`flex h-full flex-col ${split && focused ? 'outline-1 -outline-offset-1 outline-accent' : ''}`}
+      className={`flex h-full flex-col ${
+        receiving
+          ? 'outline-2 -outline-offset-2 outline-status-danger'
+          : split && focused
+            ? 'outline-1 -outline-offset-1 outline-accent'
+            : ''
+      }`}
       data-testid="ssh-pane"
       data-focused={focused ? 'true' : undefined}
+      data-broadcast={receiving ? 'true' : undefined}
       // A click or a tab into the pane gives it the focus, as ⌘⌥ + arrow does.
       onFocusCapture={() => {
         focusPane(tabId, paneId);
@@ -530,14 +607,15 @@ function TerminalPane({
       }}
     >
       <PasteDialog
-        text={heldPaste}
+        text={heldPaste?.text ?? null}
+        receivers={heldPaste?.receivers}
         onCancel={closePaste}
         onConfirm={(dontAskAgain) => {
           // term.paste keeps bracketed-paste mode and newline handling the same as an unguarded paste, and
           // fires no DOM paste event, so the guard cannot catch it again.
           if (heldPaste !== null) {
             live.current?.markPaste();
-            live.current?.term.paste(heldPaste);
+            live.current?.term.paste(heldPaste.text);
           }
           if (dontAskAgain) void usePreferencesStore.getState().update({ terminal: { confirmMultilinePaste: false } });
           closePaste();

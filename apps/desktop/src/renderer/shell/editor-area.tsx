@@ -7,6 +7,7 @@ import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
 import { useFilesStore } from '../features/ssh/files/files-store.js';
 import { filesTitle } from '../features/ssh/files/open-files.js';
 import { useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
+import { useBroadcastStore } from '../features/ssh/panes/broadcast.js';
 import { terminalTitleOf } from '../features/ssh/panes/open-layout.js';
 import { leaves } from '../features/ssh/panes/pane-tree.js';
 import { filesSessionStatus, sessionStatus } from '../features/ssh/session-status.js';
@@ -151,6 +152,7 @@ export function EditorArea() {
   const resolvedHosts = useHostsStore((state) => state.resolved);
   const layouts = useLayoutsStore((state) => state.layouts);
   // Every terminal, whichever set is shown: they stay mounted so leaving Hosts never ends a session.
+  const broadcasting = useBroadcastStore((s) => s.tabs);
   const terminalTabs = allTabs.filter((tab) => tab.kind === 'ssh-terminal' && tab.panes !== undefined);
   // Files tabs too: each holds its own SFTP session and folder.
   const filesTabs = allTabs.filter((tab) => tab.kind === 'ssh-files' && tab.hostId !== undefined);
@@ -434,6 +436,16 @@ export function EditorArea() {
                   />
                 )}
                 <span className="min-w-0 truncate">{label}</span>
+                {broadcasting[tab.id]?.on === true && (
+                  // Never missed while on (spec R8): drawn red, and named for screen readers.
+                  <span
+                    data-testid="editor-tab-broadcast"
+                    title="Broadcasting"
+                    aria-label="Broadcasting"
+                    role="img"
+                    className="size-1.5 shrink-0 rounded-full bg-status-danger"
+                  />
+                )}
                 {dirty && (
                   // Announced, not just drawn: the dot is the only thing distinguishing a tab
                   // with unsaved edits from one without, and it is too small to rely on colour.

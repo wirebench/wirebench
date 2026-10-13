@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { openFiles } from '../files/open-files.js';
 import { findHost, useHostsStore } from '../hosts-store.js';
 import { sessionStatus } from '../session-status.js';
+import { setTicked, useTabBroadcast } from './broadcast.js';
 import { closePane, requestSplit } from './pane-actions.js';
 import type { PaneLeaf } from './pane-tree.js';
 
@@ -17,8 +18,8 @@ export function useHostName(hostId: string): string {
 }
 
 /**
- * The slim bar over a pane of a split tab: its session's dot, its host, and the menu that splits, opens
- * Files on or closes this pane.
+ * The slim bar over a pane of a split tab: its session's dot, its host, while broadcasting whether it
+ * receives, and the menu that splits, opens Files on or closes this pane.
  */
 export function PaneHeader({
   tabId,
@@ -32,6 +33,7 @@ export function PaneHeader({
   const { paneId, hostId } = pane;
   const name = useHostName(hostId);
   const status = sessionStatus(useHostsStore((s) => s.panes[paneId]?.state));
+  const broadcast = useTabBroadcast(tabId);
   return (
     <div
       className={`flex h-6 shrink-0 items-center gap-1.5 border-b border-hairline px-2 text-xs ${
@@ -43,6 +45,17 @@ export function PaneHeader({
         ●
       </span>
       <span className="min-w-0 flex-1 truncate">{name}</span>
+      {broadcast.on && (
+        <input
+          type="checkbox"
+          className="accent-status-danger"
+          aria-label={`Receive broadcast in ${name}`}
+          checked={broadcast.ticked.has(paneId)}
+          onChange={(event) => {
+            setTicked(tabId, paneId, event.target.checked);
+          }}
+        />
+      )}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger
           className="rounded p-0.5 text-fg-muted hover:bg-surface-hover hover:text-fg-default"
