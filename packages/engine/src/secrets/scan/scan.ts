@@ -34,7 +34,7 @@ export function scanProjectForSecrets(project: Project): SecretFinding[] {
     const matches = detectInText(target.text, target.context);
     const seen = new Map<string, number>();
     const { location } = target;
-    const inUrl = location.kind === 'rest-url' || location.kind === 'ws-url';
+    const inUrl = location.kind === 'rest-url' || location.kind === 'ws-url' || location.kind === 'mcp-url';
     for (const match of matches) {
       const value = target.text.slice(match.start, match.end);
       const occurrence = seen.get(value) ?? 0;

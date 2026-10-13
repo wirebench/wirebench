@@ -130,19 +130,19 @@ tests.
 **Files:** new `mcp/run.ts`, `mcp/expand.ts`, `mcp/approval.ts`, `mcp/secrets.ts`, `mcp/module.ts`,
 `protocols.ts` (`SelectedRequest`, `SentExchange`, `LiveEvent`), `run/run.ts` if needed, tests.
 
-- [ ] `groups`, `whyNotRunnable`, `open` → `ExchangeHandle` with live message events, `resolve`, and
+- [x] `groups`, `whyNotRunnable`, `open` → `ExchangeHandle` with live message events, `resolve`, and
   `secretNeeds`.
-- [ ] Expansion:
+- [x] Expansion:
   - `${…}` references expand in the transport fields, the operation's strings and the arguments (with
     JSON escaping);
   - auth goes through `http/auth`, with one token per send;
   - the request's timeout wins over the server's.
-- [ ] `commandFingerprint` (SHA-256 of the expanded command, args and cwd, plus the env names).
+- [x] `commandFingerprint` (SHA-256 of the expanded command, args and cwd, plus the env names).
   `SendHost.approveCommand?(fingerprint, display)`. When the host has none, or refuses, the send fails
   with `mcp-command-unapproved`.
-- [ ] The secrets facet: scan targets and moves over the transport env and headers, the operation
+- [x] The secrets facet: scan targets and moves over the transport env and headers, the operation
   strings and the arguments.
-- [ ] Tests:
+- [x] Tests:
   - an MCP API run against the stdio and HTTP fixtures, with assertions and the "MCP result" check;
   - an unapproved stdio send;
   - secret needs;

@@ -455,7 +455,8 @@ export const sendOp = defineOp({
       if (exchange.kind === 'websocket' && item.kind === 'websocket') {
         return wsResultOf(item, result, exchange, { text: mask, base64: maskBase64 }, historyId);
       }
-      if (exchange.kind === 'websocket' || item.kind === 'websocket') {
+      // An MCP request is not sendable here yet (#79), so no MCP exchange comes back.
+      if (exchange.kind === 'websocket' || exchange.kind === 'mcp' || item.kind === 'websocket') {
         throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
       }
       return resultOf(item, result, exchange, mask, historyId);

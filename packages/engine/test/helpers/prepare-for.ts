@@ -8,6 +8,8 @@
 import { connectGrpc, resolveGrpc } from '../../src/grpc/run.js';
 import type { GrpcResolvedInput } from '../../src/grpc/run.js';
 import type { SelectedRequest } from '../../src/protocols.js';
+import { resolveMcp } from '../../src/mcp/run.js';
+import type { McpResolvedInput } from '../../src/mcp/run.js';
 import type { PropertyScopes } from '../../src/project/properties.js';
 import { connectRest, resolveRest } from '../../src/rest/run.js';
 import type { RestSendInput } from '../../src/rest/send.js';
@@ -24,7 +26,9 @@ export type Prepared =
   | { readonly kind: 'rest'; readonly input: RestSendInput }
   | { readonly kind: 'grpc'; readonly input: GrpcResolvedInput; readonly messageText: string }
   // Resolved only: a WebSocket request connects as it opens its session.
-  | { readonly kind: 'websocket'; readonly input: WsCallInput };
+  | { readonly kind: 'websocket'; readonly input: WsCallInput }
+  // Resolved only: an MCP request connects as it opens its session, after the approval.
+  | { readonly kind: 'mcp'; readonly input: McpResolvedInput };
 
 /** @throws WirebenchError what the module's `resolve…` and `connect…` throw, or its unresolved code */
 export async function prepareFor(selected: SelectedRequest, context: RunContext): Promise<Prepared> {
@@ -48,6 +52,11 @@ export async function prepareFor(selected: SelectedRequest, context: RunContext)
       const { input, unresolved } = await resolveWs(selected, context);
       if (unresolved.length > 0) throw unresolvedError('ws-unresolved-properties', selected.path, unresolved);
       return { kind: 'websocket', input };
+    }
+    case 'mcp': {
+      const { input, unresolved } = await resolveMcp(selected, context);
+      if (unresolved.length > 0) throw unresolvedError('mcp-unresolved-properties', selected.path, unresolved);
+      return { kind: 'mcp', input };
     }
   }
 }

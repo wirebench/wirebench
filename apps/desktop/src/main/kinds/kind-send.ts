@@ -6,7 +6,7 @@
  */
 import type { KindId } from '../../shared/kinds/kind-module.js';
 import { grpcSend } from './grpc/send.js';
-import type { KindSend } from './kind-main.js';
+import type { KindSend, SendKind } from './kind-main.js';
 import { restSend } from './rest/send.js';
 import { soapSend } from './soap/send.js';
 import { wsSend } from './ws/send.js';
@@ -22,7 +22,11 @@ export const KIND_SENDS: { readonly [K in KindId]: KindSend<K> } = {
 /**
  * The send steps of `kind`, typed for any kind: the caller holds an item, live event or exchange of
  * that same kind, which TypeScript cannot correlate through the lookup.
+ *
+ * @throws Error for a kind the engine sends and the app does not have yet
  */
-export function kindSend(kind: KindId): KindSend<KindId> {
-  return KIND_SENDS[kind] as unknown as KindSend<KindId>;
+export function kindSend(kind: SendKind): KindSend<SendKind> {
+  const send = (KIND_SENDS as Partial<Record<SendKind, KindSend<KindId>>>)[kind];
+  if (send === undefined) throw new Error(`The app cannot send ${kind} requests yet`);
+  return send as unknown as KindSend<SendKind>;
 }

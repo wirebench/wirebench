@@ -91,6 +91,8 @@ export function draftFor(kind: SelectedRequest['kind']): DraftOf {
     case 'grpc':
     case 'websocket':
       return { kind };
+    case 'mcp':
+      throw new Error('The app cannot send mcp requests yet');
   }
 }
 
@@ -131,8 +133,10 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     stepId: step.stepId,
     requestId: step.requestId,
     name: step.name,
-    // The wire names no WebSocket protocol for a step: such a step goes without one.
-    ...(step.protocol !== undefined && step.protocol !== 'websocket' ? { protocol: step.protocol } : {}),
+    // The wire names no WebSocket or MCP protocol for a step: such a step goes without one.
+    ...(step.protocol !== undefined && step.protocol !== 'websocket' && step.protocol !== 'mcp'
+      ? { protocol: step.protocol }
+      : {}),
     outcome: step.outcome,
     ...(step.status !== undefined ? { status: step.status } : {}),
     ...(step.durationMs !== undefined ? { durationMs: step.durationMs } : {}),

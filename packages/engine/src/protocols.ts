@@ -9,8 +9,11 @@ import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
 import type { GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
+import type { McpLiveEvent } from './mcp/events.js';
+import type { McpExchange } from './mcp/exchange.js';
 import type { McpRequestDef } from './mcp/model.js';
 import { mcpProtocol } from './mcp/module.js';
+import type { McpSelected } from './mcp/run.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
 import { createProtocolRegistry } from './protocol/registry.js';
@@ -80,7 +83,7 @@ export function defaultRegistry(): ProtocolRegistry {
 }
 
 /** One saved request selected for a run, of any built-in protocol a run can send. */
-export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected;
+export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected | McpSelected;
 
 /** A SOAP interface's definition as a host already holds it in memory: imported and compiled. */
 export type HeldSoapDefinition = Pick<WsdlImportResult, 'definition' | 'bundle' | 'schemaSet' | 'wsa'>;
@@ -115,10 +118,15 @@ export type SentExchange =
       readonly kind: 'websocket';
       /** The session whole: its handshake, every frame both ways, and how it closed. */
       readonly ws: WsExchange;
+    }
+  | {
+      readonly kind: 'mcp';
+      /** The session whole: every message both ways, the transport's record, and the operation's answer. */
+      readonly mcp: McpExchange;
     };
 
 /** A message an open exchange reports, whatever its protocol. */
-export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent;
+export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
 export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;

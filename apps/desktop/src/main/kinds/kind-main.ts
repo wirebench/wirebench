@@ -140,13 +140,19 @@ export type KindRouter<H, R extends Readonly<Record<string, KindRoute<H>>>> = {
 /** Every kind's router methods, which `ProjectRouter` adds to the core's. */
 export type KindRouters = SoapRouter & RestRouter & GrpcRouter & WsRouter;
 
+/**
+ * Every kind the engine can send, which can be ahead of the kinds the app has: a kind the engine
+ * sends before the app registers it (MCP, #79) has no send steps here yet, and `kindSend` refuses it.
+ */
+export type SendKind = SelectedRequest['kind'];
+
 /** A kind's saved request as a send item, its live event, and its exchange as `SentRequest` holds it. */
-type ItemOf<K extends KindId> = Extract<SelectedRequest, { kind: K }>;
-type LiveOf<K extends KindId> = Extract<LiveEvent, { protocol: K }>;
-type ExchangeOf<K extends KindId> = Extract<NonNullable<SentRequest['exchange']>, { kind: K }>;
+type ItemOf<K extends SendKind> = Extract<SelectedRequest, { kind: K }>;
+type LiveOf<K extends SendKind> = Extract<LiveEvent, { protocol: K }>;
+type ExchangeOf<K extends SendKind> = Extract<NonNullable<SentRequest['exchange']>, { kind: K }>;
 
 /** What one send's summary is built from (`exchange.ts`'s `summarise`). */
-export interface SummariseInput<K extends KindId> {
+export interface SummariseInput<K extends SendKind> {
   readonly deps: SendThroughEngineDeps;
   readonly sendId: string;
   readonly item: ItemOf<K>;
@@ -163,7 +169,7 @@ export interface SummariseInput<K extends KindId> {
  * The send path's steps for one kind (spec §5.5): `exchange.ts`, `draft.ts` and `live.ts` look the
  * item's kind up here rather than switching on it.
  */
-export interface KindSend<K extends KindId> {
+export interface KindSend<K extends SendKind> {
   /** The saved request as a send item with the editor's draft applied; undefined: no such request of this kind. */
   selected(project: Project, requestId: string, draft: Extract<DraftOf, { kind: K }>): ItemOf<K> | undefined;
   /** One live event as the renderer receives it; absent for a kind that reports none. */

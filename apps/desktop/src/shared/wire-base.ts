@@ -1661,12 +1661,18 @@ export const secretLocationWireSchema = z.union([
     .strict(),
   z
     .object({
-      kind: z.enum(['grpc-api-metadata', 'ws-api-header']),
+      kind: z.enum(['grpc-api-metadata', 'ws-api-header', 'mcp-env', 'mcp-header']),
       apiId: z.string(),
       name: z.string(),
       index: z.number().int(),
     })
     .strict(),
+  z
+    .object({ kind: z.literal('mcp-prompt-arg'), requestId: z.string(), name: z.string(), index: z.number().int() })
+    .strict(),
+  z.object({ kind: z.literal('mcp-arg'), apiId: z.string(), index: z.number().int() }).strict(),
+  z.object({ kind: z.literal('mcp-url'), apiId: z.string(), name: z.string().optional() }).strict(),
+  z.object({ kind: z.enum(['mcp-uri', 'mcp-arguments']), requestId: z.string() }).strict(),
   z
     .object({
       kind: z.literal('rest-body'),
