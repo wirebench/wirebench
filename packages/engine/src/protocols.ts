@@ -13,6 +13,7 @@ import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
 import { createProtocolRegistry } from './protocol/registry.js';
 import type { ProtocolRegistry } from './protocol/registry.js';
+import type { GraphqlCheckResult } from './rest/graphql/check.js';
 import type { RestRequestDef } from './rest/model.js';
 import { restProtocol } from './rest/module.js';
 import type { RestSelected } from './rest/run.js';
@@ -90,6 +91,8 @@ export type SentExchange =
       /** What was sent: after the script, with the credentials resolved. */
       readonly input: RestSendInput;
       readonly contract?: unknown;
+      /** A GraphQL request's response, checked (#77). */
+      readonly graphql?: GraphqlCheckResult;
     }
   | {
       readonly kind: 'grpc';

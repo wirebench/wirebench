@@ -8,6 +8,7 @@
  * the desktop app's e2e suite through `@wirebench/engine/test-helpers`.
  */
 
+import { buildSchema, graphql } from 'graphql';
 import { X509Certificate, createHash, createHmac, verify as verifySignature } from 'node:crypto';
 import type { TLSSocket } from 'node:tls';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -63,6 +64,35 @@ export interface TestRestServerDocument {
    */
   readonly auth?: 'basic' | 'bearer' | 'api-key';
 }
+
+/** The schema `/graphql` serves. */
+export const GRAPHQL_SDL = `type Query {
+  "A product by id"
+  product(id: ID!): Product
+  "Always fails"
+  boom: String
+}
+
+type Mutation {
+  rename(id: ID!, name: String!): Product!
+}
+
+type Product {
+  id: ID!
+  name: String!
+  price: Float
+}
+`;
+
+const GRAPHQL_SCHEMA = buildSchema(GRAPHQL_SDL);
+
+const GRAPHQL_ROOT = {
+  product: ({ id }: { id: string }) => (id === '1' ? { id: '1', name: 'Kettle', price: 24.5 } : null),
+  boom: () => {
+    throw new Error('Boom from the resolver');
+  },
+  rename: ({ id, name }: { id: string; name: string }) => ({ id, name, price: null }),
+};
 
 /** Options for {@link startTestRestServer}. */
 export interface TestRestServerOptions {
@@ -266,6 +296,28 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
           'content-length': String(bytes.byteLength),
         });
         response.end(bytes);
+        return;
+      }
+
+      // A tiny GraphQL service (#77): one product, a field that always fails, and introspection.
+      if (path === '/graphql' && request.method === 'POST') {
+        let payload: { query?: unknown; variables?: unknown; operationName?: unknown };
+        try {
+          payload = JSON.parse(body.toString('utf8')) as typeof payload;
+        } catch {
+          sendJson(response, 400, { errors: [{ message: 'The body is not JSON' }] });
+          return;
+        }
+        const result = await graphql({
+          schema: GRAPHQL_SCHEMA,
+          source: typeof payload.query === 'string' ? payload.query : '',
+          rootValue: GRAPHQL_ROOT,
+          ...(payload.variables !== null && typeof payload.variables === 'object'
+            ? { variableValues: payload.variables as Record<string, unknown> }
+            : {}),
+          ...(typeof payload.operationName === 'string' ? { operationName: payload.operationName } : {}),
+        });
+        sendJson(response, 200, JSON.parse(JSON.stringify(result)) as unknown);
         return;
       }
 
