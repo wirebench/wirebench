@@ -184,6 +184,84 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('sets the terminal font size, line height and colour scheme from the Terminal section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+    const size = screen.getByLabelText<HTMLInputElement>('Font size');
+    expect(size.value).toBe('13');
+    fireEvent.change(size, { target: { value: '16' } });
+    fireEvent.keyDown(size, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { fontSize: 16 } } });
+    });
+
+    const lineHeight = screen.getByLabelText<HTMLInputElement>('Line height');
+    fireEvent.change(lineHeight, { target: { value: '1.4' } });
+    fireEvent.keyDown(lineHeight, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { lineHeight: 1.4 } } });
+    });
+
+    const scheme = screen.getByLabelText<HTMLSelectElement>('Colour scheme');
+    expect(scheme.value).toBe('app');
+    expect([...scheme.options].map((o) => o.textContent)).toEqual(
+      expect.arrayContaining(['Follow app theme', 'Red background', 'Solarized Dark']),
+    );
+    fireEvent.change(scheme, { target: { value: 'nord' } });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { colorScheme: 'nord' } } });
+    });
+  });
+
+  describe('the terminal font family', () => {
+    afterEach(() => {
+      delete (window as { queryLocalFonts?: unknown }).queryLocalFonts;
+    });
+
+    it('is picked from the installed monospace fonts', async () => {
+      (window as { queryLocalFonts?: unknown }).queryLocalFonts = vi
+        .fn()
+        .mockResolvedValue([{ family: 'Fira Code' }, { family: 'Fira Code' }, { family: 'Helvetica' }]);
+      // A proportional family measures a row of i narrower than a row of M; a monospaced one does not.
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+        font: '',
+        measureText(this: { font: string }, text: string) {
+          return { width: this.font.includes('Helvetica') && text.startsWith('i') ? 10 : 30 };
+        },
+      } as unknown as CanvasRenderingContext2D);
+      const update = stubUpdate();
+      installWirebenchApi({ preferences: { update } });
+      render(<PreferencesEditor />);
+      fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+      const family = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Font family' });
+      await vi.waitFor(() => {
+        expect([...family.options].map((o) => o.value)).toEqual(['', 'Fira Code']);
+      });
+      fireEvent.change(family, { target: { value: 'Fira Code' } });
+      await vi.waitFor(() => {
+        expect(update).toHaveBeenCalledWith({ patch: { terminal: { fontFamily: 'Fira Code' } } });
+      });
+    });
+
+    it('is typed when the installed fonts cannot be listed', async () => {
+      const update = stubUpdate();
+      installWirebenchApi({ preferences: { update } });
+      render(<PreferencesEditor />);
+      fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+      const family = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Font family' });
+      fireEvent.change(family, { target: { value: 'Iosevka' } });
+      fireEvent.keyDown(family, { key: 'Enter' });
+      await vi.waitFor(() => {
+        expect(update).toHaveBeenCalledWith({ patch: { terminal: { fontFamily: 'Iosevka' } } });
+      });
+    });
+  });
+
   it('refuses a secret source cache lifetime above 3600 seconds, saying why, until it is fixed', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });

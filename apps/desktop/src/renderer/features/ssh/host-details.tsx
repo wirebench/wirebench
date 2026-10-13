@@ -19,6 +19,7 @@ import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from '.
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
 import { sessionStatus } from './session-status.js';
+import { schemeLabel } from './terminal-schemes.js';
 
 /** Whether the details slide-over is in front: the Hosts tab is showing, a host is picked, and it was not put away. */
 export function useHostDetailsShown(): boolean {
@@ -293,6 +294,23 @@ export function HostDetails() {
           ))}
         </Section>
       )}
+      {host.terminal !== undefined &&
+        (host.terminal.scheme.value !== undefined || host.terminal.fontSize.value !== undefined) && (
+          <Section title="Terminal">
+            {host.terminal.scheme.value !== undefined && (
+              <Row label="Scheme">
+                <span className="truncate">{schemeLabel(host.terminal.scheme.value)}</span>
+                {muted(provenance(host.terminal.scheme.from))}
+              </Row>
+            )}
+            {host.terminal.fontSize.value !== undefined && (
+              <Row label="Font size">
+                <span>{`${String(host.terminal.fontSize.value)} px`}</span>
+                {muted(provenance(host.terminal.fontSize.from))}
+              </Row>
+            )}
+          </Section>
+        )}
       <section aria-label="Port forwarding" className="flex flex-col border-t border-hairline px-1 py-3">
         <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
         <HostForwards hostId={host.id} />
