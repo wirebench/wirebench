@@ -767,6 +767,7 @@ describe('split panes', () => {
       address: `${id}.example`,
       path: [],
       tags: [],
+      protected: { value: false },
       ssh: {
         user: {},
         port: { value: 22 },
