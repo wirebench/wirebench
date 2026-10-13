@@ -114,6 +114,12 @@ exited, a sign-in failure or a changed host key never reconnects: the tab shows 
 prompt as before. **Reconnect attempts** is `terminal.reconnectAttempts`: how many tries before the tab
 stops and offers **Reconnect**. The default is 10, and the range is 1 to 100.
 
+**Session logs size limit** is `terminal.sessionLogMaxMb`: how much room all
+[session logs](/wirebench/docs/guides/hosts-and-terminals/#session-logs) on this machine may take together, in
+megabytes. Past it the oldest logs are deleted first. The default is 500, and the range is 10 to 100000.
+**Keep raw output** is `terminal.sessionLogRaw` and is off by default: when on, each log also keeps the
+stream as the terminal received it, colours and escape sequences included, beside the plain text.
+
 **Local shell** is `terminal.localShell` and is empty by default: a local terminal then runs your login
 shell (`$SHELL`) on macOS and Linux, and PowerShell 7 or else Windows PowerShell on Windows. A path or
 program name (`/bin/bash`, `cmd.exe`, `wsl.exe`) runs that instead; on macOS and Linux it starts as a

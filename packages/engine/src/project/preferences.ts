@@ -228,6 +228,10 @@ export interface TerminalPreferences {
   readonly reconnectAttempts: number;
   /** Offer the rest of a snippet, dimmed after the cursor, when the typed line is its start; Tab accepts. */
   readonly snippetSuggestions: boolean;
+  /** Megabytes all session logs on this machine may take together; past it the oldest logs are deleted. */
+  readonly sessionLogMaxMb: number;
+  /** Keep each session log's raw stream (escape sequences included) beside its plain text. */
+  readonly sessionLogRaw: boolean;
   /** The program a local terminal tab runs (#410); empty for the OS default ($SHELL, or PowerShell on Windows). */
   readonly localShell: string;
 }
@@ -315,6 +319,8 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     autoReconnect: true,
     reconnectAttempts: 10,
     snippetSuggestions: true,
+    sessionLogMaxMb: 500,
+    sessionLogRaw: false,
     localShell: '',
   }),
   shortcuts: Object.freeze({}),
@@ -353,6 +359,8 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'ui.logSize': { min: LOG_SIZE_MIN, max: LOG_SIZE_MAX, integer: true },
   'secrets.sourceCacheSeconds': { min: 0, max: 3600, integer: true },
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
+  /** Megabytes. */
+  'terminal.sessionLogMaxMb': { min: 10, max: 100_000, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceNumberLimit>>;
 
 /** A dotted key with an entry in {@link PREFERENCE_NUMBER_LIMITS}. */
@@ -513,6 +521,8 @@ export const preferencesSchema = z.object({
       autoReconnect: z.boolean().optional(),
       reconnectAttempts: limited('terminal.reconnectAttempts').optional(),
       snippetSuggestions: z.boolean().optional(),
+      sessionLogMaxMb: limited('terminal.sessionLogMaxMb').optional(),
+      sessionLogRaw: z.boolean().optional(),
       localShell: z.string().optional(),
     })
     .optional(),

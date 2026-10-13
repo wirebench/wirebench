@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Session logs for SSH terminals.** A host's details gain **Session logs**: a **Log sessions** switch
+  (also on a group's menu, inherited by the hosts inside) and the logs this machine kept, newest first,
+  which can be searched, opened and filtered, revealed in the file manager or deleted. A log is the
+  session's output as plain text with escape sequences removed, beside a `.json` file with the host,
+  user, start, end and exit code; what a full-screen program draws is left out. Passwords, keys and
+  passphrases used to connect, and secrets typed by a snippet, are masked, and only output is written.
+  Logs and switches stay on this machine. Settings › Terminal sets the size limit for all logs (500 MB
+  by default; the oldest go first) and can keep the raw stream too (#414).
 - **Local terminal.** **Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>, or
   **New local terminal** in the SSH sidebar) opens a tab with a shell on this machine, beside the SSH
   terminals: your login shell on macOS and Linux, PowerShell 7 (else Windows PowerShell) on Windows,

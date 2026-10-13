@@ -102,6 +102,8 @@ describe('terminal preferences', () => {
       autoReconnect: true,
       reconnectAttempts: 10,
       snippetSuggestions: true,
+      sessionLogMaxMb: 500,
+      sessionLogRaw: false,
       localShell: '',
     });
   });
@@ -116,6 +118,8 @@ describe('terminal preferences', () => {
       autoReconnect: false,
       reconnectAttempts: 10,
       snippetSuggestions: false,
+      sessionLogMaxMb: 500,
+      sessionLogRaw: false,
       localShell: '',
     });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
@@ -124,6 +128,14 @@ describe('terminal preferences', () => {
   it('a patch of one field leaves the other alone', () => {
     const merged = mergePreferences({ terminal: { copyOnSelect: true } });
     expect(merged.terminal.confirmMultilinePaste).toBe(true);
+  });
+
+  it('reads the session log cap and the raw switch, and clamps a cap read from disk', () => {
+    const merged = mergePreferences({ terminal: { sessionLogMaxMb: 2000, sessionLogRaw: true } });
+    expect(merged.terminal.sessionLogMaxMb).toBe(2000);
+    expect(merged.terminal.sessionLogRaw).toBe(true);
+    expect(mergePreferences({ terminal: { sessionLogMaxMb: 1 } }).terminal.sessionLogMaxMb).toBe(10);
+    expect(mergePreferences({}).terminal.sessionLogRaw).toBe(false);
   });
 
   it('reads an older file without terminal.snippetSuggestions as on', () => {

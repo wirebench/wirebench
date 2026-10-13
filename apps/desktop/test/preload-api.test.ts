@@ -82,6 +82,7 @@ describe('buildApi', () => {
       'secretSources',
       'secrets',
       'sequence',
+      'sessionLog',
       'sftp',
       'snapshot',
       'ssh',
