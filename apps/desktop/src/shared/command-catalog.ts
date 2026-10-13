@@ -99,6 +99,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Show Port Forwarding',
     category: 'View',
   },
+  'view.showSnippets': {
+    id: 'view.showSnippets',
+    label: 'Show Snippets',
+    category: 'View',
+  },
   'ssh.newHost': {
     id: 'ssh.newHost',
     label: 'Hosts: New Host…',
@@ -211,6 +216,34 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     id: 'ssh.stopAllForwards',
     label: 'Stop All Port Forwards',
     category: 'Hosts',
+  },
+  'ssh.newSnippet': {
+    id: 'ssh.newSnippet',
+    label: 'Snippets: New Snippet…',
+    category: 'Hosts',
+  },
+  'ssh.editSnippet': {
+    id: 'ssh.editSnippet',
+    label: 'Snippets: Edit Snippet…',
+    category: 'Hosts',
+  },
+  // From a menu or a row it names the snippet; from the palette it asks which one, like Run Snippet….
+  'ssh.runSnippet': {
+    id: 'ssh.runSnippet',
+    label: 'Snippets: Run Snippet',
+    category: 'Hosts',
+  },
+  'ssh.runSnippetPalette': {
+    id: 'ssh.runSnippetPalette',
+    label: 'Run Snippet…',
+    category: 'Hosts',
+  },
+  // Ctrl+; on Windows and Linux; caught in the terminal so the shell never sees it.
+  'ssh.snippetPicker': {
+    id: 'ssh.snippetPicker',
+    label: 'Terminal: Snippets…',
+    category: 'Hosts',
+    shortcut: 'Mod+Semicolon',
   },
   'sftp.refresh': {
     id: 'sftp.refresh',

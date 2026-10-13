@@ -12,22 +12,40 @@ import { routeOf } from '../features/ssh/forwarding/forward-format.js';
 import { startForward, stopForward } from '../features/ssh/forwarding/forward-actions.js';
 import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useRecentConnections } from '../features/ssh/recent-connections.js';
+import { startRun } from '../features/ssh/snippets/run.js';
+import { loadSnippets } from '../features/ssh/snippets/snippet-actions.js';
+import { useSnippetsStore } from '../features/ssh/snippets/snippets-store.js';
 import type { CommandContext } from '../lib/commands.js';
 import { listCommands, runCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import type { QuickOpenEntry } from './quick-open.js';
-import { quickOpenEntries, quickOpenHostEntries, quickOpenLayoutEntries, splitRecentHosts } from './quick-open.js';
+import {
+  quickOpenEntries,
+  quickOpenHostEntries,
+  quickOpenLayoutEntries,
+  quickOpenSnippetEntries,
+  splitRecentHosts,
+} from './quick-open.js';
 
 /**
  * Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts, to
  * connect to (`hosts`), to open in another terminal tab (`new-tab-hosts`) or to open the Files tab of
  * (`files-hosts`), or only the saved terminal layouts (`layouts`), or the port forwards to start (every rule that
- * is on, `start-forward`) or to stop (every one this window runs or has failed, `stop-forward`).
+ * is on, `start-forward`) or to stop (every one this window runs or has failed, `stop-forward`), or only the
+ * snippets, to run (`snippets`).
  */
 export type PaletteMode =
-  'commands' | 'quick-open' | 'hosts' | 'new-tab-hosts' | 'files-hosts' | 'layouts' | 'start-forward' | 'stop-forward';
+  | 'commands'
+  | 'quick-open'
+  | 'hosts'
+  | 'new-tab-hosts'
+  | 'files-hosts'
+  | 'layouts'
+  | 'start-forward'
+  | 'stop-forward'
+  | 'snippets';
 
 export interface CommandPaletteProps {
   readonly open: boolean;
@@ -73,6 +91,35 @@ function HostItem({
     >
       <span className="truncate">{files ? filesTitle(entry.label) : entry.label}</span>
       <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
+    </Command.Item>
+  );
+}
+
+/** One snippet row: select runs it into the terminal in front, or opens the run dialog when the run must ask. */
+function SnippetItem({
+  entry,
+  onOpenChange,
+  quickOpen,
+}: {
+  readonly entry: QuickOpenEntry;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly quickOpen: boolean;
+}) {
+  return (
+    <Command.Item
+      // ⌘P mixes snippets with hosts and requests, so there the value says "snippet".
+      value={quickOpen ? `${entry.value} snippet` : entry.value}
+      data-testid="palette-snippet"
+      data-name={entry.label}
+      onSelect={() => {
+        onOpenChange(false);
+        const item = useSnippetsStore.getState().snippets.find((s) => s.id === entry.snippetId);
+        if (item !== undefined) startRun(item);
+      }}
+      className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+    >
+      <span className="truncate">{entry.label}</span>
+      <span className="truncate font-mono text-xs text-fg-subtle">{entry.detail}</span>
     </Command.Item>
   );
 }
@@ -167,6 +214,16 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
     }
     return [];
   }, [sshEnabled, mode, resolvedHosts, forwardStates]);
+  // The saved snippets: ⌘P lists them under their own heading, and Run Snippet… lists only them.
+  const snippetsWanted = sshEnabled && (mode === 'quick-open' || mode === 'snippets');
+  useEffect(() => {
+    if (open && snippetsWanted) void loadSnippets();
+  }, [open, snippetsWanted]);
+  const snippets = useSnippetsStore((state) => state.snippets);
+  const snippetEntries = useMemo(
+    () => (snippetsWanted ? quickOpenSnippetEntries(snippets) : []),
+    [snippetsWanted, snippets],
+  );
   // The hosts connected to lately lead, under their own heading.
   const recentConnections = useRecentConnections();
   const { recent: recentHosts, rest: otherHosts } = useMemo(
@@ -182,23 +239,26 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const newTabPicker = mode === 'new-tab-hosts';
   const layoutsPicker = mode === 'layouts';
   const forwardPicker = mode === 'start-forward' || mode === 'stop-forward';
+  const snippetsPicker = mode === 'snippets';
   const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
-  const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker;
-  const title = forwardPicker
-    ? mode === 'start-forward'
-      ? 'Start port forward'
-      : 'Stop port forward'
-    : layoutsPicker
-      ? 'Open layout'
-      : filesPicker
-        ? 'Open files on host'
-        : newTabPicker
-          ? 'Open host in new tab'
-          : hostsOnly
-            ? 'Connect to host'
-            : quickOpen
-              ? 'Go to operation or request'
-              : 'Command palette';
+  const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker || snippetsPicker;
+  const title = snippetsPicker
+    ? 'Run snippet'
+    : forwardPicker
+      ? mode === 'start-forward'
+        ? 'Start port forward'
+        : 'Stop port forward'
+      : layoutsPicker
+        ? 'Open layout'
+        : filesPicker
+          ? 'Open files on host'
+          : newTabPicker
+            ? 'Open host in new tab'
+            : hostsOnly
+              ? 'Connect to host'
+              : quickOpen
+                ? 'Go to operation or request'
+                : 'Command palette';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -214,15 +274,17 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             key={mode}
             loop
             label={
-              forwardPicker
-                ? 'Port forwards'
-                : layoutsPicker
-                  ? 'Layouts'
-                  : hostsOnly
-                    ? 'Hosts'
-                    : quickOpen
-                      ? 'Operations, requests and hosts'
-                      : 'Commands'
+              snippetsPicker
+                ? 'Snippets'
+                : forwardPicker
+                  ? 'Port forwards'
+                  : layoutsPicker
+                    ? 'Layouts'
+                    : hostsOnly
+                      ? 'Hosts'
+                      : quickOpen
+                        ? 'Operations, requests and hosts'
+                        : 'Commands'
             }
           >
             <Command.Input
@@ -233,15 +295,17 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
             />
             <Command.List className="max-h-[320px] overflow-auto p-1">
               <Command.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">
-                {forwardPicker
-                  ? 'No matching forward.'
-                  : layoutsPicker
-                    ? 'No matching layout.'
-                    : hostsOnly
-                      ? 'No matching host.'
-                      : quickOpen
-                        ? 'No matching operation or request.'
-                        : 'No matching command.'}
+                {snippetsPicker
+                  ? 'No matching snippet.'
+                  : forwardPicker
+                    ? 'No matching forward.'
+                    : layoutsPicker
+                      ? 'No matching layout.'
+                      : hostsOnly
+                        ? 'No matching host.'
+                        : quickOpen
+                          ? 'No matching operation or request.'
+                          : 'No matching command.'}
               </Command.Empty>
               {quickOpen &&
                 entries.map((entry) => (
@@ -326,6 +390,13 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                       <span className="truncate">{entry.label}</span>
                       <span className="truncate font-mono text-xs text-fg-subtle">{entry.detail}</span>
                     </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
+              {snippetEntries.length > 0 && (
+                <Command.Group heading="Snippets" className={GROUP_CLASS}>
+                  {snippetEntries.map((entry) => (
+                    <SnippetItem key={entry.key} entry={entry} onOpenChange={onOpenChange} quickOpen={quickOpen} />
                   ))}
                 </Command.Group>
               )}

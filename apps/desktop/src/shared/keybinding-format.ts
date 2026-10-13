@@ -19,6 +19,7 @@ export interface Keybinding {
 
 const NAMED_KEYS: Readonly<Record<string, string>> = {
   comma: ',',
+  semicolon: ';',
   period: '.',
   slash: '/',
   backslash: '\\',

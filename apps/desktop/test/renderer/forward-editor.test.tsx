@@ -79,6 +79,7 @@ const RESOLVED: ResolvedHostWire[] = [
       resolvedRule('pg', 5432),
       { ...resolvedRule('old', 9000), enabled: false, offBy: 'host' },
     ],
+    env: [],
   },
 ];
 

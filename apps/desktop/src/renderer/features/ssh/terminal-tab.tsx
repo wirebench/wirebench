@@ -18,6 +18,8 @@ import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { trackPaneModes } from './terminal-modes.js';
 import { attachSnippetSuggestions } from './snippets/ghost.js';
+import { closeSnippetPicker, useSnippetPickerStore } from './snippets/snippet-actions.js';
+import { TerminalPicker } from './snippets/terminal-picker.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { BroadcastBanner } from './panes/broadcast-banner.js';
 import {
@@ -128,6 +130,8 @@ const PANE_COMMANDS: readonly CommandId[] = [
   'ssh.focusPaneUp',
   'ssh.focusPaneDown',
   'ssh.closePane',
+  // Not a pane command, but its chord too is the app's: it opens the snippet picker over this terminal.
+  'ssh.snippetPicker',
 ];
 
 /** Whether a keystroke is the chord of a pane command, as bound now (a rebind counts). */
@@ -326,6 +330,13 @@ function TerminalPane({
   /** A paste held for the user's yes; xterm never saw it. `receivers` above one: a broadcast takes it there. */
   const [heldPaste, setHeldPaste] = useState<{ text: string; receivers: number } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  // ⌘; opens the snippet picker over the tab in front; it sits on the pane that has the focus.
+  const pickerWanted = useSnippetPickerStore((s) => s.tabId === tabId);
+  const pickerOpen = pickerWanted && active && focused;
+  // Another tab coming to the front closes it, so it does not come back with this one.
+  useEffect(() => {
+    if (pickerWanted && !active) closeSnippetPicker();
+  }, [pickerWanted, active]);
   const [findFocus, setFindFocus] = useState(0);
   const [findResults, setFindResults] = useState<FindResults | undefined>(undefined);
   const finder = useMemo(() => finderFor(() => live.current?.search), []);
@@ -627,6 +638,14 @@ function TerminalPane({
       {split && <PaneHeader tabId={tabId} pane={pane} focused={focused} />}
       <div className="relative min-h-0 flex-1">
         <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
+        {pickerOpen && (
+          <TerminalPicker
+            onClose={() => {
+              closeSnippetPicker();
+              live.current?.term.focus();
+            }}
+          />
+        )}
         <TerminalFindBar
           open={findOpen}
           focusRequest={findFocus}

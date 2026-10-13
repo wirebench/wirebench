@@ -412,6 +412,46 @@ describe('SshService', () => {
     expect(open).not.toHaveBeenCalled();
   });
 
+  describe('env', () => {
+    const ENV_FILE = parseHostsFile(
+      `version: 1\ngroups:\n  - id: g\n    name: g\n    env: { LANG: C.UTF-8, TOKEN: '\${secret:tok}' }\n    hosts:\n      - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { password: '\${secret:a_pw}' } } }\n`,
+    );
+
+    it('resolves the host env, secrets included, into openSession', async () => {
+      const { service, open } = make({ known: [KEY], file: ENV_FILE, secrets: { a_pw: 'pw', tok: 't0ken' } });
+      await service.connect(as(sender(1)), CONNECT);
+      expect(open.mock.calls[0]![0].env).toEqual({ LANG: 'C.UTF-8', TOKEN: 't0ken' });
+    });
+
+    it('a missing env secret is secret-missing with the name, before any connection', async () => {
+      const { service, open } = make({ known: [KEY], file: ENV_FILE, secrets: { a_pw: 'pw' } });
+      await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({
+        code: 'secret-missing',
+        details: { name: 'tok' },
+      });
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it('masks an env secret the session prints, and sends no env for a host without any', async () => {
+      const { service, fake, emit } = make({
+        known: [KEY],
+        file: ENV_FILE,
+        secrets: { a_pw: 'pw', tok: 't0ken' },
+      });
+      await service.connect(as(sender(1)), CONNECT);
+      fake.pushData(Buffer.from('TOKEN=t0ken\r\n'));
+      const shown = emit.mock.calls
+        .filter((c) => (c[1] as { name: string }).name === 'ssh.data')
+        .map((c) => Buffer.from((c[2] as { data: string }).data, 'base64').toString('utf8'))
+        .join('');
+      expect(shown).toContain('TOKEN=');
+      expect(shown).not.toContain('t0ken');
+      const plain = make({ known: [KEY] });
+      await plain.service.connect(as(sender(2)), CONNECT);
+      expect(plain.open.mock.calls[0]![0].env).toBeUndefined();
+    });
+  });
+
   it('agent auth without a socket is ssh-auth-failed before connecting; with one, the socket is passed', async () => {
     const agentFile = parseHostsFile(
       `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { agent: true } } }\n`,

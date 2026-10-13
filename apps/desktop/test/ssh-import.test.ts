@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { HostsService } from '../src/main/hosts-service.js';
 import { isEncryptedKey, SshImportService, type SshImportFs } from '../src/main/ssh-import.js';
+import { sshImportPreviewSchema } from '../src/shared/ssh-wire.js';
 import type { SshImportPreview } from '../src/shared/ssh-wire.js';
 
 const HOME = '/home/u';
@@ -75,6 +76,17 @@ describe('SshImportService.preview', () => {
       { ref: 'k1', display: '~/.ssh/id_ed25519', hosts: ['web'], proposedSecret: 'ssh_key_id_ed25519' },
     ]);
     expect(fs.reads).toEqual([CONFIG]); // the key file is never opened by a preview
+  });
+
+  it('a SetEnv value stays in main: the preview passes the channel schema and carries no value', async () => {
+    const { service, dir } = setup({ [CONFIG]: 'Host web\n  SetEnv TOKEN=MARKER-ENV\nHost *\n  SetEnv LANG=C\n' });
+    const preview = asPreview(await service.preview(A, { source: 'user-config' }));
+    expect(sshImportPreviewSchema.parse(preview)).toEqual(preview);
+    expect(JSON.stringify(preview)).not.toContain('MARKER-ENV');
+    await service.apply(A, apply(preview.previewId));
+    const written = readFileSync(join(dir, 'hosts.yaml'), 'utf8');
+    expect(written).toContain('TOKEN: MARKER-ENV');
+    expect(written).toContain('LANG: C');
   });
 
   it('uses the picker for pick, and a cancelled pick is a cancellation', async () => {
