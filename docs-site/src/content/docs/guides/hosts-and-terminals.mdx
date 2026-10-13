@@ -11,7 +11,7 @@ the command palette, or quick-open. The user, port, key and jump host are set on
 inherited by every host under it, and the credentials never leave Wirebench's main process.
 
 <Aside type="note">
-This part of the SSH area covers hosts, the terminal and files. See
+This part of the SSH area covers hosts, terminals and split terminals, files and port forwarding. See
 [What is not here yet](#what-is-not-here-yet) for what comes later.
 </Aside>
 
@@ -305,6 +305,194 @@ outside the folder you chose.
 - Fall back to SCP: a server without the SFTP subsystem is refused with `sftp-unavailable`.
 - Copy files from the command line or the MCP server.
 
+## Split terminals and layouts
+
+A terminal tab can hold several terminals side by side, each its own session to the same host or another
+one.
+
+### Splitting
+
+**Split right** (<kbd>⌘D</kbd> / <kbd>Ctrl+D</kbd>) and **Split down** (<kbd>⌘⇧D</kbd> /
+<kbd>Ctrl+Shift+D</kbd>) are on the tab's toolbar and in each pane's menu. The new pane asks which host to
+connect to, with the current pane's host chosen; <kbd>Enter</kbd> connects.
+
+- A tab holds at most 12 panes, and a split is refused when either half would be narrower than 20 columns
+  or shorter than 5 rows.
+- Drag the line between two panes to resize them; double-click it to make them even.
+- <kbd>⌘⌥</kbd> / <kbd>Ctrl+Alt</kbd> with an arrow key moves the focus to the neighbouring pane.
+- **Close pane** in a pane's menu, or the close-tab shortcut while a pane has focus, ends that pane's
+  session, and its neighbour takes the space. Closing the last pane closes the tab.
+- Find, the paste check, reconnecting, **Files** and the host key prompt act on the focused pane.
+- Once a tab is split, each pane has a slim header with its status, its host and its menu.
+
+Connecting to a host focuses the tab you used last that has a pane on it, or opens a new tab. **Open in new
+tab** (in the host's right-click menu and the palette) always opens another.
+
+### Layouts
+
+**Save layout…** on the tab's toolbar stores the tab's panes, their hosts and their sizes as a named
+**layout**. A tab opened from a layout offers **Update "name"** or **Save as new…** instead.
+
+The **Layouts** view in the SSH sidebar lists each layout with its hosts and pane count, and opens, renames
+or deletes it. **Open Layout…** in the palette and the **Layouts** group in quick-open (<kbd>⌘P</kbd>) list
+them too. Opening a layout opens one tab with the saved panes, all connecting at once, titled with the
+layout's name. A pane whose host is no longer in `hosts.yaml` says so and offers **Remove pane**.
+
+Layouts are kept on this machine only, per workspace, in Wirebench's own data folder. They name hosts by id
+and hold nothing else: they are never written into the workspace, synced or shared with a team.
+
+### Broadcast input
+
+**Broadcast** on the toolbar of a tab with two or more panes (or **Terminal: Toggle Broadcast Input** in the
+palette) sends what you type in one pane to the other panes of that tab. It starts with every pane ticked;
+untick **Receive broadcast in …** in a pane's header to leave that pane out. Typing in a ticked pane reaches
+every ticked pane; typing in an unticked pane reaches that pane only. Resizing, find and copying are never
+broadcast.
+
+Broadcast can't go unnoticed:
+
+- a red banner across the tab says **Broadcasting to 2 of 3 panes** with **Stop**, adds **1 not connected**
+  for a ticked pane that is not connected (it receives nothing), and **1 pane missed input** when a keystroke
+  didn't reach a pane;
+- every ticked pane has a red border, and the tab has a red dot;
+- a paste into a ticked pane always asks first, single line or not, says how many panes will receive it,
+  and ignores **Don't ask again**.
+
+Broadcast is per tab, turns off when the tab closes or is down to one pane, and is never saved in a layout,
+so it never comes back on by itself.
+
+## Port forwarding
+
+Forwarding rules let a host carry traffic for you: a database or a dashboard behind the host reached on a
+port of this machine, a port on the host that reaches back to something on this machine, or a SOCKS proxy
+that sends everything through the host.
+
+### Rules in hosts.yaml
+
+Groups and hosts take an optional `forwards` list beside `ssh`:
+
+```yaml
+groups:
+  - id: prod
+    name: Production
+    ssh: { user: deploy, auth: { key: '${secret:prod_key}' } }
+    forwards:
+      - id: grafana
+        type: local
+        port: 3000
+        target: localhost:3000
+    hosts:
+      - id: db-1
+        name: db-1
+        address: 10.0.1.7
+        forwards:
+          - id: pg
+            type: local
+            port: 5432
+            target: localhost:5432
+            autoStart: true
+          - id: grafana
+            enabled: false
+hosts:
+  - id: bastion
+    name: bastion
+    address: bastion.example.com
+    ssh: { user: ops, auth: { agent: true } }
+    forwards:
+      - id: socks
+        type: dynamic
+        port: 1080
+      - id: hook
+        type: remote
+        port: 8080
+        target: localhost:3000
+```
+
+There are three types:
+
+- **`local`** listens on this machine at `bind:port` and connects, through the host, to `target` as the host
+  sees it. `db-1 · pg` above makes `127.0.0.1:5432` here reach the database on `db-1`.
+- **`remote`** asks the host to listen at `bind:port` on its side and connects each arrival to `target` as
+  this machine sees it.
+- **`dynamic`** is a SOCKS5 proxy on this machine at `bind:port`; each connection's destination is reached
+  through the host, and names are resolved on the host's side. It has no `target`.
+
+The fields:
+
+- `id` follows the host id rules and is unique within one list. `port` is 1–65535.
+- `target` is `host:port` (`[v6]:port` for IPv6), required for `local` and `remote`.
+- `bind` is `localhost`, an IPv4 or an IPv6 address; host names are refused. It defaults to `127.0.0.1` for
+  `local` and `dynamic`, and to the host's own loopback for `remote`.
+- `autoStart` (default `false`) starts the rule with the host's terminals.
+- `enabled` (default `true`) switches a rule off.
+- `forwards` holds no credentials and no `${…}` values.
+
+### Inheritance and switching a rule off
+
+A host gets every rule of the groups above it plus its own, merged by `id`. A nearer rule with the same id
+replaces the farther one whole (fields are not merged), and `{ id, enabled: false }` switches an inherited
+rule off: above, `db-1` has `pg` and not `grafana`, while every other host under **Production** has
+`grafana`. A switch-off that names no rule above it is refused when the file is read, so a typo is caught.
+
+You normally edit rules in the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
+that level, an inherited rule shows greyed with where it came from, **Override** copies it to this level to
+edit it, and **Off** switches it off here. The rule form has the type, port, bind, target and **Start with
+the host's terminals**.
+
+### Starting and stopping
+
+- **By hand:** **Start** on the rule, in the **Port forwarding** view of the SSH sidebar, in the host details
+  panel, or **Start Port Forward…** in the palette. It runs until you stop it (**Stop**, **Stop Port
+  Forward…**, **Stop All Port Forwards**).
+- **With the terminals:** a rule with `autoStart` starts when a terminal to its host opens and stops when the
+  host's last terminal closes. Starting it by hand while it runs this way keeps it running after the
+  terminals close; stopping it by hand keeps it stopped until the host's next terminal.
+
+Forwards use their own connection to the host, shared by that host's rules and separate from its
+terminals, so a terminal closing or reconnecting never drops a forward. Switching workspace or closing the
+window stops that window's forwards, and they are not restored on restart.
+
+The **Port forwarding** view lists every rule of every host with its state, type (L, R or D),
+`bind:port → target`, its host and where it came from, a filter box and **All**, **Running** and **Failed**
+chips. Rules that are off show greyed with where they were switched off. A rule's menu has **Start on
+another port…**, **Copy address**, **Edit rule** and **Stop**. If you edit a running rule, it keeps running
+as it started and offers **Restart**.
+
+While forwards run, the status bar shows **⇄ N**; it turns red when one has failed, and clicking it opens
+the view.
+
+### Ports and binds
+
+- **Loopback by default.** Every listener binds `127.0.0.1` (a remote rule, the host's loopback) unless the
+  rule says otherwise.
+- **Network binds.** A rule with any other `bind` (for example `0.0.0.0`) is marked **network** everywhere it
+  shows. Its first start on this machine asks first, because the port will be reachable from other machines.
+  The answer is kept on this machine only, never in `hosts.yaml`, and changing the bind asks again.
+- **Clashes.** A port that is already taken is refused, never moved: the error names the address and port,
+  and the Wirebench rule holding it when it is one of yours. **Start on another port…** offers a free port
+  and uses it for that run only.
+- A `remote` rule the host refuses (the port is taken there, or the server doesn't allow forwarding) fails
+  with the server's reason.
+
+### Reconnecting
+
+When the connection drops, the rules show **reconnecting** and Wirebench dials the host again on the same
+schedule as a terminal (up to 10 attempts). Local and SOCKS listeners keep their ports meanwhile, so a client
+pointed at them never reaches something else; connections arriving in the meantime are closed. A sign-in
+failure or a changed host key isn't retried. After the last attempt the rules fail and the ports are freed.
+
+### SOCKS has no password
+
+The SOCKS proxy has no authentication: any program that can reach its address can use it while it runs. On
+the default loopback bind that is any program on this machine. Only version 5 `CONNECT` is supported.
+
+### From the command line
+
+`wirebench ssh forward <host> [rule…]` opens the same rules from a terminal or a pipeline, in the foreground,
+until you stop it. It reads the trusted host keys of the desktop app on this machine and never adds to them,
+and a network bind needs `--allow-network-bind`. See the
+[CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-ssh-forward).
+
 ## Importing from an SSH config
 
 If your hosts are already in an OpenSSH client config, bring them in rather than typing them again.
@@ -375,7 +563,10 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   secret _names_.
 - `hosts.yaml` cannot hold a literal secret, and the host form cannot write one.
 - A window can only write to, resize or close sessions it opened itself, and acts only on its own
-  Files sessions, copies and edits.
+  Files sessions, copies, edits and forwards.
+- Forwards listen on loopback unless a rule says otherwise, and a network bind needs a confirmation on
+  each machine that the shared `hosts.yaml` cannot give. The SOCKS proxy has no authentication. No
+  forwarded byte is logged.
 - The Files tab's local pane reaches any file your account can; see
   [Access to this machine's files](#access-to-this-machines-files).
 - Host keys are trusted on first use, by an explicit click, and replaced only by a separate explicit
@@ -391,7 +582,8 @@ WIREBENCH_AREAS="ssh=off"
 ```
 
 With `ssh=off`, the Hosts item disappears from the activity bar, its commands (including
-**Connect to Host…** and the **Files:** commands) and quick-open entries are gone, and the area's
+**Connect to Host…**, the **Files:** and **Terminal:** commands and the port forwarding commands),
+its quick-open entries, the Port forwarding and Layouts views and the status bar item are gone, and the area's
 channels are not registered in the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
 
 ## What is not here yet
@@ -399,8 +591,8 @@ channels are not registered in the main process, so nothing can reach it. Entrie
 This part does not include:
 
 - snippets (saved commands run on one or many hosts),
-- port forwarding and tunnels, or sending requests through a host,
-- split or broadcast terminals,
+- sending requests through a host or a forward,
+- agent, X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
 - a local terminal, SSH agent forwarding to the remote, or session recording.
 

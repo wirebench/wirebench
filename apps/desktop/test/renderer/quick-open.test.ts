@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { quickOpenEntries } from '../../src/renderer/shell/quick-open.js';
+import { quickOpenEntries, quickOpenSnippetEntries } from '../../src/renderer/shell/quick-open.js';
+import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
 import type { InterfaceSummary, RequestWire } from '../../src/shared/kinds/soap/wire.js';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
@@ -126,6 +127,41 @@ describe('quickOpenEntries', () => {
       'Geo › Subtract',
       'Payments › Add',
       'Payments › Subtract',
+    ]);
+  });
+});
+
+describe('quickOpenSnippetEntries', () => {
+  const snippet = (over: Partial<SnippetListItemWire>): SnippetListItemWire => ({
+    id: 'tail',
+    name: 'Tail logs',
+    tags: ['logs', 'prod'],
+    firstLine: 'tail -f /var/log/syslog',
+    literalStart: 'tail -f /var/log/syslog',
+    variables: [],
+    secrets: [],
+    enter: true,
+    confirm: false,
+    lineCount: 1,
+    revision: 'r',
+    ...over,
+  });
+
+  it('one row per snippet, in list order, matching on name, package, tags and first line', () => {
+    const entries = quickOpenSnippetEntries([
+      snippet({ packageId: 'ops', packageName: 'Ops' }),
+      snippet({ id: 'df', name: 'Disk', tags: [], firstLine: 'df -h' }),
+    ]);
+    expect(entries).toEqual([
+      {
+        key: 'snippet:tail',
+        kind: 'snippet',
+        label: 'Tail logs',
+        detail: 'Ops · tail -f /var/log/syslog',
+        value: 'Tail logs Ops logs prod tail -f /var/log/syslog',
+        snippetId: 'tail',
+      },
+      { key: 'snippet:df', kind: 'snippet', label: 'Disk', detail: 'df -h', value: 'Disk df -h', snippetId: 'df' },
     ]);
   });
 });
