@@ -1,7 +1,8 @@
 /**
- * The Files tabs' state: two panes per tab, this machine on the left and the host on the right, each with its
- * place, folder, listing, selection and Back history (the host's with its SFTP session). A pane's id is its
- * tab's id for the host's pane and {@link localPaneId} for this machine's. Every file operation is a typed
+ * The Files tabs' state: two panes per tab, this machine on the left and the host on the right at first, each
+ * with its place, folder, listing, selection and Back history. Either pane can be switched to this machine or
+ * any host ({@link FilesState.switchPlace}); a pane on a host holds its own SFTP session, so two panes on the
+ * same host hold two. A pane's id is its tab's id for the right pane and {@link localPaneId} for the left. Every file operation is a typed
  * channel to main; this store only remembers what main answered. Each host's last folder and the
  * hidden-entries toggle are remembered on this machine (`files-prefs.ts`).
  */
@@ -46,6 +47,9 @@ export interface PaneSort {
 
 export type PanePlace =
   { readonly kind: 'local' } | { readonly kind: 'remote'; readonly hostId: string; readonly sessionId?: string };
+
+/** A place a pane can be switched to. */
+export type PlaceChoice = { readonly kind: 'local' } | { readonly kind: 'remote'; readonly hostId: string };
 
 export interface PaneState {
   readonly place: PanePlace;
@@ -103,8 +107,14 @@ interface FilesState {
   remove: (tabId: string, names: readonly string[]) => Promise<void>;
   chmod: (tabId: string, name: string, mode: number) => Promise<void>;
   setShowHidden: (show: boolean) => void;
-  /** Opens the tab's SFTP session (again, after a failure) and lists the host's last folder or its home. */
-  connect: (tabId: string, hostId: string) => Promise<void>;
+  /** Opens the pane's SFTP session (again, after a failure) and lists the host's last folder or its home. */
+  connect: (paneId: string, hostId: string) => Promise<void>;
+  /**
+   * Moves a pane to this machine or a host: its previous session closes and a host's pane opens its own
+   * session (with the trust prompt when the key is new or changed). Choosing the place it already shows does
+   * nothing, unless its connection failed.
+   */
+  switchPlace: (paneId: string, place: PlaceChoice) => Promise<void>;
   /** Lists `path`; with `push`, the folder left goes on the Back history. A refusal keeps the listing. */
   navigate: (tabId: string, path: string, options?: { readonly push?: boolean }) => Promise<boolean>;
   back: (tabId: string) => Promise<void>;
@@ -121,8 +131,18 @@ interface FilesState {
 
 const DEFAULT_SORT: PaneSort = { column: 'name', descending: false };
 
-/** Tabs with a `sftp.open` in flight, so a second mount or click does not open a second session. */
-const connecting = new Set<string>();
+/** Panes with a `sftp.open` in flight (by the generation that started it), so a second mount or click does not open a second session. */
+const connecting = new Map<string, number>();
+
+/** Bumped when a pane changes place or goes: a connect or listing started before then is stale. */
+const generations = new Map<string, number>();
+
+const generationOf = (paneId: string): number => generations.get(paneId) ?? 0;
+
+function nextGeneration(paneId: string): void {
+  generations.set(paneId, generationOf(paneId) + 1);
+  connecting.delete(paneId);
+}
 
 /** A navigation's turn per tab: an answer to an older one is dropped. */
 const turns = new Map<string, number>();
@@ -178,17 +198,25 @@ function lastFolder(hostId: string): string | undefined {
   return workspaceId === undefined ? undefined : readFilesPrefs().lastFolder[folderKey(workspaceId, hostId)];
 }
 
-function freshPane(hostId: string): PaneState {
+function freshPane(place: PanePlace): PaneState {
   return {
-    place: { kind: 'remote', hostId },
+    place,
     path: '',
     home: '',
     entries: [],
     selected: [],
     history: [],
-    status: 'connecting',
+    status: place.kind === 'local' ? 'loading' : 'connecting',
     sort: DEFAULT_SORT,
   };
+}
+
+/** Ends a session no pane uses any more. */
+function closeSession(sessionId: string | undefined): void {
+  if (sessionId === undefined) return;
+  void ipc()
+    .sftp.close({ sessionId })
+    .catch(() => undefined);
 }
 
 /** Where a pane's file operations go: its place and folder, and the names already there. */
@@ -214,6 +242,23 @@ export const useFilesStore = create<FilesState>()((set, get) => {
   const patch = (tabId: string, change: Partial<PaneState>): void => {
     replace(tabId, (pane) => ({ ...pane, ...change }));
   };
+  /** Lists this machine's home folder in a pane just set to this machine. */
+  const listLocal = async (paneId: string): Promise<void> => {
+    const generation = generationOf(paneId);
+    const home = await settle(() => ipc().sftp.localHome({}), 'The home folder could not be found');
+    if (get().panes[paneId] === undefined || generationOf(paneId) !== generation) return;
+    if (!home.ok) {
+      patch(paneId, { status: 'error', error: errorOf(home.error, 'The home folder could not be found') });
+      return;
+    }
+    patch(paneId, { home: home.value.home });
+    if (!(await get().navigate(paneId, home.value.home))) {
+      const pane = get().panes[paneId];
+      if (pane !== undefined && pane.path === '' && generationOf(paneId) === generation) {
+        patch(paneId, { status: 'error' });
+      }
+    }
+  };
 
   return {
     panes: {},
@@ -232,32 +277,8 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       // A pane that never listed (its home could not be read) may try again.
       const existing = get().panes[paneId];
       if (existing !== undefined && !(existing.status === 'error' && existing.path === '')) return;
-      set({
-        panes: {
-          ...get().panes,
-          [paneId]: {
-            place: { kind: 'local' },
-            path: '',
-            home: '',
-            entries: [],
-            selected: [],
-            history: [],
-            status: 'loading',
-            sort: DEFAULT_SORT,
-          },
-        },
-      });
-      const home = await settle(() => ipc().sftp.localHome({}), 'The home folder could not be found');
-      if (get().panes[paneId] === undefined) return;
-      if (!home.ok) {
-        patch(paneId, { status: 'error', error: errorOf(home.error, 'The home folder could not be found') });
-        return;
-      }
-      patch(paneId, { home: home.value.home });
-      if (!(await get().navigate(paneId, home.value.home))) {
-        const pane = get().panes[paneId];
-        if (pane !== undefined && pane.path === '') patch(paneId, { status: 'error' });
-      }
+      set({ panes: { ...get().panes, [paneId]: freshPane({ kind: 'local' }) } });
+      await listLocal(paneId);
     },
     showHidden: readFilesPrefs().showHidden,
     pathEditRequests: {},
@@ -342,56 +363,79 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       updateFilesPrefs((prefs) => ({ ...prefs, showHidden }));
     },
 
-    connect: async (tabId, hostId) => {
-      const existing = get().panes[tabId];
-      if (sessionOf(existing) !== undefined || connecting.has(tabId)) return;
+    connect: async (paneId, hostId) => {
+      const existing = get().panes[paneId];
+      if (sessionOf(existing) !== undefined || connecting.has(paneId)) return;
+      const generation = generationOf(paneId);
       set({
         panes: {
           ...get().panes,
-          [tabId]: existing === undefined ? freshPane(hostId) : { ...existing, error: undefined, status: 'connecting' },
+          [paneId]:
+            existing === undefined
+              ? freshPane({ kind: 'remote', hostId })
+              : { ...existing, error: undefined, status: 'connecting' },
         },
       });
-      connecting.add(tabId);
+      connecting.set(paneId, generation);
       const opened = await settle(() => ipc().sftp.open({ hostId }), 'The connection could not be started').finally(
         () => {
-          connecting.delete(tabId);
+          if (connecting.get(paneId) === generation) connecting.delete(paneId);
         },
       );
-      if (!tabExists(tabId) || get().panes[tabId] === undefined) {
-        // The tab closed while the connect ran: nothing will use the session.
-        if (opened.ok)
-          void ipc()
-            .sftp.close({ sessionId: opened.value.sessionId })
-            .catch(() => undefined);
+      const current = () => generationOf(paneId) === generation && get().panes[paneId] !== undefined;
+      if (!tabExists(tabOfPane(paneId)) || !current()) {
+        // The tab closed, or the pane moved to another place, while the connect ran: nothing will use the session.
+        if (opened.ok) closeSession(opened.value.sessionId);
         return;
       }
       if (!opened.ok) {
         const { code, message, details } = opened.error;
         if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
-          // The Files tab stands in for the terminal's pane: the prompt resumes the tab's own connect.
+          // The Files pane stands in for the terminal's pane: the prompt resumes the pane's own connect.
           openTrustPrompt(
-            { paneId: tabId, hostId },
+            { paneId, hostId },
             {
               retry: () => {
-                void get().connect(tabId, hostId);
+                if (current()) void get().connect(paneId, hostId);
               },
               cancel: () => {
-                patch(tabId, { status: 'error', error: { code, message: 'The host key was not trusted.' } });
+                if (current())
+                  patch(paneId, { status: 'error', error: { code, message: 'The host key was not trusted.' } });
               },
             },
             details,
           );
           return;
         }
-        patch(tabId, { status: 'error', error: { code, message } });
+        patch(paneId, { status: 'error', error: { code, message } });
         return;
       }
       const { sessionId, home } = opened.value;
-      patch(tabId, { place: { kind: 'remote', hostId, sessionId }, home, status: 'loading' });
+      patch(paneId, { place: { kind: 'remote', hostId, sessionId }, home, status: 'loading' });
       const remembered = lastFolder(hostId);
-      if (remembered !== undefined && remembered !== home && (await get().navigate(tabId, remembered))) return;
+      if (remembered !== undefined && remembered !== home && (await get().navigate(paneId, remembered))) return;
       // A remembered folder that is gone falls back to home, without its refusal showing.
-      await get().navigate(tabId, home);
+      await get().navigate(paneId, home);
+    },
+
+    switchPlace: async (paneId, choice) => {
+      const pane = get().panes[paneId];
+      if (pane === undefined) return;
+      const same =
+        choice.kind === 'local'
+          ? pane.place.kind === 'local'
+          : pane.place.kind === 'remote' && pane.place.hostId === choice.hostId;
+      if (same && pane.status !== 'error') return;
+      nextGeneration(paneId);
+      nextTurn(paneId);
+      closeSession(sessionOf(pane));
+      set({
+        panes: { ...get().panes, [paneId]: freshPane(choice) },
+        dialogs: { ...get().dialogs, [paneId]: undefined },
+        renaming: { ...get().renaming, [paneId]: undefined },
+      });
+      if (choice.kind === 'local') await listLocal(paneId);
+      else await get().connect(paneId, choice.hostId);
     },
 
     navigate: async (tabId, path, options = {}) => {
@@ -479,13 +523,11 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       const local = localPaneId(tabId);
       const { panes, activePanes } = get();
       if (panes[tabId] === undefined && panes[local] === undefined) return;
-      turns.delete(tabId);
-      turns.delete(local);
-      const sessionId = sessionOf(panes[tabId]);
-      if (sessionId !== undefined)
-        void ipc()
-          .sftp.close({ sessionId })
-          .catch(() => undefined);
+      for (const paneId of [tabId, local]) {
+        turns.delete(paneId);
+        nextGeneration(paneId);
+        closeSession(sessionOf(panes[paneId]));
+      }
       const rest = { ...panes };
       delete rest[tabId];
       delete rest[local];
