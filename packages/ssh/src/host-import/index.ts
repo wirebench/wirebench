@@ -9,3 +9,4 @@ export {
   type SessionImportInput,
   type SessionSource,
 } from './sessions.js';
+export { parseSecureCrtXml } from './securecrt.js';
