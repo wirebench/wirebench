@@ -22,6 +22,10 @@ describe('area modules', () => {
     expect(enabledAreaIds({})).toEqual(AREAS.map((a) => a.id));
   });
 
+  it('the SSH area is stable', () => {
+    expect(areaById('ssh').feature.stage).toBe('stable');
+  });
+
   it('areaById finds an area and rejects an unknown id', () => {
     expect(areaById('history').rail.label).toBe('History');
     expect(() => areaById('nope' as never)).toThrow(/unknown area/);

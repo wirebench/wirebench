@@ -333,7 +333,9 @@ introduced.
 The activity bar, the sidebar views, their `view.show*` commands and their IPC channels are not named by the shell. Each
 is an *area*: an `AreaModule` (`apps/desktop/src/shared/area-module.ts`) with an id, an engine feature descriptor, a rail
 item and sidebar copy, composed in the static `AREAS` list, from which `AreaId` is derived. The renderer half
-(`renderer/areas/index.ts`) supplies the sidebar view and the area's extra commands; the main half (`main/areas.ts`)
+(`renderer/areas/index.ts`) supplies the sidebar view, the area's extra commands and, optionally, a `StatusItem`
+component that the status bar (`shell/status-bar.tsx`) renders for each enabled area (the SSH area's counts running
+port forwards); the main half (`main/areas.ts`)
 registers its channels. `WIREBENCH_AREAS="ssh=off"` switches an area off: main registers none of its channels, the
 renderer none of its commands, and the rail leaves it out (`app.areas` carries the enabled ids). The contract is
 `@internal`, not a plugin API. The SSH area is the first area to bring its own tab kind and channels; its model and
