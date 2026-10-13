@@ -51,6 +51,12 @@ export type Added = [
   Engine.IssuedTokenStatus,
   Engine.IssuedTokenTarget,
   Engine.TrustDeps,
+  Engine.McpServer,
+  Engine.McpRequestDef,
+  Engine.McpOperation,
+  Engine.McpTransport,
+  Engine.McpCatalogue,
+  Engine.McpCatalogueInfo,
 ];
 
 /** Every type 3.0 renames, under its new name. */

@@ -45,6 +45,10 @@ describe('WIREBENCH_KINDS', () => {
     expect(registry.status('websocket')).toBe('disabled');
     expect(registry.status('rest')).toBe('enabled');
   });
+
+  it('keeps an engine protocol the desktop has no kind for off, whatever the switches say', () => {
+    expect(kindRegistry(['soap', 'rest', 'grpc', 'websocket']).status('mcp')).toBe('disabled');
+  });
 });
 
 describe('a project with a kind switched off', () => {

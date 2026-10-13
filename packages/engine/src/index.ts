@@ -101,6 +101,7 @@ export { soapInterfacesOf, withSoapInterfaces } from './soap/model.js';
 export { restApisOf, withRestApis } from './rest/model.js';
 export { grpcApisOf, withGrpcApis } from './grpc/model.js';
 export { wsApisOf, withWsApis } from './ws/model.js';
+export { mcpServersOf, withMcpServers } from './mcp/model.js';
 export { wssConfigsOf, withWssConfigs } from './wss/project.js';
 export type { WssConfigs } from './wss/project.js';
 export type { UnsupportedContainer } from './project/model.js';
@@ -1878,6 +1879,43 @@ export { connectWebSocket } from './ws/connect.js';
 export type { ConnectedWebSocket, ConnectOptions } from './ws/connect.js';
 export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
 export type { WsTranscript } from './ws/transcript.js';
+
+// MCP: the fifth protocol, an MCP server as a sibling container under `apis/` (#79).
+export {
+  createMcpFolder,
+  createMcpRequest,
+  createMcpServer,
+  mcpArgsFileName,
+  mcpArgumentsEmpty,
+  mcpFolderRequests,
+  mcpServerFolders,
+  mcpServerRequests,
+} from './mcp/model.js';
+export type {
+  CreateMcpFolderInput,
+  CreateMcpRequestInput,
+  CreateMcpServerInput,
+  McpCatalogue,
+  McpCatalogueInfo,
+  McpCataloguePrompt,
+  McpCataloguePromptArgument,
+  McpCatalogueResource,
+  McpCatalogueResourceTemplate,
+  McpCatalogueTool,
+  McpFolder,
+  McpHttpTransport,
+  McpListMethod,
+  McpMethod,
+  McpOperation,
+  McpRequestDef,
+  McpRequestSettings,
+  McpServer,
+  McpServerSettings,
+  McpStdioTransport,
+  McpTransport,
+} from './mcp/model.js';
+export { MCP_CATALOGUE_FILE, parseMcpCatalogue, serializeMcpCatalogue } from './mcp/files.js';
+export { mcpCataloguePath } from './mcp/storage.js';
 export { expandWsInput, expandWsMessage } from './ws/expand.js';
 export type { WsCallInput } from './ws/expand.js';
 export { toWsSessionOptions } from './ws/call.js';

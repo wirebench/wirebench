@@ -22,10 +22,17 @@ export function enabledKindsFromEnv(env: NodeJS.ProcessEnv = process.env): reado
 
 /**
  * The engine registry for this run: the built-in protocols with the kinds that are off switched off,
- * so a project's containers of those kinds load as placeholders and are saved untouched.
+ * so a project's containers of those kinds load as placeholders and are saved untouched. An engine
+ * protocol the desktop has no kind for yet is off too, for the same reason.
  */
 export function kindRegistry(enabled: readonly KindId[]): ProtocolRegistry {
-  return createBuiltinRegistry(Object.fromEntries(KINDS.map((kind) => [kind.feature.id, enabled.includes(kind.kind)])));
+  const desktopless = BUILTIN_PROTOCOLS.filter((module) => !KINDS.some((kind) => kind.kind === module.kind));
+  return createBuiltinRegistry(
+    Object.fromEntries([
+      ...KINDS.map((kind) => [kind.feature.id, enabled.includes(kind.kind)] as const),
+      ...desktopless.map((module) => [module.feature.id, false] as const),
+    ]),
+  );
 }
 
 /** What each kind keeps for the whole project rather than in a container, as the explorer names it. */

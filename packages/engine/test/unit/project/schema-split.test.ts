@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as grpcFiles from '../../../src/grpc/files.js';
+import * as mcpFiles from '../../../src/mcp/files.js';
 import * as parts from '../../../src/project/schema-parts.js';
 import * as schema from '../../../src/project/schema.js';
 import * as restFiles from '../../../src/rest/files.js';
@@ -19,6 +20,7 @@ const MOVED: readonly (readonly [string, Exports, readonly string[]])[] = [
   ['rest/files.ts', { ...restFiles }, ['apiFileSchema', 'restBodySchema', 'restRequestFileSchema']],
   ['grpc/files.ts', { ...grpcFiles }, ['grpcApiFileSchema', 'grpcMethodKindSchema', 'grpcRequestFileSchema']],
   ['ws/files.ts', { ...wsFiles }, ['wsApiFileSchema', 'wsRequestFileSchema']],
+  ['mcp/files.ts', { ...mcpFiles }, ['mcpCatalogueFileSchema', 'mcpRequestFileSchema', 'mcpServerFileSchema']],
   ['webhooks/schema.ts', { ...webhooksSchema }, ['webhookFolderFileSchema', 'webhooksFileSchema']],
   ['wss/schema.ts', { ...wssSchema }, ['wssEntrySchema', 'wssIssuedTokenEntrySchema', 'wssSamlTokenEntrySchema']],
   [
@@ -69,6 +71,7 @@ const SOAP_INTERFACE = {
 const REST_API = { ...API, kind: 'rest', baseUrl: '' };
 const GRPC_API = { ...API, kind: 'grpc', target: 'localhost:1' };
 const WS_API = { ...API, kind: 'websocket', url: '' };
+const MCP_SERVER = { ...API, kind: 'mcp', transport: { type: 'stdio', command: 'node' } };
 
 describe('the file schemas after the split', () => {
   const old: Exports = { ...schema };
@@ -98,9 +101,10 @@ describe('the file schemas after the split', () => {
     ['rest', restFiles.apiFileSchema, REST_API],
     ['grpc', grpcFiles.grpcApiFileSchema, GRPC_API],
     ['websocket', wsFiles.wsApiFileSchema, WS_API],
+    ['mcp', mcpFiles.mcpServerFileSchema, MCP_SERVER],
   ] as const)('gives %s a container schema that takes its own kind only', (kind, containerSchema, file) => {
     expect(containerSchema.safeParse(file).success).toBe(true);
-    for (const other of ['soap', 'rest', 'grpc', 'websocket'].filter((k) => k !== kind)) {
+    for (const other of ['soap', 'rest', 'grpc', 'websocket', 'mcp'].filter((k) => k !== kind)) {
       const result = containerSchema.safeParse({ ...file, kind: other });
       expect(result.success, other).toBe(false);
       expect(

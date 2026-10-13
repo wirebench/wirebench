@@ -42,6 +42,8 @@ export interface ProjectProblem {
     | 'missing-api-file'
     /** A raw body whose sibling file is gone; the request loads with an empty body. */
     | 'missing-body'
+    /** An MCP server's `catalogue.json` that is not JSON or not a catalogue; it is left as it is (#79). */
+    | 'catalogue-file-invalid'
     /**
      * A REST response example whose `file` is not `<slug>.examples/<id>.body.<ext>` of its own
      * request; the example loads without a body, and nothing outside that folder is read (#64).

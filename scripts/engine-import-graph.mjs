@@ -29,6 +29,7 @@ export const GROUP_FOLDERS = Object.freeze({
   rest: ['rest', 'webhooks'],
   grpc: ['grpc'],
   ws: ['ws', 'asyncapi'],
+  mcp: ['mcp'],
 });
 
 /**

@@ -46,17 +46,17 @@ Each task leaves `pnpm check` green.
 (`SUPPORTED_KINDS`), `project-files.ts`, `index.ts` (model exports), `scripts/engine-import-graph.mjs`,
 tests.
 
-- [ ] `McpServer` (the container, `kind: 'mcp'`), the `McpTransport` union (stdio, http and sse),
+- [x] `McpServer` (the container, `kind: 'mcp'`), the `McpTransport` union (stdio, http and sse),
   `McpRequestDef`, the `McpOperation` union, folders, settings, and the `catalogue` metadata.
   `mcpServersOf` / `withMcpServers`.
-- [ ] File schemas for `api.yaml` and `*.request.yaml`. The `tools/call` arguments go in the sibling
+- [x] File schemas for `api.yaml` and `*.request.yaml`. The `tools/call` arguments go in the sibling
   `<slug>.args.json`, written only when it is not empty. `catalogue.json` uses a stable sort and key
   order. A missing args file is a problem, and the arguments load as `{}`. An args file name that leaves
   the request's folder is refused.
-- [ ] `mcpProtocol` with the storage facet only, feature `mcp` (experimental, default on), added to
+- [x] `mcpProtocol` with the storage facet only, feature `mcp` (experimental, default on), added to
   `BUILTIN_PROTOCOLS` and `AnyRequestDef`.
-- [ ] Regenerate the v10 JSON Schemas. Add a format-10 history note.
-- [ ] Tests:
+- [x] Regenerate the v10 JSON Schemas. Add a format-10 history note.
+- [x] Tests:
   - a round trip for each transport and each operation;
   - byte-identical re-save;
   - the args sibling, the catalogue file, path traversal;

@@ -67,13 +67,14 @@ const context: RunContext = {
 };
 
 describe('the built-in registry', () => {
-  it('holds the four protocols in order, and the scripts feature', () => {
-    expect(BUILTIN_PROTOCOLS.map((module) => module.kind)).toEqual(['soap', 'rest', 'grpc', 'websocket']);
+  it('holds the five protocols in order, and the scripts feature', () => {
+    expect(BUILTIN_PROTOCOLS.map((module) => module.kind)).toEqual(['soap', 'rest', 'grpc', 'websocket', 'mcp']);
     expect(createBuiltinRegistry().features.descriptors.map((descriptor) => descriptor.id)).toEqual([
       'soap',
       'rest',
       'grpc',
       'websocket',
+      'mcp',
       'scripts',
     ]);
     expect(SCRIPTS_FEATURE).toEqual({ id: 'scripts', title: 'Scripts', default: true, stage: 'stable', requires: [] });
@@ -81,13 +82,13 @@ describe('the built-in registry', () => {
 
   it('is created once as the default, with every feature on', () => {
     expect(defaultRegistry()).toBe(defaultRegistry());
-    expect(defaultRegistry().modules).toHaveLength(4);
+    expect(defaultRegistry().modules).toHaveLength(5);
     expect(defaultRegistry().features.isEnabled('scripts')).toBe(true);
   });
 
   it('applies switches', () => {
     const registry = createBuiltinRegistry({ grpc: false, scripts: false });
-    expect(registry.modules.map((module) => module.kind)).toEqual(['soap', 'rest', 'websocket']);
+    expect(registry.modules.map((module) => module.kind)).toEqual(['soap', 'rest', 'websocket', 'mcp']);
     expect(registry.features.isEnabled('scripts')).toBe(false);
   });
 });

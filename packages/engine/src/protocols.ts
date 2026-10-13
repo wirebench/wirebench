@@ -9,6 +9,8 @@ import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
 import type { GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
+import type { McpRequestDef } from './mcp/model.js';
+import { mcpProtocol } from './mcp/module.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
 import { createProtocolRegistry } from './protocol/registry.js';
@@ -31,11 +33,17 @@ import { wsProtocol } from './ws/module.js';
 import type { WsSelected } from './ws/run.js';
 
 /**
- * The four built-in protocols, in the order their containers tie-break in the explorer.
+ * The five built-in protocols, in the order their containers tie-break in the explorer.
  *
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
-export const BUILTIN_PROTOCOLS: readonly ProtocolModule[] = [soapProtocol, restProtocol, grpcProtocol, wsProtocol];
+export const BUILTIN_PROTOCOLS: readonly ProtocolModule[] = [
+  soapProtocol,
+  restProtocol,
+  grpcProtocol,
+  wsProtocol,
+  mcpProtocol,
+];
 
 /** The feature that switches request scripts (#63). Not a protocol, so the registry is told of it. */
 export const SCRIPTS_FEATURE: FeatureDescriptor = {
@@ -122,4 +130,4 @@ export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | Grp
  * A saved request of any built-in protocol, which is what a lookup by request id can return: the id
  * space is one (ULIDs), so `kind` is how a caller finds out what it has.
  */
-export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef;
+export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef | McpRequestDef;
