@@ -66,6 +66,8 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     fontSize: 13,
     lineHeight: 1,
     colorScheme: 'app',
+    sessionLogMaxMb: 500,
+    sessionLogRaw: false,
   },
   shortcuts: {},
 };

@@ -63,7 +63,8 @@ function FontFamilySetting({
 /**
  * Preferences → Terminal: how a terminal looks (a host or group in hosts.yaml may override the scheme and
  * size), what it does with a paste and with a selection, whether it suggests snippets while the user types,
- * and whether a session the network dropped reconnects on its own.
+ * whether a session the network dropped reconnects on its own, and how much room session logs take on this
+ * machine.
  */
 export function TerminalSection({ preferences, update }: SectionProps) {
   const terminal = preferences.terminal;
@@ -171,6 +172,32 @@ export function TerminalSection({ preferences, update }: SectionProps) {
             });
           }}
           hint="How many tries a dropped session gets before the tab stops and offers Reconnect."
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Session logs">
+        <NumberSetting
+          label="Session logs size limit"
+          setting="terminal.sessionLogMaxMb"
+          value={terminal.sessionLogMaxMb}
+          {...PREFERENCE_LIMITS['terminal.sessionLogMaxMb']}
+          unit="MB"
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.terminal.sessionLogMaxMb)}
+          testId="terminal-session-log-max"
+          onCommit={(sessionLogMaxMb) => {
+            update({
+              terminal: { sessionLogMaxMb: sessionLogMaxMb ?? DEFAULT_PREFERENCES_WIRE.terminal.sessionLogMaxMb },
+            });
+          }}
+          hint="All session logs on this machine together; past it the oldest logs are deleted first. Logging is turned on per host or group in the Hosts view."
+        />
+        <BooleanSetting
+          label="Keep raw output"
+          setting="terminal.sessionLogRaw"
+          value={terminal.sessionLogRaw}
+          onChange={(sessionLogRaw) => {
+            update({ terminal: { sessionLogRaw } });
+          }}
+          hint="Also keep each log's output as the terminal received it, colours and escape sequences included, beside the plain text."
         />
       </SettingsGroup>
     </>

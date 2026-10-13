@@ -2054,6 +2054,8 @@ export const preferencesWireSchema = z.object({
     fontSize: z.number(),
     lineHeight: z.number(),
     colorScheme: z.string(),
+    sessionLogMaxMb: z.number(),
+    sessionLogRaw: z.boolean(),
   }),
   shortcuts: z.record(z.string(), z.string()),
 });

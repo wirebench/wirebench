@@ -235,6 +235,10 @@ export interface TerminalPreferences {
   readonly lineHeight: number;
   /** A built-in scheme id, or `app` to follow the app theme; a host or group in `hosts.yaml` may override it. */
   readonly colorScheme: string;
+  /** Megabytes all session logs on this machine may take together; past it the oldest logs are deleted. */
+  readonly sessionLogMaxMb: number;
+  /** Keep each session log's raw stream (escape sequences included) beside its plain text. */
+  readonly sessionLogRaw: boolean;
 }
 
 /** The whole preferences document. */
@@ -323,6 +327,8 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     fontSize: 13,
     lineHeight: 1,
     colorScheme: 'app',
+    sessionLogMaxMb: 500,
+    sessionLogRaw: false,
   }),
   shortcuts: Object.freeze({}),
 });
@@ -362,6 +368,8 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
   'terminal.fontSize': { min: 6, max: 72, integer: true },
   'terminal.lineHeight': { min: 1, max: 2, integer: false },
+  /** Megabytes. */
+  'terminal.sessionLogMaxMb': { min: 10, max: 100_000, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceNumberLimit>>;
 
 /** A dotted key with an entry in {@link PREFERENCE_NUMBER_LIMITS}. */
@@ -529,6 +537,8 @@ export const preferencesSchema = z.object({
         .string()
         .regex(/^[a-z0-9][a-z0-9-]*$/)
         .optional(),
+      sessionLogMaxMb: limited('terminal.sessionLogMaxMb').optional(),
+      sessionLogRaw: z.boolean().optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),

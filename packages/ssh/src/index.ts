@@ -16,3 +16,4 @@ export * from './keygen.js';
 export * from './install.js';
 export * from './snippets.js';
 export * from './stream-masker.js';
+export * from './text-log.js';

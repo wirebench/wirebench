@@ -32,4 +32,5 @@ export const PREFERENCE_LIMITS = {
   'terminal.reconnectAttempts': { min: 1, max: 100, integer: true },
   'terminal.fontSize': { min: 6, max: 72, integer: true },
   'terminal.lineHeight': { min: 1, max: 2, integer: false },
+  'terminal.sessionLogMaxMb': { min: 10, max: 100_000, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceLimit>>;

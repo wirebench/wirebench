@@ -18,6 +18,7 @@ import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
+import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
 
@@ -315,6 +316,7 @@ export function HostDetails() {
         <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
         <HostForwards hostId={host.id} />
       </section>
+      <HostSessionLogs hostId={host.id} path={host.path} groupName={groupName} refreshKey={hostStatus} />
       <Section title="Timing">
         <Row label="Keep-alive">
           <span>{host.ssh.keepAlive.value}s</span>
