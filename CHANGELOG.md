@@ -35,7 +35,13 @@ All notable changes to this project are documented here. The format follows
   a control key is refused. `${secret:…}` values are typed by the app itself, never shown: the line starts
   with a space so most shells keep it out of history, and the value shows as `••••` in that terminal for the
   rest of its session. A snippet changed on disk since it was shown is not run (#451).
-
+- **Run a snippet on several hosts.** The run dialog lists the open terminals with checkboxes and adds
+  hosts, groups and tags as chips that show the hosts they stand for; the button reads **Run on N hosts**,
+  counting each host once, and every protected host is named with the group it inherits that from. A host
+  reuses its most recently used open terminal, or gets a new tab that is written to once the shell has
+  printed its prompt (or after 10 s). Hosts run in parallel: one waiting on a host key or a sign-in holds
+  back none of the others, and one toast sums the run up ("Ran on 3 of 4 hosts · api-4: …"). The last
+  targets are remembered per snippet (#452).
 - **Snippet suggestions in the terminal.** Typing the start of a snippet's first line (three characters or
   more, case exact) shows the rest of that line dimmed after the cursor, with the snippet's name and `Tab`
   at the right edge; when several match, the one run most recently wins. **Tab** completes it without
