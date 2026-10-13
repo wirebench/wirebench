@@ -48,6 +48,14 @@ const NO_LAYOUTS = {
   layouts: { list: vi.fn(), save: vi.fn(), rename: vi.fn(), delete: vi.fn() },
   workspaceId: () => undefined,
 };
+const NO_FORWARD = {
+  list: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+  stopAll: vi.fn(),
+  freePort: vi.fn(),
+  hostsChanged: vi.fn(() => Promise.resolve()),
+};
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
 const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn() };
 const NO_SFTP = {
@@ -78,6 +86,7 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const host = {
@@ -105,6 +114,7 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const answer = (await invoke('ssh.saveHosts', { file: { ...EMPTY.file, extra: 1 } })) as { ok: boolean };
@@ -122,11 +132,46 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.listHosts', undefined)).toEqual({ ok: true, value: EMPTY });
-    await invoke('ssh.saveHosts', { file: EMPTY.file });
+    const window = { id: 3 };
+    await invokeAs(window, 'ssh.saveHosts', { file: EMPTY.file });
     expect(save).toHaveBeenCalledWith(EMPTY.file);
+    // A saved file may have edited a running forward's rule: that window's forwards are marked.
+    expect(NO_FORWARD.hostsChanged).toHaveBeenCalledWith(window);
+  });
+  it('forward.* calls act for the sending window', async () => {
+    const forward = {
+      list: vi.fn(() => []),
+      start: vi.fn(() => Promise.resolve()),
+      stop: vi.fn(() => Promise.resolve()),
+      stopAll: vi.fn(() => Promise.resolve()),
+      freePort: vi.fn(() => Promise.resolve(5433)),
+      hostsChanged: vi.fn(() => Promise.resolve()),
+    };
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      forward,
+      transfers: NO_TRANSFERS,
+    });
+    const window = { id: 7 };
+    expect(await invokeAs(window, 'forward.list', {})).toEqual({ ok: true, value: { forwards: [] } });
+    expect(forward.list).toHaveBeenCalledWith(window);
+    await invokeAs(window, 'forward.start', { hostId: 'a', ruleId: 'pg', port: 15432 });
+    expect(forward.start).toHaveBeenCalledWith(window, { hostId: 'a', ruleId: 'pg', port: 15432 });
+    await invokeAs(window, 'forward.stop', { hostId: 'a', ruleId: 'pg' });
+    expect(forward.stop).toHaveBeenCalledWith(window, 'a', 'pg');
+    await invokeAs(window, 'forward.stopAll', {});
+    expect(forward.stopAll).toHaveBeenCalledWith(window);
+    expect(await invokeAs(window, 'forward.freePort', { near: 5432 })).toEqual({ ok: true, value: { port: 5433 } });
   });
   it('ssh.secretNames answers names and where they live, never a value', async () => {
     const names = vi.fn().mockResolvedValue([{ name: 'DEPLOY_KEY', local: true, external: false }]);
@@ -139,6 +184,7 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.secretNames', undefined)).toEqual({
@@ -157,6 +203,7 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const answer = await invoke('ssh.setSecret', { name: 'DEPLOY_KEY', value: 'hunter2-value' });
@@ -180,6 +227,7 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const answer = await invoke('ssh.setSecret', { name: 'my password!', value: 'hunter2-value' });
@@ -197,6 +245,7 @@ describe('ssh channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const answer = (await invoke('ssh.setSecret', { name: 'A', value: 'v', extra: 1 })) as { ok: boolean };
@@ -228,6 +277,7 @@ describe('ssh channels', () => {
         sftp: NO_SFTP,
         snippets: NO_SNIPPETS,
         layouts: NO_LAYOUTS,
+        forward: NO_FORWARD,
         transfers: NO_TRANSFERS,
       });
       return ssh;
@@ -287,6 +337,7 @@ describe('known hosts channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.knownHosts', undefined)).toEqual({ ok: true, value: { entries: [entry] } });
@@ -308,6 +359,7 @@ describe('known hosts channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(
@@ -335,6 +387,7 @@ describe('host OS channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.hostOs', undefined)).toEqual({ ok: true, value: { entries } });
@@ -355,6 +408,7 @@ describe('host OS channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.setHostOs', { host: 'box:22', os: 'beos' })).toMatchObject({ ok: false });
@@ -376,6 +430,7 @@ describe('ssh snippet run channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 7 };
@@ -405,6 +460,7 @@ describe('ssh import channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 7 };
@@ -429,6 +485,7 @@ describe('ssh import channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     expect(await invoke('ssh.importPreview', { source: 'pick', path: '/etc/passwd' })).toMatchObject({ ok: false });
@@ -450,6 +507,7 @@ describe('ssh import channels', () => {
       sftp,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 3 };
@@ -484,6 +542,7 @@ describe('ssh import channels', () => {
       transfers,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
     });
     const window = { id: 4 };
     const copy = {
@@ -521,6 +580,7 @@ describe('ssh key channels', () => {
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
       transfers: NO_TRANSFERS,
     });
     const window = { id: 4 };
@@ -560,6 +620,7 @@ describe('snippet channels', () => {
       transfers: NO_TRANSFERS,
       snippets,
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
     await invoke('ssh.saveSnippets', { file: EMPTY_SNIPPETS.file });
@@ -578,6 +639,7 @@ describe('snippet channels', () => {
       transfers: NO_TRANSFERS,
       snippets: new SnippetsService({ treeDir: () => dir }),
       layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };
     const refused = (await invoke('ssh.saveSnippets', {

@@ -72,9 +72,18 @@ describe('area channels', () => {
       'sftp.retry',
     ]);
   });
-  it('with ssh=off no ssh.*, sftp.* or layout.* channel exists', () => {
+  it('the SSH area registers its forward.* channels', () => {
     expect(
-      channelsFor('ssh=off').filter((n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('layout.')),
+      channelsFor('')
+        .filter((n) => n.startsWith('forward.'))
+        .sort(),
+    ).toEqual(['forward.freePort', 'forward.list', 'forward.start', 'forward.stop', 'forward.stopAll']);
+  });
+  it('with ssh=off no ssh.*, sftp.*, forward.* or layout.* channel exists', () => {
+    expect(
+      channelsFor('ssh=off').filter(
+        (n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('forward.') || n.startsWith('layout.'),
+      ),
     ).toEqual([]);
   });
 });

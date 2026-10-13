@@ -87,6 +87,9 @@ function make(
     /** Per-window overrides (multi-window tests). */
     hostsFor?: SshServiceDeps['hosts'];
     secretsFor?: SshServiceDeps['secretsFor'];
+    onSessionsChange?: SshServiceDeps['onSessionsChange'];
+    /** A fresh session (`s1`, `s2`, …) per connect, kept in `opened`. */
+    fresh?: boolean;
     snippets?: SnippetsFile;
   } = {},
 ) {
@@ -94,6 +97,7 @@ function make(
   const hostOsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-os-')), 'ssh-host-os.json');
   if (opts.known) writeFileSync(knownHostsFile, JSON.stringify(opts.known));
   const fake = fakeSession();
+  const opened: ReturnType<typeof fakeSession>[] = [];
   // Behaves as the real openSession does: hops in order, a refused key is ssh-host-key-new with that key.
   const open = vi.fn(async (options: OpenSessionOptions) => {
     for (const [index, hop] of options.hops.entries()) {
@@ -105,7 +109,10 @@ function make(
       }
     }
     await opts.gate;
-    return fake.session;
+    if (!opts.fresh) return fake.session;
+    const next = fakeSession(`s${String(opened.length + 1)}`);
+    opened.push(next);
+    return next.session;
   });
   const emit = vi.fn();
   const secrets = opts.secrets ?? { a_pw: 'pw' };
@@ -128,8 +135,9 @@ function make(
     emit,
     open,
     ...(opts.now ? { now: opts.now } : {}),
+    ...(opts.onSessionsChange ? { onSessionsChange: opts.onSessionsChange } : {}),
   });
-  return { service, open, emit, fake, knownHostsFile, hostOsFile, list };
+  return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
 
 const as = (s: FakeSender) => s as never;
@@ -634,6 +642,30 @@ describe('SshService', () => {
     fake.pushData(Buffer.from('late'));
     fake.pushExit(null);
     expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("reports each window's open session count per host as sessions open and close", async () => {
+    const onSessionsChange = vi.fn<NonNullable<SshServiceDeps['onSessionsChange']>>();
+    const { service, opened } = make({ known: [KEY], fresh: true, onSessionsChange });
+    const one = sender(1);
+    const two = sender(2);
+    const first = await service.connect(as(one), CONNECT);
+    await service.connect(as(one), CONNECT);
+    await service.connect(as(two), CONNECT);
+    expect(onSessionsChange.mock.calls.map(([s, host, open]) => [s.id, host, open])).toEqual([
+      [1, 'a', 1],
+      [1, 'a', 2],
+      [2, 'a', 1],
+    ]);
+    onSessionsChange.mockClear();
+    service.close(as(one), first);
+    opened[1]?.pushExit(0);
+    service.disposeFor(as(two));
+    expect(onSessionsChange.mock.calls.map(([s, host, open]) => [s.id, host, open])).toEqual([
+      [1, 'a', 1],
+      [1, 'a', 0],
+      [2, 'a', 0],
+    ]);
   });
 
   it('the window going away closes its sessions; disposeAll closes every one', async () => {

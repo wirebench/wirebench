@@ -56,6 +56,7 @@ describe('buildApi', () => {
       'dialogs',
       'env',
       'exchanges',
+      'forward',
       'fs',
       'git',
       'globals',
