@@ -19,6 +19,7 @@ export interface PlannedSettings {
   readonly auth?: PlannedAuth;
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
+  readonly forwardAgent?: boolean;
 }
 
 export interface PlannedHost {
@@ -57,6 +58,8 @@ export interface PlannedKey {
   readonly path: string;
   /** `~/.ssh/id_ed25519`, for the dialog. */
   readonly display: string;
+  /** From `CertificateFile` (#421): the key's OpenSSH certificate, path and display as for the key. */
+  readonly certificate?: { readonly path: string; readonly display: string };
   /** Ids of the hosts (or the group) that use it. */
   readonly hosts: readonly string[];
   readonly proposedSecret: string;
@@ -105,9 +108,11 @@ const MAPPED = new Set([
   'proxyjump',
   'proxycommand',
   'identityfile',
+  'certificatefile',
   'serveraliveinterval',
   'connecttimeout',
   'setenv',
+  'forwardagent',
 ]);
 /** Options with no meaning for Wirebench: counted, not reported line by line. */
 export const IGNORED_KEYWORDS = new Set([
@@ -182,9 +187,12 @@ interface Mapped {
   readonly port?: number;
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
+  readonly forwardAgent?: boolean;
   /** The hops as written, outermost first; `[]` for none. */
   readonly hops: readonly string[];
   readonly identity?: string;
+  /** The first `CertificateFile`, only alongside an identity. */
+  readonly certificate?: string;
   readonly env?: Readonly<Record<string, string>>;
 }
 
@@ -236,6 +244,12 @@ function mapEffective(
   const timeout = intArg(eff.values.get('connecttimeout'), 1, 2 ** 31 - 1);
   if (timeout !== undefined) out.connectTimeout = timeout;
 
+  // `ssh` also takes a socket path or an environment variable here; only yes and no have a meaning in Wirebench.
+  const forward = eff.values.get('forwardagent')?.args[0]?.toLowerCase();
+  if (forward === 'yes') out.forwardAgent = true;
+  else if (forward === 'no') out.forwardAgent = false;
+  else if (forward !== undefined) note(`${who}: ForwardAgent is not yes or no; not imported`);
+
   // ProxyJump and ProxyCommand exclude each other: the first one obtained wins, as in `ssh`.
   const keys = [...eff.values.keys()];
   const jumpAt = keys.indexOf('proxyjump');
@@ -249,18 +263,35 @@ function mapEffective(
     if (hop !== undefined) out.hops = [hop];
   }
 
-  const [first, ...more] = eff.identityFiles;
-  if (first?.args[0] !== undefined) {
+  /** `~` and `%d` expanded; undefined when the result is not an absolute path. */
+  const fileOf = (raw: string): string | undefined => {
     const paths = pathsFor(home);
-    const raw = first.args[0];
     const tilde = raw === '~' ? home : raw.startsWith('~/') ? paths.join(home, raw.slice(2)) : raw;
     const expanded = expandTokens(tilde, { d: home });
-    if (expanded === undefined || !paths.isAbsolute(expanded)) {
+    return expanded === undefined || !paths.isAbsolute(expanded) ? undefined : expanded;
+  };
+  const [first, ...more] = eff.identityFiles;
+  if (first?.args[0] !== undefined) {
+    const raw = first.args[0];
+    const expanded = fileOf(raw);
+    if (expanded === undefined) {
       note(`${who}: IdentityFile ${raw} could not be resolved to a file; the host uses the group's authentication`);
     } else {
       out.identity = expanded;
     }
     if (more.length > 0) note(`${who}: only the first IdentityFile is used; ${more.length} more not carried`);
+  }
+  const certificate = eff.values.get('certificatefile')?.args[0];
+  if (certificate !== undefined) {
+    const expanded = fileOf(certificate);
+    if (first === undefined) note(`${who}: CertificateFile without an IdentityFile is not imported`);
+    else if (out.identity === undefined) {
+      // The IdentityFile note already says the host uses the group's authentication.
+    } else if (expanded === undefined) {
+      note(`${who}: CertificateFile ${certificate} could not be resolved to a file; the key is used without it`);
+    } else {
+      out.certificate = expanded;
+    }
   }
 
   // `NAME=value`; a `${secret:…}` inside would be refused by hosts.yaml, so it is skipped like a bad entry.
@@ -333,15 +364,26 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
   const groupId = unique(GROUP_ID, taken, '-');
 
   // Key rows, one per distinct file.
-  const keyRows = new Map<string, { ref: string; hosts: string[]; proposedSecret: string }>();
+  // Keyed by key path and certificate path: the same key with another certificate is another row.
+  const keyRows = new Map<
+    string,
+    { path: string; certificate?: string; ref: string; hosts: string[]; proposedSecret: string }
+  >();
   const secretsTaken = new Set(input.existingSecretNames);
   const paths = pathsFor(doc.home);
-  const keyFor = (path: string, owner: string): PlannedAuth => {
-    let row = keyRows.get(path);
+  const keyFor = (path: string, certificate: string | undefined, owner: string): PlannedAuth => {
+    const rowKey = `${path}\n${certificate ?? ''}`;
+    let row = keyRows.get(rowKey);
     if (!row) {
       const base = `ssh_key_${paths.basename(path).replace(/[^A-Za-z0-9_]/g, '_')}`;
-      row = { ref: `k${keyRows.size + 1}`, hosts: [], proposedSecret: unique(base, secretsTaken, '_') };
-      keyRows.set(path, row);
+      row = {
+        path,
+        ...(certificate === undefined ? {} : { certificate }),
+        ref: `k${keyRows.size + 1}`,
+        hosts: [],
+        proposedSecret: unique(base, secretsTaken, '_'),
+      };
+      keyRows.set(rowKey, row);
     }
     if (!row.hosts.includes(owner)) row.hosts.push(owner);
     return { kind: 'key', ref: row.ref };
@@ -358,8 +400,11 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
   if (all.port !== undefined && everyone('port')) group.port = all.port;
   if (all.keepAlive !== undefined && everyone('keepAlive')) group.keepAlive = all.keepAlive;
   if (all.connectTimeout !== undefined && everyone('connectTimeout')) group.connectTimeout = all.connectTimeout;
+  if (all.forwardAgent === true && everyone('forwardAgent')) group.forwardAgent = true;
   const groupAuth: PlannedAuth =
-    all.identity !== undefined && everyone('identity') ? keyFor(all.identity, groupId) : { kind: 'agent' };
+    all.identity !== undefined && everyone('identity')
+      ? keyFor(all.identity, all.certificate, groupId)
+      : { kind: 'agent' };
   group.auth = groupAuth;
   // A Host * variable goes on the group when every usable host sets that name (to any value).
   const groupEnv: Record<string, string> = {};
@@ -402,10 +447,14 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
     if (m.connectTimeout !== undefined && m.connectTimeout !== group.connectTimeout) {
       ssh.connectTimeout = m.connectTimeout;
     }
+    if (m.forwardAgent !== undefined && m.forwardAgent !== (group.forwardAgent ?? false)) {
+      ssh.forwardAgent = m.forwardAgent;
+    }
     const auth: PlannedAuth =
-      m.identity === undefined || (groupAuth.kind === 'key' && m.identity === all.identity)
+      m.identity === undefined ||
+      (groupAuth.kind === 'key' && m.identity === all.identity && m.certificate === all.certificate)
         ? groupAuth
-        : keyFor(m.identity, id);
+        : keyFor(m.identity, m.certificate, id);
     if (!sameAuth(auth, groupAuth)) ssh.auth = auth;
     if (m.identity === undefined && groupAuth.kind === 'agent') agentHosts.push(alias);
     const env = Object.fromEntries(Object.entries(m.env ?? {}).filter(([name, value]) => groupEnv[name] !== value));
@@ -566,10 +615,13 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
       ...(Object.keys(groupEnv).length === 0 ? {} : { env: groupEnv }),
     },
     hosts: [...hosts, ...created].map(withJumps),
-    keys: [...keyRows].map(([path, row]) => ({
+    keys: [...keyRows.values()].map((row) => ({
       ref: row.ref,
-      path,
-      display: displayPath(path, doc.home),
+      path: row.path,
+      display: displayPath(row.path, doc.home),
+      ...(row.certificate === undefined
+        ? {}
+        : { certificate: { path: row.certificate, display: displayPath(row.certificate, doc.home) } }),
       hosts: row.hosts,
       proposedSecret: row.proposedSecret,
     })),

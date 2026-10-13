@@ -327,6 +327,11 @@ function Report(props: {
               <fieldset key={key.ref} className="flex flex-col gap-1 rounded border border-hairline p-2 text-xs">
                 <legend className="px-1 font-mono">{key.display}</legend>
                 <span className="text-fg-subtle">{`Used by ${key.hosts.join(', ')}`}</span>
+                {key.certificate !== undefined && (
+                  <span className="text-fg-subtle">
+                    {`With certificate ${key.certificate}: stored next to the key as <secret>_cert unless you use the agent`}
+                  </span>
+                )}
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"

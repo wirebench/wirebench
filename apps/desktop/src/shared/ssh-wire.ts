@@ -11,7 +11,13 @@ export const sshProblemSchema = z.object({ code: z.string(), message: z.string()
 
 export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('password'), secret: z.string() }),
-  z.strictObject({ kind: z.literal('key'), secret: z.string(), passphraseSecret: z.string().optional() }),
+  z.strictObject({
+    kind: z.literal('key'),
+    secret: z.string(),
+    /** The secret holding the key's OpenSSH user certificate (#421); by convention `<secret>_cert`. */
+    certificateSecret: z.string().optional(),
+    passphraseSecret: z.string().optional(),
+  }),
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
@@ -22,6 +28,7 @@ export const sshSettingsWireSchema = z.strictObject({
   auth: sshAuthWireSchema.optional(),
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
+  forwardAgent: z.boolean().optional(),
 });
 
 const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
@@ -141,6 +148,7 @@ export const resolvedHostWireSchema = z.object({
     jump: prov(z.string().optional()),
     keepAlive: prov(z.number()),
     connectTimeout: prov(z.number()),
+    forwardAgent: prov(z.boolean()),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
@@ -179,7 +187,14 @@ export const sshConnectRequestSchema = z.strictObject({
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
 });
-export const sshConnectResponseSchema = z.object({ sessionId: z.string() });
+/**
+ * `agentForwarding` is left out when the host does not forward the agent. `on`: granted; `refused`: the
+ * server said no; `no-agent`: no local agent runs. The last two open the shell without it.
+ */
+export const sshConnectResponseSchema = z.object({
+  sessionId: z.string(),
+  agentForwarding: z.enum(['on', 'refused', 'no-agent']).optional(),
+});
 /** `data` is base64: terminal bytes are not always valid UTF-8. */
 export const sshWriteRequestSchema = z.strictObject({ sessionId: z.string(), data: z.string() });
 /** One keystroke batch for every pane a broadcast reaches: at most the panes a tab holds. */
@@ -214,6 +229,7 @@ export const sshExitEventSchema = z.object({
 export const sshStateEventSchema = z.object({ sessionId: z.string(), state: z.enum(['open', 'closed']) });
 
 export type SshConnectRequest = z.infer<typeof sshConnectRequestSchema>;
+export type SshConnectResponse = z.infer<typeof sshConnectResponseSchema>;
 export type SshWriteRequest = z.infer<typeof sshWriteRequestSchema>;
 export type SshWriteManyRequest = z.infer<typeof sshWriteManyRequestSchema>;
 export type SshWriteManyResponse = z.infer<typeof sshWriteManyResponseSchema>;
@@ -279,6 +295,7 @@ export const sshPlannedSettingsWireSchema = z.strictObject({
   auth: sshPlannedAuthWireSchema.optional(),
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
+  forwardAgent: z.boolean().optional(),
 });
 export const sshPlannedHostWireSchema = z.strictObject({
   alias: z.string(),
@@ -299,6 +316,8 @@ export const sshPlannedHostWireSchema = z.strictObject({
 export const sshPlannedKeyWireSchema = z.strictObject({
   ref: z.string(),
   display: z.string(),
+  /** The key's `CertificateFile`, shown the same way; stored as `<secret>_cert` with a stored or existing key. */
+  certificate: z.string().optional(),
   hosts: z.array(z.string()),
   proposedSecret: z.string(),
 });

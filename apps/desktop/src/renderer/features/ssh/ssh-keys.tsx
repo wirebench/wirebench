@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { create } from 'zustand';
 import { Button } from '../../components/button.js';
-import type { SshKeyAlgorithmWire, SshKeyWire } from '../../../shared/ssh-keys-wire.js';
+import type { SshCertificateWire, SshKeyAlgorithmWire, SshKeyWire } from '../../../shared/ssh-keys-wire.js';
 import type { ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { findHost, upsertHost, useHostsStore } from './hosts-store.js';
@@ -100,6 +100,103 @@ export function CopyPublicKeyButton({ publicKey }: { readonly publicKey: string 
     >
       {copied ? 'Copied' : 'Copy public key'}
     </Button>
+  );
+}
+
+/** A key's certificate in one line: principals, validity window and key ID; a badge when it will not sign in. */
+export function CertificateSummary({ certificate }: { readonly certificate: SshCertificateWire }) {
+  const principals = certificate.principals.length === 0 ? 'any principal' : certificate.principals.join(', ');
+  const problem = !certificate.matchesKey
+    ? 'for another key'
+    : certificate.validity === 'expired'
+      ? 'expired'
+      : certificate.validity === 'not-yet-valid'
+        ? 'not valid yet'
+        : undefined;
+  return (
+    <span
+      data-testid={`certificate-${certificate.secret}`}
+      title={`Signed by ${certificate.caFingerprint}, serial ${certificate.serial}`}
+      className="flex min-w-0 items-center gap-1 text-xs text-fg-subtle"
+    >
+      <span className="truncate">{`Certificate ${certificate.keyId} · ${principals} · ${certificate.window}`}</span>
+      {problem !== undefined && (
+        <span className="shrink-0 rounded-full border border-status-danger px-1.5 text-status-danger">{problem}</span>
+      )}
+    </span>
+  );
+}
+
+/** Pastes an OpenSSH user certificate (`<key>-cert.pub`) onto a keychain key; main checks it and stores `<key>_cert`. */
+export function AttachCertificateDialog({
+  secret,
+  onClose,
+  onAttached,
+}: {
+  readonly secret: string;
+  readonly onClose: () => void;
+  readonly onAttached: (key: SshKeyWire) => void;
+}) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const attach = async (): Promise<void> => {
+    setBusy(true);
+    const result = await ipc().ssh.attachCertificate({ secret, certificate: text });
+    setBusy(false);
+    if (result.ok) onAttached(result.value);
+    else setError(result.error.message);
+  };
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+        <Dialog.Content data-testid="attach-certificate-dialog" className={CONTENT_CLASS}>
+          <Dialog.Title className="text-md font-medium text-fg-default">{`Attach certificate to ${secret}`}</Dialog.Title>
+          <Dialog.Description className="text-sm text-fg-subtle">
+            {`Paste the OpenSSH user certificate your CA issued for this key (the -cert.pub file). It is stored as ${secret}_cert and offered before the key when a host signs in with it.`}
+          </Dialog.Description>
+          <label className={LABEL_CLASS}>
+            Certificate
+            <textarea
+              rows={4}
+              autoFocus
+              spellCheck={false}
+              className={`${INPUT_CLASS} font-mono`}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setError(undefined);
+              }}
+            />
+          </label>
+          {error !== undefined && (
+            <p role="alert" className="text-sm text-status-danger">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button disabled={busy} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || text.trim() === ''}
+              onClick={() => {
+                void attach();
+              }}
+            >
+              Attach
+            </Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -396,6 +493,7 @@ function InstallKeyBody({ target, onClose }: { readonly target: InstallTarget; r
     const auth = {
       kind: 'key' as const,
       secret: chosenSecret,
+      ...(key?.certificate === undefined ? {} : { certificateSecret: key.certificate.secret }),
       ...(key?.passphraseSecret === undefined ? {} : { passphraseSecret: key.passphraseSecret }),
     };
     if (await save(upsertHost(file, { ...entry, ssh: { ...entry.ssh, auth } }))) setStep({ kind: 'switched' });

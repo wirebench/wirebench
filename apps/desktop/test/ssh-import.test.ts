@@ -94,6 +94,15 @@ describe('SshImportService.preview', () => {
     expect(written).toContain('LANG: C');
   });
 
+  it('ForwardAgent yes passes the channel schema and is written to the host', async () => {
+    const { service, dir } = setup({ [CONFIG]: 'Host web\n  ForwardAgent yes\nHost db\n' });
+    const preview = asPreview(await service.preview(A, { source: 'user-config' }));
+    expect(sshImportPreviewSchema.parse(preview)).toEqual(preview);
+    expect(preview.hosts.find((h) => h.alias === 'web')?.ssh.forwardAgent).toBe(true);
+    await service.apply(A, apply(preview.previewId));
+    expect(readFileSync(join(dir, 'hosts.yaml'), 'utf8').match(/forwardAgent: true/g)).toHaveLength(1);
+  });
+
   it('uses the picker for pick, and a cancelled pick is a cancellation', async () => {
     const { service, pick } = setup({ '/srv/other': 'Host a\n' });
     expect(await service.preview(A, { source: 'pick' })).toEqual({ cancelled: true });
@@ -181,6 +190,57 @@ describe('SshImportService.apply', () => {
       expect(secrets.set).not.toHaveBeenCalled();
       expect(() => readFileSync(join(dir, 'hosts.yaml'))).toThrow();
     }
+  });
+
+  describe('CertificateFile (#421)', () => {
+    const CERT = 'ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29t alice@test\n';
+    const certFiles = {
+      [CONFIG]:
+        'Host web\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  CertificateFile ~/.ssh/id_ed25519-cert.pub\n',
+      '/home/u/.ssh/id_ed25519': KEY,
+      '/home/u/.ssh/id_ed25519-cert.pub': CERT,
+    };
+
+    it('shows the certificate on the key row and stores it as <secret>_cert with the key', async () => {
+      const { service, secrets, dir } = setup(certFiles);
+      const preview = asPreview(await service.preview(A, { source: 'user-config' }));
+      expect(preview.keys[0]?.certificate).toBe('~/.ssh/id_ed25519-cert.pub');
+      const result = await service.apply(
+        A,
+        apply(preview.previewId, [{ ref: 'k1', choice: { kind: 'store', secret: 'web_key' } as never }]),
+      );
+      expect(secrets.set).toHaveBeenCalledWith('web_key_cert', CERT.trim());
+      expect(result.stored).toEqual(['web_key', 'web_key_cert']);
+      expect(readFileSync(join(dir, 'hosts.yaml'), 'utf8')).toContain('certificate: ${secret:web_key_cert}');
+    });
+
+    it('keeps a <secret>_cert that already exists, and reads nothing for the agent', async () => {
+      const { service, secrets, fs, dir } = setup(certFiles);
+      secrets.names.mockResolvedValue([{ name: 'team_key_cert' }]);
+      const preview = asPreview(await service.preview(A, { source: 'user-config' }));
+      await service.apply(
+        A,
+        apply(preview.previewId, [{ ref: 'k1', choice: { kind: 'existing', secret: 'team_key' } as never }]),
+      );
+      expect(secrets.set).not.toHaveBeenCalled();
+      expect(fs.reads).toEqual([CONFIG]);
+      expect(readFileSync(join(dir, 'hosts.yaml'), 'utf8')).toContain('certificate: ${secret:team_key_cert}');
+
+      const agent = setup(certFiles);
+      const again = asPreview(await agent.service.preview(A, { source: 'user-config' }));
+      await agent.service.apply(A, apply(again.previewId, [{ ref: 'k1', choice: { kind: 'agent' } as never }]));
+      expect(agent.fs.reads).toEqual([CONFIG]);
+    });
+
+    it('refuses a certificate file that is not a certificate, and writes nothing', async () => {
+      const { service, secrets, dir } = setup({ ...certFiles, '/home/u/.ssh/id_ed25519-cert.pub': 'ssh-ed25519 AAAA' });
+      const preview = asPreview(await service.preview(A, { source: 'user-config' }));
+      await expect(
+        service.apply(A, apply(preview.previewId, [{ ref: 'k1', choice: { kind: 'store', secret: 'k' } as never }])),
+      ).rejects.toMatchObject({ code: 'ssh-key-unreadable', details: { file: '~/.ssh/id_ed25519-cert.pub' } });
+      expect(secrets.set).not.toHaveBeenCalled();
+      expect(() => readFileSync(join(dir, 'hosts.yaml'))).toThrow();
+    });
   });
 
   it("refuses another window's preview, an expired one, and a second apply", async () => {

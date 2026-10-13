@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format follows
   tags become tags. Passwords are never imported, and the notes say how many were left behind. The
   registry itself is never read (#423).
 
+- **SSH certificates.** A key sign-in in `hosts.yaml` can carry its OpenSSH user certificate:
+  `auth: { key, certificate, passphrase? }`, the certificate being a `${secret:NAME}`, inherited with
+  the rest of `auth`. On connect the certificate is offered first, then the key alone; an expired or
+  not-yet-valid certificate fails before connecting with `ssh-cert-expired` and its validity window.
+  The keychain gains **Attach certificate…** on a key, stores it as `<key>_cert`, and shows its key ID,
+  principals and validity, with a badge when it has expired or belongs to another key. The host form
+  picks up a key's certificate with the key, `wirebench ssh forward` signs in with it too, and importing
+  an SSH config maps `CertificateFile` (#421).
 - **Import trusted keys from known_hosts.** The Known hosts view (and **Hosts: Import Known Hosts…**)
   reads `~/.ssh/known_hosts` or a chosen file and trusts its keys for the hosts in `hosts.yaml` they
   name: plain and `[host]:port` names, comma lists, wildcard patterns with `!` negation, and hashed
@@ -34,7 +42,13 @@ All notable changes to this project are documented here. The format follows
   passphrases used to connect, and secrets typed by a snippet, are masked, and only output is written.
   Logs and switches stay on this machine. Settings › Terminal sets the size limit for all logs (500 MB
   by default; the oldest go first) and can keep the raw stream too (#414).
-
+- **Local terminal.** **Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>, or
+  **New local terminal** in the SSH sidebar) opens a tab with a shell on this machine, beside the SSH
+  terminals: your login shell on macOS and Linux, PowerShell 7 (else Windows PowerShell) on Windows,
+  or the program **Preferences → Terminal → Local shell** names. It starts in a shared workspace's
+  own folder, otherwise in your home folder. It keeps the SSH terminal's theme, paste guard, copy on
+  select and find, and shows **Shell ended (code N)** with **Restart**. `WIREBENCH_AREAS=ssh=off`
+  removes it with the SSH area, and `WIREBENCH_AREAS=local-terminal=off` removes it alone (#410).
 - **GraphQL requests.** A REST request's body can be **GraphQL**: a query or mutation, its variables
   and, for a document with several operations, the one to run. It goes out as the JSON body a
   GraphQL server reads, with the API's auth, environments, History, scripts, runs and sequences. An
@@ -54,6 +68,13 @@ All notable changes to this project are documented here. The format follows
   server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
   screen. The host form edits them and shows the inherited ones with their group, the details panel
   lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
+
+- **SSH agent forwarding per host or group.** `hosts.yaml` takes `ssh.forwardAgent: true`, inherited
+  down the tree and off by default. A terminal on such a host forwards your local agent, so `git pull`
+  or another `ssh` on the remote can use your keys; a jump host never gets it. The host form shows the
+  inherited value and a warning while it is on, the terminal tab shows a key while the agent is
+  forwarded (and says why when the server refused or no agent runs), the details panel and its `ssh`
+  command show it, and importing an SSH config now maps `ForwardAgent` (#413).
 
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A

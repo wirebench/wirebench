@@ -77,7 +77,13 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
     return { kind: 'failed', code, message };
   }
   if (result.ok) {
-    store.setPane(paneId, { hostId, sessionId: result.value.sessionId, state: 'open' });
+    const { agentForwarding } = result.value;
+    store.setPane(paneId, {
+      hostId,
+      sessionId: result.value.sessionId,
+      state: 'open',
+      ...(agentForwarding === undefined ? {} : { agentForwarding }),
+    });
     useRecentStore.getState().record(hostId, 'connected');
     return { kind: 'open', sessionId: result.value.sessionId };
   }

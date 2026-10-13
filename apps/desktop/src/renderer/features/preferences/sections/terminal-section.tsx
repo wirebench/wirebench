@@ -1,12 +1,13 @@
-import { BooleanSetting, NumberSetting, SettingsGroup } from '../../../components/settings-grid.js';
+import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../../components/settings-grid.js';
+import { detectPlatform } from '../../../lib/platform.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 import type { SectionProps } from './section-props.js';
 
 /**
  * Preferences → Terminal: what the SSH terminal does with a paste and with a selection, whether it suggests
- * snippets while the user types, whether a session the network dropped reconnects on its own, and how much
- * room session logs take on this machine.
+ * snippets while the user types, whether a session the network dropped reconnects on its own, how much room
+ * session logs take on this machine, and which shell a local terminal runs.
  */
 export function TerminalSection({ preferences, update }: SectionProps) {
   const terminal = preferences.terminal;
@@ -95,6 +96,23 @@ export function TerminalSection({ preferences, update }: SectionProps) {
             update({ terminal: { sessionLogRaw } });
           }}
           hint="Also keep each log's output as the terminal received it, colours and escape sequences included, beside the plain text."
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Local terminal">
+        <TextSetting
+          label="Local shell"
+          setting="terminal.localShell"
+          value={terminal.localShell}
+          trim
+          monospace
+          placeholder={
+            detectPlatform() === 'win' ? 'PowerShell 7, else Windows PowerShell' : 'Your login shell ($SHELL)'
+          }
+          testId="terminal-local-shell"
+          onCommit={(localShell) => {
+            update({ terminal: { localShell } });
+          }}
+          hint="The program a new local terminal runs, such as /bin/bash, cmd.exe or wsl.exe. Empty runs the default; on macOS and Linux it starts as a login shell."
         />
       </SettingsGroup>
     </>

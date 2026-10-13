@@ -145,6 +145,39 @@ describe('parseHostsFile', () => {
     expect(file.hosts[0]?.ssh).toMatchObject({ keepAlive: 30, connectTimeout: 5 });
     expect(parseHostsFile(serializeHostsFile(file))).toEqual(file);
   });
+  it('reads a key with its certificate, writes it back as key, certificate, passphrase', () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - id: a\n    name: a\n    address: a\n    ssh: { auth: { passphrase: '\${secret:p}', certificate: '\${secret:k_cert}', key: '\${secret:k}' } }\n`,
+    );
+    expect(file.hosts[0]?.ssh.auth).toEqual({
+      kind: 'key',
+      key: '${secret:k}',
+      certificate: '${secret:k_cert}',
+      passphrase: '${secret:p}',
+    });
+    const text = serializeHostsFile(file);
+    expect(text).toContain(
+      `auth:\n        key: \${secret:k}\n        certificate: \${secret:k_cert}\n        passphrase: \${secret:p}`,
+    );
+    expect(parseHostsFile(text)).toEqual(file);
+  });
+  it('refuses a literal certificate, and a certificate without a key', () => {
+    const e = expectCode(
+      () =>
+        parseHostsFile(
+          `version: 1\nhosts:\n  - { id: a, name: a, address: a, ssh: { auth: { key: '\${secret:k}', certificate: ssh-ed25519-cert-v01@openssh.com AAAA } } }\n`,
+        ),
+      'ssh-literal-secret',
+    );
+    expect(e.details).toMatchObject({ path: 'hosts[0].ssh.auth.certificate' });
+    expectCode(
+      () =>
+        parseHostsFile(
+          `version: 1\nhosts:\n  - { id: a, name: a, address: a, ssh: { auth: { certificate: '\${secret:c}' } } }\n`,
+        ),
+      'ssh-hosts-invalid',
+    );
+  });
 });
 
 describe('secretNameOf', () => {

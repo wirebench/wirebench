@@ -232,6 +232,8 @@ export interface TerminalPreferences {
   readonly sessionLogMaxMb: number;
   /** Keep each session log's raw stream (escape sequences included) beside its plain text. */
   readonly sessionLogRaw: boolean;
+  /** The program a local terminal tab runs (#410); empty for the OS default ($SHELL, or PowerShell on Windows). */
+  readonly localShell: string;
 }
 
 /** The whole preferences document. */
@@ -319,6 +321,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     snippetSuggestions: true,
     sessionLogMaxMb: 500,
     sessionLogRaw: false,
+    localShell: '',
   }),
   shortcuts: Object.freeze({}),
 });
@@ -520,6 +523,7 @@ export const preferencesSchema = z.object({
       snippetSuggestions: z.boolean().optional(),
       sessionLogMaxMb: limited('terminal.sessionLogMaxMb').optional(),
       sessionLogRaw: z.boolean().optional(),
+      localShell: z.string().optional(),
     })
     .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
