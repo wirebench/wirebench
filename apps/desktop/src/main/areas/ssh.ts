@@ -1,4 +1,5 @@
 import { channels } from '../../shared/ipc.js';
+import type { ForwardService } from '../forward-service.js';
 import { registerHandler } from '../ipc/register.js';
 import type { HostsService } from '../hosts-service.js';
 import type { SnippetsService } from '../snippets-service.js';
@@ -6,6 +7,7 @@ import type { SshImportService } from '../ssh-import.js';
 import type { SshKeysService } from '../ssh-keys.js';
 import type { SshSecretsService } from '../ssh-secrets.js';
 import type { SshService } from '../ssh-service.js';
+import { registerForwardChannels } from './forward-channels.js';
 import { registerSftpChannels } from './sftp-channels.js';
 
 export function registerSshChannels(deps: {
@@ -30,9 +32,15 @@ export function registerSshChannels(deps: {
   sftp: Parameters<typeof registerSftpChannels>[0]['sftp'];
   snippets: Pick<SnippetsService, 'list' | 'save'>;
   transfers: Parameters<typeof registerSftpChannels>[0]['transfers'];
+  forward: Parameters<typeof registerForwardChannels>[0]['forward'] & Pick<ForwardService, 'hostsChanged'>;
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
-  registerHandler(channels.ssh.saveHosts, (request) => deps.hosts.save(request.file));
+  registerHandler(channels.ssh.saveHosts, async (request, sender) => {
+    const saved = await deps.hosts.save(request.file);
+    // A running forward keeps the rule it started with; the window learns which ones the save changed.
+    void deps.forward.hostsChanged(sender);
+    return saved;
+  });
   registerHandler(channels.ssh.secretNames, async () => ({ names: await deps.secrets.names() }));
   registerHandler(channels.ssh.setSecret, async (request) => {
     await deps.secrets.set(request.name, request.value);
@@ -81,4 +89,6 @@ export function registerSshChannels(deps: {
   registerHandler(channels.ssh.previewSnippet, (request, sender) => deps.ssh.previewSnippet(sender, request));
   // The Files tab rides with the SSH area: off with it, so its local-path exception (spec R5) goes too.
   registerSftpChannels({ sftp: deps.sftp, transfers: deps.transfers });
+  // Forwards ride with the area too: off with it, no `forward.*` channel exists.
+  registerForwardChannels({ forward: deps.forward });
 }

@@ -47,8 +47,8 @@ export function sshSecretsFor(store: SecretLookup, scope: SshWindowScope, record
 
 /**
  * One window's workspace-switch hook for the whole SSH area (multi-window: each window holds its own
- * workspace). A switch, or a close, in that window ends its terminals and its Files sessions; another
- * window's go on.
+ * workspace). A switch, or a close, in that window ends its terminals, its Files sessions and its forwards;
+ * another window's go on.
  */
 export function sshAreaEndsOnSwitch(
   services: readonly { disposeFor(sender: WebContents): void }[],

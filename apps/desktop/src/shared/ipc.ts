@@ -24,6 +24,16 @@ import {
   sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
+  forwardFreePortRequestSchema,
+  forwardFreePortResponseSchema,
+  forwardListRequestSchema,
+  forwardListResponseSchema,
+  forwardStartRequestSchema,
+  forwardStateWireSchema,
+  forwardStopAllRequestSchema,
+  forwardStopRequestSchema,
+} from './forward-wire.js';
+import {
   sshListSnippetsResponseSchema,
   sshPreviewSnippetRequestSchema,
   sshPreviewSnippetResponseSchema,
@@ -994,6 +1004,14 @@ export const channels = {
     endEdit: defineChannel('sftp.endEdit', sftpEndEditRequestSchema, z.object({})),
     editReply: defineChannel('sftp.editReply', sftpEditReplyRequestSchema, z.object({})),
   },
+  // Port forwarding (SSH area slice 4). Registered only while the SSH area is on; a window acts on its own forwards.
+  forward: {
+    list: defineChannel('forward.list', forwardListRequestSchema, forwardListResponseSchema),
+    start: defineChannel('forward.start', forwardStartRequestSchema, z.object({})),
+    stop: defineChannel('forward.stop', forwardStopRequestSchema, z.object({})),
+    stopAll: defineChannel('forward.stopAll', forwardStopAllRequestSchema, z.object({})),
+    freePort: defineChannel('forward.freePort', forwardFreePortRequestSchema, forwardFreePortResponseSchema),
+  },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,
   // The WS-I catalogue, both runners and the HTML renderer live in the engine, which is a
@@ -1003,6 +1021,10 @@ export const channels = {
 
 /** The registry of main-to-renderer events. */
 export const events = {
+  forward: {
+    /** A forward's status changed (connection counts at most four a second); to its window only. */
+    state: defineEvent('forward.state', forwardStateWireSchema),
+  },
   sftp: {
     /** A transfer's state or progress (at most four a second, plus every state change); names and sizes only. */
     transfer: defineEvent('sftp.transfer', sftpTransferEventSchema),
