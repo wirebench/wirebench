@@ -403,6 +403,24 @@ describe('SshService', () => {
     expect(JSON.stringify(result)).not.toContain('pw');
   });
 
+  it('resolves a key with its certificate and passphrase into openSession', async () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { key: '\${secret:k}', certificate: '\${secret:k_cert}', passphrase: '\${secret:k_passphrase}' } } }\n`,
+    );
+    const { service, open } = make({
+      known: [KEY],
+      file,
+      secrets: { k: 'PRIVATE', k_cert: 'CERT', k_passphrase: 'pass' },
+    });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(open.mock.calls[0]![0].hops[0]!.auth).toEqual({
+      kind: 'key',
+      privateKey: 'PRIVATE',
+      certificate: 'CERT',
+      passphrase: 'pass',
+    });
+  });
+
   it('a missing secret is secret-missing with the name, before any connection', async () => {
     const { service, open } = make({ known: [KEY], secrets: {} });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({

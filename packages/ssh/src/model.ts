@@ -30,11 +30,15 @@ const secretRef = z.string().superRefine((value, ctx) => {
 
 const authSchema = z.union([
   z.strictObject({ password: secretRef }).transform((a) => ({ kind: 'password' as const, password: a.password })),
-  z.strictObject({ key: secretRef, passphrase: secretRef.optional() }).transform((a) => ({
-    kind: 'key' as const,
-    key: a.key,
-    ...(a.passphrase === undefined ? {} : { passphrase: a.passphrase }),
-  })),
+  z
+    .strictObject({ key: secretRef, certificate: secretRef.optional(), passphrase: secretRef.optional() })
+    .transform((a) => ({
+      kind: 'key' as const,
+      key: a.key,
+      /** An OpenSSH user certificate for the key (#421): offered first, then the key alone. */
+      ...(a.certificate === undefined ? {} : { certificate: a.certificate }),
+      ...(a.passphrase === undefined ? {} : { passphrase: a.passphrase }),
+    })),
   z.strictObject({ agent: z.literal(true) }).transform(() => ({ kind: 'agent' as const })),
 ]);
 
@@ -274,7 +278,11 @@ function settings(ssh: SshSettings): Record<string, unknown> {
       auth.kind === 'password'
         ? { password: auth.password }
         : auth.kind === 'key'
-          ? { key: auth.key, ...(auth.passphrase === undefined ? {} : { passphrase: auth.passphrase }) }
+          ? {
+              key: auth.key,
+              ...(auth.certificate === undefined ? {} : { certificate: auth.certificate }),
+              ...(auth.passphrase === undefined ? {} : { passphrase: auth.passphrase }),
+            }
           : { agent: true };
   }
   if (ssh.keepAlive !== undefined) out['keepAlive'] = ssh.keepAlive;

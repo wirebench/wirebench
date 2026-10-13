@@ -210,7 +210,11 @@ async function credentialsOf(
     const auth = hop.ssh.auth.value;
     if (auth?.kind === 'password') return [secretNameOf(auth.password)];
     if (auth?.kind === 'key') {
-      return [secretNameOf(auth.key), ...(auth.passphrase ? [secretNameOf(auth.passphrase)] : [])];
+      return [
+        secretNameOf(auth.key),
+        ...(auth.certificate ? [secretNameOf(auth.certificate)] : []),
+        ...(auth.passphrase ? [secretNameOf(auth.passphrase)] : []),
+      ];
     }
     return [];
   });
@@ -247,6 +251,7 @@ async function credentialsOf(
       credentials = {
         kind: 'key',
         privateKey: await value(auth.key),
+        ...(auth.certificate ? { certificate: await value(auth.certificate) } : {}),
         ...(auth.passphrase ? { passphrase: await value(auth.passphrase) } : {}),
       };
     } else {

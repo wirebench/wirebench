@@ -100,6 +100,18 @@ describe('HostsService', () => {
     expect(changed).toBe(1);
     expect(service.current()?.hosts).toHaveLength(1);
   });
+  it('save and list carry a key certificate by its secret name', async () => {
+    const d = dir();
+    const service = new HostsService({ treeDir: () => d, onChanged: () => undefined });
+    const auth = { kind: 'key' as const, secret: 'k', certificateSecret: 'k_cert', passphraseSecret: 'k_passphrase' };
+    const result = await service.save({
+      version: 1,
+      groups: [],
+      hosts: [{ id: 'a', name: 'A', address: '10.0.0.1', tags: [], ssh: { user: 'me', auth } }],
+    });
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toContain('certificate: ${secret:k_cert}');
+    expect(result.resolved[0]?.ssh.auth).toEqual({ value: auth, from: 'host' });
+  });
   describe('forwarding rules', () => {
     const RULES = `version: 1
 groups:
