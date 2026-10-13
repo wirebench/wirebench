@@ -6,7 +6,7 @@
  */
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
+import { Check, MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
 import { editHost, openInNewTab, openTerminalFor } from './connect.js';
@@ -22,6 +22,7 @@ import {
   upsertHost,
   useHostsStore,
 } from './hosts-store.js';
+import { groupLogged, useLogSwitchesStore } from './session-log-switches.js';
 import { useKeyInstall } from './ssh-keys.js';
 
 const ITEM_CLASS =
@@ -205,9 +206,15 @@ export function HostActionsButton({
 /** Edit, New host here, New subgroup and Delete (only while empty) for `group`, on right-click of `children`. */
 export function GroupMenu({ group, children }: { readonly group: GroupEntryWire; readonly children: ReactElement }) {
   const { file, save, openDialog } = useHostsStore();
+  const switches = useLogSwitchesStore((s) => s.switches);
   const empty = group.groups.length === 0 && group.hosts.length === 0;
+  const logged = groupLogged(file, switches, group.id);
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root
+      onOpenChange={(open) => {
+        if (open) void useLogSwitchesStore.getState().load();
+      }}
+    >
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={CONTENT_CLASS}>
@@ -235,6 +242,18 @@ export function GroupMenu({ group, children }: { readonly group: GroupEntryWire;
           >
             New subgroup…
           </ContextMenu.Item>
+          <ContextMenu.CheckboxItem
+            className={ITEM_CLASS}
+            checked={logged}
+            onCheckedChange={(checked) => {
+              void useLogSwitchesStore.getState().set({ kind: 'group', id: group.id }, checked);
+            }}
+          >
+            Log sessions
+            <ContextMenu.ItemIndicator className="ml-auto pl-3">
+              <Check size={12} aria-hidden="true" />
+            </ContextMenu.ItemIndicator>
+          </ContextMenu.CheckboxItem>
           <ContextMenu.Separator className="my-1 h-px bg-hairline" />
           <ContextMenu.Item
             className={ITEM_CLASS}

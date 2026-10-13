@@ -16,6 +16,16 @@ All notable changes to this project are documented here. The format follows
   file and jump host come across, PuTTY and SecureCRT port forwards become forwarding rules, and CSV
   tags become tags. Passwords are never imported, and the notes say how many were left behind. The
   registry itself is never read (#423).
+
+- **Session logs for SSH terminals.** A host's details gain **Session logs**: a **Log sessions** switch
+  (also on a group's menu, inherited by the hosts inside) and the logs this machine kept, newest first,
+  which can be searched, opened and filtered, revealed in the file manager or deleted. A log is the
+  session's output as plain text with escape sequences removed, beside a `.json` file with the host,
+  user, start, end and exit code; what a full-screen program draws is left out. Passwords, keys and
+  passphrases used to connect, and secrets typed by a snippet, are masked, and only output is written.
+  Logs and switches stay on this machine. Settings › Terminal sets the size limit for all logs (500 MB
+  by default; the oldest go first) and can keep the raw stream too (#414).
+
 - **GraphQL requests.** A REST request's body can be **GraphQL**: a query or mutation, its variables
   and, for a document with several operations, the one to run. It goes out as the JSON body a
   GraphQL server reads, with the API's auth, environments, History, scripts, runs and sequences. An
