@@ -179,6 +179,7 @@ describe('the environment in host details', () => {
       jump: { value: undefined, from: 'default' },
       keepAlive: { value: 15, from: 'default' },
       connectTimeout: { value: 20, from: 'default' },
+      forwardAgent: { value: false, from: 'default' },
     },
     forwards: [],
     env: [
