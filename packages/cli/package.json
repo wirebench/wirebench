@@ -18,7 +18,10 @@
   ],
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "provenance": true,
+    "imports": {
+      "#ssh": "./dist/vendor/ssh/index.js"
+    }
   },
   "prepack": "node -e \"require('fs').copyFileSync('../../LICENSE', 'LICENSE')\"",
   "bin": {
@@ -27,11 +30,20 @@
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run --root ../.. --project cli-unit --project cli-integration",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "prepack": "node scripts/vendor-ssh.mjs"
+  },
+  "imports": {
+    "#ssh": "@wirebench/ssh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
     "@wirebench/engine": "workspace:*",
+    "ssh2": "1.17.0",
+    "yaml": "2.9.0",
     "zod": "^4.6.1"
+  },
+  "devDependencies": {
+    "@wirebench/ssh": "workspace:*"
   }
 }

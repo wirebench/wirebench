@@ -21,6 +21,8 @@ import { MOCK_CHECK_HELP, MOCK_HELP, parseMockCheck, parseMockServe } from './ar
 import type { MockArgs, MockCheckArgs } from './args-mock.js';
 import { MOCK_RECORD_HELP, MOCK_RECORD_OPTIONS, parseMock, refuseMockRecordOnly } from './args-mock-record.js';
 import type { MockRecordArgs } from './args-mock-record.js';
+import { parseSsh, SSH_HELP } from './args-ssh.js';
+import type { SshForwardArgs } from './args-ssh.js';
 import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
@@ -30,6 +32,7 @@ export type { DiffContractArgs } from './args-diff-contract.js';
 export type { LintArgs } from './args-lint.js';
 export type { MockArgs, MockCheckArgs } from './args-mock.js';
 export type { MockRecordArgs } from './args-mock-record.js';
+export type { SshForwardArgs } from './args-ssh.js';
 
 /** `wirebench <verb> --help` for every verb that has its own help. */
 export const HELP_TOPICS: Readonly<Record<string, string>> = {
@@ -37,6 +40,7 @@ export const HELP_TOPICS: Readonly<Record<string, string>> = {
   'diff-contract': DIFF_CONTRACT_HELP,
   lint: LINT_HELP,
   mock: `${MOCK_HELP}\n\n${MOCK_CHECK_HELP}\n\n${MOCK_RECORD_HELP}`,
+  ssh: SSH_HELP,
 };
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
@@ -109,6 +113,10 @@ wirebench mock check <path> [mock…] [--json]
 
 ${MOCK_RECORD_HELP}
 
+wirebench ssh forward <host> [rule…] [--port <rule>=<n>]… [--host-key SHA256:<b64>]… [--json] [-q]
+                       Opens a host's port forwarding rules from hosts.yaml until stopped (see
+                       wirebench ssh --help).
+
 wirebench --version | --help
 wirebench <verb> --help`;
 
@@ -164,6 +172,7 @@ export type ParsedArgs =
   | MockArgs
   | MockCheckArgs
   | MockRecordArgs
+  | SshForwardArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -223,6 +232,9 @@ function refuseDiffOnly(values: { readonly 'fail-on'?: string | undefined }, ver
 
 /** Parses `process.argv.slice(2)` into a {@link ParsedArgs}, or throws {@link UsageError}. */
 export function parseCliArgs(argv: readonly string[]): ParsedArgs {
+  if (argv[0] === 'ssh') {
+    return parseSsh(argv.slice(1));
+  }
   let parsed;
   try {
     parsed = parseArgs({

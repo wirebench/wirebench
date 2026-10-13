@@ -2,10 +2,16 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SshConnectError, parseHostsFile } from '@wirebench/ssh';
-import type { HostsFile, KnownHostEntry, OpenSessionOptions, SshSession } from '@wirebench/ssh';
+import { SshConnectError, parseHostsFile, parseSnippetsFile, snippetRevision } from '@wirebench/ssh';
+import type { HostsFile, KnownHostEntry, OpenSessionOptions, SnippetsFile, SshSession } from '@wirebench/ssh';
 import { describe, expect, it, vi } from 'vitest';
-import { SshService, forwardResume, sshSessionsEndOnSwitch, whenWorkspaceSwitches } from '../src/main/ssh-service.js';
+import {
+  SshService,
+  forwardResume,
+  frameSnippet,
+  sshSessionsEndOnSwitch,
+  whenWorkspaceSwitches,
+} from '../src/main/ssh-service.js';
 import type { SshServiceDeps } from '../src/main/ssh-service.js';
 import type { SshListHostsResponse } from '../src/shared/ssh-wire.js';
 
@@ -84,6 +90,7 @@ function make(
     onSessionsChange?: SshServiceDeps['onSessionsChange'];
     /** A fresh session (`s1`, `s2`, …) per connect, kept in `opened`. */
     fresh?: boolean;
+    snippets?: SnippetsFile;
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -112,8 +119,13 @@ function make(
   const list = vi.fn((): Promise<SshListHostsResponse> =>
     Promise.resolve({ file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] }),
   );
+  const snippetsFile = opts.snippets ?? { version: 1 as const, packages: [], snippets: [] };
+  const listSnippets = vi.fn(() =>
+    Promise.resolve({ file: { version: 1 as const, packages: [], snippets: [] }, snippets: [], problems: [] }),
+  );
   const service = new SshService({
     hosts: opts.hostsFor ?? (() => ({ current: () => opts.file ?? FILE, list })),
+    snippets: () => ({ current: () => snippetsFile, list: listSnippets }),
     secretsFor:
       opts.secretsFor ??
       (() => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined)),
@@ -808,5 +820,178 @@ describe('SshService', () => {
       code: 'ssh-hosts-invalid',
     });
     expect(broken.open).not.toHaveBeenCalled();
+  });
+});
+
+describe('frameSnippet', () => {
+  const plain = { leadingSpace: false, bracketed: false, enter: true, skip: 0, literalStart: 'echo ' };
+
+  it('joins lines with \\r and presses Enter only when asked', () => {
+    expect(frameSnippet('echo a\necho b', plain)).toBe('echo a\recho b\r');
+    expect(frameSnippet('echo a\necho b', { ...plain, enter: false })).toBe('echo a\recho b');
+  });
+
+  it('wraps a bracketed paste and keeps an end marker in the text from closing it early', () => {
+    expect(frameSnippet('echo a\necho b', { ...plain, bracketed: true })).toBe('\x1b[200~echo a\recho b\x1b[201~\r');
+    expect(frameSnippet('echo \x1b[201~x', { ...plain, bracketed: true, enter: false })).toBe(
+      '\x1b[200~echo x\x1b[201~',
+    );
+  });
+
+  it('puts the leading space first, only when asked', () => {
+    expect(frameSnippet('echo a', { ...plain, leadingSpace: true })).toBe(' echo a\r');
+  });
+
+  it('drops the characters already typed, up to the literal start and no further', () => {
+    expect(frameSnippet('echo a', { ...plain, skip: 3, enter: false })).toBe('o a');
+    expect(frameSnippet('echo a', { ...plain, skip: 5, enter: false })).toBe('a');
+    expect(() => frameSnippet('echo a', { ...plain, skip: 6 })).toThrow(
+      expect.objectContaining({ code: 'snippet-prefix-mismatch' }),
+    );
+  });
+});
+
+describe('runSnippet', () => {
+  const SNIPPETS = parseSnippetsFile(
+    [
+      'version: 1',
+      'snippets:',
+      '  - { id: plain, name: Plain, script: "echo ${who}", variables: [{ name: who, default: me }] }',
+      '  - { id: token, name: Token, script: "curl -H ${secret:api_token} x" }',
+      '  - { id: stay, name: Stay, script: "ls", enter: false }',
+      '',
+    ].join('\n'),
+  );
+  const revisionOf = (id: string) => snippetRevision(SNIPPETS.snippets.find((s) => s.id === id)!);
+  const run = (id: string, extra: object = {}) => ({
+    sessionId: 's1',
+    snippetId: id,
+    revision: SNIPPETS.snippets.some((s) => s.id === id) ? revisionOf(id) : 'none',
+    values: {},
+    bracketed: false,
+    ...extra,
+  });
+  const written = (write: ReturnType<typeof vi.fn>) =>
+    write.mock.calls.map((c) => Buffer.from(c[0] as Uint8Array).toString('utf8')).join('');
+  const shown = (emit: ReturnType<typeof vi.fn>) =>
+    emit.mock.calls
+      .filter((c) => (c[1] as { name: string }).name === 'ssh.data')
+      .map((c) => Buffer.from((c[2] as { data: string }).data, 'base64').toString('utf8'))
+      .join('');
+
+  async function connected(opts: Parameters<typeof make>[0] = {}) {
+    const made = make({ known: [KEY], snippets: SNIPPETS, secrets: { a_pw: 'pw', api_token: 'pässwört' }, ...opts });
+    const s = sender(1);
+    await made.service.connect(as(s), CONNECT);
+    return { ...made, s };
+  }
+
+  it("refuses another window's session, an unknown id and a stale revision, writing nothing", async () => {
+    const { service, fake, s } = await connected();
+    await expect(service.runSnippet(as(sender(2)), run('plain'))).rejects.toMatchObject({
+      code: 'ssh-session-unknown',
+    });
+    await expect(service.runSnippet(as(s), run('nope'))).rejects.toMatchObject({
+      code: 'snippet-unknown',
+    });
+    await expect(service.runSnippet(as(s), run('plain', { revision: 'old' }))).rejects.toMatchObject({
+      name: 'WirebenchError',
+      code: 'snippet-changed',
+    });
+    expect(fake.write).not.toHaveBeenCalled();
+  });
+
+  it('a missing secret is secret-missing with the name, and nothing is written', async () => {
+    const { service, fake, s } = await connected({ secrets: { a_pw: 'pw' } });
+    await expect(service.runSnippet(as(s), run('token'))).rejects.toMatchObject({
+      code: 'secret-missing',
+      details: { name: 'api_token' },
+    });
+    expect(fake.write).not.toHaveBeenCalled();
+  });
+
+  it('a value with a line break is snippet-value-invalid, and nothing is written', async () => {
+    const { service, fake, s } = await connected();
+    await expect(service.runSnippet(as(s), run('plain', { values: { who: 'api\nrm -rf ~' } }))).rejects.toMatchObject({
+      name: 'WirebenchError',
+      code: 'snippet-value-invalid',
+    });
+    expect(fake.write).not.toHaveBeenCalled();
+  });
+
+  it('types a plain snippet without a leading space, with its values, and Enter', async () => {
+    const { service, fake, s } = await connected();
+    await service.runSnippet(as(s), run('plain', { values: { who: 'you' } }));
+    expect(written(fake.write)).toBe('echo you\r');
+  });
+
+  it('a secret snippet gets a leading space when nothing was typed, none after a skip', async () => {
+    const { service, fake, s } = await connected();
+    await service.runSnippet(as(s), run('token'));
+    expect(written(fake.write)).toBe(' curl -H pässwört x\r');
+    fake.write.mockClear();
+    await service.runSnippet(as(s), run('token', { skip: 4, enter: false }));
+    expect(written(fake.write)).toBe(' -H pässwört x');
+  });
+
+  it("enter: false overrides the snippet's Enter; a snippet without Enter never gets one", async () => {
+    const { service, fake, s } = await connected();
+    await service.runSnippet(as(s), run('plain', { enter: false }));
+    await service.runSnippet(as(s), run('stay'));
+    expect(written(fake.write)).toBe('echo mels');
+  });
+
+  it('frames as a bracketed paste when the terminal asks for it', async () => {
+    const { service, fake, s } = await connected();
+    await service.runSnippet(as(s), run('stay', { bracketed: true }));
+    expect(written(fake.write)).toBe('\x1b[200~ls\x1b[201~');
+  });
+
+  it('masks the echoed secret on ssh.data, also when it comes back one byte at a time', async () => {
+    const { service, fake, emit, s } = await connected();
+    fake.write.mockImplementation((bytes: Uint8Array) => {
+      for (const byte of Buffer.from(bytes)) fake.pushData(Buffer.from([byte]));
+    });
+    await service.runSnippet(as(s), run('token'));
+    await vi.waitFor(() => expect(shown(emit)).toContain('x'));
+    expect(shown(emit)).toBe(' curl -H •••• x\r');
+    expect(shown(emit)).not.toContain('pässwört');
+  });
+
+  it('releases a held tail after 150 ms of quiet, and before the exit event', async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, fake, emit, s } = await connected();
+      await service.runSnippet(as(s), run('token'));
+      emit.mockClear();
+      fake.pushData(Buffer.from('prompt pä'));
+      expect(shown(emit)).toBe('prompt ');
+      vi.advanceTimersByTime(149);
+      expect(shown(emit)).toBe('prompt ');
+      vi.advanceTimersByTime(1);
+      expect(shown(emit)).toBe('prompt pä');
+      emit.mockClear();
+      fake.pushData(Buffer.from('$ pä'));
+      fake.pushExit(0);
+      const names = emit.mock.calls.map((c) => (c[1] as { name: string }).name);
+      expect(names.indexOf('ssh.data')).toBeLessThan(names.indexOf('ssh.exit'));
+      expect(shown(emit)).toBe('$ pä');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('previewSnippet shows secrets as •••• with the revision, never asking for a secret', async () => {
+    const getSecret = vi.fn(() => Promise.resolve('never'));
+    const { service, s } = await connected({ secretsFor: () => getSecret });
+    getSecret.mockClear();
+    await expect(service.previewSnippet(as(s), { snippetId: 'token', values: {} })).resolves.toEqual({
+      text: 'curl -H •••• x',
+      revision: revisionOf('token'),
+    });
+    expect(getSecret).not.toHaveBeenCalled();
+    await expect(service.previewSnippet(as(s), { snippetId: 'nope', values: {} })).rejects.toMatchObject({
+      code: 'snippet-unknown',
+    });
   });
 });

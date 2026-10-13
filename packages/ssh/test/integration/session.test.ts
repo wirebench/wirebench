@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openSession } from '../../src/index.js';
+import { createStreamMasker, openSession } from '../../src/index.js';
 import type { SshSession } from '../../src/index.js';
 import { startSshFixture } from '../helpers/ssh-fixture.js';
 import type { SshFixture } from '../helpers/ssh-fixture.js';
@@ -230,5 +230,27 @@ describe('openSession', () => {
     const echoed = until(session, (t) => t.includes('keyed'));
     session.write(Buffer.from('keyed'));
     expect(await echoed).toContain('keyed');
+  });
+
+  it('a value added to a masker round onData never shows in the echoed output, whole or byte by byte', async () => {
+    const f = await fixture('pw');
+    session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+    const masker = createStreamMasker();
+    let shown = Buffer.alloc(0);
+    const done = new Promise<void>((resolve) => {
+      session!.onData((d) => {
+        shown = Buffer.concat([shown, masker.push(d)]);
+        if (shown.toString('utf8').includes('end2')) resolve();
+      });
+    });
+    masker.add(['pässwört']);
+    session.write(Buffer.from('a pässwört end1 '));
+    for (const byte of Buffer.from('b pässwört end2')) session.write(Buffer.from([byte]));
+    await done;
+    shown = Buffer.concat([shown, masker.flush()]);
+    const text = shown.toString('utf8');
+    expect(text).toContain('a •••• end1');
+    expect(text).toContain('b •••• end2');
+    expect(text).not.toContain('pässwört');
   });
 });

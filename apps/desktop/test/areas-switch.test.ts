@@ -48,7 +48,9 @@ describe('area channels', () => {
   it('the SSH area registers its ssh.* and sftp.* channels', () => {
     const names = channelsFor('');
     expect(names).toContain('ssh.connect');
-    expect(names).toEqual(expect.arrayContaining(['ssh.listSnippets', 'ssh.saveSnippets']));
+    expect(names).toEqual(
+      expect.arrayContaining(['ssh.listSnippets', 'ssh.saveSnippets', 'ssh.runSnippet', 'ssh.previewSnippet']),
+    );
     expect(names.filter((n) => n.startsWith('sftp.')).sort()).toEqual([
       'sftp.cancel',
       'sftp.chmod',

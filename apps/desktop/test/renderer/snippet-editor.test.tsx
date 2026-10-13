@@ -20,6 +20,7 @@ const { useSnippetEditorShown, useSnippetsStore } =
   await import('../../src/renderer/features/ssh/snippets/snippets-store.js');
 const { useHostsStore } = await import('../../src/renderer/features/ssh/hosts-store.js');
 const { useEditorsStore } = await import('../../src/renderer/state/editors.js');
+const { useRunDialogStore } = await import('../../src/renderer/features/ssh/snippets/run.js');
 
 const s = (id: string, over: Partial<SnippetWire> = {}): SnippetWire => ({
   id,
@@ -87,7 +88,10 @@ beforeEach(() => {
   useSnippetsStore.setState({ ...answerFor(FILE), loaded: true, filter: '', selectedTags: [] });
   useHostsStore.setState({ homeView: 'snippets' });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useRunDialogStore.setState({ request: null });
+});
 
 function editSnippet(id: string): void {
   useSnippetsStore.getState().openEditor({ mode: 'edit', id });
@@ -215,6 +219,34 @@ describe('snippet editor', () => {
   });
 });
 
+describe('snippet editor Run and Insert', () => {
+  it('with no terminal in front, Run and Insert open the run dialog for the saved snippet', async () => {
+    editSnippet('uptime');
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+    expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'uptime', mode: 'dialog' });
+    await userEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'uptime', enter: false, mode: 'dialog' });
+  });
+
+  it('with unsaved changes, Run asks to save first, then saves and runs', async () => {
+    editSnippet('uptime');
+    await userEvent.type(screen.getByLabelText('Script'), ' -p');
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+    expect(useRunDialogStore.getState().request).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Save and run' }));
+    await vi.waitFor(() =>
+      expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'uptime', mode: 'dialog' }),
+    );
+    expect(saved().snippets).toEqual([s('uptime', { name: 'Uptime', script: 'uptime -p' })]);
+  });
+
+  it('a new snippet has no Run until it is saved', () => {
+    useSnippetsStore.getState().openEditor({ mode: 'new' });
+    render(<SnippetEditor />);
+    expect(screen.queryByRole('button', { name: 'Run' })).toBeNull();
+  });
+});
+
 describe('Snippets panel actions', () => {
   async function renderPanel(): Promise<void> {
     render(<SnippetsPanel />);
@@ -225,6 +257,21 @@ describe('Snippets panel actions', () => {
       within(screen.getByTestId(`snippet-item-${id}`)).getByRole('button', { name: 'Snippet actions' }),
     );
   };
+
+  it('Run and Insert on a row, a double-click and Run… in its menu start a run', async () => {
+    await renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Run Uptime' }));
+    expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'uptime', mode: 'dialog' });
+    await userEvent.click(screen.getByRole('button', { name: 'Insert Restart' }));
+    expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'restart', enter: false, mode: 'dialog' });
+    useRunDialogStore.setState({ request: null });
+    await userEvent.dblClick(screen.getByText('Uptime'));
+    expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'uptime', mode: 'dialog' });
+    useRunDialogStore.setState({ request: null });
+    await rowMenu('restart');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Run…' }));
+    expect(useRunDialogStore.getState().request).toEqual({ snippetId: 'restart', mode: 'dialog' });
+  });
 
   it('clicking a row opens it in the editor', async () => {
     await renderPanel();

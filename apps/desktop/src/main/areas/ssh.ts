@@ -15,7 +15,17 @@ export function registerSshChannels(deps: {
   secrets: Pick<SshSecretsService, 'names' | 'set'>;
   ssh: Pick<
     SshService,
-    'connect' | 'write' | 'resize' | 'close' | 'trust' | 'knownHosts' | 'forgetHostKey' | 'hostOs' | 'setHostOs'
+    | 'connect'
+    | 'write'
+    | 'resize'
+    | 'close'
+    | 'trust'
+    | 'knownHosts'
+    | 'forgetHostKey'
+    | 'hostOs'
+    | 'setHostOs'
+    | 'runSnippet'
+    | 'previewSnippet'
   >;
   importer: Pick<SshImportService, 'preview' | 'apply'>;
   keys: Pick<SshKeysService, 'generate' | 'keys' | 'install'>;
@@ -72,6 +82,11 @@ export function registerSshChannels(deps: {
   registerHandler(channels.ssh.installKey, (request, sender) => deps.keys.install(sender, request));
   registerHandler(channels.ssh.listSnippets, () => deps.snippets.list());
   registerHandler(channels.ssh.saveSnippets, (request) => deps.snippets.save(request.file));
+  registerHandler(channels.ssh.runSnippet, async (request, sender) => {
+    await deps.ssh.runSnippet(sender, request);
+    return {};
+  });
+  registerHandler(channels.ssh.previewSnippet, (request, sender) => deps.ssh.previewSnippet(sender, request));
   // The Files tab rides with the SSH area: off with it, so its local-path exception (spec R5) goes too.
   registerSftpChannels({ sftp: deps.sftp, transfers: deps.transfers });
   // Forwards ride with the area too: off with it, no `forward.*` channel exists.
