@@ -3,12 +3,14 @@ import type { ForwardService } from '../forward-service.js';
 import { registerHandler } from '../ipc/register.js';
 import type { HostsService } from '../hosts-service.js';
 import type { SnippetsService } from '../snippets-service.js';
+import type { KnownHostsImportService } from '../known-hosts-import.js';
 import type { SshImportService } from '../ssh-import.js';
 import type { SshKeysService } from '../ssh-keys.js';
 import type { SshSecretsService } from '../ssh-secrets.js';
 import type { SshService } from '../ssh-service.js';
 import { registerLayoutChannels } from './layout-channels.js';
 import { registerForwardChannels } from './forward-channels.js';
+import { registerSessionLogChannels } from './session-log-channels.js';
 import { registerSftpChannels } from './sftp-channels.js';
 
 export function registerSshChannels(deps: {
@@ -30,6 +32,7 @@ export function registerSshChannels(deps: {
     | 'previewSnippet'
   >;
   importer: Pick<SshImportService, 'preview' | 'apply'>;
+  knownHostsImporter: Pick<KnownHostsImportService, 'preview' | 'apply'>;
   keys: Pick<SshKeysService, 'generate' | 'keys' | 'install' | 'attachCertificate'>;
   sftp: Parameters<typeof registerSftpChannels>[0]['sftp'];
   snippets: Pick<SnippetsService, 'list' | 'save'>;
@@ -37,6 +40,7 @@ export function registerSshChannels(deps: {
   transfers: Parameters<typeof registerSftpChannels>[0]['transfers'];
   edits: Parameters<typeof registerSftpChannels>[0]['edits'];
   forward: Parameters<typeof registerForwardChannels>[0]['forward'] & Pick<ForwardService, 'hostsChanged'>;
+  sessionLogs: Parameters<typeof registerSessionLogChannels>[0];
 }): void {
   registerHandler(channels.ssh.listHosts, () => deps.hosts.list());
   registerHandler(channels.ssh.saveHosts, async (request, sender) => {
@@ -82,6 +86,12 @@ export function registerSshChannels(deps: {
   // A preview belongs to the window that asked for it; only that window can apply it.
   registerHandler(channels.ssh.importPreview, (request, sender) => deps.importer.preview(sender, request));
   registerHandler(channels.ssh.importApply, (request, sender) => deps.importer.apply(sender, request));
+  registerHandler(channels.ssh.knownHostsImportPreview, (request, sender) =>
+    deps.knownHostsImporter.preview(sender, request),
+  );
+  registerHandler(channels.ssh.knownHostsImportApply, (request, sender) =>
+    deps.knownHostsImporter.apply(sender, request),
+  );
   registerHandler(channels.ssh.generateKey, (request) => deps.keys.generate(request));
   registerHandler(channels.ssh.keys, async (_request, sender) => ({ keys: await deps.keys.keys(sender) }));
   registerHandler(channels.ssh.installKey, (request, sender) => deps.keys.install(sender, request));
@@ -99,4 +109,6 @@ export function registerSshChannels(deps: {
   registerLayoutChannels(deps.layouts);
   // Forwards ride with the area too: off with it, no `forward.*` channel exists.
   registerForwardChannels({ forward: deps.forward });
+  // Session logs too: off with the area, no `sessionLog.*` channel exists.
+  registerSessionLogChannels(deps.sessionLogs);
 }

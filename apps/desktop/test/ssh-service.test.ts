@@ -91,6 +91,7 @@ function make(
     /** A fresh session (`s1`, `s2`, …) per connect, kept in `opened`. */
     fresh?: boolean;
     snippets?: SnippetsFile;
+    sessionLog?: SshServiceDeps['sessionLog'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -136,6 +137,7 @@ function make(
     open,
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.onSessionsChange ? { onSessionsChange: opts.onSessionsChange } : {}),
+    ...(opts.sessionLog ? { sessionLog: opts.sessionLog } : {}),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -314,6 +316,25 @@ describe('SshService', () => {
     await service.forgetHostKey({ host: KEY.host, keyType: KEY.keyType });
     expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([]);
     await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+  });
+
+  it('changeKnownHosts writes what the change returns, and the written key settles a pending prompt', async () => {
+    const { service, knownHostsFile } = make();
+    const s = sender(1);
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    const result = await service.changeKnownHosts((known) => ({ entries: [...known, KEY], added: 1 }));
+    expect(result.added).toBe(1);
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([KEY]);
+    // The refusal the connect left is settled: trusting it now is unexpected, not a second write.
+    await expect(service.trust(as(s), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+  });
+
+  it('changeKnownHosts writes nothing when the change keeps every key', async () => {
+    const { service, knownHostsFile } = make();
+    await service.changeKnownHosts((known) => ({ entries: known }));
+    expect(() => readFileSync(knownHostsFile)).toThrow();
   });
 
   it('forgetting a key that is not trusted writes nothing', async () => {
@@ -1033,6 +1054,64 @@ describe('runSnippet', () => {
     await vi.waitFor(() => expect(shown(emit)).toContain('x'));
     expect(shown(emit)).toBe(' curl -H •••• x\r');
     expect(shown(emit)).not.toContain('pässwört');
+  });
+
+  /** A session log that keeps what it was given. */
+  function fakeLog(opts: { fail?: boolean } = {}) {
+    const pushed: string[] = [];
+    const ends: unknown[] = [];
+    const sessions: string[] = [];
+    const sessionLog = vi.fn<NonNullable<SshServiceDeps['sessionLog']>>(() =>
+      opts.fail
+        ? Promise.reject(new Error('disk full'))
+        : Promise.resolve((sessionId: string) => {
+            sessions.push(sessionId);
+            return {
+              push: (data: Uint8Array) => pushed.push(Buffer.from(data).toString('utf8')),
+              end: (exit: unknown) => {
+                ends.push(exit);
+                return Promise.resolve();
+              },
+              settled: () => Promise.resolve(),
+            };
+          }),
+    );
+    return { sessionLog, pushed, ends, sessions };
+  }
+
+  it('logs what the screen shows, a snippet secret masked, and ends the log with the exit', async () => {
+    const log = fakeLog();
+    const { service, fake, s } = await connected({ sessionLog: log.sessionLog });
+    expect(log.sessionLog.mock.calls[0]?.[1]).toMatchObject({
+      hostId: 'a',
+      hops: [{ address: '10.0.0.1', auth: { kind: 'password', password: 'pw' } }],
+    });
+    expect(log.sessions).toEqual(['s1']);
+    fake.write.mockImplementation((bytes: Uint8Array) => {
+      for (const byte of Buffer.from(bytes)) fake.pushData(Buffer.from([byte]));
+    });
+    await service.runSnippet(as(s), run('token'));
+    await vi.waitFor(() => expect(log.pushed.join('')).toContain('x'));
+    expect(log.pushed.join('')).toBe(' curl -H •••• x\r');
+    fake.pushExit(0);
+    expect(log.ends).toEqual([{ code: 0, reason: 'exit' }]);
+  });
+
+  it('ends the log, with what the masker held, when the window closes the session', async () => {
+    const log = fakeLog();
+    const { service, fake, s } = await connected({ sessionLog: log.sessionLog });
+    await service.runSnippet(as(s), run('token'));
+    fake.pushData(Buffer.from('$ pä'));
+    service.close(as(s), { sessionId: 's1' });
+    expect(log.pushed.join('')).toBe('$ pä');
+    expect(log.ends).toEqual([undefined]);
+  });
+
+  it('opens the session unlogged when the log cannot start', async () => {
+    const log = fakeLog({ fail: true });
+    const { fake, emit } = await connected({ sessionLog: log.sessionLog });
+    fake.pushData(Buffer.from('hi'));
+    expect(shown(emit)).toBe('hi');
   });
 
   it('releases a held tail after 150 ms of quiet, and before the exit event', async () => {

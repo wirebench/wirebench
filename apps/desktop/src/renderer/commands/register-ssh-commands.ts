@@ -86,6 +86,16 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     },
   });
   registerCommand({
+    ...catalogEntry('ssh.importKnownHosts'),
+    run: () => {
+      // The dialog lives in the Known hosts view, which shows on the Hosts home.
+      revealHosts();
+      const hosts = useHostsStore.getState();
+      hosts.setHomeView('known-hosts');
+      hosts.setKnownHostsImportOpen(true);
+    },
+  });
+  registerCommand({
     ...catalogEntry('ssh.connect'),
     run: (_context, arg) => {
       // From the palette there is no host to name yet, so it asks which one.
