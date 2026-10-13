@@ -70,10 +70,11 @@ export const AUDIT_ACTION_GROUPS = [
   'license',
   'audit',
   'desktop',
+  'scim',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
-export const AUDIT_ACTOR_KINDS = ['user', 'ci-token', 'system', 'anonymous'] as const;
+export const AUDIT_ACTOR_KINDS = ['user', 'ci-token', 'system', 'anonymous', 'scim'] as const;
 export type AuditActorKind = (typeof AUDIT_ACTOR_KINDS)[number];
 
 export const AUDIT_TARGET_KINDS = [
@@ -85,6 +86,8 @@ export const AUDIT_TARGET_KINDS = [
   'hook',
   'ci-token',
   'license',
+  'scim-token',
+  'scim-group',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 

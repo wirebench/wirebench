@@ -3356,7 +3356,7 @@ export const licenseRemoveResponseWireSchema = z.object({ removed: z.literal(tru
 
 /** What `GET /api/v1/audit` answers, restated for the bridge; the renderer imports only the types. */
 export const auditActorWireSchema = z.object({
-  kind: z.enum(['user', 'ci-token', 'system', 'anonymous']),
+  kind: z.enum(['user', 'ci-token', 'system', 'anonymous', 'scim']),
   userId: z.string().optional(),
   email: z.string().optional(),
   tokenId: z.string().optional(),

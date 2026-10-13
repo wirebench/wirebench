@@ -75,6 +75,11 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
    `other-key.pem`, `other-cert.pem` (self-signed RSA 2048, generated once with openssl, valid until 2126,
    test-only and labelled so in a README). `test/support/saml-idp.ts` builds and signs responses with
    `xml-crypto` and has helpers for each tampering case.
+10. **Each audit action lands with the task that fires it.** `audit-log/coverage.test.ts` requires every
+    entry of `AUDIT_ACTIONS` to be asserted in `test/integration/audit-log/`. So Task 1 adds only the
+    actor kind, the target kinds and the action group. Tasks 8, 10, 11 and 12 add their actions, each with
+    `test/integration/audit-log/saml-scim.test.ts` cases. `0008_audit-log.sql` limits `actor_kind`, so
+    Task 3's migration widens that check to include `scim`.
 
 ## File map
 
@@ -116,8 +121,8 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
 ### Task 1: Engine wire shapes
 
 - [ ] Tests first (`packages/engine/test/unit/server-api/`): `FEATURES` contains `sso-provisioning`, and
-  `grantedFeatures` for an Enterprise licence includes it. The audit enums accept the new actor, targets
-  and actions, and `AUDIT_ACTION_GROUPS` has `scim`. `metaResponseSchema` parses with and without `saml`
+  `grantedFeatures` for an Enterprise licence includes it. The audit enums accept the new actor and
+  targets, and `AUDIT_ACTION_GROUPS` has `scim` (actions: ruling 10). `metaResponseSchema` parses with and without `saml`
   (an older server). The new schemas round-trip, refuse unknown keys where the existing ones do, and the
   SCIM token name is limited to 1–64 characters.
 - [ ] Implement. Re-export from `index.ts`.
