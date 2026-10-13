@@ -7,7 +7,7 @@ import { recordAudit, type Querier } from '../../context.js';
 import { isUniqueViolation } from '../../db/errors.js';
 import { newId } from '../../identity/tokens.js';
 import type { SsoEnv } from '../env.js';
-import { setGroupMembers } from '../provisioning.js';
+import { announceAccess, setGroupMembers, type AccessChanges } from '../provisioning.js';
 import * as repo from '../repo.js';
 import { GROUP_SCHEMA } from './discovery.js';
 import { scimError } from './errors.js';
@@ -89,6 +89,7 @@ export const groupRoutes =
     async function update(request: FastifyRequest, id: string, compute: (state: GroupState) => GroupState) {
       const source = scimSource(request);
       const now = env.now();
+      const changes: AccessChanges = [];
       const row = await db
         .transaction(async (tx: Querier) => {
           const current = await repo.scimGroupById(tx, id);
@@ -101,7 +102,7 @@ export const groupRoutes =
           const fields: string[] = [];
           if (next.displayName !== current.displayName) fields.push('displayName');
           if (next.externalId !== current.externalId) fields.push('externalId');
-          const delta = await setGroupMembers(tx, id, added, removed);
+          const delta = await setGroupMembers(env, tx, id, added, removed, source, changes);
           if (fields.length > 0 || delta.added.length > 0 || delta.removed.length > 0) {
             await repo.updateScimGroup(tx, id, { displayName: next.displayName, externalId: next.externalId }, now);
             await recordAudit(env.ctx.hooks, tx, {
@@ -123,6 +124,7 @@ export const groupRoutes =
           if (isUniqueViolation(error, NAME_INDEX)) throw uniqueness();
           throw error;
         });
+      announceAccess(env, changes, request.log);
       return (await resources([row], true))[0];
     }
 
@@ -162,7 +164,7 @@ export const groupRoutes =
             externalId: input.externalId,
             at: now,
           });
-          const delta = await setGroupMembers(tx, created.id, input.members, []);
+          const delta = await setGroupMembers(env, tx, created.id, input.members, [], source, []);
           await recordAudit(env.ctx.hooks, tx, {
             ...source,
             action: 'scim.group_created',
@@ -208,11 +210,12 @@ export const groupRoutes =
     scim.delete('/Groups/:id', async (request, reply) => {
       const id = (request.params as { id: string }).id;
       const source = scimSource(request);
+      const changes: AccessChanges = [];
       await db.transaction(async (tx: Querier) => {
         const current = await repo.scimGroupById(tx, id);
         if (current === undefined) throw notFound();
         // Through the one membership path first, so a linked team loses what this group gave it (§3.6).
-        await setGroupMembers(tx, id, [], await repo.groupMemberIds(tx, id));
+        await setGroupMembers(env, tx, id, [], await repo.groupMemberIds(tx, id), source, changes);
         await repo.deleteScimGroup(tx, id);
         await recordAudit(env.ctx.hooks, tx, {
           ...source,
@@ -222,6 +225,7 @@ export const groupRoutes =
           details: { displayName: current.displayName },
         });
       });
+      announceAccess(env, changes, request.log);
       return reply.code(204).send();
     });
   };

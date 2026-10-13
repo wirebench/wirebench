@@ -246,12 +246,13 @@ export async function insertProvisioned(db: Querier, key: ProvisionedKey): Promi
   );
 }
 
-export async function deleteProvisioned(db: Querier, key: ProvisionedKey): Promise<void> {
-  await db.query('delete from provisioned_memberships where team_id = $1 and user_id = $2 and group_id = $3', [
-    key.teamId,
-    key.userId,
-    key.groupId,
-  ]);
+/** `true` when the row existed: this group had added them. */
+export async function deleteProvisioned(db: Querier, key: ProvisionedKey): Promise<boolean> {
+  const result = await db.query(
+    'delete from provisioned_memberships where team_id = $1 and user_id = $2 and group_id = $3',
+    [key.teamId, key.userId, key.groupId],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function countProvisioned(db: Querier, teamId: string, userId: string): Promise<number> {

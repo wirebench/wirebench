@@ -2,11 +2,12 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SCIM_TOKEN_PATTERN } from '@wirebench/engine';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { hashSecret } from '../../../src/identity/tokens.js';
+import { hashSecret, newId } from '../../../src/identity/tokens.js';
 import { runAdmin } from '../../../src/identity/cli.js';
 import { main } from '../../../src/main.js';
 import { ssoModule } from '../../../src/sso/module.js';
 import * as repo from '../../../src/sso/repo.js';
+import * as teamsRepo from '../../../src/teams/repo.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
@@ -151,5 +152,31 @@ describeDb('wirebench-server admin scim-token (saml-scim spec §3.4)', () => {
     const again = io();
     expect(await runAdmin({ command: 'admin-scim-token-revoke', id: id! }, again.io, options)).toBe(1);
     expect(again.stderr()).toContain('sso-scim-token-not-found');
+  });
+
+  it('scim-group list, link and unlink, by name', async () => {
+    const dir = await mkTempDir();
+    const file = join(dir, 'enterprise.lic');
+    await writeFile(file, license(keys, { edition: 'enterprise' }));
+    expect(await runAdmin({ command: 'admin-license-install', file }, io().io, options)).toBe(0);
+    await removeTempDir(dir);
+    const team = await teamsRepo.insertTeam(db, { id: newId(), name: 'Payments', at: NOW });
+    await repo.insertScimGroup(db, { id: newId(), displayName: 'Engineering', externalId: null, at: NOW });
+
+    const linked = io();
+    expect(
+      await runAdmin({ command: 'admin-scim-group-link', group: 'engineering', team: 'payments' }, linked.io, options),
+    ).toBe(0);
+    expect(linked.stdout()).toBe('Linked Engineering to Payments\n');
+    const list = io();
+    expect(await runAdmin({ command: 'admin-scim-group-list' }, list.io, options)).toBe(0);
+    expect(list.stdout()).toMatch(/Engineering\s+0\s+Payments/);
+    const unlinked = io();
+    expect(await runAdmin({ command: 'admin-scim-group-unlink', group: 'Engineering' }, unlinked.io, options)).toBe(0);
+    expect((await repo.listScimGroups(db))[0]!.teamId).toBeNull();
+    expect(team.id).toBeDefined();
+    const missing = io();
+    expect(await runAdmin({ command: 'admin-scim-group-unlink', group: 'nope' }, missing.io, options)).toBe(1);
+    expect(missing.stderr()).toContain('sso-scim-group-not-found');
   });
 });

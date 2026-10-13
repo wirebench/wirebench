@@ -60,6 +60,8 @@ export const AUDIT_ACTIONS = [
   'scim.group_created',
   'scim.group_updated',
   'scim.group_deleted',
+  'scim.group_linked',
+  'scim.group_unlinked',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;

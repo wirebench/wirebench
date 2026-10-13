@@ -5,6 +5,7 @@ import { expectNoSecretsInAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
+import { seedTeam } from '../../helpers/teams.js';
 
 /** The provisioning fire sites (saml-scim spec §3.4–§3.6, plan ruling 10), read back from the stored rows. */
 describeDb('SCIM audit events', () => {
@@ -137,5 +138,41 @@ describeDb('SCIM audit events', () => {
     expect(await rows('scim.group_deleted')).toEqual([
       { actor_kind: 'scim', target_kind: 'scim-group', target_id: id, details: { displayName: 'Platform' } },
     ]);
+  });
+  it('records scim.group_linked and scim.group_unlinked with the team', async () => {
+    const token = (
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/scim-tokens',
+        headers: admin.headers,
+        payload: { name: 'Links' },
+      })
+    ).json<{ token: string }>();
+    const created = await h.app.inject({
+      method: 'POST',
+      url: '/scim/v2/Groups',
+      headers: { authorization: `Bearer ${token.token}`, 'content-type': 'application/scim+json' },
+      payload: JSON.stringify({ displayName: 'Linked' }),
+    });
+    const { id } = created.json<{ id: string }>();
+    const team = await seedTeam(h, { name: 'Payments', admins: [admin] });
+    await h.app.inject({
+      method: 'PUT',
+      url: `/api/v1/scim-groups/${id}/team`,
+      headers: admin.headers,
+      payload: { teamId: team.id },
+    });
+    await h.app.inject({ method: 'DELETE', url: `/api/v1/scim-groups/${id}/team`, headers: admin.headers });
+    const linked = await h.db.query<{ actor_kind: string; team_id: string; details: unknown }>(
+      "select actor_kind, team_id, details from audit_events where action in ('scim.group_linked', 'scim.group_unlinked') order by at, id",
+    );
+    expect(linked.rows).toEqual([
+      { actor_kind: 'user', team_id: team.id, details: { displayName: 'Linked' } },
+      { actor_kind: 'user', team_id: team.id, details: { displayName: 'Linked' } },
+    ]);
+    const actions = await h.db.query<{ action: string }>(
+      "select action from audit_events where action like 'scim.group_%link%' order by at, id",
+    );
+    expect(actions.rows.map((row) => row.action)).toEqual(['scim.group_linked', 'scim.group_unlinked']);
   });
 });

@@ -8,8 +8,12 @@ import { ExitCode, type ServerIo } from '../io.js';
 import { featureRequired } from '../licensing/errors.js';
 import * as repo from './repo.js';
 import { createScimToken, revokeScimToken } from './scim-tokens.js';
+import { listGroupSummaries, scimGroupNotFound, setGroupLink } from './group-links.js';
+import * as teamsRepo from '../teams/repo.js';
+import { teamNotFound } from '../teams/errors.js';
 
 export type ScimTokenCommand = Extract<ServerCommand, { command: `admin-scim-token-${string}` }>;
+export type ScimGroupCommand = Extract<ServerCommand, { command: `admin-scim-group-${string}` }>;
 
 export interface ScimCliEnv {
   readonly ctx: Pick<ServerContext, 'db' | 'hooks'> & { readonly license: Pick<LicenseService, 'state'> };
@@ -39,5 +43,54 @@ export async function runScimTokenCommand(command: ScimTokenCommand, env: ScimCl
       await revokeScimToken(env, command.id, SYSTEM_SOURCE);
       io.stdout.write(`Revoked ${command.id}\n`);
       return ExitCode.Ok;
+  }
+}
+
+/** A group by id, or by its name ignoring case. */
+async function groupIdOf(env: ScimCliEnv, value: string): Promise<string> {
+  const groups = await listGroupSummaries(env);
+  const found =
+    groups.find((group) => group.id === value) ??
+    groups.find((group) => group.displayName.toLowerCase() === value.toLowerCase());
+  if (found === undefined) throw scimGroupNotFound();
+  return found.id;
+}
+
+/** A team by id, or by its name ignoring case. */
+async function teamIdOf(env: ScimCliEnv, value: string): Promise<string> {
+  const teams = await teamsRepo.allTeams(env.ctx.db);
+  const found =
+    teams.find((team) => team.id === value) ?? teams.find((team) => team.name.toLowerCase() === value.toLowerCase());
+  if (found === undefined) throw teamNotFound();
+  return found.id;
+}
+
+export async function runScimGroupCommand(command: ScimGroupCommand, env: ScimCliEnv, io: ServerIo): Promise<number> {
+  if (!(await env.ctx.license.state()).features.includes('sso-provisioning')) throw featureRequired('sso-provisioning');
+  switch (command.command) {
+    case 'admin-scim-group-list': {
+      io.stdout.write(`${'id'.padEnd(26)}  ${'name'.padEnd(32)}  members  team\n`);
+      for (const group of await listGroupSummaries(env)) {
+        io.stdout.write(
+          `${group.id}  ${group.displayName.padEnd(32)}  ${String(group.memberCount).padStart(7)}  ${group.team?.name ?? '(not linked)'}\n`,
+        );
+      }
+      return ExitCode.Ok;
+    }
+    case 'admin-scim-group-link': {
+      const linked = await setGroupLink(
+        env,
+        await groupIdOf(env, command.group),
+        await teamIdOf(env, command.team),
+        SYSTEM_SOURCE,
+      );
+      io.stdout.write(`Linked ${linked.displayName} to ${linked.team!.name}\n`);
+      return ExitCode.Ok;
+    }
+    case 'admin-scim-group-unlink': {
+      const unlinked = await setGroupLink(env, await groupIdOf(env, command.group), null, SYSTEM_SOURCE);
+      io.stdout.write(`Unlinked ${unlinked.displayName}\n`);
+      return ExitCode.Ok;
+    }
   }
 }

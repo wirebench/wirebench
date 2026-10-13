@@ -54,6 +54,9 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     case 'admin-scim-token-create':
     case 'admin-scim-token-list':
     case 'admin-scim-token-revoke':
+    case 'admin-scim-group-list':
+    case 'admin-scim-group-link':
+    case 'admin-scim-group-unlink':
       return runAdmin(command, io);
     case 'serve': {
       try {
