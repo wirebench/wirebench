@@ -1,0 +1,7 @@
+name,address,port,user,group,tags,key,jump,password,notes
+bastion,bastion.example.com,2222,ops,Edge,"edge, prod",,,,Front door
+web 1,web1.example.com,,deploy,Production/Web,prod,/home/alex/.ssh/id_ed25519,bastion,,
+"db, primary",db.example.com,5432x,,Production,,,,,
+,10.0.0.5,22,root,,lab,,,not-a-real-password,"two
+lines"
+missing-address,,,,,,,,,
