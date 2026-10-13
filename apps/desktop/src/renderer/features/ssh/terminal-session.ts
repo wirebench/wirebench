@@ -23,6 +23,29 @@ const ENDED_LIMIT = 256;
 const attached = new Map<string, TerminalHandlers>();
 const pending = new Map<string, Pending>();
 const ended = new Set<string>();
+/** Listeners told that a session printed something, whether or not a terminal shows it yet. */
+const outputWatchers = new Map<string, Set<() => void>>();
+/** When each session last printed (ms since the epoch), so a watcher that comes late still knows. */
+const lastOutput = new Map<string, number>();
+
+/** When the session last printed, if it has. */
+export function lastOutputAt(sessionId: string): number | undefined {
+  return lastOutput.get(sessionId);
+}
+
+/** Calls `listener` each time the session prints; returns the unsubscribe. */
+export function watchOutput(sessionId: string, listener: () => void): () => void {
+  let set = outputWatchers.get(sessionId);
+  if (set === undefined) {
+    set = new Set();
+    outputWatchers.set(sessionId, set);
+  }
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (set.size === 0) outputWatchers.delete(sessionId);
+  };
+}
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -45,6 +68,8 @@ function pendingFor(sessionId: string): Pending {
 
 function onData(sessionId: string, data: Uint8Array): void {
   if (ended.has(sessionId)) return;
+  lastOutput.set(sessionId, Date.now());
+  for (const listener of [...(outputWatchers.get(sessionId) ?? [])]) listener();
   const handlers = attached.get(sessionId);
   if (handlers) {
     handlers.write(data);
@@ -88,6 +113,7 @@ export function attachTerminal(sessionId: string, handlers: TerminalHandlers): v
 export function detachTerminal(sessionId: string): void {
   attached.delete(sessionId);
   pending.delete(sessionId);
+  lastOutput.delete(sessionId);
   ended.add(sessionId);
   if (ended.size > ENDED_LIMIT) {
     const oldest = ended.values().next().value;

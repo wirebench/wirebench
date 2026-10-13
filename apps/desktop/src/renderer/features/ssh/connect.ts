@@ -171,7 +171,7 @@ export function paneIsOpen(paneId: string): boolean {
  * pending session (and no trust prompt waiting) connects again, so Connect on a host whose last attempt
  * failed or ended retries.
  */
-export function openTerminalFor(hostId: string): void {
+export function openTerminalFor(hostId: string): string {
   const hosts = useHostsStore.getState();
   const editors = useEditorsStore.getState();
   const use = (id: string): number => hosts.terminalTabUse[id] ?? 0;
@@ -189,18 +189,18 @@ export function openTerminalFor(hostId: string): void {
       }
     }
     editors.activate(tab.id);
-    return;
+    return tab.id;
   }
-  openInNewTab(hostId);
+  return openInNewTab(hostId);
 }
 
-/** Opens another one-pane terminal tab on the host, whatever tabs it already has. */
-export function openInNewTab(hostId: string): void {
+/** Opens another one-pane terminal tab on the host, whatever tabs it already has; returns its id. */
+export function openInNewTab(hostId: string): string {
   const hosts = useHostsStore.getState();
   const title = hosts.resolved.find((h) => h.id === hostId)?.name ?? findHost(hosts.file, hostId)?.name ?? hostId;
-  useEditorsStore
-    .getState()
-    .open({ id: `ssh-terminal:${crypto.randomUUID()}`, kind: 'ssh-terminal', title, panes: onePane(hostId) });
+  const id = `ssh-terminal:${crypto.randomUUID()}`;
+  useEditorsStore.getState().open({ id, kind: 'ssh-terminal', title, panes: onePane(hostId) });
+  return id;
 }
 
 /**
