@@ -147,8 +147,12 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
     return {
       previewId: id,
       source: shown,
-      group: plan.group,
-      hosts: [...plan.hosts],
+      // `SetEnv` values stay in main (one may hold a secret); the report notes that they are imported.
+      group: { id: plan.group.id, name: plan.group.name, ssh: plan.group.ssh },
+      hosts: plan.hosts.map(({ env, ...host }) => {
+        void env;
+        return host;
+      }),
       keys: plan.keys.map(({ ref, display, hosts, proposedSecret }) => ({
         ref,
         display,
