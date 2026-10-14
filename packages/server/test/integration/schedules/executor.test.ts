@@ -5,6 +5,7 @@ import type { SyncFile } from '@wirebench/engine';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { executeRun, type ExecutorEnv } from '../../../src/schedules/executor.js';
 import * as repo from '../../../src/schedules/repo.js';
+import { sealAlertTargets } from '../../../src/schedules/seal.js';
 import { describeDb } from '../../helpers/database.js';
 import {
   API_KEY,
@@ -79,6 +80,30 @@ describeDb('executeRun (scheduled-runs spec §3.2)', () => {
       'select r.summary, s.result from schedule_runs r join schedule_results s on s.run_id = r.id',
     );
     expect(JSON.stringify(stored.rows)).not.toContain(API_KEY);
+  });
+
+  it('a failing run moves the alert state and queues its alert in the same commit', async () => {
+    const alerts = {
+      targets: sealAlertTargets(testSettings(), [{ kind: 'webhook', url: 'https://hooks.example.test/in' }]),
+      muteAfter: 3,
+    };
+    const { run } = await runOnce(await workspaceSnapshot([probe('Fail', `${server.url}/fail`)]), { alerts });
+    const schedule = await repo.runWithSchedule(c.h.db, run.id);
+    expect(schedule!.schedule).toMatchObject({ alertState: 'failing', failureStreak: 1 });
+    const queued = await c.h.db.query<{ kind: string; payload: { run: { id: string }; failures: { path: string }[] } }>(
+      'select kind, payload from schedule_alert_outbox where run_id = $1',
+      [run.id],
+    );
+    expect(queued.rows).toEqual([
+      {
+        kind: 'failure',
+        payload: expect.objectContaining({
+          run: expect.objectContaining({ id: run.id, status: 'failed' }) as unknown,
+          failures: [expect.objectContaining({ path: expect.stringContaining('Fail') as unknown })],
+        }) as unknown,
+      },
+    ]);
+    expect(JSON.stringify(queued.rows)).not.toContain(API_KEY);
   });
 
   it('an unreachable host errors the run', async () => {

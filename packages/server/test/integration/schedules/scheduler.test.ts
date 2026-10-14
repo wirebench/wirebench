@@ -192,7 +192,7 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     await s.stop();
   });
 
-  it('a run left running past its deadline by a server that died ends interrupted; a live one is left alone', async () => {
+  it('a run left running past its deadline by a server that died ends interrupted and counts for alerts; a live one is left alone', async () => {
     const id = await seedSchedule('Hourly', -60 * 60_000);
     const at = (minutesAgo: number): Date => new Date(c.h.clock.now.getTime() - minutesAgo * 60_000);
     const stale = newId();
@@ -206,6 +206,11 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
       reason: 'interrupted',
     });
     expect((await repo.runWithSchedule(c.h.db, live))!.run.status).toBe('running');
+    // An interrupted run is an errored one to the alert state.
+    expect(await repo.scheduleById(c.h.db, c.workspaceId, id)).toMatchObject({
+      alertState: 'failing',
+      failureStreak: 1,
+    });
     await s.stop();
   });
 

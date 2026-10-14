@@ -1,7 +1,7 @@
 /**
  * A schedule's runs (scheduled-runs spec §3.7): run now and cancel for workspace admins, the history and
- * one run's results for every role. Results are stored masked, with an exchange only for a failed or
- * errored request, so a read hands them out as stored.
+ * one run's results and alert deliveries for every role. Results are stored masked, with an exchange
+ * only for a failed or errored request, so a read hands them out as stored.
  */
 import {
   scheduleRunDetailSchema,
@@ -152,7 +152,11 @@ export const scheduleRunRoutes =
         const schedule = await scheduleOf(request.workspaceAccess!.workspaceId, scheduleId);
         const run = await repo.runById(db, schedule.id, runId);
         if (run === undefined) throw runNotFound();
-        return { ...run, results: (await repo.resultsOf(db, run.id)) as ScheduleResult[] };
+        return {
+          ...run,
+          results: (await repo.resultsOf(db, run.id)) as ScheduleResult[],
+          alerts: await repo.alertsOfRun(db, run.id),
+        };
       },
     );
 

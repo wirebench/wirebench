@@ -77,6 +77,14 @@ const sections: Section[] = [
     ],
     links: [{ label: 'Read the SAML and SCIM guide', slug: DOCS_LINKS.serverSamlScim }],
   },
+  {
+    heading: 'Scheduled runs',
+    paragraphs: [
+      "An Enterprise server runs a shared workspace's suites on a schedule, the way wirebench run runs them in a pipeline: a cron expression in a time zone, the project, the environment and the requests or suites to run. Each run reads the workspace as last pushed, and its results are kept for 90 days unless you set another age.",
+      'When a schedule starts failing, its alert goes out by email, Slack, Teams or a signed webhook, and again when it passes. Repeated failures are muted after a number you choose. A run sees only its project and the secrets set on its schedule, never the server\'s own environment, and its results and alerts are masked.',
+    ],
+    links: [{ label: 'Read the scheduled runs guide', slug: DOCS_LINKS.serverScheduledRuns }],
+  },
 ];
 
 const slugify = (heading: string): string =>
@@ -88,7 +96,7 @@ const slugify = (heading: string): string =>
 
 <Base
   title="Editions — Wirebench Server"
-  description="Community, Team and Enterprise editions of Wirebench Server: seats, offline licenses, 30 days of grace, the audit log, desktop activity, forwarding and tamper evidence."
+  description="Community, Team and Enterprise editions of Wirebench Server: seats, offline licenses, 30 days of grace, the audit log, desktop activity, forwarding, tamper evidence and scheduled runs."
 >
   <div class="editions">
     <h1>Editions</h1>

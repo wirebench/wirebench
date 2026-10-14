@@ -76,7 +76,7 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
     }
   });
 
-  it('one run comes with its stored results; a run of another schedule is not found', async () => {
+  it('one run comes with its stored results and alert deliveries; a run of another schedule is not found', async () => {
     const runId = await seedRun(5, 'running');
     const failed = { path: 'Api/Fail', group: 'Api', name: 'Fail', protocol: 'rest', outcome: 'failed', exchange: {} };
     await repo.finishRun(c.h.db, runId, {
@@ -88,9 +88,24 @@ describeDb('the runs API (scheduled-runs spec §3.7)', () => {
       results: [failed],
       at: c.h.clock.now,
     });
+    await c.h.db.query(
+      `insert into schedule_alert_outbox (id, schedule_id, run_id, target_index, kind, payload, state, attempts, last_error)
+       values ($1, $2, $3, 0, 'failure', '{}', 'dead', 8, 'the alert to hooks.example.test was answered 410')`,
+      [newId(), scheduleId, runId],
+    );
     const res = await call<ScheduleRunDetail>(c.h, c.viewer, 'GET', `${runs()}/${runId}`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: runId, status: 'failed', commit: 'c'.repeat(40), results: [failed] });
+    // The alerts it sent, never their payload or the target's URL.
+    expect(res.body.alerts).toEqual([
+      {
+        kind: 'failure',
+        target: 0,
+        state: 'dead',
+        attempts: 8,
+        lastError: 'the alert to hooks.example.test was answered 410',
+      },
+    ]);
     expect(await call(c.h, c.viewer, 'GET', `${runs()}/${newId()}`)).toMatchObject({
       status: 404,
       body: { code: 'schedules-run-not-found' },

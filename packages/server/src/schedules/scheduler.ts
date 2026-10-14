@@ -11,6 +11,7 @@
  */
 import type { LicenseService } from '../context.js';
 import { newId } from '../identity/tokens.js';
+import { enqueueAlerts } from './alerts/outbox.js';
 import { nextFire } from './cron.js';
 import { executeRun, type AbortReason, type ExecutorEnv } from './executor.js';
 import * as repo from './repo.js';
@@ -108,8 +109,19 @@ export class Scheduler {
     // Without the feature nothing new fires or starts; runs under way finish.
     const state = await this.env.license().state();
     if (!state.features.includes('scheduled-runs')) return { fired: 0, started: 0 };
-    // A run whose server died ends `interrupted` once past its deadline, and frees its schedule.
-    await repo.interruptStaleRuns(this.env.db, this.env.now());
+    // A run whose server died ends `interrupted` once past its deadline, frees its schedule and counts as
+    // an errored run for its alerts.
+    await this.env.db.transaction(async (tx) => {
+      for (const run of await repo.interruptStaleRuns(tx, this.env.now())) {
+        await enqueueAlerts(tx, this.env, run.scheduleId, {
+          ...run,
+          status: 'errored',
+          reason: 'interrupted',
+          summary: null,
+          results: [],
+        });
+      }
+    });
     const fired = await this.fire();
     const started = await this.startQueued();
     return { fired, started };

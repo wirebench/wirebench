@@ -2158,6 +2158,7 @@ export type {
 } from './server-api/saml-scim.js';
 export {
   ALERT_TARGET_KINDS,
+  ALERT_DELIVERY_STATES,
   SCHEDULE_ALERT_STATES,
   SCHEDULE_LIMITS,
   SCHEDULE_RUN_STATUSES,
@@ -2166,6 +2167,7 @@ export {
   alertTargetInputSchema,
   alertTargetSchema,
   alertTestResponseSchema,
+  scheduleAlertDeliverySchema,
   scheduleAlertsInputSchema,
   scheduleCreateSchema,
   scheduleOptionsSchema,
@@ -2191,6 +2193,7 @@ export type {
   AlertTargetKind,
   AlertTestResponse,
   Schedule,
+  ScheduleAlertDelivery,
   ScheduleAlertState,
   ScheduleAlertsInput,
   ScheduleCreate,

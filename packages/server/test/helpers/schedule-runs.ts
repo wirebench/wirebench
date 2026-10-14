@@ -28,7 +28,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { newId } from '../../src/identity/tokens.js';
 import type { ExecutorEnv } from '../../src/schedules/executor.js';
 import * as repo from '../../src/schedules/repo.js';
-import { sealValue } from '../../src/schedules/seal.js';
+import { sealValue, type StoredAlerts } from '../../src/schedules/seal.js';
 import type { SchedulesSettings } from '../../src/schedules/settings.js';
 import type { SchedulesCast } from './schedules.js';
 import { SCHEDULES_KEY } from './schedules.js';
@@ -194,6 +194,7 @@ export async function seedRun(
     readonly target?: Partial<ScheduleTarget>;
     readonly options?: Partial<ScheduleOptions>;
     readonly secret?: boolean;
+    readonly alerts?: StoredAlerts;
   } = {},
 ): Promise<{ readonly scheduleId: string; readonly runId: string }> {
   const scheduleId = newId();
@@ -205,7 +206,7 @@ export async function seedRun(
     timeZone: 'UTC',
     target: { project: 'Billing', environment: 'prod', ...input.target },
     options: { timeoutMinutes: 15, allowProtected: false, insecureTls: false, bail: false, ...input.options },
-    alerts: { targets: [], muteAfter: 3 },
+    alerts: input.alerts ?? { targets: [], muteAfter: 3 },
     enabled: true,
     nextRunAt: null,
     createdBy: c.admin.user.id,

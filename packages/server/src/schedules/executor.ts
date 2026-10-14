@@ -2,7 +2,8 @@
  * One scheduled run, start to finish (scheduled-runs spec §3.2): the workspace head is written to a
  * private directory, loaded with the engine's loaders and run with `runSuite` — the CLI's own run —
  * under an empty system scope, the schedule's sealed secrets and one cookie jar. Everything stored
- * is masked first. The temporary directory goes in every case.
+ * is masked first. The temporary directory goes in every case. The stored outcome moves the schedule's
+ * alert state and queues its alerts in the same transaction.
  */
 import { readFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
@@ -39,6 +40,7 @@ import {
 import type { FastifyBaseLogger } from 'fastify';
 import { announce, recordAudit, type Database, type ServerHooks } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
+import { enqueueAlerts } from './alerts/outbox.js';
 import { materialise, type Materialised } from './materialise.js';
 import { RunStopped, type RunReason } from './outcome.js';
 import * as repo from './repo.js';
@@ -282,6 +284,8 @@ export async function executeRun(env: ExecutorEnv, runId: string, signal: AbortS
           : {}),
       },
     });
+    // The alert state moves with the run it judges: both commit, or neither.
+    await enqueueAlerts(tx, env, schedule.id, { id: runId, ...outcome, commit, environment });
     return true;
   });
   // After the commit; a run a cancel ended was announced by the cancel.

@@ -483,8 +483,43 @@ Each PR is green on its own.
 - **An admin points a schedule at an internal service the operator did not expect.** This is
   inherent to the feature. Mitigation: Enterprise-only, the operator off-switch, and the audit trail.
 
-## 13. Follow-ups (to be filed)
+## 13. Follow-ups
 
-- Desktop Schedules tab with run history and the live `schedule-run` message, designed mockup first.
-- Workspace secret sources on the server, behind an operator trust setting.
-- Latency trend alerts.
+- #517 Desktop Schedules tab with run history and the live `schedule-run` message, designed mockup first.
+- #518 Workspace secret sources on the server, behind an operator trust setting.
+- #519 Latency trend alerts.
+
+## 14. Revisions after building
+
+Rulings made while building, which supersede the sections above where they differ.
+
+- **Secrets come from the schedule only (§3.2, §3.3).** A run resolves a secret from the schedule's
+  sealed values, by the name `WIREBENCH_SECRET_<NAME>` gives it in a pipeline. The server's own
+  `WIREBENCH_SECRET_*` environment is never read: it belongs to the operator, not to a workspace.
+- **An unset `${#System#…}` errors the request (§6).** The system scope is empty, as planned, but the
+  engine treats an unresolved reference as `rest-unresolved-properties`, so the request errors rather
+  than sending an empty value. The test proves the server's variable never reaches the wire.
+- **The target names a project by slug or id (§2).** Slugs keep case and spaces (`CountryInfo`), so the
+  target takes any non-empty name up to 200 characters. A linked project errors with `target-invalid`.
+- **Interrupted runs are found by deadline, not at boot (§3.1).** Servers may share a database, so a
+  booting server cannot tell its own crashed runs from another server's live ones. Each pass ends a
+  run still `running` a minute past its schedule's deadline as `errored` with reason `interrupted`, and
+  that run counts as errored for the alert state.
+- **Callback assertions are unavailable in scheduled runs.** A callback assertion errors with a
+  message saying so, until a run can read the workspace's catch URLs.
+- **Alerts are evaluated in the run's transaction (§3.2 step 5).** The alert state and the queued
+  deliveries commit with the run's outcome, before the announcement, so a crash cannot store one
+  without the other.
+- **The outbox leases rather than locks (§3.4).** A pass marks up to 20 due deliveries taken for a minute
+  and sends them outside a transaction, so no row lock is held across a 10 s send. A delivery looks its
+  target up by index when it is sent: a target removed since then gets nothing, and the delivery is
+  retried until it is given up.
+- **A run's deliveries are part of its detail.** `GET …/runs/:runId` returns `alerts`: kind, target
+  index, state, attempts and last error, never the payload or the URL. This is how "they can be read
+  from the run" (§3.9) is met.
+- **A test alert touches nothing.** `POST …/alerts/test` sends synchronously, outside the outbox, and
+  changes neither the alert state nor the history.
+- **Alert size.** A failing request's message is cut to 300 characters, and a Slack header to the 150
+  Slack accepts.
+- **Delivery (§11).** PR 1 (#509) merged into this design's branch rather than main, so #514 carried its
+  commits to main along with PR 2.
