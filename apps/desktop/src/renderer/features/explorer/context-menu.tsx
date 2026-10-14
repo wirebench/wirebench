@@ -298,7 +298,7 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
-          className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          className="z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           // Portalled, yet React bubbles its clicks through the component tree to the tree's row
           // wrapper, which would select and open the row over the tab an item just opened.
           onClick={(event) => event.stopPropagation()}

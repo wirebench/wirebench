@@ -27,7 +27,7 @@ import { useKeyInstall } from './ssh-keys.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
-const CONTENT_CLASS = 'z-50 min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
+const CONTENT_CLASS = 'z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 
 /** The parts of a Radix menu the items are drawn with; the context menu and the dropdown both fit. */
 interface MenuKit {

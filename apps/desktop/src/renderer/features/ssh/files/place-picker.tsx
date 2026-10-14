@@ -87,7 +87,7 @@ export function PlacePicker({
           side="bottom"
           align="start"
           sideOffset={4}
-          className="z-50 max-h-80 min-w-56 overflow-y-auto rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          className="z-dropdown max-h-80 min-w-56 overflow-y-auto rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
         >
           <input
             type="text"

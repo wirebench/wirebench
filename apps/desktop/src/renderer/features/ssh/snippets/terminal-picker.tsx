@@ -43,7 +43,7 @@ export function TerminalPicker({ onClose }: { readonly onClose: () => void }) {
 
   return (
     <div
-      className="absolute top-2 left-1/2 z-20 w-[min(420px,90%)] -translate-x-1/2 overflow-hidden rounded-lg border border-hairline-strong bg-surface-overlay shadow-2xl"
+      className="absolute top-2 left-1/2 z-[1] w-[min(420px,90%)] -translate-x-1/2 overflow-hidden rounded-lg border border-hairline-strong bg-surface-overlay shadow-2xl"
       data-testid="snippet-picker"
     >
       <Command loop label="Snippets" value={selected} onValueChange={setSelected} onKeyDown={onKeyDown}>

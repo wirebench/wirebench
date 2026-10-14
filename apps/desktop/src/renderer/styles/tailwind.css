@@ -62,6 +62,29 @@
   --spacing-right-rail: var(--wb-right-rail-width);
 }
 
+/* The layer scale, one name per layer; the values live in tokens.css. */
+@utility z-dropdown {
+  z-index: var(--wb-layer-dropdown);
+}
+
+@utility z-dialog {
+  z-index: var(--wb-layer-dialog);
+}
+
+@utility z-toast {
+  z-index: var(--wb-layer-toast);
+}
+
+@layer base {
+  /* Every Dialog and AlertDialog on the dialog layer, without each one saying so: Radix portals a dialog's
+     overlay and its content to <body> one by one, each with a `data-state`. Menus and tooltips land in a
+     popper wrapper instead and take their layer from their own class. Two dialogs open at once share the
+     layer, and the later one in the DOM (the one opened second) paints on top. */
+  body > [data-state]:not([data-radix-popper-content-wrapper]) {
+    z-index: var(--wb-layer-dialog);
+  }
+}
+
 @layer components {
   /* The macOS `hiddenInset` title bar: the strip drags the window, its controls must not. */
   .wb-drag {
