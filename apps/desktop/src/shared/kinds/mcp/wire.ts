@@ -394,6 +394,8 @@ export const mcpApprovalWireSchema = z.object({
   fingerprint: z.string(),
   /** The command line as it ran, secrets masked. */
   display: z.string(),
+  /** The server it was approved for, as it was named then; absent in an approval kept without one. */
+  serverName: z.string().optional(),
   approvedAt: z.string(),
 });
 export type McpApprovalWire = z.infer<typeof mcpApprovalWireSchema>;

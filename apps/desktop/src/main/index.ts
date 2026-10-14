@@ -60,6 +60,8 @@ import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js'
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
+import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from './mcp-approvals.js';
+import { promptWindowOf } from './kinds/mcp/ipc.js';
 import {
   SESSION_LOGS_DIR,
   SESSION_LOG_SWITCHES_FILE,
@@ -989,8 +991,17 @@ void app.whenReady().then(() => {
   });
   scriptHost = scripts;
   registerScriptChannels(scripts);
+  // This machine's MCP stdio approvals (#79); a send with no window of its own asks in the focused one.
+  const mcpApprovals = new McpApprovals({
+    store: new McpApprovalStore(join(app.getPath('userData'), MCP_APPROVALS_FILE)),
+    defaultWindow: () => {
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      return window === undefined ? undefined : promptWindowOf(window.webContents);
+    },
+  });
   const requestDeps: RequestChannelDeps = {
     project: workspaceService,
+    mcpApprovals,
     secretSources: () => workspaceService.secretSourcesSnapshot(),
     adHocScopes: () => {
       const state = globalProperties.get();

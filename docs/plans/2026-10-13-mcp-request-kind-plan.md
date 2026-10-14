@@ -218,13 +218,13 @@ the scripting suites.
 exchange}.ts`, `project-wire.ts`, `project-request-map.ts`, `search.ts`, `workspace-service.ts`,
 `unsaved-store.ts`, `sequence-runner.ts`, `history-service.ts`, tests.
 
-- [ ] Mutations and the host, with the catalogue written through the host.
-- [ ] The send facet: summarise, record History, audit, key masks. The live event.
-- [ ] The approval store: per machine, in userData `mcp-approvals.json`, atomic writes. The prompt is
+- [x] Mutations and the host, with the catalogue written through the host.
+- [x] The send facet: summarise, record History, audit, key masks. The live event.
+- [x] The approval store: per machine, in userData `mcp-approvals.json`, atomic writes. The prompt is
   a round trip to the renderer: *Run once*, *Always allow* or *Cancel*. In a run, it is asked once per
   fingerprint.
-- [ ] `api.refreshMcpCatalogue` writes `catalogue.json` and the metadata.
-- [ ] Tests: the mutations, host round trip, the approval store, the prompt round trip (a mock
+- [x] `api.refreshMcpCatalogue` writes `catalogue.json` and the metadata.
+- [x] Tests: the mutations, host round trip, the approval store, the prompt round trip (a mock
   renderer), send recording History, refresh, and the switched-off kind refused.
 
 ### Task 14: Renderer: kind registration, explorer, new-server dialog

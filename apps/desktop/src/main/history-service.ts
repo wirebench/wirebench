@@ -67,6 +67,7 @@ import { mkdirSync, watch } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import {
   ProjectError,
+  buildMcpHistoryEntry,
   buildWsHistoryEntry as buildEngineWsHistoryEntry,
   detectLanguage,
   normalizeHistoryEntry,
@@ -79,6 +80,7 @@ import {
 import type {
   HistoryEntry,
   HistorySse,
+  McpHistoryInput,
   HistoryFile,
   HistoryListQuery,
   RestContractResult,
@@ -813,6 +815,20 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildWsHistoryEntry(projectId, record);
+    return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
+  }
+
+  /**
+   * Appends one MCP send's entry to its project's file, returning the wire shape it wrote. Built by
+   * the engine's builder, which the command line shares, and masked of every secret value main
+   * recorded this session.
+   */
+  async recordMcpSend(projectId: string, record: McpHistoryInput): Promise<HistoryEntryWire | undefined> {
+    const file = this.files.get(projectId);
+    if (file === undefined) {
+      return undefined;
+    }
+    const entry = buildMcpHistoryEntry(projectId, record, { text: (text) => redactSecretValues(text) });
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 

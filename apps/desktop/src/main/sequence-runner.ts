@@ -60,6 +60,7 @@ import type {
   SequenceStepResultWire,
   SequenceWaitingEvent,
 } from '../shared/wire-base.js';
+import type { McpExchangeSummary } from '../shared/kinds/mcp/wire.js';
 
 /** What a run needs from the app around it. */
 export interface SequenceRunDeps {
@@ -90,9 +91,8 @@ export function draftFor(kind: SelectedRequest['kind']): DraftOf {
     case 'rest':
     case 'grpc':
     case 'websocket':
-      return { kind };
     case 'mcp':
-      throw new Error('The app cannot send mcp requests yet');
+      return { kind };
   }
 }
 
@@ -241,6 +241,8 @@ export class SequenceRunner {
       throw sendDeclined([guarded]);
     }
 
+    // Each MCP command line is asked about once for the whole run, before the first step that runs it.
+    const approveCommand = deps.requests.mcpApprovals?.forRun();
     const send: SequenceStepSender = async (resolved, sequenceScope, signal) => {
       // Each run of a step is its own send: a branch may run one step several times (#347).
       const sendId = `${request.runId}:${resolved.index}:${resolved.attempt}`;
@@ -265,6 +267,7 @@ export class SequenceRunner {
           tags,
           run: true,
           protectedConfirmed: true,
+          ...(approveCommand !== undefined ? { approveCommand } : {}),
           ...(resolved.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
           onScriptsRan: (sent) => {
             ran = sent;
@@ -284,9 +287,14 @@ export class SequenceRunner {
         // The send holds its id from its first moment: a cancel that came just before reaches it too.
         if (signal.aborted) stop();
         const summary = await sending;
-        // A WebSocket session's handshake row is already in the HTTP Log; any other step's row is this.
-        if (!('handshake' in summary)) {
-          deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
+        // A WebSocket session's handshake row is already in the HTTP Log, and an MCP send writes
+        // none (History is its record); any other step's row is this.
+        if (!('handshake' in summary) && resolved.selected.kind !== 'mcp') {
+          deps.requests.onExchange?.({
+            kind: 'exchange',
+            exchange: summary as Exclude<typeof summary, McpExchangeSummary>,
+            requestId,
+          });
         }
         if (described === undefined) {
           return { error: { code: 'no-response', message: 'The send ended without a response' } };

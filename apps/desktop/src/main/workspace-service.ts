@@ -122,7 +122,6 @@ import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
 import { requireKindEnabled } from './project-mutations.js';
 import type { KindId } from '../shared/kinds/kind-module.js';
-import type { MainKindId } from './kinds/enabled-kinds.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
@@ -176,6 +175,7 @@ import type { GrpcRequestPatchWire } from '../shared/kinds/grpc/wire.js';
 import type { RestRequestPatchWire } from '../shared/kinds/rest/wire.js';
 import type { RequestPatchWire } from '../shared/kinds/soap/wire.js';
 import type { WsRequestPatchWire } from '../shared/kinds/ws/wire.js';
+import type { McpRequestPatchWire } from '../shared/kinds/mcp/wire.js';
 import type {
   CertificatesCheckResponse,
   EngineProgressEvent,
@@ -767,6 +767,7 @@ export class WorkspaceService implements ProjectRouter {
   private grpcDrafts: Record<string, GrpcRequestPatchWire> = {};
   /** The WebSocket editor's unsaved edits, the fourth of the same set. */
   private wsDrafts: Record<string, WsRequestPatchWire> = {};
+  private mcpDrafts: Record<string, McpRequestPatchWire> = {};
   /** What the last open restored, until the renderer takes it. */
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
@@ -1016,6 +1017,7 @@ export class WorkspaceService implements ProjectRouter {
     this.restDrafts = {};
     this.grpcDrafts = {};
     this.wsDrafts = {};
+    this.mcpDrafts = {};
     this.restored = undefined;
     const notices: UnsavedRestoreNoticeWire[] = [];
 
@@ -1069,14 +1071,14 @@ export class WorkspaceService implements ProjectRouter {
       this.restDrafts = stashed.restRequests;
       this.grpcDrafts = stashed.grpcRequests;
       this.wsDrafts = stashed.wsRequests;
+      this.mcpDrafts = stashed.mcpRequests;
       this.restored = {
         workspaceId: workspace.id,
         drafts: { ...this.drafts },
         restDrafts: { ...this.restDrafts },
         grpcDrafts: { ...this.grpcDrafts },
         wsDrafts: { ...this.wsDrafts },
-        // MCP has no editor yet, so nothing of it is ever stashed.
-        mcpDrafts: {},
+        mcpDrafts: { ...this.mcpDrafts },
         notices,
       };
 
@@ -1344,6 +1346,7 @@ export class WorkspaceService implements ProjectRouter {
     this.restDrafts = {};
     this.grpcDrafts = {};
     this.wsDrafts = {};
+    this.mcpDrafts = {};
     this.restored = undefined;
     for (const entry of open.entries) {
       this.deps.history.close(entry.projectId, this.historyOwner);
@@ -2619,7 +2622,7 @@ export class WorkspaceService implements ProjectRouter {
         await this.writeUnsaved(entry);
       }
     }
-    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
+    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts, this.mcpDrafts);
     await store.idle();
   }
 
@@ -2672,6 +2675,7 @@ export class WorkspaceService implements ProjectRouter {
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
     grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
     wsRequests: Readonly<Record<string, WsRequestPatchWire>> = {},
+    mcpRequests: Readonly<Record<string, McpRequestPatchWire>> = {},
   ): Promise<void> {
     const waiters = this.stashWaiters;
     this.stashWaiters = [];
@@ -2683,7 +2687,8 @@ export class WorkspaceService implements ProjectRouter {
       this.restDrafts = { ...restRequests };
       this.grpcDrafts = { ...grpcRequests };
       this.wsDrafts = { ...wsRequests };
-      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
+      this.mcpDrafts = { ...mcpRequests };
+      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts, this.mcpDrafts);
     } finally {
       for (const resolve of waiters) {
         resolve();
@@ -3567,7 +3572,7 @@ export function* kindEntityIds(
 }
 
 function routeKinds(): void {
-  for (const [kind, routes] of Object.entries(KIND_ROUTES) as [MainKindId, (typeof KIND_ROUTES)[MainKindId]][]) {
+  for (const [kind, routes] of Object.entries(KIND_ROUTES) as [KindId, (typeof KIND_ROUTES)[KindId]][]) {
     for (const [name, route] of Object.entries(routes)) {
       const forward = function (this: WorkspaceService, ...args: unknown[]): unknown {
         // A kind this run switched off has no channels, but its host is refused here too.

@@ -14,22 +14,10 @@ import type { UnsupportedContainerWire } from '../../shared/wire-base.js';
 import { KINDS, type KindId } from '../../shared/kinds/kind-module.js';
 import { parseAreaSwitches } from '../areas.js';
 
-/**
- * Kinds whose shared half is in `KINDS` but whose main half is not built yet: MCP's is #79's next
- * slice. They are off whatever `WIREBENCH_KINDS` says, so their containers load as placeholders and
- * are saved untouched, and main's kind tables leave them out ({@link MainKindId}).
- */
-const NO_MAIN_HALF_YET = ['mcp'] as const satisfies readonly KindId[];
-
-/** The kinds main has a half of: every key of `KindHosts`, `KIND_SENDS` and `KIND_ROUTES`. */
-export type MainKindId = Exclude<KindId, (typeof NO_MAIN_HALF_YET)[number]>;
-
 /** The kinds `WIREBENCH_KINDS` leaves on, in the kinds' order. Anything not `<kind>=on|off` is ignored. */
 export function enabledKindsFromEnv(env: NodeJS.ProcessEnv = process.env): readonly KindId[] {
   const switches = parseAreaSwitches(env['WIREBENCH_KINDS']);
-  return KINDS.filter(
-    (kind) => switches[kind.kind] !== false && !(NO_MAIN_HALF_YET as readonly KindId[]).includes(kind.kind),
-  ).map((kind) => kind.kind);
+  return KINDS.filter((kind) => switches[kind.kind] !== false).map((kind) => kind.kind);
 }
 
 /**

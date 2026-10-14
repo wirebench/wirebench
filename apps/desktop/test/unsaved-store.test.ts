@@ -99,9 +99,16 @@ describe('UnsavedStore', () => {
       restRequests: {},
       grpcRequests: {},
       wsRequests: {},
+      mcpRequests: {},
     });
     await store.writeDrafts({});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
+    expect(await store.readDrafts()).toEqual({
+      requests: {},
+      restRequests: {},
+      grpcRequests: {},
+      wsRequests: {},
+      mcpRequests: {},
+    });
 
     // All four protocols' drafts live in one file, and any one alone is enough to keep it.
     await store.writeDrafts({}, { rest1: { url: '/pets' } });
@@ -110,9 +117,16 @@ describe('UnsavedStore', () => {
       restRequests: { rest1: { url: '/pets' } },
       grpcRequests: {},
       wsRequests: {},
+      mcpRequests: {},
     });
     await store.writeDrafts({}, {});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
+    expect(await store.readDrafts()).toEqual({
+      requests: {},
+      restRequests: {},
+      grpcRequests: {},
+      wsRequests: {},
+      mcpRequests: {},
+    });
     expect(await readdir(join(dir, 'unsaved'))).toEqual([]);
 
     // A WebSocket draft alone also keeps the file.
@@ -122,9 +136,22 @@ describe('UnsavedStore', () => {
       restRequests: {},
       grpcRequests: {},
       wsRequests: { ws1: { url: '/ws' } },
+      mcpRequests: {},
     });
     await store.writeDrafts({}, {}, {}, {});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
+    expect(await store.readDrafts()).toEqual({
+      requests: {},
+      restRequests: {},
+      grpcRequests: {},
+      wsRequests: {},
+      mcpRequests: {},
+    });
+    expect(await readdir(join(dir, 'unsaved'))).toEqual([]);
+
+    // So does an MCP draft alone.
+    await store.writeDrafts({}, {}, {}, {}, { m1: { name: 'Echo' } });
+    expect((await store.readDrafts()).mcpRequests).toEqual({ m1: { name: 'Echo' } });
+    await store.writeDrafts({}, {}, {}, {}, {});
     expect(await readdir(join(dir, 'unsaved'))).toEqual([]);
   });
 

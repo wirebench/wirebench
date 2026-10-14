@@ -23,22 +23,25 @@ import type { HistoryService } from '../history-service.js';
 import type { WorkspaceService } from '../workspace-service.js';
 import type { ChannelRequest, ChannelResponse, channels } from '../../shared/ipc.js';
 import type { SearchDocument } from '../search.js';
-import type { MainKindId } from './enabled-kinds.js';
+import type { KindId } from '../../shared/kinds/kind-module.js';
 import type { ProjectChange } from '../../shared/wire-types.js';
 import type { RestFolderPatchWire } from '../../shared/kinds/rest/wire.js';
 import type { ProjectHostCore } from '../project-host-core.js';
 import type { ProjectWireContext } from '../project-wire.js';
 import type { MutationDeps, MutationResult } from '../project-mutations.js';
 import type { GrpcHost } from './grpc/host.js';
+import type { McpHost } from './mcp/host.js';
 import type { RestHost } from './rest/host.js';
 import type { SoapHost } from './soap/host.js';
 import type { WsHost } from './ws/host.js';
 import type { GrpcRouter } from './grpc/router.js';
+import type { McpRouter } from './mcp/router.js';
 import type { RestRouter } from './rest/router.js';
 import type { SoapRouter } from './soap/router.js';
 import type { WsRouter } from './ws/router.js';
 import type { KindEntityIds } from './kind-routes.js';
 import { grpcMain } from './grpc/kind.js';
+import { mcpMain } from './mcp/kind.js';
 import { restMain } from './rest/kind.js';
 import { soapMain } from './soap/kind.js';
 import { wsMain } from './ws/kind.js';
@@ -115,6 +118,7 @@ export interface KindHosts {
   readonly rest: RestHost & KindHostHooks;
   readonly grpc: GrpcHost & KindHostHooks;
   readonly websocket: WsHost & KindHostHooks;
+  readonly mcp: McpHost & KindHostHooks;
 }
 
 /**
@@ -138,12 +142,9 @@ export type KindRouter<H, R extends Readonly<Record<string, KindRoute<H>>>> = {
 };
 
 /** Every kind's router methods, which `ProjectRouter` adds to the core's. */
-export type KindRouters = SoapRouter & RestRouter & GrpcRouter & WsRouter;
+export type KindRouters = SoapRouter & RestRouter & GrpcRouter & WsRouter & McpRouter;
 
-/**
- * Every kind the engine can send, which can be ahead of the kinds the app has: a kind the engine
- * sends before the app registers it (MCP, #79) has no send steps here yet, and `kindSend` refuses it.
- */
+/** Every kind the engine can send; the app has send steps for each. */
 export type SendKind = SelectedRequest['kind'];
 
 /** A kind's saved request as a send item, its live event, and its exchange as `SentRequest` holds it. */
@@ -254,7 +255,7 @@ export interface KindChannelDeps {
   readonly showSaveHtml: (options: { defaultPath: string; title: string }) => Promise<string | undefined>;
 }
 
-export interface MainKind<K extends MainKindId = MainKindId> {
+export interface MainKind<K extends KindId = KindId> {
   readonly kind: K;
   /** Its share of the project host: caches and methods, built once per open project. */
   createHost(core: ProjectHostCore): KindHosts[K];
@@ -274,9 +275,9 @@ export interface MainKind<K extends MainKindId = MainKindId> {
 }
 
 /** Any one kind's main half. */
-export type AnyMainKind = { [K in MainKindId]: MainKind<K> }[MainKindId];
+export type AnyMainKind = { [K in KindId]: MainKind<K> }[KindId];
 
-export const MAIN_KINDS: readonly AnyMainKind[] = [soapMain, restMain, grpcMain, wsMain];
+export const MAIN_KINDS: readonly AnyMainKind[] = [soapMain, restMain, grpcMain, wsMain, mcpMain];
 
 /** The kind that owns `changeKind`, if any. */
 export function mutationOwner(changeKind: string): AnyMainKind | undefined {

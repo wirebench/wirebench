@@ -5,11 +5,12 @@
 import type { LiveEvent } from '@wirebench/engine';
 import { kindSend } from '../kinds/kind-send.js';
 import type { GrpcLiveEvent } from '../../shared/kinds/grpc/wire.js';
+import type { McpLiveEvent } from '../../shared/kinds/mcp/wire.js';
 import type { RestLiveEvent } from '../../shared/kinds/rest/wire.js';
 import type { WsLiveEvent } from '../../shared/kinds/ws/wire.js';
 
 /** A live event as the renderer receives it, of any protocol. */
-export type LiveEventWire = RestLiveEvent | GrpcLiveEvent | WsLiveEvent;
+export type LiveEventWire = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiveEvent;
 
 /**
  * One live event on the wire, as its kind turns it. `keyParams` names the query parameters an API key

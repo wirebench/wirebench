@@ -33,6 +33,7 @@ const API_OF: Readonly<Record<string, ProjectChange>> = {
   rest: { kind: 'add-api', name: 'Shop', baseUrl: 'https://shop.test' },
   grpc: { kind: 'add-grpc-api', name: 'Greeter', target: 'localhost:50051' },
   websocket: { kind: 'add-ws-api', name: 'Chat', url: 'wss://chat.test' },
+  mcp: { kind: 'add-mcp-server', name: 'Files' },
 };
 
 describe('a change through a kind that is off', () => {
