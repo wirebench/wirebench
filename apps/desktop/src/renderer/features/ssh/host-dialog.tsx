@@ -8,14 +8,17 @@ import type {
   HostsFileWire,
   SshOsId,
   SshSettingsWire,
+  TerminalEntryWire,
 } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
+import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
 import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
 import { ancestorsOf, findGroup, findHost, freeId, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
 import { INPUT_CLASS, InheritedField, InheritedSwitch, type Provenance } from './inherited-field.js';
@@ -100,6 +103,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
   const [forwards, setForwards] = useState<ForwardEntryWire[]>(existing?.forwards ?? []);
   const [env, setEnv] = useState<EnvVarWire[]>(existing?.env ?? []);
+  const [terminal, setTerminal] = useState<TerminalEntryWire>(existing?.terminal ?? {});
+  const terminalPrefs = usePreferencesStore((s) => s.preferences.terminal);
   const [failed, setFailed] = useState(false);
   // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
   const osKey = (): string =>
@@ -121,7 +126,9 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const authReady = ssh.auth === undefined || ssh.auth.kind === 'agent' || ssh.auth.secret !== '';
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
   const envReady = envProblem(env) === undefined;
-  const valid = name.trim() !== '' && (!isHost || address.trim() !== '') && authReady && forwardsReady && envReady;
+  const terminalReady = terminalProblem(terminal) === undefined;
+  const valid =
+    name.trim() !== '' && (!isHost || address.trim() !== '') && authReady && forwardsReady && envReady && terminalReady;
 
   const submit = async (): Promise<void> => {
     const id = existing?.id ?? freeId(file, slug(name));
@@ -130,6 +137,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     // No rules left writes no `forwards` key.
     const ownForwards = forwards.length === 0 ? {} : { forwards };
     const ownEnv = env.length === 0 ? {} : { env };
+    // A block where every field inherits writes no `terminal` key.
+    const ownTerminal = Object.keys(cleanTerminal(terminal)).length === 0 ? {} : { terminal: cleanTerminal(terminal) };
     const next = isHost
       ? upsertHost(
           file,
@@ -141,6 +150,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             ...guard,
             ssh: clean,
             ...ownEnv,
+            ...ownTerminal,
             ...ownForwards,
           },
           parent,
@@ -154,6 +164,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             ...guard,
             ssh: clean,
             ...ownEnv,
+            ...ownTerminal,
             ...ownForwards,
             groups: [],
             hosts: [],
@@ -307,6 +318,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         }}
       />
       <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
+      <HostTerminalSection own={terminal} inherited={inheritedTerminal(chain, terminalPrefs)} onChange={setTerminal} />
       <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
       {failed && problems[0] !== undefined && (
         <p role="alert" className="text-sm text-status-danger">

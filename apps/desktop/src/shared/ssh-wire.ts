@@ -53,6 +53,12 @@ export const envVarWireSchema = z.union([
   z.strictObject({ name: z.string(), secret: z.string() }),
 ]);
 
+/** A level's own `terminal:` block in hosts.yaml; a field left out inherits. */
+export const terminalEntryWireSchema = z.strictObject({
+  scheme: z.string().optional(),
+  fontSize: z.number().optional(),
+});
+
 export const hostEntryWireSchema = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -61,6 +67,7 @@ export const hostEntryWireSchema = z.strictObject({
   protected: z.boolean().optional(),
   ssh: sshSettingsWireSchema,
   env: z.array(envVarWireSchema).optional(),
+  terminal: terminalEntryWireSchema.optional(),
   forwards: z.array(forwardEntryWireSchema).optional(),
 });
 
@@ -72,6 +79,7 @@ export interface HostEntryWire {
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
   env?: EnvVarWire[] | undefined;
+  terminal?: TerminalEntryWire | undefined;
   forwards?: ForwardEntryWire[] | undefined;
 }
 export interface GroupEntryWire {
@@ -81,6 +89,7 @@ export interface GroupEntryWire {
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
   env?: EnvVarWire[] | undefined;
+  terminal?: TerminalEntryWire | undefined;
   forwards?: ForwardEntryWire[] | undefined;
   groups: GroupEntryWire[];
   hosts: HostEntryWire[];
@@ -94,6 +103,7 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
     protected: z.boolean().optional(),
     ssh: sshSettingsWireSchema,
     env: z.array(envVarWireSchema).optional(),
+    terminal: terminalEntryWireSchema.optional(),
     forwards: z.array(forwardEntryWireSchema).optional(),
     groups: z.array(groupEntryWireSchema),
     hosts: z.array(hostEntryWireSchema),
@@ -153,6 +163,8 @@ export const resolvedHostWireSchema = z.object({
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
   env: z.array(resolvedEnvVarWireSchema),
+  /** Nearest level wins per field; `default` with no value means Preferences → Terminal applies. */
+  terminal: z.object({ scheme: prov(z.string().optional()), fontSize: prov(z.number().optional()) }).optional(),
 });
 
 export const sshListHostsResponseSchema = z.object({
@@ -169,6 +181,7 @@ export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
 export type EnvVarWire = z.infer<typeof envVarWireSchema>;
+export type TerminalEntryWire = z.infer<typeof terminalEntryWireSchema>;
 export type ResolvedEnvVarWire = z.infer<typeof resolvedEnvVarWireSchema>;
 export type ResolvedForwardWire = z.infer<typeof resolvedForwardWireSchema>;
 export type SshProblemWire = z.infer<typeof sshProblemSchema>;

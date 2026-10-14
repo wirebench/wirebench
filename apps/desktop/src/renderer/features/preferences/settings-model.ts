@@ -172,7 +172,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
       {
         id: 'terminal',
         label: 'Terminal',
-        subtitle: 'SSH terminal behaviour.',
+        subtitle: 'SSH terminal fonts, colours and behaviour.',
         keys: stored('terminal'),
         searchable: true,
       },

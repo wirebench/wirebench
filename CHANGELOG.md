@@ -73,6 +73,15 @@ All notable changes to this project are documented here. The format follows
   OpenCollection and `.http` GraphQL requests now import as GraphQL, and a Postman export writes them
   back as GraphQL (#77).
 
+- **Terminal font, size and colour scheme, per host or group.** Settings → Terminal gains
+  **Appearance**: the font family, picked from the machine's monospaced fonts, the size, the line
+  height and a colour scheme. **Follow app theme** stays the default. The built-in schemes are three
+  tinted backgrounds (red, amber, green) and the open palettes Solarized Dark and Light, Dracula,
+  Nord, Gruvbox Dark, One Dark and Tomorrow Night. `hosts.yaml` takes `terminal: { scheme,
+  fontSize }` on hosts and groups, inherited per field, and the host form shows what a level
+  inherits and from where. Open terminals restyle when a setting changes. **⌘+** / **⌘−** / **⌘0**
+  resize the focused terminal only, until it closes (#411).
+
 - **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
   and groups, merged by name down the tree so a nearer level wins for each variable; a value is
   text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the

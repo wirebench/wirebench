@@ -359,3 +359,52 @@ groups:
     expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).not.toContain('env');
   });
 });
+
+describe('HostsService terminal', () => {
+  const TERMINAL = `version: 1
+groups:
+  - id: prod
+    name: Production
+    terminal:
+      scheme: red
+      fontSize: 15
+    hosts:
+      - id: api
+        name: api
+        address: 10.0.1.5
+        terminal:
+          fontSize: 18
+`;
+
+  it('list carries each level’s terminal block and the resolved fields with their source', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), TERMINAL);
+    const listed = sshListHostsResponseSchema.parse(await new HostsService({ treeDir: () => d }).list());
+    expect(listed.problems).toEqual([]);
+    expect(listed.file.groups[0]?.terminal).toEqual({ scheme: 'red', fontSize: 15 });
+    expect(listed.file.groups[0]?.hosts[0]?.terminal).toEqual({ fontSize: 18 });
+    expect(listed.resolved[0]?.terminal).toEqual({
+      scheme: { value: 'red', from: { group: 'prod' } },
+      fontSize: { value: 18, from: 'host' },
+    });
+  });
+
+  it('saving the listed file writes the blocks back unchanged', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), TERMINAL);
+    const service = new HostsService({ treeDir: () => d });
+    const { file } = sshListHostsResponseSchema.parse(await service.list());
+    await service.save(file);
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toBe(TERMINAL);
+  });
+
+  it('save refuses a font size out of range', async () => {
+    await expect(
+      new HostsService({ treeDir: () => dir() }).save({
+        version: 1,
+        groups: [],
+        hosts: [{ id: 'a', name: 'a', address: 'a', tags: [], ssh: {}, terminal: { fontSize: 500 } }],
+      }),
+    ).rejects.toMatchObject({ code: 'ssh-hosts-invalid' });
+  });
+});

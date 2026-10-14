@@ -1,18 +1,121 @@
-import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../../components/settings-grid.js';
+import {
+  BooleanSetting,
+  EnumSetting,
+  NumberSetting,
+  SettingsGroup,
+  TextSetting,
+} from '../../../components/settings-grid.js';
+import { useInstalledMonospaceFonts } from '../../../lib/installed-fonts.js';
 import { detectPlatform } from '../../../lib/platform.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
+import { APP_SCHEME_ID, schemeLabel, TERMINAL_SCHEMES } from '../../ssh/terminal-schemes.js';
 import type { SectionProps } from './section-props.js';
 
+const FONT_HINT = 'Tried first; the app’s monospace font fills in for any character it lacks.';
+
 /**
- * Preferences → Terminal: what the SSH terminal does with a paste and with a selection, whether it suggests
- * snippets while the user types, whether a session the network dropped reconnects on its own, how much room
- * session logs take on this machine, and which shell a local terminal runs.
+ * The terminal's font family: a list of the machine's monospaced families, or a text field where the
+ * platform cannot list them. A family set before but no longer installed stays in the list, marked.
+ */
+function FontFamilySetting({
+  value,
+  onCommit,
+}: {
+  readonly value: string;
+  readonly onCommit: (family: string) => void;
+}) {
+  const fonts = useInstalledMonospaceFonts();
+  if (fonts === null) {
+    return (
+      <TextSetting
+        label="Font family"
+        value={value}
+        placeholder="The app’s monospace font"
+        monospace
+        trim
+        setting="terminal.fontFamily"
+        hint={FONT_HINT}
+        onCommit={onCommit}
+      />
+    );
+  }
+  const listed = fonts ?? [];
+  const options = [
+    { value: '', label: 'App default' },
+    ...(value === '' || listed.includes(value)
+      ? []
+      : [{ value, label: fonts === undefined ? value : `${value} (not installed)` }]),
+    ...listed.map((family) => ({ value: family, label: family })),
+  ];
+  return (
+    <EnumSetting
+      label="Font family"
+      value={value}
+      options={options}
+      display="select"
+      setting="terminal.fontFamily"
+      hint={FONT_HINT}
+      onChange={onCommit}
+    />
+  );
+}
+
+/**
+ * Preferences → Terminal: how a terminal looks (a host or group in hosts.yaml may override the scheme and
+ * size), what it does with a paste and with a selection, whether it suggests snippets while the user types,
+ * whether a session the network dropped reconnects on its own, how much room session logs take on this machine,
+ * and which shell a local terminal runs.
  */
 export function TerminalSection({ preferences, update }: SectionProps) {
   const terminal = preferences.terminal;
   return (
     <>
+      <SettingsGroup title="Appearance">
+        <FontFamilySetting
+          value={terminal.fontFamily ?? ''}
+          onCommit={(fontFamily) => {
+            update({ terminal: { fontFamily } });
+          }}
+        />
+        <NumberSetting
+          label="Font size"
+          value={terminal.fontSize}
+          {...PREFERENCE_LIMITS['terminal.fontSize']}
+          unit="px"
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.terminal.fontSize)}
+          setting="terminal.fontSize"
+          onCommit={(fontSize) => {
+            update({ terminal: { fontSize: fontSize ?? DEFAULT_PREFERENCES_WIRE.terminal.fontSize } });
+          }}
+          hint="⌘+ and ⌘− (Ctrl on Windows and Linux) resize the focused terminal until it closes; ⌘0 puts it back."
+        />
+        <NumberSetting
+          label="Line height"
+          value={terminal.lineHeight}
+          {...PREFERENCE_LIMITS['terminal.lineHeight']}
+          placeholder={String(DEFAULT_PREFERENCES_WIRE.terminal.lineHeight)}
+          setting="terminal.lineHeight"
+          onCommit={(lineHeight) => {
+            update({ terminal: { lineHeight: lineHeight ?? DEFAULT_PREFERENCES_WIRE.terminal.lineHeight } });
+          }}
+          hint="A multiple of the font size, from 1 to 2."
+        />
+        <EnumSetting
+          label="Colour scheme"
+          value={terminal.colorScheme}
+          options={[APP_SCHEME_ID, ...TERMINAL_SCHEMES.map((scheme) => scheme.id)].map((id) => ({
+            value: id,
+            label: schemeLabel(id),
+          }))}
+          display="select"
+          setting="terminal.colorScheme"
+          onChange={(colorScheme) => {
+            update({ terminal: { colorScheme } });
+          }}
+          hint="A host or group can set its own in its form, so production and staging look different."
+        />
+      </SettingsGroup>
       <SettingsGroup title="Clipboard">
         <BooleanSetting
           label="Confirm multi-line paste"
