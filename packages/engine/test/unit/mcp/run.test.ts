@@ -61,6 +61,12 @@ describe('commandDisplay', () => {
       'npx -y @scope/server@1.2 "a b" "" "x\\"y"',
     );
   });
+
+  it('shows a Windows path as written', () => {
+    expect(commandDisplay('C:\\node\\node.exe', ['C:\\srv\\server.mjs', 'C:\\Program Files\\x'])).toBe(
+      'C:\\node\\node.exe C:\\srv\\server.mjs "C:\\Program Files\\x"',
+    );
+  });
 });
 
 describe('approveMcpCommand', () => {

@@ -106,7 +106,9 @@ still waiting and closes the session.
   does not match is a warning in the exchange, and is not dropped.
 - **stdio.** The server is spawned with `spawn`, with no shell, as `command` with `args`, from `cwd`.
   Its environment is the parent's `PATH`, `HOME`, `USER`, `LANG`, `TMPDIR` and `SYSTEMROOT` (where
-  set), plus the expanded `env`. Messages are newline-delimited JSON. stderr is kept as text, capped at
+  set), plus the expanded `env`. On Windows it also inherits the profile and system folders a
+  launcher such as `npx` needs (`APPDATA`, `LOCALAPPDATA`, `USERPROFILE`, `PATHEXT`, `TEMP` and the
+  like), matched without regard to case. Messages are newline-delimited JSON. stderr is kept as text, capped at
   64 KiB. On close, stdin is ended. The process gets `SIGTERM` after 2 s and `SIGKILL` 2 s after that.
   A process that exits early fails the send with `mcp-server-exited`, which gives the exit code and the
   tail of stderr.

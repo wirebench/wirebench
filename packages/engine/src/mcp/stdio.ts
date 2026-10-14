@@ -26,6 +26,36 @@ import type { McpWireCloseOptions, McpWireHandlers, McpWireTransport } from './t
 /** The parent variables a stdio server inherits, where they are set. Everything else is the transport's own `env`. */
 export const MCP_STDIO_PARENT_ENV = ['PATH', 'HOME', 'USER', 'LANG', 'TMPDIR', 'SYSTEMROOT'] as const;
 
+/**
+ * What Windows adds to the allowlist: the profile and system folders a process there needs to start
+ * a launcher such as `npx` (which reads `APPDATA`), find a program's extension (`PATHEXT`) or a temp
+ * folder. Windows also gives a new process several of these itself.
+ */
+export const MCP_STDIO_WINDOWS_ENV = [
+  'APPDATA',
+  'COMSPEC',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'LOCALAPPDATA',
+  'LOGONSERVER',
+  'PATHEXT',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+  'SYSTEMDRIVE',
+  'TEMP',
+  'TMP',
+  'USERDOMAIN',
+  'USERNAME',
+  'USERPROFILE',
+  'WINDIR',
+] as const;
+
+/** The parent variables a stdio server inherits on `platform`. */
+export function mcpStdioParentEnvNames(platform: NodeJS.Platform = process.platform): readonly string[] {
+  return platform === 'win32' ? [...MCP_STDIO_PARENT_ENV, ...MCP_STDIO_WINDOWS_ENV] : MCP_STDIO_PARENT_ENV;
+}
+
 /** How much of stderr's end an early-exit error carries in its details. */
 const STDERR_TAIL_BYTES = 4 * 1024;
 
@@ -67,11 +97,15 @@ export function resolveMcpCwd(projectDir: string, cwd: string | undefined): stri
 export function mcpStdioEnv(
   parentEnv: NodeJS.ProcessEnv,
   env: Readonly<Record<string, string>>,
+  platform: NodeJS.Platform = process.platform,
 ): Record<string, string> {
+  const names = mcpStdioParentEnvNames(platform);
   const out: Record<string, string> = {};
-  for (const name of MCP_STDIO_PARENT_ENV) {
-    const value = parentEnv[name];
-    if (value !== undefined) out[name] = value;
+  for (const [name, value] of Object.entries(parentEnv)) {
+    if (value === undefined) continue;
+    // Windows names are case-insensitive: a copy of its environment may hold `Path` for `PATH`.
+    const key = platform === 'win32' ? name.toUpperCase() : name;
+    if (names.includes(key)) out[name] = value;
   }
   return { ...out, ...env };
 }

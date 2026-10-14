@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { mcpStdioEnv, openStdioTransport, resolveMcpCwd, type McpStdioTransport } from '../../../src/mcp/stdio.js';
+import { mcpStdioEnv, mcpStdioParentEnvNames, openStdioTransport, resolveMcpCwd, type McpStdioTransport } from '../../../src/mcp/stdio.js';
 import { runMcpSession, type McpOperationCall } from '../../../src/mcp/session.js';
 
 const FIXTURE = resolve(import.meta.dirname, '../../fixtures/mcp/stdio-server.mjs');
@@ -40,8 +40,21 @@ afterEach(async () => {
 
 describe('mcpStdioEnv and resolveMcpCwd', () => {
   it('passes only the allowlisted parent variables, then the transport’s own', () => {
-    const env = mcpStdioEnv({ PATH: '/bin', HOME: '/h', SECRET_TOKEN: 'no', LANG: 'C' }, { LANG: 'fr', API_KEY: 'k' });
+    const env = mcpStdioEnv(
+      { PATH: '/bin', HOME: '/h', SECRET_TOKEN: 'no', LANG: 'C', USERPROFILE: '/u' },
+      { LANG: 'fr', API_KEY: 'k' },
+      'linux',
+    );
     expect(env).toEqual({ PATH: '/bin', HOME: '/h', LANG: 'fr', API_KEY: 'k' });
+  });
+
+  it('adds the Windows profile variables on Windows, matching names in any case', () => {
+    const env = mcpStdioEnv(
+      { Path: 'C:\\bin', USERPROFILE: 'C:\\u', AppData: 'C:\\a', SECRET_TOKEN: 'no' },
+      {},
+      'win32',
+    );
+    expect(env).toEqual({ Path: 'C:\\bin', USERPROFILE: 'C:\\u', AppData: 'C:\\a' });
   });
 
   it('runs in the project folder, or cwd against it', () => {
@@ -87,7 +100,7 @@ describe('stdio transport against the fixture', () => {
     expect(seen.env['FIXTURE_FLAG']).toBe('on');
     expect(seen.env['SHOULD_NOT_LEAK']).toBeUndefined();
     // macOS itself adds __CF_USER_TEXT_ENCODING to every process; nothing else may appear.
-    const allowed = ['PATH', 'HOME', 'USER', 'LANG', 'TMPDIR', 'SYSTEMROOT', 'FIXTURE_FLAG'];
+    const allowed = [...mcpStdioParentEnvNames(), 'FIXTURE_FLAG'];
     const extra = Object.keys(seen.env).filter((k) => !allowed.includes(k.toUpperCase()) && !k.startsWith('__CF_'));
     expect(extra).toEqual([]);
     expect(seen.cwd).toBe(FIXTURE_DIR);
