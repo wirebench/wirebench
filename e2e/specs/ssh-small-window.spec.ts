@@ -121,7 +121,8 @@ test('a split tab at 1024×700 stays in the editor area and keeps its find bar i
   await contentSize(launched, 1024, 700);
   const left = page.getByTestId('ssh-pane').first();
   await left.getByTestId('ssh-terminal').click();
-  await page.keyboard.press('Control+f');
+  // ⌘F on macOS, Ctrl+F elsewhere.
+  await page.keyboard.press('ControlOrMeta+f');
   const find = left.getByTestId('terminal-find');
   await expect(find).toBeVisible();
 
