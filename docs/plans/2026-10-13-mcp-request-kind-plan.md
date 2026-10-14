@@ -254,12 +254,12 @@ tests.
 **Files:** new `features/mcp-editor/{mcp-editor,operation-bar,arguments-tab,settings-tab}.tsx`, the
 `approval-dialog.tsx`, tests.
 
-- [ ] The operation bar: method, tool or prompt picker (from the catalogue, free text allowed), URI,
+- [x] The operation bar: method, tool or prompt picker (from the catalogue, free text allowed), URI,
   *Send* and *Cancel*.
-- [ ] The arguments JSON editor, given the tool's `inputSchema`. Prompt arguments in a table. The
+- [x] The arguments JSON editor, given the tool's `inputSchema`. Prompt arguments in a table. The
   Assertions and Scripts tabs reuse the shared ones.
-- [ ] The approval dialog: the command line (masked), the folder, the env names, and the three buttons.
-- [ ] Tests: picking an operation, the schema passed to the editor, the dialog answers.
+- [x] The approval dialog: the command line (masked), the folder, the env names, and the three buttons.
+- [x] Tests: picking an operation, the schema passed to the editor, the dialog answers.
 
 ### Task 17: Renderer: response pane
 
