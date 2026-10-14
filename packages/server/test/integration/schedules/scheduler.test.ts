@@ -34,7 +34,9 @@ function heldRuns() {
   const started: { runId: string; signal: AbortSignal; release: () => void }[] = [];
   const execute = (runId: string, signal: AbortSignal): Promise<void> =>
     new Promise<void>((done) => {
-      signal.addEventListener('abort', () => done(), { once: true });
+      // A run claimed during a stop starts already aborted.
+      if (signal.aborted) done();
+      else signal.addEventListener('abort', () => done(), { once: true });
       started.push({ runId, signal, release: done });
     });
   return { started, execute };
@@ -156,6 +158,25 @@ describeDb('the scheduler (scheduled-runs spec §3.1)', () => {
     const s = scheduler({ execute: held.execute });
     await s.runOnce();
     await s.stop();
+    expect(held.started.map((run) => run.signal.reason as unknown)).toEqual(['shutdown']);
+    expect(s.running).toBe(0);
+  });
+
+  it('a stop while a pass is claiming aborts what the pass claims, and waits for it', async () => {
+    await seedSchedule('Hourly');
+    const held = heldRuns();
+    let stopping: Promise<void> | undefined;
+    // The claim commits, then the server stops before the pass launches what it claimed.
+    const db = Object.assign(Object.create(c.h.db) as typeof c.h.db, {
+      transaction: async <T>(fn: Parameters<typeof c.h.db.transaction<T>>[0]): Promise<T> => {
+        const result = await c.h.db.transaction(fn);
+        if (stopping === undefined && Array.isArray(result) && result.length > 0) stopping = s.stop();
+        return result;
+      },
+    });
+    const s = scheduler({ db, execute: held.execute });
+    await s.runOnce();
+    await stopping;
     expect(held.started.map((run) => run.signal.reason as unknown)).toEqual(['shutdown']);
     expect(s.running).toBe(0);
   });

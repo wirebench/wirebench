@@ -38,6 +38,8 @@ export class Scheduler {
   private passing: Promise<SchedulerPass> | undefined;
   private stopped = false;
   private readonly inFlight = new Map<string, { readonly abort: AbortController; readonly done: Promise<void> }>();
+  /** Starts a finished run set off outside a pass, so `idle` waits for them too. */
+  private readonly starting = new Set<Promise<void>>();
 
   constructor(private readonly env: SchedulerEnv) {}
 
@@ -69,8 +71,8 @@ export class Scheduler {
   /** Waits until no pass is under way and no run is in flight. */
   async idle(): Promise<void> {
     await this.passing?.catch(() => undefined);
-    while (this.inFlight.size > 0) {
-      await Promise.all([...this.inFlight.values()].map((run) => run.done));
+    while (this.inFlight.size > 0 || this.starting.size > 0) {
+      await Promise.all([...this.inFlight.values()].map((run) => run.done).concat([...this.starting]));
     }
   }
 
@@ -157,6 +159,8 @@ export class Scheduler {
 
   private launch(runId: string): void {
     const abort = new AbortController();
+    // Claimed while a stop was under way: it is marked running, so it runs straight into the shutdown.
+    if (this.stopped) abort.abort('shutdown' satisfies AbortReason);
     const execute = this.env.execute ?? ((id, signal) => executeRun(this.env, id, signal));
     const done = execute(runId, abort.signal)
       .catch((error: unknown) => {
@@ -166,9 +170,13 @@ export class Scheduler {
         this.inFlight.delete(runId);
         // A slot came free: start the next queued run now rather than at the next tick.
         if (!this.stopped) {
-          void this.startQueued().catch((error: unknown) => {
-            this.env.log.error({ message: messageOf(error) }, 'scheduler start failed');
-          });
+          const start: Promise<void> = this.startQueued()
+            .then(() => undefined)
+            .catch((error: unknown) => {
+              this.env.log.error({ message: messageOf(error) }, 'scheduler start failed');
+            })
+            .finally(() => this.starting.delete(start));
+          this.starting.add(start);
         }
       });
     this.inFlight.set(runId, { abort, done });
