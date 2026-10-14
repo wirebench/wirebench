@@ -14,6 +14,11 @@ All notable changes to this project are documented here. The format follows
   sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
   section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
   `mosh-server` is missing (#419).
+- **Empty places offer the next step.** A project with nothing in it shows **New REST API**,
+  **Import definition…** and **Import cURL…** on the Start tab; once there is an API, Start offers
+  **New request**, **Import…** and **Switch workspace…**. The empty Environments view has a
+  **New environment** button, and opening Search puts the caret in its input. They use the same
+  empty-state card as the SSH views (#565).
 - **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
   `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
   The tree follows the active tab, unfolding to its request and selecting it, and a new request
