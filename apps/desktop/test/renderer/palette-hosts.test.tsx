@@ -152,6 +152,8 @@ describe('hosts in the palette', () => {
     const input = screen.getByTestId<HTMLInputElement>('command-palette-input');
     fireEvent.change(input, { target: { value: 'connect' } });
     expect(input.value).toBe('connect');
+    // One Connect to Host… (#536): the menus' twin that takes a host is not listed.
+    expect(screen.getAllByText(/Connect to Host/)).toHaveLength(1);
     fireEvent.click(screen.getByText('Hosts: Connect to Host…'));
 
     const picker = screen.getByTestId<HTMLInputElement>('quick-open-input');
