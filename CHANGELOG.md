@@ -16,6 +16,13 @@ All notable changes to this project are documented here. The format follows
   can't run stays listed, greyed, with the reason. **History: Re-send Last Request** re-sends the
   newest entry of any protocol. A REST request's menu gains **Send**, **Copy as cURL**,
   **Copy URL**, **Run…** (the Runner on that one request) and **Move to…** (#543).
+- **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
+  forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
+  (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
+  empty view says what it is for and offers its first step, and a search that hides everything offers
+  **Clear search**. **New rule…** in the Port forwarding view picks a host and adds a rule to it without
+  opening the host's settings. The SSH area's first tab is named after the view it shows, with its icon,
+  instead of always saying Hosts (#535).
 - **SSH through a SOCKS5 or HTTP proxy.** A host or a group can name a SOCKS5 or HTTP CONNECT proxy (host
   form → Advanced → Proxy), with an optional user and a password kept as a secret. The first hop of a
   connection, the host or its outermost jump host, is dialled through it, and the proxy resolves the

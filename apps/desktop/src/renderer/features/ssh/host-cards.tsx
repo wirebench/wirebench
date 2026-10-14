@@ -17,6 +17,7 @@ import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
 import { lastConnectedOf, useRecentConnections } from './recent-connections.js';
 import { sessionStatus } from './session-status.js';
+import { SshEmptyState, SshNoMatches } from './ssh-view-frame.js';
 
 interface Section {
   /** Absent for the hosts outside any group. */
@@ -288,32 +289,27 @@ export function HostCards({
 
   if (file.groups.length === 0 && file.hosts.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-hairline-strong px-6 py-12 text-center">
-        <span className="flex size-12 items-center justify-center rounded-xl bg-accent-muted text-fg-default">
-          <Server size={22} aria-hidden="true" />
-        </span>
-        <h3 className="text-md font-medium text-fg-default">Add your first host</h3>
-        <p className="max-w-sm text-sm text-fg-subtle">
-          Save the servers you connect to, sort them into groups, and open a terminal with a double-click.
-        </p>
-        <div className="flex gap-2">
-          <Button
-            variant="primary"
-            onClick={() => {
-              openDialog({ mode: 'new-host' });
-            }}
-          >
-            <Plus size={13} aria-hidden /> Add host
-          </Button>
-          <Button
-            onClick={() => {
-              useHostsStore.getState().setImportOpen(true);
-            }}
-          >
-            Import hosts
-          </Button>
-        </div>
-      </div>
+      <SshEmptyState
+        icon={Server}
+        text="Save the servers you connect to, sort them into groups, and open a terminal with a double-click."
+        testId="hosts-empty"
+      >
+        <Button
+          variant="primary"
+          onClick={() => {
+            openDialog({ mode: 'new-host' });
+          }}
+        >
+          <Plus size={13} aria-hidden /> Add host
+        </Button>
+        <Button
+          onClick={() => {
+            useHostsStore.getState().setImportOpen(true);
+          }}
+        >
+          Import hosts…
+        </Button>
+      </SshEmptyState>
     );
   }
 
@@ -345,7 +341,14 @@ export function HostCards({
   };
 
   if (sections.length === 0) {
-    return <p className="p-1 text-sm text-fg-subtle">No host matches the filter.</p>;
+    return (
+      <SshNoMatches
+        text="No host matches the search."
+        onClear={() => {
+          useHostsStore.setState({ filter: '', selectedTags: [] });
+        }}
+      />
+    );
   }
 
   const order = sections.flatMap((s) => (folded(s.group?.id ?? TOP_LEVEL) ? [] : s.hosts.map((h) => h.id)));

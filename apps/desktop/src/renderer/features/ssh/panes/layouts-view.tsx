@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { LayoutPanelLeft, Server } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import type { LayoutWire } from '../../../../shared/layout-wire.js';
@@ -6,6 +7,8 @@ import { useHostsStore } from '../hosts-store.js';
 import { useLayoutsStore } from './layouts-store.js';
 import { layoutHosts, layoutPaneCount, openLayout } from './open-layout.js';
 import { LayoutNameDialog } from './save-layout-dialog.js';
+import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from '../ssh-view-frame.js';
+import { SSH_VIEWS } from '../ssh-views.js';
 
 /**
  * The SSH home's Layouts view: the open workspace's layouts saved on this machine, each with its hosts and pane
@@ -18,6 +21,7 @@ export function LayoutsPanel() {
   const [renaming, setRenaming] = useState<LayoutWire>();
   const [deleting, setDeleting] = useState<LayoutWire>();
   const [error, setError] = useState<string>();
+  const [filter, setFilter] = useState('');
 
   useEffect(() => {
     useLayoutsStore
@@ -28,23 +32,51 @@ export function LayoutsPanel() {
 
   const nameOf = (hostId: string): string => resolved.find((host) => host.id === hostId)?.name ?? hostId;
 
+  const needle = filter.trim().toLowerCase();
+  const shown = layouts.filter(
+    (layout) =>
+      needle === '' ||
+      [layout.name, ...layoutHosts(layout.root).map(nameOf)].some((field) => field.toLowerCase().includes(needle)),
+  );
+
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-fg-subtle">
-        Terminal tabs saved with their panes, on this machine. Opening one connects every pane in a new tab.
-      </p>
+    <SshView>
+      <SshViewHeader
+        title={SSH_VIEWS.layouts.label}
+        {...(loaded ? { count: layouts.length } : {})}
+        search={{ value: filter, onChange: setFilter, label: 'Filter layouts', placeholder: 'Search layouts…' }}
+        description="Terminal tabs saved with their panes, on this machine. Opening one connects every pane in a new tab."
+      />
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {error}
         </p>
       )}
       {!loaded ? null : layouts.length === 0 ? (
-        <p className="text-sm text-fg-subtle" data-testid="layouts-empty">
-          Split a terminal tab and choose Save layout… to add one.
-        </p>
+        <SshEmptyState
+          icon={LayoutPanelLeft}
+          text="Open a host, split its terminal tab into panes, then choose Save layout… to reopen them all in one go."
+          testId="layouts-empty"
+        >
+          <Button
+            variant="primary"
+            onClick={() => {
+              useHostsStore.getState().setHomeView('hosts');
+            }}
+          >
+            <Server size={13} aria-hidden /> Open a host
+          </Button>
+        </SshEmptyState>
+      ) : shown.length === 0 ? (
+        <SshNoMatches
+          text="No layout matches the search."
+          onClear={() => {
+            setFilter('');
+          }}
+        />
       ) : (
         <ul aria-label="Layouts" className="flex flex-col divide-y divide-hairline rounded-md border border-hairline">
-          {layouts.map((layout) => {
+          {shown.map((layout) => {
             const count = layoutPaneCount(layout.root);
             return (
               <li key={layout.id} data-testid="layout-row" className="flex items-center gap-3 px-3 py-2">
@@ -121,6 +153,6 @@ export function LayoutsPanel() {
             });
         }}
       />
-    </div>
+    </SshView>
   );
 }
