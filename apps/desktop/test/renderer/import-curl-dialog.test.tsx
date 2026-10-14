@@ -54,6 +54,29 @@ describe('ImportCurlDialog', () => {
     expect(problems.textContent).not.toContain('s3cret');
   });
 
+  it('refuses text that is not a curl command, says why and disables Import', async () => {
+    installWirebenchApi();
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={{ kind: 'rest', apiId: 'api-1' }} />);
+
+    await userEvent.click(screen.getByLabelText('cURL command'));
+    await userEvent.paste('wget http://example.com');
+
+    expect(screen.getByTestId('import-curl-not-curl').textContent).toContain('starts with “wget”');
+    expect(screen.queryByTestId('import-curl-preview')).toBeNull();
+    expect(screen.getByTestId<HTMLButtonElement>('import-curl-submit').disabled).toBe(true);
+  });
+
+  it('accepts a curl command pasted with its $ prompt', async () => {
+    installWirebenchApi();
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={{ kind: 'rest', apiId: 'api-1' }} />);
+
+    await userEvent.click(screen.getByLabelText('cURL command'));
+    await userEvent.paste('$ curl https://api.test/pets');
+
+    expect(screen.queryByTestId('import-curl-not-curl')).toBeNull();
+    expect(screen.getByTestId<HTMLButtonElement>('import-curl-submit').disabled).toBe(false);
+  });
+
   it('previews a REST import as the request it will make, without SOAP fields or SOAP problems', async () => {
     installWirebenchApi();
     render(<ImportCurlDialog open onOpenChange={vi.fn()} target={{ kind: 'rest', apiId: 'api-1' }} />);
