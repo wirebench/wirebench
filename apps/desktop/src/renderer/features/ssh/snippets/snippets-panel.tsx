@@ -22,6 +22,7 @@ import {
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import type { SnippetListItemWire, SnippetsFileWire } from '../../../../shared/snippets-wire.js';
+import { formatKeybinding } from '@shared/keybinding-format.js';
 import { detectPlatform } from '../../../lib/platform.js';
 import { INPUT_CLASS as FIELD_CLASS } from '../inherited-field.js';
 import {
@@ -91,7 +92,8 @@ export function SnippetsPanel() {
   const openEditor = useSnippetsStore((s) => s.openEditor);
   const [naming, setNaming] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  const mac = detectPlatform() === 'mac';
+  const platform = detectPlatform();
+  const mac = platform === 'mac';
   const tags = [...new Set(snippets.flatMap((s) => s.tags))].sort();
   const filtering = filter.trim() !== '' || selectedTags.length > 0;
   const sections = sectionsOf(file.packages, filterSnippets(snippets, filter, selectedTags), filtering);
@@ -144,7 +146,7 @@ export function SnippetsPanel() {
             }}
           />
           <kbd className="pointer-events-none absolute right-2 rounded border border-hairline px-1 font-sans text-xs text-fg-subtle">
-            {mac ? '⌘F' : 'Ctrl+F'}
+            {formatKeybinding('Mod+F', platform)}
           </kbd>
         </label>
         <div className="ml-auto flex">

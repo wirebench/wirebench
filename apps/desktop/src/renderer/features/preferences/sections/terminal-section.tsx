@@ -6,7 +6,8 @@ import {
   TextSetting,
 } from '../../../components/settings-grid.js';
 import { useInstalledMonospaceFonts } from '../../../lib/installed-fonts.js';
-import { detectPlatform } from '../../../lib/platform.js';
+import { formatKeybinding } from '@shared/keybinding-format.js';
+import { detectPlatform, type Platform } from '../../../lib/platform.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
 import { APP_SCHEME_ID, schemeLabel, TERMINAL_SCHEMES } from '../../ssh/terminal-schemes.js';
@@ -61,6 +62,12 @@ function FontFamilySetting({
   );
 }
 
+/** The zoom keys in the platform's own notation: `⌘+` on macOS, `Ctrl++` elsewhere. */
+function zoomHint(platform: Platform): string {
+  const keys = (binding: string): string => formatKeybinding(binding, platform);
+  return `${keys('Mod+Plus')} and ${keys('Mod+Minus')} resize the focused terminal until it closes; ${keys('Mod+0')} puts it back.`;
+}
+
 /**
  * Preferences → Terminal: how a terminal looks (a host or group in hosts.yaml may override the scheme and
  * size), what it does with a paste and with a selection, whether it suggests snippets while the user types,
@@ -88,7 +95,7 @@ export function TerminalSection({ preferences, update }: SectionProps) {
           onCommit={(fontSize) => {
             update({ terminal: { fontSize: fontSize ?? DEFAULT_PREFERENCES_WIRE.terminal.fontSize } });
           }}
-          hint="⌘+ and ⌘− (Ctrl on Windows and Linux) resize the focused terminal until it closes; ⌘0 puts it back."
+          hint={zoomHint(detectPlatform())}
         />
         <NumberSetting
           label="Line height"

@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Command } from 'cmdk';
+import { formatKeybinding } from '@shared/keybinding-format.js';
+import { detectPlatform } from '../../../lib/platform.js';
 import { quickOpenSnippetEntries } from '../../../shell/quick-open.js';
 import { startRun } from './run.js';
 import { loadSnippets, showSnippets } from './snippet-actions.js';
@@ -48,7 +50,7 @@ export function TerminalPicker({ onClose }: { readonly onClose: () => void }) {
         <Command.Input
           autoFocus
           data-testid="snippet-picker-input"
-          placeholder="Run snippet · ⌥⏎ inserts"
+          placeholder={`Run snippet · ${formatKeybinding('Alt+Enter', detectPlatform())} inserts`}
           className="h-9 w-full border-b border-hairline bg-transparent px-3 text-md text-fg-default outline-none placeholder:text-fg-faint"
         />
         <Command.List className="max-h-[240px] overflow-auto p-1">

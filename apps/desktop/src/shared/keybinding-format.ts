@@ -38,6 +38,8 @@ const NAMED_KEYS: Readonly<Record<string, string>> = {
   arrowdown: 'arrowdown',
   pageup: 'pageup',
   pagedown: 'pagedown',
+  plus: '+',
+  minus: '-',
 };
 
 /**
