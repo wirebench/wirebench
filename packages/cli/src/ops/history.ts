@@ -27,7 +27,7 @@ export interface HistoryRow {
   readonly at: string;
   /** The item path `send` takes, as it was when the entry was written. */
   readonly item: string;
-  readonly kind: 'soap' | 'rest' | 'grpc' | 'websocket';
+  readonly kind: 'soap' | 'rest' | 'grpc' | 'websocket' | 'mcp';
   readonly method?: string;
   /** Absent when the send got no response. */
   readonly status?: number;

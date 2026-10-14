@@ -56,6 +56,9 @@ const ADDED = [
   'serializeMcpCatalogue',
   'parseMcpCatalogue',
   'mcpCataloguePath',
+  'buildMcpHistoryEntry',
+  'historyMcpOf',
+  'redactMcpExchange',
 ] as const;
 
 /** 2.x name, 3.0 name. */

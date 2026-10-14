@@ -84,6 +84,8 @@ export interface McpMessage {
   /** The message as it went or came. Empty for a received message over the size cap, which is not kept. */
   readonly text: string;
   readonly warnings: readonly string[];
+  /** Never set by a session: History's cap sets it on a message whose text it left out. */
+  readonly payloadTruncated?: true;
 }
 
 /** How the server answered the operation. */

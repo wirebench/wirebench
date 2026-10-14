@@ -153,9 +153,9 @@ tests.
 **Files:** new `mcp/history-entry.ts`, `project/history.ts` (the `mcp` kind and a restated `HistoryMcp`
 shape), `server-api/audit.ts`, `index.ts`, tests (`history-shapes`, redaction).
 
-- [ ] `buildMcpHistoryEntry`, `historyMcpOf` (caps the messages, as `capFrames` caps frames) and
+- [x] `buildMcpHistoryEntry`, `historyMcpOf` (caps the messages, as `capFrames` caps frames) and
   `redactMcpExchange` (masks secrets in messages, env, headers and stderr).
-- [ ] Tests: capping, masking, the shapes stay equal.
+- [x] Tests: capping, masking, the shapes stay equal.
 
 ### Task 9: Scripting facet
 

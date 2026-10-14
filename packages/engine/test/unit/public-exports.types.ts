@@ -57,6 +57,10 @@ export type Added = [
   Engine.McpTransport,
   Engine.McpCatalogue,
   Engine.McpCatalogueInfo,
+  Engine.McpExchange,
+  Engine.McpHistoryInput,
+  Engine.McpHistoryMasks,
+  Engine.HistoryMcp,
 ];
 
 /** Every type 3.0 renames, under its new name. */

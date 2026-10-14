@@ -171,7 +171,7 @@ export const DESKTOP_AUDIT_LIMITS = {
 
 /** One request the desktop sent. Metadata only: no headers, no body, no response. */
 export const desktopRequestSentDetailsSchema = z.strictObject({
-  protocol: z.enum(['rest', 'soap', 'grpc', 'websocket']),
+  protocol: z.enum(['rest', 'soap', 'grpc', 'websocket', 'mcp']),
   method: z.string().min(1).max(256).nullable(),
   url: z.string().min(1).max(DESKTOP_AUDIT_LIMITS.maxUrlLength),
   status: z.number().int().nullable(),

@@ -107,6 +107,10 @@ export type { CommandFingerprintInput } from './mcp/approval.js';
 export { mcpItemFor } from './mcp/run.js';
 export type { McpResolvedInput, McpSelected } from './mcp/run.js';
 export type { McpLiveEvent } from './mcp/events.js';
+// One MCP send as History records it, for every host that writes History.
+export { buildMcpHistoryEntry, historyMcpOf, redactMcpExchange } from './mcp/history-entry.js';
+export type { McpHistoryInput, McpHistoryMasks } from './mcp/history-entry.js';
+export type { McpExchange, McpExchangeTransport } from './mcp/exchange.js';
 export { wssConfigsOf, withWssConfigs } from './wss/project.js';
 export type { WssConfigs } from './wss/project.js';
 export type { UnsupportedContainer } from './project/model.js';
@@ -1235,6 +1239,10 @@ export type {
   HistoryHeader,
   HistoryListQuery,
   HistoryLockOptions,
+  HistoryMcp,
+  HistoryMcpHttpCall,
+  HistoryMcpMessage,
+  HistoryMcpTransport,
   HistoryOptions,
   HistoryContract,
   HistorySse,

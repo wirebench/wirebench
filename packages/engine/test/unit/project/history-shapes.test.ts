@@ -1,5 +1,15 @@
 import { describe, expectTypeOf, it } from 'vitest';
-import type { HistoryContract, HistorySseRow, HistoryWsFrame } from '../../../src/project/history.js';
+import type { McpExchangeTransport } from '../../../src/mcp/exchange.js';
+import type { McpHttpCall } from '../../../src/mcp/http-calls.js';
+import type { McpMessage } from '../../../src/mcp/session.js';
+import type {
+  HistoryContract,
+  HistoryMcpHttpCall,
+  HistoryMcpMessage,
+  HistoryMcpTransport,
+  HistorySseRow,
+  HistoryWsFrame,
+} from '../../../src/project/history.js';
 import type { RestContractResult } from '../../../src/rest/contract-check.js';
 import type { SseRow } from '../../../src/http/sse.js';
 import type { WsFrame } from '../../../src/ws/model.js';
@@ -18,5 +28,11 @@ describe('history record shapes', () => {
 
   it('keeps a contract result as the REST module defines it', () => {
     expectTypeOf<HistoryContract>().toEqualTypeOf<RestContractResult>();
+  });
+
+  it('keeps an MCP message, HTTP call and transport as the MCP module defines them', () => {
+    expectTypeOf<HistoryMcpMessage>().toEqualTypeOf<McpMessage>();
+    expectTypeOf<HistoryMcpHttpCall>().toEqualTypeOf<McpHttpCall>();
+    expectTypeOf<HistoryMcpTransport>().toEqualTypeOf<McpExchangeTransport>();
   });
 });

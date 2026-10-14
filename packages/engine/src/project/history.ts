@@ -16,6 +16,7 @@ import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ulid } from 'ulidx';
 import { ProjectError } from '../errors.js';
+import type { Timings } from '../http/types.js';
 import { isNotFound, nodeFs, readFileIfExists, writeFileAtomic } from './fs.js';
 import type { FsLike } from './fs.js';
 
@@ -173,6 +174,93 @@ export interface HistorySse {
 }
 
 /**
+ * One JSON-RPC message of an MCP session as History keeps it: the MCP module's `McpMessage`,
+ * restated for the same reason as {@link HistoryWsFrame}.
+ */
+export interface HistoryMcpMessage {
+  readonly direction: 'sent' | 'received';
+  /** ISO 8601. */
+  readonly at: string;
+  /** UTF-8 bytes. */
+  readonly size: number;
+  readonly kind: 'request' | 'notification' | 'result' | 'error' | 'invalid';
+  readonly id?: string | number;
+  readonly method?: string;
+  readonly text: string;
+  readonly warnings: readonly string[];
+  /** Set when History's cap left the message's text out. */
+  readonly payloadTruncated?: true;
+}
+
+/**
+ * One HTTP call of an MCP session as History keeps it: the MCP module's `McpHttpCall`, restated
+ * for the same reason as {@link HistoryWsFrame}.
+ */
+export interface HistoryMcpHttpCall {
+  readonly method: string;
+  readonly url: string;
+  /** ISO 8601. */
+  readonly startedAt: string;
+  /** `0` when no response came. */
+  readonly status: number;
+  readonly requestHeaders: Readonly<Record<string, string>>;
+  readonly responseHeaders: Readonly<Record<string, string>>;
+  readonly timings?: Timings;
+  readonly message?: { readonly id?: string | number; readonly method?: string };
+  readonly error?: string;
+}
+
+/**
+ * The transport an MCP send went over as History keeps it: the MCP module's
+ * `McpExchangeTransport`, restated for the same reason as {@link HistoryWsFrame}.
+ */
+export type HistoryMcpTransport =
+  | {
+      readonly type: 'stdio';
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly cwd: string;
+      readonly env: Readonly<Record<string, string>>;
+    }
+  | { readonly type: 'http' | 'sse'; readonly url: string };
+
+/**
+ * The MCP side of a history entry: one session's operation, how the server answered it, and a
+ * capped transcript of its JSON-RPC messages (the MCP module's `historyMcpOf` caps it, as a
+ * WebSocket session's frames are capped), with the HTTP calls or the stdio server's stderr beside it.
+ */
+export interface HistoryMcp {
+  readonly transport: HistoryMcpTransport;
+  /** The operation's JSON-RPC method: `tools/call`, `resources/read`, … */
+  readonly method: string;
+  /** ISO 8601. */
+  readonly startedAt: string;
+  readonly protocolVersion?: string;
+  /** The server's `serverInfo` from its `initialize` result, when it gave one. */
+  readonly serverInfo?: { readonly name: string; readonly version: string };
+  readonly messages: readonly HistoryMcpMessage[];
+  /** Messages the session itself did not keep, past its own cap. */
+  readonly droppedMessages: number;
+  /** Set only when History's cap trimmed something (messages, or just a message's text). */
+  readonly truncated?: boolean;
+  /** How many messages History's head/tail cap left out; absent when only a text was stripped. */
+  readonly omittedMessages?: number;
+  readonly httpCalls?: readonly HistoryMcpHttpCall[];
+  readonly stderr?: string;
+  readonly stderrTruncated?: boolean;
+  readonly exitCode?: number | null;
+  readonly exitSignal?: string | null;
+  /** The operation's result; absent when there was none, or it was too large to keep beside its message. */
+  readonly result?: unknown;
+  /** Set when a result came but was too large to keep here; its message may still hold it. */
+  readonly resultOmitted?: true;
+  readonly error?: { readonly code: number; readonly message: string; readonly data?: unknown };
+  /** Why the session could not finish; absent when it did. */
+  readonly failure?: { readonly code: string; readonly message: string };
+  readonly warnings: readonly string[];
+}
+
+/**
  * One recorded send. Stored **already redacted** by the caller — this module has no concept of
  * secrets and never inspects `request`/`response` bodies beyond storing and searching them.
  */
@@ -187,7 +275,7 @@ export interface HistoryEntry {
    * several — a gRPC server stream — extends this union with its own shape rather than bending
    * this one, which is why the field exists before there is a second value for it to hold.
    */
-  readonly kind?: 'soap' | 'rest' | 'grpc' | 'websocket';
+  readonly kind?: 'soap' | 'rest' | 'grpc' | 'websocket' | 'mcp';
   /** The HTTP method, for a REST send. A SOAP send is always a POST and does not record one. */
   readonly method?: string;
   /** ISO-8601 timestamp of the send. */
@@ -223,6 +311,8 @@ export interface HistoryEntry {
   readonly grpc?: HistoryGrpc;
   /** The session record of a WebSocket send; absent for the other protocols. */
   readonly ws?: HistoryWs;
+  /** The session record of an MCP send; absent for the other protocols. */
+  readonly mcp?: HistoryMcp;
   /** The event-stream record of a REST send whose response was `text/event-stream`; absent otherwise. */
   readonly sse?: HistorySse;
   /** How a REST response compared with its OpenAPI contract; absent when it was not checked. */
@@ -325,6 +415,7 @@ function matches(entry: HistoryEntry, needle: string): boolean {
     entry.grpc?.statusName ?? '',
     entry.ws?.url ?? '',
     entry.ws?.protocol ?? '',
+    entry.mcp?.method ?? '',
     entry.status !== undefined ? String(entry.status) : '',
     entry.fault?.reason ?? '',
     ...(entry.tags ?? []),
