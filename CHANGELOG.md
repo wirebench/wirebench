@@ -22,6 +22,16 @@ All notable changes to this project are documented here. The format follows
   can't run stays listed, greyed, with the reason. **History: Re-send Last Request** re-sends the
   newest entry of any protocol. A REST request's menu gains **Send**, **Copy as cURL**,
   **Copy URL**, **Run…** (the Runner on that one request) and **Move to…** (#543).
+- **One variable syntax for data runs, honest runner marks and visible inherited settings.** A data
+  file's column is now read as `${column}`, like every other variable, in the Runner,
+  `wirebench run --data` and scheduled server runs; it comes last in the lookup, after Global, so it
+  never hides a property, and `${#Data#column}` keeps working. While a Runner tab with a data file is
+  open, its columns are offered when you type `${` in a request it runs, and `${#Data#…}` is no longer marked unresolved. In
+  the Runner's results a request with no checks shows a grey ring instead of a green tick, and an amber
+  mark when it got a 4xx or 5xx. A REST request's Settings tab shows each inherited value in its empty
+  field, with a **from …** link to where it is set and **Inherit** on a changed checkbox; the timeout
+  now names the project's Default timeout, which is what a send uses. Swagger 2.0 path parameters are
+  filled from `x-example` on import (#560).
 - **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
   forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
   (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
