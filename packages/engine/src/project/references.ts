@@ -28,7 +28,7 @@ export interface PropertyReference {
 }
 
 /** The scopes `${#Scope#name}` may name, as `properties.ts` accepts them. */
-const SCOPES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System', 'Sequence', 'Dynamic']);
+const SCOPES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System', 'Sequence', 'Data', 'Dynamic']);
 
 /** A dynamic generator's name, without the `(…)` arguments it may be given. */
 function generatorName(text: string): string {

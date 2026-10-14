@@ -7,7 +7,9 @@
  * - what to offer there, and what accepting an item writes;
  * - what one reference resolves to, against the request's `request.variables` list;
  * - which references to mark as unresolved;
- * - the text a variable is referenced by: `${name}` when the chain reaches its scope, else explicit.
+ * - the text a variable is referenced by: `${name}` when the chain reaches its scope, else explicit;
+ * - the columns of a Runner data file that runs the request (#560): offered after the chain, as the
+ *   shorthand reaches them last, and never marked unresolved as `${#Data#…}` while none is known.
  *
  * A masked value is shown only as `••••••`: the list never carries it in the first place.
  */
@@ -19,8 +21,11 @@ import {
 } from '@wirebench/engine/rest';
 import type { RequestVariablesResponse, RequestVariableWire, VariableEditTargetWire } from '../../shared/wire-base.js';
 
-/** What `request.variables` answered for one request. */
-export type RequestVariables = RequestVariablesResponse;
+/**
+ * What `request.variables` answered for one request, plus the columns of a Runner data file that runs
+ * it, when one is chosen in an open Runner tab (#560).
+ */
+export type RequestVariables = RequestVariablesResponse & { readonly dataColumns?: readonly string[] };
 export type VariableScope = RequestVariableWire['scope'];
 
 /** How a scope reads in the editor. */
@@ -38,6 +43,15 @@ const SCOPES: readonly VariableScope[] = ['Env', 'Project', 'Workspace', 'Global
 /** The scope of the generated values (#333): `${#Dynamic#name}`, or `${$name}` for short. */
 const DYNAMIC = 'Dynamic';
 
+/** The scope of a data-driven run's row (#336): `${#Data#column}`, or `${column}` last in the chain. */
+const DATA = 'Data';
+
+/** How a data column reads in a list or a hover. */
+const DATA_LABEL = 'Data row';
+
+/** What a data column's value is, since only a run has one. */
+const DATA_TEXT = "A column of the Runner's data file: each iteration reads it from its own row.";
+
 /** The mask a secret-backed value is shown as. */
 export const MASK = '••••••';
 
@@ -46,7 +60,8 @@ export type CompletionContext =
   | { readonly kind: 'name'; readonly scope?: VariableScope; readonly prefix: string; readonly start: number }
   | { readonly kind: 'scope'; readonly prefix: string; readonly start: number }
   | { readonly kind: 'secret'; readonly prefix: string; readonly start: number }
-  | { readonly kind: 'dynamic'; readonly prefix: string; readonly start: number };
+  | { readonly kind: 'dynamic'; readonly prefix: string; readonly start: number }
+  | { readonly kind: 'data'; readonly prefix: string; readonly start: number };
 
 // Each one anchored at the caret, and never behind the `$${` escape.
 const SCOPED_NAME = /(?<!\$)\$\{#([A-Za-z]+)#([^\s{}#$]*)$/;
@@ -64,10 +79,11 @@ export function completionContext(before: string): CompletionContext | undefined
   }
   const scoped = SCOPED_NAME.exec(before);
   if (scoped !== null) {
+    const prefix = scoped[2]!;
+    if (scoped[1] === DATA) return { kind: 'data', prefix, start: before.length - prefix.length };
     const scope = scoped[1] as VariableScope;
     // An unknown scope has nothing to offer.
     if (!SCOPES.includes(scope)) return undefined;
-    const prefix = scoped[2]!;
     return { kind: 'name', scope, prefix, start: before.length - prefix.length };
   }
   const scope = SCOPE.exec(before);
@@ -124,7 +140,19 @@ export function completionItems(
         ...(matches(DYNAMIC)
           ? [{ label: DYNAMIC, insertText: `${DYNAMIC}#`, detail: 'Generated on each send', documentation: '' }]
           : []),
+        ...((variables.dataColumns?.length ?? 0) > 0 && matches(DATA)
+          ? [{ label: DATA, insertText: `${DATA}#`, detail: DATA_LABEL, documentation: '' }]
+          : []),
       ];
+    case 'data':
+      return (variables.dataColumns ?? [])
+        .filter((column) => matches(column))
+        .map((column) => ({
+          label: column,
+          insertText: `${column}${brace}`,
+          detail: DATA_LABEL,
+          documentation: DATA_TEXT,
+        }));
     case 'dynamic':
       return DYNAMIC_GENERATORS.filter((generator) => matches(generator.name)).map((generator) => ({
         label: generator.name,
@@ -164,7 +192,19 @@ export function completionItems(
           detail: 'Secret',
           documentation: MASK,
         }));
-      return [...names, ...secrets];
+      // A column comes after the chain: one a chain scope also defines is reached only explicitly.
+      const columns = (variables.dataColumns ?? [])
+        .filter((column) => matches(column))
+        .map((column) => {
+          const shadowed = chainEntry(column, variables) !== undefined;
+          return {
+            label: column,
+            insertText: `${shadowed ? `#${DATA}#` : ''}${column}${brace}`,
+            detail: shadowed ? `${DATA_LABEL} (shadowed)` : DATA_LABEL,
+            documentation: DATA_TEXT,
+          };
+        });
+      return [...names, ...columns, ...secrets];
     }
   }
 }
@@ -186,6 +226,7 @@ export type ReferenceStatus =
   | { readonly status: 'resolved'; readonly entry: RequestVariableWire }
   | { readonly status: 'dynamic'; readonly generator: DynamicGeneratorInfo }
   | { readonly status: 'secret'; readonly name: string }
+  | { readonly status: 'data'; readonly name: string }
   | { readonly status: 'unresolved'; readonly name: string }
   | { readonly status: 'unknown' };
 
@@ -204,10 +245,19 @@ export function classifyReference(
   switch (reference.form) {
     case 'shorthand': {
       const entry = chainEntry(reference.name, variables);
-      return entry === undefined ? unresolved : { status: 'resolved', entry };
+      if (entry !== undefined) return { status: 'resolved', entry };
+      return variables.dataColumns?.includes(reference.name) === true
+        ? { status: 'data', name: reference.name }
+        : unresolved;
     }
     case 'scoped': {
       if (reference.scope === 'Sequence') return { status: 'unknown' };
+      if (reference.scope === DATA) {
+        // Only a run has a row: without a known column, a send is the only judge.
+        return variables.dataColumns?.includes(reference.name) === true
+          ? { status: 'data', name: reference.name }
+          : { status: 'unknown' };
+      }
       const entry = variables.entries.find(
         (candidate) => candidate.scope === reference.scope && candidate.name === reference.name,
       );
@@ -272,6 +322,8 @@ export function hoverContent(status: ReferenceStatus, raw: string): HoverContent
       };
     case 'secret':
       return { title: status.name, scope: 'Secret', value: MASK };
+    case 'data':
+      return { title: status.name, scope: DATA_LABEL, value: DATA_TEXT };
     case 'dynamic':
       return {
         title: `$${status.generator.name}`,

@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { RunnerTab, resultMark } from '../../src/renderer/features/runner/runner-tab.js';
-import { subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
+import { dataColumnsFor, subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type {
   RunnerRequestResult,
@@ -254,6 +254,25 @@ describe('resultMark (#560)', () => {
       tone: 'text-status-danger',
     });
     expect(resultMark({ outcome: 'skipped', assertions: [] }).mark).toBe('–');
+  });
+
+  it('gives a request the columns of every open target that runs it with a readable data file', () => {
+    const other: RunnerState = {
+      ...STATE,
+      targetId: 'folder-1',
+      requests: [{ id: 'me', name: 'Me', path: 'Shop/Me', protocol: 'rest' }],
+      data: { name: 'more.csv', columns: ['password', 'otp'], rows: 1 },
+    };
+    const broken: RunnerState = {
+      ...STATE,
+      targetId: 'folder-2',
+      data: { name: 'gone.csv', columns: ['x'], rows: 0, error: { code: 'data-file-unreadable', message: 'gone' } },
+    };
+    const targets = { [STATE.targetId]: STATE, [other.targetId]: other, [broken.targetId]: broken };
+    expect(dataColumnsFor(targets, 'me')).toEqual(['user', 'password', 'otp']);
+    expect(dataColumnsFor(targets, 'login')).toEqual(['user', 'password']);
+    expect(dataColumnsFor(targets, 'elsewhere')).toEqual([]);
+    expect(dataColumnsFor(targets, undefined)).toEqual([]);
   });
 
   it('teaches the ${column} form in the hint', async () => {
