@@ -303,10 +303,10 @@ tests.
 
 **Files:** new `e2e/specs/mcp-request.spec.ts`, and an e2e fixture server (stdio) under `e2e/fixtures/`.
 
-- [ ] Create a stdio server pointing at the fixture, then approve it and refresh the catalogue.
-- [ ] Create a request from a tool, send it, and see the result.
-- [ ] Call the tool that sets `isError` and see the error status.
-- [ ] Run it in CI only.
+- [x] Create a stdio server pointing at the fixture, then approve it and refresh the catalogue.
+- [x] Create a request from a tool, send it, and see the result.
+- [x] Call the tool that sets `isError` and see the error status.
+- [x] Run it in CI only.
 
 ### Task 19: Docs and changelog
 
