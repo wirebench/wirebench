@@ -6,7 +6,7 @@ import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import { logExchange, makeExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
+import { logExchange, makeExchange, makeFailure, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 describe('StatusBar', () => {
   beforeEach(() => {
@@ -71,6 +71,28 @@ describe('StatusBar', () => {
     render(<StatusBar />);
 
     expect(screen.getByText('503').className).toContain('text-status-danger');
+  });
+
+  it('reports a failure after a success as the last send, in red; a cancel stays neutral', () => {
+    useExchangesStore.setState({
+      log: [
+        logExchange(makeExchange()),
+        {
+          kind: 'failure',
+          failure: makeFailure({ durationMs: 3, error: { code: 'connection-refused', message: 'x' } }),
+        },
+      ],
+    });
+    const { unmount } = render(<StatusBar />);
+    expect(screen.getByTestId('status-bar-last').textContent).toBe('last: Connection refused in 3.0 ms');
+    expect(screen.getByText('Connection refused').className).toContain('text-status-danger');
+    unmount();
+
+    useExchangesStore.setState({
+      log: [{ kind: 'failure', failure: makeFailure({ error: { code: 'aborted', message: 'x' } }) }],
+    });
+    render(<StatusBar />);
+    expect(screen.getByText('Cancelled').className).not.toContain('danger');
   });
 
   it('summarises a WebSocket handshake as the last exchange, in a success tone', () => {

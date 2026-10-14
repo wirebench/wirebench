@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Command, defaultFilter } from 'cmdk';
-import type { CommandCategory, CommandDefinition } from '@shared/commands.js';
+import { Command } from 'cmdk';
+import type { CommandCategory } from '@shared/commands.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
+import { RENDERER_KINDS, rendererKind } from '../kinds/index.js';
 import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
 import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
@@ -16,14 +17,16 @@ import { startRun } from '../features/ssh/snippets/run.js';
 import { loadSnippets } from '../features/ssh/snippets/snippet-actions.js';
 import { useSnippetsStore } from '../features/ssh/snippets/snippets-store.js';
 import type { CommandContext } from '../lib/commands.js';
-import { listCommands, runCommand } from '../lib/commands.js';
+import { listPaletteCommands, runCommand, type PaletteCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
+import { paletteFilter, paletteKeywords } from './palette-filter.js';
 import type { QuickOpenEntry } from './quick-open.js';
 import {
   quickOpenEntries,
   quickOpenHostEntries,
+  quickOpenKindEntries,
   quickOpenLayoutEntries,
   quickOpenSnippetEntries,
   splitRecentHosts,
@@ -54,8 +57,6 @@ export interface CommandPaletteProps {
   /** Defaults to the command list; `quick-open` is ⌘P's operations/requests/hosts list, `hosts` the host picker. */
   readonly mode?: PaletteMode;
 }
-
-type Definition = CommandDefinition<CommandContext>;
 
 const GROUP_CLASS =
   '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-fg-faint [&_[cmdk-group-heading]]:uppercase';
@@ -124,33 +125,44 @@ function SnippetItem({
   );
 }
 
-function groupByCategory(commands: readonly Definition[]): readonly (readonly [CommandCategory, Definition[]])[] {
-  const groups = new Map<CommandCategory, Definition[]>();
-  for (const command of commands) {
-    const bucket = groups.get(command.category);
+function groupByCategory(rows: readonly PaletteCommand[]): readonly (readonly [CommandCategory, PaletteCommand[]])[] {
+  const groups = new Map<CommandCategory, PaletteCommand[]>();
+  for (const row of rows) {
+    const bucket = groups.get(row.command.category);
     if (bucket === undefined) {
-      groups.set(command.category, [command]);
+      groups.set(row.command.category, [row]);
     } else {
-      bucket.push(command);
+      bucket.push(row);
     }
   }
   return [...groups.entries()];
+}
+
+/** What {@link rankGroups} scores an item by. */
+interface PaletteNamed {
+  readonly category: string;
+  readonly label: string;
 }
 
 /**
  * The groups with the best match first, for a non-empty search. cmdk ranks the items inside a group
  * but leaves the groups in the order they were rendered (alphabetical by category), so "HTTP Log"
  * used to select a Secrets command over View's Show HTTP Log. Each group scores as its best item,
- * by the same filter and the same `category label` value the items are matched on; ties keep order.
+ * by the same filter, value and keywords the items are matched on; ties keep order.
+ *
+ * @param nameOf - A group item's command, for groups of palette rows rather than of commands.
  */
-export function rankGroups<
-  G extends readonly [CommandCategory, readonly { readonly category: string; readonly label: string }[]],
->(groups: readonly G[], search: string): readonly G[] {
+export function rankGroups<T, G extends readonly [CommandCategory, readonly T[]]>(
+  groups: readonly G[],
+  search: string,
+  nameOf: (item: T) => PaletteNamed = (item) => item as PaletteNamed,
+): readonly G[] {
   if (search.trim() === '') {
     return groups;
   }
-  const best = (commands: G[1]): number =>
-    Math.max(0, ...commands.map((command) => defaultFilter(`${command.category} ${command.label}`, search)));
+  const score = (named: PaletteNamed): number =>
+    paletteFilter(`${named.category} ${named.label}`, search, paletteKeywords(named));
+  const best = (items: G[1]): number => Math.max(0, ...items.map((item) => score(nameOf(item))));
   return groups
     .map((group, index) => ({ group, index, score: best(group[1]) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
@@ -162,23 +174,23 @@ export function rankGroups<
  * keybindings — and ⌘P, the same dialog in quick-open mode over operations and requests.
  */
 export function CommandPalette({ open, onOpenChange, context, mode = 'commands' }: CommandPaletteProps) {
-  // `listCommands` is filtered by `when`, whose predicates (e.g. "a workspace is open") read
+  // `listPaletteCommands` is filtered by `when`, whose predicates (e.g. "a workspace is open") read
   // stores that are *not* part of `context` (workspace, selection-adjacent project state, …), so
   // `context`'s own identity can stay unchanged across a state change that should still affect
   // what is listed. `open` is in the dependency list for exactly that reason: every reopen
   // re-evaluates `when` against the current world, rather than reusing whatever was computed the
   // last time `context` itself happened to change identity — which, before this, only reliably
   // happened once, coincidentally, from a library's mount-time resize callback.
-  const groups = useMemo(
-    () => groupByCategory(listCommands(context).filter((command) => command.paletteHidden !== true)),
-    [context, open],
-  );
+  const groups = useMemo(() => groupByCategory(listPaletteCommands(context)), [context, open]);
   const [search, setSearch] = useState('');
   // A new mode or a reopen starts from an empty search, as the keyed `Command` below does.
   useEffect(() => {
     setSearch('');
   }, [mode, open]);
-  const rankedGroups = useMemo(() => rankGroups(groups, search), [groups, search]);
+  const rankedGroups = useMemo(
+    () => rankGroups(groups, search, (row: PaletteCommand) => row.command),
+    [groups, search],
+  );
   const interfaces = useProjectStore((state) => state.interfaces);
   const requests = useProjectStore((state) => state.requests);
   const projectOf = useProjectStore((state) => state.projectOf);
@@ -187,9 +199,25 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
     () => Object.fromEntries(Object.entries(projects).map(([id, project]) => [id, project.name])),
     [projects],
   );
+  // Every other kind's saved requests, each kind listing its own (a switched-off kind lists none).
+  const project = useProjectStore((state) => state);
+  const enabledKinds = useUiStore((state) => state.enabledKinds);
+  const kindRequests = useMemo(
+    () =>
+      mode === 'quick-open'
+        ? RENDERER_KINDS.filter((kind) => enabledKinds.includes(kind.kind)).flatMap((kind) =>
+            quickOpenKindEntries(kind.kind, kind.requests.quickOpen?.(project) ?? [], {
+              folders: project.folders,
+              projectOf,
+              projectNames,
+            }),
+          )
+        : [],
+    [mode, enabledKinds, project, projectOf, projectNames],
+  );
   const entries = useMemo(
-    () => (mode === 'quick-open' ? quickOpenEntries(interfaces, requests, projectOf, projectNames) : []),
-    [mode, interfaces, requests, projectOf, projectNames],
+    () => (mode === 'quick-open' ? quickOpenEntries(interfaces, requests, projectOf, projectNames, kindRequests) : []),
+    [mode, interfaces, requests, projectOf, projectNames, kindRequests],
   );
   // A switched-off ssh area contributes no hosts, in quick-open or in the host picker.
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
@@ -302,6 +330,8 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           <Command
             key={mode}
             loop
+            // The commands rank a search naming their group first; the pickers keep cmdk's own order.
+            {...(picker ? {} : { filter: paletteFilter })}
             label={
               snippetsPicker
                 ? 'Snippets'
@@ -343,9 +373,12 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     key={entry.key}
                     value={entry.value}
                     data-testid="quick-open-item"
+                    data-kind={entry.requestKind ?? 'soap'}
                     onSelect={() => {
                       onOpenChange(false);
-                      if (entry.kind === 'request') {
+                      if (entry.requestKind !== undefined && entry.requestId !== undefined) {
+                        rendererKind(entry.requestKind).requests.open(entry.requestId);
+                      } else if (entry.kind === 'request') {
                         explorerActions.openRequest(entry.requestId);
                       } else {
                         explorerActions.newRequest(entry.interfaceId, entry.bindingName, entry.operationName);
@@ -438,22 +471,29 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                 </Command.Group>
               )}
               {!picker &&
-                rankedGroups.map(([category, commands]) => (
+                rankedGroups.map(([category, rows]) => (
                   <Command.Group key={category} heading={category} className={GROUP_CLASS}>
-                    {commands.map((command) => {
+                    {rows.map(({ command, disabledReason }) => {
                       const shortcut = effectiveShortcut(command);
                       return (
                         <Command.Item
                           key={command.id}
                           value={`${command.category} ${command.label}`}
+                          keywords={paletteKeywords(command)}
+                          // A command that cannot run here stays listed, greyed, saying why.
+                          disabled={disabledReason !== undefined}
+                          data-testid="palette-command"
                           onSelect={() => {
                             onOpenChange(false);
                             void runCommand(command.id, context);
                           }}
-                          className="flex cursor-default items-center justify-between rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                          className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[disabled=true]:text-fg-faint data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
                         >
-                          <span>{command.label}</span>
-                          {shortcut !== undefined && (
+                          <span className="min-w-0 truncate">{command.label}</span>
+                          {disabledReason !== undefined && (
+                            <span className="min-w-0 truncate text-xs text-fg-faint">{disabledReason}</span>
+                          )}
+                          {disabledReason === undefined && shortcut !== undefined && (
                             <span className="font-mono text-xs text-fg-subtle">
                               {formatKeybinding(shortcut, context.platform)}
                             </span>

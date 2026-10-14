@@ -1,4 +1,5 @@
 import { readdirSync, statSync } from 'node:fs';
+import { createServer, type AddressInfo } from 'node:net';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -182,9 +183,50 @@ test.describe('REST: make an API, send a request, read the response', () => {
 
     await sendRest(page);
 
-    await expect(responseStatus(page)).toContainText('rest-unresolved-properties');
+    await expect(responseStatus(page)).toContainText('Unresolved variables');
+    // The panel names the reference and keeps the code, small, under it.
+    await expect(page.getByTestId('send-error-reference')).toHaveText('${#Env#missing}');
+    await expect(page.getByTestId('send-error-code')).toHaveText('rest-unresolved-properties');
     // And nothing reached the server.
     expect(server.requests.filter((request) => request.url.startsWith('/pet'))).toHaveLength(0);
+  });
+
+  test('a refused connection shows the error panel, and Retry sends again', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+    // A port that was free a moment ago: nothing listens there, so the connect is refused.
+    const closedPort = await new Promise<number>((resolve) => {
+      const probe = createServer();
+      probe.listen(0, '127.0.0.1', () => {
+        const { port } = probe.address() as AddressInfo;
+        probe.close(() => {
+          resolve(port);
+        });
+      });
+    });
+
+    await createWorkspace(page, 'REST');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Refused');
+    await setMethodAndUrl(page, 'GET', `http://127.0.0.1:${String(closedPort)}/echo`);
+
+    await sendRest(page);
+
+    await expect(responseStatus(page)).toHaveText('Connection refused');
+    const panel = page.getByTestId('send-error-panel');
+    await expect(panel).toBeVisible();
+    await expect(page.getByTestId('send-error-hint')).toContainText('Nothing is listening');
+    await expect(page.getByTestId('send-error-code')).toHaveText('connection-refused');
+    await expect(page.getByText('Send the request to see its response.')).toHaveCount(0);
+
+    // Point it at the live server and Retry from the panel: the same request goes again.
+    await setMethodAndUrl(page, 'GET', `${server.url}/echo`);
+    await page.getByTestId('send-error-retry').click();
+    await expect(responseStatus(page)).toContainText('200', { timeout: 20_000 });
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByTestId('status-bar-last')).toContainText('200');
   });
 
   test('an environment override points the next send at a second server', async () => {

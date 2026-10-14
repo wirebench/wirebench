@@ -110,12 +110,19 @@ export function toHttpError(
     readonly deadlineHit: boolean;
     readonly hadProxy?: boolean;
     readonly host?: string;
+    /** The limit the deadline enforced; a `timeout` carries it as `details.timeoutMs` so the app can name it. */
+    readonly timeoutMs?: number;
   },
 ): HttpError {
   const code = nodeErrorCode(err);
 
   if (options.deadlineHit) {
-    return new HttpError('timeout' satisfies HttpErrorCode, 'The request timed out.', optionsFor(err, code));
+    const base = optionsFor(err, code);
+    return new HttpError(
+      'timeout' satisfies HttpErrorCode,
+      'The request timed out.',
+      options.timeoutMs === undefined ? base : { ...base, details: { ...base.details, timeoutMs: options.timeoutMs } },
+    );
   }
   if (options.userAborted || isAbortError(err)) {
     return new HttpError('aborted' satisfies HttpErrorCode, 'The request was aborted.', optionsFor(err, code));

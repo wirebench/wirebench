@@ -168,17 +168,17 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
-| Send REST Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
+| REST: Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | REST: Copy as cURL | — | — |
 | REST: Import cURL… | — | — |
 | REST: Get OAuth2 Token | — | — |
-| Send gRPC Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
+| gRPC: Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | gRPC: Copy as Command | — | — |
 | WebSocket: Connect or Send Selected Message | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | WebSocket: Disconnect | — | — |
 | WebSocket: Send Selected Message | — | — |
 | WebSocket: Copy as Command | — | — |
-| Send MCP Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
+| MCP: Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | MCP: Cancel Request | — | — |
 | Sequence: Run | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Sequence: Cancel Run | — | — |
@@ -246,7 +246,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
-| History: Re-send Last SOAP Request | — | — |
+| History: Re-send Last Request | — | — |
 | History: Compare Last Two Sends | — | — |
 | History: Delete All Entries | — | — |
 

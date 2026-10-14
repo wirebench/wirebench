@@ -11,7 +11,6 @@ import { useEditorsStore, type EditorTab } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { rendererKindOf } from '../../kinds/index.js';
 import { useUiStore } from '../../state/ui.js';
-import { ipc } from '../../state/ipc-client.js';
 import { formatClockTime } from '../../lib/format-size.js';
 import type { HistoryEntryWire } from '../../../shared/wire-types.js';
 import type { RestExchangeSummary } from '../../../shared/kinds/rest/wire.js';
@@ -54,32 +53,25 @@ export async function resendHistoryEntry(entry: Pick<HistoryEntryWire, 'id' | 'k
   }
 }
 
-/** Only SOAP entries are what `history.resendLast` replays. */
-function isSoapEntry(entry: Pick<HistoryEntryWire, 'kind'>): boolean {
-  return (entry.kind ?? 'soap') === 'soap';
-}
-
 /**
- * Re-sends the most recent SOAP history entry, or says there is none.
+ * Re-sends the most recent entry History can re-send, whatever its kind, or says there is none.
  *
- * Only SOAP can be replayed, so the newest entry overall is not always the one this re-sends.
- * When it is not, the entry that *is* being re-sent is named — a command called "re-send the last
- * request" must never quietly replay something older than the row at the top of History.
+ * A WebSocket session, an MCP call and a REST event stream cannot be replayed from History, so the
+ * newest entry overall is not always the one this re-sends. When it is not, the entry that *is* being
+ * re-sent is named — a command called "re-send the last request" must never quietly replay something
+ * older than the row at the top of History.
  */
 export async function resendLastHistoryEntry(): Promise<void> {
   const entries = useHistoryStore.getState().entries;
-  const entry = entries.find(isSoapEntry);
+  const entry = entries.find(canResendHistoryEntry);
   if (entry === undefined) {
-    showToast('Nothing to re-send: only a SOAP entry can be re-sent from History.');
+    showToast('Nothing to re-send: no entry in History can be re-sent.');
     return;
   }
   if (entry.id !== entries[0]?.id) {
-    showToast(`Re-sending the newest SOAP entry: ${entry.requestName} (${formatClockTime(entry.at)}).`);
+    showToast(`Re-sending the newest entry that can be re-sent: ${entry.requestName} (${formatClockTime(entry.at)}).`);
   }
-  const result = await ipc().history.resend({ id: entry.id });
-  if (!result.ok) {
-    showToast(resendFailure(result.error));
-  }
+  await resendHistoryEntry(entry);
 }
 
 /** One side of a Compare tab: a History entry, a REST request's latest exchange, or a bare body. */

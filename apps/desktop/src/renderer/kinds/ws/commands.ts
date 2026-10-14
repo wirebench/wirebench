@@ -1,4 +1,4 @@
-import { folderOf, insideKindApi } from '../../commands/command-helpers.js';
+import { kindTarget } from '../../commands/command-helpers.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { registerCommand } from '../../lib/commands.js';
@@ -22,10 +22,11 @@ export function registerWsCommands(): void {
   });
   registerCommand({
     ...catalogEntry('ws.newRequest'),
-    when: (ctx) => insideKindApi('websocket', ctx.selection),
+    when: (ctx) => kindTarget('websocket', ctx.selection) !== undefined,
     whenScope: 'selection.wsApi',
     run: (ctx) => {
-      explorerActions.newWsRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+      const target = kindTarget('websocket', ctx.selection);
+      explorerActions.newWsRequest(target?.apiId, target?.folderId);
     },
   });
   // A WebSocket tab's `Mod+Enter` is its next step: connect a closed session, or send the selected

@@ -149,6 +149,16 @@ describe('sendRest', () => {
     expect(useProblemsStore.getState().items.map((item) => item.problem.code)).toContain('dns');
   });
 
+  it('records no Problem for a cancel or a declined protected-environment prompt', async () => {
+    sendRest.mockResolvedValue({ ok: false, error: { code: 'aborted', message: 'The request was aborted.' } });
+    await useExchangesStore.getState().sendRest('rest-1');
+    sendRest.mockResolvedValue({ ok: false, error: { code: 'send-declined', message: 'Not sent' } });
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    expect(useExchangesStore.getState().restByRequest['rest-1']).toMatchObject({ status: 'error' });
+    expect(useProblemsStore.getState().items).toEqual([]);
+  });
+
   it('reports the property references main could not resolve', async () => {
     sendRest.mockResolvedValue({
       ok: true,
