@@ -195,6 +195,24 @@ describe('SessionLogStore', () => {
     expect(existsSync(join(root, WS, 'web'))).toBe(true);
     await live.end(undefined);
   });
+
+  it('lists every host’s logs, newest first, when no host is named (#534)', async () => {
+    const { logs } = store({ clock: ticking() });
+    for (const [host, id] of [
+      ['web', 'a1111111'],
+      ['db', 'b2222222'],
+      ['web', 'c3333333'],
+    ] as const) {
+      await logs.start(start({ hostId: host, sessionId: id })).end({ code: 0, reason: 'exit' });
+    }
+    const all = await logs.list(WS);
+    expect(all.map((e) => [e.hostId, e.id.slice(-8)])).toEqual([
+      ['web', 'c3333333'],
+      ['db', 'b2222222'],
+      ['web', 'a1111111'],
+    ]);
+    expect(await logs.list('other-workspace')).toEqual([]);
+  });
 });
 
 describe('sessionLogPlanner', () => {
