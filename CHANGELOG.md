@@ -265,6 +265,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
+  response", the response pane names the failure in plain words (**Connection refused**, **Host not
+  found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers
+  **Retry**; the code stays as small text under it. A timeout names the limit it hit and links the
+  request's Settings tab; each unresolved `${name}` links to the field it was written in. Your own
+  Cancel reads as a neutral **Cancelled**, and neither a cancel nor a declined protected-environment
+  prompt adds a Problem. The status bar's **last:** now shows the latest send, failures included. A
+  URL with `://` but no valid scheme or host (`ht!tp:// bad url`) is refused before sending, with the
+  reason under the URL field, where it used to go out as a path under the base URL (#541).
 - **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
   how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
   terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a
