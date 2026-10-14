@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import type {
@@ -20,51 +20,32 @@ import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
 import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
-import { ancestorsOf, findGroup, findHost, freeId, upsertGroup, upsertHost, useHostsStore } from './hosts-store.js';
-import { INPUT_CLASS, InheritedField, InheritedSwitch, type Provenance } from './inherited-field.js';
+import {
+  ancestorsOf,
+  findGroup,
+  findHost,
+  flattenGroups,
+  freeId,
+  moveHost,
+  upsertGroup,
+  upsertHost,
+  useHostsStore,
+} from './hosts-store.js';
+import { INPUT_CLASS, InheritedField, InheritedSwitch, sourceText } from './inherited-field.js';
+import {
+  chainOf,
+  dropEmpty,
+  inheritedFrom,
+  inheritedProtected,
+  initialGroup,
+  missingFields,
+  passwordSecretName,
+  slug,
+  withField,
+} from './host-form-model.js';
+import { useSecretNames } from './secret-fields.js';
 
 type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout';
-
-/** Where `field` comes from for an entry inside `chain` (outermost group first): nearest group that sets it. */
-function inheritedFrom<K extends keyof SshSettingsWire>(
-  chain: readonly GroupEntryWire[],
-  field: K,
-): Provenance<NonNullable<SshSettingsWire[K]>> {
-  for (const g of [...chain].reverse()) {
-    const value = g.ssh[field];
-    if (value !== undefined) return { value, from: { group: g.name } };
-  }
-  const fallback = (SSH_DEFAULTS as Record<string, number>)[field];
-  return { value: fallback as NonNullable<SshSettingsWire[K]> | undefined, from: 'default' };
-}
-
-/** Whether the enclosing groups make an entry protected: the nearest group that says, else off by default. */
-function inheritedProtected(chain: readonly GroupEntryWire[]): Provenance<boolean> {
-  for (const g of [...chain].reverse()) {
-    if (g.protected !== undefined) return { value: g.protected, from: { group: g.name } };
-  }
-  return { value: false, from: 'default' };
-}
-
-function slug(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'host'
-  );
-}
-
-/** An override left empty is not saved: it would be a literal empty string in the file. */
-function dropEmpty(ssh: SshSettingsWire): SshSettingsWire {
-  return Object.fromEntries(Object.entries(ssh).filter(([, v]) => v !== ''));
-}
-
-function withField(ssh: SshSettingsWire, key: keyof SshSettingsWire, value: unknown): SshSettingsWire {
-  const { [key]: dropped, ...rest } = ssh;
-  void dropped;
-  return value === undefined ? rest : { ...rest, [key]: value };
-}
 
 interface FormProps {
   readonly file: HostsFileWire;
@@ -73,8 +54,29 @@ interface FormProps {
   readonly embedded?: boolean;
 }
 
+/** The login name on this machine, which a new host's User starts from; empty until main answers, or if it cannot. */
+function useLocalUser(): string {
+  const [name, setName] = useState('');
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => ipc().ssh.localUser(undefined))
+      .then((result) => {
+        if (live && result.ok) setName(result.value.name);
+      })
+      // Without it the field starts empty and Save says User is required.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return name;
+}
+
+const FIELD_CLASS = 'flex flex-col gap-1 text-xs';
+
 export function HostForm({ file, dialog, embedded = false }: FormProps) {
-  const { save, closeDialog, problems, resolved } = useHostsStore();
+  const { save, closeDialog, problems, resolved, groupFilter } = useHostsStore();
   const isHost = dialog.mode === 'new-host' || dialog.mode === 'edit-host';
   const editing = dialog.mode === 'edit-host' || dialog.mode === 'edit-group';
   const existing =
@@ -83,29 +85,33 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       : dialog.mode === 'edit-group'
         ? findGroup(file, dialog.id)
         : undefined;
-  const parent = dialog.mode === 'new-host' || dialog.mode === 'new-group' ? dialog.parent : undefined;
+  // The group a host sits in now; Save moves it when the Group select changes.
+  const [currentGroup] = useState(() =>
+    dialog.mode === 'edit-host' ? ancestorsOf(file, 'host', dialog.id).at(-1)?.id : undefined,
+  );
+  const [groupId, setGroupId] = useState(() =>
+    dialog.mode === 'new-host' || dialog.mode === 'new-group'
+      ? initialGroup(file, dialog.parent, groupFilter)
+      : currentGroup,
+  );
   const chain: GroupEntryWire[] =
-    dialog.mode === 'edit-host'
-      ? ancestorsOf(file, 'host', dialog.id)
-      : dialog.mode === 'edit-group'
-        ? ancestorsOf(file, 'group', dialog.id)
-        : parent === undefined
-          ? []
-          : [
-              ...ancestorsOf(file, 'group', parent),
-              ...(findGroup(file, parent) ? [findGroup(file, parent) as GroupEntryWire] : []),
-            ];
+    dialog.mode === 'edit-group' ? ancestorsOf(file, 'group', dialog.id) : chainOf(file, groupId);
 
   const [name, setName] = useState(existing?.name ?? '');
   const [address, setAddress] = useState(existing !== undefined && 'address' in existing ? existing.address : '');
   const [tags, setTags] = useState((existing?.tags ?? []).join(', '));
   const [ssh, setSsh] = useState<SshSettingsWire>(existing?.ssh ?? {});
+  const [password, setPassword] = useState('');
   const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
   const [forwards, setForwards] = useState<ForwardEntryWire[]>(existing?.forwards ?? []);
   const [env, setEnv] = useState<EnvVarWire[]>(existing?.env ?? []);
   const [terminal, setTerminal] = useState<TerminalEntryWire>(existing?.terminal ?? {});
   const terminalPrefs = usePreferencesStore((s) => s.preferences.terminal);
   const [failed, setFailed] = useState(false);
+  const [secretError, setSecretError] = useState<string | undefined>(undefined);
+  const { names: secretNames } = useSecretNames();
+  const localUser = useLocalUser();
+  const missingId = useId();
   // The OS is kept per server on this machine, keyed like its trusted host key: address and port.
   const osKey = (): string =>
     `${address.trim()}:${String(ssh.port ?? inheritedFrom(chain, 'port').value ?? SSH_DEFAULTS.port)}`;
@@ -113,7 +119,23 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const savedOs = useHostsStore((s) => s.osByHost[savedOsKey]);
   const [os, setOs] = useState<SshOsId | ''>(savedOs?.chosen ?? '');
 
+  // A new host starts from what its group does not supply: this machine's login name, and a typed password.
+  // Both follow the Group select until the field is touched.
+  const [touched, setTouched] = useState<{ user?: true; auth?: true }>({});
+  const groupUser = inheritedFrom(chain, 'user').value;
+  const groupHasAuth = inheritedFrom(chain, 'auth').value !== undefined;
+  const fresh = dialog.mode === 'new-host';
+  useEffect(() => {
+    if (!fresh || touched.user === true) return;
+    setSsh((prev) => withField(prev, 'user', groupUser === undefined && localUser !== '' ? localUser : undefined));
+  }, [fresh, touched.user, groupUser, localUser]);
+  useEffect(() => {
+    if (!fresh || touched.auth === true) return;
+    setSsh((prev) => withField(prev, 'auth', groupHasAuth ? undefined : { kind: 'password', secret: '' }));
+  }, [fresh, touched.auth, groupHasAuth]);
+
   const set = (key: Inheritable | 'auth') => (value: unknown) => {
+    if (key === 'user' || key === 'auth') setTouched((prev) => ({ ...prev, [key]: true }));
     setSsh((prev) => withField(prev, key, value));
   };
   const jumpInherited = inheritedFrom(chain, 'jump');
@@ -123,25 +145,58 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t !== '');
-  const authReady = ssh.auth === undefined || ssh.auth.kind === 'agent' || ssh.auth.secret !== '';
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
-  const envReady = envProblem(env) === undefined;
-  const terminalReady = terminalProblem(terminal) === undefined;
-  const valid =
-    name.trim() !== '' && (!isHost || address.trim() !== '') && authReady && forwardsReady && envReady && terminalReady;
+  const sectionProblems = [
+    ...(forwardsReady ? [] : ['A forwarding rule is incomplete (Advanced)']),
+    ...[envProblem(env), terminalProblem(terminal)].filter((p): p is string => p !== undefined),
+  ];
+  const missing = missingFields({
+    isHost,
+    needsLogin: fresh,
+    name,
+    address,
+    user: ssh.user,
+    inheritedUser: groupUser,
+    auth: ssh.auth,
+    inheritedAuth: inheritedFrom(chain, 'auth').value,
+    password,
+    sectionProblems,
+  });
+  const valid = missing.length === 0;
 
   const submit = async (): Promise<void> => {
     const id = existing?.id ?? freeId(file, slug(name));
-    const clean = dropEmpty(ssh);
+    let clean = dropEmpty(ssh);
+    // A typed password goes to this machine's secret store first; the file only ever gets its name.
+    if (clean.auth?.kind === 'password' && password !== '') {
+      const secret =
+        clean.auth.secret !== ''
+          ? clean.auth.secret
+          : passwordSecretName(
+              id,
+              secretNames.map((n) => n.name),
+            );
+      const stored = await ipc().ssh.setSecret({ name: secret, value: password });
+      if (!stored.ok) {
+        setSecretError(stored.error.message);
+        return;
+      }
+      clean = { ...clean, auth: { ...clean.auth, secret } };
+      // A save main refuses next keeps the stored name, so trying again does not store a second copy.
+      setSsh(clean);
+      setPassword('');
+      setSecretError(undefined);
+    }
     const guard = protectedHere === undefined ? {} : { protected: protectedHere };
     // No rules left writes no `forwards` key.
     const ownForwards = forwards.length === 0 ? {} : { forwards };
     const ownEnv = env.length === 0 ? {} : { env };
     // A block where every field inherits writes no `terminal` key.
     const ownTerminal = Object.keys(cleanTerminal(terminal)).length === 0 ? {} : { terminal: cleanTerminal(terminal) };
+    const base = dialog.mode === 'edit-host' && groupId !== currentGroup ? moveHost(file, id, groupId) : file;
     const next = isHost
       ? upsertHost(
-          file,
+          base,
           {
             id,
             name: name.trim(),
@@ -153,10 +208,10 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             ...ownTerminal,
             ...ownForwards,
           },
-          parent,
+          groupId,
         )
       : upsertGroup(
-          file,
+          base,
           {
             id,
             name: name.trim(),
@@ -169,7 +224,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             groups: [],
             hosts: [],
           },
-          parent,
+          groupId,
         );
     if (!(await save(next))) {
       setFailed(true);
@@ -185,6 +240,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   };
 
   const label = `${editing ? 'Edit' : 'New'} ${isHost ? 'host' : 'group'}`;
+  const groups = flattenGroups(file);
   return (
     <form
       className="flex flex-col gap-3"
@@ -201,7 +257,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           <Dialog.Description className="sr-only">{`${label}: settings left on inherit come from the enclosing group.`}</Dialog.Description>
         </>
       )}
-      <label className="flex flex-col gap-1 text-xs">
+      <label className={FIELD_CLASS}>
         <span className="text-fg-subtle">Name</span>
         <input
           className={INPUT_CLASS}
@@ -212,122 +268,178 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         />
       </label>
       {isHost && (
-        <label className="flex flex-col gap-1 text-xs">
+        <label className={FIELD_CLASS}>
           <span className="text-fg-subtle">Address</span>
           <input
             className={INPUT_CLASS}
             value={address}
+            placeholder="host.example.com or 10.0.0.5"
             onChange={(e) => {
               setAddress(e.target.value);
             }}
           />
         </label>
       )}
-      {isHost && (
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-fg-subtle">OS</span>
+      {dialog.mode !== 'edit-group' && groups.length > 0 && (
+        <label className={FIELD_CLASS}>
+          <span className="text-fg-subtle">{isHost ? 'Group' : 'Inside group'}</span>
           <select
-            aria-label="OS"
+            aria-label={isHost ? 'Group' : 'Inside group'}
             className={INPUT_CLASS}
-            value={os}
+            value={groupId ?? ''}
             onChange={(e) => {
-              setOs(e.target.value as SshOsId | '');
+              setGroupId(e.target.value === '' ? undefined : e.target.value);
             }}
           >
-            <option value="">{`Auto${savedOs?.detected === undefined ? '' : ` (${savedOs.detected.name})`}`}</option>
-            {SSH_OS_IDS.map((id) => (
-              <option key={id} value={id}>
-                {OS_LABELS[id]}
+            <option value="">No group</option>
+            {groups.map(({ group, depth }) => (
+              <option key={group.id} value={group.id}>
+                {`${' '.repeat(depth)}${group.name}`}
               </option>
             ))}
           </select>
         </label>
       )}
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-fg-subtle">Tags (comma separated)</span>
-        <input
-          className={INPUT_CLASS}
-          value={tags}
-          onChange={(e) => {
-            setTags(e.target.value);
-          }}
+      <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-2">
+        <InheritedField
+          label="User"
+          provenance={inheritedFrom(chain, 'user')}
+          override={ssh.user}
+          onChange={set('user')}
         />
-      </label>
-      <InheritedSwitch
-        label="Protected"
-        provenance={inheritedProtected(chain)}
-        override={protectedHere}
-        onChange={setProtectedHere}
-      />
-      <InheritedField
-        label="User"
-        provenance={inheritedFrom(chain, 'user')}
-        override={ssh.user}
-        onChange={set('user')}
-      />
-      <InheritedField
-        label="Port"
-        type="number"
-        provenance={inheritedFrom(chain, 'port')}
-        override={ssh.port}
-        onChange={set('port')}
-      />
-      <div className="flex items-end gap-2">
-        <label className="flex flex-1 flex-col gap-1 text-xs">
-          <span className="text-fg-subtle">Jump host</span>
-          <select
-            aria-label="Jump host"
-            className={INPUT_CLASS}
-            value={ssh.jump ?? ''}
-            onChange={(e) => {
-              set('jump')(e.target.value === '' ? undefined : e.target.value);
-            }}
-          >
-            <option value="">{`Inherit${jumpInherited.value === undefined ? ' (none)' : ''}`}</option>
-            {jumpOptions.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {ssh.jump === undefined && jumpInherited.value !== undefined && typeof jumpInherited.from === 'object' && (
-          <span className="pb-1.5 text-xs text-fg-subtle">{`${jumpInherited.value} from ${jumpInherited.from.group}`}</span>
-        )}
+        <InheritedField
+          label="Port"
+          type="number"
+          provenance={inheritedFrom(chain, 'port')}
+          override={ssh.port}
+          onChange={set('port')}
+        />
       </div>
-      <InheritedField
-        label="Keep-alive (s)"
-        type="number"
-        provenance={inheritedFrom(chain, 'keepAlive')}
-        override={ssh.keepAlive}
-        onChange={set('keepAlive')}
+      <HostAuthSection
+        value={ssh.auth}
+        inherited={inheritedFrom(chain, 'auth')}
+        onChange={set('auth')}
+        password={password}
+        onPasswordChange={setPassword}
       />
-      <InheritedField
-        label="Connect timeout (s)"
-        type="number"
-        provenance={inheritedFrom(chain, 'connectTimeout')}
-        override={ssh.connectTimeout}
-        onChange={set('connectTimeout')}
-      />
-      <HostAuthSection value={ssh.auth} inherited={inheritedFrom(chain, 'auth')} onChange={set('auth')} />
-      <AgentForwardingSection
-        override={ssh.forwardAgent}
-        inherited={inheritedForwardAgent(chain)}
-        onChange={(next) => {
-          setSsh((prev) => withField(prev, 'forwardAgent', next));
-        }}
-      />
-      <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
-      <HostTerminalSection own={terminal} inherited={inheritedTerminal(chain, terminalPrefs)} onChange={setTerminal} />
-      <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
+      {secretError !== undefined && (
+        <p role="alert" className="text-sm text-status-danger">
+          {`The password was not stored: ${secretError}`}
+        </p>
+      )}
+      <details className="border-t border-hairline pt-2" data-testid="host-advanced">
+        <summary className="cursor-pointer rounded text-xs font-medium text-fg-subtle select-none hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none">
+          Advanced
+        </summary>
+        <div className="mt-3 flex flex-col gap-3">
+          {isHost && (
+            <label className={FIELD_CLASS}>
+              <span className="text-fg-subtle">OS</span>
+              <select
+                aria-label="OS"
+                className={INPUT_CLASS}
+                value={os}
+                onChange={(e) => {
+                  setOs(e.target.value as SshOsId | '');
+                }}
+              >
+                <option value="">{`Auto${savedOs?.detected === undefined ? '' : ` (${savedOs.detected.name})`}`}</option>
+                {SSH_OS_IDS.map((id) => (
+                  <option key={id} value={id}>
+                    {OS_LABELS[id]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className={FIELD_CLASS}>
+            <span className="text-fg-subtle">Tags (comma separated)</span>
+            <input
+              className={INPUT_CLASS}
+              value={tags}
+              onChange={(e) => {
+                setTags(e.target.value);
+              }}
+            />
+          </label>
+          <InheritedSwitch
+            label="Protected"
+            provenance={inheritedProtected(chain)}
+            override={protectedHere}
+            onChange={setProtectedHere}
+          />
+          <label className={FIELD_CLASS}>
+            <span className="flex gap-2 text-fg-subtle">
+              Jump host
+              {ssh.jump === undefined && jumpInherited.value !== undefined && (
+                <span className="text-fg-faint">{sourceText(jumpInherited)}</span>
+              )}
+            </span>
+            <select
+              aria-label="Jump host"
+              className={INPUT_CLASS}
+              value={ssh.jump ?? ''}
+              onChange={(e) => {
+                set('jump')(e.target.value === '' ? undefined : e.target.value);
+              }}
+            >
+              <option value="">{jumpInherited.value === undefined ? 'None' : 'Inherit'}</option>
+              {jumpOptions.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <InheritedField
+              label="Keep-alive (s)"
+              type="number"
+              provenance={inheritedFrom(chain, 'keepAlive')}
+              override={ssh.keepAlive}
+              onChange={set('keepAlive')}
+            />
+            <InheritedField
+              label="Connect timeout (s)"
+              type="number"
+              provenance={inheritedFrom(chain, 'connectTimeout')}
+              override={ssh.connectTimeout}
+              onChange={set('connectTimeout')}
+            />
+          </div>
+          <AgentForwardingSection
+            override={ssh.forwardAgent}
+            inherited={inheritedForwardAgent(chain)}
+            onChange={(next) => {
+              setSsh((prev) => withField(prev, 'forwardAgent', next));
+            }}
+          />
+          <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
+          <HostTerminalSection
+            own={terminal}
+            inherited={inheritedTerminal(chain, terminalPrefs)}
+            onChange={setTerminal}
+          />
+          <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
+        </div>
+      </details>
       {failed && problems[0] !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {problems[0].message}
         </p>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex items-start gap-2">
+        {valid ? (
+          <span className="flex-1" />
+        ) : (
+          <ul id={missingId} aria-label="Needed to save" className="flex-1 text-xs text-fg-subtle">
+            {missing.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        )}
         <Button onClick={closeDialog}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={!valid}>
+        <Button type="submit" variant="primary" disabled={!valid} aria-describedby={valid ? undefined : missingId}>
           Save
         </Button>
       </div>

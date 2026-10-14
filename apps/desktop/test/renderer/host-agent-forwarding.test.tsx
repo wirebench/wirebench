@@ -86,7 +86,7 @@ afterEach(() => {
 const edit = (id: string) => render(<HostForm file={FILE} dialog={{ mode: 'edit-host', id }} embedded />);
 const section = () => screen.getByRole('region', { name: 'Agent forwarding' });
 const toggle = () => within(section()).getByRole<HTMLButtonElement>('switch', { name: 'Forward SSH agent' });
-const override = () => within(section()).getByRole('switch', { name: 'Override Forward SSH agent' });
+const inherit = () => within(section()).getByRole('button', { name: 'Inherit Forward SSH agent' });
 const save = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 };
@@ -95,21 +95,20 @@ describe('the agent forwarding section of the host form', () => {
   it('is off by default, with no warning', () => {
     edit('plain');
     expect(toggle().getAttribute('aria-checked')).toBe('false');
-    expect(within(section()).getByText('default')).toBeTruthy();
+    expect(within(section()).getByText('off · default')).toBeTruthy();
     expect(within(section()).queryByRole('note')).toBeNull();
   });
 
   it('shows the inherited value with its group, and the warning while it is on', () => {
     edit('git-box');
     expect(toggle().getAttribute('aria-checked')).toBe('true');
-    expect(toggle().disabled).toBe(true);
-    expect(within(section()).getByText('from Ops')).toBeTruthy();
+    expect(within(section()).getByText('on · from Ops')).toBeTruthy();
+    expect(within(section()).queryByRole('button', { name: 'Inherit Forward SSH agent' })).toBeNull();
     expect(within(section()).getByRole('note').textContent).toMatch(/root on this host can use the keys/);
   });
 
   it('turning it on here saves forwardAgent: true on the host and shows the warning', async () => {
     edit('plain');
-    await userEvent.click(override());
     await userEvent.click(toggle());
     expect(within(section()).getByRole('note')).toBeTruthy();
     await save();
@@ -118,9 +117,12 @@ describe('the agent forwarding section of the host form', () => {
 
   it('a host can switch an inherited forward off; a host that inherits writes no key', async () => {
     edit('git-box');
-    await userEvent.click(override());
     await userEvent.click(toggle());
     expect(within(section()).queryByRole('note')).toBeNull();
+    // Inherit takes the group's value back; flipping again pins it off here.
+    await userEvent.click(inherit());
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    await userEvent.click(toggle());
     await save();
     expect(saved().groups[0]!.hosts[0]!.ssh.forwardAgent).toBe(false);
     cleanup();

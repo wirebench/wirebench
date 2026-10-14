@@ -255,6 +255,19 @@ All notable changes to this project are documented here. The format follows
   refuses it as made by a newer Wirebench. A version-9 project opens unchanged (#338, #339, #348,
   #77).
 
+### Changed
+
+- **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
+  how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
+  terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a
+  user, User is a plain field prefilled with this machine's login name; the inherit switch shows only
+  when a group supplies the value, and every inheritable row has one switch with its source as text
+  ("22 · default", "deploy · from Production"). **Password** takes the password inline and stores it
+  on Save as the workspace secret `<host>_password` (the hosts file holds only the name); **Choose a
+  stored secret** picks an existing one instead. A **Group** select starts on the group the dialog was
+  opened from or the active group chip, and moves an edited host. A disabled Save lists what is
+  missing. The host edit panel has the same form (#531).
+
 ### Fixed
 
 - **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
