@@ -305,6 +305,12 @@ describe('fromRestCurl', () => {
     ]);
   });
 
+  it('leaves a ${…} variable out of the path-parameter table', () => {
+    expect(fromRestCurl(`curl 'https://api.test/pets/\${petId}/photos/{photoId}'`).request.pathParams).toEqual([
+      { name: 'photoId', value: '', enabled: true },
+    ]);
+  });
+
   it('names what it ignored rather than dropping it silently', () => {
     const result = fromRestCurl(`curl --retry 3 --compressed -o out.json https://api.test/p`);
 
