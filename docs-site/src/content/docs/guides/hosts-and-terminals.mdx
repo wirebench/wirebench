@@ -265,6 +265,48 @@ is forwarded, and a faint key whose tooltip says why when it is not (the server 
 agent runs); in a split tab each pane's header shows its own. The host details panel lists the setting
 with its source, and its `ssh` command gains `-A`.
 
+## Mosh
+
+On a flaky or roaming link (a train, tethering, a high-latency VPN), a Mosh session keeps going across
+dropped packets and network changes, and echoes your keystrokes at once. Wirebench signs in over SSH as
+usual, starts `mosh-server` on the host, then runs the session over UDP with the `mosh-client` installed on
+your computer, in the same terminal tab.
+
+```yaml
+groups:
+  - id: roaming
+    name: Roaming
+    ssh:
+      protocol: mosh
+      mosh:
+        server: /usr/local/bin/mosh-server # default: mosh-server on the host's PATH
+        ports: 60000:60010 # one port or LOW:HIGH; default: the server picks
+    hosts:
+      - id: laptop-dev
+        name: laptop-dev
+        address: dev.example.com
+      - id: office
+        name: office
+        address: 10.0.0.6
+        ssh:
+          protocol: ssh
+```
+
+- `protocol` is `ssh` unless a host or a group above it says `mosh`, and is inherited like the other `ssh`
+  settings: **office** above stays on SSH. The `mosh` block is taken whole from the nearest level that sets
+  it.
+- Install mosh on both sides: `mosh-server` on the host, and `mosh-client` on your computer (Homebrew, your
+  Linux package manager, or a `mosh-client.exe` on `PATH` on Windows). Without the client, the connection
+  screen says so; without the server, it names the command it could not find.
+- UDP goes straight from your computer to the host's address, never through a jump host, so the host's UDP
+  ports (60000–61000 by default) must be open to you.
+- The host's environment variables are passed to `mosh-server` on its command line, where other users of
+  the host can see them while it starts. Agent forwarding does not apply to a Mosh session.
+- The details panel shows the protocol with its source. Closing the tab ends the session on the host too.
+
+In the host form, **Protocol** sits under **Advanced**; choosing **Mosh** shows the server command and the
+UDP ports.
+
 ## Opening a terminal
 
 Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts

@@ -94,6 +94,30 @@ describe('sendRest', () => {
     expect(useProblemsStore.getState().items).toEqual([]);
   });
 
+  it('keeps the last response while the next send is out, and drops it when the answer lands', async () => {
+    const previous = { ...makeRestExchange(), sendId: 'old' };
+    useExchangesStore.setState({ restByRequest: { 'rest-1': { status: 'done', sendId: 'old', exchange: previous } } });
+    let answer: (value: unknown) => void = () => undefined;
+    sendRest.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const sending = useExchangesStore.getState().sendRest('rest-1');
+    await vi.waitFor(() => {
+      expect(sendRest).toHaveBeenCalled();
+    });
+    const during = useExchangesStore.getState().restByRequest['rest-1'];
+    expect(during).toMatchObject({ status: 'sending' });
+    expect(during?.exchange).toBeUndefined();
+    expect(during?.previous?.sendId).toBe('old');
+
+    answer({ ok: true, value: makeRestExchange() });
+    await sending;
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.previous).toBeUndefined();
+  });
+
   it('names the request only, and keeps the reply under that request', async () => {
     await useExchangesStore.getState().sendRest('rest-1');
 

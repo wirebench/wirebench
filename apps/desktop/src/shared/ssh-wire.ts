@@ -21,6 +21,15 @@ export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
+export const sshProtocolWireSchema = z.enum(['ssh', 'mosh']);
+export type SshProtocolWire = z.infer<typeof sshProtocolWireSchema>;
+
+/** `ssh.mosh`, taken whole from the nearest level: the remote server command and the UDP port or range. */
+export const moshSettingsWireSchema = z.strictObject({
+  server: z.string().optional(),
+  ports: z.string().optional(),
+});
+export type MoshSettingsWire = z.infer<typeof moshSettingsWireSchema>;
 /** A proxy the first hop is dialled through (#417); its password is a secret NAME, never a value. */
 export const sshProxyWireSchema = z.strictObject({
   type: z.enum(['socks5', 'http']),
@@ -38,6 +47,9 @@ export const sshSettingsWireSchema = z.strictObject({
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
   forwardAgent: z.boolean().optional(),
+  /** `mosh` starts a mosh server over SSH, then runs the session over UDP (#419). */
+  protocol: sshProtocolWireSchema.optional(),
+  mosh: moshSettingsWireSchema.optional(),
   /** `false` connects directly though a group above sets a proxy. */
   proxy: z.union([z.literal(false), sshProxyWireSchema]).optional(),
 });
@@ -170,6 +182,9 @@ export const resolvedHostWireSchema = z.object({
     keepAlive: prov(z.number()),
     connectTimeout: prov(z.number()),
     forwardAgent: prov(z.boolean()),
+    /** Main always sends both; absent reads as SSH with no mosh block. */
+    protocol: prov(sshProtocolWireSchema).optional(),
+    mosh: prov(moshSettingsWireSchema.optional()).optional(),
     /** Used when this host is the first hop; `undefined` connects directly. */
     proxy: prov(sshProxyWireSchema.optional()),
   }),
