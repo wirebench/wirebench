@@ -4,6 +4,7 @@ import { SshModelError } from './errors.js';
 import { forwardsSchema, isOffForm, serializeForward } from './forward-rules.js';
 import type { ForwardEntry } from './forward-rules.js';
 import { envSchema } from './host-env.js';
+import { moshSchema, protocolSchema } from './host-mosh.js';
 import { terminalSchema } from './host-terminal.js';
 import type { TerminalEntry } from './host-terminal.js';
 import { resolveSettings } from './resolve.js';
@@ -66,6 +67,10 @@ const settingsSchema = z
     connectTimeout: z.number().int().min(1).optional(),
     /** Off by default; a nearer `false` turns an inherited `true` off. */
     forwardAgent: z.boolean().optional(),
+    /** `mosh` starts a mosh server over SSH and runs the session over UDP (#419); `ssh` by default. */
+    protocol: protocolSchema,
+    /** Taken whole from the nearest level that sets it. */
+    mosh: moshSchema,
     /** `false` connects directly though a group above sets a proxy. */
     proxy: z.union([z.literal(false), proxySchema]).optional(),
   })
@@ -311,6 +316,8 @@ function settings(ssh: SshSettings): Record<string, unknown> {
   if (ssh.keepAlive !== undefined) out['keepAlive'] = ssh.keepAlive;
   if (ssh.connectTimeout !== undefined) out['connectTimeout'] = ssh.connectTimeout;
   if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
+  if (ssh.protocol !== undefined) out['protocol'] = ssh.protocol;
+  if (ssh.mosh !== undefined) out['mosh'] = { ...ssh.mosh };
   if (ssh.proxy === false) out['proxy'] = false;
   else if (ssh.proxy !== undefined) {
     const { type, host, port, user, password } = ssh.proxy;

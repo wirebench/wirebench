@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
+  `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
+  in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block
+  sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
+  section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
+  `mosh-server` is missing (#419).
 - **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
   `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
   The tree follows the active tab, unfolding to its request and selecting it, and a new request

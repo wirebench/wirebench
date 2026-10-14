@@ -10,7 +10,14 @@ import {
   proxyCredentialsOf,
   secretNameOf,
 } from '@wirebench/ssh';
-import type { DialOptions, HopCredentials, HostsFile, KnownHostEntry, ResolvedHost } from '@wirebench/ssh';
+import type {
+  DialOptions,
+  HopCredentials,
+  HostsFile,
+  KnownHostEntry,
+  MoshSettings,
+  ResolvedHost,
+} from '@wirebench/ssh';
 import { asWirebenchError } from './hosts-service.js';
 import type { HostsService } from './hosts-service.js';
 
@@ -129,6 +136,8 @@ export interface SshConnector {
     env: Record<string, string>;
     secrets: string[];
     forwardAgent?: { readonly socket?: string };
+    /** Set when the target's protocol is `mosh` (#419): the session starts a mosh server, then runs over UDP. */
+    mosh?: { readonly settings?: MoshSettings };
   }>;
   /**
    * Checks the machine's known hosts (read now, once per connect) and records a refusal that sender may
@@ -310,6 +319,9 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         hops,
         ...(await envFor(target, getSecret)),
         ...(target.ssh.forwardAgent.value ? { forwardAgent: socket ? { socket } : {} } : {}),
+        ...(target.ssh.protocol.value === 'mosh'
+          ? { mosh: target.ssh.mosh.value === undefined ? {} : { settings: target.ssh.mosh.value } }
+          : {}),
       };
     },
 
