@@ -77,8 +77,8 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   // The fixture's shell echoes every byte it is sent, so what the terminal shows is the typed line.
   const terminal = page.getByTestId('ssh-terminal');
   await expect(terminal.locator('.xterm')).toBeVisible({ timeout: 30_000 });
-  // The terminal is drawn before its session opens, and keys typed before then go nowhere: wait for the
-  // tab's status dot to say the session is open.
+  // Wait for the tab's status dot to say the session is open; keys typed before then are kept for the
+  // shell (the next test), but the click below would land on the connection screen.
   await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -163,4 +163,40 @@ test('WIREBENCH_AREAS=ssh=off hides the area and its commands', async () => {
   await expect(page.getByTestId('ssh-nav-layouts')).toHaveCount(0);
   await expect(page.getByTestId('status-bar')).toBeVisible();
   await expect(page.getByTestId('status-bar-forwards')).toHaveCount(0);
+});
+
+test('keys typed while the connection screen shows reach the shell once it opens (#361)', async () => {
+  test.setTimeout(180_000);
+  // The server holds the sign-in, so the typing below happens while the pane is still connecting.
+  fixture = await startSshFixture({ password: { user: 'tester', password: 'pw' }, authDelayMs: 4_000 });
+  launched = await launchApp();
+  const page = launched.window;
+  await createWorkspace(page, 'Ops');
+  await page.getByTestId('activity-hosts').click();
+  await page.getByRole('button', { name: 'New host' }).click();
+  const dialog = page.getByTestId('host-dialog');
+  await fillNewHost(dialog, { name: 'box', port: fixture.port, user: 'tester', password: 'pw' });
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByTestId('host-row-box').dblclick();
+  const trust = page.getByTestId('trust-dialog');
+  await expect(trust).toBeVisible({ timeout: 30_000 });
+  await trust.getByRole('button', { name: 'Trust and connect' }).click();
+
+  const screen = page.getByTestId('connect-screen');
+  await expect(page.getByTestId('connect-step-auth')).toHaveAttribute('data-state', 'running', { timeout: 30_000 });
+  const terminal = page.getByTestId('ssh-terminal');
+  // Trust hands the focus to the pane, not back to the host list, while the connect goes on.
+  await expect(terminal.locator('textarea.xterm-helper-textarea')).toBeFocused({ timeout: 2_000 });
+  await page.keyboard.type('echo early');
+  await page.keyboard.press('Enter');
+  await expect(screen.getByTestId('connect-typed-ahead')).toHaveText('What you typed is sent when the shell opens.');
+  await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toHaveCount(0);
+
+  // The fixture's shell echoes what it is sent: the line arrives once the session opens.
+  await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(terminal).toContainText('echo early', { timeout: 30_000 });
 });
