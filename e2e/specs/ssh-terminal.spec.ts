@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { startSshFixture, type SshFixture } from '@wirebench/ssh/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
+import { fillNewHost } from '../helpers/ssh-host.js';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -43,20 +44,16 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   await page.getByRole('button', { name: 'New host' }).click();
   const dialog = page.getByTestId('host-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Name', { exact: true }).fill('box');
-  await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
-  await dialog.getByRole('switch', { name: 'Override Port' }).click();
-  await dialog.getByLabel('Port', { exact: true }).fill(String(fixture.port));
-  await dialog.getByRole('switch', { name: 'Override User' }).click();
-  await dialog.getByLabel('User', { exact: true }).fill('tester');
-
-  // SSH secrets belong to the workspace, not to a project: the value is stored from the dialog itself.
-  await dialog.getByRole('radio', { name: 'Password', exact: true }).check();
-  await dialog.getByRole('button', { name: 'Set value…' }).click();
-  await dialog.getByLabel('Secret name', { exact: true }).fill('box_pw');
-  await dialog.getByLabel('Secret value', { exact: true }).fill('pw');
-  await dialog.getByRole('button', { name: 'Store' }).click();
-  await expect(dialog.getByLabel('Password secret', { exact: true })).toHaveValue('box_pw');
+  // Essentials first: the rest waits under a closed Advanced, and a disabled Save says what it needs.
+  await expect(dialog.getByLabel('Tags (comma separated)')).toBeHidden();
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await expect(dialog.getByRole('list', { name: 'Needed to save' })).toContainText('Address is required');
+  // No group supplies a user, so User is a plain field (no Override switch), prefilled with the login name.
+  await expect(dialog.getByRole('switch', { name: 'Override User' })).toHaveCount(0);
+  await expect(dialog.getByLabel('User', { exact: true })).not.toHaveValue('');
+  // The password is typed inline; Save stores it as the workspace secret box_password.
+  await fillNewHost(dialog, { name: 'box', port: fixture.port, user: 'tester', password: 'pw' });
+  await expect(dialog.getByRole('list', { name: 'Needed to save' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 

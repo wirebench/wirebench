@@ -2,10 +2,35 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import type { SshFixture } from '@wirebench/ssh/test-helpers';
 
 /**
- * Adds host `name` for the fixture's password user from the Hosts view's New host dialog, storing the
- * password as a workspace secret. `password` and `port` default to the fixture's (`pw`, its port); a
- * different one makes a host that fails to sign in or to connect. `beforeSave` fills more of the dialog
- * (forwarding rules) before Save.
+ * Fills the essentials of an open New host dialog: name, address 127.0.0.1, port, user and an inline
+ * password, which Save stores as the workspace secret `<name>_password`. Leaves the dialog open.
+ */
+export async function fillNewHost(
+  dialog: Locator,
+  options: { readonly name: string; readonly port: number; readonly user: string; readonly password?: string },
+): Promise<void> {
+  await dialog.getByLabel('Name', { exact: true }).fill(options.name);
+  await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
+  await dialog.getByLabel('Port', { exact: true }).fill(String(options.port));
+  // No group supplies a user: a plain field, prefilled with this machine's login name.
+  await dialog.getByLabel('User', { exact: true }).fill(options.user);
+  await dialog.getByRole('radio', { name: 'Password', exact: true }).check();
+  if (options.password !== undefined) await dialog.locator('input[type="password"]').fill(options.password);
+}
+
+/** Unfolds the host dialog's Advanced section, where tags, terminal and forwarding settings live. */
+export async function openAdvanced(dialog: Locator): Promise<void> {
+  const advanced = dialog.getByTestId('host-advanced');
+  if (!(await advanced.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await advanced.getByText('Advanced', { exact: true }).click();
+  }
+}
+
+/**
+ * Adds host `name` for the fixture's password user from the Hosts view's New host dialog, typing the
+ * password inline; Save stores it as the workspace secret `<name>_password`. `password` and `port` default
+ * to the fixture's (`pw`, its port); a different one makes a host that fails to sign in or to connect.
+ * `beforeSave` fills more of the dialog (forwarding rules, under Advanced) before Save.
  */
 export async function addPasswordHost(
   page: Page,
@@ -21,18 +46,12 @@ export async function addPasswordHost(
   await page.getByRole('button', { name: 'New host' }).click();
   const dialog = page.getByTestId('host-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Name', { exact: true }).fill(options.name);
-  await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
-  await dialog.getByRole('switch', { name: 'Override Port' }).click();
-  await dialog.getByLabel('Port', { exact: true }).fill(String(options.port ?? fixture.port));
-  await dialog.getByRole('switch', { name: 'Override User' }).click();
-  await dialog.getByLabel('User', { exact: true }).fill('tester');
-  await dialog.getByRole('radio', { name: 'Password', exact: true }).check();
-  await dialog.getByRole('button', { name: 'Set value…' }).click();
-  await dialog.getByLabel('Secret name', { exact: true }).fill(`${options.name}_pw`);
-  await dialog.getByLabel('Secret value', { exact: true }).fill(options.password ?? 'pw');
-  await dialog.getByRole('button', { name: 'Store' }).click();
-  await expect(dialog.getByLabel('Password secret', { exact: true })).toHaveValue(`${options.name}_pw`);
+  await fillNewHost(dialog, {
+    name: options.name,
+    port: options.port ?? fixture.port,
+    user: 'tester',
+    password: options.password ?? 'pw',
+  });
   await options.beforeSave?.(dialog);
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
