@@ -16,6 +16,7 @@ import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
+import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
@@ -148,7 +149,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
   const sectionProblems = [
     ...(forwardsReady ? [] : ['A forwarding rule is incomplete (Advanced)']),
-    ...[envProblem(env), terminalProblem(terminal)].filter((p): p is string => p !== undefined),
+    ...[envProblem(env), terminalProblem(terminal), moshProblem(ssh.mosh)].filter((p): p is string => p !== undefined),
   ];
   const missing = missingFields({
     isHost,
@@ -407,6 +408,18 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
               onChange={set('connectTimeout')}
             />
           </div>
+          <MoshSection
+            protocol={ssh.protocol}
+            mosh={ssh.mosh}
+            inheritedProtocol={inheritedProtocol(chain)}
+            inheritedMosh={inheritedMosh(chain)}
+            onProtocol={(next) => {
+              setSsh((prev) => withField(prev, 'protocol', next));
+            }}
+            onMosh={(next) => {
+              setSsh((prev) => withField(prev, 'mosh', next));
+            }}
+          />
           <AgentForwardingSection
             override={ssh.forwardAgent}
             inherited={inheritedForwardAgent(chain)}
