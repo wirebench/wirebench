@@ -49,6 +49,11 @@ const sections: Section[] = [
     ],
   },
   {
+    heading: 'MCP servers',
+    text: "Test an MCP server the way you test any API: a local process over stdio, or a server over Streamable HTTP or HTTP+SSE. Its tools, resources and prompts are fetched into the project, where a diff shows its contract drifting. Each request calls one tool, resource or prompt, with arguments checked against the tool's input schema, and every JSON-RPC message is kept. A local command runs only once this machine approves it.",
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.mcpServers }],
+  },
+  {
     heading: 'Importers and switching',
     text: 'Turn a WSDL, an OpenAPI document, a Postman collection, a curl command, a .proto file, a running gRPC server or a legacy SOAP project into requests you can run and edit. An OpenAPI or AsyncAPI document behind authentication is fetched with Basic, a bearer token or an API key. When an OpenAPI document changes, Update Definition re-reads it into the REST API you already have. And nothing is locked in: export a project or an API as a Postman Collection or an OpenCollection, with a report of anything that did not fit.',
     links: [

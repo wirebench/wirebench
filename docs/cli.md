@@ -8,7 +8,8 @@ for the one-line pipeline step.
 This page documents S1–S7: SOAP, REST, gRPC and WebSocket requests, all four assertion types that apply
 to them, all four reporters, environment-variable secrets and OAuth2 client credentials — see the
 [design spec](specs/2026-09-18-cli-runner-design.md) and, for S7,
-[its own spec](specs/2026-09-22-cli-runner-design.md).
+[its own spec](specs/2026-09-22-cli-runner-design.md). MCP requests (#79) run too: see
+[MCP requests](#mcp-requests).
 
 `wirebench run` and `wirebench secrets list` run a project in a pipeline. The verbs under
 [Work with a project](#work-with-a-project) and [`wirebench mcp`](#wirebench-mcp) (issue #32, see the
@@ -61,6 +62,8 @@ wirebench run <path> [selector…] [options]
     --update-baseline  Save each changed response as its golden, keeping its ignore rules.
                        The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
+    --allow-commands   Let MCP servers run their local (stdio) commands; without it each one is
+                       refused. Sequence steps included.
     --no-secret-sources   Read secrets from WIREBENCH_SECRET_<NAME> only; skip the workspace's
                           secret sources.
     --trust-secret-sources
@@ -80,7 +83,7 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
 wirebench import <source> [--name <name>]
 wirebench operations [<interface-or-api>]
 wirebench generate <operation> [--optional all|required]
-wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline]
+wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--allow-commands]
 wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema]
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
 wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]
@@ -101,7 +104,7 @@ wirebench export <postman|opencollection> [--api <name|slug|id>] [--out <dir>] [
                        Writes the project, or one API or interface, as a Postman Collection v2.1 or an
                        OpenCollection document: see "Export to another tool" below.
 
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [--allow-commands] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
                        Serves those verbs as MCP tools to a coding agent, over stdio or on 127.0.0.1.
 
 wirebench mock <path> [mock…] [--port <n>] [--host <addr>] [--json] [-q]
@@ -246,6 +249,34 @@ The error codes a send can end with, besides the HTTP layer's (`timeout`, `abort
 `grpc-method-unset`, a gRPC request with no method; `secret-missing`, a credential secret that is not set;
 `ws-handshake-refused`; `grpc-definition-missing`; and `exchange-not-streaming`, a message pushed to a send that
 takes none (only a host that drives a send by hand can cause it; a run never does).
+
+### MCP requests
+
+A saved MCP request (#79, see [the design spec](specs/2026-10-13-mcp-request-kind-design.md) and the
+[MCP servers guide](../docs-site/src/content/docs/guides/mcp-servers.mdx)) runs as the desktop sends it: one
+session per request — connect, `initialize`, the operation, close — over stdio, Streamable HTTP or legacy
+HTTP+SSE. `run`, `send` and the `send` tool of `wirebench mcp` take them, and a sequence can have them as steps.
+
+- **Local commands need `--allow-commands`.** A stdio server's command line lives in the project, so a pull can
+  change what a send starts. Without the flag every stdio send fails with `mcp-command-unapproved` (exit 3),
+  naming the command, and the advice names the flag. `run --allow-commands` covers every MCP request of the run,
+  sequence steps included; `send --allow-commands` the one send; `wirebench mcp --allow-commands` every tool call
+  of that server process. Any other verb refuses the flag (exit 2). HTTP servers need no approval.
+- **What assertions read.** The body is the operation's result as JSON, or `{"error": {…}}` for a JSON-RPC
+  error; the headers are the operation's HTTP response headers (none for stdio); the status is the HTTP status
+  of the operation's `POST` for Streamable HTTP, and `0` otherwise. `send` prints that body, and History
+  records the send with its messages, tagged `cli` or `mcp`.
+- **The "MCP result" check.** Every MCP request of a run gets a check named `MCP result`, which fails on a
+  JSON-RPC error and on a `tools/call` result with `isError: true`, showing the first text content. It does not
+  count as an assertion for `--require-assertions`.
+- **No body override.** `send --body` or `--body-file` on an MCP request is refused: it has no envelope or body
+  to replace.
+- **Error codes.** Besides `mcp-command-unapproved`: `mcp-unresolved-properties` (a `${…}` nothing resolves),
+  `mcp-auth-unsupported` (NTLM, Digest, AWS Signature v4 or Kerberos, which an MCP session cannot apply),
+  `mcp-capability-missing` (the server did not advertise what the operation needs), `mcp-arguments-invalid`
+  (the arguments are not one JSON object), `mcp-spawn-failed`, `mcp-server-exited`, `mcp-timeout`,
+  `mcp-protocol-unsupported`, `mcp-message-too-large`, `mcp-endpoint-origin`, `mcp-http-status` and
+  `mcp-http-failed`. Each is exit 3.
 
 ## Sequences
 
@@ -685,9 +716,9 @@ to [`wirebench mcp`](#wirebench-mcp).
 | Verb | Does |
 | --- | --- |
 | `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
-| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) and saved WebSocket requests (API, URL), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. Each SOAP and REST row also carries `tool`, the name of the operation's tool (see [Contract operations as tools](#contract-operations-as-tools)), when its definition is readable. |
+| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) saved WebSocket requests (API, URL) and saved MCP requests (server, method, tool, prompt or URI), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. Each SOAP and REST row also carries `tool`, the name of the operation's tool (see [Contract operations as tools](#contract-operations-as-tools)), when its definition is readable. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
-| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>] [--baseline]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>] [--baseline] [--allow-commands]` | Sends one saved SOAP, REST, WebSocket or MCP request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
 | `wirebench call <operation> [--args <json\|@file>] [-e <env>] [--schema]` | Calls one operation of an imported contract with JSON arguments, as its MCP tool does: builds the request a new request of the operation would be, sends it under the interface's or API's endpoint, auth and `WIREBENCH_SECRET_*` secrets, records it in History tagged `cli`, and prints the response (`--json`: the result as JSON, the same object the tool returns). `<operation>` is the `operations` reference or the tool name. `--args` takes JSON or `@<file>`; `--schema` prints the arguments' JSON Schema and sends nothing. A response is exit 0, a SOAP fault or a 4xx/5xx included. |
 | `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
 | `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
@@ -866,7 +897,7 @@ error; 3 when `--api` names nothing or there is nothing to export.
 ## `wirebench mcp`
 
 ```text
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [--allow-commands] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
 ```
 
 Serves the verbs above as MCP tools to a coding agent: `import`, `operations`, `generate`, `send`,
@@ -881,6 +912,7 @@ contract tool to make.
 | `--project <dir>` | The project the tools work on (default: the current directory). Checked at start: a folder that is not a project exits 2. |
 | `--allow-write` | Lets `import` write the project. Off: `import` answers `write-not-allowed`. |
 | `--allow-send` | Lets `send` and the contract tools make requests. Off: they answer `send-not-allowed`. |
+| `--allow-commands` | Lets `send` start the local (stdio) command of an MCP server the project holds, on every tool call of this server process. Off: such a send answers `mcp-command-unapproved`, naming the command. See [MCP requests](#mcp-requests). |
 | `-e, --env <a,b>` | The environments `send` and the contract tools may use, by name, slug or id; any other is `environment-not-allowed`. Under `-e`, a call that resolves no environment (a project that defines none) is refused too. |
 | `--tools <a,b\|none>` | The interfaces and APIs, by name or slug, whose operations are tools (default: all). `none` serves the eight tools above only. A name the project does not have exits 2. |
 | `--history-dir <dir>` | The folder that holds the History `.jsonl` files (default: the desktop's, see [History location](#history-location)). |

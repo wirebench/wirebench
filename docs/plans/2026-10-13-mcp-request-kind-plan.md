@@ -316,5 +316,5 @@ tests.
   commands and their approval);
 - `docs/architecture/overview.md` if it lists the kinds, `docs/roadmap.md`, `CHANGELOG.md`.
 
-- [ ] The guide: the three transports, the catalogue, operations, approval, runs, scripts, limits.
-- [ ] `pnpm check:banned-terms` passes.
+- [x] The guide: the three transports, the catalogue, operations, approval, runs, scripts, limits.
+- [x] `pnpm check:banned-terms` passes.

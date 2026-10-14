@@ -29,7 +29,9 @@ drive. Here, Wirebench is an MCP *client*. No model runs in the app (roadmap, "D
 5. **Runs, sequences, assertions and scripts.** An MCP request is runnable everywhere a REST request
    is. It has pre- and post-request scripts under ADR-0016.
 6. **Auth over HTTP is the existing auth.** The auth types a REST request has, plus headers, proxy, TLS
-   and client certificates. MCP's own authorization discovery (protected-resource metadata and dynamic
+   and client certificates. (As built: the types that answer a challenge and resend — NTLM, Digest, AWS
+   Signature v4 and Kerberos — are refused with `mcp-auth-unsupported`, since a session's calls carry
+   their credentials up front; Basic is sent on every call.) MCP's own authorization discovery (protected-resource metadata and dynamic
    client registration) is a follow-up issue.
 7. **The catalogue is kept in the project.** *Refresh catalogue* stores the server's lists as a
    committed, diffable file beside the server, as a GraphQL schema is. The file drives the tool picker
@@ -124,11 +126,20 @@ still waiting and closes the session.
   that client messages are `POST`ed to, and that URL must have the same origin (`mcp-endpoint-origin`).
   Answers arrive on the stream.
 - **Auth** is applied to every HTTP call of the session, as REST applies it. An OAuth2 token is fetched
-  once per send.
+  once per send. Basic is encoded on every call rather than after a challenge. NTLM, Digest, AWS
+  Signature v4 and Kerberos cannot be applied up front, so a send with one fails with
+  `mcp-auth-unsupported` before anything is sent.
 - **The SSE parser moves into core** (`rest/sse.ts` to `http/sse.ts`). ADR-0017 rule 1 forbids `mcp/`
   from importing `rest/`.
 - **Limits.** A message is capped at 4 MiB (`mcp-message-too-large`). The exchange keeps 1,000 messages
-  at most, and History caps it as WebSocket frames are capped.
+  at most, and History caps it as WebSocket frames are capped (the first 400 and the last 100, 1 MB); a
+  result over 256 KiB is left out of the History entry and flagged.
+- **Error codes** (as built). Besides those above: `mcp-spawn-failed`, `mcp-connection-closed`,
+  `mcp-timeout`, `mcp-cancelled`, `mcp-initialize-failed`, `mcp-protocol-unsupported`,
+  `mcp-transport-failed`, `mcp-bad-url`, `mcp-http-status`, `mcp-http-failed`, `mcp-stream-expected`,
+  `mcp-endpoint-missing`, `mcp-endpoint-invalid`, `mcp-arguments-invalid` (a tool call's arguments are
+  not one JSON object), `mcp-auth-unsupported` and `mcp-unresolved-properties`; a refresh adds
+  `mcp-catalogue-failed` and `mcp-catalogue-invalid`.
 
 ## The stdio approval
 
@@ -137,14 +148,22 @@ still waiting and closes the session.
   again. Changing the command, an argument, the folder or the set of variables does ask again.
 - **Desktop:** approvals are kept per machine in the app's data folder (`mcp-approvals.json`), never in
   the project. A send whose fingerprint is not approved opens a dialog. The dialog shows the command line
-  exactly as it will run (with secrets masked), the folder, and the variable names. Its buttons are
-  *Run once*, *Always allow* and *Cancel*. In a run, the dialog is asked once per fingerprint before the
-  first send. *Refresh catalogue* goes through the same gate.
+  as it will run (with secrets shown as their `${secret:…}` reference), the folder, and the variable
+  names. In the displayed command line an argument is bare when plain, a Windows path reads as written
+  (backslashes not doubled), any other argument a reader could misread is single-quoted, and one holding
+  a single quote is shown as a JSON string. Its buttons are *Run once*, *Always allow* and *Cancel*.
+  Dismissing the dialog, closing the window, or leaving the prompt unanswered for five minutes counts as
+  *Cancel*. In a run, the dialog is asked once per fingerprint before the first send. *Refresh catalogue*
+  goes through the same gate. The dialog is mounted by the shell, so a prompt from a run or a refresh
+  started anywhere is answered; main asks through the `mcp.approval` event and the window answers with
+  `app.mcpApprove`.
 - **CLI and `wirebench mcp`:** a stdio send without `--allow-commands` fails with
-  `mcp-command-unapproved`. The error names the command. `wirebench mcp --allow-commands` passes the
-  permission to every tool call of that server process. HTTP transports need no approval.
-- The engine holds the rule: a send asks its host's `approveCommand(fingerprint, display)`. A host that
-  gives none refuses, so a new host cannot skip the gate by accident.
+  `mcp-command-unapproved`. The error names the command, and the CLI's advice names the flag.
+  `wirebench mcp --allow-commands` passes the permission to every tool call of that server process.
+  HTTP transports need no approval.
+- The engine holds the rule: a send asks its host's `approveCommand(request)`, a
+  `CommandApprovalRequest` carrying the fingerprint, the masked display, the folder, the variable names
+  and the server's name. A host that gives none refuses, so a new host cannot skip the gate by accident.
 
 ## Results and checks
 
@@ -194,24 +213,34 @@ still waiting and closes the session.
     *Send*.
   - Tabs: Arguments, Assertions, Scripts, Settings. The Arguments tab is a JSON editor that takes the
     tool's `inputSchema` for completion and markers. It uses Monaco's JSON language, which the REST body
-    editor already loads, so no new renderer code is eager. Prompt arguments are a key-value table.
+    editor already loads, so no new renderer code is eager. Completion walks the schema in the
+    renderer's mirror of the catalogue. Markers come from main, as the GraphQL editor's do: once typing
+    pauses the editor asks `request.mcpArgumentsCheck`, which parses the text (an error where the parse
+    stopped) and validates it against the `inputSchema` with the engine's validator (warnings, since a
+    send only warns on a mismatch). Prompt arguments are a key-value table.
 - **Response pane.**
-  - A status line: "OK", "Tool error (isError)" or "Error −32602 Invalid params", plus the duration and
-    the message count.
+  - A status line: "OK", "Tool error (isError)" or "Error −32602 Invalid params", or why the session
+    stopped with the tail of stderr, plus the duration, the message count and the warnings count.
   - *Result*: content blocks rendered by type. Text is shown as text. Images are shown from base64.
     Audio shows as a labelled block. Resource links and embedded resources show their URI, MIME type and
     text. `structuredContent` is shown as pretty JSON.
   - *Messages*: the JSON-RPC timeline in both directions, with the HTTP calls or the stderr beside it.
+- **Runs.** A sequence step can name an MCP request (badged MCP, placed by server and the tool, prompt
+  or resource it names), and *Run…* on a server row runs its requests in the Runner.
 - **History** keeps each send, with its messages capped. A History entry can be opened but not re-sent
   in this slice: a re-send would also need the approval. MCP sends are not written to the HTTP Log,
   because History is their record.
-- Main holds the session, the approval store and the catalogue refresh. The renderer gets summaries over
+- Main holds the session, the approval store and the catalogue refresh. A refresh writes nothing to
+  History; main saves `catalogue.json` and the metadata through the host. The renderer gets summaries over
   IPC and loads no MCP SDK code: the CSP trap, and the 14 MB budget.
 
 ## CLI and the MCP server
 
-- `wirebench send` and `wirebench run` take MCP requests and print the result as JSON. `--allow-commands`
-  is new on `send`, `run`, `sequence` and `mcp`.
+- `wirebench send` and `wirebench run` (sequences included) take MCP requests; `send` prints the result,
+  or the JSON-RPC error, as JSON in `body`, the way assertions read it. `--allow-commands` is new on
+  `send`, `run` (it covers sequence steps; there is no separate `sequence` verb) and `mcp`; every other
+  verb refuses the flag rather than ignore it. A `--body` override is refused for an MCP request, as for
+  WebSocket: it has no envelope or body to replace. `wirebench operations` lists the saved MCP requests.
 - The MCP server's `send` tool sends an MCP request like any other. History records CLI sends as it
   records the others.
 
@@ -242,7 +271,8 @@ still waiting and closes the session.
 - **CLI tests:** `send` with and without `--allow-commands`, and the MCP server's `send` tool.
 - **Desktop unit tests:** the mutations, the host, the channels, the approval store and dialog, the
   explorer rows, the request editor, the response pane, and the guard tests that list kinds.
-- **One e2e spec** (CI only):
+- **One e2e spec** (CI only), against a fixture server in `e2e/fixtures/mcp-stdio/` written as plain
+  newline-delimited JSON-RPC, so the app can spawn it without resolving the SDK from there:
   1. Create a stdio server pointing at the fixture.
   2. Approve it and refresh the catalogue.
   3. Create a request from a tool, send it, and see the result.

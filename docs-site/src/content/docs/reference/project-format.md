@@ -37,6 +37,14 @@ my-service/
       <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth
       <Folder>/folder.pre.ts  # the folder's scripts, run for every request inside it (format 9)
+  apis/<McpServer>/
+    api.yaml                  # kind: mcp, transport (stdio, http or sse), settings, catalogue metadata
+    catalogue.json            # the server's tools, resources, templates and prompts, when refreshed (format 10)
+    requests/
+      <Request>.request.yaml  # kind: mcp, operation (method, tool, uri or prompt), assertions, settings
+      <Request>.args.json     # a tools/call's arguments, when it has any
+      <Request>.pre.ts        # the request's scripts, as for REST
+      <Folder>/folder.yaml    # a folder's own name and order (its scripts in folder.pre.ts)
   sequences/
     <Sequence>.sequence.yaml  # kind: sequence, version, steps (request ids), transfers, assertions
   mocks/<Mock>/
@@ -66,6 +74,9 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `environments/<slug>.yaml` | One environment's endpoint overrides and properties |
 | `interfaces/<Interface>/interface.yaml` | A SOAP interface: its WSDL/XSD reference, endpoints, WS-Addressing policy and auth (a reference, never a credential) |
 | `apis/<Api>/api.yaml` | A REST API: its OpenAPI reference, base URL, settings and auth reference |
+| `apis/<McpServer>/api.yaml` | An MCP server: `kind: mcp` and its `transport`, which is a local process (`{ type: stdio, command, args, cwd?, env }`, `cwd` relative to the project folder and the project folder when absent), Streamable HTTP (`{ type: http, url, headers, auth }`) or legacy HTTP+SSE (`{ type: sse, url, headers, auth }`, `url` being the event stream). Also `settings: { timeoutMs?, protocolVersion? }` and, after a refresh, `catalogue: { fetchedAt, serverInfo: { name, version }, protocolVersion }`. See [MCP servers](/wirebench/docs/guides/mcp-servers/) |
+| `apis/<McpServer>/catalogue.json` | The lists the server advertised at the last refresh — `tools`, `resources`, `resourceTemplates`, `prompts`, each entry as the server sent it. Each list is sorted by name (or URI), each entry's keys in a fixed order, pretty-printed, so a refresh that finds nothing new saves the same bytes. Only the lists the server advertised are present. A file that is not a catalogue is reported and left alone |
+| `<Request>.request.yaml` (MCP) + `<Request>.args.json` | An MCP request: `kind: mcp` and one `operation` — `{ method: tools/list \| resources/list \| resources/templates/list \| prompts/list }`, `{ method: tools/call, tool, arguments: { file: <Request>.args.json } }`, `{ method: resources/read, uri }` or `{ method: prompts/get, prompt, arguments: [entries] }` (prompt arguments are strings) — plus `assertions`, `scripts` and `settings: { timeoutMs? }`. A tool call's arguments are a JSON object in the sibling `.args.json`, written only when there are any; a call with none sends `{}` |
 | `<Request>.request.yaml` + `<Request>.xml` (SOAP) or `<Request>.body.json` (REST) | One saved request: metadata in YAML, the payload in a file of its own kind |
 | `<Request>.pre.ts`, `<Request>.post.ts` | A request's pre-request and post-response scripts, named by its `scripts` key. They are TypeScript, or JavaScript (`.pre.js`, `.post.js`) for scripts imported from Postman. Renaming or moving the request moves them |
 | `api.pre.ts`, `interface.pre.ts`, `folder.pre.ts` (and `.post.ts`) | The scripts of an API, a SOAP interface or a REST or gRPC folder, named by the `scripts` key of `api.yaml`, `interface.yaml` or `folder.yaml`. They run around every request inside: the API's or interface's first, then each folder's from the outermost in, then the request's own. A request slugged `folder` cannot have scripts in a folder that has them, since both would use `folder.pre.ts` |
@@ -226,7 +237,10 @@ The project format is currently **version 10**:
     A REST request's body can be GraphQL (`kind: graphql`), with its query in
     `<Request>.body.graphql` and its `variables` and `operationName` in the request file. An API can
     record where its GraphQL schema came from (`graphqlSchema: { source, fetchedAt }`), with the
-    schema in `graphql/schema.graphql` beside `api.yaml`. A version-9 project migrates unchanged.
+    schema in `graphql/schema.graphql` beside `api.yaml`. An `apis/` container can be an MCP server
+    (`kind: mcp`), with its catalogue in `catalogue.json` and a tool call's arguments in
+    `<Request>.args.json`; a build without the MCP kind, or with it switched off, loads such a server
+    as a placeholder and never rewrites it. A version-9 project migrates unchanged.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it

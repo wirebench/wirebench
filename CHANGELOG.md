@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Test MCP servers.** An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and
+  WebSocket APIs: a local process over stdio, Streamable HTTP, or the legacy HTTP+SSE transport.
+  **New MCP server…** on a project creates one; its tab edits the connection (command, arguments,
+  folder and environment, or URL, headers and auth) and shows its catalogue. **Refresh catalogue**
+  fetches the server's tools, resources, templates and prompts into `catalogue.json` beside
+  `api.yaml`, sorted so a refresh with nothing new saves the same bytes and a diff shows contract drift.
+  A request runs one operation (`tools/call`, `resources/read`, `prompts/get` or a list) in its own
+  session; a tool call's arguments are completed and marked from the tool's `inputSchema`. The response
+  shows OK, a tool error or a JSON-RPC error, the content blocks by type, and every JSON-RPC message with
+  the HTTP calls or the server's stderr. A stdio command runs only once this machine approves it (**Run
+  once**, **Always allow** or **Cancel**, asked again when the command line changes); `wirebench run`,
+  `send` and `mcp` refuse one unless given `--allow-commands`. MCP requests run in the Runner, sequences
+  and the CLI with assertions, an "MCP result" check and scripts, and are kept in History. Servers that
+  need NTLM, Digest, AWS Signature v4 or Kerberos are refused (`mcp-auth-unsupported`); MCP's own
+  authorization discovery, long-lived sessions and answering server requests are not in this release (#79).
+
 - **Import hosts from PuTTY, SecureCRT, MobaXterm and CSV.** **Hosts: Import Hosts…** (was **Import
   from SSH Config…**) now also reads a PuTTY registry export (`.reg`), a SecureCRT XML settings export, a
   MobaXterm `.mobaconf` or `.mxtsessions` file, and a CSV with the columns `name, address, port, user,

@@ -40,6 +40,7 @@ export default defineConfig({
             { label: 'GraphQL', slug: 'guides/graphql' },
             { label: 'gRPC', slug: 'guides/grpc' },
             { label: 'WebSocket', slug: 'guides/websocket' },
+            { label: 'MCP servers', slug: 'guides/mcp-servers' },
             { label: 'AsyncAPI contracts', slug: 'guides/asyncapi' },
             { label: 'Importing APIs', slug: 'guides/importers' },
             { label: 'Exporting collections', slug: 'guides/exporters' },
