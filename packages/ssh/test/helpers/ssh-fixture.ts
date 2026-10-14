@@ -79,6 +79,8 @@ export async function startSshFixture(options: {
   acceptEnv?: readonly string[];
   /** Refuse agent forwarding requests, as `AllowAgentForwarding no` would; without it they are granted. */
   refuseAgentForwarding?: boolean;
+  /** Hold every sign-in this long before accepting it, so a test can act while the client connects. */
+  authDelayMs?: number;
 }): Promise<SshFixture> {
   const sftp = options.sftp;
   const sftpBinary = typeof sftp === 'object' ? findSftpServer() : null;
@@ -136,7 +138,8 @@ export async function startSshFixture(options: {
         ctx.username === options.password.user &&
         ctx.password === options.password.password
       ) {
-        ctx.accept();
+        if (options.authDelayMs === undefined) ctx.accept();
+        else setTimeout(() => ctx.accept(), options.authDelayMs);
       } else if (
         ctx.method === 'publickey' &&
         allowedKey !== undefined &&
