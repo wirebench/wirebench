@@ -317,7 +317,16 @@ describe('EnvironmentsView', () => {
     setUp({ environments: [] });
     const grid = screen.getByRole('grid', { name: 'Environments' });
     expect(within(grid).getAllByRole('row')).toHaveLength(2);
-    expect(grid.textContent).not.toContain('No environments yet.');
-    expect(screen.getByText('No environments yet.')).toBeTruthy();
+    const empty = screen.getByTestId('environments-empty');
+    expect(grid.contains(empty)).toBe(false);
+    expect(empty.textContent).toContain('An environment holds the values a request resolves');
+  });
+
+  it('offers New environment while there are none, and it adds the first one', async () => {
+    const { mutate } = setUp({ environments: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'New environment' }));
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ kind: 'add-workspace-environment', name: 'Environment 1' });
+    });
   });
 });

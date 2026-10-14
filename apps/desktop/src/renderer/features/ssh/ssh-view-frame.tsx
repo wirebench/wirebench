@@ -4,8 +4,9 @@
  * the line a search that hides everything shows, with the way back.
  */
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Search, type LucideIcon } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { ActionEmptyState, type ActionEmptyStateProps } from '../../components/empty-state.js';
 import { formatKeybinding } from '@shared/keybinding-format.js';
 import { detectPlatform } from '../../lib/platform.js';
 
@@ -100,29 +101,11 @@ export function SshViewHeader({ title, count, search, actions, description }: Ss
   );
 }
 
-export interface SshEmptyStateProps {
-  readonly icon: LucideIcon;
-  /** One sentence on the task the view is for. */
-  readonly text: string;
-  /** The primary action first. */
-  readonly children: ReactNode;
-  readonly testId?: string;
-}
+export type SshEmptyStateProps = ActionEmptyStateProps;
 
-/** A view with nothing in it yet: what it is for, and the button that adds the first one. */
-export function SshEmptyState({ icon: Icon, text, children, testId }: SshEmptyStateProps) {
-  return (
-    <div
-      data-testid={testId ?? 'ssh-empty-state'}
-      className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-hairline-strong px-6 py-12 text-center"
-    >
-      <span className="flex size-12 items-center justify-center rounded-xl bg-accent-muted text-fg-default">
-        <Icon size={22} aria-hidden="true" />
-      </span>
-      <p className="max-w-sm text-sm text-fg-muted">{text}</p>
-      <div className="flex gap-2">{children}</div>
-    </div>
-  );
+/** A view with nothing in it yet: the shell's shared empty-state card, under the SSH views' test id. */
+export function SshEmptyState({ testId, ...props }: SshEmptyStateProps) {
+  return <ActionEmptyState {...props} testId={testId ?? 'ssh-empty-state'} />;
 }
 
 /** A search (or filter) that leaves nothing: says so, and offers to clear it. */
