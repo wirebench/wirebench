@@ -50,6 +50,7 @@ import {
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
 import { SnippetRunDialog } from '../features/ssh/snippets/run-dialog.js';
 import { TrustDialog } from '../features/ssh/trust-dialog.js';
+import { HostDeleteDialog } from '../features/ssh/host-delete.js';
 import { ForwardPrompts } from '../features/ssh/forwarding/bind-confirm-dialog.js';
 import { subscribeToForwards } from '../features/ssh/forwarding/forwards-store.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
@@ -595,6 +596,7 @@ export function AppShell() {
       <SecretSourcesApproveDialog />
       {/* Here, not in the Hosts view: a connect from a terminal tab prompts while that view is hidden. */}
       {sshEnabled && <TrustDialog />}
+      {sshEnabled && <HostDeleteDialog />}
       {sshEnabled && <ForwardPrompts />}
       {sshEnabled && <SnippetRunDialog />}
       <CollectionExportReportDialog />

@@ -257,6 +257,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **SSH quick wins.** Deleting a host asks first, naming how many open sessions will close, and those
+  terminal panes and its Files tab close with it; Delete is drawn as a danger item. Dialogs share one
+  layer scale (menus, then dialogs, then toasts), so a split divider no longer draws through the Save
+  layout dialog and the trust prompt shows over a pane's connection screen. Shortcuts in the SSH views and
+  Terminal settings read in the platform's notation (Alt+Enter, Ctrl++ off a Mac). The palette lists one
+  Connect to Host…, and every SSH command starts with its area: Hosts, Terminal, Files, Forwarding,
+  Layouts or Snippets, with Forwarding in a category of its own (#536).
 - **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
   workspace a project environment applies through the workspace environment with the same slug; a
   rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped

@@ -11,6 +11,7 @@ import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'reac
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
 import { editHost, openInNewTab, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
+import { useHostDelete } from './host-delete.js';
 import {
   ancestorsOf,
   findHost,
@@ -18,7 +19,6 @@ import {
   freeId,
   moveHost,
   removeGroup,
-  removeHost,
   upsertHost,
   useHostsStore,
 } from './hosts-store.js';
@@ -27,6 +27,8 @@ import { useKeyInstall } from './ssh-keys.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
+/** Delete: the same item, in the danger colour. */
+const DANGER_ITEM_CLASS = ITEM_CLASS.replace('text-fg-default', 'text-status-danger');
 const CONTENT_CLASS = 'z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 
 /** The parts of a Radix menu the items are drawn with; the context menu and the dropdown both fit. */
@@ -143,12 +145,13 @@ function HostItems({ host, kit: M }: { readonly host: HostEntryWire; readonly ki
       </M.Item>
       <M.Separator className="my-1 h-px bg-hairline" />
       <M.Item
-        className={ITEM_CLASS}
+        className={DANGER_ITEM_CLASS}
         onSelect={() => {
-          void save(removeHost(file, host.id));
+          // Asks first, naming the sessions that will close; the dialog outlives this menu.
+          useHostDelete.getState().ask(host.id);
         }}
       >
-        Delete
+        Delete…
       </M.Item>
     </>
   );
