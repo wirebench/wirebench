@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import type { RendererKind } from '../renderer-kind.js';
+import { requestContainer } from '../tab-contribution.js';
 import { registerMcpCommands } from './commands.js';
 import { mcpHistory, mcpLog, mcpRequests, mcpSearch } from './activity.js';
 import { mcpExplorer } from './explorer.js';
@@ -27,6 +28,8 @@ export const mcpRenderer: RendererKind = {
   tabs: [
     {
       kind: 'mcp-request',
+      container: (id, project) =>
+        requestContainer(project.mcpRequests[id], (apiId) => project.mcpServers[apiId] !== undefined),
       idField: 'mcpRequestId',
       prefix: 'mcp:',
       persisted: true,
@@ -36,6 +39,7 @@ export const mcpRenderer: RendererKind = {
     },
     {
       kind: 'mcp-api',
+      container: (id, project) => (project.mcpServers[id] === undefined ? undefined : { apiId: id }),
       idField: 'mcpApiId',
       prefix: 'mcp-api:',
       persisted: true,

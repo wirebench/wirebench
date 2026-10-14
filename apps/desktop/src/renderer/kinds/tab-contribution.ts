@@ -7,7 +7,7 @@
 import type { ComponentType, LazyExoticComponent } from 'react';
 import type { DraftsState } from '../state/drafts.js';
 import type { EditorTab } from '../state/editors.js';
-import type { ProjectStore } from '../state/project.js';
+import type { ProjectSnapshot, ProjectStore } from '../state/project.js';
 import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
 
 /** The `EditorTab` fields that hold a tab's entity id. */
@@ -55,8 +55,30 @@ export interface TabContribution {
   title(id: string, context: TabTitleContext): string | undefined;
   /** What tells the entity apart from others of the same name, shown after it in the tab menu. */
   detail?(id: string, context: TabTitleContext): string | undefined;
+  /**
+   * The API (and folder) the tab's entity sits in: where a `<kind>.new*` command run from this tab creates.
+   * Unset, or `undefined`, for a tab that is not in one of its kind's APIs.
+   */
+  container?(id: string, project: ProjectSnapshot): TabContainer | undefined;
   /** Whether the entity has unsaved edits; only the request kinds carry drafts. */
   dirty?(id: string, drafts: DraftsState): boolean;
+}
+
+/** An API, and the folder inside it, that a tab's entity sits in. */
+export interface TabContainer {
+  readonly apiId: string;
+  readonly folderId?: string;
+}
+
+/** The container of a request that has an `apiId` and maybe a `folderId`, when `owns` says the API is its kind's. */
+export function requestContainer(
+  request: { readonly apiId: string; readonly folderId?: string | undefined } | undefined,
+  owns: (apiId: string) => boolean,
+): TabContainer | undefined {
+  if (request === undefined || !owns(request.apiId)) return undefined;
+  return request.folderId === undefined
+    ? { apiId: request.apiId }
+    : { apiId: request.apiId, folderId: request.folderId };
 }
 
 /** A tab's entity id, read through its contribution. */

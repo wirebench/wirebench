@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import type { RendererKind } from '../renderer-kind.js';
+import { requestContainer } from '../tab-contribution.js';
 import { registerGrpcCommands } from './commands.js';
 import { grpcRequests, grpcHistory, grpcSearch, grpcLog } from './activity.js';
 import { grpcExplorer } from './explorer.js';
@@ -37,6 +38,8 @@ export const grpcRenderer: RendererKind = {
   tabs: [
     {
       kind: 'grpc-request',
+      container: (id, project) =>
+        requestContainer(project.grpcRequests[id], (apiId) => project.grpcApis[apiId] !== undefined),
       idField: 'grpcRequestId',
       prefix: 'grpc:',
       persisted: true,
@@ -46,6 +49,7 @@ export const grpcRenderer: RendererKind = {
     },
     {
       kind: 'grpc-api',
+      container: (id, project) => (project.grpcApis[id] === undefined ? undefined : { apiId: id }),
       idField: 'grpcApiId',
       prefix: 'grpc-api:',
       persisted: true,
