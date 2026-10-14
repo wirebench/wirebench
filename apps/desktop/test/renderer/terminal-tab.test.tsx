@@ -39,6 +39,17 @@ const xterm = vi.hoisted(() => {
     getSelection(): string {
       return this.selection;
     }
+    hasSelection(): boolean {
+      return this.selection !== '';
+    }
+    selectedAll = 0;
+    selectAll(): void {
+      this.selectedAll += 1;
+    }
+    cleared = 0;
+    clear(): void {
+      this.cleared += 1;
+    }
     onSelectionChange(listener: () => void) {
       this.selectionListeners.push(listener);
       return { dispose: () => undefined };
@@ -885,6 +896,127 @@ describe('the terminal tab', () => {
       expect(lastTerminal()?.focused).toBe(focusedBefore + 1);
       expect(search()?.cleared).toBeGreaterThan(cleared);
     });
+
+    it('is a strip above the terminal, outside the area the connection screen covers (#534)', async () => {
+      await mount();
+      terminalKey(CHORD);
+      const holder = screen.getByTestId('ssh-terminal');
+      expect(findBar().compareDocumentPosition(holder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(findBar().parentElement?.contains(holder)).toBe(true);
+      expect(findBar().className).not.toMatch(/absolute/);
+      expect(holder.parentElement?.contains(findBar())).toBe(false);
+    });
+
+    it('closes when its pane loses the session (#534)', async () => {
+      await mount();
+      terminalKey(CHORD);
+      expect(findBar().hidden).toBe(false);
+      act(() => {
+        dispatch('ssh.exit', { sessionId: 's1', code: 0 });
+        useHostsStore.getState().noteSessionState('s1', 'closed');
+      });
+      expect(findBar().hidden).toBe(true);
+    });
+  });
+
+  describe('the right-click menu (#534)', () => {
+    async function mount(reply = OPEN('s1')): Promise<void> {
+      connect.mockResolvedValueOnce(reply);
+      act(() => {
+        openTerminalFor('a');
+      });
+      render(<EditorArea />);
+      await waitFor(() => {
+        expect(sessionOn('a')?.state).toBe('open');
+      });
+    }
+    async function pick(name: string): Promise<void> {
+      fireEvent.contextMenu(screen.getByTestId('ssh-terminal'));
+      fireEvent.click(await screen.findByRole('menuitem', { name }));
+    }
+    const readText = vi.fn<() => Promise<string>>();
+    beforeEach(() => {
+      readText.mockReset();
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText, readText }, configurable: true });
+    });
+
+    it('Find… opens the pane’s find bar with the query focused', async () => {
+      await mount();
+      expect(screen.getByTestId('terminal-find').hidden).toBe(true);
+      await pick('Find…');
+      expect(screen.getByTestId('terminal-find').hidden).toBe(false);
+      await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Find' }));
+      });
+    });
+
+    it('Copy copies the selection; Select all and Clear act on the terminal', async () => {
+      await mount();
+      const term = lastTerminal();
+      if (term === undefined) throw new Error('no terminal');
+      term.selection = 'picked';
+      await pick('Copy');
+      expect(writeText).toHaveBeenCalledWith('picked');
+      await pick('Select all');
+      expect(term.selectedAll).toBe(1);
+      await pick('Clear');
+      expect(term.cleared).toBe(1);
+    });
+
+    it('Paste goes through the paste guard: one line goes in, several lines ask first', async () => {
+      await mount();
+      readText.mockResolvedValueOnce('uptime');
+      await pick('Paste');
+      await waitFor(() => {
+        expect(lastTerminal()?.pasted).toEqual(['uptime']);
+      });
+      readText.mockResolvedValueOnce('rm -rf a\nrm -rf b\n');
+      await pick('Paste');
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+      expect(lastTerminal()?.pasted).toEqual(['uptime']);
+    });
+
+    it('Ctrl+Shift+C and Ctrl+Shift+V copy and paste off a Mac, and never reach the shell', async () => {
+      await mount();
+      const term = lastTerminal();
+      if (term === undefined) throw new Error('no terminal');
+      term.selection = 'out';
+      const copy = new KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true, cancelable: true });
+      expect(term.keyHandler?.(copy)).toBe(false);
+      expect(copy.defaultPrevented).toBe(true);
+      expect(writeText).toHaveBeenCalledWith('out');
+      readText.mockResolvedValueOnce('ls');
+      act(() => {
+        term.keyHandler?.(new KeyboardEvent('keydown', { key: 'V', ctrlKey: true, shiftKey: true }));
+      });
+      await waitFor(() => {
+        expect(term.pasted).toEqual(['ls']);
+      });
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('Reconnect opens a fresh session in the pane', async () => {
+      await mount();
+      connect.mockResolvedValueOnce(OPEN('s2'));
+      await pick('Reconnect');
+      await waitFor(() => {
+        expect(sessionOn('a')?.sessionId).toBe('s2');
+      });
+      expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
+    });
+  });
+
+  it('draws the recording dot on the tab while the session is logged (#534)', async () => {
+    connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1', recording: true } });
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    expect(await screen.findByTestId('recording-mark')).toBeTruthy();
+    act(() => {
+      useHostsStore.getState().noteSessionState('s1', 'closed');
+    });
+    expect(screen.queryByTestId('recording-mark')).toBeNull();
   });
 });
 

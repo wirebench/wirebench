@@ -331,6 +331,18 @@ the screen shows no spinner or moving line, only the ticks.
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
+- Right-click in a terminal for **Copy**, **Paste**, **Select all**, **Find…**, **Clear**, **Split
+  right**, **Split down**, **Run snippet…**, **Open files** and **Reconnect**, each with its shortcut.
+  On macOS copy, paste and select all are <kbd>⌘C</kbd>, <kbd>⌘V</kbd> and <kbd>⌘A</kbd>; on Windows
+  and Linux they are <kbd>Ctrl+Shift+C</kbd>, <kbd>Ctrl+Shift+V</kbd> and <kbd>Ctrl+Shift+A</kbd>, so
+  <kbd>Ctrl+C</kbd> still interrupts the remote program. A paste from the menu asks first the same way.
+- <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd> in a terminal, or **Find…** in its menu, opens a find bar above
+  that pane, which moves the terminal down rather than covering its text. Each pane has its own.
+  <kbd>Enter</kbd> and <kbd>Shift+Enter</kbd> go to the next and previous match; **Match case**,
+  **Match whole word** and **Use regular expression** narrow the search. The bar closes when the
+  pane's session ends or drops.
+- A red dot on the tab, and on the pane's header in a split tab, means the session is being written
+  to a [session log](#session-logs).
 
 ## Local terminal
 
@@ -478,7 +490,7 @@ one.
 <kbd>Ctrl+Shift+D</kbd>) are on the tab's toolbar and in each pane's menu. The new pane asks which host to
 connect to, with the current pane's host chosen; <kbd>Enter</kbd> connects.
 
-- A tab holds at most 12 panes, and a split is refused when either half would be narrower than 20 columns
+- A tab holds at most 12 panes, and a split is refused when either half would be narrower than 40 columns
   or shorter than 5 rows.
 - Drag the line between two panes to resize them; double-click it to make them even.
 - <kbd>⌘⌥</kbd> / <kbd>Ctrl+Alt</kbd> with an arrow key moves the focus to the neighbouring pane.
@@ -970,10 +982,12 @@ host, address, user, start, end and exit code. All logs together stay under **Se
 limit** (Settings › Terminal, 500 MB by default): past it the oldest logs are deleted first. A log a
 session is still writing is never deleted.
 
-**Reading them.** The host's details list its logs, newest first, with how the session ended and the
-size. **Search logs** finds the logs that contain some text and shows the first line that matches;
+**Reading them.** The host's details list its logs under the day they started, newest first, one
+row each such as *11:09 · 16 B · exit 0*: the start time, the size and how the session ended.
+**Search logs** finds the logs that contain some text and shows the first line that matches;
 open a log to read it, filtered to the lines that contain your text. Each log can also be revealed in
-the file manager, or deleted.
+the file manager, or deleted. **Session Logs…** in the palette, or **All hosts…** in a host's
+details, lists every host's logs in one place, with a filter by host name.
 
 Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.
 

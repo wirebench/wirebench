@@ -50,7 +50,7 @@ import {
   forwardStopRequestSchema,
 } from './forward-wire.js';
 import {
-  sessionLogHostRequestSchema,
+  sessionLogListRequestSchema,
   sessionLogListResponseSchema,
   sessionLogReadResponseSchema,
   sessionLogRequestSchema,
@@ -1040,6 +1040,8 @@ export const channels = {
     saveHosts: defineChannel('ssh.saveHosts', sshSaveHostsRequestSchema, sshListHostsResponseSchema),
     secretNames: defineChannel('ssh.secretNames', z.undefined(), sshSecretNamesResponseSchema),
     setSecret: defineChannel('ssh.setSecret', sshSetSecretRequestSchema, z.object({})),
+    // The login name on this machine: a new host's User starts from it (#531).
+    localUser: defineChannel('ssh.localUser', z.undefined(), z.strictObject({ name: z.string() })),
     connect: defineChannel('ssh.connect', sshConnectRequestSchema, sshConnectResponseSchema),
     write: defineChannel('ssh.write', sshWriteRequestSchema, z.object({})),
     writeMany: defineChannel('ssh.writeMany', sshWriteManyRequestSchema, sshWriteManyResponseSchema),
@@ -1126,7 +1128,7 @@ export const channels = {
   sessionLog: {
     switches: defineChannel('sessionLog.switches', z.object({}), sessionLogSwitchesResponseSchema),
     setSwitch: defineChannel('sessionLog.setSwitch', sessionLogSetSwitchRequestSchema, z.object({})),
-    list: defineChannel('sessionLog.list', sessionLogHostRequestSchema, sessionLogListResponseSchema),
+    list: defineChannel('sessionLog.list', sessionLogListRequestSchema, sessionLogListResponseSchema),
     read: defineChannel('sessionLog.read', sessionLogRequestSchema, sessionLogReadResponseSchema),
     search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
     delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),

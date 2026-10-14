@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { SshAuthWire } from '../../../shared/ssh-wire.js';
@@ -18,15 +18,25 @@ function describe(auth: SshAuthWire | undefined): string {
   return auth === undefined ? 'none' : auth.kind === 'agent' ? 'agent' : `${auth.kind} (${auth.secret})`;
 }
 
-/** The auth block of the host / group form: inherit it, or pick password / key / agent with secret names. */
+/**
+ * The auth block of the host / group form: inherit it (offered only when a group supplies one, or nothing is
+ * chosen yet), or pick password / key / agent. A password is typed inline and the form stores it as a secret
+ * on Save; a stored secret can be chosen instead. A key is picked by secret name.
+ */
 export function HostAuthSection(props: {
   readonly value: SshAuthWire | undefined;
   readonly inherited: Provenance<SshAuthWire>;
   readonly onChange: (next: SshAuthWire | undefined) => void;
+  /** The password typed inline; never shown back once saved. */
+  readonly password?: string;
+  readonly onPasswordChange?: (password: string) => void;
 }) {
-  const { value, inherited, onChange } = props;
+  const { value, inherited, onChange, password = '', onPasswordChange } = props;
+  const radioName = useId();
   const { names, reload: loadNames } = useSecretNames();
   const [setting, setSetting] = useState<{ name: string; value: string; error?: string } | undefined>(undefined);
+  // A password is typed by default; picking a stored secret instead is the less common path.
+  const [savedSecret, setSavedSecret] = useState(false);
 
   // Write-only: the value goes to main and is never read back; the file only ever gets the name.
   const storeValue = async (): Promise<void> => {
@@ -42,6 +52,7 @@ export function HostAuthSection(props: {
   };
 
   const kind: Kind = value?.kind ?? 'inherit';
+  const kinds = KINDS.filter((k) => k.id !== 'inherit' || inherited.value !== undefined || value === undefined);
   const pick = (next: Kind): void => {
     if (next === 'inherit') onChange(undefined);
     else if (next === 'agent') onChange({ kind: 'agent' });
@@ -54,11 +65,11 @@ export function HostAuthSection(props: {
     <fieldset className="flex flex-col gap-2 text-xs">
       <legend className="text-fg-subtle">Authentication</legend>
       <div role="radiogroup" aria-label="Authentication" className="flex flex-wrap gap-3">
-        {KINDS.map((k) => (
+        {kinds.map((k) => (
           <label key={k.id} className="flex items-center gap-1 text-sm text-fg-default">
             <input
               type="radio"
-              name="ssh-auth-kind"
+              name={radioName}
               checked={kind === k.id}
               onChange={() => {
                 pick(k.id);
@@ -71,14 +82,66 @@ export function HostAuthSection(props: {
       {value === undefined && (
         <p className="text-fg-subtle">{`Inherited: ${describe(inherited.value)}${source === '' ? '' : ` (${source})`}`}</p>
       )}
-      {value !== undefined && value.kind !== 'agent' && (
+      {value?.kind === 'password' && !savedSecret && (
+        <div className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-fg-subtle">Password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              className={INPUT_CLASS}
+              value={password}
+              placeholder={value.secret === '' ? undefined : `Saved as ${value.secret} · type to replace`}
+              onChange={(e) => {
+                onPasswordChange?.(e.target.value);
+              }}
+            />
+          </label>
+          <div className="flex items-center gap-2 text-fg-subtle">
+            <span className="flex-1">
+              {value.secret === ''
+                ? 'Kept on this machine as a secret, never in the hosts file.'
+                : `Stored as the secret ${value.secret}.`}
+            </span>
+            <button
+              type="button"
+              className="rounded px-1 hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+              onClick={() => {
+                onPasswordChange?.('');
+                setSavedSecret(true);
+              }}
+            >
+              Choose a stored secret
+            </button>
+          </div>
+        </div>
+      )}
+      {value?.kind === 'password' && savedSecret && (
         <div className="flex items-end gap-2">
           <SecretSelect
-            label={value.kind === 'password' ? 'Password secret' : 'Private key secret'}
+            label="Password secret"
             value={value.secret}
             names={names}
             onChange={(secret) => {
-              if (value.kind !== 'key') return onChange({ ...value, secret });
+              onChange({ ...value, secret });
+            }}
+          />
+          <Button
+            onClick={() => {
+              setSavedSecret(false);
+            }}
+          >
+            Type a password
+          </Button>
+        </div>
+      )}
+      {value?.kind === 'key' && (
+        <div className="flex items-end gap-2">
+          <SecretSelect
+            label="Private key secret"
+            value={value.secret}
+            names={names}
+            onChange={(secret) => {
               // A keychain key's certificate goes with it (`<key>_cert`, #421).
               const { certificateSecret, ...rest } = value;
               void certificateSecret;
@@ -88,32 +151,28 @@ export function HostAuthSection(props: {
               );
             }}
           />
-          {value.kind === 'key' && (
-            <SecretSelect
-              label="Certificate secret"
-              value={value.certificateSecret ?? ''}
-              names={names}
-              optional
-              onChange={(name) => {
-                const { certificateSecret, ...rest } = value;
-                void certificateSecret;
-                onChange(name === '' ? rest : { ...rest, certificateSecret: name });
-              }}
-            />
-          )}
-          {value.kind === 'key' && (
-            <SecretSelect
-              label="Passphrase secret"
-              value={value.passphraseSecret ?? ''}
-              names={names}
-              optional
-              onChange={(name) => {
-                const { passphraseSecret, ...rest } = value;
-                void passphraseSecret;
-                onChange(name === '' ? rest : { ...rest, passphraseSecret: name });
-              }}
-            />
-          )}
+          <SecretSelect
+            label="Certificate secret"
+            value={value.certificateSecret ?? ''}
+            names={names}
+            optional
+            onChange={(name) => {
+              const { certificateSecret, ...rest } = value;
+              void certificateSecret;
+              onChange(name === '' ? rest : { ...rest, certificateSecret: name });
+            }}
+          />
+          <SecretSelect
+            label="Passphrase secret"
+            value={value.passphraseSecret ?? ''}
+            names={names}
+            optional
+            onChange={(name) => {
+              const { passphraseSecret, ...rest } = value;
+              void passphraseSecret;
+              onChange(name === '' ? rest : { ...rest, passphraseSecret: name });
+            }}
+          />
           <Button
             onClick={() => {
               setSetting({ name: '', value: '' });

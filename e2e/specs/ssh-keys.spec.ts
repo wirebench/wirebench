@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { startSshFixture, type SshFixture } from '@wirebench/ssh/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
+import { fillNewHost } from '../helpers/ssh-host.js';
 
 let launched: LaunchedApp | undefined;
 let fixture: SshFixture | undefined;
@@ -35,18 +36,7 @@ test('generate a key in the keychain, install it on a host and switch the host t
   await page.getByRole('button', { name: 'New host' }).click();
   const dialog = page.getByTestId('host-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Name', { exact: true }).fill('box');
-  await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
-  await dialog.getByRole('switch', { name: 'Override Port' }).click();
-  await dialog.getByLabel('Port', { exact: true }).fill(String(fixture.port));
-  await dialog.getByRole('switch', { name: 'Override User' }).click();
-  await dialog.getByLabel('User', { exact: true }).fill('tester');
-  await dialog.getByRole('radio', { name: 'Password', exact: true }).check();
-  await dialog.getByRole('button', { name: 'Set value…' }).click();
-  await dialog.getByLabel('Secret name', { exact: true }).fill('box_pw');
-  await dialog.getByLabel('Secret value', { exact: true }).fill('pw');
-  await dialog.getByRole('button', { name: 'Store' }).click();
-  await expect(dialog.getByLabel('Password secret', { exact: true })).toHaveValue('box_pw');
+  await fillNewHost(dialog, { name: 'box', port: fixture.port, user: 'tester', password: 'pw' });
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 
@@ -68,7 +58,7 @@ test('generate a key in the keychain, install it on a host and switch the host t
   // Install it over the password sign-in; the host key is new, so it is trusted from the dialog first.
   await row.getByRole('button', { name: 'Install on host…' }).click();
   const install = page.getByTestId('install-key-dialog');
-  await expect(install).toContainText('Signs in with password box_pw');
+  await expect(install).toContainText('Signs in with password box_password');
   await install.getByRole('button', { name: 'Install' }).click();
   await expect(install).toContainText(fixture.hostKey.fingerprint, { timeout: 30_000 });
   await install.getByRole('button', { name: 'Trust and install' }).click();

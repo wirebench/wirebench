@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
   **Clear search**. **New rule…** in the Port forwarding view picks a host and adds a rule to it without
   opening the host's settings. The SSH area's first tab is named after the view it shows, with its icon,
   instead of always saying Hosts (#535).
+- **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
+  Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
+  Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select
+  all, leaving Ctrl+C to the shell. The find bar is now a strip above its pane that moves the terminal
+  down instead of covering it or the reconnect notice, and closes when the pane's session ends or
+  drops. A red dot on the tab and the pane header shows a session is being written to a session log.
+  **Session Logs…** in the palette, or **All hosts…** in a host's details, lists every host's logs,
+  and log rows now read like *11:09 · 16 B · exit 0* under the day they started (#534).
 - **Connection screen for SSH terminals and Files.** Until the shell opens, a pane shows the steps of
   the connect: Resolving address, Connecting, Checking host key, Authenticating and Starting shell (or
   Starting SFTP). Each shows what it is doing, then a tick and how long it took, and the screen ends
@@ -262,6 +270,19 @@ All notable changes to this project are documented here. The format follows
   refuses it as made by a newer Wirebench. A version-9 project opens unchanged (#338, #339, #348,
   #77).
 
+### Changed
+
+- **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
+  how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
+  terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a
+  user, User is a plain field prefilled with this machine's login name; the inherit switch shows only
+  when a group supplies the value, and every inheritable row has one switch with its source as text
+  ("22 · default", "deploy · from Production"). **Password** takes the password inline and stores it
+  on Save as the workspace secret `<host>_password` (the hosts file holds only the name); **Choose a
+  stored secret** picks an existing one instead. A **Group** select starts on the group the dialog was
+  opened from or the active group chip, and moves an edited host. A disabled Save lists what is
+  missing. The host edit panel has the same form (#531).
+
 ### Fixed
 
 - **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
@@ -276,6 +297,14 @@ All notable changes to this project are documented here. The format follows
   the override stopped applying and sends went to the API's own base URL. A rename of a REST,
   WebSocket or gRPC API now moves its keys in the project's environments and in every workspace
   environment (#477).
+- **The SSH area fits a small window.** At 1024×700 the Files panes showed sizes and dates but no
+  names, and scrolled sideways. Each pane now keeps the Name column at least 10rem wide, drops
+  **Modified** below 560 pixels and **Permissions** below 440, and never scrolls sideways. A split
+  terminal tab no longer slides under the sidebar, and its find bar stays inside its pane. A split right
+  is refused with a toast when either half would be narrower than 40 columns (was 20). Host details
+  scroll only downwards, putting each label above its value in a panel narrower than 360 pixels. The SSH
+  menu cuts long labels short and turns into a column of icons, each named in its tooltip, when the sidebar
+  is too narrow for them (#533).
 
 ## [6.0.0] - 2026-10-12
 

@@ -94,7 +94,11 @@ export function SlideOver({ label, open, width, onWidthChange, onToggle, onClose
             <X size={14} aria-hidden="true" />
           </IconButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2">{children}</div>
+        {/* Scrolls down only: the content is a container, so a narrow panel lays it out narrower (its
+            children may not hold it wider) rather than scrolling sideways. */}
+        <div className="@container min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2 *:min-w-0">
+          {children}
+        </div>
       </div>
     </aside>
   );

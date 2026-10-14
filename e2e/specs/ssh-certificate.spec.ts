@@ -50,9 +50,7 @@ test('attach a certificate to a keychain key and sign in with it', async () => {
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Name', { exact: true }).fill('box');
   await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
-  await dialog.getByRole('switch', { name: 'Override Port' }).click();
   await dialog.getByLabel('Port', { exact: true }).fill(String(server.port));
-  await dialog.getByRole('switch', { name: 'Override User' }).click();
   await dialog.getByLabel('User', { exact: true }).fill(server.user);
   await dialog.getByRole('radio', { name: 'Key', exact: true }).check();
   await dialog.getByLabel('Private key secret', { exact: true }).selectOption('ci_key');
