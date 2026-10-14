@@ -177,9 +177,10 @@ test.describe('secrets', () => {
     await expect(rawRequest).toContainText('Authorization: <redacted>');
     await expect(rawRequest).not.toContainText('Basic ');
 
-    // Toggling show-secrets through the palette re-reads the cached exchange from main.
+    // Revealing secrets through the palette asks first, then re-reads the cached exchange from main.
     await page.keyboard.press(isMac ? 'Meta+k' : 'Control+k');
-    await page.getByRole('option').filter({ hasText: 'Show Secrets' }).first().click();
+    await page.getByRole('option').filter({ hasText: 'Reveal Secrets' }).first().click();
+    await page.locator('[data-testid="reveal-secrets-confirm"]').click();
 
     await expect(rawRequest).toContainText('Authorization: Basic ', { timeout: 10_000 });
   });

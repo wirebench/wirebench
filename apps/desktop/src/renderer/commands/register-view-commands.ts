@@ -58,6 +58,12 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     },
   });
   registerCommand({
+    ...catalogEntry('view.showHttpLog'),
+    run: () => {
+      ui().showConsoleTab('http-log');
+    },
+  });
+  registerCommand({
     ...catalogEntry('view.toggleCode'),
     run: () => {
       ui().toggleCode();

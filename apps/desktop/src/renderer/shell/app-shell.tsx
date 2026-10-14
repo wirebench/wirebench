@@ -61,6 +61,7 @@ import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-di
 import { SettingsPage } from '../features/preferences/settings-page.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
+import { RevealSecretsDialog } from '../features/console/reveal-secrets-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
 import { OpenTeamWorkspaceDialog } from '../features/workspace/open-team-workspace-dialog.js';
@@ -575,6 +576,7 @@ export function AppShell() {
       <CreateWorkspaceDialog />
       <WorkspaceManageDialog />
       <RemoveProjectDialog />
+      <RevealSecretsDialog />
       <ShareDialog />
       <JoinDialog />
       <OpenTeamWorkspaceDialog />

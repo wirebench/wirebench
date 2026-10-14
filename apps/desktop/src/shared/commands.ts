@@ -130,6 +130,7 @@ export const COMMAND_IDS = [
   'script.clearValues',
   'env.switch',
   'env.next',
+  'view.showHttpLog',
   'secrets.toggleShowSecrets',
   'secrets.setTokenValue',
   'secrets.clearSourceCache',
