@@ -145,6 +145,8 @@ export function ConnectScreen({
   const steps = view?.steps;
   const total = view !== undefined && view.outcome.kind === 'connected' ? view.outcome.at - view.startedAt : undefined;
   const showActions = failed || (reconnect === undefined && view === undefined);
+  // A host's settings stopped it before any step ran: the steps are not the story (#532).
+  const settings = view?.outcome.kind === 'failed' && view.outcome.step === undefined ? view.outcome : undefined;
 
   return (
     <div
@@ -190,7 +192,16 @@ export function ConnectScreen({
           </span>
         </div>
 
-        <ol className="flex flex-col gap-1" aria-label="Connection steps">
+        {settings !== undefined && (
+          <div className="flex flex-col gap-1">
+            <h2 className="text-sm font-medium text-fg-default">Host settings</h2>
+            <p role="alert" data-testid="connect-error" className="text-sm text-fg-default">
+              {settings.sentence}
+            </p>
+          </div>
+        )}
+
+        <ol className={settings === undefined ? 'flex flex-col gap-1' : 'hidden'} aria-label="Connection steps">
           {(steps ?? []).map((step) => {
             const duration = step.state === 'done' ? stepDuration(step) : undefined;
             return (
