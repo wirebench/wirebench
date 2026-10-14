@@ -72,6 +72,11 @@ describe('the connect phase reducer', () => {
     expect(states(view)).toEqual(['resolve:done', 'connect:done', 'host-key:done', 'auth:running', 'shell:pending']);
   });
 
+  it('keeps the flag on a line that says what failed', () => {
+    const view = reduceProgress(startView('a1', 'terminal', 1000), { ...log('password refused', 1001), error: true });
+    expect(view.log).toEqual([{ at: 1001, text: 'password refused', error: true }]);
+  });
+
   it("keeps the log in order and marks a jump host's lines with its address", () => {
     const view = fold(startView('a1', 'terminal', 1000), [
       log('Resolving bastion', 1001, { hop: 0, hops: 2, host: 'bastion:22' }),
@@ -142,6 +147,8 @@ describe('the connect phase reducer', () => {
     const sentence = view.outcome.kind === 'failed' ? view.outcome.sentence : '';
     expect(sentence).toContain('refused the connection on port 22');
     expect(sentence).not.toContain('ECONNREFUSED');
+    // The log ends with the same sentence, flagged as the error.
+    expect(view.log.at(-1)).toEqual({ at: 1040, text: sentence, error: true });
   });
 
   it('an auth refusal fails Authenticating whatever ran last', () => {

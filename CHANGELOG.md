@@ -14,8 +14,8 @@ All notable changes to this project are documented here. The format follows
   with **Connected in N ms** before fading into the terminal. A failed step turns red with one plain
   sentence, such as a refused port, no answer in time, a changed host key or a refused sign-in naming
   the methods the server allows, and offers **Retry**, **Edit host** and **Close**. **Show log**
-  unfolds a timestamped handshake log that opens on its own when a connect fails and never holds a
-  password, passphrase or key. A dropped session's reconnect shows its countdown on the same screen,
+  unfolds a timestamped handshake log that opens on its own when a connect fails, shows the lines that
+  say what failed in red, and never holds a password, passphrase or key. A dropped session's reconnect shows its countdown on the same screen,
   with **Reconnect now** and **Stop**. Reduced motion shows no spinner or moving line (#528).
 - **Test MCP servers.** An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and
   WebSocket APIs: a local process over stdio, Streamable HTTP, or the legacy HTTP+SSE transport.

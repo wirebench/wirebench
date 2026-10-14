@@ -265,7 +265,13 @@ export const sshConnectProgressWireSchema = z.discriminatedUnion('kind', [
     ...hopWhere,
     detail: z.string().optional(),
   }),
-  z.object({ kind: z.literal('log'), ...hopWhere, line: z.string() }),
+  z.object({
+    kind: z.literal('log'),
+    ...hopWhere,
+    line: z.string(),
+    /** The line says what failed (drawn in red). */
+    error: z.literal(true).optional(),
+  }),
 ]);
 export const sshConnectProgressEventSchema = z.object({
   attemptId: z.string(),

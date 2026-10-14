@@ -160,6 +160,9 @@ describe('connect progress (#528)', () => {
       details: { hop: 0, tried: ['password'], allowed: expect.arrayContaining(['password']) as unknown },
     });
     expect(logOf(events)).toContain('password refused');
+    // The lines that say what failed are flagged, so the screen can draw them red.
+    const failures = events.flatMap((e) => (e.kind === 'log' && e.error === true ? [e.line] : []));
+    expect(failures).toEqual(['password refused', 'Signing in as tester failed: no method left']);
     expect(JSON.stringify(events)).not.toContain('secret');
   });
   it('a port nothing listens on fails in the TCP stage as refused', async () => {

@@ -26,6 +26,8 @@ export interface ConnectStep {
 export interface ConnectLogLine {
   readonly at: number;
   readonly text: string;
+  /** The line says what failed. */
+  readonly error?: true;
 }
 
 /** What is being opened: the last step reads "Starting shell" for a terminal, "Starting SFTP" for Files. */
@@ -115,7 +117,7 @@ export function reduceProgress(view: ConnectView, event: SshConnectProgressWire)
   const target = event.hop === event.hops - 1;
   if (event.kind === 'log') {
     const text = target ? event.line : `[${event.host}] ${event.line}`;
-    const log = [...view.log, { at: event.at, text }];
+    const log: ConnectLogLine[] = [...view.log, { at: event.at, text, ...(event.error ? { error: true } : {}) }];
     return { ...view, log: log.length > CONNECT_LOG_LIMIT ? log.slice(-CONNECT_LOG_LIMIT) : log };
   }
   if (view.outcome.kind !== 'running') return view;
@@ -170,7 +172,9 @@ export function failedView(view: ConnectView, error: ConnectError, at: number): 
     return { id: step.id, state: 'pending' };
   });
   const sentence = connectFailureSentence(error, view.purpose);
-  return { ...view, steps, outcome: { kind: 'failed', step: id, sentence } };
+  // The log ends with the same sentence in red, so it says what failed even where no stage logged it.
+  const log: ConnectLogLine[] = [...view.log, { at, text: sentence, error: true }];
+  return { ...view, steps, log, outcome: { kind: 'failed', step: id, sentence } };
 }
 
 /** The host key is new or changed: the step waits on the trust prompt. */

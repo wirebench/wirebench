@@ -69,7 +69,7 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
         ),
       );
     const failed = (error: Error): SshConnectError => {
-      progress.log('The server would not open a shell');
+      progress.fail('The server would not open a shell');
       return new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
         host: hostOf(lastHop),
         hop: options.hops.length - 1,

@@ -134,7 +134,7 @@ export async function openSftp(options: DialOptions): Promise<SftpSession> {
   progress.log('Starting the SFTP subsystem');
   const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
     const refused = (): void => {
-      progress.log('The server offers no SFTP');
+      progress.fail('The server offers no SFTP');
       chain.endAll();
       const host = hostOf(lastHop);
       reject(new SftpError('sftp-unavailable', `${host} offers no SFTP`, { host }));
