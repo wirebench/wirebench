@@ -52,7 +52,9 @@ describe('the import dialog with Kerberos', () => {
     const { addInterface } = stub({ available: true, platform: 'linux' });
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Kerberos (signed-in ticket)' }).hasAttribute('disabled')).toBe(false),
     );
@@ -68,7 +70,9 @@ describe('the import dialog with Kerberos', () => {
     const { addInterface } = stub({ available: true, platform: 'win32' });
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Kerberos (signed-in ticket)' }).hasAttribute('disabled')).toBe(false),
     );
@@ -83,7 +87,9 @@ describe('the import dialog with Kerberos', () => {
     stub({ available: false, reason: 'No Kerberos library here.', platform: 'linux' });
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Kerberos (signed-in ticket)' }).hasAttribute('disabled')).toBe(true),
     );
@@ -105,7 +111,9 @@ describe('the import dialog with Kerberos', () => {
     });
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     fireEvent.change(screen.getByLabelText('Definition authentication'), { target: { value: 'kerberos' } });
     expect(screen.getByLabelText<HTMLSelectElement>('Definition authentication').value).toBe('kerberos');
 
@@ -121,7 +129,9 @@ describe('the import dialog with Kerberos', () => {
     stub({ available: true, platform: 'linux' });
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     fireEvent.change(screen.getByLabelText('Definition authentication'), { target: { value: 'basic' } });
     expect(screen.getByLabelText('Username')).toBeTruthy();
     expect(screen.queryByLabelText('Definition SPN')).toBeNull();

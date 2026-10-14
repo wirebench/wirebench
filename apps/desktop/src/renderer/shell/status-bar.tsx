@@ -134,9 +134,16 @@ export function StatusBar() {
               title="Toggle Console"
               aria-label="Toggle Console"
               aria-pressed={consoleVisible}
+              // One text colour only, so the highest severity is never lost to the open-console colour.
               className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
-                consoleVisible ? 'text-fg-default' : ''
-              } ${errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''}`}
+                errorCount > 0
+                  ? 'text-status-danger'
+                  : problemCount > 0
+                    ? 'text-status-warning'
+                    : consoleVisible
+                      ? 'text-fg-default'
+                      : ''
+              }`}
               onClick={() => {
                 toggleConsole();
               }}

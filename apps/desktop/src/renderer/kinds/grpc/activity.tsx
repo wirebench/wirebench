@@ -5,6 +5,16 @@ import type { KindHistory, KindLog, KindRequests, KindSearch } from '../renderer
 export const grpcRequests: KindRequests = {
   open: openGrpcRequestTab,
   exists: (requestId, project) => project.grpcRequests[requestId] !== undefined,
+  quickOpen: (project) =>
+    Object.values(project.grpcRequests).map((request) => ({
+      id: request.id,
+      tag: 'gRPC',
+      name: request.name,
+      apiId: request.apiId,
+      apiName: project.grpcApis[request.apiId]?.name ?? 'gRPC API',
+      ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+      match: `${request.service}/${request.method}`,
+    })),
 };
 
 function GrpcHistoryBadge({ place }: { readonly place: 'row' | 'header' }) {

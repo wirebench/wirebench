@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { quickOpenEntries, quickOpenSnippetEntries } from '../../src/renderer/shell/quick-open.js';
+import {
+  quickOpenEntries,
+  quickOpenKindEntries,
+  quickOpenSnippetEntries,
+} from '../../src/renderer/shell/quick-open.js';
 import type { SnippetListItemWire } from '../../src/shared/snippets-wire.js';
 import type { InterfaceSummary, RequestWire } from '../../src/shared/kinds/soap/wire.js';
 
@@ -163,5 +167,63 @@ describe('quickOpenSnippetEntries', () => {
       },
       { key: 'snippet:df', kind: 'snippet', label: 'Disk', detail: 'df -h', value: 'Disk df -h', snippetId: 'df' },
     ]);
+  });
+});
+
+describe('quickOpenKindEntries', () => {
+  const places = {
+    folders: { 'f-outer': { name: 'Pets' }, 'f-inner': { name: 'Admin', parentId: 'f-outer' } },
+    projectOf: { 'api-1': 'p-1' },
+    projectNames: { 'p-1': 'Shop' },
+  };
+
+  it('labels a request METHOD name, with project › API › folders under it', () => {
+    const [entry] = quickOpenKindEntries(
+      'rest',
+      [{ id: 'r-1', tag: 'GET', name: 'List pets', apiId: 'api-1', apiName: 'Petstore', folderId: 'f-inner' }],
+      places,
+    );
+
+    expect(entry?.label).toBe('GET List pets');
+    expect(entry?.detail).toBe('Shop › Petstore › Pets › Admin');
+    expect(entry?.kind).toBe('request');
+    expect(entry?.requestKind).toBe('rest');
+    expect(entry?.requestId).toBe('r-1');
+  });
+
+  it('matches on the URL as well as the name', () => {
+    const [entry] = quickOpenKindEntries(
+      'rest',
+      [{ id: 'r-1', tag: 'GET', name: 'One', apiId: 'api-1', apiName: 'Petstore', match: '${base}/pets/{id}' }],
+      places,
+    );
+
+    expect(entry?.value).toContain('/pets/{id}');
+  });
+
+  it('leaves the project out when it is not known, and stops at a folder cycle', () => {
+    const [entry] = quickOpenKindEntries(
+      'grpc',
+      [{ id: 'g-1', tag: 'gRPC', name: 'Say', apiId: 'api-2', apiName: 'Greeter', folderId: 'a' }],
+      {
+        folders: { a: { name: 'A', parentId: 'b' }, b: { name: 'B', parentId: 'a' } },
+        projectOf: {},
+        projectNames: {},
+      },
+    );
+
+    expect(entry?.detail).toBe('Greeter › B › A');
+    expect(entry?.key).toBe('grpc-request:g-1');
+  });
+
+  it('sorts kind requests in among the SOAP requests, ahead of the operations', () => {
+    const rest = quickOpenKindEntries(
+      'rest',
+      [{ id: 'r-1', tag: 'GET', name: 'List pets', apiId: 'api-1', apiName: 'Petstore' }],
+      places,
+    );
+    const entries = quickOpenEntries({ 'if-1': summary() }, { 'req-1': request() }, {}, {}, rest);
+
+    expect(entries.map((entry) => entry.label)).toEqual(['GET List pets', 'Request 1', 'Subtract']);
   });
 });

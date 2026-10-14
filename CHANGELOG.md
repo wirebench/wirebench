@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
+  `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
+  The tree follows the active tab, unfolding to its request and selecting it, and a new request
+  starts in rename mode in the tree. In the palette a search naming a group (**REST**, **History**)
+  lists that group first, a protocol's commands also act on its open tab, and a command that
+  can't run stays listed, greyed, with the reason. **History: Re-send Last Request** re-sends the
+  newest entry of any protocol. A REST request's menu gains **Send**, **Copy as cURL**,
+  **Copy URL**, **Run…** (the Runner on that one request) and **Move to…** (#543).
 - **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
   forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
   (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
@@ -296,6 +304,14 @@ All notable changes to this project are documented here. The format follows
   connection screen shows a connect under way is kept (up to 4 KB) and sent to the shell as soon as
   it opens; the screen says so. A connect that fails drops it, and keys typed after a failure or
   after a session ends still go nowhere (#361).
+
+- **Import and lint findings read as places, not pointers.** The Import dialog labels its URL field by
+  the picked format (**Definition URL or file**, or **WSDL URL** only for WSDL), with a placeholder for
+  each format; the WSDL authentication select has a visible label, and the OpenAPI face says
+  **Authentication** once. An OpenAPI import's summary counts the lint findings it filed, linked to
+  **Problems**. A lint finding there reads `GET /json › 200 › application/json` instead of a JSON
+  pointer (the pointer and position stay in its tooltip), shows its rule id as small text after the
+  message, and a click opens the request for that operation, or the API when there is none (#561).
 
 - **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
   response", the response pane names the failure in plain words (**Connection refused**, **Host not

@@ -37,3 +37,15 @@ describe('an MCP Runner target', () => {
     expect(runnerRequests(target!, defaultRunnerSettings()).map((request) => request.id)).toEqual(['mcp-read']);
   });
 });
+
+describe('a single-request Runner target', () => {
+  it('runs one request on its own, named after it', () => {
+    const target = resolveTarget(project(), 'mcp-read');
+    expect(target).toMatchObject({ kind: 'request', id: 'mcp-read', name: 'Read a file' });
+    expect(runnerRequests(target!, defaultRunnerSettings()).map((request) => request.id)).toEqual(['mcp-read']);
+  });
+
+  it('names nothing for an id no request, folder or API has', () => {
+    expect(resolveTarget(project(), 'nope')).toBeUndefined();
+  });
+});

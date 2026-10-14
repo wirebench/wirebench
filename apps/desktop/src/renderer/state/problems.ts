@@ -136,7 +136,8 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => ({
           severity: finding.severity === 'error' ? ('error' as const) : ('warning' as const),
           problem: {
             code: finding.rule,
-            message: `${finding.rule}: ${finding.message}`,
+            // The rule id is `code`, which Problems shows as secondary text beside the message.
+            message: finding.message,
             source: 'lint',
             location: finding.path === '' ? '/' : finding.path,
             ...(finding.range !== undefined

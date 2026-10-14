@@ -13,6 +13,27 @@ const McpHistoryBody = lazy(async () => {
 export const mcpRequests: KindRequests = {
   open: openMcpRequestTab,
   exists: (requestId, project) => project.mcpRequests[requestId] !== undefined,
+  quickOpen: (project) =>
+    Object.values(project.mcpRequests).map((request) => {
+      const operation = request.operation;
+      const target =
+        operation.method === 'tools/call'
+          ? operation.tool
+          : operation.method === 'resources/read'
+            ? operation.uri
+            : operation.method === 'prompts/get'
+              ? operation.prompt
+              : '';
+      return {
+        id: request.id,
+        tag: 'MCP',
+        name: request.name,
+        apiId: request.apiId,
+        apiName: project.mcpServers[request.apiId]?.name ?? 'MCP server',
+        ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+        match: `${operation.method} ${target}`.trim(),
+      };
+    }),
 };
 
 function McpHistoryBadge({ entry, place }: { readonly entry: HistoryEntryWire; readonly place: 'row' | 'header' }) {

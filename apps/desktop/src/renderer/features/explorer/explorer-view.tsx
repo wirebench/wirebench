@@ -31,14 +31,15 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
-import { EXPLORER_DIALOGS, explorerDeletion, explorerRole } from '../../kinds/index.js';
+import { EXPLORER_DIALOGS, TAB_KINDS, entityIdOf, explorerDeletion, explorerRole } from '../../kinds/index.js';
+import { useEditorsStore } from '../../state/editors.js';
 import { kindLabel } from '../../kinds/placeholders.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { isDropDisabled, planMoves } from './drag-drop.js';
-import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
+import { getExplorerTree, registerExplorerTree, revealNode } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject, ExplorerWebhooks } from './tree-nodes.js';
 import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
 import { openCatchUrlTab, webhooksActions } from '../webhooks/webhooks-actions.js';
@@ -246,6 +247,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         {node.isEditing ? (
           <input
             autoFocus
+            data-testid="explorer-rename-input"
             defaultValue={node.data.label}
             className="ml-1 min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
             onClick={(e) => e.stopPropagation()}
@@ -482,6 +484,19 @@ export function ExplorerView() {
     registerExplorerTree(treeRef ?? null);
     return () => registerExplorerTree(null);
   }, [treeRef]);
+
+  // The tree follows the active tab: its row is unfolded to, selected and scrolled into view, while focus
+  // stays in the editor.
+  const activeTabId = useEditorsStore((state) => state.activeId);
+  useEffect(() => {
+    if (treeRef === null || treeRef === undefined) return;
+    const { tabs } = useEditorsStore.getState();
+    const tab = tabs.find((candidate) => candidate.id === activeTabId);
+    const contribution = tab === undefined ? undefined : TAB_KINDS[tab.kind];
+    const id = tab === undefined || contribution === undefined ? undefined : entityIdOf(tab, contribution);
+    const nodeId = id === undefined ? undefined : contribution?.treeNode?.(id, useProjectStore.getState());
+    if (nodeId !== undefined) revealNode(nodeId);
+  }, [treeRef, activeTabId]);
 
   // What the user last folded open or shut in this workspace. Read once per tree mount — the tree
   // owns the live state and reports every change back through `onToggle`.

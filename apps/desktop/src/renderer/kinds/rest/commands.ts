@@ -1,4 +1,4 @@
-import { folderOf, insideKindApi } from '../../commands/command-helpers.js';
+import { insideKindApi, kindTarget } from '../../commands/command-helpers.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { registerCommand } from '../../lib/commands.js';
@@ -18,11 +18,18 @@ function hasRestDefinition(apiId: string | undefined): boolean {
   return apiId !== undefined && useProjectStore.getState().apis[apiId]?.definition?.cache === true;
 }
 
+/** Why a REST creator cannot run: there is no REST API to create in. */
+const NO_REST_API = 'Select a REST API, or open one of its requests';
+/** Why a REST tab's command cannot run. */
+const NO_REST_TAB = 'Open a REST request first';
+/** Why a definition command cannot run. */
+const NO_REST_DEFINITION = 'Select a REST API imported from a definition';
+
 /** Registers REST's own commands (kind modules spec §6.1). */
 export function registerRestCommands(): void {
   // The three REST creators. Each is gated on a selection *anywhere inside* an API — a folder row
-  // and a request row both name their API — so "New request" works from wherever the user is
-  // rather than only on the API row itself.
+  // and a request row both name their API — or on an open REST tab, so "New request" works from
+  // wherever the user is rather than only on the API row itself.
   registerCommand({
     ...catalogEntry('rest.newApi'),
     when: (ctx) => ctx.selection?.kind === 'project',
@@ -33,24 +40,29 @@ export function registerRestCommands(): void {
   });
   registerCommand({
     ...catalogEntry('rest.newFolder'),
-    when: (ctx) => insideKindApi('rest', ctx.selection),
+    when: (ctx) => kindTarget('rest', ctx.selection) !== undefined,
     whenScope: 'selection.api',
+    unavailable: () => NO_REST_API,
     run: (ctx) => {
-      explorerActions.newFolder(ctx.selection?.apiId, folderOf(ctx.selection));
+      const target = kindTarget('rest', ctx.selection);
+      explorerActions.newFolder(target?.apiId, target?.folderId);
     },
   });
   registerCommand({
     ...catalogEntry('rest.newRequest'),
-    when: (ctx) => insideKindApi('rest', ctx.selection),
+    when: (ctx) => kindTarget('rest', ctx.selection) !== undefined,
     whenScope: 'selection.api',
+    unavailable: () => NO_REST_API,
     run: (ctx) => {
-      explorerActions.newRestRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+      const target = kindTarget('rest', ctx.selection);
+      explorerActions.newRestRequest(target?.apiId, target?.folderId);
     },
   });
   registerCommand({
     ...catalogEntry('rest.updateDefinition'),
     when: (ctx) => insideKindApi('rest', ctx.selection) && hasRestDefinition(ctx.selection?.apiId),
     whenScope: 'selection.api',
+    unavailable: () => NO_REST_DEFINITION,
     run: (ctx) => {
       explorerActions.updateRestDefinition(ctx.selection?.apiId);
     },
@@ -59,6 +71,7 @@ export function registerRestCommands(): void {
     ...catalogEntry('rest.lintDefinition'),
     when: (ctx) => insideKindApi('rest', ctx.selection) && hasRestDefinition(ctx.selection?.apiId),
     whenScope: 'selection.api',
+    unavailable: () => NO_REST_DEFINITION,
     run: (ctx) => {
       const apiId = ctx.selection?.apiId;
       if (apiId !== undefined) void lintRestDefinition(apiId, { reveal: true });
@@ -70,6 +83,7 @@ export function registerRestCommands(): void {
     ...catalogEntry('rest.send'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
+    unavailable: () => NO_REST_TAB,
     run: () => {
       const requestId = activeRestRequestId();
       // Refused while the tab's Send button is disabled (a webhook item with no target).
@@ -84,6 +98,7 @@ export function registerRestCommands(): void {
     ...catalogEntry('rest.copyAsCurl'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
+    unavailable: () => NO_REST_TAB,
     // The same `request.curl` the SOAP command uses, and the same shell the Code panel remembers:
     // the palette and the panel must never hand out two different commands for one request.
     run: () => {
@@ -95,24 +110,19 @@ export function registerRestCommands(): void {
   });
   registerCommand({
     ...catalogEntry('rest.importCurl'),
-    when: () => activeRestRequestId() !== undefined,
-    whenScope: 'editor.rest',
-    run: () => {
-      const requestId = activeRestRequestId();
-      const request = requestId === undefined ? undefined : useProjectStore.getState().restRequests[requestId];
-      if (request !== undefined) {
-        ui().setImportCurlTarget({
-          kind: 'rest',
-          apiId: request.apiId,
-          ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
-        });
-      }
+    when: (ctx) => kindTarget('rest', ctx.selection) !== undefined,
+    whenScope: 'selection.api',
+    unavailable: () => NO_REST_API,
+    run: (ctx) => {
+      const target = kindTarget('rest', ctx.selection);
+      if (target !== undefined) explorerActions.importCurlInto(target.apiId, target.folderId);
     },
   });
   registerCommand({
     ...catalogEntry('rest.getToken'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
+    unavailable: () => NO_REST_TAB,
     run: () => {
       void getOAuth2Token(activeRestRequestId());
     },
