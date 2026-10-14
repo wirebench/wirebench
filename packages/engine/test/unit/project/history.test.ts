@@ -113,6 +113,22 @@ describe('appendHistory / openHistory', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('removes one entry by id, on disk too, and says whether it was there', async () => {
+    const dir = await tempProjectDir();
+    const file = join(dir, 'history.jsonl');
+    const handle = await openHistory(file);
+    const keep = makeEntry();
+    const drop = makeEntry();
+    await handle.append(keep);
+    await handle.append(drop);
+    expect(await handle.remove(drop.id)).toBe(true);
+    expect(await handle.remove('no-such-entry')).toBe(false);
+    expect(handle.list().map((entry) => entry.id)).toEqual([keep.id]);
+    const reopened = await openHistory(file);
+    expect(reopened.list().map((entry) => entry.id)).toEqual([keep.id]);
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('rotates at the cap, keeping only the newest entries', async () => {
     const dir = await tempProjectDir();
     const file = join(dir, 'history.jsonl');

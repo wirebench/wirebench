@@ -189,3 +189,31 @@ describe('re-sending a REST entry from its tab', () => {
     expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
   });
 });
+
+describe('a REST entry with no request body', () => {
+  function restEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire {
+    return {
+      ...sseEntry(),
+      id: 'h-get',
+      sse: undefined,
+      requestName: 'Pet',
+      response: { envelopeXml: '{"id":1}', rawHeaders: [], status: 200, statusText: 'OK' },
+      ...overrides,
+    };
+  }
+
+  it('gives the tab to the response and says the request had no body', () => {
+    useHistoryStore.setState({ entries: [restEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-get" />);
+    expect(screen.getByTestId('history-no-request-body').textContent).toBe('The request had no body.');
+  });
+
+  it('keeps both halves when the request carried a body', () => {
+    useHistoryStore.setState({
+      entries: [restEntry({ method: 'POST', request: { envelopeXml: '{"name":"Rex"}', headers: [] } })],
+      total: 1,
+    });
+    render(<HistoryEntryView historyId="h-get" />);
+    expect(screen.queryByTestId('history-no-request-body')).toBeNull();
+  });
+});

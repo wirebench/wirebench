@@ -20,6 +20,8 @@ export {
   type UrlProblem,
 } from './url.js';
 export type { KeyValueEntry } from './model.js';
+// Whether pasted text is a curl command, so the import dialog refuses what main would refuse.
+export { notCurlReason } from '../http/curl-start.js';
 // The `${secret:name}` name rule, so the renderer's secret review checks a name typed into it
 // exactly as main's move will — a request's headers, query and body are where those tokens land.
 export { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';

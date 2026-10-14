@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { rendererKindOf } from '../../kinds/index.js';
 import { Button } from '../../components/button.js';
@@ -8,24 +10,17 @@ import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { canResendHistoryEntry, entrySide, openCompareTab, resendHistoryEntry } from './history-actions.js';
+import { historyCountLabel, historyTabTitle, hostOf } from './history-row-text.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire } from '../../../shared/wire-types.js';
 import type { WorkspaceProjectWire } from '../../../shared/wire-base.js';
 
-const ROW_HEIGHT = 40;
+// Two lines of `text-xs` plus the row's padding.
+const ROW_HEIGHT = 44;
 const VIRTUALISE_ABOVE = 200;
 
 /** Stable empty list: a fresh `[]` from the workspace selector would re-render on every tick. */
 const NO_PROJECTS: readonly WorkspaceProjectWire[] = [];
-
-/** The host part of a URL, or the raw string when it doesn't parse (a `${...}` placeholder, say). */
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
 
 type Tone = 'good' | 'bad' | 'neutral';
 
@@ -37,10 +32,14 @@ function toneOf(entry: HistoryEntryWire): Tone {
 }
 
 const TONE_CLASS: Record<Tone, string> = {
-  good: 'text-status-success',
-  bad: 'text-status-danger',
-  neutral: 'text-fg-subtle',
+  good: 'bg-status-success/15 text-status-success',
+  bad: 'bg-status-danger/15 text-status-danger',
+  neutral: 'bg-surface-hover text-fg-subtle',
 };
+
+const ITEM_CLASS =
+  'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
+const CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 
 interface RowProps {
   readonly entry: HistoryEntryWire;
@@ -55,8 +54,15 @@ interface RowProps {
   readonly onResend: () => void;
   readonly onCompare: () => void;
   readonly onCompareWithCurrent: () => void;
+  readonly onDelete: () => void;
 }
 
+/**
+ * One recorded send, on two lines: what it was (kind badge, name, status) and when and where it
+ * went (time · host · duration). A click anywhere on it opens the entry. Its actions are behind
+ * one 24px ⋯ button at the far right, so however narrow the sidebar, a click on the row never
+ * re-sends, compares or deletes: each of those is a menu choice.
+ */
 function Row({
   entry,
   projectName,
@@ -67,70 +73,89 @@ function Row({
   onResend,
   onCompare,
   onCompareWithCurrent,
+  onDelete,
 }: RowProps) {
   const Badge = rendererKindOf(entry.kind)?.history.Badge;
+  const details = [formatClockTime(entry.at), projectName, hostOf(entry.endpoint), formatDuration(entry.durationMs)];
   return (
     <div
       role="row"
       aria-rowindex={rowIndex}
       data-testid="history-row"
       {...rowProps}
-      className={`flex h-full items-center gap-2 border-b border-hairline px-2 text-xs ${
-        compareArmed ? 'bg-surface-selected' : ''
+      onKeyDown={(event) => {
+        // Enter on the row itself; the focused ⋯ button handles its own Enter.
+        if (event.key === 'Enter' && event.target === event.currentTarget) {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      data-compare-armed={compareArmed ? 'true' : undefined}
+      className={`flex h-full items-stretch border-b border-hairline text-xs ${
+        compareArmed ? 'bg-surface-selected' : 'hover:bg-surface-hover'
       }`}
     >
       <div role="gridcell" aria-colindex={1} className="flex min-w-0 flex-1">
+        {/* Out of the tab order: the row is the tab stop, and Enter on it opens. */}
         <button
           type="button"
+          tabIndex={-1}
           onClick={onOpen}
-          className="flex w-full min-w-0 items-center gap-2 text-left hover:underline"
+          className="flex w-full min-w-0 flex-col justify-center gap-0.5 px-2 text-left"
           aria-label={`Open ${entry.requestName}`}
         >
-          <span className="w-16 shrink-0 font-mono text-fg-subtle">{formatClockTime(entry.at)}</span>
-          {projectName !== undefined && (
-            <span className="w-24 shrink-0 truncate text-fg-faint" title={projectName}>
-              {projectName}
+          <span className="flex w-full min-w-0 items-center gap-2">
+            {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
+                says what kind of send this was, so the badge is never empty. */}
+            {Badge !== undefined && <Badge entry={entry} place="row" />}
+            <span className="min-w-0 flex-1 truncate">
+              <span className="text-fg-default">{entry.requestName}</span>
+              {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
             </span>
-          )}
-          {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
-              says what kind of send this was, so the column is never empty. */}
-          {Badge !== undefined && <Badge entry={entry} place="row" />}
-          <span className="min-w-0 flex-1 truncate">
-            <span className="text-fg-default">{entry.requestName}</span>
-            {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
+            <span className={`shrink-0 rounded-sm px-1 font-mono ${TONE_CLASS[toneOf(entry)]}`}>
+              {entry.status ?? 'err'}
+            </span>
           </span>
-          <span className="w-40 shrink-0 truncate text-fg-subtle" title={entry.endpoint}>
-            {hostOf(entry.endpoint)}
+          <span className="w-full truncate text-fg-subtle" title={entry.endpoint}>
+            {details.filter((part) => part !== undefined).join(' · ')}
           </span>
-          <span className={`w-10 shrink-0 font-mono ${TONE_CLASS[toneOf(entry)]}`}>{entry.status ?? 'err'}</span>
-          <span className="w-16 shrink-0 text-fg-subtle">{formatDuration(entry.durationMs)}</span>
         </button>
       </div>
-      <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST event
-            stream resend from their request. */}
-        {canResendHistoryEntry(entry) && (
-          <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
-            ↻
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          onClick={onCompare}
-          title="Compare…"
-          aria-label={`Compare ${entry.requestName}…`}
-          aria-pressed={compareArmed}
-        >
-          ⇄
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={onCompareWithCurrent}
-          title="Compare with current"
-          aria-label={`Compare ${entry.requestName} with current`}
-        >
-          ⇄*
-        </Button>
+      <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center pr-1">
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              data-testid="history-row-actions"
+              aria-label={`Actions for ${entry.requestName}`}
+              title="Actions"
+              className="inline-flex size-6 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
+            >
+              <MoreHorizontal size={14} aria-hidden="true" />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content align="end" className={CONTENT_CLASS}>
+              {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST
+                  event stream resend from their request. */}
+              {canResendHistoryEntry(entry) && (
+                <DropdownMenu.Item className={ITEM_CLASS} onSelect={onResend}>
+                  Re-send
+                </DropdownMenu.Item>
+              )}
+              <DropdownMenu.Item className={ITEM_CLASS} onSelect={onCompare}>
+                {compareArmed ? 'Cancel compare' : 'Compare…'}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className={ITEM_CLASS} onSelect={onCompareWithCurrent}>
+                Compare with current
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
+              <DropdownMenu.Item className={ITEM_CLASS} onSelect={onDelete}>
+                Delete
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
     </div>
   );
@@ -138,7 +163,7 @@ function Row({
 
 /**
  * The activity bar's History view: search, a virtualised list of every recorded send, and
- * per-row Open/Re-send/Compare actions.
+ * per-row Open/Re-send/Compare/Delete actions.
  */
 export function HistoryView() {
   const entries = useHistoryStore((state) => state.entries);
@@ -146,6 +171,7 @@ export function HistoryView() {
   const query = useHistoryStore((state) => state.query);
   const search = useHistoryStore((state) => state.search);
   const clear = useHistoryStore((state) => state.clear);
+  const remove = useHistoryStore((state) => state.remove);
   const projectFilter = useHistoryStore((state) => state.projectId);
   const setProjectFilter = useHistoryStore((state) => state.setProjectFilter);
   const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects ?? NO_PROJECTS);
@@ -166,7 +192,7 @@ export function HistoryView() {
   });
 
   const openEntry = (entry: HistoryEntryWire) => {
-    openTab({ id: `history:${entry.id}`, kind: 'history', title: entry.requestName, historyId: entry.id });
+    openTab({ id: `history:${entry.id}`, kind: 'history', title: historyTabTitle(entry), historyId: entry.id });
   };
 
   const resend = (entry: HistoryEntryWire) => {
@@ -265,7 +291,7 @@ export function HistoryView() {
           aria-label="History"
           aria-rowcount={entries.length}
           // Two columns: the entry itself and its actions. There is no selection model here —
-          // a row is opened, re-sent or compared, never "selected" — so no row carries
+          // a row is opened, re-sent, compared or deleted, never "selected" — so no row carries
           // `aria-selected`, and the roving tab stop is focus only.
           aria-colcount={2}
           className="min-h-0 flex-1 overflow-auto"
@@ -294,6 +320,7 @@ export function HistoryView() {
                       onResend={() => resend(entry)}
                       onCompare={() => compare(entry)}
                       onCompareWithCurrent={() => compareWithCurrent(entry)}
+                      onDelete={() => void remove(entry.id)}
                     />
                   </div>
                 );
@@ -312,13 +339,14 @@ export function HistoryView() {
                   onResend={() => resend(entry)}
                   onCompare={() => compare(entry)}
                   onCompareWithCurrent={() => compareWithCurrent(entry)}
+                  onDelete={() => void remove(entry.id)}
                 />
               </div>
             ))
           )}
         </div>
       )}
-      <p className="shrink-0 border-t border-hairline px-2 py-1 text-xs text-fg-faint">{total} entries</p>
+      <p className="shrink-0 border-t border-hairline px-2 py-1 text-xs text-fg-faint">{historyCountLabel(total)}</p>
     </div>
   );
 }

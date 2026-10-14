@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { EditorArea } from '../../src/renderer/shell/editor-area.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -203,5 +204,30 @@ describe('EditorArea environment colour', () => {
     useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [{ ...env, color: 'red' }] }) });
     setUp();
     expect(screen.getByTestId('editor-tab-strip').style.getPropertyValue('--env-color')).toBe('');
+  });
+});
+
+describe('EditorArea — the SSH set’s fixed tab', () => {
+  afterEach(() => {
+    cleanup();
+    useHostsStore.setState({ homeView: 'hosts' });
+    useEditorsStore.getState().reset();
+  });
+
+  it('is named after the view it shows, and follows it', () => {
+    installWirebenchApi();
+    useEditorsStore.getState().reset();
+    useEditorsStore.getState().showSet('ssh');
+    render(<EditorArea />);
+    expect(screen.getByRole('tab', { name: 'Hosts' })).toBeDefined();
+    act(() => {
+      useHostsStore.getState().setHomeView('forwarding');
+    });
+    expect(screen.getByRole('tab', { name: 'Port forwarding' })).toBeDefined();
+    expect(screen.queryByRole('tab', { name: 'Hosts' })).toBeNull();
+    act(() => {
+      useHostsStore.getState().setHomeView('known-hosts');
+    });
+    expect(screen.getByRole('tab', { name: 'Known hosts' }).querySelector('svg')).not.toBeNull();
   });
 });
