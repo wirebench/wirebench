@@ -285,6 +285,11 @@ All notable changes to this project are documented here. The format follows
   now waits for a yes even on one line and with the multi-line question turned off. The dialog shows
   the characters escaped (`\x1b`) and offers no "Don't ask again" (#361).
 
+- **Keys typed while a terminal connects reach the shell.** What you type, or paste, while the
+  connection screen shows a connect under way is kept (up to 4 KB) and sent to the shell as soon as
+  it opens; the screen says so. A connect that fails drops it, and keys typed after a failure or
+  after a session ends still go nowhere (#361).
+
 - **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
   how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
   terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a

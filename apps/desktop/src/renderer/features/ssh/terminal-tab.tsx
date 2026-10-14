@@ -20,6 +20,7 @@ import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { trackPaneModes } from './terminal-modes.js';
+import { TypeAhead, type TypeAheadState } from './type-ahead.js';
 import { attachSnippetSuggestions } from './snippets/ghost.js';
 import { closeSnippetPicker, openSnippetPicker, useSnippetPickerStore } from './snippets/snippet-actions.js';
 import { TerminalPicker } from './snippets/terminal-picker.js';
@@ -104,6 +105,18 @@ function broadcastReceivers(tabId: string, paneId: string): string[] | undefined
 }
 
 /** What hosts.yaml sets for a host's terminal (its own level or a group's), read now. */
+/** Whether nothing else holds the focus: the terminal may take it without stealing it from the user. */
+function focusIsIdle(holder: HTMLElement | null): boolean {
+  const away = document.activeElement;
+  return away === null || away === document.body || holder?.contains(away) === true;
+}
+
+/** Whether the pane's connection screen shows a connect under way: running, or waiting on the trust prompt. */
+function isConnecting(paneId: string): boolean {
+  const kind = useConnectStore.getState().views[paneId]?.outcome.kind;
+  return kind === 'running' || kind === 'trust';
+}
+
 function overrideOf(hostId: string): TerminalOverride {
   const terminal = useHostsStore.getState().resolved.find((host) => host.id === hostId)?.terminal;
   return { scheme: terminal?.scheme.value, fontSize: terminal?.fontSize.value };
@@ -353,6 +366,9 @@ function TerminalPane({
   /** A paste held for the user's yes; xterm never saw it. `receivers` above one: a broadcast takes it there. */
   const [heldPaste, setHeldPaste] = useState<{ text: string; receivers: number } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  /** Keys typed while the pane connects, sent once its shell opens (#361). */
+  const typeAhead = useRef(new TypeAhead());
+  const [typedAhead, setTypedAhead] = useState<TypeAheadState>(() => typeAhead.current.state);
   // ⌘; opens the snippet picker over the tab in front; it sits on the pane that has the focus.
   const pickerWanted = useSnippetPickerStore((s) => s.tabId === tabId);
   const pickerOpen = pickerWanted && active && focused;
@@ -410,6 +426,7 @@ function TerminalPane({
     // xterm sees keys only while it has focus, so the find chord is the focused terminal's alone; it opens
     // the find bar and never reaches the shell.
     const platform = detectPlatform();
+    const connecting = (): boolean => isConnecting(paneId);
     // Inline snippet suggestions: fed what the user types, Tab accepts a ghost.
     // Not while this pane broadcasts: the typed start went to every ticked pane, a completion would not.
     const suggestions = attachSnippetSuggestions(term, {
@@ -421,7 +438,7 @@ function TerminalPane({
     };
     /** Text the paste guard lets through goes in as xterm's own paste; anything else waits for the user's yes. */
     const pasteText = (text: string): void => {
-      if (text === '' || target.current === undefined) return;
+      if (text === '' || (target.current === undefined && !connecting())) return;
       const receivers = broadcastReceivers(tabId, paneId)?.length ?? 1;
       if (guardPaste(text, usePreferencesStore.getState().preferences.terminal, receivers) === 'send') {
         suggestions.markPaste();
@@ -512,7 +529,14 @@ function TerminalPane({
 
     const send = (bytes: Uint8Array): void => {
       const id = target.current;
-      if (id === undefined) return;
+      if (id === undefined) {
+        // While the connection screen runs, keys are kept for the shell; once it fails, or a session has
+        // ended, they go nowhere.
+        if (!connecting()) return;
+        typeAhead.current.push(bytes);
+        setTypedAhead(typeAhead.current.state);
+        return;
+      }
       const data = bytesToBase64(bytes);
       const receivers = broadcastReceivers(tabId, paneId);
       if (receivers === undefined) {
@@ -564,6 +588,8 @@ function TerminalPane({
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     let disposed = false;
+    typeAhead.current.clear();
+    setTypedAhead(typeAhead.current.state);
     void connectToHost({ paneId, hostId }, sent).then((result) => {
       if (disposed) settleAfterTeardown(paneId, result?.sessionId);
     });
@@ -641,6 +667,10 @@ function TerminalPane({
       },
     });
     current.syncSize();
+    // What was typed while connecting goes to this pane's shell alone, ahead of anything typed from now on.
+    const typed = typeAhead.current.take();
+    setTypedAhead(typeAhead.current.state);
+    if (typed !== undefined) void ipc().ssh.write({ sessionId, data: bytesToBase64(typed) });
     if (focusRef.current) current.term.focus();
     return () => {
       detachTerminal(sessionId);
@@ -666,6 +696,22 @@ function TerminalPane({
       clearInterval(tick);
     };
   }, [waiting]);
+
+  // A connect that starts after the trust prompt: the pane takes the focus back, so typing reaches it (#361).
+  const attemptId = attempt?.attemptId;
+  const attemptRunning = attempt?.outcome.kind === 'running';
+  useEffect(() => {
+    if (!attemptRunning || !focusRef.current) return;
+    if (focusIsIdle(holder.current)) live.current?.term.focus();
+  }, [attemptId, attemptRunning]);
+
+  // A connect that failed takes what was typed for it along: a later attempt starts empty.
+  const attemptFailed = attempt?.outcome.kind === 'failed';
+  useEffect(() => {
+    if (!attemptFailed) return;
+    typeAhead.current.clear();
+    setTypedAhead(typeAhead.current.state);
+  }, [attemptFailed]);
 
   const exitCode = sessionId !== undefined && exit?.sessionId === sessionId ? exit.code : undefined;
   const ended = sessionId !== undefined && (exitCode !== undefined || session?.state === 'closed');
@@ -821,6 +867,7 @@ function TerminalPane({
             purpose="terminal"
             view={attempt}
             reconnect={banner}
+            typedAhead={typedAhead}
             onRetry={() => {
               useHostsStore.getState().bumpReconnect(paneId);
             }}
@@ -833,9 +880,7 @@ function TerminalPane({
             onFaded={() => {
               dropAttempt(paneId);
               // Not from where the user has moved on to since connecting, such as this pane's find bar.
-              const away = document.activeElement;
-              const idle = away === null || away === document.body || holder.current?.contains(away) === true;
-              if (focusRef.current && idle) live.current?.term.focus();
+              if (focusRef.current && focusIsIdle(holder.current)) live.current?.term.focus();
             }}
           />
         )}
