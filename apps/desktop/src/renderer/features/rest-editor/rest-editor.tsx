@@ -14,22 +14,23 @@
  * under it differ, since a webhook item has no API to read a base URL from — see
  * `webhook-url-note.tsx`.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { WEBHOOK_AUTH_TYPES } from '../../components/auth-fields.js';
 import { Tabs } from '../../components/tabs.js';
+import { showToast } from '../../components/toast.js';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { folderChainOf, selectApiOf, useProjectStore } from '../../state/project.js';
-import { isAbsoluteUrl, queryFromUrl, syncPathParams } from '../../state/rest-url.js';
+import { isAbsoluteUrl, queryFromUrl, syncPathParams, urlProblem } from '../../state/rest-url.js';
 import { useCurrentValuesStore } from '../../state/current-values.js';
 import { useActiveEnvironmentIdFor } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import type { RequestPreflightResponse } from '../../../shared/wire-types.js';
-import type { RestRequestPatchWire } from '../../../shared/kinds/rest/wire.js';
+import type { RestRequestPatchWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
 import type { AuthConfigWire } from '../../../shared/wire-base.js';
 import { explorerActions } from '../explorer/explorer-actions.js';
 import { WebhookUrlNote } from '../webhook-items/webhook-url-note.js';
@@ -168,7 +169,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
     isWebhookItem && resolved.targetErrorCode === 'webhook-target-missing' ? 'Set the Webhooks target' : undefined;
   // The Signing tab's inline error: a CI name or scheme field it shows but holds back (§5.2, P5).
   const [signingProblem, setSigningProblem] = useState<string | undefined>(undefined);
-  const sendDisabledReason = targetMissingReason ?? (isWebhookItem ? signingProblem : undefined);
+  // A URL that means to be absolute but is not one would go out as a path under the base URL.
+  const badUrlReason = urlProblem(request?.url ?? '');
+  const sendDisabledReason = targetMissingReason ?? badUrlReason ?? (isWebhookItem ? signingProblem : undefined);
   useEffect(() => {
     setRestSendBlocked(requestId, sendDisabledReason);
     return () => {
@@ -187,6 +190,35 @@ export function RestEditor({ requestId }: RestEditorProps) {
     }
     void sendRest(requestId);
   }, [sendRest, requestId]);
+
+  const sectionRef = useRef<HTMLElement>(null);
+  /** Takes the user to where an unresolved `${name}` was written: the URL, or the tab holding it. */
+  const revealReference = useCallback(
+    (ref: string) => {
+      const current = useProjectStore.getState().restRequests[requestId];
+      if (current === undefined) {
+        return;
+      }
+      const where = referenceField(current, ref);
+      if (where === undefined) {
+        showToast(`${ref} is not written in this request: it comes from the base URL or another variable.`);
+        return;
+      }
+      if (where !== 'url') {
+        setTab(where);
+        return;
+      }
+      const input = sectionRef.current?.querySelector<HTMLInputElement>('input[data-testid="rest-url"]');
+      if (input !== null && input !== undefined) {
+        input.focus();
+        const at = input.value.indexOf(ref);
+        if (at >= 0) {
+          input.setSelectionRange(at, at + ref.length);
+        }
+      }
+    },
+    [requestId],
+  );
 
   if (request === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This request no longer exists.</p>;
@@ -304,10 +336,26 @@ export function RestEditor({ requestId }: RestEditorProps) {
     </div>
   );
 
-  const responsePane = <RestResponsePane state={exchange} requestId={requestId} />;
+  const responsePane = (
+    <RestResponsePane
+      state={exchange}
+      requestId={requestId}
+      onRetry={onSend}
+      retryDisabledReason={sendDisabledReason}
+      onOpenTimeoutSetting={() => {
+        setTab('settings');
+      }}
+      onRevealReference={revealReference}
+    />
+  );
 
   return (
-    <section aria-label={`Request ${request.name}`} data-testid="rest-editor" className="flex h-full min-h-0 flex-col">
+    <section
+      ref={sectionRef}
+      aria-label={`Request ${request.name}`}
+      data-testid="rest-editor"
+      className="flex h-full min-h-0 flex-col"
+    >
       <RestBreadcrumb requestId={requestId} />
       {isWebhookItem && (
         <div className="flex h-6 shrink-0 items-center border-b border-hairline bg-surface-base px-3">
@@ -347,6 +395,15 @@ export function RestEditor({ requestId }: RestEditorProps) {
         sendDisabledReason={sendDisabledReason}
         menu={<SendMenu requestId={requestId} kind="rest" />}
       />
+      {badUrlReason !== undefined && (
+        <p
+          role="alert"
+          data-testid="rest-url-problem"
+          className="border-b border-hairline bg-surface-base px-3 py-1 text-xs text-status-danger"
+        >
+          {badUrlReason}
+        </p>
+      )}
       {isWebhookItem && (
         <>
           {invalidTargetMessage !== undefined && (
@@ -383,6 +440,31 @@ export function RestEditor({ requestId }: RestEditorProps) {
       )}
     </section>
   );
+}
+
+/** Where a request's editor shows the text `ref` is written in, checked in the order the editor reads. */
+export function referenceField(
+  request: Pick<RestRequestWire, 'url' | 'query' | 'pathParams' | 'headers' | 'body' | 'auth'>,
+  ref: string,
+): 'url' | 'params' | 'headers' | 'body' | 'auth' | undefined {
+  const inRows = (rows: readonly { readonly name: string; readonly value: string }[]): boolean =>
+    rows.some((row) => row.name.includes(ref) || row.value.includes(ref));
+  if (request.url.includes(ref)) {
+    return 'url';
+  }
+  if (inRows(request.query) || inRows(request.pathParams)) {
+    return 'params';
+  }
+  if (inRows(request.headers)) {
+    return 'headers';
+  }
+  if (JSON.stringify(request.body).includes(ref)) {
+    return 'body';
+  }
+  if (request.auth !== undefined && JSON.stringify(request.auth).includes(ref)) {
+    return 'auth';
+  }
+  return undefined;
 }
 
 /**

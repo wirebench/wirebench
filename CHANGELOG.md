@@ -287,6 +287,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
+  response", the response pane names the failure in plain words (**Connection refused**, **Host not
+  found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers
+  **Retry**; the code stays as small text under it. A timeout names the limit it hit and links the
+  request's Settings tab; each unresolved `${name}` links to the field it was written in. Your own
+  Cancel reads as a neutral **Cancelled**, and neither a cancel nor a declined protected-environment
+  prompt adds a Problem. The status bar's **last:** now shows the latest send, failures included. A
+  URL with `://` but no valid scheme or host (`ht!tp:// bad url`) is refused before sending, with the
+  reason under the URL field, where it used to go out as a path under the base URL (#541).
 - **History rows read on two lines, and a click opens.** A row shows the method, name and a status
   chip, then the time, host and duration, so the name is never squeezed out at narrow widths.
   Re-send, Compare, Compare with current and a new **Delete** (one entry) are in a **⋯** menu at the
