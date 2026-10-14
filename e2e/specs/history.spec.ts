@@ -114,8 +114,9 @@ test.describe('history', () => {
     const rows = page.getByTestId('history-row');
     await expect(rows).toHaveCount(1, { timeout: 20_000 });
 
-    // A click in the middle of the row opens the entry, titled with its send time, and sends nothing.
-    await rows.first().click();
+    // A click on the row's text opens the entry, titled with its send time, and sends nothing. Its
+    // left side: in a narrow sidebar the right half is under the hover actions.
+    await rows.first().click({ position: { x: 12, y: 12 } });
     await expect(
       page.getByRole('tablist', { name: 'Open editors' }).getByRole('tab', { name: /Echo · \d\d:\d\d:\d\d/ }),
     ).toBeVisible({ timeout: 20_000 });

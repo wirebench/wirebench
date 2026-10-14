@@ -198,8 +198,11 @@ test.describe('REST response validation', () => {
     }
     const rows = page.getByTestId('history-row');
     await expect(rows).toHaveCount(3, { timeout: 20_000 });
-    // A click anywhere on the row opens it.
-    await rows.filter({ hasText: '503' }).first().click();
+    // A click on the row's text opens it (its right edge holds the hover actions).
+    await rows
+      .filter({ hasText: '503' })
+      .first()
+      .click({ position: { x: 12, y: 12 } });
     await expect(page.getByTestId('rest-contract-chip').filter({ hasText: 'Unexpected status' }).first()).toBeVisible({
       timeout: 20_000,
     });
