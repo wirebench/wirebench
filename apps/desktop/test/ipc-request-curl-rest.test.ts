@@ -11,7 +11,7 @@ import { createApi, createProject, createRestRequest } from '@wirebench/engine';
 import type { AuthConfig, KeyValueEntry, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { recordSecretValue } from '../src/main/redact.js';
-import { type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { importedRequestName, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { ProjectChange } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS, restApiWire } from './helpers/wire-defaults.js';
 import { registerRequestChannelsWithKinds } from './helpers/kind-channels.js';
@@ -457,6 +457,32 @@ describe('request.importCurl into an API', () => {
 
     expect(result.problems).toContain('Ignored --retry');
   });
+
+  it('names a request it was given no name for from its method and path', async () => {
+    const changes: ProjectChange[] = [];
+    setup({ changes });
+
+    await invoke('request.importCurl', {
+      command: `$ curl -X DELETE 'https://api.test/pets/{petId}?force=true'`,
+      target: { kind: 'rest', apiId: 'api-1' },
+    });
+
+    expect(changes[0]).toMatchObject({ kind: 'add-rest-request', name: 'DELETE /pets/{petId}' });
+  });
+
+  it('refuses text that is not a curl command and creates nothing', async () => {
+    const changes: ProjectChange[] = [];
+    setup({ changes });
+
+    const result = (await invoke('request.importCurl', {
+      command: 'wget http://example.com',
+      target: { kind: 'rest', apiId: 'api-1' },
+    })) as { ok: boolean; error?: { message: string } };
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.message).toContain('starts with “wget”');
+    expect(changes).toEqual([]);
+  });
 });
 
 describe('request.curl — Digest and AWS Signature v4', () => {
@@ -498,5 +524,15 @@ describe('request.curl — Digest and AWS Signature v4', () => {
     );
     expect(query.command).not.toContain('--aws-sigv4');
     expect(query.notes?.join(' ')).toContain('presigned');
+  });
+});
+
+describe('importedRequestName', () => {
+  it('is the method and path, without the query or a foreign origin', () => {
+    expect(importedRequestName('GET', '/pets?limit=1')).toBe('GET /pets');
+    expect(importedRequestName('POST', 'https://other.test/v1/pets#x')).toBe('POST /v1/pets');
+    expect(importedRequestName('GET', 'https://other.test')).toBe('GET /');
+    expect(importedRequestName(undefined, '/pets')).toBe('GET /pets');
+    expect(importedRequestName('GET', undefined)).toBeUndefined();
   });
 });

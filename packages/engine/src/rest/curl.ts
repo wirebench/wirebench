@@ -22,6 +22,7 @@ import { applyAuth } from '../http/auth/apply-auth.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
 import { expandBundles, takesNoValue } from '../http/curl-flags.js';
 import { isOmitted, omittedBasic } from './request-headers.js';
+import { stripShellPrompt } from '../http/curl-start.js';
 import { composeUrl, pathParamPattern, splitQuery, trimTrailingSlashes } from './url.js';
 
 /** What a redacted secret reads as in an exported command. Matches the host's own marker. */
@@ -258,7 +259,7 @@ function splitField(argument: string): { readonly name: string; readonly value: 
  */
 export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): FromRestCurlResult {
   const problems: string[] = [];
-  const tokenized = tokenizeCommand(text);
+  const tokenized = tokenizeCommand(stripShellPrompt(text));
   const tokens = expandBundles(tokenized.tokens);
   const { heredoc } = tokenized;
 
