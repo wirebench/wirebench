@@ -1,5 +1,5 @@
 import { accessSync, constants, statSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { posix } from 'node:path';
 
 /**
  * Where an installed `mosh-client` usually lives, looked at after PATH: an app started from the Dock or a
@@ -17,10 +17,11 @@ export function findMoshClient(options: {
   const windows = options.platform === 'win32';
   const name = windows ? 'mosh-client.exe' : 'mosh-client';
   const path = options.env['PATH'] ?? options.env['Path'] ?? '';
-  const dirs = path.split(windows ? ';' : delimiter).filter((d) => d.length > 0);
-  if (!windows) dirs.push(...FALLBACK_DIRS, join(options.home, '.nix-profile', 'bin'));
+  // The platform's own separators, not this process's: tests run every platform's rules on any host.
+  const dirs = path.split(windows ? ';' : ':').filter((d) => d.length > 0);
+  if (!windows) dirs.push(...FALLBACK_DIRS, posix.join(options.home, '.nix-profile', 'bin'));
   for (const dir of dirs) {
-    const candidate = windows ? `${dir.replace(/[\\/]+$/, '')}\\${name}` : join(dir, name);
+    const candidate = windows ? `${dir.replace(/[\\/]+$/, '')}\\${name}` : posix.join(dir, name);
     if (options.isExecutable(candidate)) return candidate;
   }
   return undefined;
