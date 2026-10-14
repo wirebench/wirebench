@@ -162,7 +162,9 @@ export function TerminalFindBar({ open, focusRequest, finder, results, onClose }
       data-testid="terminal-find"
       hidden={!open}
       onKeyDown={onKeyDown}
-      className="absolute top-2 right-4 z-10 flex items-center gap-1 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+      // Held between both edges of the pane and as wide as it needs: in a narrow pane the input gives way
+      // rather than the bar running out past the pane's left edge.
+      className="absolute top-2 right-4 left-2 z-10 ml-auto flex w-fit max-w-[calc(100%-1.5rem)] min-w-0 items-center gap-1 overflow-hidden rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
     >
       <input
         ref={input}
@@ -176,7 +178,7 @@ export function TerminalFindBar({ open, focusRequest, finder, results, onClose }
           setQuery(event.target.value);
           run('next', event.target.value, options, true);
         }}
-        className={`w-48 rounded border bg-surface-sunken px-2 py-0.5 text-sm text-fg-default outline-none ${
+        className={`w-48 min-w-16 shrink rounded border bg-surface-sunken px-2 py-0.5 text-sm text-fg-default outline-none ${
           invalid ? 'border-status-danger' : 'border-hairline focus:border-accent'
         }`}
       />
