@@ -29,6 +29,7 @@ masking hides the value.
 | `html`               | —                                                                                       | `--reporter html=<path>`                   |
 | `bail`               | `false`                                                                                 | `--bail`                                   |
 | `require-assertions` | `false`                                                                                 | `--require-assertions`                     |
+| `allow-commands`     | `false`                                                                                 | `--allow-commands`                         |
 | `insecure`           | `false`                                                                                 | `--insecure`                               |
 | `timeout`            | —                                                                                       | `--timeout`                                |
 | `sla`                | —                                                                                       | `--sla`                                    |

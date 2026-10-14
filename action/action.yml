@@ -32,6 +32,10 @@ inputs:
     description: Treat a request with no assertions as an error.
     required: false
     default: 'false'
+  allow-commands:
+    description: Let MCP requests start the local command their stdio server names (--allow-commands).
+    required: false
+    default: 'false'
   insecure:
     description: Skip TLS certificate verification.
     required: false
@@ -76,6 +80,7 @@ runs:
         WB_HTML: ${{ inputs.html }}
         WB_BAIL: ${{ inputs.bail }}
         WB_REQUIRE_ASSERTIONS: ${{ inputs.require-assertions }}
+        WB_ALLOW_COMMANDS: ${{ inputs.allow-commands }}
         WB_INSECURE: ${{ inputs.insecure }}
         WB_TIMEOUT: ${{ inputs.timeout }}
         WB_SLA: ${{ inputs.sla }}
@@ -140,6 +145,9 @@ runs:
         fi
         if [ "$WB_REQUIRE_ASSERTIONS" = "true" ]; then
           args+=(--require-assertions)
+        fi
+        if [ "$WB_ALLOW_COMMANDS" = "true" ]; then
+          args+=(--allow-commands)
         fi
         if [ "$WB_INSECURE" = "true" ]; then
           args+=(--insecure)
