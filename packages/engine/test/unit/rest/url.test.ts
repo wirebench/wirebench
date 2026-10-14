@@ -69,6 +69,17 @@ describe('parseUrlParams', () => {
   it('ignores a property reference and an unterminated brace', () => {
     expect(parseUrlParams('${#Env#base}/pet/{petId')).toEqual([]);
   });
+
+  it('skips a ${…} variable, which the send expands, and keeps the placeholder after it', () => {
+    expect(parseUrlParams('${a}/{b}')).toEqual(['b']);
+    expect(parseUrlParams('{a}')).toEqual(['a']);
+    expect(parseUrlParams('${a}')).toEqual([]);
+    expect(parseUrlParams('/pets/${petId}')).toEqual([]);
+  });
+
+  it('reads $${name}, the escape for a literal $, as a $ and then a placeholder', () => {
+    expect(parseUrlParams('/files/$${home}')).toEqual(['home']);
+  });
 });
 
 describe('splitQuery and joinQuery', () => {
