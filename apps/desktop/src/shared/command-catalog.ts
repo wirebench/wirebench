@@ -256,6 +256,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Hosts',
     shortcut: 'Mod+Alt+T',
   },
+  // Every host's session logs on this machine (#534); a host's own are in its details panel.
+  'ssh.sessionLogs': {
+    id: 'ssh.sessionLogs',
+    label: 'Session Logs…',
+    category: 'Hosts',
+  },
   'sftp.refresh': {
     id: 'sftp.refresh',
     label: 'Files: Refresh',
