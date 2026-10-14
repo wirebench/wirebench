@@ -227,8 +227,16 @@ export class SessionLogStore {
     };
   }
 
-  /** A host's logs, newest first. @throws WirebenchError `session-log-unknown` for an id that cannot be a folder */
-  async list(workspaceId: string, hostId: string): Promise<SessionLogEntry[]> {
+  /**
+   * A host's logs, or with no host every host's in the workspace, newest first.
+   * @throws WirebenchError `session-log-unknown` for an id that cannot be a folder
+   */
+  async list(workspaceId: string, hostId?: string): Promise<SessionLogEntry[]> {
+    if (hostId === undefined) {
+      const hosts = (await names(join(this.deps.root, checkSegment(workspaceId)))).filter((n) => SEGMENT.test(n));
+      const all = await Promise.all(hosts.map((host) => this.list(workspaceId, host)));
+      return all.flat().sort(byId).reverse();
+    }
     const dir = this.dirOf(workspaceId, hostId);
     const ids = (await names(dir))
       .filter((n) => n.endsWith('.json'))

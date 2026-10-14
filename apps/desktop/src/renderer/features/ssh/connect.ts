@@ -81,12 +81,13 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
     return { kind: 'failed', code, message };
   }
   if (result.ok) {
-    const { agentForwarding } = result.value;
+    const { agentForwarding, recording } = result.value;
     store.setPane(paneId, {
       hostId,
       sessionId: result.value.sessionId,
       state: 'open',
       ...(agentForwarding === undefined ? {} : { agentForwarding }),
+      ...(recording === true ? { recording } : {}),
     });
     useRecentStore.getState().record(hostId, 'connected');
     noteConnected(paneId, attemptId);

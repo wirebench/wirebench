@@ -271,6 +271,7 @@ export class SshService {
     } catch {
       log = undefined;
     }
+    const recording = log !== undefined;
     let quiet: ReturnType<typeof setTimeout> | undefined;
     const send = (data: Uint8Array): void => {
       if (data.length === 0) return;
@@ -321,9 +322,10 @@ export class SshService {
     this.sessionsChanged(sender, request.hostId);
     const target = hops[hops.length - 1];
     if (target) void this.probeOs(sender, session, `${target.address}:${target.port}`);
-    if (forwardAgent === undefined) return { sessionId };
+    const opened = { sessionId, ...(recording ? { recording: true as const } : {}) };
+    if (forwardAgent === undefined) return opened;
     const forwarding = forwardAgent.socket === undefined ? 'no-agent' : session.agentForwarding;
-    return forwarding === 'off' ? { sessionId } : { sessionId, agentForwarding: forwarding };
+    return forwarding === 'off' ? opened : { ...opened, agentForwarding: forwarding };
   }
 
   /**
