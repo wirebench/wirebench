@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Terminal tab marks.** A terminal tab behind another one shows when it printed something new, when
+  it waits for input (a password, passphrase or verification code prompt, or a yes/no question), and
+  when its session failed or dropped. Each mark has its own shape as well as its own colour, split
+  panes show theirs on the pane header, and screen readers hear each new mark. Going to the tab or
+  pane clears it (#422).
 - **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
   `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
   in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block
