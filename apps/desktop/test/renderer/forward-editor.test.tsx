@@ -231,7 +231,7 @@ describe('forwarding commands', () => {
     for (const id of ['view.showForwarding', 'ssh.startForward', 'ssh.stopForward', 'ssh.stopAllForwards'] as const) {
       expect(COMMAND_CATALOG[id].id).toBe(id);
     }
-    expect(COMMAND_CATALOG['ssh.startForward'].label).toBe('Start Port Forward…');
+    expect(COMMAND_CATALOG['ssh.startForward'].label).toBe('Forwarding: Start Port Forward…');
   });
 
   it('Start port forward… lists every on rule as host · rule and starts the picked one', async () => {

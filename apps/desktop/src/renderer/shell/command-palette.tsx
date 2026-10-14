@@ -149,7 +149,10 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   // re-evaluates `when` against the current world, rather than reusing whatever was computed the
   // last time `context` itself happened to change identity — which, before this, only reliably
   // happened once, coincidentally, from a library's mount-time resize callback.
-  const groups = useMemo(() => groupByCategory(listCommands(context)), [context, open]);
+  const groups = useMemo(
+    () => groupByCategory(listCommands(context).filter((command) => command.paletteHidden !== true)),
+    [context, open],
+  );
   const interfaces = useProjectStore((state) => state.interfaces);
   const requests = useProjectStore((state) => state.requests);
   const projectOf = useProjectStore((state) => state.projectOf);

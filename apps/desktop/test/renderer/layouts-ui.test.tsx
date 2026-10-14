@@ -238,9 +238,9 @@ describe('layouts in the palette', () => {
     return <CommandPalette open={open} onOpenChange={setOpen} context={context} mode={mode} />;
   }
 
-  it('⌘K Open Layout… lists the layouts and opens the one picked', async () => {
+  it('⌘K Layouts: Open Layout… lists the layouts and opens the one picked', async () => {
     render(<Shell />);
-    fireEvent.click(screen.getByText('Open Layout…'));
+    fireEvent.click(screen.getByText('Layouts: Open Layout…'));
     expect(screen.getByPlaceholderText('Open layout')).toBeDefined();
     fireEvent.click(await screen.findByText('Prod databases'));
     expect(useEditorsStore.getState().tabs).toMatchObject([{ title: 'Prod databases', layoutId: 'L1' }]);
@@ -252,11 +252,11 @@ describe('layouts in the palette', () => {
     expect(screen.getByText('Layouts')).toBeDefined();
   });
 
-  it('⌘K Save Layout… opens the dialog for the terminal tab in front', () => {
+  it('⌘K Layouts: Save Layout… opens the dialog for the terminal tab in front', () => {
     openSplitTab();
     render(<Shell />);
     act(() => {
-      fireEvent.click(screen.getByText('Terminal: Save Layout…'));
+      fireEvent.click(screen.getByText('Layouts: Save Layout…'));
     });
     expect(useLayoutsStore.getState().savingTabId).toBe('ssh-terminal:t1');
   });
