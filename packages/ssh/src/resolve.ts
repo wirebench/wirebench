@@ -2,6 +2,7 @@ import { SshModelError } from './errors.js';
 import { defaultBind, isOffForm, parseTarget } from './forward-rules.js';
 import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
+import type { MoshSettings, SessionProtocol } from './host-mosh.js';
 import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshSettings } from './model.js';
 
 export type Provenance<T> = { readonly value: T; readonly from: 'host' | 'default' | { readonly group: string } };
@@ -49,6 +50,10 @@ export interface ResolvedHost {
     readonly connectTimeout: Provenance<number>;
     /** Whether the target's shell forwards the local agent; never a jump host's. */
     readonly forwardAgent: Provenance<boolean>;
+    /** `ssh` by default; `mosh` bootstraps a mosh server over SSH, then runs over UDP (#419). */
+    readonly protocol: Provenance<SessionProtocol>;
+    /** The nearest level's block, whole; read only when the protocol is `mosh`. */
+    readonly mosh: Provenance<MoshSettings | undefined>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
@@ -62,7 +67,7 @@ export interface ResolvedHost {
   };
 }
 
-const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false } as const;
+const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false, protocol: 'ssh' } as const;
 
 interface Located {
   readonly host: HostEntry;
@@ -164,7 +169,17 @@ function resolveEnv(located: Located): ResolvedEnvVar[] {
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
   const out: Record<string, unknown> = {};
-  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout', 'forwardAgent'] as const) {
+  for (const key of [
+    'user',
+    'port',
+    'jump',
+    'auth',
+    'keepAlive',
+    'connectTimeout',
+    'forwardAgent',
+    'protocol',
+    'mosh',
+  ] as const) {
     const { value } = pick(located, key, undefined);
     if (value !== undefined) out[key] = value;
   }
@@ -185,6 +200,8 @@ function resolveLocated(located: Located): ResolvedHost {
     keepAlive: pick(located, 'keepAlive', DEFAULTS.keepAlive) as Provenance<number>,
     connectTimeout: pick(located, 'connectTimeout', DEFAULTS.connectTimeout) as Provenance<number>,
     forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
+    protocol: pick(located, 'protocol', DEFAULTS.protocol) as Provenance<SessionProtocol>,
+    mosh: pick(located, 'mosh', undefined),
   };
   const incomplete =
     ssh.user.value === undefined

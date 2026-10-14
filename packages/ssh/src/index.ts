@@ -2,6 +2,7 @@ export * from './errors.js';
 export * from './model.js';
 export * from './host-env.js';
 export * from './host-terminal.js';
+export * from './host-mosh.js';
 export * from './forward-rules.js';
 export * from './socks5.js';
 export * from './resolve.js';
