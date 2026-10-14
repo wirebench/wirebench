@@ -37,7 +37,11 @@ export const sftpErrorWireSchema = z.object({
   details: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const sftpOpenRequestSchema = z.strictObject({ hostId: z.string().min(1) });
+/** `attemptId`: the connect's progress goes to the window as `ssh.connectProgress` under it (#528). */
+export const sftpOpenRequestSchema = z.strictObject({
+  hostId: z.string().min(1),
+  attemptId: z.string().min(1).max(100).optional(),
+});
 /** `home` is the server's login directory, absolute. */
 export const sftpOpenResponseSchema = z.object({ sessionId: z.string(), home: z.string() });
 export const sftpCloseRequestSchema = z.strictObject({ sessionId: z.string().min(1) });

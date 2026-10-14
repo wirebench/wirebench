@@ -19,6 +19,7 @@ import type {
 import { asWirebenchError } from './hosts-service.js';
 import { localList, localMkdir, localRemove, localRename } from './local-fs.js';
 import type { SshConnector } from './ssh-connect.js';
+import { progressTo } from './ssh-service.js';
 import type { SshServiceDeps } from './ssh-service.js';
 
 export interface SftpServiceDeps {
@@ -106,7 +107,11 @@ export class SftpService {
     if (stale()) throw closed();
     let session: SftpSession;
     try {
-      session = await (this.deps.open ?? openSftp)({ hops, verifyHostKey });
+      session = await (this.deps.open ?? openSftp)({
+        hops,
+        verifyHostKey,
+        ...progressTo(this.deps.emit, sender, request.attemptId),
+      });
     } catch (error) {
       // A refused key is forgotten with the window, as its sessions are.
       if ((error as { code?: unknown }).code === 'ssh-host-key-new' && !stale()) this.watch(sender);

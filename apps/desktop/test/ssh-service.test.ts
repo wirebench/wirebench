@@ -416,6 +416,22 @@ describe('SshService', () => {
     });
   });
 
+  it("sends the connect's progress to the window under the renderer's attempt id (#528)", async () => {
+    const { service, open, emit } = make({ known: [KEY] });
+    const s = sender(1);
+    await service.connect(as(s), { ...CONNECT, attemptId: 'try-1' });
+    const options = open.mock.calls[0]?.[0];
+    const event = { kind: 'log', hop: 0, hops: 1, host: '10.0.0.1:22', at: 1, line: 'Resolving 10.0.0.1' } as const;
+    options?.onProgress?.(event);
+    expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.connectProgress' }), {
+      attemptId: 'try-1',
+      event,
+    });
+    // Without an attempt id nothing listens, so nothing is sent.
+    await service.connect(as(s), CONNECT);
+    expect(open.mock.calls[1]?.[0].onProgress).toBeUndefined();
+  });
+
   it('resolves the secret into openSession and never into the result', async () => {
     const { service, open } = make({ known: [KEY] });
     const result = await service.connect(as(sender(1)), CONNECT);
@@ -443,6 +459,8 @@ describe('SshService', () => {
     expect(open.mock.calls[0]![0].hops[0]!.auth).toEqual({
       kind: 'key',
       privateKey: 'PRIVATE',
+      // The key's secret name, for the connection screen; the key itself stays in privateKey.
+      label: 'k',
       certificate: 'CERT',
       passphrase: 'pass',
     });

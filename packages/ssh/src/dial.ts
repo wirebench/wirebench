@@ -426,6 +426,8 @@ function handshake(
       client.connect(config);
       certAuth?.attach(client);
     } catch {
+      // ssh2 never took the socket over, so nothing else will close it.
+      sock.destroy();
       // The library message can describe the key material, so it is never forwarded.
       const host = hostOf(hop);
       reject(
@@ -529,6 +531,9 @@ export async function dialChain(options: DialOptions): Promise<DialledChain> {
     };
   } catch (error) {
     endAll();
+    // Which hop failed means more with how many there are: the screen tells a jump host from the target.
+    if (error instanceof SshModelError)
+      throw new SshConnectError(error.code, error.message, { ...error.details, hops: options.hops.length });
     throw error;
   }
 }

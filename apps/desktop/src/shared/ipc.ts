@@ -20,6 +20,7 @@ import {
   sshSecretNamesResponseSchema,
   sshSetSecretRequestSchema,
   sshStateEventSchema,
+  sshConnectProgressEventSchema,
   sshTrustRequestSchema,
   sshKnownHostsResponseSchema,
   sshForgetHostKeyRequestSchema,
@@ -1166,6 +1167,8 @@ export const events = {
     /** The remote shell ended; the session id is gone. */
     exit: defineEvent('ssh.exit', sshExitEventSchema),
     state: defineEvent('ssh.state', sshStateEventSchema),
+    /** A connect's stages and handshake log (#528), under the `attemptId` the renderer gave `ssh.connect` or `sftp.open`. */
+    connectProgress: defineEvent('ssh.connectProgress', sshConnectProgressEventSchema),
     /** The machine woke from sleep: a terminal waiting to reconnect tries at once. To every window. */
     resumed: defineEvent('ssh.resumed', z.object({})),
   },

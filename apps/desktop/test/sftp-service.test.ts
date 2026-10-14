@@ -120,6 +120,15 @@ describe('SftpService', () => {
     });
   });
 
+  it("sends the open's progress to the window under the renderer's attempt id (#528)", async () => {
+    const { service, open, emit } = make();
+    const s = sender(1);
+    await service.open(as(s), { hostId: 'a', attemptId: 'files-1' });
+    const event = { kind: 'phase', phase: 'shell', state: 'done', hop: 0, hops: 1, host: 'h:22', at: 1 } as const;
+    open.mock.calls[0]?.[0].onProgress?.(event);
+    expect(emit).toHaveBeenCalledWith(s, events.ssh.connectProgress, { attemptId: 'files-1', event });
+  });
+
   it("another sender's calls are sftp-session-unknown", async () => {
     const { service } = make();
     const { sessionId } = await service.open(as(sender(1)), { hostId: 'a' });
