@@ -269,7 +269,7 @@ All notable changes to this project are documented here. The format follows
   wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
   shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer
   slides the response pane sideways. Below 800px wide the REST editor puts the response under the
-  request, and a window under 760px tall starts with the console collapsed. **Save response** and
+  request, and a window under 720px tall starts with the console collapsed. **Save response** and
   **Copy path** are icon buttons with tooltips, so the status line keeps its room. Generated header
   values and the HTTP Log's columns cut to one line with the full text in a tooltip, instead of
   wrapping a character per line or overlapping their headers; a narrow HTTP Log shows its four main

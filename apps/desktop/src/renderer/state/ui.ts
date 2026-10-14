@@ -646,9 +646,10 @@ export const useUiStore = create<UiStore>((set, get) => {
 
 /**
  * A window shorter than this starts with the console collapsed: at 700px its quarter of the
- * column leaves the editor too little room. The default window (820px) is above it.
+ * column leaves the editor too little room. The default 820px window stays above it, even inside
+ * the native frame and menu bar Windows draws (less than 760px of content there).
  */
-export const CONSOLE_COLLAPSED_BELOW_PX = 760;
+export const CONSOLE_COLLAPSED_BELOW_PX = 720;
 
 /**
  * Hydrates the store from `localStorage` once, then keeps writing every later change back.
