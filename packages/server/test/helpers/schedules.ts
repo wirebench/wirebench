@@ -57,7 +57,9 @@ export async function schedulesHarness(
   let scheduler: Scheduler | undefined;
   const execute = (runId: string, signal: AbortSignal): Promise<void> =>
     new Promise<void>((done) => {
-      signal.addEventListener('abort', () => done(), { once: true });
+      // A run claimed during a stop starts already aborted.
+      if (signal.aborted) done();
+      else signal.addEventListener('abort', () => done(), { once: true });
       started.push({ runId, signal, release: done });
     });
   const h = await licensingHarness(keys, {
