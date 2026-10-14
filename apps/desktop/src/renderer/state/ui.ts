@@ -61,7 +61,17 @@ export interface Selection {
  */
 export interface PendingNodeDeletion {
   readonly kind:
-    'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request' | 'ws-api' | 'ws-request' | 'sequence' | 'mock';
+    | 'api'
+    | 'folder'
+    | 'rest-request'
+    | 'grpc-api'
+    | 'grpc-request'
+    | 'ws-api'
+    | 'ws-request'
+    | 'mcp-api'
+    | 'mcp-request'
+    | 'sequence'
+    | 'mock';
   readonly id: string;
   readonly name: string;
   /** How many requests are inside it; `0` for an empty folder or API, and for a request. */

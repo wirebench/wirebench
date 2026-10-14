@@ -15,6 +15,8 @@ import { wsApiTabId } from '../../src/renderer/features/ws-api/ws-api-actions.js
 import { sequenceTabId } from '../../src/renderer/features/sequence/sequence-actions.js';
 import { wsTabId } from '../../src/renderer/features/ws-editor/ws-actions.js';
 import { runnerTabId } from '../../src/renderer/features/runner/runner-actions.js';
+import { mcpApiTabId } from '../../src/renderer/features/mcp-api/mcp-api-actions.js';
+import { mcpTabId } from '../../src/renderer/features/mcp-editor/mcp-actions.js';
 
 describe('renderer kinds (kind modules spec §6)', () => {
   it('has one renderer half per shared kind, in the same order', () => {
@@ -45,6 +47,8 @@ describe('renderer kinds (kind modules spec §6)', () => {
       'grpc-api': grpcApiTabId,
       'ws-request': wsTabId,
       'ws-api': wsApiTabId,
+      'mcp-request': mcpTabId,
+      'mcp-api': mcpApiTabId,
       environment: (id) => environmentTabId({ kind: 'environment', id }),
       project: projectTabId,
       sequence: sequenceTabId,

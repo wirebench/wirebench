@@ -8,6 +8,7 @@ export const DOCS_LINKS = {
   graphql: 'guides/graphql',
   grpc: 'guides/grpc',
   websocket: 'guides/websocket',
+  mcpServers: 'guides/mcp-servers',
   asyncapi: 'guides/asyncapi',
   importers: 'guides/importers',
   exporters: 'guides/exporters',

@@ -1,6 +1,7 @@
 /**
  * The renderer's kinds and its tab table (kind modules spec §6).
  */
+import type { ComponentType } from 'react';
 import { GENERIC_TABS } from './generic-tabs.js';
 import { grpcRenderer } from './grpc/index.js';
 import { restRenderer } from './rest/index.js';
@@ -8,13 +9,20 @@ import type { ExplorerDeletion, ExplorerNodeRole, KindExplorer, RendererKind } f
 import { soapRenderer } from './soap/index.js';
 import type { TabContribution } from './tab-contribution.js';
 import { wsRenderer } from './ws/index.js';
+import { mcpRenderer } from './mcp/index.js';
 import type { KindId } from '../../shared/kinds/kind-module.js';
 import type { ExplorerNodeKind } from '../features/explorer/tree-nodes.js';
 import type { EditorTab } from '../state/editors.js';
 import type { PendingNodeDeletion } from '../state/ui.js';
 
 /** Every renderer kind, in the explorer's tie-break order. */
-export const RENDERER_KINDS: readonly RendererKind[] = [soapRenderer, restRenderer, grpcRenderer, wsRenderer];
+export const RENDERER_KINDS: readonly RendererKind[] = [
+  soapRenderer,
+  restRenderer,
+  grpcRenderer,
+  wsRenderer,
+  mcpRenderer,
+];
 
 /** Every tab kind that names an entity, by `EditorTab.kind`: the kinds' own, then the generic ones. */
 export const TAB_KINDS: Readonly<Partial<Record<EditorTab['kind'], TabContribution>>> = Object.fromEntries(
@@ -23,6 +31,11 @@ export const TAB_KINDS: Readonly<Partial<Record<EditorTab['kind'], TabContributi
 
 export type { TabContribution, TabTitleContext } from './tab-contribution.js';
 export { entityIdOf } from './tab-contribution.js';
+
+/** Every kind's explorer dialogs, mounted once beside the tree. */
+export const EXPLORER_DIALOGS: readonly ComponentType[] = RENDERER_KINDS.flatMap((kind) =>
+  kind.explorer.Dialogs === undefined ? [] : [kind.explorer.Dialogs],
+);
 
 /** The explorer role of a node kind a protocol kind owns; `undefined` for a core node kind. */
 export function explorerRole(nodeKind: ExplorerNodeKind): ExplorerNodeRole | undefined {

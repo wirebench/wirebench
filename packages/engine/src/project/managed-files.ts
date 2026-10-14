@@ -74,6 +74,7 @@ export async function isExamplesDir(
  * - `<slug>.msg-<message-slug>.<ext>` — one WebSocket saved message, one file per message
  *   ({@link isWsMessageSibling}).
  * - `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js`, `<slug>.post.js` — a request's scripts (#63).
+ * - `<slug>.args.json` — an MCP call's arguments (#79).
  * - every `<id>.body.<ext>` in `<slug>.examples/` — a REST request's response examples (#64); the
  *   directory is the request's, not a folder, so it is not walked as one ({@link isExamplesDir}).
  *
@@ -116,7 +117,11 @@ export async function listApiTreeFiles(fs: FsLike, root: string, dir: string): P
       continue;
     }
     for (const slug of requestSlugs) {
-      if (isWsMessageSibling(entry.name, slug) || isScriptFileOf(entry.name, slug)) {
+      if (
+        isWsMessageSibling(entry.name, slug) ||
+        isScriptFileOf(entry.name, slug) ||
+        entry.name === `${slug}.args.json`
+      ) {
         managed.push(`${dir}/${entry.name}`);
         break;
       }

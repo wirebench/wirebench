@@ -1,3 +1,4 @@
+import type { McpApprovals } from '../mcp-approvals.js';
 import {
   applySoapAuth,
   applyWsaHeaders,
@@ -161,6 +162,11 @@ export function ownerOf(project: Pick<RequestChannelProject, 'projectId'>, entit
 export interface RequestChannelDeps {
   /** Supplies the scopes; `ProjectRouter` in the app, a stub in tests. */
   readonly project: RequestChannelProject;
+  /**
+   * This machine's MCP stdio approvals and their prompt (#79). Absent (a test, a headless caller),
+   * every stdio send is refused, as the engine's gate refuses a host that lends no approver.
+   */
+  readonly mcpApprovals?: McpApprovals;
   /** Asks before a send under protected environments (#345); see `SendThroughEngineDeps.confirmProtected`. */
   readonly confirmProtected?: (environmentNames: readonly string[]) => Promise<boolean>;
   /**
@@ -303,6 +309,7 @@ export function toSendDeps(
     ...(deps.audit !== undefined ? { audit: deps.audit } : {}),
     ...(deps.auditWorkspace !== undefined ? { auditWorkspace: deps.auditWorkspace } : {}),
     ...(deps.confirmProtected !== undefined ? { confirmProtected: deps.confirmProtected } : {}),
+    ...(deps.mcpApprovals !== undefined ? { approveCommand: deps.mcpApprovals.approver() } : {}),
   };
 }
 

@@ -71,6 +71,8 @@ export interface EditorTab {
     | 'grpc-api'
     | 'ws-request'
     | 'ws-api'
+    | 'mcp-request'
+    | 'mcp-api'
     | 'env-compare'
     | 'catch-url'
     | 'sequence'
@@ -105,6 +107,10 @@ export interface EditorTab {
   readonly wsRequestId?: string;
   /** Set when `kind` is `'ws-api'`: the WebSocket API this tab shows. */
   readonly wsApiId?: string;
+  /** Set when `kind` is `'mcp-request'`: the MCP request this tab edits, its own field like `wsRequestId`. */
+  readonly mcpRequestId?: string;
+  /** Set when `kind` is `'mcp-api'`: the MCP server this tab shows. */
+  readonly mcpApiId?: string;
   /**
    * Set when `kind` is `'catch-url'`: the catch URL this tab shows (webhook-capture §4.2). Session
    * only: captures are never cached, so the tab is not persisted.

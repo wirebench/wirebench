@@ -31,7 +31,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
-import { explorerDeletion, explorerRole } from '../../kinds/index.js';
+import { EXPLORER_DIALOGS, explorerDeletion, explorerRole } from '../../kinds/index.js';
 import { kindLabel } from '../../kinds/placeholders.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
@@ -408,6 +408,7 @@ export function ExplorerView() {
   const webhookCollections = useProjectStore((state) => state.webhooks);
   const grpc = useProjectStore((state) => state.grpc);
   const ws = useProjectStore((state) => state.ws);
+  const mcp = useProjectStore((state) => state.mcp);
   const sequenceLists = useProjectStore((state) => state.sequenceLists);
   const mockLists = useProjectStore((state) => state.mockLists);
   const scriptValues = useScriptValuesStore((state) => state.byProject);
@@ -474,6 +475,7 @@ export function ExplorerView() {
     scriptValues,
     mockLists,
     Object.fromEntries(Object.entries(projects).map(([id, project]) => [id, project.unsupported ?? []])),
+    mcp,
   );
 
   useEffect(() => {
@@ -805,6 +807,9 @@ export function ExplorerView() {
       </div>
 
       <EnableScriptsDialog />
+      {EXPLORER_DIALOGS.map((Dialogs, index) => (
+        <Dialogs key={index} />
+      ))}
 
       <ConfirmDialog
         open={confirmRemoveInterfaceId !== undefined}

@@ -170,4 +170,53 @@ describe('RunnerTab', () => {
     fireEvent.click(screen.getByTestId('runner-view-close'));
     expect(screen.getByTestId('runner-empty')).toBeTruthy();
   });
+
+  it('lists and reports an MCP server’s requests: no status, the MCP result check shown', async () => {
+    installWirebenchApi({
+      runner: {
+        state: vi.fn().mockResolvedValue({
+          ok: true,
+          value: {
+            ...STATE,
+            data: undefined,
+            requests: [{ id: 'mcp-1', name: 'Read a file', path: 'Files/Read a file', protocol: 'mcp' }],
+          },
+        }),
+        run,
+        history: { list: vi.fn().mockResolvedValue({ ok: true, value: { runs: [] } }), get: historyGet },
+      },
+      on: vi.fn().mockImplementation((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return vi.fn();
+      }),
+    });
+    const unsubscribe = subscribeToRunnerProgress();
+    await mount();
+    expect(screen.getByTestId('runner-request').textContent).toContain('mcp');
+    fireEvent.click(screen.getByTestId('runner-run'));
+    const runId = (run.mock.calls[0]![0] as { runId: string }).runId;
+
+    act(() => {
+      listeners.get('runner.progress')?.({
+        runId,
+        targetId: 'api-1',
+        request: {
+          requestId: 'mcp-1',
+          path: 'Files/Read a file',
+          name: 'Read a file',
+          protocol: 'mcp',
+          outcome: 'failed',
+          durationMs: 8,
+          assertions: [
+            { type: 'mcp', label: 'MCP result', outcome: 'failed', expected: 'no error', actual: 'No such file' },
+          ],
+        } satisfies RunnerRequestResult,
+      });
+    });
+    const row = screen.getByTestId('runner-result');
+    expect(row.getAttribute('data-outcome')).toBe('failed');
+    expect(row.querySelector('summary')?.textContent).toBe('✗Files/Read a file8 ms');
+    expect(within(row).getByTestId('runner-result-assertion').textContent).toContain('MCP result');
+    unsubscribe();
+  });
 });

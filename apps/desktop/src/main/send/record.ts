@@ -8,6 +8,8 @@ import type {
   GrpcCallResult,
   GrpcResolvedInput,
   GrpcSelected,
+  McpExchange,
+  McpSelected,
   RestContractResult,
   RestExchange,
   RestSelected,
@@ -420,4 +422,39 @@ export function reportWsHandshakeFailure(
       keyParams,
     }),
   );
+}
+
+/**
+ * Appends one MCP send's History entry, answered or failed on the wire. A no-op without a history
+ * service. The entry names the request, its server and the folders down to it; it is built from the
+ * unredacted exchange and redacted as it is written, as every entry is.
+ */
+export async function recordMcp(
+  deps: RecordDeps,
+  item: Pick<McpSelected, 'request' | 'server' | 'chain'>,
+  exchange: McpExchange,
+  label?: HistoryLabel,
+): Promise<void> {
+  const requestId = item.request.id;
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const names = {
+    requestName: item.request.name,
+    serverName: item.server.name,
+    folderPath: item.chain.map((folder) => folder.name).join(' / '),
+  };
+  const meta: typeof names & { readonly tags?: readonly string[] } = labelled(names, label) ?? names;
+  const entry = await deps.history.recordMcpSend(projectId, {
+    requestId,
+    requestName: meta.requestName,
+    serverName: meta.serverName,
+    folderPath: meta.folderPath,
+    exchange,
+    ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
 }

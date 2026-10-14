@@ -53,6 +53,15 @@ import type {
   WsRequestWire,
 } from '../../shared/kinds/ws/wire.js';
 import type {
+  ApiRefreshMcpCatalogueResponse,
+  McpOperationWire,
+  McpRequestPatchWire,
+  McpRequestWire,
+  McpServerPatchWire,
+  McpServerWire,
+  McpTransportWire,
+} from '../../shared/kinds/mcp/wire.js';
+import type {
   SequencePatch,
   SequenceWire,
   MockOperationPatch,
@@ -72,7 +81,12 @@ import type {
   RequestAssertionWire,
   WebhookSigningWire,
 } from '../../shared/wire-base.js';
-import type { ExplorerGrpcData, ExplorerRestData, ExplorerWsData } from '../features/explorer/tree-nodes.js';
+import type {
+  ExplorerGrpcData,
+  ExplorerMcpData,
+  ExplorerRestData,
+  ExplorerWsData,
+} from '../features/explorer/tree-nodes.js';
 import { useDraftsStore } from './drafts.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
@@ -149,6 +163,12 @@ export interface ProjectSnapshot {
   readonly wsRequests: Record<string, WsRequestWire>;
   /** Each project's WebSocket lists, per project for the same reason as `rest`. Folders are in `folders`. */
   readonly ws: Readonly<Record<string, ExplorerWsData>>;
+  /** MCP servers by id, flattened across every open project. */
+  readonly mcpServers: Record<string, McpServerWire>;
+  /** MCP requests by id, flattened across every open project, staged edits applied. */
+  readonly mcpRequests: Record<string, McpRequestWire>;
+  /** Each project's MCP lists, per project for the same reason as `rest`. Folders are in `folders`. */
+  readonly mcp: Readonly<Record<string, ExplorerMcpData>>;
   /** Sequences by id, flattened across every open project. */
   readonly sequences: Record<string, SequenceWire>;
   /** Each project's sequences, in their own `order` (they do not share the containers' ordering). */
@@ -421,6 +441,29 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly saveWsRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   readonly removeWsRequest: (requestId: string) => Promise<void>;
   readonly cloneWsRequest: (requestId: string) => Promise<string>;
+  /** Adds an MCP server to a project and returns its id; no transport makes a stdio one with no command. */
+  readonly addMcpServer: (projectId: string, name: string, transport?: McpTransportWire) => Promise<string>;
+  readonly updateMcpServer: (apiId: string, patch: McpServerPatchWire) => Promise<void>;
+  readonly removeMcpServer: (apiId: string) => Promise<void>;
+  /**
+   * Fetches the server's tools, resources, templates and prompts into its catalogue (#79). A stdio
+   * server this machine has not approved asks first, as a send does.
+   */
+  readonly refreshMcpCatalogue: (apiId: string, sendId?: string) => Promise<ApiRefreshMcpCatalogueResponse>;
+  /** Adds an MCP request to a server or one of its folders; no operation lists the server's tools. */
+  readonly addMcpRequest: (
+    apiId: string,
+    parentId?: string,
+    name?: string,
+    operation?: McpOperationWire,
+  ) => Promise<string>;
+  readonly updateMcpRequest: (requestId: string, patch: McpRequestPatchWire) => Promise<void>;
+  /** Stages an edit made in the MCP editor, as {@link editWsRequest} does for WebSocket. */
+  readonly editMcpRequest: (requestId: string, patch: McpRequestPatchWire) => void;
+  readonly commitMcpRequest: (requestId: string) => Promise<boolean>;
+  readonly saveMcpRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
+  readonly removeMcpRequest: (requestId: string) => Promise<void>;
+  readonly cloneMcpRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
   readonly addEnvironment: (projectId: string, name: string) => Promise<string>;
   /**
@@ -595,6 +638,9 @@ type Indexes = Pick<
   | 'wsApis'
   | 'wsRequests'
   | 'ws'
+  | 'mcpServers'
+  | 'mcpRequests'
+  | 'mcp'
   | 'sequences'
   | 'sequenceLists'
   | 'mocks'
@@ -717,6 +763,25 @@ export function layerWsEdits(request: WsRequestWire, draftPatch: WsRequestPatchW
   };
 }
 
+/** One MCP request's staged-but-unsaved patch, or `undefined` when it is clean. */
+export function mcpDraftPatch(requestId: string): McpRequestPatchWire | undefined {
+  return useDraftsStore.getState().peekMcpRequest(requestId);
+}
+
+/** A mirrored MCP request with its staged edit laid over it; the operation and settings are replaced. */
+export function layerMcpEdits(request: McpRequestWire, draftPatch: McpRequestPatchWire | undefined): McpRequestWire {
+  if (draftPatch === undefined) {
+    return request;
+  }
+  return {
+    ...request,
+    ...(draftPatch.name !== undefined ? { name: draftPatch.name } : {}),
+    ...(draftPatch.description !== undefined ? { description: draftPatch.description ?? undefined } : {}),
+    ...(draftPatch.operation !== undefined ? { operation: draftPatch.operation } : {}),
+    ...(draftPatch.settings !== undefined ? { settings: draftPatch.settings } : {}),
+  };
+}
+
 /**
  * Lays the edits main has not confirmed yet over the request it just sent us.
  *
@@ -754,6 +819,9 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const wsApis: Record<string, WsApiWire> = {};
   const wsRequests: Record<string, WsRequestWire> = {};
   const ws: Record<string, ExplorerWsData> = {};
+  const mcpServers: Record<string, McpServerWire> = {};
+  const mcpRequests: Record<string, McpRequestWire> = {};
+  const mcp: Record<string, ExplorerMcpData> = {};
   const sequences: Record<string, SequenceWire> = {};
   const sequenceLists: Record<string, readonly SequenceWire[]> = {};
   const mocks: Record<string, MockWire> = {};
@@ -820,6 +888,19 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       apis: project.wsApis ?? [],
       requests: (project.wsRequests ?? []).map((request) => wsRequests[request.id] ?? request),
     };
+    // An older fixture may predate MCP too.
+    for (const server of project.mcpServers ?? []) {
+      mcpServers[server.id] = server;
+      projectOf[server.id] = project.id;
+    }
+    for (const request of project.mcpRequests ?? []) {
+      mcpRequests[request.id] = layerMcpEdits(request, mcpDraftPatch(request.id));
+      projectOf[request.id] = project.id;
+    }
+    mcp[project.id] = {
+      servers: project.mcpServers ?? [],
+      requests: (project.mcpRequests ?? []).map((request) => mcpRequests[request.id] ?? request),
+    };
     // An older fixture may predate sequences; treat a missing list as empty, as for WebSocket.
     const projectSequences = [...(project.sequences ?? [])].sort((a, b) => a.order - b.order);
     for (const sequence of projectSequences) {
@@ -867,6 +948,9 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     wsApis,
     wsRequests,
     ws,
+    mcpServers,
+    mcpRequests,
+    mcp,
     sequences,
     sequenceLists,
     mocks,
@@ -1011,6 +1095,9 @@ const EMPTY: ProjectSnapshot = {
   wsApis: {},
   wsRequests: {},
   ws: {},
+  mcpServers: {},
+  mcpRequests: {},
+  mcp: {},
   sequences: {},
   sequenceLists: {},
   mocks: {},
@@ -1130,6 +1217,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       .closeOpenWsSessions([requestId])
       .catch(() => undefined);
     useExchangesStore.getState().clearWsRequest(requestId);
+  };
+
+  /** The MCP counterpart of {@link forgetRestRequest}; clearing its exchange also ends a send in flight. */
+  const forgetMcpRequest = (requestId: string): void => {
+    useDraftsStore.getState().discardMcpRequest(requestId);
+    useEditorsStore.getState().close(`mcp:${requestId}`);
+    useExchangesStore.getState().clearMcpRequest(requestId);
   };
 
   /** Saves one project, reporting its own status. */
@@ -1550,6 +1644,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const wsInside = Object.values(get().wsRequests).filter(
         (request) => request.folderId !== undefined && insideIds.has(request.folderId),
       );
+      const mcpInside = Object.values(get().mcpRequests).filter(
+        (request) => request.folderId !== undefined && insideIds.has(request.folderId),
+      );
       await mutateEntity(folderId, { kind: 'remove-folder', folderId });
       for (const request of inside) {
         forgetRestRequest(request.id);
@@ -1559,6 +1656,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
       for (const request of wsInside) {
         forgetWsRequest(request.id);
+      }
+      for (const request of mcpInside) {
+        forgetMcpRequest(request.id);
       }
     },
 
@@ -1862,6 +1962,110 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { createdId } = await mutateEntity(requestId, { kind: 'clone-ws-request', requestId });
       if (createdId === undefined) {
         throw new Error('clone-ws-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    addMcpServer: async (projectId, name, transport) => {
+      const { createdId } = await mutate(projectId, {
+        kind: 'add-mcp-server',
+        name,
+        ...(transport !== undefined ? { transport } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-mcp-server did not return a server id');
+      }
+      return createdId;
+    },
+
+    updateMcpServer: async (apiId, patch) => {
+      await mutateEntity(apiId, { kind: 'update-mcp-server', apiId, patch });
+    },
+
+    removeMcpServer: async (apiId) => {
+      const inside = Object.values(get().mcpRequests).filter((request) => request.apiId === apiId);
+      await mutateEntity(apiId, { kind: 'remove-mcp-server', apiId });
+      for (const request of inside) {
+        forgetMcpRequest(request.id);
+      }
+      useEditorsStore.getState().close(`mcp-api:${apiId}`);
+    },
+
+    refreshMcpCatalogue: async (apiId, sendId) => {
+      const result = await ipc().api.refreshMcpCatalogue({ apiId, ...(sendId !== undefined ? { sendId } : {}) });
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      // Main saved the catalogue beside the server; the reply names the project, not its snapshot.
+      await get().refresh(result.value.projectId);
+      return result.value;
+    },
+
+    addMcpRequest: async (apiId, parentId, name, operation) => {
+      const { createdId } = await mutateEntity(apiId, {
+        kind: 'add-mcp-request',
+        apiId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(name !== undefined ? { name } : {}),
+        ...(operation !== undefined ? { operation } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-mcp-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    updateMcpRequest: async (requestId, patch) => {
+      await mutateEntity(requestId, { kind: 'update-mcp-request', requestId, patch });
+    },
+
+    editMcpRequest: (requestId, patch) => {
+      update((draft) => {
+        const request = draft.mcpRequests[requestId];
+        if (request !== undefined) {
+          draft.mcpRequests[requestId] = layerMcpEdits(request, patch);
+        }
+      });
+      useDraftsStore.getState().stageMcpRequest(requestId, patch);
+    },
+
+    commitMcpRequest: async (requestId) => {
+      const staged = useDraftsStore.getState().peekMcpRequest(requestId);
+      if (staged === undefined) {
+        return true;
+      }
+      const projectId = ownerOf(requestId);
+      const result = await ipc().project.mutate({
+        projectId,
+        change: { kind: 'update-mcp-request', requestId, patch: staged },
+      });
+      if (!result.ok) {
+        showToast(asError(result.error).message);
+        return false;
+      }
+      apply(projectId, result.value.project);
+      useDraftsStore.getState().clearMcpRequestIfUnchanged(requestId, staged);
+      return true;
+    },
+
+    saveMcpRequest: async (requestId, options) => {
+      await saveItem(
+        requestId,
+        useDraftsStore.getState().peekMcpRequest(requestId) !== undefined,
+        async () => await get().commitMcpRequest(requestId),
+        options,
+      );
+    },
+
+    removeMcpRequest: async (requestId) => {
+      await mutateEntity(requestId, { kind: 'remove-mcp-request', requestId });
+      forgetMcpRequest(requestId);
+    },
+
+    cloneMcpRequest: async (requestId) => {
+      const { createdId } = await mutateEntity(requestId, { kind: 'clone-mcp-request', requestId });
+      if (createdId === undefined) {
+        throw new Error('clone-mcp-request did not return a request id');
       }
       return createdId;
     },

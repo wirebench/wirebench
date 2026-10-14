@@ -8,6 +8,7 @@ import type { KindId } from '../../shared/kinds/kind-module.js';
 import type { ProjectWire } from '../../shared/wire-types.js';
 import { grpcEntityIds, grpcRoutes } from './grpc/router.js';
 import type { KindRoute } from './kind-main.js';
+import { mcpEntityIds, mcpRoutes } from './mcp/router.js';
 import { restEntityIds, restRoutes } from './rest/router.js';
 import { soapEntityIds, soapRoutes } from './soap/router.js';
 import { wsEntityIds, wsRoutes } from './ws/router.js';
@@ -20,6 +21,7 @@ export const KIND_ROUTES: {
   rest: restRoutes,
   grpc: grpcRoutes,
   websocket: wsRoutes,
+  mcp: mcpRoutes,
 };
 
 /** The entity ids one kind's channels address in a project snapshot. */
@@ -35,4 +37,5 @@ export const KIND_ENTITY_IDS: { readonly [K in KindId]: KindEntityIds } = {
   rest: restEntityIds,
   grpc: grpcEntityIds,
   websocket: wsEntityIds,
+  mcp: mcpEntityIds,
 };

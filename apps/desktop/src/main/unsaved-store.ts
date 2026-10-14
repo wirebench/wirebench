@@ -22,10 +22,12 @@ import { grpcRequestPatchSchema } from '../shared/kinds/grpc/wire.js';
 import { restRequestPatchSchema } from '../shared/kinds/rest/wire.js';
 import { requestPatchSchema } from '../shared/kinds/soap/wire.js';
 import { wsRequestPatchSchema } from '../shared/kinds/ws/wire.js';
+import { mcpRequestPatchSchema } from '../shared/kinds/mcp/wire.js';
 import type { GrpcRequestPatchWire } from '../shared/kinds/grpc/wire.js';
 import type { RestRequestPatchWire } from '../shared/kinds/rest/wire.js';
 import type { RequestPatchWire } from '../shared/kinds/soap/wire.js';
 import type { WsRequestPatchWire } from '../shared/kinds/ws/wire.js';
+import type { McpRequestPatchWire } from '../shared/kinds/mcp/wire.js';
 
 /** Folder, inside a workspace's own folder, that holds its recovery records. */
 export const UNSAVED_DIR = 'unsaved';
@@ -55,6 +57,8 @@ const draftsRecordSchema = z.object({
   grpcRequests: z.record(z.string(), grpcRequestPatchSchema).optional(),
   /** Absent in a file written before WebSocket existed. */
   wsRequests: z.record(z.string(), wsRequestPatchSchema).optional(),
+  /** Absent in a file written before MCP existed. */
+  mcpRequests: z.record(z.string(), mcpRequestPatchSchema).optional(),
 });
 
 /** One project's recovery record, as stored. */
@@ -295,6 +299,7 @@ export class UnsavedStore {
     readonly restRequests: Record<string, RestRequestPatchWire>;
     readonly grpcRequests: Record<string, GrpcRequestPatchWire>;
     readonly wsRequests: Record<string, WsRequestPatchWire>;
+    readonly mcpRequests: Record<string, McpRequestPatchWire>;
   }> {
     const path = join(this.dir, DRAFTS_FILE);
     await this.queues.get(path);
@@ -304,26 +309,36 @@ export class UnsavedStore {
       restRequests: record?.restRequests ?? {},
       grpcRequests: record?.grpcRequests ?? {},
       wsRequests: record?.wsRequests ?? {},
+      mcpRequests: record?.mcpRequests ?? {},
     };
   }
 
-  /** Replaces the stored drafts; four empty maps remove the file. */
+  /** Replaces the stored drafts; five empty maps remove the file. */
   writeDrafts(
     requests: Readonly<Record<string, RequestPatchWire>>,
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
     grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
     wsRequests: Readonly<Record<string, WsRequestPatchWire>> = {},
+    mcpRequests: Readonly<Record<string, McpRequestPatchWire>> = {},
   ): Promise<void> {
     const path = join(this.dir, DRAFTS_FILE);
     if (
       Object.keys(requests).length === 0 &&
       Object.keys(restRequests).length === 0 &&
       Object.keys(grpcRequests).length === 0 &&
-      Object.keys(wsRequests).length === 0
+      Object.keys(wsRequests).length === 0 &&
+      Object.keys(mcpRequests).length === 0
     ) {
       return this.enqueue(path, () => rm(path, { force: true }));
     }
-    const record = { version: UNSAVED_RECORD_VERSION, requests, restRequests, grpcRequests, wsRequests };
+    const record = {
+      version: UNSAVED_RECORD_VERSION,
+      requests,
+      restRequests,
+      grpcRequests,
+      wsRequests,
+      ...(Object.keys(mcpRequests).length > 0 ? { mcpRequests } : {}),
+    };
     return this.enqueue(path, () => writeAtomic(path, JSON.stringify(record)));
   }
 }

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu } from 'electron';
 import { AREAS } from '../../shared/area-module.js';
 import type { AreaId } from '../../shared/area-module.js';
-import { KINDS, type KindId } from '../../shared/kinds/kind-module.js';
+import type { KindId } from '../../shared/kinds/kind-module.js';
 import { appVersion } from '../app-version.js';
 import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
@@ -9,6 +9,7 @@ import type { MenuApi } from '../menu.js';
 import { emitEvent } from './events.js';
 import type { UpdateStatusWire } from '../../shared/wire-base.js';
 import { registerHandler } from './register.js';
+import { enabledKindsFromEnv } from '../kinds/enabled-kinds.js';
 
 /**
  * Registers the `app.*` IPC channels: the version triple, the application menu the renderer
@@ -30,7 +31,7 @@ export function registerAppChannels(
     Promise.resolve({ kind: 'error', message: 'Could not check for updates' }),
   newWindow: () => void = () => undefined,
   enabledAreas: readonly AreaId[] = AREAS.map((area) => area.id),
-  enabledKinds: readonly KindId[] = KINDS.map((kind) => kind.kind),
+  enabledKinds: readonly KindId[] = enabledKindsFromEnv({}),
   localTerminal = enabledAreas.includes('ssh'),
 ): void {
   registerHandler(channels.app.version, () =>

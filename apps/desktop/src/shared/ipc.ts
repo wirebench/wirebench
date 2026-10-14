@@ -415,6 +415,7 @@ import { soapChannels } from './kinds/soap/channels.js';
 import { restChannels, restEvents } from './kinds/rest/channels.js';
 import { grpcChannels, grpcEvents } from './kinds/grpc/channels.js';
 import { wsChannels, wsEvents } from './kinds/ws/channels.js';
+import { mcpChannels, mcpEvents } from './kinds/mcp/channels.js';
 
 export { defineChannel, defineEvent } from './ipc-contract.js';
 export type { ChannelRequest, ChannelResponse, EventPayload, IpcChannel, IpcEvent } from './ipc-contract.js';
@@ -471,6 +472,7 @@ export const channels = {
      * own workspace; see the multi-window design.
      */
     newWindow: defineChannel('app.newWindow', z.undefined(), z.object({})),
+    ...mcpChannels.app,
   },
   auth: {
     /** Whether this build can do Kerberos/SPNEGO here, and why not when it cannot. */
@@ -506,6 +508,7 @@ export const channels = {
     ...restChannels.request,
     ...grpcChannels.request,
     ...wsChannels.request,
+    ...mcpChannels.request,
   },
   /**
    * Obtaining an OAuth2 token. Every call names the entity whose configuration to use, never the
@@ -683,6 +686,7 @@ export const channels = {
     ...restChannels.api,
     ...grpcChannels.api,
     ...wsChannels.api,
+    ...mcpChannels.api,
   },
   // A workspace owns its projects: creating, opening and closing one is a `workspace.*` call,
   // not a `project.*` one. What is left here addresses *one* project of the open workspace,
@@ -1186,6 +1190,7 @@ export const events = {
   grpc: grpcEvents.grpc,
   rest: restEvents.rest,
   ws: wsEvents.ws,
+  mcp: mcpEvents.mcp,
   globals: {
     changed: defineEvent('globals.changed', globalsStateSchema),
   },

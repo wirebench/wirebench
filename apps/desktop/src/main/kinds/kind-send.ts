@@ -6,7 +6,8 @@
  */
 import type { KindId } from '../../shared/kinds/kind-module.js';
 import { grpcSend } from './grpc/send.js';
-import type { KindSend } from './kind-main.js';
+import type { KindSend, SendKind } from './kind-main.js';
+import { mcpSend } from './mcp/send.js';
 import { restSend } from './rest/send.js';
 import { soapSend } from './soap/send.js';
 import { wsSend } from './ws/send.js';
@@ -17,12 +18,13 @@ export const KIND_SENDS: { readonly [K in KindId]: KindSend<K> } = {
   rest: restSend,
   grpc: grpcSend,
   websocket: wsSend,
+  mcp: mcpSend,
 };
 
 /**
  * The send steps of `kind`, typed for any kind: the caller holds an item, live event or exchange of
  * that same kind, which TypeScript cannot correlate through the lookup.
  */
-export function kindSend(kind: KindId): KindSend<KindId> {
-  return KIND_SENDS[kind] as unknown as KindSend<KindId>;
+export function kindSend(kind: SendKind): KindSend<SendKind> {
+  return KIND_SENDS[kind] as unknown as KindSend<SendKind>;
 }

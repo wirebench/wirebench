@@ -32,6 +32,8 @@ export type RenamableNodeKind =
   | 'grpc-request'
   | 'ws-api'
   | 'ws-request'
+  | 'mcp-api'
+  | 'mcp-request'
   | 'webhook-folder'
   | 'webhook-request'
   | 'sequence'
@@ -45,6 +47,8 @@ const NODE_ID_PREFIX: Readonly<Record<RenamableNodeKind, string>> = {
   'grpc-request': 'grpc',
   'ws-api': 'ws-api',
   'ws-request': 'ws',
+  'mcp-api': 'mcp-api',
+  'mcp-request': 'mcp',
   'webhook-folder': 'webhook-folder',
   'webhook-request': 'webhook-request',
   sequence: 'sequence',

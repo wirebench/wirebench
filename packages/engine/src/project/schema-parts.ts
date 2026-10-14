@@ -320,7 +320,7 @@ export const restFolderFileSchema = z.looseObject({
 });
 
 /** Every protocol this build can load. A `kind` outside this list is refused by name, never guessed at. */
-const SUPPORTED_KINDS = ['soap', 'rest', 'grpc', 'websocket'];
+const SUPPORTED_KINDS = ['soap', 'rest', 'grpc', 'websocket', 'mcp'];
 
 /**
  * Refuses a document whose `kind` this build does not know how to honour — a protocol a later

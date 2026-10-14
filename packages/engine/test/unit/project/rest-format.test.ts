@@ -512,7 +512,7 @@ describe('a kind this build does not support', () => {
     expect(error).toBeInstanceOf(ProjectError);
     expect(error.code).toBe('project-kind-not-supported');
     expect(error.message).toContain('"graphql"');
-    expect(error.details).toMatchObject({ kind: 'graphql', supported: ['soap', 'rest', 'grpc', 'websocket'] });
+    expect(error.details).toMatchObject({ kind: 'graphql', supported: ['soap', 'rest', 'grpc', 'websocket', 'mcp'] });
     await rm(dir, { recursive: true, force: true });
   });
 

@@ -24,7 +24,7 @@ import type { JsonSchema } from '../../src/rest/openapi/model.js';
 import { sampleFromSchema, sampleXml } from '../../src/json/schema/sample.js';
 import { prettyBody } from '../../src/rest/response.js';
 import { sendRest } from '../../src/rest/send.js';
-import { createSseParser } from '../../src/rest/sse.js';
+import { createSseParser } from '../../src/http/sse.js';
 import type { FetchDocument } from '../../src/wsdl/resolver.js';
 import { writeLargeOpenApiFixture } from '../helpers/large-openapi.js';
 import { startTestRestServer } from '../helpers/test-rest-server.js';

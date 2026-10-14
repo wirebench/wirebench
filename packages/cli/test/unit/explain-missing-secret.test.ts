@@ -1,6 +1,6 @@
 import type { RequestResult } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { explainMissingSecret } from '../../src/secret-advice.js';
+import { explainFailure, explainMissingSecret } from '../../src/secret-advice.js';
 
 const errored = (error: NonNullable<RequestResult['error']>): RequestResult => ({
   path: 'Echo/Echo/Secured hello',
@@ -56,5 +56,27 @@ describe('explainMissingSecret', () => {
   it('leaves any other error alone', () => {
     const raw = errored({ code: 'keystore-unreadable', message: 'unreadable', details: { id: 'k' } });
     expect(explainMissingSecret(raw, [])).toBe(raw);
+  });
+});
+
+describe('explainFailure', () => {
+  it('adds the --allow-commands advice to an unapproved MCP command, keeping what the engine said', () => {
+    const raw = errored({
+      code: 'mcp-command-unapproved',
+      message: 'The MCP server "Local" runs the command "node server.js", which has not been approved',
+    });
+    expect(explainFailure(raw, []).error?.message).toBe(
+      'The MCP server "Local" runs the command "node server.js", which has not been approved. ' +
+        'Pass --allow-commands to let MCP servers run their local commands.',
+    );
+  });
+
+  it('still explains a missing secret, and leaves any other error alone', () => {
+    const missing = errored({ code: 'secret-missing', message: 'x', details: { ref: 'sec_wss' } });
+    expect(explainFailure(missing, [{ ref: 'sec_wss', purpose: 'p' }]).error?.message).toContain(
+      'WIREBENCH_SECRET_SEC_WSS',
+    );
+    const other = errored({ code: 'timeout', message: 'slow' });
+    expect(explainFailure(other, [])).toBe(other);
   });
 });

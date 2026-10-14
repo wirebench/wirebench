@@ -5,7 +5,7 @@ import {
   isEventStream,
   serializeEventStream,
   type SseRow,
-} from '../../../src/rest/sse.js';
+} from '../../../src/http/sse.js';
 
 const enc = new TextEncoder();
 function parse(...chunks: (string | Uint8Array)[]): SseRow[] {

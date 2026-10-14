@@ -278,6 +278,7 @@ describe('useWorkspaceStore', () => {
       restRequests: {},
       grpcRequests: {},
       wsRequests: {},
+      mcpRequests: {},
     });
     expect(order).toEqual(['stash', 'open']);
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
@@ -299,6 +300,7 @@ describe('useWorkspaceStore', () => {
       restRequests: {},
       grpcRequests: {},
       wsRequests: {},
+      mcpRequests: {},
     });
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });

@@ -234,6 +234,48 @@ not gated: the person typing the command has allowed it. The gates belong to the
   characters (`bodyTruncated`), so a large response cannot flood the agent's context; both
   set `truncated`.
 
+## An MCP server's local command runs only once approved
+
+An MCP request (#79) whose server is a local process (stdio) starts that process on *Send*. Its command
+line lives in the project, so a `git pull` can change what a send runs: a project is code to be reviewed,
+and its MCP servers are commands. The engine holds the gate, so no host can skip it by accident: before it
+spawns anything a send asks its host's `approveCommand`, and a host that gives none refuses with
+`mcp-command-unapproved`.
+
+- **What is approved.** A command line's fingerprint is the SHA-256 of the expanded command, arguments
+  and folder, plus the *names* of its environment variables. The values are left out, so rotating a
+  secret does not ask again; changing the command, an argument, the folder or the set of variables does.
+- **Desktop: per machine, asked in the window.** Approvals live in `userData/mcp-approvals.json`, written
+  atomically, never in a project or a workspace. An unknown fingerprint opens a dialog showing the
+  command line as it will run (secrets as their `${secret:…}` reference, never their value), the folder
+  and the variable names: *Run once* keeps nothing, *Always allow* keeps the fingerprint, and *Cancel*,
+  a closed window or a prompt left unanswered for five minutes refuse. A sequence or Runner run asks at
+  most once per fingerprint. *Refresh catalogue* goes through the same gate. Approvals are listed and
+  revoked through `app.mcpApprovals` and `app.mcpRevokeApproval`.
+- **CLI and `wirebench mcp`: opt in.** `wirebench run`, `send` and `mcp` approve nothing unless started
+  with `--allow-commands`; for `mcp` the flag covers every tool call of that server process, so give it
+  only to a server whose project you trust. In CI the flag is the pipeline author's decision, made in
+  the pipeline file, which is reviewed like the project.
+- **No shell, a small environment.** The process is spawned with no shell, so an argument is never
+  re-parsed. It gets `PATH`, `HOME`, `USER`, `LANG`, `TMPDIR` and `SYSTEMROOT` from the parent where
+  they are set (on Windows also the profile and system folders a launcher needs: `APPDATA`,
+  `LOCALAPPDATA`, `USERPROFILE`, `PATHEXT`, `TEMP` and the like, matched without regard to case), plus
+  the variables the server declares. Nothing else of the app's environment — no `WIREBENCH_SECRET_*`
+  variable, no token — reaches it unless the project names it.
+- **Scripts cannot change it.** A pre-request script sees the operation, never the command line, so it
+  cannot alter what was approved. A `${…}` value from a sequence step never reaches a command line.
+- **Bounded and reaped.** A message over 4 MiB ends the session; stderr is kept to its last 64 KiB. On
+  close stdin is ended, then `SIGTERM` after 2 s and `SIGKILL` 2 s later, and a send resolves only once
+  the process has exited, so none is left behind.
+- **History is redacted.** The secret values a send resolved are masked in every message, the command
+  line and its variables, stderr, the result and the error before the entry is written.
+
+An MCP server over HTTP needs no approval: it is a request like a REST one, with the same proxy, TLS and
+auth. A legacy HTTP+SSE server's message endpoint must keep the stream's origin (`mcp-endpoint-origin`), so
+neither the server nor anything between can redirect the session's messages and credentials elsewhere.
+A request the server sends the client (sampling, elicitation, roots) is answered `-32601` and recorded;
+Wirebench declares no client capabilities and runs no model.
+
 ## Paths from the renderer are proven, not trusted
 
 Main never opens a path just because the renderer named one. A path is usable only if it is

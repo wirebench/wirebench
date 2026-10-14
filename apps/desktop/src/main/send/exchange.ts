@@ -32,6 +32,7 @@ import type {
   JwtSendAuth,
   AuthConfig,
   BaseUrlSource,
+  CommandApprovalRequest,
   DesktopAuditEvent,
   ExchangeHandle,
   GrpcResolvedInput,
@@ -43,6 +44,7 @@ import type {
   RestSelected,
   RestSendInput,
   RunContext,
+  RunScope,
   ScriptedRequest,
   ScriptedSend,
   SelectedBase,
@@ -79,6 +81,7 @@ import { type HistoryLabel, type HistoryNameFallback } from './record.js';
 import type { HistoryEntryWire, ResolvedSendInputWire } from '../../shared/wire-types.js';
 import type { GrpcExchangeSummary, GrpcLiveEvent, GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
 import type { RestExchangeSummary, RestLiveEvent, RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
+import type { McpExchangeSummary, McpLiveEvent } from '../../shared/kinds/mcp/wire.js';
 import type { ExchangeSummary } from '../../shared/kinds/soap/wire.js';
 import type { WsExchangeSummary, WsLiveEvent, WsRequestPatchWire } from '../../shared/kinds/ws/wire.js';
 
@@ -133,6 +136,11 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
    */
   readonly onSent?: (sent: SentRequest) => void | Promise<void>;
   /**
+   * Asks about an MCP stdio command line for this send (#79): the window that sent it, or a run's
+   * memo so each command line is asked about once per run. Absent, the deps' approver asks.
+   */
+  readonly approveCommand?: (request: CommandApprovalRequest) => Promise<boolean>;
+  /**
    * A send the app makes for its own use, such as fetching a GraphQL schema (#77): the request's
    * scripts do not run, and it leaves no History entry and no HTTP Log row. It is still audited.
    */
@@ -145,6 +153,7 @@ interface LiveByKind {
   readonly soap: never;
   readonly grpc: GrpcLiveEvent;
   readonly websocket: WsLiveEvent;
+  readonly mcp: McpLiveEvent;
 }
 
 /** What a send answers with, by protocol. */
@@ -153,6 +162,7 @@ interface SummaryByKind {
   readonly soap: ExchangeSummary;
   readonly grpc: GrpcExchangeSummary;
   readonly websocket: WsExchangeSummary;
+  readonly mcp: McpExchangeSummary;
 }
 
 export type SendSummary = SummaryByKind[keyof SummaryByKind];
@@ -495,6 +505,7 @@ async function sendReserved(
     projectId,
     ...masks,
     ...(options.envId !== undefined ? { envId: options.envId } : {}),
+    ...(options.approveCommand !== undefined ? { approveCommand: options.approveCommand } : {}),
   };
   const desktopHost = await desktopSendHost(deps, send);
   // A quiet send reports no failure row: its caller hears the error.
@@ -600,6 +611,27 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.registry !== undefined ? { registry: located.registry } : {}),
     host,
   };
+}
+
+/**
+ * What a send the app makes for its own use runs in, outside any saved request (#79, an MCP
+ * catalogue refresh): the project that owns `entityId` under its active environment, and the app's
+ * host for it, which writes no HTTP Log row. Undefined when no open project owns the entity.
+ */
+export async function appSendScope(
+  deps: SendThroughEngineDeps,
+  entityId: string,
+  send: Pick<DesktopSend, 'sendId' | 'approveCommand'>,
+): Promise<{ readonly project: Project; readonly scope: RunScope; readonly host: SendHost } | undefined> {
+  const located = savedContext(deps, entityId, undefined);
+  if (located === undefined) return undefined;
+  const real = await desktopSendHost(deps, {
+    ...send,
+    requestId: entityId,
+    projectId: deps.project.projectId(entityId),
+  });
+  const host: SendHost = { ...real, events: {} };
+  return { project: located.project, scope: createRunScope(runContextOf(located, host)), host };
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
   grpcApisOf,
   keystoreEntrySchema,
+  mcpServersOf,
   qnameToString,
   restApisOf,
   soapInterfacesOf,
@@ -30,6 +31,10 @@ import type {
   GrpcApi,
   GrpcRequestDef,
   KeyValueEntry,
+  McpOperation,
+  McpRequestDef,
+  McpServer,
+  McpTransport,
   RestApi,
   RestBody,
   RestRequestDef,
@@ -65,6 +70,13 @@ import type {
   RequestWire,
 } from '../shared/kinds/soap/wire.js';
 import type { WsApiWire, WsRequestWire } from '../shared/kinds/ws/wire.js';
+import type {
+  McpCatalogueWire,
+  McpOperationWire,
+  McpRequestWire,
+  McpServerWire,
+  McpTransportWire,
+} from '../shared/kinds/mcp/wire.js';
 import type {
   UnsupportedContainerWire,
   RequestAssertionWire,
@@ -818,11 +830,111 @@ function toWsTreeWires(apis: readonly WsApi[]): {
   return { folders, requests };
 }
 
+function toMcpTransportWire(transport: McpTransport): McpTransportWire {
+  if (transport.type === 'stdio') {
+    return {
+      type: 'stdio',
+      command: transport.command,
+      args: [...transport.args],
+      ...(transport.cwd !== undefined ? { cwd: transport.cwd } : {}),
+      env: toKeyValueWires(transport.env),
+    };
+  }
+  return {
+    type: transport.type,
+    url: transport.url,
+    headers: toKeyValueWires(transport.headers),
+    ...(transport.auth !== undefined ? { auth: toAuthConfigWire(transport.auth) } : {}),
+  };
+}
+
+function toMcpServerWire(server: McpServer): McpServerWire {
+  return {
+    kind: 'mcp',
+    id: server.id,
+    name: server.name,
+    slug: server.slug,
+    order: server.order,
+    ...(server.description !== undefined ? { description: server.description } : {}),
+    transport: toMcpTransportWire(server.transport),
+    settings: { ...server.settings },
+    ...(server.catalogueInfo !== undefined
+      ? { catalogueInfo: { ...server.catalogueInfo, serverInfo: { ...server.catalogueInfo.serverInfo } } }
+      : {}),
+    // Kept as the server listed it, fields the protocol adds later included: a plain JSON copy.
+    ...(server.catalogue !== undefined
+      ? { catalogue: JSON.parse(JSON.stringify(server.catalogue)) as McpCatalogueWire }
+      : {}),
+  };
+}
+
+function toMcpOperationWire(operation: McpOperation): McpOperationWire {
+  switch (operation.method) {
+    case 'tools/call':
+      return { method: operation.method, tool: operation.tool, arguments: operation.arguments };
+    case 'resources/read':
+      return { method: operation.method, uri: operation.uri };
+    case 'prompts/get':
+      return { method: operation.method, prompt: operation.prompt, arguments: toKeyValueWires(operation.arguments) };
+    default:
+      return { method: operation.method };
+  }
+}
+
+function toMcpRequestWire(request: McpRequestDef, apiId: string, folderId: string | undefined): McpRequestWire {
+  return {
+    kind: 'mcp',
+    id: request.id,
+    apiId,
+    ...(folderId !== undefined ? { folderId } : {}),
+    name: request.name,
+    slug: request.slug,
+    order: request.order,
+    ...(request.description !== undefined ? { description: request.description } : {}),
+    operation: toMcpOperationWire(request.operation),
+    settings: { ...request.settings },
+    ...scriptsField(request.scripts),
+    assertions: toAssertionWires(request.assertions),
+  };
+}
+
+/** Every folder and request of every MCP server, flattened; the folders join the rest. */
+function toMcpTreeWires(servers: readonly McpServer[]): {
+  readonly folders: RestFolderWire[];
+  readonly requests: McpRequestWire[];
+} {
+  const folders: RestFolderWire[] = [];
+  const requests: McpRequestWire[] = [];
+  const walk = (server: McpServer, container: Pick<McpServer, 'folders' | 'requests'>, parentId?: string): void => {
+    for (const request of container.requests) {
+      requests.push(toMcpRequestWire(request, server.id, parentId));
+    }
+    for (const folder of container.folders) {
+      folders.push({
+        id: folder.id,
+        apiId: server.id,
+        ...(parentId !== undefined ? { parentId } : {}),
+        name: folder.name,
+        slug: folder.slug,
+        order: folder.order,
+        ...(folder.description !== undefined ? { description: folder.description } : {}),
+        ...scriptsField(folder.scripts),
+      });
+      walk(server, folder, folder.id);
+    }
+  };
+  for (const server of servers) {
+    walk(server, server);
+  }
+  return { folders, requests };
+}
+
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
   const restTree = toRestTreeWires(restApisOf(project));
   const grpcTree = toGrpcTreeWires(grpcApisOf(project));
   const wsTree = toWsTreeWires(wsApisOf(project));
+  const mcpTree = toMcpTreeWires(mcpServersOf(project));
   const webhooks = webhooksOf(project);
   const webhookTree =
     webhooks !== undefined ? toWebhookTreeWires(webhooks, webhookCollectionId(project.id)) : undefined;
@@ -837,13 +949,21 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     interfaces: soapInterfacesOf(project).map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
     apis: restApisOf(project).map(toApiWire),
-    folders: [...restTree.folders, ...grpcTree.folders, ...wsTree.folders, ...(webhookTree?.folders ?? [])],
+    folders: [
+      ...restTree.folders,
+      ...grpcTree.folders,
+      ...wsTree.folders,
+      ...mcpTree.folders,
+      ...(webhookTree?.folders ?? []),
+    ],
     restRequests: [...restTree.requests, ...(webhookTree?.requests ?? [])],
     ...(webhooksWire !== undefined ? { webhooks: webhooksWire } : {}),
     grpcApis: grpcApisOf(project).map(toGrpcApiWire),
     grpcRequests: grpcTree.requests,
     wsApis: wsApisOf(project).map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
     wsRequests: wsTree.requests,
+    mcpServers: mcpServersOf(project).map(toMcpServerWire),
+    mcpRequests: mcpTree.requests,
     sequences: project.sequences.map(toSequenceWire),
     mocks: project.mocks.map(toMockWire),
     properties: { ...project.properties },

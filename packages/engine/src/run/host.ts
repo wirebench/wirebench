@@ -51,8 +51,27 @@ export interface SendFailure {
   readonly exchange?: unknown;
 }
 
+/** A local command a send would run, as the host is asked to approve it (an MCP stdio server). */
+export interface CommandApprovalRequest {
+  /** SHA-256, hex, of the command, its arguments, its folder and its variables' names. */
+  readonly fingerprint: string;
+  /** The command line as it will run, with its secrets masked. */
+  readonly display: string;
+  /** The absolute folder it runs in. */
+  readonly cwd: string;
+  /** The names of the variables it is given beyond the inherited ones, sorted; never their values. */
+  readonly envNames: readonly string[];
+  /** The name of the container the command belongs to. */
+  readonly serverName: string;
+}
+
 export interface SendHost {
   readonly getSecret: GetSecret;
+  /**
+   * Asked before a send runs a local command; true lets it run. Absent, or false: the send is
+   * refused, so a host cannot run a command it never meant to approve.
+   */
+  readonly approveCommand?: (request: CommandApprovalRequest) => Promise<boolean>;
   /** Told every OAuth2 access token the send obtains, so the host can mask it in all it prints. */
   readonly onSecretValue?: (value: string) => void;
   readonly proxyFor?: (url: string) => Promise<ProxyOptions | undefined>;

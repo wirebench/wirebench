@@ -3,7 +3,7 @@ export type { SelectedRequest, StepRequestLookup } from './select.js';
 export { scopesFor, withSystemValuesReported } from './context.js';
 export { overlayCurrent, withCurrentValues } from './current-values.js';
 export type { CurrentValues } from './current-values.js';
-export type { AttemptedRequest, ClientIdentity, SendFailure, SendHost } from './host.js';
+export type { AttemptedRequest, ClientIdentity, CommandApprovalRequest, SendFailure, SendHost } from './host.js';
 export type { RunContext, RunWorkspace } from './context.js';
 export {
   cappedExchange,

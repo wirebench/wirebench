@@ -77,7 +77,7 @@ flowchart TB
     Pr --> K
   end
 
-  Net(["Remote service<br/>SOAP · REST · gRPC · WebSocket"])
+  Net(["Remote service<br/>SOAP · REST · gRPC · WebSocket · MCP"])
   Disk[("Workspace folder<br/>workspace.yaml · environments/ · projects/<slug>/")]
   Key[("OS keychain<br/>userData/secrets.json")]
 
@@ -148,7 +148,7 @@ process, in `wirebench run` and in `wirebench mcp`.
 
 **Protocol modules (ADR-0017).** Each protocol is one module behind the `ProtocolModule` interface
 (`packages/engine/src/protocol/module.ts`), defined in its own folder: `soap/module.ts`,
-`rest/module.ts`, `grpc/module.ts` and `ws/module.ts`. A module has up to three facets. *Storage*
+`rest/module.ts`, `grpc/module.ts`, `ws/module.ts` and `mcp/module.ts`. A module has up to three facets. *Storage*
 reads and writes its containers in a project folder. *Run* lists the requests a run can send, sends
 one, and names the secrets it needs. *Scripting* describes what a script sees of a request and a
 response. WebSocket's run facet offers no request, so its requests load and save and a run cannot send them.
@@ -175,7 +175,7 @@ cannot disagree with what is actually sent. Nothing else in `rest/` is importabl
 
 ## How a send actually happens
 
-**There is one send path, and every host uses it.** A project holds SOAP, REST, gRPC and WebSocket
+**There is one send path, and every host uses it.** A project holds SOAP, REST, gRPC, WebSocket and MCP
 requests (ADR-0007, ADR-0017), and `request.send` takes an id, not a protocol. Main resolves what that
 id names and hands it to the engine's `openExchange`, which asks the registry for the protocol's module
 and calls its run facet's `open`. The desktop, `wirebench run`, `wirebench send` and the MCP `send` tool
@@ -183,7 +183,9 @@ all call it, so a request sends the same bytes from each. What differs between h
 lends the send: a `SendHost`, carried on `RunContext.host`, holds the secret getter (the only required
 member) and, when a host has them, the proxy, TLS trust and client identity, the OAuth2 token source,
 preferences, cookies, a contract check, gRPC schemas, and hooks that report a send that failed. Where a
-member is absent the send behaves as the command line's does. The desktop builds its host from its own
+member is absent the send behaves as the command line's does. One member gates rather than lends:
+`approveCommand` says whether an MCP server's local command may start, and a host without it refuses
+every stdio send (`mcp-command-unapproved`). The desktop builds its host from its own
 services (`apps/desktop/src/main/send/host.ts`); the command line builds one from the environment.
 
 `open` returns an `ExchangeHandle` with the live events, `push`, `halfClose`, `close` and `cancel`, and
@@ -304,6 +306,7 @@ introduced.
 | OpenAPI import, mapping, Update Definition, the definition cache | `packages/engine/src/rest/openapi` |
 | gRPC calls, `.proto` sets, server reflection | `packages/engine/src/grpc` |
 | WebSocket sessions; AsyncAPI import | `packages/engine/src/ws`, `packages/engine/src/asyncapi` |
+| MCP client sessions (stdio, Streamable HTTP, legacy SSE), the catalogue, the stdio command fingerprint | `packages/engine/src/mcp` |
 | JSON Schema `$ref` resolution, parsing and sampling | `packages/engine/src/json/schema` |
 | HTTP, auth (Basic, NTLMv2, OAuth2 token requests and PKCE, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/engine/src/http` |
 | WS-Security, WS-Addressing | `packages/engine/src/wss`, `packages/engine/src/wsa` |

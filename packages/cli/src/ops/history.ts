@@ -27,7 +27,7 @@ export interface HistoryRow {
   readonly at: string;
   /** The item path `send` takes, as it was when the entry was written. */
   readonly item: string;
-  readonly kind: 'soap' | 'rest' | 'grpc' | 'websocket';
+  readonly kind: 'soap' | 'rest' | 'grpc' | 'websocket' | 'mcp';
   readonly method?: string;
   /** Absent when the send got no response. */
   readonly status?: number;
@@ -65,7 +65,7 @@ export interface HistoryDiffResult {
 /** The most characters (paths and values) the changes of one diff may hold in all: 256 KiB. */
 export const MAX_DIFF_CHARS = 256 * 1024;
 
-/** `Interface/Operation/Request` for SOAP; `API/Folder/…/Request` for REST, gRPC and WebSocket. */
+/** `Interface/Operation/Request` for SOAP; `API/Folder/…/Request` for REST, gRPC, WebSocket and MCP (its server). */
 export function historyItemOf(entry: HistoryEntry): string {
   // A SOAP operation name is one path segment, however it is spelled; a REST folder chain is joined by ' / '.
   const middle =

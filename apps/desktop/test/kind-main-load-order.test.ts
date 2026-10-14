@@ -25,6 +25,7 @@ const ENTRIES = [
   '../src/main/ipc/search.js',
   '../src/main/kinds/rest/ipc.js',
   '../src/main/kinds/soap/ipc.js',
+  '../src/main/kinds/mcp/ipc.js',
 ];
 
 describe('loading main with the kinds in a cycle', () => {
@@ -32,6 +33,6 @@ describe('loading main with the kinds in a cycle', () => {
     vi.resetModules();
     await import(entry);
     const { MAIN_KINDS } = await import('../src/main/kinds/kind-main.js');
-    expect(MAIN_KINDS.map((kind) => kind.kind)).toEqual(['soap', 'rest', 'grpc', 'websocket']);
+    expect(MAIN_KINDS.map((kind) => kind.kind)).toEqual(['soap', 'rest', 'grpc', 'websocket', 'mcp']);
   });
 });

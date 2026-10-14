@@ -67,6 +67,8 @@ export interface KindExplorer {
   readonly deletions?: Partial<Record<PendingNodeDeletion['kind'], ExplorerDeletion>>;
   /** Whether `apiId` names one of the kind's APIs: which kind a folder's commands belong to. */
   ownsApi?(apiId: string, project: ProjectSnapshot): boolean;
+  /** The dialogs the kind's rows open (a new container's form, a picker), mounted once with the explorer. */
+  readonly Dialogs?: ComponentType;
 }
 
 /** The kind's saved requests, as History, Search and the HTTP Log reach them. */

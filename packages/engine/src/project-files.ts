@@ -15,6 +15,7 @@
  */
 import { z } from 'zod';
 import { grpcApiFileSchema, grpcRequestFileSchema } from './grpc/files.js';
+import { mcpRequestFileSchema, mcpServerFileSchema } from './mcp/files.js';
 import { FORMAT_VERSION } from './project/model.js';
 import {
   apiDefinitionCacheManifestSchema,
@@ -70,13 +71,18 @@ export const PROJECT_FILE_KINDS: readonly ProjectFileKind[] = [
     name: 'api',
     title: 'API',
     files: ['apis/*/api.yaml'],
-    schema: z.discriminatedUnion('kind', [apiFileSchema, grpcApiFileSchema, wsApiFileSchema]),
+    schema: z.discriminatedUnion('kind', [apiFileSchema, grpcApiFileSchema, wsApiFileSchema, mcpServerFileSchema]),
   },
   {
     name: 'api-request',
     title: 'API request',
     files: ['apis/*/requests/**/*.request.yaml'],
-    schema: z.discriminatedUnion('kind', [restRequestFileSchema, grpcRequestFileSchema, wsRequestFileSchema]),
+    schema: z.discriminatedUnion('kind', [
+      restRequestFileSchema,
+      grpcRequestFileSchema,
+      wsRequestFileSchema,
+      mcpRequestFileSchema,
+    ]),
   },
   { name: 'folder', title: 'Request folder', files: ['apis/*/requests/**/folder.yaml'], schema: restFolderFileSchema },
   {

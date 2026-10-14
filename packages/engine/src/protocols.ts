@@ -9,6 +9,12 @@ import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
 import type { GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
+import type { McpLiveEvent } from './mcp/events.js';
+import type { McpExchange } from './mcp/exchange.js';
+import type { McpRequestDef } from './mcp/model.js';
+import { mcpProtocol } from './mcp/module.js';
+import type { McpSelected } from './mcp/run.js';
+import type { McpRequestSnapshot, McpResponseSnapshot } from './mcp/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
 import { createProtocolRegistry } from './protocol/registry.js';
@@ -31,11 +37,17 @@ import { wsProtocol } from './ws/module.js';
 import type { WsSelected } from './ws/run.js';
 
 /**
- * The four built-in protocols, in the order their containers tie-break in the explorer.
+ * The five built-in protocols, in the order their containers tie-break in the explorer.
  *
  * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
-export const BUILTIN_PROTOCOLS: readonly ProtocolModule[] = [soapProtocol, restProtocol, grpcProtocol, wsProtocol];
+export const BUILTIN_PROTOCOLS: readonly ProtocolModule[] = [
+  soapProtocol,
+  restProtocol,
+  grpcProtocol,
+  wsProtocol,
+  mcpProtocol,
+];
 
 /** The feature that switches request scripts (#63). Not a protocol, so the registry is told of it. */
 export const SCRIPTS_FEATURE: FeatureDescriptor = {
@@ -72,7 +84,7 @@ export function defaultRegistry(): ProtocolRegistry {
 }
 
 /** One saved request selected for a run, of any built-in protocol a run can send. */
-export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected;
+export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected | McpSelected;
 
 /** A SOAP interface's definition as a host already holds it in memory: imported and compiled. */
 export type HeldSoapDefinition = Pick<WsdlImportResult, 'definition' | 'bundle' | 'schemaSet' | 'wsa'>;
@@ -107,19 +119,24 @@ export type SentExchange =
       readonly kind: 'websocket';
       /** The session whole: its handshake, every frame both ways, and how it closed. */
       readonly ws: WsExchange;
+    }
+  | {
+      readonly kind: 'mcp';
+      /** The session whole: every message both ways, the transport's record, and the operation's answer. */
+      readonly mcp: McpExchange;
     };
 
 /** A message an open exchange reports, whatever its protocol. */
-export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent;
+export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
-export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;
+export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot | McpRequestSnapshot;
 
 /** The response snapshot of any built-in protocol that has scripts (spec §3.1). */
-export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | GrpcResponseSnapshot;
+export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | GrpcResponseSnapshot | McpResponseSnapshot;
 
 /**
  * A saved request of any built-in protocol, which is what a lookup by request id can return: the id
  * space is one (ULIDs), so `kind` is how a caller finds out what it has.
  */
-export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef;
+export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef | WsRequestDef | McpRequestDef;

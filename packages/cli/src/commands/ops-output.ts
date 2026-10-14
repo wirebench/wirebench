@@ -30,9 +30,15 @@ function operationsText(result: OperationsResult): string {
   const out: string[] = [];
   for (const row of result.operations) {
     const detail =
-      row.kind === 'soap' ? (row.soapAction ?? '') : row.kind === 'rest' ? (row.operationId ?? '') : row.url;
+      row.kind === 'soap'
+        ? (row.soapAction ?? '')
+        : row.kind === 'rest'
+          ? (row.operationId ?? '')
+          : row.kind === 'mcp'
+            ? [row.method, row.target].filter((part) => part !== undefined).join(' ')
+            : row.url;
     out.push(detail.length > 0 ? `${row.ref}  (${detail})` : row.ref);
-    if (row.kind !== 'websocket' && row.tool !== undefined) {
+    if ((row.kind === 'soap' || row.kind === 'rest') && row.tool !== undefined) {
       out.push(`  tool: ${row.tool}`);
     }
     out.push(...row.items.map((item) => `  ${item}`));
@@ -71,8 +77,11 @@ function frameLine(frame: NonNullable<SendResult['frames']>[number]): string {
 
 function sendText(result: SendResult): string {
   const mark = (outcome: string): string => (outcome === 'passed' ? 'ok  ' : outcome === 'failed' ? 'FAIL' : 'ERR ');
+  // An MCP session over stdio has no status: its line is the method, the command and the time.
+  const status =
+    result.kind === 'mcp' && result.status === 0 ? '' : ` -> ${String(result.status)} ${result.statusText}`;
   return lines(
-    `${result.outcome.toUpperCase()}  ${result.method} ${result.url} -> ${String(result.status)} ${result.statusText} (${String(result.durationMs)} ms)`,
+    `${result.outcome.toUpperCase()}  ${result.method} ${result.url}${status} (${String(result.durationMs)} ms)`,
     ...(result.unasserted ? ['  (no assertions)'] : []),
     ...result.assertions.flatMap((assertion) =>
       // A baseline difference lists one change per line under its label, as the run's cli reporter does.

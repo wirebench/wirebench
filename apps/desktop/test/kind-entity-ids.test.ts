@@ -28,6 +28,7 @@ const PROJECT = {
     restFolderWire({ id: 'webhook-folder', apiId: 'hooks' }),
     restFolderWire({ id: 'grpc-folder', apiId: 'grpc-api' }),
     restFolderWire({ id: 'ws-folder', apiId: 'ws-api' }),
+    restFolderWire({ id: 'mcp-folder', apiId: 'mcp-server' }),
   ],
   restRequests: [restRequestWire({ id: 'rest-request' })],
   webhooks: { id: 'hooks' },
@@ -35,6 +36,8 @@ const PROJECT = {
   grpcRequests: [grpcRequestWire({ id: 'grpc-request' })],
   wsApis: [wsApiWire({ id: 'ws-api' })],
   wsRequests: [wsRequestWire({ id: 'ws-request' })],
+  mcpServers: [{ id: 'mcp-server' }],
+  mcpRequests: [{ id: 'mcp-request' }],
 } as unknown as ProjectWire;
 
 describe("the routing index's entity ids", () => {
@@ -56,6 +59,9 @@ describe("the routing index's entity ids", () => {
         'ws-api',
         'ws-folder',
         'ws-request',
+        'mcp-server',
+        'mcp-folder',
+        'mcp-request',
       ].sort(),
     );
   });

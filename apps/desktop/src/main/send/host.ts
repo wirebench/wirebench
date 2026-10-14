@@ -21,6 +21,7 @@ import {
 import type {
   AttemptedRequest,
   ClientIdentity,
+  CommandApprovalRequest,
   CookieJarHost,
   GetSecret,
   HttpExchange,
@@ -70,6 +71,11 @@ export interface DesktopSendDeps {
   readonly onExchange?: (entry: LogEntryWire) => void;
   /** The open workspace's cookie jar (cookie jar spec §2), asked for once at the start of each send; absent in tests that never send cookies. */
   readonly cookies?: () => CookieJarHost;
+  /**
+   * Asks this machine's approval of an MCP stdio command line (#79), in the focused window, when the
+   * send names no approver of its own. Absent, every stdio send is refused: the engine's gate holds.
+   */
+  readonly approveCommand?: (request: CommandApprovalRequest) => Promise<boolean>;
 }
 
 export interface DesktopSend {
@@ -84,6 +90,8 @@ export interface DesktopSend {
   failedStage?: 'prepare' | 'send';
   /** Set by the host's `onExchange` when the WebSocket handshake row was written. */
   handshakeLogged?: boolean;
+  /** This send's own MCP approver: the window that sent it, or a run's memo. Wins over the deps'. */
+  readonly approveCommand?: (request: CommandApprovalRequest) => Promise<boolean>;
 }
 
 /**
@@ -100,6 +108,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
   const preferences = deps.preferences?.();
   const tokens = oauth2Tokens(deps);
   const issued = issuedTokensFor(deps, send);
+  const approveCommand = send.approveCommand ?? deps.approveCommand;
   return {
     getSecret: desktopSecrets(deps, projectId),
     onSecretValue: recordSecretValue,
@@ -125,6 +134,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
     ...(issued !== undefined ? { protocols: { soap: { issuedTokens: issued } } } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
     ...(cookies !== undefined ? { cookies } : {}),
+    ...(approveCommand !== undefined ? { approveCommand } : {}),
     contractFor: restContractFor(deps),
     callbackUrlFor: (item) => Promise.resolve(callbackUrlOf(deps, send, item)),
     // The project's own schema for a gRPC API, which it loads once a session, discovered or imported.
@@ -134,6 +144,8 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
     events: {
       onFailed: (item, failure) => {
         send.failedStage = failure.stage;
+        // An MCP send writes no HTTP Log row, failed or not: History is its record (#79).
+        if (item.kind === 'mcp') return;
         // Every module says what it attempted; without that there is no row to write.
         const { attempted } = failure;
         if (attempted === undefined) return;

@@ -8,6 +8,7 @@ import { cp, readFile } from 'node:fs/promises';
 import { join, matchesGlob } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
+import { createMcpFolder, createMcpRequest, createMcpServer } from '../../src/mcp/model.js';
 import { createMock, createMockOperation, createMockResponse } from '../../src/mock/model.js';
 import { PROJECT_FILE_KINDS, PROJECT_SCHEMA_BASE_URL, projectJsonSchemas } from '../../src/project-files.js';
 import { loadProject } from '../../src/project/load.js';
@@ -117,6 +118,62 @@ describe('projectJsonSchemas', () => {
     await saveProject({ ...sampleProject(), mocks: [mock] }, dir);
     const files = await listTree(dir);
     expect(files.filter((file) => file.startsWith('mocks/') && file.endsWith('.yaml'))).toHaveLength(3);
+    await expectValidTree(dir);
+  });
+
+  it('accepts the files of saved MCP servers, every transport and operation (#79)', async () => {
+    const dir = await tempProjectDir();
+    const call = createMcpRequest('Forecast', {
+      operation: { method: 'tools/call', tool: 'get_weather', arguments: '{"city":"Oslo"}' },
+      settings: { timeoutMs: 2_000 },
+    });
+    const prompt = createMcpRequest('Summary', {
+      order: 1,
+      operation: {
+        method: 'prompts/get',
+        prompt: 'summarise',
+        arguments: [{ name: 'topic', value: 'rain', enabled: true }],
+      },
+    });
+    const read = createMcpRequest('Log', { order: 2, operation: { method: 'resources/read', uri: 'file:///log' } });
+    const stdio = createMcpServer('Local', {
+      transport: {
+        type: 'stdio',
+        command: 'node',
+        args: ['s.js'],
+        cwd: 'tools',
+        env: [{ name: 'K', value: '${secret:k}', enabled: true }],
+      },
+      settings: { timeoutMs: 5_000, protocolVersion: '2025-06-18' },
+      catalogueInfo: {
+        fetchedAt: '2026-10-13T00:00:00.000Z',
+        serverInfo: { name: 's', version: '1' },
+        protocolVersion: '2025-06-18',
+      },
+      catalogue: { tools: [] },
+      requests: [call, prompt, read],
+      folders: [createMcpFolder('Lists', { requests: [createMcpRequest('Tools')] })],
+    });
+    const http = createMcpServer('Remote', {
+      order: 1,
+      transport: {
+        type: 'http',
+        url: 'https://mcp.test/mcp',
+        headers: [{ name: 'X-A', value: '1', enabled: false }],
+        auth: { type: 'bearer', tokenRef: 'r' },
+      },
+    });
+    const sse = createMcpServer('Legacy', {
+      order: 2,
+      transport: { type: 'sse', url: 'https://mcp.test/sse', headers: [] },
+    });
+    await saveProject(
+      { ...sampleProject(), containers: { ...sampleProject().containers, mcp: [stdio, http, sse] } },
+      dir,
+    );
+    expect((await listTree(dir)).filter((file) => /^apis\/(Local|Remote|Legacy)\/.*\.yaml$/.test(file))).toHaveLength(
+      8,
+    );
     await expectValidTree(dir);
   });
 

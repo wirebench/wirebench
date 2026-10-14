@@ -21,6 +21,11 @@ import type { DetectContext, SecretRule } from './rules.js';
  * a userinfo password included); `rest-query` and `ws-query` are its query table.
  * `grpc-api-metadata` and `ws-api-header` are the entries set on the API itself, sent by every
  * request in it.
+ *
+ * An MCP server's transport is located on the server (`apiId`): `mcp-env` and `mcp-header` its
+ * variables and headers, `mcp-arg` one argument of its command line by position, and `mcp-url` its
+ * URL. A request's operation is located on the request: `mcp-prompt-arg` a prompt argument,
+ * `mcp-uri` a resource URI, and `mcp-arguments` a tool call's arguments JSON.
  */
 export type SecretLocation =
   | {
@@ -30,11 +35,15 @@ export type SecretLocation =
       readonly index: number;
     }
   | {
-      readonly kind: 'grpc-api-metadata' | 'ws-api-header';
+      readonly kind: 'grpc-api-metadata' | 'ws-api-header' | 'mcp-env' | 'mcp-header';
       readonly apiId: string;
       readonly name: string;
       readonly index: number;
     }
+  | { readonly kind: 'mcp-prompt-arg'; readonly requestId: string; readonly name: string; readonly index: number }
+  | { readonly kind: 'mcp-arg'; readonly apiId: string; readonly index: number }
+  | { readonly kind: 'mcp-url'; readonly apiId: string; readonly name?: string }
+  | { readonly kind: 'mcp-uri' | 'mcp-arguments'; readonly requestId: string }
   | { readonly kind: 'rest-body'; readonly requestId: string; readonly field?: number; readonly name?: string }
   | { readonly kind: 'soap-body' | 'grpc-message'; readonly requestId: string }
   | { readonly kind: 'rest-url' | 'ws-url'; readonly requestId: string; readonly name?: string }
@@ -76,7 +85,10 @@ export function* keyed(
     | 'ws-header'
     | 'ws-query'
     | 'grpc-api-metadata'
-    | 'ws-api-header',
+    | 'ws-api-header'
+    | 'mcp-env'
+    | 'mcp-header'
+    | 'mcp-prompt-arg',
   ownerId: string,
   path: string,
   noun: string,
@@ -88,7 +100,7 @@ export function* keyed(
     if (value === '') continue;
     yield {
       location:
-        kind === 'grpc-api-metadata' || kind === 'ws-api-header'
+        kind === 'grpc-api-metadata' || kind === 'ws-api-header' || kind === 'mcp-env' || kind === 'mcp-header'
           ? { kind, apiId: ownerId, name, index }
           : { kind, requestId: ownerId, name, index },
       label: `${path}${SEP}${noun} ${name}`,
@@ -134,6 +146,9 @@ export interface SecretMove {
 function locationKey(location: SecretLocation): string {
   if (location.kind === 'rest-url' || location.kind === 'ws-url') {
     return JSON.stringify({ kind: location.kind, requestId: location.requestId });
+  }
+  if (location.kind === 'mcp-url') {
+    return JSON.stringify({ kind: location.kind, apiId: location.apiId });
   }
   return JSON.stringify(location);
 }
@@ -204,7 +219,7 @@ export function mapTree<N extends TreeNode<R>, R>(node: N, fn: (request: R) => R
   } as Partial<N>);
 }
 
-export type KeyedKind = Extract<SecretLocation, { index: number }>['kind'];
+export type KeyedKind = Extract<SecretLocation, { index: number; name: string }>['kind'];
 
 /** `entries` with each one's value rewritten at its keyed location. */
 export function keyedEntries<E extends { readonly name: string; readonly value: string }>(

@@ -35,7 +35,7 @@ export {
   serializeEventStream,
   type SseParser,
   type SseRow,
-} from './sse.js';
+} from '../http/sse.js';
 export {
   applyJsonFormEdit,
   buildJsonForm,

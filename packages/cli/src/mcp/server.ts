@@ -19,11 +19,12 @@ import { OPS } from '../ops/index.js';
 import type { ContractToolsHost } from './contract-tools.js';
 
 export const SERVER_INSTRUCTIONS =
-  'Wirebench tools over one project. send takes its SOAP, REST and WebSocket requests. Start with ' +
+  'Wirebench tools over one project. send takes its SOAP, REST, WebSocket and MCP requests. Start with ' +
   'operations to learn the references the other tools take. Every imported SOAP operation and REST endpoint is ' +
   'also a tool of its own, taking JSON arguments and returning the response as JSON. send, import and the ' +
   'operation tools may be refused: the user starts the server with --allow-send or ' +
-  '--allow-write to allow them. Secrets come from the environment the server was started in, and a ' +
+  '--allow-write to allow them, and an MCP request whose server is a local command with ' +
+  '--allow-commands. Secrets come from the environment the server was started in, and a ' +
   'resolved secret is masked wherever it appears in a result. Other values are redacted by pattern: ' +
   'credential headers, URL credentials and credential-named URL parameters, the WS-Security Password, ' +
   'SAML token signatures and Kerberos tokens, and values under secret-looking JSON or form keys. A value ' +

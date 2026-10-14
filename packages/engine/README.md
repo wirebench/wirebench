@@ -30,6 +30,12 @@ A protocol module's scripting facet (`ProtocolScripting`) has a new required `le
 
 A kind with no containers is absent from `containers`: a loaded project, a new one and one whose last API of a kind was removed through a writer all leave it out. Build a project's containers through the writers, so each container literal is checked against its own type rather than `ContainerBase`.
 
+### Added
+
+MCP is a fifth built-in protocol (`kind: mcp`, #79): an MCP server is a container under `apis/`, beside REST, gRPC and WebSocket APIs, and its requests run one operation each (`tools/list`, `tools/call`, `resources/read`, `prompts/get` and the other lists) over stdio, Streamable HTTP or legacy HTTP+SSE. The model (`McpServer`, `McpRequestDef`, `McpOperation`, `McpTransport`, `McpCatalogue`, `createMcpServer` and the rest), the catalogue file (`serializeMcpCatalogue`, `parseMcpCatalogue`, `mcpCataloguePath`), the send's item (`mcpItemFor`, `McpSelected`, `mcpEffectiveAuth`), its exchange (`McpExchange`, `McpMessage`, `McpLiveEvent`) and its History entry (`buildMcpHistoryEntry`, `historyMcpOf`, `redactMcpExchange`) are exported. `refreshMcpCatalogue(server, scope, host)` lists what a server has on one session, through the same gate as a send, and returns the catalogue as `catalogue.json` stores it; it writes nothing.
+
+A stdio server runs only once its host approves the command line: `SendHost.approveCommand(request)` is asked with a `CommandApprovalRequest` whose `fingerprint` is `commandFingerprint` of the expanded command, arguments, folder and variable names. A host without `approveCommand` refuses every stdio send with `mcp-command-unapproved`.
+
 ## Migrating to 3.1
 
 3.1 puts every protocol behind one interface ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). The main entry's exports changed; nothing was kept as a deprecated alias. The subpaths (`./xml`, `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) did not change.

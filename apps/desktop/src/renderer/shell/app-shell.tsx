@@ -35,6 +35,7 @@ import {
   subscribeToGrpcLive,
   subscribeToRestLive,
   subscribeToWsLive,
+  subscribeToMcpLive,
 } from '../state/exchanges.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
@@ -69,6 +70,7 @@ import { CollectionExportReportDialog } from '../features/explorer/export-collec
 import { SecretTokenDialog } from '../features/secrets/secret-token-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
 import { ConflictResolver } from '../features/sync/conflict-resolver.js';
+import { McpApprovalDialog } from '../features/mcp-editor/approval-dialog.js';
 import { IdentityDialog } from '../features/sync/identity-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
@@ -348,6 +350,7 @@ export function AppShell() {
   useEffect(() => subscribeToGrpcLive(), []);
   useEffect(() => subscribeToRestLive(), []);
   useEffect(() => subscribeToWsLive(), []);
+  useEffect(() => subscribeToMcpLive(), []);
   useEffect(() => subscribeToSequenceProgress(), []);
   useEffect(() => subscribeToRunnerProgress(), []);
   useEffect(() => subscribeToMocks(), []);
@@ -583,6 +586,8 @@ export function AppShell() {
       <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />
+      {/* Here, not in an editor: a run or a catalogue refresh from anywhere may need an answer. */}
+      <McpApprovalDialog />
       <IdentityDialog />
       <SecretReviewDialog />
       <SecretTokenDialog />

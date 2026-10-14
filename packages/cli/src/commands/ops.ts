@@ -75,7 +75,7 @@ export async function opCommand(args: OpArgs, io: CliIo): Promise<ExitCode> {
     {
       project: args.project,
       historyDir: args.historyDir,
-      gates: OPEN_GATES,
+      gates: args.allowCommands === true ? { ...OPEN_GATES, commands: true } : OPEN_GATES,
       origin: 'cli',
       secretSources: args.secretSources,
     },

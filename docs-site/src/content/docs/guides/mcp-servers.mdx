@@ -1,0 +1,211 @@
+---
+title: MCP servers
+description: Test an MCP server over stdio, Streamable HTTP or HTTP+SSE — its catalogue, one operation per request, every JSON-RPC message kept.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and WebSocket APIs, in the
+same project, environments, History and search. Wirebench is the MCP *client* here: it starts or
+reaches the server, fetches what it offers, calls one tool, resource or prompt per request, and keeps
+every JSON-RPC message of the exchange, so the result can be asserted on in a run in CI. No model runs
+in the app. (The other direction — Wirebench *as* an MCP server that a coding agent drives — is
+[Agents (MCP)](/wirebench/docs/guides/agents-mcp/).)
+
+## Create a server
+
+<Steps>
+
+1. Right-click a project in the explorer and choose **New MCP server…**.
+2. Name it and pick its transport:
+   - **Local process (stdio)** — the command that starts the server (`npx`, `node`, `uvx`…) and its
+     arguments, one per line, so an argument may hold spaces.
+   - **Streamable HTTP** — the server's URL, such as `https://example.com/mcp`.
+   - **HTTP+SSE (legacy)** — the URL of the event stream, for servers that predate Streamable HTTP.
+3. Choose **Create**. The server's tab opens.
+
+</Steps>
+
+The server's tab has three sections:
+
+- **Connection** — the transport and its fields. A stdio server has its command, its arguments (one
+  field each, passed as written: the process is started with no shell, so nothing is quoted or
+  split), the folder it runs in (relative to the project folder; blank is the project folder) and its
+  environment variables. An HTTP or SSE server has its URL, the headers every call sends, and its
+  auth. Switching between HTTP and SSE keeps those fields; switching to or from stdio starts blank.
+- **Settings** — the session timeout, and the protocol version to ask for (blank: the latest the
+  app knows).
+- **Catalogue** — what the server listed at the last refresh (below).
+
+Every field expands `${…}` references, `${secret:…}` included, as a REST API's do.
+
+## Refresh the catalogue
+
+**Refresh** on the server's tab, or **Refresh catalogue** on its explorer row, opens one session and
+lists what the server advertised: its **tools**, **resources**, **resource templates** and **prompts**,
+with their descriptions, following `nextCursor` up to 50 pages a list. The tab then reads
+"Fetched *date* from *server* *version*", and a toast says how many of each it found.
+
+The catalogue is kept in the project, in `catalogue.json` beside the server's `api.yaml`: sorted, with
+a fixed key order, so a refresh that finds nothing new saves the same bytes and a commit's diff of the
+file shows how the server's contract drifted. It drives the tool picker, argument completion and the
+checks below. A refresh records nothing in History.
+
+## Requests: one operation each
+
+A request runs one operation. **New request** on the server's row makes one; **New request** on a
+tool row of the catalogue, or **New request from tool…** on the server's row, makes a `tools/call` for
+that tool, named after it. The request's method is one of:
+
+| Method | Sends | Badge |
+| --- | --- | --- |
+| `tools/call` | a tool's name and its arguments | `CALL` |
+| `resources/read` | a resource's URI | `READ` |
+| `prompts/get` | a prompt's name and its arguments | `GET` |
+| `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list` | nothing | `LIST` |
+
+The operation bar holds **Send**, the method, and the tool or prompt (picked from the catalogue, or
+typed) or the URI. Below it are the **Arguments**, **Assertions**, **Scripts** and **Settings** tabs:
+
+- A `tools/call`'s **Arguments** are one JSON object (blank sends `{}`). When the catalogue has the
+  tool, the editor completes property names and values from its `inputSchema` and marks what does not
+  fit it as you type: a JSON syntax error as an error, a schema mismatch as a warning, since sending
+  bad input on purpose is a test.
+- A prompt's arguments are strings, so they are a name-and-value table; the prompt's declared
+  arguments are offered.
+- **Settings** has the request's timeout, which wins over the server's (default 30 seconds).
+
+Choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. Each send is one self-contained
+session: connect, `initialize`, a check that the server speaks a protocol version the client knows and
+advertised what the operation needs, `notifications/initialized`, the operation, close. The desktop
+behaves exactly as a run in CI does.
+
+## The response
+
+The status line says how the server answered — **OK**, **Tool error (isError)**, **Error -32602
+Invalid params**, or why the session stopped, with the tail of a stdio server's stderr — then the
+duration, the message count and any warnings.
+
+- **Result** draws a tool call's content blocks by type: text (with a pretty-JSON toggle when it is
+  JSON), images from their base64 data, audio as a labelled block, resource links and embedded
+  resources with their URI, MIME type and text, and then `structuredContent` as JSON. A list is a
+  table; a resource read or a prompt shows its contents.
+- **Messages** is the JSON-RPC timeline in both directions — time, size, id, method and any schema
+  warnings — with the selected message's JSON, and beside it the HTTP calls (method, URL, status,
+  headers, timings) or the stdio server's stderr and exit code.
+- **Assertions** shows the request's assertion results.
+
+Every message is checked against the protocol's schemas, and one that does not match is kept with a
+warning rather than dropped, since a test tool has to show what the server really sent. When the
+catalogue has the tool, the arguments are checked against its `inputSchema` and `structuredContent`
+against its `outputSchema`, as warnings only.
+
+A request the server sends the client — `sampling/createMessage`, `elicitation/create`, `roots/list` —
+is answered with JSON-RPC `-32601` (method not found), and both messages appear on the timeline: the
+client declares no capabilities.
+
+## Running a local command: the approval
+
+A stdio server's command line lives in the project, so a `git pull` can change what **Send** runs.
+Before it starts a command line this machine has not approved, the desktop asks:
+
+> **Run this command?** — the server's name, the command line as it will run (secrets shown as their
+> `${secret:…}` reference, never their value), the folder, and the names of the environment variables.
+
+- **Run once** lets this send through and remembers nothing.
+- **Always allow** remembers this exact command line on this machine.
+- **Cancel**, or closing the dialog, refuses the send.
+
+The approval is kept per machine, in the app's data folder, never in the project. It covers the
+expanded command, arguments and folder and the *names* of the variables, so rotating a secret's value
+does not ask again, and changing the command, an argument, the folder or the set of variables does.
+**Refresh catalogue** goes through the same gate. In a sequence or a Runner run, each command line is
+asked about at most once for the whole run. HTTP servers need no approval.
+
+A stdio server gets a small environment, not the app's: `PATH`, `HOME`, `USER`, `LANG`, `TMPDIR` and
+`SYSTEMROOT` where they are set (on Windows also the profile and system folders a launcher such as
+`npx` needs, such as `APPDATA`, `USERPROFILE`, `PATHEXT` and `TEMP`), plus the variables you set on the
+server.
+
+On the command line, `wirebench run`, `wirebench send` and `wirebench mcp` approve nothing by default:
+a stdio send fails with `mcp-command-unapproved`, naming the command. Pass `--allow-commands` to let
+them run, in a pipeline you control:
+
+```bash
+wirebench run ./project --env ci --allow-commands --reporter junit=reports/wirebench.xml
+```
+
+## Auth over HTTP
+
+An HTTP or SSE server takes the auth types a REST API has, sent on every HTTP call of the session:
+Basic, Bearer, an API key, a JWT, or OAuth2 (one token fetched per send). The proxy, TLS settings and
+client certificates apply as they do to a REST send.
+
+NTLM, Digest, AWS Signature v4 and Kerberos answer a challenge and resend, which an MCP session's
+calls cannot do, so a send with one of them fails with `mcp-auth-unsupported` before anything is sent.
+
+## Runs, sequences and assertions
+
+An MCP request runs everywhere a REST request does: the **Runner**, a **sequence** step, `wirebench
+run`, `wirebench send` and the `send` tool of `wirebench mcp`. What assertions read:
+
+- the **body** is the operation's result as JSON, or `{"error": {…}}` for a JSON-RPC error, so
+  `match` with JSONPath reads `$.content[0].text` or `$.error.code`;
+- the **headers** are the operation's HTTP response headers (none for stdio);
+- the **status** is the HTTP status of the operation's `POST` for Streamable HTTP, and `0` otherwise.
+
+Every run also adds a check named **MCP result**. It fails on a JSON-RPC error and on a `tools/call`
+result with `isError: true`, showing the first text content. Like the GraphQL errors check, it does
+not count as an assertion for `--require-assertions`.
+
+## Scripts
+
+An MCP request has pre-request and post-response scripts, and runs its folders' scripts around its
+own (a server keeps none of its own). The pre-request script sees the operation and may change the
+tool and its arguments, the URI, the prompt and its arguments, and an HTTP server's path and query —
+never the method, the transport or the URL's scheme, host and port. A stdio command line is not in
+what a script sees at all, so a script cannot change what was approved. The post-response script sees
+the result or error, `isError`, the server's `serverInfo`, the message count and the duration. Types
+come from the catalogue: the tool's `inputSchema` types the arguments and its `outputSchema` the
+structured content. See the [Script API](/wirebench/docs/reference/script-api/).
+
+## History
+
+Each send is kept in History with its messages — the first 400 and the last 100, capped at 1 MB, as
+a WebSocket session is — and a result over 256 KiB is left out and flagged. Secret values the send
+resolved are masked in every message, the command line and its variables, stderr and the result, and
+credential headers are redacted. An entry can be opened but not re-sent, since a re-send would need
+the approval again. MCP sends are not written to the HTTP Log: History is their record.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| One message, either direction | 4 MiB (`mcp-message-too-large`) |
+| Messages kept per send | 1,000; later ones are counted |
+| A stdio server's stderr kept | its last 64 KiB |
+| Session timeout | 30 seconds unless the request or server sets one |
+| Catalogue pages per list | 50 |
+| Closing a stdio server | stdin ended, then `SIGTERM` after 2 s and `SIGKILL` 2 s later |
+
+A stdio server that exits early fails the send with `mcp-server-exited`, with its exit code and the
+tail of its stderr. When the deadline passes, the client sends `notifications/cancelled` for the
+request still waiting and closes the session (`mcp-timeout`). A legacy SSE server that names an
+endpoint on another origin fails with `mcp-endpoint-origin`, so the session's messages and
+credentials never leave the server's own origin.
+
+<Aside type="note" title="Not in this release">
+MCP's own authorization discovery and dynamic client registration; a session held open across sends,
+subscriptions and the unsolicited `GET` stream; answering sampling, elicitation and roots requests;
+`completion/complete`, `logging/setLevel` and `ping` as operations; importing servers from an MCP
+client's config file; a CLI command that refreshes the catalogue and fails on drift; and re-sending
+from History, MCP in exports, cURL and code generation.
+</Aside>
+
+## Related
+
+- [Agents (MCP)](/wirebench/docs/guides/agents-mcp/) — Wirebench as an MCP server
+- [Assertions](/wirebench/docs/guides/assertions/)
+- [Sequences](/wirebench/docs/guides/sequences/)
+- [Run in CI](/wirebench/docs/guides/run-in-ci/)
+- [Project folder format](/wirebench/docs/reference/project-format/)

@@ -111,12 +111,12 @@ describe('resolveItem beside WebSocket and gRPC requests', () => {
   it('still refuses a gRPC request, path or API, as unsupported-kind', () => {
     expect(refusalIn(mixed, 'Greeter/Hello')).toEqual({
       code: 'unsupported-kind',
-      message: '"Greeter/Hello" is a gRPC request; send takes SOAP, REST and WebSocket requests',
+      message: '"Greeter/Hello" is a gRPC request; send takes SOAP, REST, WebSocket and MCP requests',
     });
     expect(refusalIn(mixed, 'Greeter').code).toBe('unsupported-kind');
     expect(refusalIn(mixed, 'Greeter/Nope')).toEqual({
       code: 'unsupported-kind',
-      message: '"Greeter/Nope" is in the gRPC API "Greeter"; send takes SOAP, REST and WebSocket requests',
+      message: '"Greeter/Nope" is in the gRPC API "Greeter"; send takes SOAP, REST, WebSocket and MCP requests',
     });
   });
 });

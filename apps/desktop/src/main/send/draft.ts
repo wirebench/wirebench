@@ -19,6 +19,7 @@ import { toEngineAuthConfig, toEngineRows } from '../project-api-mutations.js';
 import type { HistoryNameFallback } from './record.js';
 import type { ResolvedSendInputWire } from '../../shared/wire-types.js';
 import type { GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
+import type { McpRequestPatchWire } from '../../shared/kinds/mcp/wire.js';
 import type { RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
 import type { WsRequestPatchWire } from '../../shared/kinds/ws/wire.js';
 
@@ -27,7 +28,8 @@ export type DraftOf =
   | { readonly kind: 'rest'; readonly draft?: RestRequestPatchWire }
   | { readonly kind: 'soap'; readonly override?: SoapOverride }
   | { readonly kind: 'grpc'; readonly draft?: GrpcRequestPatchWire }
-  | { readonly kind: 'websocket'; readonly draft?: WsRequestPatchWire };
+  | { readonly kind: 'websocket'; readonly draft?: WsRequestPatchWire }
+  | { readonly kind: 'mcp'; readonly draft?: McpRequestPatchWire };
 
 /** The request id a send with no saved request behind it goes by (`SendOptions.adHoc`). */
 export const AD_HOC_ID = 'ad-hoc';

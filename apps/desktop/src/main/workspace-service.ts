@@ -175,6 +175,7 @@ import type { GrpcRequestPatchWire } from '../shared/kinds/grpc/wire.js';
 import type { RestRequestPatchWire } from '../shared/kinds/rest/wire.js';
 import type { RequestPatchWire } from '../shared/kinds/soap/wire.js';
 import type { WsRequestPatchWire } from '../shared/kinds/ws/wire.js';
+import type { McpRequestPatchWire } from '../shared/kinds/mcp/wire.js';
 import type {
   CertificatesCheckResponse,
   EngineProgressEvent,
@@ -766,6 +767,7 @@ export class WorkspaceService implements ProjectRouter {
   private grpcDrafts: Record<string, GrpcRequestPatchWire> = {};
   /** The WebSocket editor's unsaved edits, the fourth of the same set. */
   private wsDrafts: Record<string, WsRequestPatchWire> = {};
+  private mcpDrafts: Record<string, McpRequestPatchWire> = {};
   /** What the last open restored, until the renderer takes it. */
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
@@ -1015,6 +1017,7 @@ export class WorkspaceService implements ProjectRouter {
     this.restDrafts = {};
     this.grpcDrafts = {};
     this.wsDrafts = {};
+    this.mcpDrafts = {};
     this.restored = undefined;
     const notices: UnsavedRestoreNoticeWire[] = [];
 
@@ -1068,12 +1071,14 @@ export class WorkspaceService implements ProjectRouter {
       this.restDrafts = stashed.restRequests;
       this.grpcDrafts = stashed.grpcRequests;
       this.wsDrafts = stashed.wsRequests;
+      this.mcpDrafts = stashed.mcpRequests;
       this.restored = {
         workspaceId: workspace.id,
         drafts: { ...this.drafts },
         restDrafts: { ...this.restDrafts },
         grpcDrafts: { ...this.grpcDrafts },
         wsDrafts: { ...this.wsDrafts },
+        mcpDrafts: { ...this.mcpDrafts },
         notices,
       };
 
@@ -1341,6 +1346,7 @@ export class WorkspaceService implements ProjectRouter {
     this.restDrafts = {};
     this.grpcDrafts = {};
     this.wsDrafts = {};
+    this.mcpDrafts = {};
     this.restored = undefined;
     for (const entry of open.entries) {
       this.deps.history.close(entry.projectId, this.historyOwner);
@@ -2616,7 +2622,7 @@ export class WorkspaceService implements ProjectRouter {
         await this.writeUnsaved(entry);
       }
     }
-    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
+    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts, this.mcpDrafts);
     await store.idle();
   }
 
@@ -2669,6 +2675,7 @@ export class WorkspaceService implements ProjectRouter {
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
     grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
     wsRequests: Readonly<Record<string, WsRequestPatchWire>> = {},
+    mcpRequests: Readonly<Record<string, McpRequestPatchWire>> = {},
   ): Promise<void> {
     const waiters = this.stashWaiters;
     this.stashWaiters = [];
@@ -2680,7 +2687,8 @@ export class WorkspaceService implements ProjectRouter {
       this.restDrafts = { ...restRequests };
       this.grpcDrafts = { ...grpcRequests };
       this.wsDrafts = { ...wsRequests };
-      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
+      this.mcpDrafts = { ...mcpRequests };
+      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts, this.mcpDrafts);
     } finally {
       for (const resolve of waiters) {
         resolve();
@@ -2714,6 +2722,7 @@ export class WorkspaceService implements ProjectRouter {
         restDrafts: {},
         grpcDrafts: {},
         wsDrafts: {},
+        mcpDrafts: {},
         notices: [],
       }
     );

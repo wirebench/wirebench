@@ -35,8 +35,9 @@ describe('WIREBENCH_KINDS', () => {
     expect(enabledKindsFromEnv({ WIREBENCH_KINDS: 'grpc=off, websocket=OFF, nonsense, rest=maybe' })).toEqual([
       'soap',
       'rest',
+      'mcp',
     ]);
-    expect(enabledKindsFromEnv({})).toEqual(['soap', 'rest', 'grpc', 'websocket']);
+    expect(enabledKindsFromEnv({})).toEqual(['soap', 'rest', 'grpc', 'websocket', 'mcp']);
   });
 
   it('builds an engine registry with those kinds off', () => {
@@ -44,6 +45,13 @@ describe('WIREBENCH_KINDS', () => {
     expect(registry.status('grpc')).toBe('disabled');
     expect(registry.status('websocket')).toBe('disabled');
     expect(registry.status('rest')).toBe('enabled');
+  });
+
+  it('switches MCP off like any other kind (#79)', () => {
+    expect(enabledKindsFromEnv({}).includes('mcp')).toBe(true);
+    const enabled = enabledKindsFromEnv({ WIREBENCH_KINDS: 'mcp=off' });
+    expect(enabled).not.toContain('mcp');
+    expect(kindRegistry(enabled).status('mcp')).toBe('disabled');
   });
 });
 

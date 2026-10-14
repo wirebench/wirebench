@@ -10,6 +10,7 @@ import type { RunRequestSender, RunSendOverrides, SelectedRequest, SentRequest, 
 import type { EngineService } from '../engine-service.js';
 import { toSendDeps, type RequestChannelDeps } from '../ipc/request.js';
 import { sendThroughEngine } from '../send/exchange.js';
+import type { McpExchangeSummary } from '../../shared/kinds/mcp/wire.js';
 import { draftFor } from '../sequence-runner.js';
 
 export interface DesktopSendDeps {
@@ -40,6 +41,8 @@ export function createDesktopRunSend(
   signal: AbortSignal,
 ): DesktopRunSend {
   const sendDeps = toSendDeps(deps.service, deps.requests);
+  // Each MCP command line is asked about once for the whole run, before the first send that runs it.
+  const approveCommand = deps.requests.mcpApprovals?.forRun();
   let next = 0;
   return async (item, overrides, beforeRows) => {
     const sendId = `${runId}:${String(next++)}`;
@@ -64,6 +67,7 @@ export function createDesktopRunSend(
         run: true,
         // The run asked about a protected environment before its first send (`runner-service.ts`).
         protectedConfirmed: true,
+        ...(approveCommand !== undefined ? { approveCommand } : {}),
         onScriptsRan: (scripts) => {
           ran = scripts;
         },
@@ -75,9 +79,14 @@ export function createDesktopRunSend(
       // The send holds its id from its first moment: a stop that came just before reaches it too.
       if (signal.aborted) stop();
       const summary = await sending;
-      // A WebSocket session's handshake row is already in the HTTP Log; any other request's row is this.
-      if (!('handshake' in summary)) {
-        deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
+      // A WebSocket session's handshake row is already in the HTTP Log, and an MCP send writes none
+      // (History is its record); any other request's row is this.
+      if (!('handshake' in summary) && item.kind !== 'mcp') {
+        deps.requests.onExchange?.({
+          kind: 'exchange',
+          exchange: summary as Exclude<typeof summary, McpExchangeSummary>,
+          requestId,
+        });
       }
       if (sent === undefined) {
         throw new WirebenchError('no-response', 'The send ended without a response');

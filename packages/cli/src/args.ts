@@ -77,6 +77,8 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --update-baseline  Save each changed response as its golden, keeping its ignore rules.
                        The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
+    --allow-commands   Let MCP servers run their local (stdio) commands; without it each one is
+                       refused. Sequence steps included.
     --no-secret-sources   Read secrets from WIREBENCH_SECRET_<NAME> only; skip the workspace's
                           secret sources.
     --trust-secret-sources
@@ -142,6 +144,8 @@ export interface RunArgs extends RunDataArgs {
   readonly requireBaseline: boolean;
   readonly updateBaseline: boolean;
   readonly insecure: boolean;
+  /** `--allow-commands`: MCP stdio servers may start their commands (#79). */
+  readonly allowCommands: boolean;
   readonly secretSources: CliSecretSourcesOptions;
   readonly color: boolean;
   readonly quiet: boolean;
@@ -177,6 +181,9 @@ export type ParsedArgs =
   | { readonly command: 'version' };
 
 const REPORTER_KINDS = new Set(['junit', 'json', 'html']);
+
+/** The verbs `--allow-commands` applies to: those that send saved MCP requests (#79). */
+const COMMAND_VERBS: ReadonlySet<string> = new Set(['run', 'send', 'mcp']);
 
 /** Parses `--reporter <spec>`, one of `cli` or `<kind>=<file>`. */
 function parseReporter(spec: string): ReporterSpec {
@@ -255,6 +262,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         'require-baseline': { type: 'boolean' },
         'update-baseline': { type: 'boolean' },
         insecure: { type: 'boolean' },
+        'allow-commands': { type: 'boolean' },
         'no-secret-sources': { type: 'boolean' },
         'trust-secret-sources': { type: 'boolean' },
         'trust-secret-sources-hash': { type: 'string' },
@@ -302,6 +310,11 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (word !== 'run') {
     refuseRunDataOnly(values, `wirebench ${word === 'secrets' ? 'secrets list' : word}`);
+  }
+
+  // Only what sends MCP requests takes it; every other verb refuses it rather than ignore it.
+  if (values['allow-commands'] !== undefined && !COMMAND_VERBS.has(word)) {
+    throw new UsageError(`--allow-commands does not apply to wirebench ${word === 'secrets' ? 'secrets list' : word}`);
   }
 
   if (word !== 'lint') {
@@ -361,6 +374,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       requireBaseline,
       updateBaseline,
       insecure: values.insecure ?? false,
+      allowCommands: values['allow-commands'] ?? false,
       secretSources: secretSourcesOptionsFrom(values),
       color: !values['no-color'],
       quiet: values.quiet ?? false,

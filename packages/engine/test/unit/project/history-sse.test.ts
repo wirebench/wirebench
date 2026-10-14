@@ -5,7 +5,7 @@ import { openHistory } from '../../../src/project/history.js';
 import { historySseOf } from '../../../src/rest/sse-transcript.js';
 import type { HistoryEntry } from '../../../src/project/history.js';
 import type { RestEventStreamLike } from '../../../src/rest/sse-transcript.js';
-import type { SseRow } from '../../../src/rest/sse.js';
+import type { SseRow } from '../../../src/http/sse.js';
 import { tempProjectDir } from './fixture.js';
 
 let counter = 0;

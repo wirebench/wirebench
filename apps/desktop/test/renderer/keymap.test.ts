@@ -112,6 +112,7 @@ describe('keymapRows', () => {
     // Every send command carries ⌘⏎, and an ungated command overlaps either of them.
     expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual([
       'Send gRPC Request',
+      'Send MCP Request',
       'Send Request',
       'Send REST Request',
       'Sequence: Run',
@@ -128,6 +129,7 @@ describe('keymapRows', () => {
 
     expect(rowFor(rows, 'editor.closeTab')?.conflictsWith).toEqual([
       'Send gRPC Request',
+      'Send MCP Request',
       'Send Request',
       'Send REST Request',
       'Sequence: Run',

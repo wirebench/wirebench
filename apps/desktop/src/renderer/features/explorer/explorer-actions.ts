@@ -10,6 +10,10 @@ import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
 import { openGrpcApiTab } from '../grpc-api/grpc-api-actions.js';
 import { openWsRequestTab } from '../ws-editor/ws-actions.js';
 import { openWsApiTab } from '../ws-api/ws-api-actions.js';
+import { openMcpRequestTab } from '../mcp-editor/mcp-actions.js';
+import { openMcpApiTab } from '../mcp-api/mcp-api-actions.js';
+import { useNewMcpServerDialog } from '../mcp-api/new-server-dialog-state.js';
+import { useMcpToolPicker } from '../mcp-api/tool-picker-state.js';
 import { useWsiStore } from '../../state/wsi.js';
 import {
   exportDefinition,
@@ -519,6 +523,7 @@ export const explorerActions = {
       ...Object.values(state.restRequests),
       ...Object.values(state.grpcRequests),
       ...Object.values(state.wsRequests),
+      ...Object.values(state.mcpRequests),
     ].filter((request) => inside.has(request.folderId ?? '')).length;
     if (requestCount === 0 && !confirmsDeletes()) {
       void state.removeFolder(folderId).catch(reportDeleteFailure);
@@ -632,6 +637,137 @@ export const explorerActions = {
       return;
     }
     useUiStore.getState().requestDeleteNode({ kind: 'ws-api', id: apiId, name: api.name, requestCount });
+  },
+
+  /** **New MCP server…** (#79): asks for its name and transport, then creates it in the project. */
+  newMcpServer(projectId: string | undefined): void {
+    if (projectId === undefined) {
+      return;
+    }
+    useNewMcpServerDialog.getState().open(
+      projectId,
+      nextName(
+        'MCP server',
+        Object.values(useProjectStore.getState().mcpServers).map((server) => server.name),
+      ),
+    );
+  },
+
+  /** Creates an MCP request (it lists the server's tools until told otherwise) and opens its editor. */
+  newMcpRequest(apiId: string | undefined, parentId?: string): void {
+    if (apiId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addMcpRequest(apiId, parentId)
+      .then((requestId) => {
+        openMcpRequestTab(requestId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New request failed');
+      });
+  },
+
+  /** **New request from tool…**: picks one of the server's catalogued tools, then makes a call of it. */
+  newMcpRequestFromTool(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    const server = useProjectStore.getState().mcpServers[apiId];
+    if (server === undefined) {
+      return;
+    }
+    if ((server.catalogue?.tools ?? []).length === 0) {
+      showToast(
+        server.catalogue === undefined
+          ? `Refresh the catalogue of ${server.name} first: it lists the server's tools`
+          : `${server.name} lists no tools`,
+      );
+      return;
+    }
+    useMcpToolPicker.getState().open(apiId);
+  },
+
+  /**
+   * **Refresh catalogue**: fetches the server's tools, resources and prompts into the project. A
+   * stdio server this machine has not approved asks first. Says what it found, or why it failed.
+   */
+  refreshMcpCatalogue(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    const name = useProjectStore.getState().mcpServers[apiId]?.name ?? 'the server';
+    void useProjectStore
+      .getState()
+      .refreshMcpCatalogue(apiId)
+      .then((refreshed) => {
+        showToast(refreshSummary(name, refreshed.counts, refreshed.warnings));
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Refresh catalogue failed');
+      });
+  },
+
+  openMcpRequest(requestId: string | undefined): void {
+    if (requestId !== undefined) {
+      openMcpRequestTab(requestId);
+    }
+  },
+
+  openMcpApi(apiId: string | undefined): void {
+    if (apiId !== undefined) {
+      openMcpApiTab(apiId);
+    }
+  },
+
+  /** Copies an MCP request beside the original and opens the copy. */
+  duplicateMcpRequest(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .cloneMcpRequest(requestId)
+      .then(openMcpRequestTab)
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Duplicate request failed');
+      });
+  },
+
+  /** Deletes an MCP server and everything in it, under the same rule as any other API. */
+  removeMcpApi(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    const state = useProjectStore.getState();
+    const server = state.mcpServers[apiId];
+    if (server === undefined) {
+      return;
+    }
+    const requestCount = Object.values(state.mcpRequests).filter((request) => request.apiId === apiId).length;
+    if (requestCount === 0 && !confirmsDeletes()) {
+      void state.removeMcpServer(apiId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore.getState().requestDeleteNode({ kind: 'mcp-api', id: apiId, name: server.name, requestCount });
+  },
+
+  deleteMcpRequest(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return;
+    }
+    const request = useProjectStore.getState().mcpRequests[requestId];
+    if (request === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeMcpRequest(requestId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore
+      .getState()
+      .requestDeleteNode({ kind: 'mcp-request', id: requestId, name: request.name, requestCount: 0 });
   },
 
   /** Asks, then switches on the scripts of the given requests (#63): **Switch on scripts…**. */
@@ -796,6 +932,32 @@ export const explorerActions = {
     useUiStore.getState().requestDeleteNode({ kind: 'ws-request', id: requestId, name: request.name, requestCount: 0 });
   },
 };
+
+/** What a catalogue refresh found, as its toast says it: `Fetched 3 tools and 1 prompt from Files`. */
+export function refreshSummary(
+  name: string,
+  counts: {
+    readonly tools: number;
+    readonly resources: number;
+    readonly resourceTemplates: number;
+    readonly prompts: number;
+  },
+  warnings: readonly string[],
+): string {
+  const plural = (count: number, one: string, many: string): string => `${String(count)} ${count === 1 ? one : many}`;
+  const parts = [
+    ...(counts.tools > 0 ? [plural(counts.tools, 'tool', 'tools')] : []),
+    ...(counts.resources > 0 ? [plural(counts.resources, 'resource', 'resources')] : []),
+    ...(counts.resourceTemplates > 0
+      ? [plural(counts.resourceTemplates, 'resource template', 'resource templates')]
+      : []),
+    ...(counts.prompts > 0 ? [plural(counts.prompts, 'prompt', 'prompts')] : []),
+  ];
+  const last = parts.pop();
+  const list = parts.length === 0 ? last : `${parts.join(', ')} and ${last ?? ''}`;
+  const found = list === undefined ? `${name} lists nothing` : `Fetched ${list} from ${name}`;
+  return warnings.length === 0 ? found : `${found}. ${warnings.join(' ')}`;
+}
 
 /** `<base> N`, the first number not already taken — how a new API or folder is named. */
 function nextName(base: string, existing: readonly string[]): string {

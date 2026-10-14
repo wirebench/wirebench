@@ -1,10 +1,11 @@
 /**
  * What a sequence step's request is, as the step list and the Add-step picker show it: its name, a
  * protocol badge, the path to it, and whether a run can send it. As a run decides it: an orphaned
- * request cannot be a step, every other request of any protocol can (a WebSocket session and a
- * streaming gRPC call included), and an id that is gone is a missing request.
+ * request cannot be a step, every other request of any protocol can (a WebSocket session, a
+ * streaming gRPC call and an MCP request included), and an id that is gone is a missing request.
  */
 import type { useProjectStore } from '../../state/project.js';
+import type { McpOperationWire } from '../../../shared/kinds/mcp/wire.js';
 
 type ProjectState = ReturnType<typeof useProjectStore.getState>;
 
@@ -12,12 +13,26 @@ type ProjectState = ReturnType<typeof useProjectStore.getState>;
 export interface StepRequestInfo {
   readonly requestId: string;
   readonly name: string;
-  /** `POST`, `SOAP`, `gRPC`, `WS`. */
+  /** `POST`, `SOAP`, `gRPC`, `WS`, `MCP`. */
   readonly badge: string;
   /** Where it lives: the interface and operation, or the API. */
   readonly path: string;
   /** Why a run cannot send it; absent when it can. */
   readonly unsupported?: string;
+}
+
+/** What an MCP request's operation names: the tool, prompt or resource, or the list method. */
+function mcpTargetOf(operation: McpOperationWire): string {
+  switch (operation.method) {
+    case 'tools/call':
+      return operation.tool;
+    case 'prompts/get':
+      return operation.prompt;
+    case 'resources/read':
+      return operation.uri;
+    default:
+      return operation.method;
+  }
 }
 
 /** The request `requestId` names, or `undefined` when it is gone. */
@@ -64,6 +79,13 @@ export function stepRequestInfo(state: ProjectState, requestId: string): StepReq
       ...(ws.orphaned === true ? { unsupported: 'This request is no longer in its contract' } : {}),
     };
   }
+  // An MCP request has no contract to fall out of: a tool the server no longer lists fails its send.
+  const mcp = state.mcpRequests[requestId];
+  if (mcp !== undefined) {
+    const target = mcpTargetOf(mcp.operation);
+    const server = state.mcpServers[mcp.apiId]?.name ?? '';
+    return { requestId, name: mcp.name, badge: 'MCP', path: target === '' ? server : `${server}/${target}` };
+  }
   return undefined;
 }
 
@@ -86,6 +108,7 @@ export function projectStepRequests(state: ProjectState, projectId: string): Ste
     ...Object.keys(state.restRequests),
     ...Object.keys(state.grpcRequests),
     ...Object.keys(state.wsRequests),
+    ...Object.keys(state.mcpRequests),
   ].filter((id) => state.projectOf[id] === projectId && !isWebhookRequestId(state, id));
   return ids
     .map((id) => stepRequestInfo(state, id))

@@ -14,6 +14,8 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useCaptureFocusStore } from '../../src/renderer/state/capture-focus.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
+  mcpRequestWire,
+  mcpServerWire,
   NO_REST,
   PROJECT_SETTINGS,
   restApiWire,
@@ -126,6 +128,42 @@ describe('SequenceTab', () => {
     expect(within(steps[1]!).getByText('Live feed')).toBeTruthy();
     expect(within(steps[1]!).queryByTestId('sequence-step-problem')).toBeNull();
     expect(within(steps[2]!).getByTestId('sequence-step-problem').textContent).toBe('Missing request');
+  });
+
+  it('shows an MCP request as a step and offers one in Add step', () => {
+    const withMcp = sequenceWire({
+      steps: [
+        { id: 'step-mcp', requestId: 'mcp-1', enabled: true, requestAssertions: true, transfers: [], assertions: [] },
+      ],
+    });
+    useProjectStore.getState().applySnapshot('p1', {
+      ...project(withMcp),
+      mcpServers: [mcpServerWire({ name: 'Files' })],
+      mcpRequests: [
+        mcpRequestWire({
+          name: 'Read a file',
+          operation: { method: 'tools/call', tool: 'read_file', arguments: '{}' },
+        }),
+        mcpRequestWire({ id: 'mcp-2', name: 'List tools', operation: { method: 'tools/list' } }),
+      ],
+    });
+    useProjectStore.setState({ updateSequence });
+    render(
+      <TooltipPrimitive.Provider>
+        <SequenceTab sequenceId={withMcp.id} />
+      </TooltipPrimitive.Provider>,
+    );
+
+    const [step] = screen.getAllByTestId('sequence-step');
+    expect(within(step!).getByText('Read a file')).toBeTruthy();
+    expect(within(step!).getByText('MCP')).toBeTruthy();
+    expect(within(step!).queryByTestId('sequence-step-problem')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('sequence-add-step'));
+    const items = screen.getAllByTestId('sequence-add-step-item');
+    expect(items.map((item) => item.textContent)).toContain('MCPList toolsFiles/tools/list');
+    fireEvent.click(items.find((item) => item.textContent?.includes('List tools'))!);
+    expect(lastPatch().steps?.map((entry) => entry.requestId)).toEqual(['mcp-1', 'mcp-2']);
   });
 
   it('sends the whole step list with a step disabled, removed or moved', () => {

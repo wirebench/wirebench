@@ -37,6 +37,7 @@ describe('explorerMenuItems', () => {
       'New API…',
       'New gRPC API…',
       'New WebSocket API…',
+      'New MCP server…',
       'New Webhook',
       'New Sequence',
       'Run…',
@@ -69,6 +70,7 @@ describe('explorerMenuItems', () => {
       'New API…',
       'New gRPC API…',
       'New WebSocket API…',
+      'New MCP server…',
       'New Webhook',
       'New Sequence',
       'Run…',
@@ -150,7 +152,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-webhook', 'new-sequence'],
+      ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-mcp-server', 'new-webhook', 'new-sequence'],
       ['runner'],
       ['settings'],
       ['reveal', 'export', 'export-postman', 'export-opencollection'],
@@ -404,7 +406,7 @@ describe('explorerMenuItems on a project’s webhook collection (openapi-webhook
     const labels = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' })).map(
       (item) => item.label,
     );
-    expect(labels.indexOf('New Webhook')).toBe(labels.indexOf('New WebSocket API…') + 1);
+    expect(labels.indexOf('New Webhook')).toBe(labels.indexOf('New MCP server…') + 1);
   });
 
   it('offers the collection’s own operations', () => {

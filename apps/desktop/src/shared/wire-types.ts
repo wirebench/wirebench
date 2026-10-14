@@ -97,6 +97,15 @@ import {
   wsRequestPatchSchema,
   wsRequestWireSchema,
 } from './kinds/ws/wire.js';
+import {
+  historyMcpWireSchema,
+  mcpOperationWireSchema,
+  mcpRequestPatchSchema,
+  mcpRequestWireSchema,
+  mcpServerPatchSchema,
+  mcpServerWireSchema,
+  mcpTransportWireSchema,
+} from './kinds/mcp/wire.js';
 
 /**
  * A send input after main has folded in the TLS material the renderer may never name (see
@@ -288,6 +297,10 @@ export const projectWireSchema = z.object({
   wsApis: z.array(wsApiWireSchema),
   /** Every WebSocket request of every WebSocket API, flat. */
   wsRequests: z.array(wsRequestWireSchema),
+  /** The project's MCP servers; their folders are in `folders`, keyed by `apiId` like the rest. */
+  mcpServers: z.array(mcpServerWireSchema),
+  /** Every MCP request of every MCP server, flat. */
+  mcpRequests: z.array(mcpRequestWireSchema),
   /** The project's sequences (`sequences/`), in `order`. */
   sequences: z.array(sequenceWireSchema),
   /** The project's mocks (`mocks/`), in `order`. */
@@ -525,6 +538,27 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     }),
   }),
   z.object({ kind: z.literal('remove-ws-message'), requestId: z.string(), messageId: z.string() }),
+  // An MCP server's folders go through `add-folder`, `update-folder` and `remove-folder`, and its
+  // folders and requests move through `move-node`, as every other kind's do.
+  z.object({
+    kind: z.literal('add-mcp-server'),
+    name: z.string(),
+    /** Absent makes a stdio server with no command yet. */
+    transport: mcpTransportWireSchema.optional(),
+  }),
+  z.object({ kind: z.literal('update-mcp-server'), apiId: z.string(), patch: mcpServerPatchSchema }),
+  z.object({ kind: z.literal('remove-mcp-server'), apiId: z.string() }),
+  z.object({
+    kind: z.literal('add-mcp-request'),
+    apiId: z.string(),
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+    /** Absent lists the server's tools; *New request from tool…* passes a `tools/call`. */
+    operation: mcpOperationWireSchema.optional(),
+  }),
+  z.object({ kind: z.literal('update-mcp-request'), requestId: z.string(), patch: mcpRequestPatchSchema }),
+  z.object({ kind: z.literal('remove-mcp-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('clone-mcp-request'), requestId: z.string() }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-environment'),
@@ -970,7 +1004,7 @@ export const historyEntrySchema = z.object({
    * carries none, and a reader treats its absence as SOAP (`normalizeHistoryEntry`). Every entry
    * main writes from now on names its kind.
    */
-  kind: z.enum(['soap', 'rest', 'grpc', 'websocket']).optional(),
+  kind: z.enum(['soap', 'rest', 'grpc', 'websocket', 'mcp']).optional(),
   at: z.string(),
   projectId: z.string(),
   requestId: z.string().optional(),
@@ -1033,6 +1067,8 @@ export const historyEntrySchema = z.object({
       error: z.string().optional(),
     })
     .optional(),
+  /** The session record of an MCP send: the operation, how the server answered, its capped messages. */
+  mcp: historyMcpWireSchema.optional(),
   /**
    * The event-stream record of a REST send whose response was `text/event-stream`: the engine's
    * `HistorySse`, capped the way a WebSocket session's frames are.
@@ -1080,6 +1116,8 @@ export const workspaceStashDraftsRequestSchema = z.object({
   grpcRequests: z.record(z.string(), grpcRequestPatchSchema).optional(),
   /** The WebSocket editor's unsaved edits, by ws request id; absent in a stash from an older build. */
   wsRequests: z.record(z.string(), wsRequestPatchSchema).optional(),
+  /** The MCP editor's unsaved edits, by MCP request id; absent in a stash from an older build. */
+  mcpRequests: z.record(z.string(), mcpRequestPatchSchema).optional(),
 });
 export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
 
@@ -1095,6 +1133,8 @@ export const workspaceRestoredResponseSchema = z.object({
   grpcDrafts: z.record(z.string(), grpcRequestPatchSchema).default({}),
   /** The WebSocket drafts the last session left unsaved, by WebSocket request id. */
   wsDrafts: z.record(z.string(), wsRequestPatchSchema).default({}),
+  /** The MCP drafts the last session left unsaved, by MCP request id. */
+  mcpDrafts: z.record(z.string(), mcpRequestPatchSchema).default({}),
   notices: z.array(unsavedRestoreNoticeSchema),
 });
 export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;

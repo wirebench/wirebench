@@ -48,6 +48,23 @@ const ADDED = [
   'requestIssuedToken',
   'soapIssuedTokenTarget',
   'soapIssuedTokenKeyTarget',
+  'mcpServersOf',
+  'withMcpServers',
+  'createMcpServer',
+  'createMcpFolder',
+  'createMcpRequest',
+  'serializeMcpCatalogue',
+  'parseMcpCatalogue',
+  'mcpCataloguePath',
+  'buildMcpHistoryEntry',
+  'historyMcpOf',
+  'redactMcpExchange',
+  'refreshMcpCatalogue',
+  'MCP_CATALOGUE_MAX_PAGES',
+  'commandFingerprint',
+  'commandDisplay',
+  'mcpItemFor',
+  'mcpEffectiveAuth',
 ] as const;
 
 /** 2.x name, 3.0 name. */
@@ -191,10 +208,11 @@ describe('the public exports of 3.0', () => {
     expect(valueOf(name)).toBeDefined();
   });
 
-  it('composes the four built-in protocols, every one enabled', () => {
-    expect(engine.BUILTIN_PROTOCOLS.map((module) => module.kind).sort()).toEqual(['grpc', 'rest', 'soap', 'websocket']);
+  it('composes the five built-in protocols, every one enabled', () => {
+    const kinds = ['grpc', 'mcp', 'rest', 'soap', 'websocket'];
+    expect(engine.BUILTIN_PROTOCOLS.map((module) => module.kind).sort()).toEqual(kinds);
     const registry = engine.createBuiltinRegistry();
-    expect(registry.modules.map((module) => module.kind).sort()).toEqual(['grpc', 'rest', 'soap', 'websocket']);
+    expect(registry.modules.map((module) => module.kind).sort()).toEqual(kinds);
     expect(registry.features.isEnabled('scripts')).toBe(true);
   });
 

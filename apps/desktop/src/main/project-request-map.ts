@@ -3,7 +3,7 @@
  * wherever it sits (#63 scripts, #192 assertions). A container nothing changed in keeps its identity.
  */
 import type { Project } from '@wirebench/engine';
-import { grpcApisOf, restApisOf, soapInterfacesOf, wsApisOf } from '@wirebench/engine';
+import { grpcApisOf, mcpServersOf, restApisOf, soapInterfacesOf, wsApisOf } from '@wirebench/engine';
 
 /** A saved request of any protocol, as far as these changes go. */
 export interface Identified {
@@ -35,7 +35,7 @@ function mapSame<T>(items: readonly T[], map: (item: T) => T): readonly T[] {
 }
 
 /**
- * `project` with `update` applied to every SOAP, REST and gRPC request, and to every WebSocket
+ * `project` with `update` applied to every SOAP, REST, gRPC and MCP request, and to every WebSocket
  * request too when `protocols.websocket` is set.
  */
 export function mapRequests<X extends Identified = Identified>(
@@ -59,6 +59,7 @@ export function mapRequests<X extends Identified = Identified>(
       soap: interfaces,
       rest: mapSame(restApisOf(project), (api) => mapTree(api, update)),
       grpc: mapSame(grpcApisOf(project), (api) => mapTree(api, update)),
+      mcp: mapSame(mcpServersOf(project), (server) => mapTree(server, update)),
       ...(protocols.websocket === true ? { websocket: mapSame(wsApisOf(project), (api) => mapTree(api, update)) } : {}),
     },
   };
@@ -77,7 +78,7 @@ function mapFolders<T extends FolderTree>(node: T, update: Update): T {
 
 /**
  * `project` with `update` applied to every level that can carry scripts (#334): each SOAP interface,
- * each REST and gRPC API, and every folder in them.
+ * each REST and gRPC API, and every folder in them; and every MCP folder, whose server keeps none.
  */
 export function mapScriptLevels<X extends Identified = Identified>(project: Project, edit: Update<X>): Project {
   const update = edit as Update;
@@ -88,6 +89,7 @@ export function mapScriptLevels<X extends Identified = Identified>(project: Proj
       soap: mapSame(soapInterfacesOf(project), (iface) => update(iface)),
       rest: mapSame(restApisOf(project), (api) => mapFolders(update(api), update)),
       grpc: mapSame(grpcApisOf(project), (api) => mapFolders(update(api), update)),
+      mcp: mapSame(mcpServersOf(project), (server) => mapFolders(server, update)),
     },
   };
 }

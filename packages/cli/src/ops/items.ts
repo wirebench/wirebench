@@ -6,17 +6,17 @@ import { grpcApisOf, selectRequests } from '@wirebench/engine';
 import type { Project, SelectedRequest } from '@wirebench/engine';
 import { OpsError } from './errors.js';
 
-export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' | 'websocket' }>;
+export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' | 'websocket' | 'mcp' }>;
 
 /** A container the project's folder holds and this build did not load. */
 type Placeholder = NonNullable<Project['unsupported']>[number];
 
 function isSendable(item: SelectedRequest): item is SendableItem {
-  return item.kind === 'soap' || item.kind === 'rest' || item.kind === 'websocket';
+  return item.kind === 'soap' || item.kind === 'rest' || item.kind === 'websocket' || item.kind === 'mcp';
 }
 
 /** What `send` takes, as its refusals name it. */
-const TAKES = 'send takes SOAP, REST and WebSocket requests';
+const TAKES = 'send takes SOAP, REST, WebSocket and MCP requests';
 
 /** The refusal of a request `send` cannot take: a gRPC one. */
 function notSendable(item: SelectedRequest): OpsError {
@@ -42,7 +42,7 @@ function placeholderFor(project: Project, ref: string): Placeholder | undefined 
 
 /**
  * Requests `send` cannot take (gRPC) are set aside before any ambiguity is judged, so a name a SOAP,
- * REST or WebSocket request shares with one of them still resolves to that request; a name two
+ * REST, WebSocket or MCP request shares with one of them still resolves to that request; a name two
  * requests `send` takes share is ambiguous. A reference only gRPC requests match is refused as
  * `unsupported-kind`.
  *

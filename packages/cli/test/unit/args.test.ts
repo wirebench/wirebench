@@ -229,6 +229,7 @@ describe('parseCliArgs — mcp', () => {
       historyDir: 'h',
       allowWrite: true,
       allowSend: true,
+      allowCommands: false,
       environments: ['local', 'staging'],
       secretSources: DEFAULT_CLI_SECRET_SOURCES,
     });
@@ -237,6 +238,7 @@ describe('parseCliArgs — mcp', () => {
       project: '.',
       allowWrite: false,
       allowSend: false,
+      allowCommands: false,
       secretSources: DEFAULT_CLI_SECRET_SOURCES,
     });
     expect(parseCliArgs(['mcp', '--help'])).toEqual({ command: 'help', topic: 'mcp' });
@@ -267,6 +269,27 @@ describe('parseCliArgs — mcp', () => {
     [['send', 'x', '--allow-send']],
     [['run', 'p', '--allow-send']],
     [['run', 'p', '--allow-write']],
+  ])('rejects %j as a usage error', (argv) => {
+    expect(() => parseCliArgs(argv)).toThrow(UsageError);
+  });
+});
+
+describe('--allow-commands', () => {
+  it('is read by run, send and mcp, and off by default', () => {
+    expect(parseCliArgs(['run', 'p'])).toMatchObject({ allowCommands: false });
+    expect(parseCliArgs(['run', 'p', '--allow-commands'])).toMatchObject({ allowCommands: true });
+    expect(parseCliArgs(['run', 'p', '--sequence', 's', '--allow-commands'])).toMatchObject({ allowCommands: true });
+    expect(parseCliArgs(['send', 'x', '--allow-commands'])).toMatchObject({ op: 'send', allowCommands: true });
+    expect(parseCliArgs(['send', 'x'])).not.toHaveProperty('allowCommands');
+    expect(parseCliArgs(['mcp', '--allow-commands'])).toMatchObject({ command: 'mcp', allowCommands: true });
+  });
+
+  it.each([
+    [['operations', '--allow-commands']],
+    [['call', 'a', '--allow-commands']],
+    [['secrets', 'list', 'p', '--allow-commands']],
+    [['lint', 'x.yaml', '--allow-commands']],
+    [['mock', 'p', '--allow-commands']],
   ])('rejects %j as a usage error', (argv) => {
     expect(() => parseCliArgs(argv)).toThrow(UsageError);
   });

@@ -21,6 +21,7 @@ import { BUILTIN_PROTOCOLS, createBuiltinRegistry, SCRIPTS_FEATURE } from '../..
 import { createApi, createRestRequest, restApisOf } from '../../../src/rest/model.js';
 import { createWebhookCollection } from '../../../src/webhooks/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage, wsApisOf } from '../../../src/ws/model.js';
+import { createMcpRequest, createMcpServer, mcpServersOf } from '../../../src/mcp/model.js';
 import { sampleProject, tempProjectDir } from './fixture.js';
 import { soapInterfacesOf } from '../../../src/soap/model.js';
 import { webhooksOf } from '../../../src/webhooks/model.js';
@@ -408,6 +409,7 @@ describe.each([
   { kind: 'rest', containers: (project: Project) => restApisOf(project) },
   { kind: 'grpc', containers: (project: Project) => grpcApisOf(project) },
   { kind: 'websocket', containers: (project: Project) => wsApisOf(project) },
+  { kind: 'mcp', containers: (project: Project) => mcpServersOf(project) },
 ])('the project with $kind switched off', ({ kind, containers }) => {
   let dir: string;
 
@@ -428,6 +430,20 @@ describe.each([
               createWsRequest('Feed', {
                 id: 'WR1',
                 messages: [createWsSavedMessage('Subscribe', { id: 'WM1', content: '{"op":"sub"}' })],
+              }),
+            ],
+          }),
+        ],
+        mcp: [
+          createMcpServer('Weather', {
+            id: 'M1',
+            order: 3,
+            transport: { type: 'stdio', command: 'node', args: ['weather.js'], env: [] },
+            catalogue: { tools: [{ name: 'get_weather', inputSchema: { type: 'object' } }] },
+            requests: [
+              createMcpRequest('Forecast', {
+                id: 'MR1',
+                operation: { method: 'tools/call', tool: 'get_weather', arguments: '{"city":"Oslo"}' },
               }),
             ],
           }),

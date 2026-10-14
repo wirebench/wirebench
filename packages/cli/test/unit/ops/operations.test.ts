@@ -2,6 +2,8 @@
 import {
   createGrpcApi,
   createGrpcRequest,
+  createMcpRequest,
+  createMcpServer,
   createWsApi,
   createWsFolder,
   createWsRequest,
@@ -214,5 +216,41 @@ describe('op operations', () => {
     await expect(runOp(operationsOp, { container: 'Greeter' }, fixture.base())).rejects.toMatchObject({
       code: 'container-not-found',
     });
+  });
+  it('lists saved MCP requests with their method and what they name', async () => {
+    const fixture = await emptyProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      containers: {
+        ...project.containers,
+        mcp: [
+          createMcpServer('Tools', {
+            id: 'mcp-tools',
+            requests: [
+              createMcpRequest('List', { id: 'm-list', order: 0 }),
+              createMcpRequest('Echo', {
+                id: 'm-echo',
+                order: 1,
+                operation: { method: 'tools/call', tool: 'echo', arguments: '' },
+              }),
+            ],
+          }),
+        ],
+      },
+    }));
+
+    const result = await runOp(operationsOp, { container: 'Tools' }, fixture.base());
+
+    expect(result.operations).toEqual([
+      { kind: 'mcp', container: 'Tools', method: 'tools/list', ref: 'Tools/List', items: ['Tools/List'] },
+      {
+        kind: 'mcp',
+        container: 'Tools',
+        method: 'tools/call',
+        target: 'echo',
+        ref: 'Tools/Echo',
+        items: ['Tools/Echo'],
+      },
+    ]);
   });
 });

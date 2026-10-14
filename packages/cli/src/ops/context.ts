@@ -20,6 +20,11 @@ export interface Gates {
    * passes `allowProtected`. The CLI's own verbs leave it off — the person typing chose it.
    */
   readonly refuseProtected?: boolean;
+  /**
+   * `--allow-commands`: an MCP stdio server's command line runs without being asked about. Off, a
+   * stdio send is refused with `mcp-command-unapproved`; HTTP servers never ask (#79).
+   */
+  readonly commands?: boolean;
 }
 
 export const OPEN_GATES: Gates = { write: true, send: true };

@@ -8,7 +8,7 @@
  *  2. core imports no protocol group, except the edges listed in {@link CORE_EXCEPTIONS}.
  *
  * `node scripts/engine-import-graph.mjs` prints every import that leaves its group for a protocol
- * group, one per line: `[core->rest] project/history.ts -> rest/sse.ts : SseRow (type-only)`.
+ * group, one per line: `[core->rest] project/history.ts -> rest/model.ts : RestRequest (type-only)`.
  * `--check` prints only what breaks a rule and exits non-zero when anything does; an exception that
  * no import uses any more breaks it too, so the list cannot outlive its reasons. `--json` prints the
  * same as JSON. `--src <dir>` reads another tree (the test's fixture).
@@ -29,6 +29,7 @@ export const GROUP_FOLDERS = Object.freeze({
   rest: ['rest', 'webhooks'],
   grpc: ['grpc'],
   ws: ['ws', 'asyncapi'],
+  mcp: ['mcp'],
 });
 
 /**

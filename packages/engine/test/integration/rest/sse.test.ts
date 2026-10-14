@@ -5,7 +5,7 @@
  * existed.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { SseRow } from '../../../src/rest/sse.js';
+import type { SseRow } from '../../../src/http/sse.js';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';

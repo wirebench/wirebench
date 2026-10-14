@@ -1,10 +1,11 @@
 /**
  * A send as the desktop's History records it (R5): the same fields and the same redaction as the
- * desktop's `buildHistoryEntry` and `buildRestHistoryEntry`, and for a WebSocket session the very
- * builder the desktop uses, so the History panel shows an agent's send like its own. Tagged with
+ * desktop's `buildHistoryEntry` and `buildRestHistoryEntry`, and for a WebSocket or an MCP session the
+ * very builder the desktop uses, so the History panel shows an agent's send like its own. Tagged with
  * where it came from.
  */
 import {
+  buildMcpHistoryEntry,
   buildWsHistoryEntry,
   generateHistoryId,
   jwtSendAuth,
@@ -98,6 +99,20 @@ export function historyEntryFor(input: HistoryEntryInput): HistoryEntry {
         tags: [input.origin],
       },
       { text: mask, base64: input.maskBase64 },
+    );
+  }
+  if (exchange.kind === 'mcp' && item.kind === 'mcp') {
+    return buildMcpHistoryEntry(
+      input.projectId,
+      {
+        requestId: item.request.id,
+        requestName: item.request.name,
+        serverName: item.server.name,
+        folderPath: item.chain.map((folder) => folder.name).join(' / '),
+        exchange: exchange.mcp,
+        tags: [input.origin],
+      },
+      { text: mask },
     );
   }
   const common = {

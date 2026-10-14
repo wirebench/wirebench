@@ -28,6 +28,7 @@ describe('KINDS', () => {
   it('looks a kind up, and narrows a string from outside', () => {
     expect(kindById('websocket').label).toBe('WebSocket');
     expect(toKindId('grpc')).toBe('grpc');
+    expect(kindById('mcp').tabs).toEqual({ request: 'mcp-request', container: 'mcp-api' });
     expect(toKindId('graphql')).toBeUndefined();
   });
 

@@ -29,6 +29,7 @@ export function mcpBaseFor(args: McpArgs, io: Pick<CliIo, 'stderr' | 'env'>): Op
       gates: {
         write: args.allowWrite,
         send: args.allowSend,
+        ...(args.allowCommands ? { commands: true } : {}),
         refuseProtected: true,
         ...(args.environments !== undefined ? { environments: args.environments } : {}),
       },
@@ -42,7 +43,8 @@ export function mcpBaseFor(args: McpArgs, io: Pick<CliIo, 'stderr' | 'env'>): Op
 export function describeGates(base: OpsBase): string {
   const environments =
     base.gates.environments !== undefined ? `, environments ${base.gates.environments.join(', ')}` : '';
-  return `write ${base.gates.write ? 'on' : 'off'}, send ${base.gates.send ? 'on' : 'off'}${environments}`;
+  const commands = base.gates.commands === true ? ', commands on' : '';
+  return `write ${base.gates.write ? 'on' : 'off'}, send ${base.gates.send ? 'on' : 'off'}${commands}${environments}`;
 }
 
 /** Loads the project once; the exit code, after its error is printed, when it cannot be served. */

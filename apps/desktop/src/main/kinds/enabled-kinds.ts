@@ -25,7 +25,9 @@ export function enabledKindsFromEnv(env: NodeJS.ProcessEnv = process.env): reado
  * so a project's containers of those kinds load as placeholders and are saved untouched.
  */
 export function kindRegistry(enabled: readonly KindId[]): ProtocolRegistry {
-  return createBuiltinRegistry(Object.fromEntries(KINDS.map((kind) => [kind.feature.id, enabled.includes(kind.kind)])));
+  return createBuiltinRegistry(
+    Object.fromEntries(KINDS.map((kind) => [kind.feature.id, enabled.includes(kind.kind)] as const)),
+  );
 }
 
 /** What each kind keeps for the whole project rather than in a container, as the explorer names it. */

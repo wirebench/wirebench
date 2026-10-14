@@ -2,6 +2,7 @@
 import {
   loadOpenApiDocument,
   redactUrl,
+  mcpServersOf,
   restApisOf,
   selectRequests,
   soapInterfacesOf,
@@ -50,6 +51,18 @@ export type OperationRow =
       readonly url: string;
       readonly ref: string;
       readonly items: readonly string[];
+    }
+  | {
+      /** One saved MCP request (#79): its path is the ref, as a WebSocket request's is. */
+      readonly kind: 'mcp';
+      /** The server's name. */
+      readonly container: string;
+      /** The JSON-RPC method the request runs. */
+      readonly method: string;
+      /** The tool, resource URI or prompt it names; absent for a list. */
+      readonly target?: string;
+      readonly ref: string;
+      readonly items: readonly string[];
     };
 
 export interface OperationsResult {
@@ -63,7 +76,7 @@ const input = z.object({
     .string()
     .min(1)
     .optional()
-    .describe('An interface, a REST API or a WebSocket API, by name or slug; all of them when absent'),
+    .describe('An interface, a REST API, a WebSocket API or an MCP server, by name or slug; all of them when absent'),
 });
 
 async function soapSummaries(
@@ -98,7 +111,8 @@ export const operationsOp = defineOp({
   title: 'List operations',
   description:
     "Lists the project's SOAP operations (interface, binding, operation, SOAP action), REST endpoints " +
-    '(API, method, path, operationId) and saved WebSocket requests (API, URL). Each row carries the reference ' +
+    '(API, method, path, operationId), saved WebSocket requests (API, URL) and saved MCP requests (server, ' +
+    'method, tool or resource or prompt). Each row carries the reference ' +
     'generate and validate take, and the paths of the saved requests send takes. Reads only.',
   input,
   async run(value, context): Promise<OperationsResult> {
@@ -110,24 +124,26 @@ export const operationsOp = defineOp({
     const apis = [...restApisOf(project)].filter(matches).sort(byOrder);
     // gRPC APIs are left out: send refuses their requests, and generate and validate take none.
     const wsApis = [...wsApisOf(project)].filter(matches).sort(byOrder);
-    if (wanted !== undefined && interfaces.length + apis.length + wsApis.length === 0) {
+    const mcpServers = [...mcpServersOf(project)].filter(matches).sort(byOrder);
+    if (wanted !== undefined && interfaces.length + apis.length + wsApis.length + mcpServers.length === 0) {
       throw new OpsError('container-not-found', `No interface or API is named "${wanted}"`, { container: wanted });
     }
     const selected = selectRequests(project, []).selected;
     const notes: string[] = [];
     const shared = new Set(
-      [...soapInterfacesOf(project), ...restApisOf(project), ...wsApisOf(project)]
+      [...soapInterfacesOf(project), ...restApisOf(project), ...wsApisOf(project), ...mcpServersOf(project)]
         .map((container) => container.name)
         .filter((name, index, names) => names.indexOf(name) !== index),
     );
     for (const name of shared) {
-      if ([...interfaces, ...apis, ...wsApis].some((container) => container.name === name)) {
+      if ([...interfaces, ...apis, ...wsApis, ...mcpServers].some((container) => container.name === name)) {
         notes.push(`More than one interface or API is named "${name}"; a reference starting with it may be ambiguous`);
       }
     }
     const soapItems = selected.filter((item) => item.kind === 'soap');
     const restItems = selected.filter((item) => item.kind === 'rest');
     const wsItems = selected.filter((item) => item.kind === 'websocket');
+    const mcpItems = selected.filter((item) => item.kind === 'mcp');
     const operations: OperationRow[] = [];
     const tools = await toolNamesByRef(project, context.projectDir);
     const toolOf = (key: string): { readonly tool?: string } => {
@@ -200,6 +216,27 @@ export const operationsOp = defineOp({
           kind: 'websocket',
           container: api.name,
           url: redactRequestUrl(item.request.url),
+          ref: item.path,
+          items: [item.path],
+        });
+      }
+    }
+    for (const server of mcpServers) {
+      for (const item of mcpItems.filter((candidate) => candidate.server.id === server.id)) {
+        const { operation } = item.request;
+        const target =
+          operation.method === 'tools/call'
+            ? operation.tool
+            : operation.method === 'resources/read'
+              ? redactUrlsInText(operation.uri)
+              : operation.method === 'prompts/get'
+                ? operation.prompt
+                : undefined;
+        operations.push({
+          kind: 'mcp',
+          container: server.name,
+          method: operation.method,
+          ...(target !== undefined ? { target } : {}),
           ref: item.path,
           items: [item.path],
         });

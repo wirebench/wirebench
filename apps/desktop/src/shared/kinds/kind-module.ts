@@ -1,5 +1,6 @@
 import type { FeatureDescriptor } from '@wirebench/engine';
 import { grpcKind } from './grpc/kind.js';
+import { mcpKind } from './mcp/kind.js';
 import { restKind } from './rest/kind.js';
 import { soapKind } from './soap/kind.js';
 import { wsKind } from './ws/kind.js';
@@ -13,11 +14,11 @@ import { wsKind } from './ws/kind.js';
  * @internal Composed statically in `KINDS`; not yet a plugin API (ADR-0017).
  */
 export interface KindModule<K extends string = string> {
-  /** The engine's protocol kind: `soap`, `rest`, `grpc`, `websocket`. */
+  /** The engine's protocol kind: `soap`, `rest`, `grpc`, `websocket`, `mcp`. */
   readonly kind: K;
   /** The engine module's feature descriptor, repeated here because `shared/` imports the engine type-only. */
   readonly feature: FeatureDescriptor;
-  /** How the kind is named to a person: `SOAP`, `REST`, `gRPC`, `WebSocket`. */
+  /** How the kind is named to a person: `SOAP`, `REST`, `gRPC`, `WebSocket`, `MCP`. */
   readonly label: string;
   /** Its editor tab kinds, as `EditorTab.kind` names them. */
   readonly tabs: { readonly request: string; readonly container: string };
@@ -29,7 +30,7 @@ export interface KindModule<K extends string = string> {
 }
 
 /** Every desktop kind, in the explorer's tie-break order. */
-export const KINDS = [soapKind, restKind, grpcKind, wsKind] as const;
+export const KINDS = [soapKind, restKind, grpcKind, wsKind, mcpKind] as const;
 
 export type KindId = (typeof KINDS)[number]['kind'];
 

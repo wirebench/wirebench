@@ -28,6 +28,12 @@ export function activeWsRequestId(): string | undefined {
   return tabs.find((tab) => tab.id === activeId && tab.kind === 'ws-request')?.wsRequestId;
 }
 
+/** The MCP request behind the active editor tab, or `undefined` when none is an MCP tab. */
+export function activeMcpRequestId(): string | undefined {
+  const { tabs, activeId } = useEditorsStore.getState();
+  return tabs.find((tab) => tab.id === activeId && tab.kind === 'mcp-request')?.mcpRequestId;
+}
+
 /** The sequence behind the active editor tab, or `undefined` when none is a sequence tab. */
 export function activeSequenceId(): string | undefined {
   const { tabs, activeId } = useEditorsStore.getState();

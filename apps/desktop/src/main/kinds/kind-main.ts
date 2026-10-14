@@ -30,15 +30,18 @@ import type { ProjectHostCore } from '../project-host-core.js';
 import type { ProjectWireContext } from '../project-wire.js';
 import type { MutationDeps, MutationResult } from '../project-mutations.js';
 import type { GrpcHost } from './grpc/host.js';
+import type { McpHost } from './mcp/host.js';
 import type { RestHost } from './rest/host.js';
 import type { SoapHost } from './soap/host.js';
 import type { WsHost } from './ws/host.js';
 import type { GrpcRouter } from './grpc/router.js';
+import type { McpRouter } from './mcp/router.js';
 import type { RestRouter } from './rest/router.js';
 import type { SoapRouter } from './soap/router.js';
 import type { WsRouter } from './ws/router.js';
 import type { KindEntityIds } from './kind-routes.js';
 import { grpcMain } from './grpc/kind.js';
+import { mcpMain } from './mcp/kind.js';
 import { restMain } from './rest/kind.js';
 import { soapMain } from './soap/kind.js';
 import { wsMain } from './ws/kind.js';
@@ -115,6 +118,7 @@ export interface KindHosts {
   readonly rest: RestHost & KindHostHooks;
   readonly grpc: GrpcHost & KindHostHooks;
   readonly websocket: WsHost & KindHostHooks;
+  readonly mcp: McpHost & KindHostHooks;
 }
 
 /**
@@ -138,15 +142,18 @@ export type KindRouter<H, R extends Readonly<Record<string, KindRoute<H>>>> = {
 };
 
 /** Every kind's router methods, which `ProjectRouter` adds to the core's. */
-export type KindRouters = SoapRouter & RestRouter & GrpcRouter & WsRouter;
+export type KindRouters = SoapRouter & RestRouter & GrpcRouter & WsRouter & McpRouter;
+
+/** Every kind the engine can send; the app has send steps for each. */
+export type SendKind = SelectedRequest['kind'];
 
 /** A kind's saved request as a send item, its live event, and its exchange as `SentRequest` holds it. */
-type ItemOf<K extends KindId> = Extract<SelectedRequest, { kind: K }>;
-type LiveOf<K extends KindId> = Extract<LiveEvent, { protocol: K }>;
-type ExchangeOf<K extends KindId> = Extract<NonNullable<SentRequest['exchange']>, { kind: K }>;
+type ItemOf<K extends SendKind> = Extract<SelectedRequest, { kind: K }>;
+type LiveOf<K extends SendKind> = Extract<LiveEvent, { protocol: K }>;
+type ExchangeOf<K extends SendKind> = Extract<NonNullable<SentRequest['exchange']>, { kind: K }>;
 
 /** What one send's summary is built from (`exchange.ts`'s `summarise`). */
-export interface SummariseInput<K extends KindId> {
+export interface SummariseInput<K extends SendKind> {
   readonly deps: SendThroughEngineDeps;
   readonly sendId: string;
   readonly item: ItemOf<K>;
@@ -163,7 +170,7 @@ export interface SummariseInput<K extends KindId> {
  * The send path's steps for one kind (spec §5.5): `exchange.ts`, `draft.ts` and `live.ts` look the
  * item's kind up here rather than switching on it.
  */
-export interface KindSend<K extends KindId> {
+export interface KindSend<K extends SendKind> {
   /** The saved request as a send item with the editor's draft applied; undefined: no such request of this kind. */
   selected(project: Project, requestId: string, draft: Extract<DraftOf, { kind: K }>): ItemOf<K> | undefined;
   /** One live event as the renderer receives it; absent for a kind that reports none. */
@@ -270,7 +277,7 @@ export interface MainKind<K extends KindId = KindId> {
 /** Any one kind's main half. */
 export type AnyMainKind = { [K in KindId]: MainKind<K> }[KindId];
 
-export const MAIN_KINDS: readonly AnyMainKind[] = [soapMain, restMain, grpcMain, wsMain];
+export const MAIN_KINDS: readonly AnyMainKind[] = [soapMain, restMain, grpcMain, wsMain, mcpMain];
 
 /** The kind that owns `changeKind`, if any. */
 export function mutationOwner(changeKind: string): AnyMainKind | undefined {

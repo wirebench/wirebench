@@ -101,6 +101,20 @@ export { soapInterfacesOf, withSoapInterfaces } from './soap/model.js';
 export { restApisOf, withRestApis } from './rest/model.js';
 export { grpcApisOf, withGrpcApis } from './grpc/model.js';
 export { wsApisOf, withWsApis } from './ws/model.js';
+export { mcpServersOf, withMcpServers } from './mcp/model.js';
+export { commandDisplay, commandFingerprint } from './mcp/approval.js';
+export type { CommandFingerprintInput } from './mcp/approval.js';
+export { mcpEffectiveAuth, mcpItemFor } from './mcp/run.js';
+// Refresh catalogue: one session that lists what the server has, through the same gate as a send.
+export { MCP_CATALOGUE_MAX_PAGES, refreshMcpCatalogue } from './mcp/catalogue.js';
+export type { McpCatalogueRefresh, RefreshMcpCatalogueOptions } from './mcp/catalogue.js';
+export type { McpMessage } from './mcp/session.js';
+export type { McpResolvedInput, McpSelected } from './mcp/run.js';
+export type { McpLiveEvent } from './mcp/events.js';
+// One MCP send as History records it, for every host that writes History.
+export { buildMcpHistoryEntry, historyMcpOf, redactMcpExchange } from './mcp/history-entry.js';
+export type { McpHistoryInput, McpHistoryMasks } from './mcp/history-entry.js';
+export type { McpExchange, McpExchangeTransport } from './mcp/exchange.js';
 export { wssConfigsOf, withWssConfigs } from './wss/project.js';
 export type { WssConfigs } from './wss/project.js';
 export type { UnsupportedContainer } from './project/model.js';
@@ -169,6 +183,7 @@ export {
   ProtoError,
   GrpcError,
   WsError,
+  McpError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -731,8 +746,8 @@ export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, Res
 export { previewRestHeaders } from './rest/header-preview.js';
 export { headersOfRows, isOmitted, restHeaderRows } from './rest/request-headers.js';
 export type { RestHeaderLayers, RestHeaderRow, RestHeaderSource, RestHeaderState } from './rest/request-headers.js';
-export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
-export type { SseParser, SseRow } from './rest/sse.js';
+export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './http/sse.js';
+export type { SseParser, SseRow } from './http/sse.js';
 export {
   capSseRows,
   createSseRowStore,
@@ -1228,6 +1243,10 @@ export type {
   HistoryHeader,
   HistoryListQuery,
   HistoryLockOptions,
+  HistoryMcp,
+  HistoryMcpHttpCall,
+  HistoryMcpMessage,
+  HistoryMcpTransport,
   HistoryOptions,
   HistoryContract,
   HistorySse,
@@ -1878,6 +1897,43 @@ export { connectWebSocket } from './ws/connect.js';
 export type { ConnectedWebSocket, ConnectOptions } from './ws/connect.js';
 export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
 export type { WsTranscript } from './ws/transcript.js';
+
+// MCP: the fifth protocol, an MCP server as a sibling container under `apis/` (#79).
+export {
+  createMcpFolder,
+  createMcpRequest,
+  createMcpServer,
+  mcpArgsFileName,
+  mcpArgumentsEmpty,
+  mcpFolderRequests,
+  mcpServerFolders,
+  mcpServerRequests,
+} from './mcp/model.js';
+export type {
+  CreateMcpFolderInput,
+  CreateMcpRequestInput,
+  CreateMcpServerInput,
+  McpCatalogue,
+  McpCatalogueInfo,
+  McpCataloguePrompt,
+  McpCataloguePromptArgument,
+  McpCatalogueResource,
+  McpCatalogueResourceTemplate,
+  McpCatalogueTool,
+  McpFolder,
+  McpHttpTransport,
+  McpListMethod,
+  McpMethod,
+  McpOperation,
+  McpRequestDef,
+  McpRequestSettings,
+  McpServer,
+  McpServerSettings,
+  McpStdioTransport,
+  McpTransport,
+} from './mcp/model.js';
+export { MCP_CATALOGUE_FILE, parseMcpCatalogue, serializeMcpCatalogue } from './mcp/files.js';
+export { mcpCataloguePath } from './mcp/storage.js';
 export { expandWsInput, expandWsMessage } from './ws/expand.js';
 export type { WsCallInput } from './ws/expand.js';
 export { toWsSessionOptions } from './ws/call.js';

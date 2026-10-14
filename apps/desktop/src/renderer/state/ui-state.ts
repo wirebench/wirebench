@@ -32,6 +32,8 @@ export interface PersistedTab {
     | 'grpc-api'
     | 'ws-request'
     | 'ws-api'
+    | 'mcp-request'
+    | 'mcp-api'
     | 'sequence'
     | 'mock';
   /** The entity id — the request, interface, API, environment or project the tab edits. */
@@ -50,6 +52,8 @@ export const PERSISTED_TAB_KINDS: readonly PersistedTab['kind'][] = [
   'grpc-api',
   'ws-request',
   'ws-api',
+  'mcp-request',
+  'mcp-api',
   'sequence',
   'mock',
 ];

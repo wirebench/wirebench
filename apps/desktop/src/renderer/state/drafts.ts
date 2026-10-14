@@ -19,6 +19,7 @@ import { create } from 'zustand';
 import type { GrpcRequestPatchWire } from '../../shared/kinds/grpc/wire.js';
 import type { RestRequestPatchWire } from '../../shared/kinds/rest/wire.js';
 import type { RequestPatchWire } from '../../shared/kinds/soap/wire.js';
+import type { McpRequestPatchWire } from '../../shared/kinds/mcp/wire.js';
 import type { WsRequestPatchWire } from '../../shared/kinds/ws/wire.js';
 
 export interface DraftsState {
@@ -66,6 +67,14 @@ export interface DraftsState {
   readonly discardWsRequest: (requestId: string) => void;
   readonly isWsRequestDirty: (requestId: string) => boolean;
   readonly dirtyWsRequestIds: () => readonly string[];
+  /** Pending patch per MCP request id, the fifth kind of draft, kept apart for the same reason. */
+  readonly mcpRequests: Readonly<Record<string, McpRequestPatchWire>>;
+  readonly stageMcpRequest: (requestId: string, patch: McpRequestPatchWire) => void;
+  readonly peekMcpRequest: (requestId: string) => McpRequestPatchWire | undefined;
+  readonly clearMcpRequestIfUnchanged: (requestId: string, committed: McpRequestPatchWire | undefined) => void;
+  readonly discardMcpRequest: (requestId: string) => void;
+  readonly isMcpRequestDirty: (requestId: string) => boolean;
+  readonly dirtyMcpRequestIds: () => readonly string[];
   /**
    * Forgets every draft. Called when a workspace is left: its drafts have already been handed to
    * main, which keeps them with that workspace, and they name requests the next one does not have.
@@ -78,6 +87,7 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
   restRequests: {},
   grpcRequests: {},
   wsRequests: {},
+  mcpRequests: {},
 
   stageRequest: (requestId, patch) => {
     set((state) => ({
@@ -207,7 +217,38 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
 
   dirtyWsRequestIds: () => Object.keys(get().wsRequests),
 
+  stageMcpRequest: (requestId, patch) => {
+    set((state) => ({
+      mcpRequests: { ...state.mcpRequests, [requestId]: { ...state.mcpRequests[requestId], ...patch } },
+    }));
+  },
+
+  peekMcpRequest: (requestId) => get().mcpRequests[requestId],
+
+  clearMcpRequestIfUnchanged: (requestId, committed) => {
+    const pending = get().mcpRequests[requestId];
+    if (pending === undefined || JSON.stringify(pending) !== JSON.stringify(committed)) {
+      return;
+    }
+    get().discardMcpRequest(requestId);
+  },
+
+  discardMcpRequest: (requestId) => {
+    set((state) => {
+      if (!(requestId in state.mcpRequests)) {
+        return state;
+      }
+      const mcpRequests = { ...state.mcpRequests };
+      delete mcpRequests[requestId];
+      return { mcpRequests };
+    });
+  },
+
+  isMcpRequestDirty: (requestId) => get().mcpRequests[requestId] !== undefined,
+
+  dirtyMcpRequestIds: () => Object.keys(get().mcpRequests),
+
   reset: () => {
-    set({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
+    set({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {}, mcpRequests: {} });
   },
 }));

@@ -13,7 +13,14 @@ import { switcherEnvironments } from '../state/environment-scope.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { currentProjectId } from '../state/workspace-tabs.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
-import { activeGrpcRequestId, activeRequestId, activeRestRequestId, activeWsRequestId, ui } from './command-helpers.js';
+import {
+  activeGrpcRequestId,
+  activeMcpRequestId,
+  activeRequestId,
+  activeRestRequestId,
+  activeWsRequestId,
+  ui,
+} from './command-helpers.js';
 
 /** Registers the Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
@@ -38,9 +45,15 @@ export function registerProjectCommands(): void {
       activeRequestId() !== undefined ||
       activeRestRequestId() !== undefined ||
       activeGrpcRequestId() !== undefined ||
-      activeWsRequestId() !== undefined,
+      activeWsRequestId() !== undefined ||
+      activeMcpRequestId() !== undefined,
     whenScope: 'project',
     run: () => {
+      const mcpRequestId = activeMcpRequestId();
+      if (mcpRequestId !== undefined) {
+        void useProjectStore.getState().saveMcpRequest(mcpRequestId, { manual: true });
+        return;
+      }
       // A WebSocket tab writes its staged edits (saved messages included) the way a gRPC one does.
       const wsRequestId = activeWsRequestId();
       if (wsRequestId !== undefined) {
