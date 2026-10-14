@@ -4,7 +4,7 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 describe('useSecretsVisibilityStore', () => {
   beforeEach(() => {
-    useSecretsVisibilityStore.setState({ show: false });
+    useSecretsVisibilityStore.setState({ show: false, confirmingReveal: false });
   });
 
   it('mirrors whatever main reports rather than deciding the value itself', async () => {
@@ -47,5 +47,34 @@ describe('useSecretsVisibilityStore', () => {
     await useSecretsVisibilityStore.getState().setShow(true);
 
     expect(useSecretsVisibilityStore.getState().show).toBe(false);
+  });
+
+  it('requestToggle() asks before revealing and only reveals on yes', async () => {
+    const setShowSecrets = vi.fn().mockResolvedValue({ ok: true, value: { show: true } });
+    installWirebenchApi({ secrets: { setShowSecrets } });
+
+    await useSecretsVisibilityStore.getState().requestToggle();
+    expect(useSecretsVisibilityStore.getState().confirmingReveal).toBe(true);
+    expect(setShowSecrets).not.toHaveBeenCalled();
+
+    await useSecretsVisibilityStore.getState().answerReveal(false);
+    expect(useSecretsVisibilityStore.getState().confirmingReveal).toBe(false);
+    expect(setShowSecrets).not.toHaveBeenCalled();
+
+    await useSecretsVisibilityStore.getState().requestToggle();
+    await useSecretsVisibilityStore.getState().answerReveal(true);
+    expect(setShowSecrets).toHaveBeenCalledWith({ show: true });
+    expect(useSecretsVisibilityStore.getState().show).toBe(true);
+  });
+
+  it('requestToggle() hides at once when secrets are shown, without asking', async () => {
+    const setShowSecrets = vi.fn().mockResolvedValue({ ok: true, value: { show: false } });
+    installWirebenchApi({ secrets: { setShowSecrets } });
+    useSecretsVisibilityStore.setState({ show: true });
+
+    await useSecretsVisibilityStore.getState().requestToggle();
+
+    expect(useSecretsVisibilityStore.getState().confirmingReveal).toBe(false);
+    expect(setShowSecrets).toHaveBeenCalledWith({ show: false });
   });
 });

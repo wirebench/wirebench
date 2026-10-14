@@ -10,6 +10,8 @@ import type { ConnectFailure, ConnectProgress } from './connect-progress.js';
 import { SshModelError } from './errors.js';
 import { fingerprintOf, keyTypeOf } from './known-hosts.js';
 import type { KnownHostEntry } from './known-hosts.js';
+import { ProxyError, openProxyTunnel, proxyTargetOf } from './proxy.js';
+import type { ProxyCredentials } from './proxy.js';
 
 export interface HopCredentials {
   readonly address: string;
@@ -31,6 +33,11 @@ export interface HopCredentials {
   readonly keepAlive: number;
   /** Seconds. */
   readonly connectTimeout: number;
+  /**
+   * Dial this hop through a SOCKS5 or HTTP CONNECT proxy (#417). Read on the first hop only: the hops after
+   * it are reached through the one before.
+   */
+  readonly proxy?: ProxyCredentials;
 }
 
 export interface DialOptions {
@@ -68,7 +75,7 @@ export interface DialledChain {
 
 /**
  * ssh-host-key-new {host,keyType,fingerprint,hop} · ssh-auth-failed {host,method,hop,tried,allowed,key?} ·
- * ssh-connect-failed {host,hop,reason,phase?,timeout?} · ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host}
+ * ssh-connect-failed {host,hop,reason,phase?,timeout?,proxy?,proxyType?,proxyReason?,proxyDetail?} · ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host}
  */
 export class SshConnectError extends SshModelError {}
 
@@ -170,46 +177,92 @@ function trackAuth(config: ConnectConfig, hop: HopCredentials, progress: HopProg
 /**
  * The first hop's TCP connection, opened here rather than by ssh2 so the name lookup and the connect are
  * timed and told apart: a name that does not resolve, a port nothing listens on, a host that never answers.
+ * With a proxy, the connection goes to the proxy, which is then asked for a tunnel to the hop; the proxy
+ * resolves the hop's name.
  */
 function openSocket(hop: HopCredentials, index: number, progress: HopProgress): Promise<Socket> {
   const host = hostOf(hop);
+  const proxy = hop.proxy;
+  const proxyName = proxy === undefined ? undefined : `${proxyKind(proxy)} ${proxyTargetOf(proxy.host, proxy.port)}`;
+  // What the TCP connection is opened to: the proxy, or the hop itself.
+  const dial =
+    proxy === undefined ? { address: hop.address, port: hop.port } : { address: proxy.host, port: proxy.port };
+  const dialHost = proxyTargetOf(dial.address, dial.port);
+  const proxyDetails = (): Record<string, unknown> =>
+    proxy === undefined ? {} : { proxy: proxyTargetOf(proxy.host, proxy.port), proxyType: proxy.type };
   return new Promise((resolve, reject) => {
-    const literal = net.isIP(hop.address) !== 0;
-    progress.start('resolve', hop.address);
+    const literal = net.isIP(dial.address) !== 0;
+    if (proxyName !== undefined) progress.log(`Connecting through the ${proxyName}`);
+    progress.start('resolve', dial.address);
     let resolved = false;
+    let tunnelling = false;
     const noteResolved = (address: string): void => {
       if (resolved) return;
       resolved = true;
       progress.done('resolve', address);
-      progress.start('tcp', `${address}:${String(hop.port)}`);
+      progress.start('tcp', proxyName === undefined ? `${address}:${String(dial.port)}` : `through the ${proxyName}`);
     };
     if (literal) {
-      progress.log(`${hop.address} is an IP address: nothing to resolve`);
-      noteResolved(hop.address);
+      progress.log(`${dial.address} is an IP address: nothing to resolve`);
+      noteResolved(dial.address);
     } else {
-      progress.log(`Resolving ${hop.address}`);
+      progress.log(`Resolving ${dial.address}`);
     }
-    const socket = net.connect({ host: hop.address, port: hop.port });
+    const socket = net.connect({ host: dial.address, port: dial.port });
+    let settled = false;
     const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       socket.destroy();
+      if (proxy !== undefined && error instanceof ProxyError) {
+        // "the proxy refused the user and password" → a line of its own.
+        progress.fail(`${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}`);
+        reject(
+          new SshConnectError('ssh-connect-failed', `${host}: ${error.message}`, {
+            host,
+            hop: index,
+            reason: 'proxy',
+            phase: 'tcp',
+            ...proxyDetails(),
+            proxyReason: error.kind,
+            ...(error.detail === undefined ? {} : { proxyDetail: error.detail }),
+          }),
+        );
+        return;
+      }
       const reason: ConnectFailure = connectFailureOf(error);
       const phase = resolved ? 'tcp' : 'resolve';
+      const what = proxy === undefined ? '' : 'the proxy ';
       progress.fail(
         reason === 'timeout'
-          ? `No answer from ${host} after ${String(hop.connectTimeout)} s`
-          : `${phase === 'resolve' ? `Could not resolve ${hop.address}` : `Could not connect to ${host}`} (${failureWords(reason)})`,
+          ? `No answer from ${tunnelling ? `${host} through the proxy` : `${what}${dialHost}`} after ${String(hop.connectTimeout)} s`
+          : `${phase === 'resolve' ? `Could not resolve ${what}${dial.address}` : `Could not connect to ${what}${dialHost}`} (${failureWords(reason)})`,
       );
       const message =
         reason === 'timeout' ? `no answer after ${String(hop.connectTimeout)} s` : (error as Error).message;
       reject(
-        new SshConnectError('ssh-connect-failed', `${host}: ${message}`, {
-          host,
-          hop: index,
-          reason,
-          phase,
-          ...(reason === 'timeout' ? { timeout: hop.connectTimeout } : {}),
-        }),
+        new SshConnectError(
+          'ssh-connect-failed',
+          `${host}: ${proxy === undefined ? '' : `proxy ${dialHost}: `}${message}`,
+          proxy === undefined
+            ? {
+                host,
+                hop: index,
+                reason,
+                phase,
+                ...(reason === 'timeout' ? { timeout: hop.connectTimeout } : {}),
+              }
+            : {
+                host,
+                hop: index,
+                reason: 'proxy',
+                phase,
+                ...proxyDetails(),
+                proxyReason: reason,
+                ...(reason === 'timeout' ? { timeout: hop.connectTimeout } : {}),
+              },
+        ),
       );
     };
     const timer = setTimeout(() => {
@@ -217,7 +270,7 @@ function openSocket(hop: HopCredentials, index: number, progress: HopProgress): 
     }, hop.connectTimeout * 1000);
     socket.on('lookup', (error: Error | null, address: string | undefined) => {
       if (error !== null || typeof address !== 'string') return;
-      progress.log(`Resolved ${hop.address} to ${address}`);
+      progress.log(`Resolved ${dial.address} to ${address}`);
       noteResolved(address);
     });
     socket.on('connectionAttempt', (ip: string, port: number) => {
@@ -227,18 +280,42 @@ function openSocket(hop: HopCredentials, index: number, progress: HopProgress): 
       progress.log(`${ip} port ${String(port)}: ${failureWords(connectFailureOf(error))}`);
     });
     socket.once('error', fail);
-    socket.once('connect', () => {
+    const open = (): void => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       socket.removeListener('error', fail);
       // ssh2 takes the socket over and handles its errors; this keeps one in between from going unheard.
       socket.on('error', () => undefined);
-      const address = socket.remoteAddress ?? hop.address;
-      noteResolved(address);
-      progress.log(`TCP connection to ${address} port ${String(hop.port)} open`);
-      progress.done('tcp', `${address}:${String(hop.port)}`);
       resolve(socket);
+    };
+    socket.once('connect', () => {
+      const address = socket.remoteAddress ?? dial.address;
+      noteResolved(address);
+      progress.log(
+        `TCP connection to ${proxy === undefined ? '' : 'the proxy at '}${address} port ${String(dial.port)} open`,
+      );
+      if (proxy === undefined) {
+        progress.done('tcp', `${address}:${String(hop.port)}`);
+        open();
+        return;
+      }
+      tunnelling = true;
+      const login = proxy.user === undefined ? '' : ` as ${proxy.user}`;
+      progress.log(`Asking the proxy${login} for a tunnel to ${host}`);
+      openProxyTunnel(socket, proxy, hop.address, hop.port).then(() => {
+        if (settled) return;
+        progress.log(`The proxy opened a tunnel to ${host}`);
+        progress.done('tcp', `through the ${proxyName ?? 'proxy'}`);
+        open();
+      }, fail);
     });
   });
+}
+
+/** How the log names a proxy's kind. */
+function proxyKind(proxy: ProxyCredentials): string {
+  return proxy.type === 'socks5' ? 'SOCKS5 proxy' : 'HTTP proxy';
 }
 
 /** A failure reason in a few words, for the log. */
@@ -256,6 +333,8 @@ function failureWords(reason: ConnectFailure): string {
       return 'connection reset';
     case 'jump':
       return 'the jump host would not open the channel';
+    case 'proxy':
+      return 'the proxy would not open the tunnel';
     case 'other':
       return 'connection failed';
   }

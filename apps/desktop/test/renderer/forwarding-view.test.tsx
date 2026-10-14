@@ -181,6 +181,69 @@ describe('the Port forwarding view', () => {
     expect(screen.getAllByTestId('forward-row').map((row) => row.dataset['forward'])).toEqual(['db-1/admin']);
   });
 
+  it('a filter that hides every rule offers Clear search', () => {
+    render(<ForwardingPanel />);
+    fireEvent.change(screen.getByLabelText('Filter forwards'), { target: { value: 'nothing-like-this' } });
+    expect(screen.queryAllByTestId('forward-row')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getAllByTestId('forward-row')).toHaveLength(4);
+  });
+
+  it('with no rule anywhere, the empty state offers New rule…', () => {
+    useHostsStore.setState({ resolved: [host('db-2', 'db-2', [])] });
+    render(<ForwardingPanel />);
+    const empty = screen.getByTestId('forwards-empty');
+    fireEvent.click(within(empty).getByRole('button', { name: /New rule/ }));
+    expect(screen.getByTestId('new-rule-dialog')).toBeDefined();
+  });
+
+  it('New rule… adds the rule to the picked host and saves hosts.yaml', async () => {
+    const withHosts: HostsFileWire = {
+      ...FILE,
+      hosts: [
+        { id: 'db-1', name: 'db-1', address: 'db-1.example', tags: [], ssh: {} },
+        { id: 'bastion', name: 'bastion', address: 'bastion.example', tags: [], ssh: {} },
+      ],
+    };
+    const saveHosts = vi.fn().mockResolvedValue(ok({ file: withHosts, resolved: [DB1, BASTION], problems: [] }));
+    (window.wirebench as unknown as { ssh: Record<string, unknown> }).ssh['saveHosts'] = saveHosts;
+    useHostsStore.setState({ file: withHosts });
+    render(<ForwardingPanel />);
+    fireEvent.click(screen.getByRole('button', { name: /New rule/ }));
+    const dialog = screen.getByTestId('new-rule-dialog');
+    fireEvent.change(within(dialog).getByLabelText('Host'), { target: { value: 'bastion' } });
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Id').value).toBe('forward');
+    fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
+    fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
+      target: { value: 'localhost:6000' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add rule' }));
+    await waitFor(() => {
+      expect(saveHosts).toHaveBeenCalledOnce();
+    });
+    const saved = (saveHosts.mock.calls[0]![0] as { file: HostsFileWire }).file;
+    expect(saved.hosts.find((h) => h.id === 'bastion')?.forwards).toEqual([
+      { id: 'forward', type: 'local', port: 6000, target: 'localhost:6000' },
+    ]);
+    expect(saved.hosts.find((h) => h.id === 'db-1')?.forwards).toBeUndefined();
+    await waitFor(() => {
+      expect(screen.queryByTestId('new-rule-dialog')).toBeNull();
+    });
+  });
+
+  it('New rule… refuses an id the picked host already has', () => {
+    render(<ForwardingPanel />);
+    fireEvent.click(screen.getByRole('button', { name: /New rule/ }));
+    const dialog = screen.getByTestId('new-rule-dialog');
+    fireEvent.change(within(dialog).getByLabelText('Id'), { target: { value: 'pg' } });
+    fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
+    fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
+      target: { value: 'localhost:6000' },
+    });
+    expect(within(dialog).getByText('This host already has a rule pg')).toBeDefined();
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: 'Add rule' }).disabled).toBe(true);
+  });
+
   it('keeps a forward whose rule was removed while it ran, with Stop only', async () => {
     act(() => {
       useForwardsStore.getState().apply({ ...running('db-1', 'gone', 9000), removed: true });

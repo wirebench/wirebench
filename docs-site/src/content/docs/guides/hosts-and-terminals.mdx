@@ -7,7 +7,9 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 A workspace can describe the machines its APIs run on: servers, bastions, jump hosts. You write them
 down once, in groups, and open an interactive SSH terminal to any of them from the **Hosts** view,
-the command palette, or quick-open. The user, port, key and jump host are set on a group and
+the command palette, or quick-open. The SSH sidebar picks what the area's first tab shows (Hosts,
+Snippets, Layouts, Port forwarding, Keychain or Known hosts), and the tab takes that view's name. Each
+view has its count, a search (<kbd>⌘F</kbd>) and its main action in the header. The user, port, key and jump host are set on a group and
 inherited by every host under it, and the credentials never leave Wirebench's main process.
 
 <Aside type="note">
@@ -308,10 +310,23 @@ listens on, a host that never answers, a changed host key, a refused sign-in, a 
 and a jump host that cannot reach the target. **Retry** connects again, **Edit host** opens the host's
 settings, and **Close** closes the pane. The reason is also in the Problems tab.
 
+**Retry** is the main button only when trying again can work, as with a host that did not answer. A
+refused sign-in or a host setting fails the same way each time, so the screen offers the fix first:
+
+- **A host with no user** starts no step. Under **Host settings** the screen asks **Sign in as**; type
+  the user and press **Connect**. The user signs this pane in only, unless **Save to host** is ticked,
+  which writes it into the host's settings.
+- **A refused password**, or one not on this machine, shows **Password for** *user* on the screen.
+  **Save and retry** stores it as the host's password secret on this machine, then connects again. The
+  password never goes into `hosts.yaml` or the log.
+- Any other setting, such as a jump host that is no longer in the file, makes **Edit host** the main
+  button.
+
 **Show log** unfolds the handshake log: timestamped lines for the lookup, the TCP connection, the
 server's software, the host key and its `known_hosts` result, each sign-in attempt and its result, and
 the methods the server allows. It is folded while connecting and opens on its own when a connect fails,
-with the lines that say what failed, and the failure's sentence as the last line, in red.
+with the lines that say what failed, and the failure's sentence as the last line, in red. It opens
+scrolled to its end, with the line that failed highlighted.
 It never holds a password, passphrase or private key. With **Reduce motion** on in the system settings,
 the screen shows no spinner or moving line, only the ticks.
 
@@ -606,7 +621,8 @@ replaces the farther one whole (fields are not merged), and `{ id, enabled: fals
 rule off: above, `db-1` has `pg` and not `grafana`, while every other host under **Production** has
 `grafana`. A switch-off that names no rule above it is refused when the file is read, so a typo is caught.
 
-You normally edit rules in the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
+**New rule…** in the **Port forwarding** view adds a rule to a host you pick from a list. To edit rules, or to
+set one on a whole group, use the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
 that level, an inherited rule shows greyed with where it came from, **Override** copies it to this level to
 edit it, and **Off** switches it off here. The rule form has the type, port, bind, target and **Start with
 the host's terminals**.
@@ -625,7 +641,7 @@ terminals, so a terminal closing or reconnecting never drops a forward. Switchin
 window stops that window's forwards, and they are not restored on restart.
 
 The **Port forwarding** view lists every rule of every host with its state, type (L, R or D),
-`bind:port → target`, its host and where it came from, a filter box and **All**, **Running** and **Failed**
+`bind:port → target`, its host and where it came from, a search box and **All**, **Running** and **Failed**
 chips. Rules that are off show greyed with where they were switched off. A rule's menu has **Start on
 another port…**, **Copy address**, **Edit rule** and **Stop**. If you edit a running rule, it keeps running
 as it started and offers **Restart**.

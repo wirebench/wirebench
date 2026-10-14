@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
+  forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
+  (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
+  empty view says what it is for and offers its first step, and a search that hides everything offers
+  **Clear search**. **New rule…** in the Port forwarding view picks a host and adds a rule to it without
+  opening the host's settings. The SSH area's first tab is named after the view it shows, with its icon,
+  instead of always saying Hosts (#535).
+- **SSH through a SOCKS5 or HTTP proxy.** A host or a group can name a SOCKS5 or HTTP CONNECT proxy (host
+  form → Advanced → Proxy), with an optional user and a password kept as a secret. The first hop of a
+  connection, the host or its outermost jump host, is dialled through it, and the proxy resolves the
+  host's name. Groups pass it down; **None** on a host under a group's proxy connects directly. The
+  connection screen logs the proxy hop and says plainly when the proxy cannot be reached, refuses the
+  sign-in or will not open the tunnel. Terminals, Files, port forwarding and `wirebench ssh forward` all
+  use it, and the `ssh_config` importer maps `ProxyCommand nc -X 5` and `nc -X connect` lines (#417).
+
 - **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
   Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
   Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select
@@ -16,6 +31,7 @@ All notable changes to this project are documented here. The format follows
   drops. A red dot on the tab and the pane header shows a session is being written to a session log.
   **Session Logs…** in the palette, or **All hosts…** in a host's details, lists every host's logs,
   and log rows now read like *11:09 · 16 B · exit 0* under the day they started (#534).
+
 - **Connection screen for SSH terminals and Files.** Until the shell opens, a pane shows the steps of
   the connect: Resolving address, Connecting, Checking host key, Authenticating and Starting shell (or
   Starting SFTP). Each shows what it is doing, then a tick and how long it took, and the screen ends
@@ -25,6 +41,12 @@ All notable changes to this project are documented here. The format follows
   unfolds a timestamped handshake log that opens on its own when a connect fails, shows the lines that
   say what failed in red, and never holds a password, passphrase or key. A dropped session's reconnect shows its countdown on the same screen,
   with **Reconnect now** and **Stop**. Reduced motion shows no spinner or moving line (#528).
+- **Fix a sign-in on the connection screen.** A host with no user starts no step: the screen reports it
+  as a host setting and asks **Sign in as**, for this pane only or, with **Save to host**, into the
+  host's settings. A refused password shows **Password for** *user* with **Save and retry**, which stores
+  it as the host's password secret and connects again. **Retry** stays the main button for network
+  failures only; after a refused sign-in or a host setting the fix comes first. A failed connect's log
+  opens at its end with the failing line highlighted (#532).
 - **Test MCP servers.** An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and
   WebSocket APIs: a local process over stdio, Streamable HTTP, or the legacy HTTP+SSE transport.
   **New MCP server…** on a project creates one; its tab edits the connection (command, arguments,
@@ -274,6 +296,12 @@ All notable changes to this project are documented here. The format follows
   values and the HTTP Log's columns cut to one line with the full text in a tooltip, instead of
   wrapping a character per line or overlapping their headers; a narrow HTTP Log shows its four main
   columns (#542).
+- **History rows read on two lines, and a click opens.** A row shows the method, name and a status
+  chip, then the time, host and duration, so the name is never squeezed out at narrow widths.
+  Re-send, Compare, Compare with current and a new **Delete** (one entry) are in a **⋯** menu at the
+  row's right edge; a click anywhere else on the row opens the entry and never re-sends it. The arrow keys move
+  between rows and Enter opens one. An entry's tab is titled with its name and send time, a send with
+  no request body gives the tab to the response, and the footer says "1 entry" (#544).
 - **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
   how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
   terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a
@@ -287,6 +315,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Revealing secrets in the HTTP log asks first.** The palette command is now **Reveal Secrets in HTTP
+  Log…** and, like the log's lock, asks before Authorization headers, cookies and passwords show;
+  hiding them never asks. A new **Show HTTP Log** command is what a search for "HTTP Log" lands on,
+  the palette now puts the category with the best match first, and the lock is an icon rather than an
+  emoji that showed as a box on Linux (#545).
+- **`${name}` in a REST URL is no longer a path parameter.** `/pets/${petId}` used to add an empty
+  `petId` row to the path-parameter table although the send expands the variable; only `{name}` adds
+  a row now, in the editor and in a cURL import (#545).
+- **Import cURL takes only curl commands.** Text that does not start with `curl` (after an optional
+  `$ ` prompt) is refused with the reason, and Import stays disabled; `wget http://example.com` used to
+  import as a GET to `{base}wget`. An imported REST request is named from its method and path, such
+  as `GET /pets/{petId}` (#545).
 - **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
   workspace a project environment applies through the workspace environment with the same slug; a
   rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped

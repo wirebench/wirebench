@@ -6,14 +6,29 @@ import type { ConnectError } from './connect-errors.js';
 
 /**
  * Each connection screen's attempt (#528), keyed by what connects: a terminal pane's id, or a Files pane's.
- * `attempts` routes main's progress events (which name the attempt) to the screen showing it.
+ * `attempts` routes main's progress events (which name the attempt) to the screen showing it. `users`: the
+ * user typed on a screen to sign in as (#532), kept for the pane's later connects and never written to
+ * the hosts file.
  */
 interface ConnectState {
   readonly views: Readonly<Record<string, ConnectView>>;
   readonly attempts: Readonly<Record<string, string>>;
+  readonly users: Readonly<Record<string, string>>;
 }
 
-export const useConnectStore = create<ConnectState>()(() => ({ views: {}, attempts: {} }));
+export const useConnectStore = create<ConnectState>()(() => ({ views: {}, attempts: {}, users: {} }));
+
+/** Signs the pane's connects in as `user`, or as the host's own again (`undefined`). */
+export function setSignInUser(key: string, user: string | undefined): void {
+  const { users } = useConnectStore.getState();
+  const rest = { ...users };
+  delete rest[key];
+  useConnectStore.setState({ users: user === undefined ? rest : { ...rest, [key]: user } });
+}
+
+export function signInUserOf(key: string): string | undefined {
+  return useConnectStore.getState().users[key];
+}
 
 function update(key: string, attemptId: string, change: (view: ConnectView) => ConnectView): void {
   const { views } = useConnectStore.getState();

@@ -6,6 +6,8 @@ import { ipc } from './ipc-client.js';
 export interface SecretsVisibilitySnapshot {
   /** `true` while the HTTP log renders real `Authorization`/`Cookie`/`wsse:Password` values. */
   readonly show: boolean;
+  /** `true` while the "Reveal secrets?" confirmation is open, asked before the flag turns on. */
+  readonly confirmingReveal: boolean;
 }
 
 /** The store: the mirrored flag plus the actions that move it (always via main). */
@@ -16,6 +18,13 @@ export interface SecretsVisibilityStore extends SecretsVisibilitySnapshot {
   readonly setShow: (show: boolean) => Promise<void>;
   /** Flips the flag. */
   readonly toggle: () => Promise<void>;
+  /**
+   * What the log's lock and the palette command do: hiding is immediate, revealing asks first, so a
+   * palette search that lands on the command (or a stray click) never puts credentials on screen.
+   */
+  readonly requestToggle: () => Promise<void>;
+  /** Closes the confirmation; `reveal` says whether its answer was yes. */
+  readonly answerReveal: (reveal: boolean) => Promise<void>;
 }
 
 /**
@@ -26,6 +35,7 @@ export interface SecretsVisibilityStore extends SecretsVisibilitySnapshot {
  */
 export const useSecretsVisibilityStore = create<SecretsVisibilityStore>((set, get) => ({
   show: false,
+  confirmingReveal: false,
 
   refresh: async () => {
     const result = await ipc().secrets.getShowSecrets(undefined);
@@ -47,5 +57,20 @@ export const useSecretsVisibilityStore = create<SecretsVisibilityStore>((set, ge
 
   toggle: async () => {
     await get().setShow(!get().show);
+  },
+
+  requestToggle: async () => {
+    if (get().show) {
+      await get().setShow(false);
+      return;
+    }
+    set({ confirmingReveal: true });
+  },
+
+  answerReveal: async (reveal) => {
+    set({ confirmingReveal: false });
+    if (reveal) {
+      await get().setShow(true);
+    }
   },
 }));

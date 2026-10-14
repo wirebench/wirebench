@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Command } from 'cmdk';
+import { Command, defaultFilter } from 'cmdk';
 import type { CommandCategory, CommandDefinition } from '@shared/commands.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
@@ -138,6 +138,26 @@ function groupByCategory(commands: readonly Definition[]): readonly (readonly [C
 }
 
 /**
+ * The groups with the best match first, for a non-empty search. cmdk ranks the items inside a group
+ * but leaves the groups in the order they were rendered (alphabetical by category), so "HTTP Log"
+ * used to select a Secrets command over View's Show HTTP Log. Each group scores as its best item,
+ * by the same filter and the same `category label` value the items are matched on; ties keep order.
+ */
+export function rankGroups<
+  G extends readonly [CommandCategory, readonly { readonly category: string; readonly label: string }[]],
+>(groups: readonly G[], search: string): readonly G[] {
+  if (search.trim() === '') {
+    return groups;
+  }
+  const best = (commands: G[1]): number =>
+    Math.max(0, ...commands.map((command) => defaultFilter(`${command.category} ${command.label}`, search)));
+  return groups
+    .map((group, index) => ({ group, index, score: best(group[1]) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ group }) => group);
+}
+
+/**
  * ⌘K / ⌘⇧P — everything the app can do, listed from the same registry that drives the
  * keybindings — and ⌘P, the same dialog in quick-open mode over operations and requests.
  */
@@ -150,6 +170,12 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   // last time `context` itself happened to change identity — which, before this, only reliably
   // happened once, coincidentally, from a library's mount-time resize callback.
   const groups = useMemo(() => groupByCategory(listCommands(context)), [context, open]);
+  const [search, setSearch] = useState('');
+  // A new mode or a reopen starts from an empty search, as the keyed `Command` below does.
+  useEffect(() => {
+    setSearch('');
+  }, [mode, open]);
+  const rankedGroups = useMemo(() => rankGroups(groups, search), [groups, search]);
   const interfaces = useProjectStore((state) => state.interfaces);
   const requests = useProjectStore((state) => state.requests);
   const projectOf = useProjectStore((state) => state.projectOf);
@@ -289,6 +315,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           >
             <Command.Input
               autoFocus
+              onValueChange={setSearch}
               data-testid={picker ? 'quick-open-input' : 'command-palette-input'}
               placeholder={picker ? title : 'Search or run a command'}
               className="h-10 w-full border-b border-hairline bg-transparent px-3 text-md text-fg-default outline-none placeholder:text-fg-faint"
@@ -408,7 +435,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                 </Command.Group>
               )}
               {!picker &&
-                groups.map(([category, commands]) => (
+                rankedGroups.map(([category, commands]) => (
                   <Command.Group key={category} heading={category} className={GROUP_CLASS}>
                     {commands.map((command) => {
                       const shortcut = effectiveShortcut(command);

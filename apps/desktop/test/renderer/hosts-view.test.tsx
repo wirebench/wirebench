@@ -52,6 +52,7 @@ const defaults = {
   keepAlive: { value: 15, from: 'default' },
   connectTimeout: { value: 20, from: 'default' },
   forwardAgent: { value: false, from: 'default' },
+  proxy: { value: undefined, from: 'default' },
 } as const;
 const STATE = {
   file: {
@@ -212,6 +213,25 @@ describe('Keychain', () => {
     await userEvent.type(screen.getByLabelText('Secret value'), 'v');
     await userEvent.click(screen.getByRole('button', { name: 'Store' }));
     expect(setSecret).toHaveBeenCalledWith({ name: 'FRESH', value: 'v' });
+  });
+  it('the search narrows the names; one that hides them all offers Clear search', async () => {
+    useHostsStore.setState({ homeView: 'keychain' });
+    render(<SshHome />);
+    await screen.findByTestId('secret-row-UNSET');
+    await userEvent.type(screen.getByLabelText('Filter secrets'), 'deploy');
+    expect(screen.queryByTestId('secret-row-UNSET')).toBeNull();
+    expect(screen.getByTestId('secret-row-DEPLOY_KEY')).toBeDefined();
+    await userEvent.type(screen.getByLabelText('Filter secrets'), '-nothing');
+    await userEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByTestId('secret-row-UNSET')).toBeDefined();
+  });
+  it('with no secrets, offers to generate a key', async () => {
+    secretNames.mockResolvedValue({ ok: true, value: { names: [] } });
+    useHostsStore.setState({ homeView: 'keychain' });
+    render(<SshHome />);
+    const empty = await screen.findByTestId('keychain-empty');
+    expect(within(empty).getByRole('button', { name: /Generate key/ })).toBeDefined();
+    expect(screen.getByTestId('ssh-view-count').textContent).toBe('0');
   });
 });
 
@@ -590,8 +610,16 @@ describe('Hosts tab view', () => {
   it('with no hosts, offers the first one and the import', () => {
     useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
     render(<SshHome />);
-    expect(screen.getByText('Add your first host')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Import hosts' })).toBeDefined();
+    expect(screen.getByTestId('hosts-empty')).toBeDefined();
+    expect(within(screen.getByTestId('hosts-empty')).getByRole('button', { name: /Add host/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Import hosts…' })).toBeDefined();
+  });
+  it('a search that hides every host offers Clear search', async () => {
+    useHostsStore.setState({ filter: 'nothing-like-this' });
+    render(<SshHome />);
+    await userEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(useHostsStore.getState().filter).toBe('');
+    expect(screen.getByTestId('host-row-a')).toBeDefined();
   });
 });
 

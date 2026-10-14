@@ -8,6 +8,7 @@ import {
   envVariablesFor,
   fromCurl,
   fromRestCurl,
+  notCurlReason,
   generateCode,
   grpcToCommand,
   isWirebenchError,
@@ -908,6 +909,11 @@ async function importCurl(
   deps: Pick<RequestChannelDeps, 'project' | 'storeSecret'>,
   request: RequestImportCurlRequest,
 ): Promise<RequestImportCurlResponse> {
+  // The dialog refuses this too; main checks again so no other caller can import `wget …` as a GET.
+  const notCurl = notCurlReason(request.command);
+  if (notCurl !== undefined) {
+    throw new ProjectError('not-curl', notCurl);
+  }
   return request.target.kind === 'rest'
     ? await importCurlAsRest(deps, request, request.target)
     : await importCurlAsSoap(deps.project, request, request.target);
@@ -971,6 +977,20 @@ function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
 }
 
 /**
+ * What an imported REST request is called when the caller gives no name: its method and path
+ * (`GET /pets/{petId}`), so a few imports in a row can be told apart in the explorer. The path
+ * leaves out the query and, for a URL outside the API's base, the scheme and host.
+ */
+export function importedRequestName(method: string | undefined, url: string | undefined): string | undefined {
+  if (url === undefined || url === '') {
+    return undefined;
+  }
+  const withoutQuery = url.split(/[?#]/, 1)[0] ?? '';
+  const path = withoutQuery.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, '');
+  return `${method ?? 'GET'} ${path === '' ? '/' : path}`;
+}
+
+/**
  * The REST half: a new request in an API (or a folder of it), then one patch with everything the
  * command described.
  *
@@ -988,12 +1008,13 @@ async function importCurlAsRest(
   const api = project.projectSnapshot?.(owner)?.apis.find((candidate) => candidate.id === target.apiId);
 
   const parsed = fromRestCurl(request.command, api?.baseUrl !== undefined ? { baseUrl: api.baseUrl } : {});
+  const name = request.name ?? importedRequestName(parsed.request.method, parsed.request.url);
 
   const created = await project.projectMutate(owner, {
     kind: 'add-rest-request',
     apiId: target.apiId,
     ...(target.folderId !== undefined ? { parentId: target.folderId } : {}),
-    ...(request.name !== undefined ? { name: request.name } : {}),
+    ...(name !== undefined ? { name } : {}),
   });
   const requestId = created.createdId;
   if (requestId === undefined) {

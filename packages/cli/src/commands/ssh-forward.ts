@@ -14,7 +14,15 @@ import {
   secretPseudoRef,
 } from '@wirebench/engine';
 import type { SecretNeed, Workspace } from '@wirebench/engine';
-import { EMPTY_HOSTS_FILE, isNetworkBind, jumpChain, openForwardConnection, parseHostsFile, secretNameOf } from '#ssh';
+import {
+  EMPTY_HOSTS_FILE,
+  isNetworkBind,
+  jumpChain,
+  openForwardConnection,
+  proxyCredentialsOf,
+  parseHostsFile,
+  secretNameOf,
+} from '#ssh';
 import type {
   DialOptions,
   ForwardConnection,
@@ -206,17 +214,21 @@ async function credentialsOf(
   workspace: Workspace | undefined,
   platform: NodeJS.Platform,
 ): Promise<HopCredentials[]> {
-  const names = chain.flatMap((hop) => {
+  const proxy = chain[0]?.ssh.proxy.value;
+  const names = chain.flatMap((hop, index) => {
     const auth = hop.ssh.auth.value;
-    if (auth?.kind === 'password') return [secretNameOf(auth.password)];
+    // Only the first hop is dialled through its proxy; asked for before any hop's credentials.
+    const proxyNames = index === 0 && proxy?.password ? [secretNameOf(proxy.password)] : [];
+    if (auth?.kind === 'password') return [...proxyNames, secretNameOf(auth.password)];
     if (auth?.kind === 'key') {
       return [
+        ...proxyNames,
         secretNameOf(auth.key),
         ...(auth.certificate ? [secretNameOf(auth.certificate)] : []),
         ...(auth.passphrase ? [secretNameOf(auth.passphrase)] : []),
       ];
     }
-    return [];
+    return proxyNames;
   });
   const needs: SecretNeed[] = names.map((name) => ({ ref: secretPseudoRef(name), purpose: 'SSH credential' }));
   const secrets = cliSecrets(needs, io.env, workspace, args.secretSources, createSourceCache());
@@ -240,7 +252,8 @@ async function credentialsOf(
     return found;
   };
   const hops: HopCredentials[] = [];
-  for (const hop of chain) {
+  const proxyCredentials = proxy === undefined ? undefined : await proxyCredentialsOf(proxy, value);
+  for (const [index, hop] of chain.entries()) {
     const auth = hop.ssh.auth.value;
     const user = hop.ssh.user.value;
     if (auth === undefined || user === undefined) continue; // chainOf refused incomplete hops
@@ -272,6 +285,7 @@ async function credentialsOf(
       auth: credentials,
       keepAlive: hop.ssh.keepAlive.value,
       connectTimeout: hop.ssh.connectTimeout.value,
+      ...(index === 0 && proxyCredentials !== undefined ? { proxy: proxyCredentials } : {}),
     });
   }
   return hops;

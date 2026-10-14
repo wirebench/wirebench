@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Lock, LockOpen } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
@@ -163,7 +164,7 @@ export function HttpLog() {
   const setPreserveLog = useExchangesStore((state) => state.setPreserveLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
-  const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
+  const toggleSecrets = useSecretsVisibilityStore((state) => state.requestToggle);
   // 0–2 send ids, oldest first: one shows its detail, two are compared.
   const [selection, setSelection] = useState<readonly string[]>([]);
   const selectedId = selection.at(-1);
@@ -312,12 +313,16 @@ export function HttpLog() {
             <Button
               variant="ghost"
               aria-pressed={showSecrets}
-              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
+              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to reveal'}
               onClick={() => {
                 void toggleSecrets();
               }}
             >
-              <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
+              {showSecrets ? (
+                <LockOpen aria-hidden="true" className="size-3.5" />
+              ) : (
+                <Lock aria-hidden="true" className="size-3.5" />
+              )}
               <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
             </Button>
             <Button

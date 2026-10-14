@@ -2,6 +2,7 @@
  * One plain sentence for a connect that failed (#528): what happened and what to do. Built from the
  * error's code and details only, never its message: a library's exception text is not for the screen.
  */
+import type { SshAuthWire } from '../../../shared/ssh-wire.js';
 import type { ConnectPurpose } from './connect-progress.js';
 
 /** A connect's refusal as the IPC result carries it. */
@@ -82,6 +83,33 @@ function authSentence(details: Readonly<Record<string, unknown>>, who: string): 
   return `${capitalise(who)} refused ${triedWords}${as}; it allows ${others.join(', ')}. Change the host's sign-in method.`;
 }
 
+/** The first hop's proxy failed (#417): reaching the proxy itself, or the tunnel it was asked for. */
+function proxySentence(details: Readonly<Record<string, unknown>>, host: string): string {
+  const where = text(details, 'proxy');
+  const proxy = where === undefined ? 'the proxy' : `the proxy ${where}`;
+  const words = text(details, 'proxyDetail');
+  switch (details['proxyReason']) {
+    case 'dns':
+      return `${capitalise(proxy)} could not be found. Check the proxy's address in the host's settings, your DNS or your VPN.`;
+    case 'refused':
+      return words === undefined
+        ? `${capitalise(proxy)} refused the connection: nothing listens on that port. Check the proxy's address and port.`
+        : `${capitalise(proxy)} would not open a tunnel to ${host} (${words}). Check the host's address and port, and that the proxy allows it.`;
+    case 'timeout': {
+      const seconds = typeof details['timeout'] === 'number' ? ` after ${String(details['timeout'])} s` : '';
+      return `No answer from ${proxy}${seconds}. Check its address, your network or VPN.`;
+    }
+    case 'unreachable':
+      return `There is no route to ${proxy}. Check your network or VPN.`;
+    case 'auth':
+      return `${capitalise(proxy)} refused the sign-in${words === undefined ? '' : ` (${words})`}. Check the proxy user and password in the host's settings.`;
+    case 'protocol':
+      return `${capitalise(proxy)} did not answer as ${details['proxyType'] === 'http' ? 'an HTTP' : 'a SOCKS5'} proxy. Check the proxy's type and port.`;
+    default:
+      return `${capitalise(proxy)} closed the connection before the tunnel to ${host} opened. The log below shows how far it got.`;
+  }
+}
+
 function reachSentence(details: Readonly<Record<string, unknown>>, who: string, host: string): string {
   const { address, port } = split(host);
   switch (details['reason']) {
@@ -101,6 +129,8 @@ function reachSentence(details: Readonly<Record<string, unknown>>, who: string, 
       const via = text(details, 'via');
       return `The jump host${via === undefined ? '' : ` ${via}`} could not open a connection to ${host}. Check the target's address and port from the jump host.`;
     }
+    case 'proxy':
+      return proxySentence(details, host);
     default:
       if (details['phase'] === 'shell') return `Signed in, but ${who} would not open a shell.`;
       return `The connection to ${host} failed. The log below shows how far it got.`;
@@ -132,6 +162,10 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       return `The secret ${name === undefined ? 'this host signs in with' : `"${name}"`} is not on this machine. Set it in the host's settings.`;
     }
     case 'ssh-host-incomplete':
+      if (details['field'] === 'user') return 'This host has no user to sign in as. Enter one to connect.';
+      if (details['field'] === 'auth') {
+        return 'This host has no sign-in method (password, key or agent). Edit the host to choose one.';
+      }
       return 'This host is missing a setting it needs to connect (its user or sign-in method). Edit the host to fill it in.';
     case 'ssh-host-unknown':
       return 'This host is no longer in the hosts file.';
@@ -157,4 +191,91 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
         ? 'The file browser could not connect. The log below shows how far it got.'
         : 'The connection could not be started. The log below shows how far it got.';
   }
+}
+
+/**
+ * What stopped a connect, which decides what the screen offers (#532). `network`: the host could not be
+ * reached, so trying again can work. `auth`: the server refused the sign-in, or its credential is unusable.
+ * `settings`: the host's own settings stop it before anything goes on the network. `trust`: the host key
+ * was not trusted.
+ */
+export type ConnectErrorKind = 'network' | 'auth' | 'settings' | 'trust' | 'other';
+
+export function connectErrorKind(code: string): ConnectErrorKind {
+  switch (code) {
+    case 'ssh-connect-failed':
+      return 'network';
+    case 'ssh-auth-failed':
+    case 'ssh-cert-expired':
+    case 'ssh-cert-invalid':
+    case 'ssh-cert-mismatch':
+      return 'auth';
+    case 'ssh-host-incomplete':
+    case 'secret-missing':
+    case 'ssh-host-unknown':
+    case 'ssh-jump-unknown':
+    case 'ssh-jump-cycle':
+    case 'ssh-hosts-invalid':
+      return 'settings';
+    case 'ssh-host-key-new':
+    case 'ssh-host-key-changed':
+      return 'trust';
+    default:
+      return 'other';
+  }
+}
+
+/** The target host's sign-in, as far as the screen's fixes need it. */
+export interface SignIn {
+  readonly hostId: string;
+  readonly user: string | undefined;
+  readonly auth: SshAuthWire | undefined;
+}
+
+/**
+ * What the screen offers for a failed connect. `retryPrimary`: Retry is the main button, since trying again
+ * can work. `ask`: a field on the screen fixes it there: the user to sign in as, or the password for `user`,
+ * stored under the host's secret `secret`.
+ */
+export type ConnectFix =
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: boolean; readonly ask?: undefined }
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'user' }
+  | {
+      readonly kind: ConnectErrorKind;
+      readonly retryPrimary: false;
+      readonly ask: 'password';
+      readonly secret: string;
+      readonly user: string | undefined;
+    };
+
+/** Retry stays primary unless the same attempt would fail the same way: a refused sign-in or a setting. */
+export function connectFix(error: ConnectError, target: SignIn | undefined): ConnectFix {
+  const kind = connectErrorKind(error.code);
+  const details = error.details ?? {};
+  const retryPrimary = kind !== 'auth' && kind !== 'settings';
+  if (target === undefined || retryPrimary) return { kind, retryPrimary };
+  const hostId = details['hostId'];
+  if (
+    error.code === 'ssh-host-incomplete' &&
+    details['field'] === 'user' &&
+    (hostId ?? target.hostId) === target.hostId
+  ) {
+    return { kind, retryPrimary: false, ask: 'user' };
+  }
+  const { auth } = target;
+  const hop = details['hop'];
+  const hops = details['hops'];
+  const jump = typeof hop === 'number' && typeof hops === 'number' && hop < hops - 1;
+  // Only the target's own password: a jump host's, a key or the agent is fixed in the host's settings.
+  if (auth?.kind !== 'password' || auth.secret === '' || jump) return { kind, retryPrimary };
+  const refused = error.code === 'ssh-auth-failed' && details['agent'] !== 'missing' && details['unusableKey'] !== true;
+  const missing = error.code === 'secret-missing' && text(details, 'name') === auth.secret;
+  if (!refused && !missing) return { kind, retryPrimary };
+  return {
+    kind,
+    retryPrimary: false,
+    ask: 'password',
+    secret: auth.secret,
+    user: text(details, 'user') ?? target.user,
+  };
 }

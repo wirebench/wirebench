@@ -74,6 +74,7 @@ const RESOLVED: ResolvedHostWire[] = [
       keepAlive: { value: 15, from: 'default' },
       connectTimeout: { value: 20, from: 'default' },
       forwardAgent: { value: false, from: 'default' },
+      proxy: { value: undefined, from: 'default' },
     },
     forwards: [
       { ...resolvedRule('grafana', 3000), from: { group: 'prod' } },
