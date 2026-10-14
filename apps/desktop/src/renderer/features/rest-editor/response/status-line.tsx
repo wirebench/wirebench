@@ -6,6 +6,7 @@
  * of the app. A transport failure has no status at all: the line names it in plain words, and the
  * panel under it says the rest.
  */
+import { useEffect, useState } from 'react';
 import type { IpcError } from '../../../../shared/ipc.js';
 import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
@@ -34,6 +35,41 @@ export interface StatusLineProps {
   readonly sending?: boolean;
   /** An event stream still arriving: its status and running counts, before the exchange exists. */
   readonly live?: RestLiveState | undefined;
+  /** When the send in flight started (ISO), for the elapsed time beside "Sending…". */
+  readonly startedAt?: string | undefined;
+}
+
+/** How often the elapsed time ticks: a tenth of a second is what it shows. */
+const TICK_MS = 100;
+
+/** `2.4 s`: the time a send has been out, to the tenth of a second. */
+export function elapsedText(ms: number): string {
+  return `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
+}
+
+/** "Sending…" and a live timer. Only the words are announced: a ticking number would be read out every tick. */
+function SendingStatus({ startedAt }: { readonly startedAt: string | undefined }) {
+  const start = startedAt === undefined ? Number.NaN : Date.parse(startedAt);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (Number.isNaN(start)) return undefined;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [start]);
+  return (
+    <p data-testid="rest-response-status" className="px-2 font-mono text-xs text-fg-muted">
+      <span role="status">Sending…</span>
+      {!Number.isNaN(start) && (
+        <span data-testid="rest-response-elapsed" aria-hidden="true" className="tabular-nums">
+          {` ${elapsedText(now - start)}`}
+        </span>
+      )}
+    </p>
+  );
 }
 
 /** `12 events · last id 7`, the part of the line an event stream adds. */
@@ -53,7 +89,7 @@ function liveLastEventId(live: RestLiveState): string {
 }
 
 /** The `200 OK · 12 ms · 1.2 KB · HTTP/1.1` line. */
-export function StatusLine({ exchange, error, sending = false, live }: StatusLineProps) {
+export function StatusLine({ exchange, error, sending = false, live, startedAt }: StatusLineProps) {
   if (error !== undefined) {
     // The title alone: the panel below carries the message, the hint and the code.
     const view = describeSendError(error);
@@ -82,11 +118,7 @@ export function StatusLine({ exchange, error, sending = false, live }: StatusLin
     );
   }
   if (sending) {
-    return (
-      <p role="status" data-testid="rest-response-status" className="px-2 font-mono text-xs text-fg-muted">
-        Sending…
-      </p>
-    );
+    return <SendingStatus startedAt={startedAt} />;
   }
   if (exchange === undefined) {
     return null;

@@ -80,4 +80,24 @@ describe('UrlBar', () => {
     expect(send.nextElementSibling?.textContent).toBe('▾');
     expect(send.className).toContain('rounded-r-none');
   });
+
+  it('keeps Send laid out under Cancel while sending, so the method and URL do not move', () => {
+    const onCancel = vi.fn();
+    const { rerender } = render(<UrlBar {...props({ menu: <button type="button">▾</button> })} />);
+    const slot = screen.getByTestId('rest-send-slot');
+    const before = slot.firstElementChild;
+
+    rerender(<UrlBar {...props({ sending: true, onCancel, menu: <button type="button">▾</button> })} />);
+
+    // The same Send group, hidden and out of reach, still sizes the slot; Cancel shares its cell.
+    expect(slot.firstElementChild).toBe(before);
+    expect(before?.className).toContain('invisible');
+    expect(before?.getAttribute('aria-hidden')).toBe('true');
+    expect(slot.className).toContain('[&>*]:col-start-1');
+    // One button answers to the test id: Cancel.
+    expect(screen.getAllByTestId('rest-send')).toHaveLength(1);
+    expect(screen.getByTestId('rest-send').textContent).toBe('Cancel');
+    fireEvent.click(screen.getByTestId('rest-send'));
+    expect(onCancel).toHaveBeenCalled();
+  });
 });

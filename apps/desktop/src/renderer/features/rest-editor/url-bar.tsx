@@ -70,21 +70,18 @@ export function UrlBar({
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
-      {sending ? (
-        <Button
-          variant="secondary"
-          data-testid="rest-send"
-          onClick={onCancel}
-          title={live ? 'Stop the stream (Esc)' : 'Cancel (Esc)'}
+      {/* Send and Cancel share one grid cell, and the Send group stays laid out (hidden) while
+          Cancel shows, so the cell is as wide as the wider of the two and the method and URL beside
+          it never move when a send starts or ends. */}
+      <div data-testid="rest-send-slot" className="grid shrink-0 [&>*]:col-start-1 [&>*]:row-start-1">
+        <div
+          className={`flex items-center ${sending ? 'invisible' : ''}`}
+          {...(sending ? { 'aria-hidden': true, inert: true } : {})}
         >
-          <Square size={12} aria-hidden="true" />
-          {live ? 'Stop' : 'Cancel'}
-        </Button>
-      ) : (
-        <div className="flex shrink-0 items-center">
           <Button
             variant="primary"
-            data-testid="rest-send"
+            // Only the visible button answers to the test id: while sending, that is Cancel.
+            {...(sending ? {} : { 'data-testid': 'rest-send' })}
             className={menu === undefined ? '' : SPLIT_HEAD_CLASS}
             onClick={onSend}
             disabled={sendDisabledReason !== undefined}
@@ -99,7 +96,19 @@ export function UrlBar({
           </Button>
           {menu}
         </div>
-      )}
+        {sending && (
+          <Button
+            variant="secondary"
+            data-testid="rest-send"
+            className="justify-center"
+            onClick={onCancel}
+            title={live ? 'Stop the stream (Esc)' : 'Cancel (Esc)'}
+          >
+            <Square size={12} aria-hidden="true" />
+            {live ? 'Stop' : 'Cancel'}
+          </Button>
+        )}
+      </div>
 
       {custom ? (
         <input
