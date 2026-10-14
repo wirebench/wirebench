@@ -2,7 +2,7 @@ import { SshModelError } from './errors.js';
 import { defaultBind, isOffForm, parseTarget } from './forward-rules.js';
 import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
-import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshSettings } from './model.js';
+import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshProxy, SshSettings } from './model.js';
 
 export type Provenance<T> = { readonly value: T; readonly from: 'host' | 'default' | { readonly group: string } };
 
@@ -49,6 +49,12 @@ export interface ResolvedHost {
     readonly connectTimeout: Provenance<number>;
     /** Whether the target's shell forwards the local agent; never a jump host's. */
     readonly forwardAgent: Provenance<boolean>;
+    /**
+     * The proxy this host is dialled through when it is the first hop; `undefined` connects directly (a
+     * nearer `proxy: false` gives that, with its level as `from`). A jump host's own setting is the one used
+     * for it, never the target's.
+     */
+    readonly proxy: Provenance<SshProxy | undefined>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
@@ -160,11 +166,16 @@ function resolveEnv(located: Located): ResolvedEnvVar[] {
   return [...out.values()];
 }
 
+/** `false` (connect directly) resolves to no proxy, keeping the level that said so. */
+function proxyOf(picked: Provenance<SshSettings['proxy']>): Provenance<SshProxy | undefined> {
+  return picked.value === false ? { value: undefined, from: picked.from } : { value: picked.value, from: picked.from };
+}
+
 /** Merged values, nearest wins; `auth` is replaced whole, never merged. No defaults, no provenance. */
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
   const out: Record<string, unknown> = {};
-  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout', 'forwardAgent'] as const) {
+  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout', 'forwardAgent', 'proxy'] as const) {
     const { value } = pick(located, key, undefined);
     if (value !== undefined) out[key] = value;
   }
@@ -185,6 +196,7 @@ function resolveLocated(located: Located): ResolvedHost {
     keepAlive: pick(located, 'keepAlive', DEFAULTS.keepAlive) as Provenance<number>,
     connectTimeout: pick(located, 'connectTimeout', DEFAULTS.connectTimeout) as Provenance<number>,
     forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
+    proxy: proxyOf(pick(located, 'proxy', undefined)),
   };
   const incomplete =
     ssh.user.value === undefined

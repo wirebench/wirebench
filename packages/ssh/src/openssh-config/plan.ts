@@ -20,6 +20,15 @@ export interface PlannedSettings {
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
   readonly forwardAgent?: boolean;
+  /** From `ProxyCommand nc -X 5|connect -x host:port %h %p`; never a password (`nc` asks for one). */
+  readonly proxy?: PlannedProxy;
+}
+
+export interface PlannedProxy {
+  readonly type: 'socks5' | 'http';
+  readonly host: string;
+  readonly port: number;
+  readonly user?: string;
 }
 
 export interface PlannedHost {
@@ -165,6 +174,37 @@ const PROXY_W = (args: readonly string[]): string | undefined => {
   return rest.length === 3 && rest[0] === '-W' && rest[1] === '%h:%p' ? rest[2] : undefined;
 };
 
+/**
+ * `nc [-X 5|connect] -x host[:port] [-P user] %h %p`: the proxy `nc` would dial through, or `undefined` for
+ * any other command or flag. `nc` speaks SOCKS5 without `-X`; its default ports are 1080 and 3128; `-P` is
+ * the HTTP proxy's user.
+ */
+const PROXY_NC = (args: readonly string[]): PlannedProxy | undefined => {
+  const command = args[0]?.split('/').at(-1);
+  if (command !== 'nc' || args.at(-2) !== '%h' || args.at(-1) !== '%p') return undefined;
+  const flags = args.slice(1, -2);
+  if (flags.length % 2 !== 0) return undefined;
+  const seen = new Map<string, string>();
+  for (let i = 0; i < flags.length; i += 2) {
+    const flag = flags[i] as string;
+    if (!['-X', '-x', '-P'].includes(flag) || seen.has(flag)) return undefined;
+    seen.set(flag, flags[i + 1] as string);
+  }
+  const version = (seen.get('-X') ?? '5').toLowerCase();
+  const type = version === '5' ? 'socks5' : version === 'connect' ? 'http' : undefined;
+  const where = seen.get('-x');
+  const user = seen.get('-P');
+  if (type === undefined || where === undefined || (user !== undefined && type !== 'http')) return undefined;
+  const parsed = where.includes('@') ? undefined : parseHop(where);
+  if (parsed === undefined) return undefined;
+  return {
+    type,
+    host: parsed.host,
+    port: parsed.port ?? (type === 'socks5' ? 1080 : 3128),
+    ...(user === undefined ? {} : { user }),
+  };
+};
+
 /** `[user@]host[:port]` or `[user@][v6]:port`; `undefined` for anything else (an `ssh://` URI). */
 export function parseHop(hop: string): { user?: string; host: string; port?: number } | undefined {
   if (hop.includes('://')) return undefined;
@@ -188,6 +228,7 @@ interface Mapped {
   readonly keepAlive?: number;
   readonly connectTimeout?: number;
   readonly forwardAgent?: boolean;
+  readonly proxy?: PlannedProxy;
   /** The hops as written, outermost first; `[]` for none. */
   readonly hops: readonly string[];
   readonly identity?: string;
@@ -260,7 +301,14 @@ function mapEffective(
   } else if (commandAt !== -1) {
     const line = eff.values.get('proxycommand') as SshConfigLine;
     const hop = PROXY_W(line.args);
+    const proxy = PROXY_NC(line.args);
     if (hop !== undefined) out.hops = [hop];
+    else if (proxy !== undefined) {
+      out.proxy = proxy;
+      if (proxy.user !== undefined) {
+        note(`${who}: the proxy's password is not in the ssh config; set it in the host's form`);
+      }
+    }
   }
 
   /** `~` and `%d` expanded; undefined when the result is not an absolute path. */
@@ -330,7 +378,12 @@ function reportLines(doc: SshConfigDocument): Pick<SshConfigReport, 'skipped' | 
       if (IGNORED_KEYWORDS.has(line.keyword)) ignored.set(line.keyword, (ignored.get(line.keyword) ?? 0) + 1);
       else if (!MAPPED.has(line.keyword)) {
         skipped.push({ file: line.file, line: line.line, keyword: line.keyword, why: 'not imported' });
-      } else if (line.keyword === 'proxycommand' && line.args[0]?.toLowerCase() !== 'none' && !PROXY_W(line.args)) {
+      } else if (
+        line.keyword === 'proxycommand' &&
+        line.args[0]?.toLowerCase() !== 'none' &&
+        !PROXY_W(line.args) &&
+        !PROXY_NC(line.args)
+      ) {
         skipped.push({
           file: line.file,
           line: line.line,
@@ -401,6 +454,9 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
   if (all.keepAlive !== undefined && everyone('keepAlive')) group.keepAlive = all.keepAlive;
   if (all.connectTimeout !== undefined && everyone('connectTimeout')) group.connectTimeout = all.connectTimeout;
   if (all.forwardAgent === true && everyone('forwardAgent')) group.forwardAgent = true;
+  const sameProxy = (a: PlannedProxy | undefined, b: PlannedProxy | undefined): boolean =>
+    JSON.stringify(a) === JSON.stringify(b);
+  if (all.proxy !== undefined && usable.every((x) => sameProxy(x.m.proxy, all.proxy))) group.proxy = all.proxy;
   const groupAuth: PlannedAuth =
     all.identity !== undefined && everyone('identity')
       ? keyFor(all.identity, all.certificate, groupId)
@@ -450,6 +506,7 @@ export function planSshConfigImport(input: SshConfigImportInput): SshConfigImpor
     if (m.forwardAgent !== undefined && m.forwardAgent !== (group.forwardAgent ?? false)) {
       ssh.forwardAgent = m.forwardAgent;
     }
+    if (m.proxy !== undefined && !sameProxy(m.proxy, group.proxy)) ssh.proxy = m.proxy;
     const auth: PlannedAuth =
       m.identity === undefined ||
       (groupAuth.kind === 'key' && m.identity === all.identity && m.certificate === all.certificate)

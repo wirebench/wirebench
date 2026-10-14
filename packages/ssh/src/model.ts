@@ -44,6 +44,18 @@ const authSchema = z.union([
   z.strictObject({ agent: z.literal(true) }).transform(() => ({ kind: 'agent' as const })),
 ]);
 
+/**
+ * A SOCKS5 or HTTP CONNECT proxy the first hop of a connection is dialled through (#417). The password is a
+ * `${secret:NAME}` token only, like every credential here.
+ */
+const proxySchema = z.strictObject({
+  type: z.enum(['socks5', 'http']),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  user: z.string().min(1).optional(),
+  password: secretRef.optional(),
+});
+
 const settingsSchema = z
   .strictObject({
     user: z.string().min(1).optional(),
@@ -54,6 +66,8 @@ const settingsSchema = z
     connectTimeout: z.number().int().min(1).optional(),
     /** Off by default; a nearer `false` turns an inherited `true` off. */
     forwardAgent: z.boolean().optional(),
+    /** `false` connects directly though a group above sets a proxy. */
+    proxy: z.union([z.literal(false), proxySchema]).optional(),
   })
   .default({});
 
@@ -71,6 +85,7 @@ const hostSchema = z.strictObject({
 
 export type SshAuth = z.infer<typeof authSchema>;
 export type SshSettings = z.infer<typeof settingsSchema>;
+export type SshProxy = z.infer<typeof proxySchema>;
 export type HostEntry = z.infer<typeof hostSchema>;
 export interface GroupEntry {
   id: string;
@@ -296,6 +311,17 @@ function settings(ssh: SshSettings): Record<string, unknown> {
   if (ssh.keepAlive !== undefined) out['keepAlive'] = ssh.keepAlive;
   if (ssh.connectTimeout !== undefined) out['connectTimeout'] = ssh.connectTimeout;
   if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
+  if (ssh.proxy === false) out['proxy'] = false;
+  else if (ssh.proxy !== undefined) {
+    const { type, host, port, user, password } = ssh.proxy;
+    out['proxy'] = {
+      type,
+      host,
+      port,
+      ...(user === undefined ? {} : { user }),
+      ...(password === undefined ? {} : { password }),
+    };
+  }
   return out;
 }
 

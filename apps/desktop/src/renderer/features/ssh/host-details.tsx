@@ -18,6 +18,7 @@ import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
+import { proxyText } from './proxy-section.js';
 import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
@@ -77,6 +78,14 @@ export function sshCommandOf(host: ResolvedHostWire, jumpAddress: string | undef
   if (port !== 22) parts.push('-p', String(port));
   if (host.ssh.forwardAgent.value) parts.push('-A');
   if (jumpAddress !== undefined) parts.push('-J', jumpAddress);
+  // Only a first hop is dialled through its proxy; with a jump host, the jump host's own proxy applies.
+  const proxy = host.ssh.proxy.value;
+  if (proxy !== undefined && jumpAddress === undefined) {
+    const host = proxy.host.includes(':') ? `[${proxy.host}]` : proxy.host;
+    const login = proxy.type === 'http' && proxy.user !== undefined ? ` -P ${proxy.user}` : '';
+    const version = proxy.type === 'socks5' ? '5' : 'connect';
+    parts.push('-o', `"ProxyCommand=nc -X ${version} -x ${host}:${String(proxy.port)}${login} %h %p"`);
+  }
   const user = host.ssh.user.value;
   parts.push(user === undefined ? host.address : `${user}@${host.address}`);
   return parts.join(' ');
@@ -191,6 +200,7 @@ export function HostDetails() {
   const hostKey = `${host.address}:${String(host.ssh.port.value)}`;
   const keys = knownHosts.filter((k) => k.host === hostKey);
   const command = sshCommandOf(host, jumpAddress);
+  const proxy = host.ssh.proxy.value;
   const muted = (text: string): ReactNode => <span className="truncate text-xs text-fg-subtle">{text}</span>;
   const osEntry = osByHost[osKeyOf(host)];
   const os = osOf(osEntry);
@@ -242,6 +252,17 @@ export function HostDetails() {
           <span className="truncate">{jump === undefined ? '—' : (jumpHost?.name ?? jump)}</span>
           {jump !== undefined && muted(provenance(host.ssh.jump.from))}
         </Row>
+        <Row label="Proxy">
+          <span className="truncate">{proxy === undefined ? '—' : proxyText(proxy)}</span>
+          {(proxy !== undefined || host.ssh.proxy.from !== 'default') && muted(provenance(host.ssh.proxy.from))}
+          {proxy !== undefined && jump !== undefined && muted('not used: reached through the jump host')}
+        </Row>
+        {proxy?.passwordSecret !== undefined && (
+          <Row label="Proxy password">
+            <span className="truncate font-mono">{proxy.passwordSecret}</span>
+            {muted(secretState(proxy.passwordSecret))}
+          </Row>
+        )}
       </Section>
       <Section title="Sign-in">
         {auth === undefined ? (
