@@ -89,8 +89,9 @@ export interface TerminalFindBarProps {
 const NO_OPTIONS: FindOptions = { caseSensitive: false, wholeWord: false, regex: false };
 
 /**
- * Find in a terminal's scrollback, over its top-right corner. Enter finds the next match, Shift+Enter the
- * previous; the query and options stay while the bar is closed, so reopening searches the same thing.
+ * Find in a terminal's scrollback: a strip above its pane's terminal, which it pushes down rather than covers.
+ * Enter finds the next match, Shift+Enter the previous; the query and options stay while the bar is closed,
+ * so reopening searches the same thing.
  */
 export function TerminalFindBar({ open, focusRequest, finder, results, onClose }: TerminalFindBarProps) {
   const input = useRef<HTMLInputElement>(null);
@@ -162,7 +163,8 @@ export function TerminalFindBar({ open, focusRequest, finder, results, onClose }
       data-testid="terminal-find"
       hidden={!open}
       onKeyDown={onKeyDown}
-      className="absolute top-2 right-4 z-10 flex items-center gap-1 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+      // As wide as its pane: in a narrow one the input gives way before the buttons are cut off.
+      className="flex min-w-0 shrink-0 items-center gap-1 overflow-hidden border-b border-hairline bg-surface-raised px-2 py-1"
     >
       <input
         ref={input}
@@ -176,7 +178,7 @@ export function TerminalFindBar({ open, focusRequest, finder, results, onClose }
           setQuery(event.target.value);
           run('next', event.target.value, options, true);
         }}
-        className={`w-48 rounded border bg-surface-sunken px-2 py-0.5 text-sm text-fg-default outline-none ${
+        className={`w-48 min-w-16 shrink rounded border bg-surface-sunken px-2 py-0.5 text-sm text-fg-default outline-none ${
           invalid ? 'border-status-danger' : 'border-hairline focus:border-accent'
         }`}
       />

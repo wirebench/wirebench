@@ -4,6 +4,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { AgentForwardingMark, agentForwardingOf } from '../features/ssh/agent-forwarding.js';
+import { RecordingMark, recordingOf } from '../features/ssh/recording-mark.js';
 import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
 import { useFilesStore } from '../features/ssh/files/files-store.js';
 import { filesTitle } from '../features/ssh/files/open-files.js';
@@ -377,6 +378,13 @@ export function EditorArea() {
                     leaves(tab.panes).map((leaf) => leaf.paneId),
                   )
                 : undefined;
+            const recording =
+              tab.kind === 'ssh-terminal' &&
+              tab.panes !== undefined &&
+              recordingOf(
+                paneSessions,
+                leaves(tab.panes).map((leaf) => leaf.paneId),
+              );
             return (
               // One focusable control per tab. A nested close *button* would be interactive
               // content inside a `tab` widget, which screen readers do not announce reliably, so
@@ -456,6 +464,7 @@ export function EditorArea() {
                   />
                 )}
                 <span className="min-w-0 truncate">{label}</span>
+                {recording && <RecordingMark />}
                 {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
                 {broadcasting[tab.id]?.on === true && (
                   // Never missed while on (spec R8): drawn red, and named for screen readers.
