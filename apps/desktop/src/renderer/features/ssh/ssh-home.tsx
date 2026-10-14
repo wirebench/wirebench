@@ -3,7 +3,7 @@
  * (the secret names hosts sign in with) or the host keys trusted on this machine. Terminal
  * sessions open as tabs after it.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   ArrowUpDown,
@@ -15,8 +15,8 @@ import {
   LayoutGrid,
   List,
   Plus,
-  Search,
   Server,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
@@ -27,7 +27,6 @@ import type {
   SshKnownHostWire,
   SshSecretNameWire,
 } from '../../../shared/ssh-wire.js';
-import { detectPlatform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
 import { ForwardingPanel } from './forwarding/forwarding-view.js';
@@ -36,6 +35,8 @@ import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
 import { RecentSection } from './recent-section.js';
+import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from './ssh-view-frame.js';
+import { SSH_VIEWS } from './ssh-views.js';
 import {
   AttachCertificateDialog,
   CertificateSummary,
@@ -154,157 +155,120 @@ function HostsPanel() {
   const openDialog = useHostsStore((s) => s.openDialog);
   const setImportOpen = useHostsStore((s) => s.setImportOpen);
   const [prefs, setPrefs] = useHostsPrefs();
-  const searchRef = useRef<HTMLInputElement>(null);
   const tags = [...new Set(resolved.flatMap((h) => h.tags))].sort();
-  const mac = detectPlatform() === 'mac';
-
-  // ⌘F (Ctrl+F elsewhere) goes to the search while this tab is in front.
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent): void => {
-      if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [mac]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-2 flex items-baseline gap-2 text-lg font-medium text-fg-default">
-          Hosts <span className="text-sm font-normal text-fg-subtle">{resolved.length}</span>
-        </h2>
-        <label className="relative flex max-w-md min-w-48 flex-1 items-center">
-          <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2 text-fg-subtle" />
-          <input
-            ref={searchRef}
-            type="search"
-            aria-label="Filter hosts"
-            placeholder="Search hosts…"
-            className={`${INPUT_CLASS} pr-12 pl-7`}
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && filter !== '') {
-                e.stopPropagation();
-                setFilter('');
-              }
-            }}
-          />
-          <kbd className="pointer-events-none absolute right-2 rounded border border-hairline px-1 font-sans text-xs text-fg-subtle">
-            {mac ? '⌘F' : 'Ctrl+F'}
-          </kbd>
-        </label>
-        <div className="ml-auto flex items-center gap-2">
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <Button variant="ghost" aria-label={`Sort by ${SORT_LABELS[prefs.sort]}`}>
-                <ArrowUpDown size={13} aria-hidden="true" /> {SORT_LABELS[prefs.sort]}
-                <ChevronDown size={12} aria-hidden="true" />
-              </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
-                <DropdownMenu.RadioGroup
-                  value={prefs.sort}
-                  onValueChange={(value) => {
-                    setPrefs({ sort: value as HostsSort });
-                  }}
-                >
-                  {(Object.keys(SORT_LABELS) as HostsSort[]).map((sort) => (
-                    <DropdownMenu.RadioItem key={sort} value={sort} className={MENU_ITEM_CLASS}>
-                      <span className="w-3">
-                        <DropdownMenu.ItemIndicator>
-                          <Check size={12} aria-hidden="true" />
-                        </DropdownMenu.ItemIndicator>
-                      </span>
-                      {SORT_LABELS[sort]}
-                    </DropdownMenu.RadioItem>
-                  ))}
-                </DropdownMenu.RadioGroup>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-          <div role="group" aria-label="Layout" className="flex rounded-md border border-hairline-strong">
-            {(
-              [
-                ['grid', 'Cards', LayoutGrid],
-                ['list', 'List', List],
-              ] as const
-            ).map(([layout, label, Icon]) => (
-              <button
-                key={layout}
-                type="button"
-                aria-label={label}
-                aria-pressed={prefs.layout === layout}
-                onClick={() => {
-                  setPrefs({ layout });
-                }}
-                className={`inline-flex h-row w-7 items-center justify-center first:rounded-l-md last:rounded-r-md ${
-                  prefs.layout === layout
-                    ? 'bg-accent-muted text-fg-default'
-                    : 'text-fg-subtle hover:bg-surface-hover hover:text-fg-default'
-                }`}
-              >
-                <Icon size={14} aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-          <div className="flex">
-            <Button
-              variant="primary"
-              className={SPLIT_HEAD_CLASS}
-              onClick={() => {
-                openDialog({ mode: 'new-host' });
-              }}
-            >
-              <Plus size={13} aria-hidden /> New host
-            </Button>
+    <SshView>
+      <SshViewHeader
+        title={SSH_VIEWS.hosts.label}
+        count={resolved.length}
+        search={{ value: filter, onChange: setFilter, label: 'Filter hosts', placeholder: 'Search hosts…' }}
+        description="The servers you connect to. Double-click one to open a terminal."
+        actions={
+          <>
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
-                <Button variant="primary" aria-label="More ways to add" className={SPLIT_TAIL_CLASS}>
-                  <ChevronDown size={13} aria-hidden="true" />
+                <Button variant="ghost" aria-label={`Sort by ${SORT_LABELS[prefs.sort]}`}>
+                  <ArrowUpDown size={13} aria-hidden="true" /> {SORT_LABELS[prefs.sort]}
+                  <ChevronDown size={12} aria-hidden="true" />
                 </Button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
-                  <DropdownMenu.Item
-                    className={MENU_ITEM_CLASS}
-                    onSelect={() => {
-                      openDialog({ mode: 'new-host' });
+                  <DropdownMenu.RadioGroup
+                    value={prefs.sort}
+                    onValueChange={(value) => {
+                      setPrefs({ sort: value as HostsSort });
                     }}
                   >
-                    <Server size={13} aria-hidden="true" /> New host
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    className={MENU_ITEM_CLASS}
-                    onSelect={() => {
-                      openDialog({ mode: 'new-group' });
-                    }}
-                  >
-                    <FolderPlus size={13} aria-hidden="true" /> New group
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    className={MENU_ITEM_CLASS}
-                    onSelect={() => {
-                      setImportOpen(true);
-                    }}
-                  >
-                    <Download size={13} aria-hidden="true" /> Import hosts…
-                  </DropdownMenu.Item>
+                    {(Object.keys(SORT_LABELS) as HostsSort[]).map((sort) => (
+                      <DropdownMenu.RadioItem key={sort} value={sort} className={MENU_ITEM_CLASS}>
+                        <span className="w-3">
+                          <DropdownMenu.ItemIndicator>
+                            <Check size={12} aria-hidden="true" />
+                          </DropdownMenu.ItemIndicator>
+                        </span>
+                        {SORT_LABELS[sort]}
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
-          </div>
-        </div>
-      </div>
+            <div role="group" aria-label="Layout" className="flex rounded-md border border-hairline-strong">
+              {(
+                [
+                  ['grid', 'Cards', LayoutGrid],
+                  ['list', 'List', List],
+                ] as const
+              ).map(([layout, label, Icon]) => (
+                <button
+                  key={layout}
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={prefs.layout === layout}
+                  onClick={() => {
+                    setPrefs({ layout });
+                  }}
+                  className={`inline-flex h-row w-7 items-center justify-center first:rounded-l-md last:rounded-r-md ${
+                    prefs.layout === layout
+                      ? 'bg-accent-muted text-fg-default'
+                      : 'text-fg-subtle hover:bg-surface-hover hover:text-fg-default'
+                  }`}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+            <div className="flex">
+              <Button
+                variant="primary"
+                className={SPLIT_HEAD_CLASS}
+                onClick={() => {
+                  openDialog({ mode: 'new-host' });
+                }}
+              >
+                <Plus size={13} aria-hidden /> New host
+              </Button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <Button variant="primary" aria-label="More ways to add" className={SPLIT_TAIL_CLASS}>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
+                    <DropdownMenu.Item
+                      className={MENU_ITEM_CLASS}
+                      onSelect={() => {
+                        openDialog({ mode: 'new-host' });
+                      }}
+                    >
+                      <Server size={13} aria-hidden="true" /> New host
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={MENU_ITEM_CLASS}
+                      onSelect={() => {
+                        openDialog({ mode: 'new-group' });
+                      }}
+                    >
+                      <FolderPlus size={13} aria-hidden="true" /> New group
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={MENU_ITEM_CLASS}
+                      onSelect={() => {
+                        setImportOpen(true);
+                      }}
+                    >
+                      <Download size={13} aria-hidden="true" /> Import hosts…
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            </div>
+          </>
+        }
+      />
       <GroupChips />
       {tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by tag">
@@ -339,7 +303,7 @@ function HostsPanel() {
       {/* A search is after a host by name: the recent strip would only push the matches down. */}
       {filter.trim() === '' && selectedTags.length === 0 && <RecentSection />}
       <HostCards prefs={prefs} onPrefs={setPrefs} />
-    </div>
+    </SshView>
   );
 }
 
@@ -374,6 +338,7 @@ function KeychainPanel() {
   const [attaching, setAttaching] = useState<string>();
   // Bumped with every listing, so a key stored from the form is recognised as one too.
   const [listing, setListing] = useState(0);
+  const [filter, setFilter] = useState('');
   const keys = useSshKeys(listing);
   const openInstall = useKeyInstall((s) => s.open);
 
@@ -398,29 +363,37 @@ function KeychainPanel() {
     await load();
   };
 
+  const needle = filter.trim().toLowerCase();
+  const shown = (names ?? []).filter(
+    (secret) =>
+      needle === '' ||
+      [secret.name, ...usersOf(secret.name, resolved)].some((field) => field.toLowerCase().includes(needle)),
+  );
+  const generate = (): void => {
+    setGenerating(true);
+  };
+  const newSecret = (): void => {
+    setForm({ name: '', fixed: false, value: '' });
+  };
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <p className="flex-1 text-sm text-fg-subtle">
-          The passwords and private keys hosts sign in with, by name. A value is stored on this machine for the
-          workspace and is never shown again.
-        </p>
-        <Button
-          onClick={() => {
-            setGenerating(true);
-          }}
-        >
-          <KeyRound size={13} aria-hidden /> Generate key…
-        </Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setForm({ name: '', fixed: false, value: '' });
-          }}
-        >
-          <Plus size={13} aria-hidden /> New secret
-        </Button>
-      </div>
+    <SshView>
+      <SshViewHeader
+        title={SSH_VIEWS.keychain.label}
+        {...(names === undefined ? {} : { count: names.length })}
+        search={{ value: filter, onChange: setFilter, label: 'Filter secrets', placeholder: 'Search secrets…' }}
+        description="The passwords and private keys hosts sign in with, by name. A value is stored on this machine for the workspace and is never shown again."
+        actions={
+          <>
+            <Button onClick={generate}>
+              <KeyRound size={13} aria-hidden /> Generate key…
+            </Button>
+            <Button variant="primary" onClick={newSecret}>
+              <Plus size={13} aria-hidden /> New secret
+            </Button>
+          </>
+        }
+      />
       {form !== undefined && (
         <form
           aria-label="Store a secret"
@@ -472,10 +445,28 @@ function KeychainPanel() {
         </form>
       )}
       {names === undefined ? null : names.length === 0 ? (
-        <p className="text-sm text-fg-subtle">No secrets yet. Store one here, or from a host's sign-in settings.</p>
+        <SshEmptyState
+          icon={KeyRound}
+          text="Store the passwords and private keys your hosts sign in with, or generate a new key here."
+          testId="keychain-empty"
+        >
+          <Button variant="primary" onClick={generate}>
+            <KeyRound size={13} aria-hidden /> Generate key…
+          </Button>
+          <Button onClick={newSecret}>
+            <Plus size={13} aria-hidden /> New secret
+          </Button>
+        </SshEmptyState>
+      ) : shown.length === 0 ? (
+        <SshNoMatches
+          text="No secret matches the search."
+          onClear={() => {
+            setFilter('');
+          }}
+        />
       ) : (
         <ul aria-label="Secrets" className="flex flex-col divide-y divide-hairline rounded-md border border-hairline">
-          {names.map((secret) => {
+          {shown.map((secret) => {
             const users = usersOf(secret.name, resolved);
             const key = keys.get(secret.name);
             return (
@@ -576,7 +567,7 @@ function KeychainPanel() {
           void load();
         }}
       />
-    </div>
+    </SshView>
   );
 }
 
@@ -584,6 +575,7 @@ function KnownHostsPanel() {
   const [entries, setEntries] = useState<readonly SshKnownHostWire[]>();
   const [error, setError] = useState<string>();
   const [forgetting, setForgetting] = useState<SshKnownHostWire>();
+  const [filter, setFilter] = useState('');
   const setImportOpen = useHostsStore((s) => s.setKnownHostsImportOpen);
   // An import writes keys from the dialog in the Hosts sidebar; the list reads again when it does.
   const revision = useHostsStore((s) => s.knownHostsRevision);
@@ -607,33 +599,57 @@ function KnownHostsPanel() {
     await load();
   };
 
+  const needle = filter.trim().toLowerCase();
+  const shown = (entries ?? []).filter(
+    (entry) =>
+      needle === '' ||
+      [entry.host, entry.keyType, entry.fingerprint].some((field) => field.toLowerCase().includes(needle)),
+  );
+  const openImport = (): void => {
+    setImportOpen(true);
+  };
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <p className="flex-1 text-sm text-fg-subtle">
-          The host keys you trusted on this machine. Forgetting one makes the next connection to that host ask again.
-        </p>
-        <Button
-          onClick={() => {
-            setImportOpen(true);
-          }}
-        >
-          Import known hosts…
-        </Button>
-      </div>
+    <SshView>
+      <SshViewHeader
+        title={SSH_VIEWS['known-hosts'].label}
+        {...(entries === undefined ? {} : { count: entries.length })}
+        search={{ value: filter, onChange: setFilter, label: 'Filter known hosts', placeholder: 'Search known hosts…' }}
+        description="The host keys you trusted on this machine. Forgetting one makes the next connection to that host ask again."
+        actions={
+          <Button variant="primary" onClick={openImport}>
+            <Download size={13} aria-hidden /> Import known hosts…
+          </Button>
+        }
+      />
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {error}
         </p>
       )}
       {entries === undefined ? null : entries.length === 0 ? (
-        <p className="text-sm text-fg-subtle">No trusted host keys yet. The first connection to a host asks.</p>
+        <SshEmptyState
+          icon={ShieldCheck}
+          text="No trusted host keys yet. The first connection to a host asks, or bring in the keys this machine already trusts."
+          testId="known-hosts-empty"
+        >
+          <Button variant="primary" onClick={openImport}>
+            <Download size={13} aria-hidden /> Import known hosts…
+          </Button>
+        </SshEmptyState>
+      ) : shown.length === 0 ? (
+        <SshNoMatches
+          text="No host key matches the search."
+          onClear={() => {
+            setFilter('');
+          }}
+        />
       ) : (
         <ul
           aria-label="Known hosts"
           className="flex flex-col divide-y divide-hairline rounded-md border border-hairline"
         >
-          {entries.map((entry) => (
+          {shown.map((entry) => (
             <li
               key={`${entry.host} ${entry.keyType}`}
               data-testid={`known-host-${entry.host}`}
@@ -675,6 +691,6 @@ function KnownHostsPanel() {
           if (entry !== undefined) void forget(entry);
         }}
       />
-    </div>
+    </SshView>
   );
 }

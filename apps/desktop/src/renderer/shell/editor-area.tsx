@@ -14,6 +14,7 @@ import { useBroadcastStore } from '../features/ssh/panes/broadcast.js';
 import { terminalTitleOf } from '../features/ssh/panes/open-layout.js';
 import { leaves } from '../features/ssh/panes/pane-tree.js';
 import { filesSessionStatus, sessionStatus } from '../features/ssh/session-status.js';
+import { SSH_VIEWS } from '../features/ssh/ssh-views.js';
 import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useShallow } from 'zustand/react/shallow';
 import { entityIdOf, TAB_KINDS, tabOwner, type TabTitleContext } from '../kinds/index.js';
@@ -90,7 +91,10 @@ const MENU_ITEM_CLASS =
  * explorer adds a real tab from `state/editors.ts`; its body is the lazily-loaded request editor.
  */
 /** What an area's empty editor says, before anything of that area is open. */
-/** The tab a set keeps first, never closed or moved: what is shown while no other tab of it is. */
+/**
+ * The tab a set keeps first, never closed or moved: what is shown while no other tab of it is. SSH's is
+ * named, with its icon, after the view it shows (`SSH_VIEWS`).
+ */
 const FIXED_TAB: Readonly<Partial<Record<TabSet, string>>> = { explorer: 'Start', ssh: 'Hosts' };
 
 const EMPTY_HINT: Readonly<Record<TabSet, string>> = {
@@ -107,7 +111,9 @@ export function EditorArea() {
   const tabs = useMemo(() => tabsInSet(allTabs, displayedSet), [allTabs, displayedSet]);
   // Explorer's set opens on the Start page and SSH's on its fixed Hosts tab; another area's set
   // with nothing open shows its own hint.
-  const fixedLabel = FIXED_TAB[displayedSet];
+  const sshView = SSH_VIEWS[useHostsStore((state) => state.homeView)];
+  const fixedLabel = displayedSet === 'ssh' ? sshView.label : FIXED_TAB[displayedSet];
+  const FixedIcon = displayedSet === 'ssh' ? sshView.icon : undefined;
   const hasStart = fixedLabel !== undefined;
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
@@ -348,10 +354,11 @@ export function EditorArea() {
               onClick={() => {
                 showStart();
               }}
-              className={`inline-flex shrink-0 items-center border-r border-hairline px-3 text-sm ${
+              className={`inline-flex shrink-0 items-center gap-1.5 border-r border-hairline px-3 text-sm ${
                 showingStart ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
               }`}
             >
+              {FixedIcon !== undefined && <FixedIcon size={13} aria-hidden="true" className="shrink-0" />}
               {fixedLabel}
             </button>
           )}

@@ -7,7 +7,9 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 A workspace can describe the machines its APIs run on: servers, bastions, jump hosts. You write them
 down once, in groups, and open an interactive SSH terminal to any of them from the **Hosts** view,
-the command palette, or quick-open. The user, port, key and jump host are set on a group and
+the command palette, or quick-open. The SSH sidebar picks what the area's first tab shows (Hosts,
+Snippets, Layouts, Port forwarding, Keychain or Known hosts), and the tab takes that view's name. Each
+view has its count, a search (<kbd>⌘F</kbd>) and its main action in the header. The user, port, key and jump host are set on a group and
 inherited by every host under it, and the credentials never leave Wirebench's main process.
 
 <Aside type="note">
@@ -619,7 +621,8 @@ replaces the farther one whole (fields are not merged), and `{ id, enabled: fals
 rule off: above, `db-1` has `pg` and not `grafana`, while every other host under **Production** has
 `grafana`. A switch-off that names no rule above it is refused when the file is read, so a typo is caught.
 
-You normally edit rules in the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
+**New rule…** in the **Port forwarding** view adds a rule to a host you pick from a list. To edit rules, or to
+set one on a whole group, use the host and group dialogs, under **Port forwarding**: **Add rule** adds one at
 that level, an inherited rule shows greyed with where it came from, **Override** copies it to this level to
 edit it, and **Off** switches it off here. The rule form has the type, port, bind, target and **Start with
 the host's terminals**.
@@ -638,7 +641,7 @@ terminals, so a terminal closing or reconnecting never drops a forward. Switchin
 window stops that window's forwards, and they are not restored on restart.
 
 The **Port forwarding** view lists every rule of every host with its state, type (L, R or D),
-`bind:port → target`, its host and where it came from, a filter box and **All**, **Running** and **Failed**
+`bind:port → target`, its host and where it came from, a search box and **All**, **Running** and **Failed**
 chips. Rules that are off show greyed with where they were switched off. A rule's menu has **Start on
 another port…**, **Copy address**, **Edit rule** and **Stop**. If you edit a running rule, it keeps running
 as it started and offers **Restart**.

@@ -37,8 +37,8 @@ export function inheritedForwards(chain: readonly GroupEntryWire[]): InheritedFo
   return [...byId.values()];
 }
 
-/** `id`, or `id-2`, `id-3`, … — the first no rule on this level or above uses. */
-function freeRuleId(taken: ReadonlySet<string>): string {
+/** `forward`, or `forward-2`, `forward-3`, … — the first no rule on this level or above uses. */
+export function freeRuleId(taken: ReadonlySet<string>): string {
   let id = 'forward';
   for (let n = 2; taken.has(id); n++) id = `forward-${String(n)}`;
   return id;
