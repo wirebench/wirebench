@@ -41,10 +41,12 @@ beforeEach(() => {
 });
 
 describe('splitFits', () => {
-  it('needs 20 columns each side for a split right and 5 rows each for a split down', () => {
+  it('needs 40 columns each side for a split right and 5 rows each for a split down', () => {
+    expect(splitFits({ cols: 120, rows: 24 }, 'row')).toBe(true);
     expect(splitFits({ cols: 80, rows: 24 }, 'row')).toBe(true);
-    expect(splitFits({ cols: 40, rows: 24 }, 'row')).toBe(true);
-    expect(splitFits({ cols: 39, rows: 24 }, 'row')).toBe(false);
+    // A 50-column pane (half of a 1024-pixel window) would leave two 25-column halves.
+    expect(splitFits({ cols: 79, rows: 24 }, 'row')).toBe(false);
+    expect(splitFits({ cols: 50, rows: 24 }, 'row')).toBe(false);
     expect(splitFits({ cols: 80, rows: 10 }, 'column')).toBe(true);
     expect(splitFits({ cols: 80, rows: 9 }, 'column')).toBe(false);
   });
@@ -80,10 +82,10 @@ describe('splitting', () => {
   it('refuses, with a toast, a split that leaves a half too narrow or too short', () => {
     const id = tab()?.id ?? '';
     const paneId = leaves(tree())[0]?.paneId ?? '';
-    notePaneSize(paneId, { cols: 38, rows: 8 });
+    notePaneSize(paneId, { cols: 78, rows: 8 });
     requestSplit(id, 'row');
     expect(usePanesStore.getState().picker).toBeUndefined();
-    expect(toast).toHaveBeenLastCalledWith('Too narrow to split: each half needs 20 columns');
+    expect(toast).toHaveBeenLastCalledWith('Too narrow to split: each half needs 40 columns');
     requestSplit(id, 'column');
     expect(usePanesStore.getState().picker).toBeUndefined();
     expect(toast).toHaveBeenLastCalledWith('Too short to split: each half needs 5 rows');

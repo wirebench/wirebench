@@ -290,6 +290,14 @@ All notable changes to this project are documented here. The format follows
   the override stopped applying and sends went to the API's own base URL. A rename of a REST,
   WebSocket or gRPC API now moves its keys in the project's environments and in every workspace
   environment (#477).
+- **The SSH area fits a small window.** At 1024×700 the Files panes showed sizes and dates but no
+  names, and scrolled sideways. Each pane now keeps the Name column at least 10rem wide, drops
+  **Modified** below 560 pixels and **Permissions** below 440, and never scrolls sideways. A split
+  terminal tab no longer slides under the sidebar, and its find bar stays inside its pane. A split right
+  is refused with a toast when either half would be narrower than 40 columns (was 20). Host details
+  scroll only downwards, putting each label above its value in a panel narrower than 360 pixels. The SSH
+  menu cuts long labels short and turns into a column of icons, each named in its tooltip, when the sidebar
+  is too narrow for them (#533).
 
 ## [6.0.0] - 2026-10-12
 
