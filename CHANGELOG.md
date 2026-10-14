@@ -14,6 +14,13 @@ All notable changes to this project are documented here. The format follows
   sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
   section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
   `mosh-server` is missing (#419).
+- **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
+  forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
+  (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
+  empty view says what it is for and offers its first step, and a search that hides everything offers
+  **Clear search**. **New rule…** in the Port forwarding view picks a host and adds a rule to it without
+  opening the host's settings. The SSH area's first tab is named after the view it shows, with its icon,
+  instead of always saying Hosts (#535).
 - **SSH through a SOCKS5 or HTTP proxy.** A host or a group can name a SOCKS5 or HTTP CONNECT proxy (host
   form → Advanced → Proxy), with an optional user and a password kept as a secret. The first hop of a
   connection, the host or its outermost jump host, is dialled through it, and the proxy resolves the
