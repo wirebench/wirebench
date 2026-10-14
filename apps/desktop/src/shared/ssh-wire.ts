@@ -21,6 +21,15 @@ export const sshAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
 ]);
 
+/** A proxy the first hop is dialled through (#417); its password is a secret NAME, never a value. */
+export const sshProxyWireSchema = z.strictObject({
+  type: z.enum(['socks5', 'http']),
+  host: z.string(),
+  port: z.number(),
+  user: z.string().optional(),
+  passwordSecret: z.string().optional(),
+});
+
 export const sshSettingsWireSchema = z.strictObject({
   user: z.string().optional(),
   port: z.number().optional(),
@@ -29,6 +38,8 @@ export const sshSettingsWireSchema = z.strictObject({
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
   forwardAgent: z.boolean().optional(),
+  /** `false` connects directly though a group above sets a proxy. */
+  proxy: z.union([z.literal(false), sshProxyWireSchema]).optional(),
 });
 
 const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
@@ -159,6 +170,8 @@ export const resolvedHostWireSchema = z.object({
     keepAlive: prov(z.number()),
     connectTimeout: prov(z.number()),
     forwardAgent: prov(z.boolean()),
+    /** Used when this host is the first hop; `undefined` connects directly. */
+    proxy: prov(sshProxyWireSchema.optional()),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
@@ -177,6 +190,7 @@ export const sshSaveHostsRequestSchema = z.strictObject({ file: hostsFileWireSch
 
 export type SshAuthWire = z.infer<typeof sshAuthWireSchema>;
 export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
+export type SshProxyWire = z.infer<typeof sshProxyWireSchema>;
 export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
@@ -359,6 +373,9 @@ export const sshPlannedSettingsWireSchema = z.strictObject({
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
   forwardAgent: z.boolean().optional(),
+  proxy: z
+    .strictObject({ type: z.enum(['socks5', 'http']), host: z.string(), port: z.number(), user: z.string().optional() })
+    .optional(),
 });
 export const sshPlannedHostWireSchema = z.strictObject({
   alias: z.string(),

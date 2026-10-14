@@ -329,3 +329,54 @@ describe('duplicates (M3)', () => {
     expect(host(p, 'x').ssh.jump).toBe('web');
   });
 });
+
+describe('proxies (#417)', () => {
+  it('maps nc -X 5 and -X connect ProxyCommands, with the default ports and a -P user', async () => {
+    const p = await plan(
+      [
+        'Host s',
+        '  ProxyCommand nc -X 5 -x socks.corp:1081 %h %p',
+        'Host h',
+        '  ProxyCommand /usr/bin/nc -x web.corp -X connect -P alice %h %p',
+        'Host d',
+        '  ProxyCommand nc -x [2001:db8::1] %h %p',
+        '',
+      ].join('\n'),
+    );
+    expect(host(p, 's').ssh.proxy).toEqual({ type: 'socks5', host: 'socks.corp', port: 1081 });
+    expect(host(p, 'h').ssh.proxy).toEqual({ type: 'http', host: 'web.corp', port: 3128, user: 'alice' });
+    expect(host(p, 'd').ssh.proxy).toEqual({ type: 'socks5', host: '2001:db8::1', port: 1080 });
+    expect(p.report.skipped).toEqual([]);
+    expect(p.report.notes.some((n) => n.includes("h: the proxy's password"))).toBe(true);
+    const file = merged(p);
+    expect(resolveHost(file, 'h').ssh.proxy.value).toEqual({
+      type: 'http',
+      host: 'web.corp',
+      port: 3128,
+      user: 'alice',
+    });
+  });
+  it('puts a Host * proxy every host shares on the group', async () => {
+    const p = await plan('Host a\nHost b\nHost *\n  ProxyCommand nc -X 5 -x p.corp:1080 %h %p\n');
+    expect(p.group.ssh.proxy).toEqual({ type: 'socks5', host: 'p.corp', port: 1080 });
+    expect(host(p, 'a').ssh.proxy).toBeUndefined();
+    expect(resolveHost(merged(p), 'b').ssh.proxy.value).toMatchObject({ host: 'p.corp' });
+  });
+  it('skips a form it cannot read safely: SOCKS4, another tool, extra flags, -P with SOCKS5', async () => {
+    const p = await plan(
+      [
+        'Host a',
+        '  ProxyCommand nc -X 4 -x p:1080 %h %p',
+        'Host b',
+        '  ProxyCommand ncat --proxy p:1080 --proxy-type socks5 %h %p',
+        'Host c',
+        '  ProxyCommand nc -w 5 -X 5 -x p:1080 %h %p',
+        'Host d',
+        '  ProxyCommand nc -X 5 -P bob -x p:1080 %h %p',
+        '',
+      ].join('\n'),
+    );
+    for (const alias of ['a', 'b', 'c', 'd']) expect(host(p, alias).ssh.proxy).toBeUndefined();
+    expect(p.report.skipped.map((s) => s.line)).toEqual([2, 4, 6, 8]);
+  });
+});
