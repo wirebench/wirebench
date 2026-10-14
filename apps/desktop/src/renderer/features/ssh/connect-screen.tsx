@@ -4,6 +4,8 @@ import { Check, ChevronDown, ChevronRight, Circle, CircleDot, KeyRound, Laptop, 
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
 import { findHost, osKeyOf, upsertHost, useHostsStore } from './hosts-store.js';
+import { findIdentity, upsertIdentity } from './identities.js';
+import type { IdentityWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS } from './inherited-field.js';
 import { connectFix } from './connect-errors.js';
 import { setSignInUser, useConnectStore } from './connect-store.js';
@@ -146,15 +148,19 @@ const SIGN_IN_USER = /^[^\s\p{Cc}]+$/u;
 
 /**
  * "Sign in as [user] [Connect] ☐ Save to host" for a host with no user (#532). Saved, the user goes into
- * the host's own settings through the hosts file; not saved, it signs this pane's connects in only.
+ * the host's own settings through the hosts file; not saved, it signs this pane's connects in only. A host
+ * signing in through an identity that has no user offers saving it to that identity instead, for every
+ * host using it (#416).
  */
 function SignInAsForm({
   hostId,
   paneKey,
+  identity,
   onConnect,
 }: {
   readonly hostId: string;
   readonly paneKey: string | undefined;
+  readonly identity: IdentityWire | undefined;
   readonly onConnect: () => void;
 }) {
   const [user, setUser] = useState('');
@@ -173,12 +179,19 @@ function SignInAsForm({
     if (save) {
       const hosts = useHostsStore.getState();
       const entry = findHost(hosts.file, hostId);
+      const current = identity === undefined ? undefined : findIdentity(hosts.file, identity.id);
       const saved =
-        entry !== undefined &&
-        (await hosts.save(upsertHost(hosts.file, { ...entry, ssh: { ...entry.ssh, user: name } })));
+        current !== undefined
+          ? await hosts.save(upsertIdentity(hosts.file, { ...current, user: name }))
+          : entry !== undefined &&
+            (await hosts.save(upsertHost(hosts.file, { ...entry, ssh: { ...entry.ssh, user: name } })));
       if (!saved) {
         setBusy(false);
-        setError('The host could not be saved. Edit the host to set its user.');
+        setError(
+          identity === undefined
+            ? 'The host could not be saved. Edit the host to set its user.'
+            : 'The identity could not be saved. Edit it in the Keychain to set its user.',
+        );
         return;
       }
       if (paneKey !== undefined) setSignInUser(paneKey, undefined);
@@ -224,7 +237,7 @@ function SignInAsForm({
             setSave(e.target.checked);
           }}
         />
-        Save to host
+        {identity === undefined ? 'Save to host' : `Save to identity ${identity.name}`}
       </label>
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
@@ -243,10 +256,13 @@ function SignInAsForm({
 function PasswordForm({
   user,
   secret,
+  identity,
   onRetry,
 }: {
   readonly user: string | undefined;
   readonly secret: string;
+  /** The identity the password belongs to (#416): saving it changes it for every host using it. */
+  readonly identity: string | undefined;
   readonly onRetry: () => void;
 }) {
   const [value, setValue] = useState('');
@@ -295,6 +311,9 @@ function PasswordForm({
           Save and retry
         </Button>
       </div>
+      {identity !== undefined && (
+        <p className="text-xs text-fg-muted">{`Saved for the identity ${identity}: every host that uses it signs in with it.`}</p>
+      )}
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {error}
@@ -321,6 +340,13 @@ export function ConnectScreen({
   overlay = false,
 }: ConnectScreenProps) {
   const host = useHostsStore((s) => s.resolved.find((h) => h.id === hostId));
+  const hostsFile = useHostsStore((s) => s.file);
+  // The identity the host signs in through, and the one its password comes from (#416).
+  const identityId = host?.ssh.identity?.value;
+  const identity = identityId === undefined ? undefined : findIdentity(hostsFile, identityId);
+  const authFrom = host?.ssh.auth.from;
+  const authIdentity =
+    typeof authFrom === 'object' && 'identity' in authFrom ? findIdentity(hostsFile, authFrom.identity) : undefined;
   // What the screen connects (a pane), from the attempt it shows: a user typed here is kept under it.
   const paneKey = useConnectStore((s) => (view === undefined ? undefined : s.attempts[view.attemptId]));
   const typedUser = useConnectStore((s) => (paneKey === undefined ? undefined : s.users[paneKey]));
@@ -481,8 +507,12 @@ export function ConnectScreen({
           <p className="text-sm text-status-success" role="status">{`Connected in ${formatDuration(total)}`}</p>
         )}
 
-        {fix?.ask === 'user' && <SignInAsForm hostId={hostId} paneKey={paneKey} onConnect={onRetry} />}
-        {fix?.ask === 'password' && <PasswordForm user={fix.user} secret={fix.secret} onRetry={onRetry} />}
+        {fix?.ask === 'user' && (
+          <SignInAsForm hostId={hostId} paneKey={paneKey} identity={identity} onConnect={onRetry} />
+        )}
+        {fix?.ask === 'password' && (
+          <PasswordForm user={fix.user} secret={fix.secret} identity={authIdentity?.name} onRetry={onRetry} />
+        )}
 
         {showActions && (
           <div className="flex flex-wrap gap-2">
