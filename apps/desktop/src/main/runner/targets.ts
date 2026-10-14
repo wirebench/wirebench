@@ -18,10 +18,11 @@ export type RunnerTarget =
     }
   | { readonly kind: 'sequence'; readonly id: string; readonly name: string; readonly sequence: SequenceDef };
 
-/** The API (or SOAP interface) a selected request belongs to. */
+/** The API (or SOAP interface, or MCP server) a selected request belongs to. */
 function containerOf(item: SelectedRequest): { readonly id: string; readonly name: string } | undefined {
   if ('api' in item) return item.api;
   if ('iface' in item) return item.iface;
+  if ('server' in item) return item.server;
   return undefined;
 }
 

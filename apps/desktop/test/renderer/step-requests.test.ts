@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { projectStepRequests } from '../../src/renderer/features/sequence/step-requests.js';
+import { projectStepRequests, stepRequestInfo } from '../../src/renderer/features/sequence/step-requests.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import {
   grpcApiWire,
   grpcRequestWire,
+  mcpRequestWire,
+  mcpServerWire,
   restApiWire,
   restRequestWire,
   wsApiWire,
@@ -53,5 +55,41 @@ describe('projectStepRequests', () => {
       expect(byId[id]).not.toHaveProperty('unsupported');
     }
     expect(byId['w2']?.unsupported).toBe('This request is no longer in its contract');
+  });
+
+  it('offers an MCP request as a step, badged MCP and placed by the tool, prompt or resource it names', () => {
+    useProjectStore.setState({
+      mcpServers: { 'mcp-api-1': mcpServerWire({ id: 'mcp-api-1', name: 'Files' }) },
+      mcpRequests: {
+        m1: mcpRequestWire({
+          id: 'm1',
+          name: 'Read a file',
+          operation: { method: 'tools/call', tool: 'read_file', arguments: '{}' },
+        }),
+        m2: mcpRequestWire({ id: 'm2', name: 'List tools', operation: { method: 'tools/list' } }),
+        m3: mcpRequestWire({
+          id: 'm3',
+          name: 'Notes',
+          operation: { method: 'resources/read', uri: 'file:///notes.md' },
+        }),
+        m4: mcpRequestWire({
+          id: 'm4',
+          name: 'Untitled',
+          operation: { method: 'prompts/get', prompt: '', arguments: [] },
+        }),
+        other: mcpRequestWire({ id: 'other', name: 'Elsewhere' }),
+      },
+      projectOf: { m1: 'p1', m2: 'p1', m3: 'p1', m4: 'p1', other: 'p2' },
+    });
+
+    const info = projectStepRequests(useProjectStore.getState(), 'p1');
+
+    expect(info).toEqual([
+      { requestId: 'm4', name: 'Untitled', badge: 'MCP', path: 'Files' },
+      { requestId: 'm3', name: 'Notes', badge: 'MCP', path: 'Files/file:///notes.md' },
+      { requestId: 'm1', name: 'Read a file', badge: 'MCP', path: 'Files/read_file' },
+      { requestId: 'm2', name: 'List tools', badge: 'MCP', path: 'Files/tools/list' },
+    ]);
+    expect(stepRequestInfo(useProjectStore.getState(), 'other')).toMatchObject({ name: 'Elsewhere', badge: 'MCP' });
   });
 });

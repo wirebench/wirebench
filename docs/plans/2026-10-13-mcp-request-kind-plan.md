@@ -286,6 +286,19 @@ tests.
 - [x] Tests: the channel (valid, a type mismatch, a missing required property, a parse error), the
   marker mapping, and the editor's debounced check.
 
+### Task 17b: Renderer: MCP requests as sequence steps and Runner rows
+
+**Files:** `features/sequence/{step-requests.ts,add-step-dialog.tsx}`, `main/runner/targets.ts`, tests.
+
+- [x] An MCP request is a sequence step: listed in *Add step…*, badged `MCP`, its path the server and
+  the tool, prompt or resource it names (the list method for a list); never orphaned.
+- [x] *Run…* on a server row resolves the server as the Runner's API target (its selected requests
+  carry `server`, not `api`); a server folder already did. The Runner tab lists and reports MCP rows
+  with no status and the "MCP result" check.
+- [x] The HTTP Log's maps need nothing: an MCP send writes no Log row. The code panel and the
+  endpoints table leave MCP out, as the spec does not list them.
+- [x] Tests: the step picker and step list, the Runner's server and folder targets, the result row.
+
 ### Task 18: e2e
 
 **Files:** new `e2e/specs/mcp-request.spec.ts`, and an e2e fixture server (stdio) under `e2e/fixtures/`.

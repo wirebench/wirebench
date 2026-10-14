@@ -21,10 +21,11 @@ export function AddStepDialog({ open, onOpenChange, projectId, onPick }: AddStep
   const restRequests = useProjectStore((state) => state.restRequests);
   const grpcRequests = useProjectStore((state) => state.grpcRequests);
   const wsRequests = useProjectStore((state) => state.wsRequests);
+  const mcpRequests = useProjectStore((state) => state.mcpRequests);
   const entries = useMemo(
     () => (open ? projectStepRequests(useProjectStore.getState(), projectId) : []),
     // The maps are what the list is built from; the store is read whole inside.
-    [open, projectId, requests, restRequests, grpcRequests, wsRequests],
+    [open, projectId, requests, restRequests, grpcRequests, wsRequests, mcpRequests],
   );
 
   return (
