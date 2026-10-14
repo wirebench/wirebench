@@ -44,8 +44,10 @@ export function commandFingerprint(input: CommandFingerprintInput): string {
 
 /** An argument as a reader of the command line sees it: bare when plain, else double-quoted. */
 function displayArg(arg: string): string {
-  // Backslashes are left alone, so a Windows path reads as written; only quotes are escaped.
-  return /^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '\\"')}"`;
+  // A Windows path reads as written. Anything else a reader could misread is single-quoted, which
+  // needs no escaping; an argument holding a single quote is shown as a JSON string.
+  if (/^[\w@%+=:,./\\-]+$/.test(arg)) return arg;
+  return arg.includes("'") ? JSON.stringify(arg) : `'${arg}'`;
 }
 
 /**

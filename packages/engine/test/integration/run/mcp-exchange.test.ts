@@ -222,7 +222,7 @@ describe('the stdio approval', () => {
         cwd,
         envNames: ['A_VAR', 'B_VAR'],
       }),
-      display: `${process.execPath} ${FIXTURE} sdk --token "\${secret:arg_token}"`,
+      display: `${process.execPath} ${FIXTURE} sdk --token '\${secret:arg_token}'`,
       cwd,
       envNames: ['A_VAR', 'B_VAR'],
       serverName: 'Local',

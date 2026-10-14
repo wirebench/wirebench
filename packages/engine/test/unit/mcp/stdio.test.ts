@@ -1,6 +1,12 @@
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { mcpStdioEnv, mcpStdioParentEnvNames, openStdioTransport, resolveMcpCwd, type McpStdioTransport } from '../../../src/mcp/stdio.js';
+import {
+  mcpStdioEnv,
+  mcpStdioParentEnvNames,
+  openStdioTransport,
+  resolveMcpCwd,
+  type McpStdioTransport,
+} from '../../../src/mcp/stdio.js';
 import { runMcpSession, type McpOperationCall } from '../../../src/mcp/session.js';
 
 const FIXTURE = resolve(import.meta.dirname, '../../fixtures/mcp/stdio-server.mjs');

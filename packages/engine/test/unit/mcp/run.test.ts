@@ -57,14 +57,14 @@ describe('commandFingerprint', () => {
 
 describe('commandDisplay', () => {
   it('quotes only what a reader would misread', () => {
-    expect(commandDisplay('npx', ['-y', '@scope/server@1.2', 'a b', '', 'x"y'])).toBe(
-      'npx -y @scope/server@1.2 "a b" "" "x\\"y"',
+    expect(commandDisplay('npx', ['-y', '@scope/server@1.2', 'a b', '', 'x"y', "it's"])).toBe(
+      `npx -y @scope/server@1.2 'a b' '' 'x"y' "it's"`,
     );
   });
 
   it('shows a Windows path as written', () => {
     expect(commandDisplay('C:\\node\\node.exe', ['C:\\srv\\server.mjs', 'C:\\Program Files\\x'])).toBe(
-      'C:\\node\\node.exe C:\\srv\\server.mjs "C:\\Program Files\\x"',
+      "C:\\node\\node.exe C:\\srv\\server.mjs 'C:\\Program Files\\x'",
     );
   });
 });
