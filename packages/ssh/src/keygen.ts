@@ -1,18 +1,27 @@
 import ssh2 from 'ssh2';
 import { SshModelError } from './errors.js';
+import { skEnroll } from './fido/authenticator.js';
+import type { FidoTransport } from './fido/authenticator.js';
 import { fingerprintOf } from './known-hosts.js';
+import { SK_ECDSA, SK_ED25519, encodeSkPrivateKey, isSkPrivateKey, parseSkPrivateKey, skPublicBlob } from './sk-key.js';
 
 // ssh2 is CommonJS: its `utils` is reached through the default export, as the test fixture does.
 const { utils } = ssh2;
 
-export type SshKeyAlgorithm = 'ed25519' | 'ecdsa' | 'rsa';
+/** `-sk`: made on a FIDO2 security key (#420), which keeps the private half. */
+export type SshKeyAlgorithm = 'ed25519' | 'ecdsa' | 'rsa' | 'ed25519-sk' | 'ecdsa-sk';
 
-/** The sizes each algorithm offers, default first; Ed25519 has one fixed size. */
+/** The sizes each algorithm offers, default first; Ed25519 and the security keys have one fixed size. */
 export const SSH_KEY_BITS: Readonly<Record<SshKeyAlgorithm, readonly number[]>> = {
   ed25519: [],
   ecdsa: [256, 384, 521],
   rsa: [4096, 3072, 2048],
+  'ed25519-sk': [],
+  'ecdsa-sk': [],
 };
+
+const isSecurityKey = (algorithm: SshKeyAlgorithm): algorithm is 'ed25519-sk' | 'ecdsa-sk' =>
+  algorithm === 'ed25519-sk' || algorithm === 'ecdsa-sk';
 
 export interface GenerateKeyOptions {
   readonly algorithm: SshKeyAlgorithm;
@@ -21,6 +30,14 @@ export interface GenerateKeyOptions {
   /** Encrypts the private key (aes256-ctr, bcrypt KDF) when non-empty. */
   readonly passphrase?: string;
   readonly comment?: string;
+  /** A security key only: its PIN, when it has one set or `verifyRequired` is on. Never stored. */
+  readonly pin?: string;
+  /** A security key only: asks for the PIN on every sign-in as well as the touch. */
+  readonly verifyRequired?: boolean;
+  /** A security key only: told when it waits for the touch. */
+  readonly onTouch?: () => void;
+  /** A security key only: tests inject a software authenticator. */
+  readonly transport?: FidoTransport;
 }
 
 /** What can be said of a key without its private half. */
@@ -51,18 +68,34 @@ const ED25519_ATTEMPTS = 8;
  * A new key pair in OpenSSH format. Asynchronous because an RSA key takes a noticeable time to make and the
  * desktop calls this from its main process.
  *
- * @throws SshModelError `ssh-key-invalid` for a size the algorithm does not offer or a multi-line comment
+ * A security key algorithm makes a non-resident credential on the one key plugged in (it waits for a
+ * touch); the file holds its key handle, not a private key.
+ *
+ * @throws SshModelError `ssh-key-invalid` for a size the algorithm does not offer or a multi-line comment |
+ *   the `ssh-sk-*` refusals of {@link skEnroll} for a security key
  */
 export async function generateKey(options: GenerateKeyOptions): Promise<GeneratedKey> {
   const sizes = Object.hasOwn(SSH_KEY_BITS, options.algorithm) ? SSH_KEY_BITS[options.algorithm] : undefined;
   if (sizes === undefined) throw new SshModelError('ssh-key-invalid', 'Unknown key type');
-  const bits = options.algorithm === 'ed25519' ? undefined : (options.bits ?? sizes[0]);
+  const bits = sizes.length === 0 ? undefined : (options.bits ?? sizes[0]);
   if (bits !== undefined && !sizes.includes(bits)) {
     throw new SshModelError('ssh-key-invalid', `A ${options.algorithm} key is ${sizes.join(', ')} bits`, { bits });
   }
   const comment = options.comment ?? '';
   if (/[\r\n]/.test(comment)) throw new SshModelError('ssh-key-invalid', 'A key comment is one line');
   const passphrase = options.passphrase ?? '';
+  const { algorithm } = options;
+  if (isSecurityKey(algorithm)) {
+    const made = await skEnroll({
+      keyType: algorithm === 'ed25519-sk' ? SK_ED25519 : SK_ECDSA,
+      ...(options.pin ? { pin: options.pin } : {}),
+      ...(options.verifyRequired ? { verifyRequired: true } : {}),
+      ...(options.onTouch ? { onTouch: options.onTouch } : {}),
+      ...(options.transport ? { transport: options.transport } : {}),
+    });
+    const privateKey = encodeSkPrivateKey({ ...made, comment }, passphrase);
+    return { privateKey, ...describeBlob(made.keyType, skPublicBlob(made), comment) };
+  }
   const settings = {
     ...(bits === undefined ? {} : { bits }),
     ...(comment === '' ? {} : { comment }),
@@ -70,14 +103,14 @@ export async function generateKey(options: GenerateKeyOptions): Promise<Generate
   };
   for (let attempt = 1; ; attempt++) {
     const pair = await new Promise<{ private: string; public: string }>((resolve, reject) => {
-      utils.generateKeyPair(options.algorithm, settings as never, (error, keys) => {
+      utils.generateKeyPair(algorithm, settings as never, (error, keys) => {
         // The library message is not forwarded: it can describe the options, passphrase included.
         if (error) reject(new SshModelError('ssh-key-invalid', 'The key could not be generated'));
         else resolve(keys);
       });
     });
     const info = describePublicKey(pair.public);
-    if (options.algorithm !== 'ed25519' || isWholeEd25519(info)) return { privateKey: pair.private, ...info };
+    if (algorithm !== 'ed25519' || isWholeEd25519(info)) return { privateKey: pair.private, ...info };
     if (attempt === ED25519_ATTEMPTS) throw new SshModelError('ssh-key-invalid', 'The key could not be generated');
   }
 }
@@ -102,6 +135,10 @@ export function looksLikePrivateKey(text: string): boolean {
  */
 export function describePrivateKey(text: string, passphrase?: string): SshKeyInfo {
   if (!looksLikePrivateKey(text)) throw new SshModelError('ssh-key-invalid', 'This secret is not a private key');
+  if (isSkPrivateKey(text)) {
+    const sk = parseSkPrivateKey(text, passphrase === '' ? undefined : passphrase);
+    if (sk !== undefined) return describeBlob(sk.keyType, skPublicBlob(sk), sk.comment);
+  }
   const parsed = utils.parseKey(text, passphrase === '' ? undefined : passphrase);
   const key = Array.isArray(parsed) ? (parsed[0] as ssh2.ParsedKey | undefined) : parsed;
   if (key === undefined || key instanceof Error) {
@@ -121,6 +158,11 @@ export function describePrivateKey(text: string, passphrase?: string): SshKeyInf
     fingerprint: fingerprintOf(blob),
     publicKey: key.comment ? `${line} ${key.comment}` : line,
   };
+}
+
+function describeBlob(keyType: string, blob: Buffer, comment: string): SshKeyInfo {
+  const line = `${keyType} ${blob.toString('base64')}`;
+  return { keyType, fingerprint: fingerprintOf(blob), publicKey: comment ? `${line} ${comment}` : line };
 }
 
 /**

@@ -468,6 +468,29 @@ describe('SshService', () => {
     });
   });
 
+  it('hands a security key PIN to the key hops of that connect only (#420)', async () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { key: '\${secret:k}' } } }\n`,
+    );
+    const { service, open } = make({ known: [KEY], file, secrets: { k: 'PRIVATE' } });
+    const result = await service.connect(as(sender(1)), { ...CONNECT, skPin: '2468' });
+    expect(open.mock.calls[0]![0].hops[0]!.auth).toEqual({
+      kind: 'key',
+      privateKey: 'PRIVATE',
+      label: 'k',
+      pin: '2468',
+    });
+    expect(JSON.stringify(result)).not.toContain('2468');
+    await service.connect(as(sender(1)), CONNECT);
+    expect(open.mock.calls[1]![0].hops[0]!.auth).not.toHaveProperty('pin');
+  });
+
+  it('gives no PIN to a password hop', async () => {
+    const { service, open } = make({ known: [KEY] });
+    await service.connect(as(sender(1)), { ...CONNECT, skPin: '2468' });
+    expect(open.mock.calls[0]![0].hops[0]!.auth).toEqual({ kind: 'password', password: 'pw' });
+  });
+
   it('a missing secret is secret-missing with the name, before any connection', async () => {
     const { service, open } = make({ known: [KEY], secrets: {} });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({

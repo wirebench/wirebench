@@ -5,6 +5,7 @@ import type { WebContents } from 'electron';
 import { secretPseudoRef } from '@wirebench/engine';
 import { generateKey } from '@wirebench/ssh';
 import type { HopCredentials } from '@wirebench/ssh';
+import { SoftAuthenticator, softTransport } from '@wirebench/ssh/test-helpers';
 import { SshKeysService } from '../src/main/ssh-keys.js';
 
 const sender = { id: 7 } as unknown as WebContents;
@@ -109,6 +110,35 @@ describe('SshKeysService.generate', { timeout: 30_000 }, () => {
       code: 'ssh-key-invalid',
     });
     expect(chain.secrets.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('SshKeysService.generate with a security key (#420)', () => {
+  it('makes the key on the authenticator with the PIN, stores the handle file and never the PIN', async () => {
+    const authenticator = new SoftAuthenticator({ pin: '2468' });
+    const chain = keychain();
+    const { keys } = service(chain, {
+      generate: (options) => generateKey({ ...options, transport: softTransport(authenticator) }),
+    });
+    const answer = await keys.generate({ name: 'yubi', algorithm: 'ed25519-sk', pin: '2468', verifyRequired: true });
+    expect(answer).toMatchObject({ name: 'yubi', locked: false, keyType: 'sk-ssh-ed25519@openssh.com' });
+    expect(answer.publicKey).toMatch(/^sk-ssh-ed25519@openssh\.com [A-Za-z0-9+/=]+ me@machine$/);
+    expect(authenticator.credentials.size).toBe(1);
+    expect([...chain.values.keys()]).toEqual(['yubi']);
+    expect([...chain.values.values()].join('\n')).not.toContain('2468');
+    // The keychain lists it by its public half, like any key.
+    expect(await keys.keys(sender)).toEqual([answer]);
+  });
+
+  it('passes a security key refusal through as a WirebenchError and stores nothing', async () => {
+    const chain = keychain();
+    const { keys } = service(chain, {
+      generate: (options) => generateKey({ ...options, transport: softTransport() }),
+    });
+    await expect(keys.generate({ name: 'yubi', algorithm: 'ecdsa-sk' })).rejects.toMatchObject({
+      code: 'ssh-sk-no-device',
+    });
+    expect(chain.values.size).toBe(0);
   });
 });
 
