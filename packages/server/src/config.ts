@@ -126,6 +126,11 @@ const inputSchema = z.object({
     .default('openid email profile')
     .transform((value) => value.split(/\s+/).filter((scope) => scope.length > 0)),
   oidcDisplayName: z.string().min(1).max(60).default('OIDC'),
+  samlIdpMetadata: z.string().min(1).optional(),
+  samlDisplayName: z.string().min(1).max(60).default('SSO'),
+  samlEmailAttribute: z.string().min(1).max(256).optional(),
+  samlNameAttribute: z.string().min(1).max(256).optional(),
+  samlClockSkewSeconds: integerText(0, 300, '120'),
   tokenIdleDays: integerText(1, 3650, '30'),
   tokenMaxDays: integerText(1, 3650, '180'),
   invitationDays: integerText(1, 365, '7'),
@@ -297,6 +302,45 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: 'OIDC',
     secret: false,
     description: 'The label of the *Continue with …* button in the app.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_IDP_METADATA',
+    key: 'samlIdpMetadata',
+    required: false,
+    secret: false,
+    description:
+      'The SAML identity provider’s metadata: an https:// URL or an absolute file path. Setting it turns SAML sign-in on (Enterprise). Read at start-up.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_DISPLAY_NAME',
+    key: 'samlDisplayName',
+    required: false,
+    defaultText: 'SSO',
+    secret: false,
+    description: 'The label of the SAML *Continue with …* button in the app.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_EMAIL_ATTRIBUTE',
+    key: 'samlEmailAttribute',
+    required: false,
+    secret: false,
+    description:
+      'The assertion attribute that carries the email. Unset: the usual email claim names, then an email-format NameID.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_NAME_ATTRIBUTE',
+    key: 'samlNameAttribute',
+    required: false,
+    secret: false,
+    description: 'The assertion attribute that carries the display name. Unset: the usual name claim names.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_CLOCK_SKEW_SECONDS',
+    key: 'samlClockSkewSeconds',
+    required: false,
+    defaultText: '120',
+    secret: false,
+    description: 'Clock skew allowed on a SAML assertion’s validity window, in seconds (0–300).',
   },
   {
     env: 'WIREBENCH_SERVER_TOKEN_IDLE_DAYS',
@@ -600,6 +644,20 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
         message: 'is for syslog+tls:// and https:// forwarding only; unset it with an http:// URL',
       });
   }
+  if (config.samlIdpMetadata !== undefined && !isAbsolute(config.samlIdpMetadata)) {
+    let scheme: string | undefined;
+    try {
+      scheme = new URL(config.samlIdpMetadata).protocol;
+    } catch {
+      scheme = undefined;
+    }
+    if (!(scheme === 'https:' || (scheme === 'http:' && config.allowInsecurePublicUrl)))
+      problems.push({
+        variable: 'WIREBENCH_SERVER_SAML_IDP_METADATA',
+        message:
+          'must be an https:// URL or an absolute file path; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for an http:// development URL',
+      });
+  }
   if ((config.smtpUrl === undefined) !== (config.smtpFrom === undefined)) {
     problems.push(
       config.smtpUrl === undefined
@@ -607,11 +665,11 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
         : { variable: 'WIREBENCH_SERVER_SMTP_FROM', message: 'is required when WIREBENCH_SERVER_SMTP_URL is set' },
     );
   }
-  if (!config.localAuth && config.oidcIssuer === undefined) {
+  if (!config.localAuth && config.oidcIssuer === undefined && config.samlIdpMetadata === undefined) {
     problems.push({
       variable: 'WIREBENCH_SERVER_LOCAL_AUTH',
       message:
-        'identity-no-method: at least one sign-in method must be on; set it to true or set WIREBENCH_SERVER_OIDC_ISSUER',
+        'identity-no-method: at least one sign-in method must be on; set it to true, or set WIREBENCH_SERVER_OIDC_ISSUER or WIREBENCH_SERVER_SAML_IDP_METADATA',
     });
   }
   if (problems.length > 0) throw new ConfigError(problems);

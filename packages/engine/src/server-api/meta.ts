@@ -14,7 +14,14 @@ export const metaResponseSchema = z.object({
   version: z.string(),
   apiVersion: z.literal(SERVER_API_VERSION),
   publicUrl: z.string().url(),
-  auth: z.object({ local: z.boolean(), oidc: z.boolean(), oidcDisplayName: z.string().optional() }),
+  auth: z.object({
+    local: z.boolean(),
+    oidc: z.boolean(),
+    oidcDisplayName: z.string().optional(),
+    /** saml-scim §3.1: absent from an older server, which the desktop reads as no SAML. */
+    saml: z.boolean().optional(),
+    samlDisplayName: z.string().optional(),
+  }),
   capabilities: z.array(z.string()),
   /** webhook-capture §3.7: absent on a server without the module, which the desktop reads as disabled. */
   hooks: hooksMetaSchema.optional(),

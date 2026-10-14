@@ -20,7 +20,7 @@ import type {
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 
-export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'audit';
+export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'audit' | 'provisioning';
 
 export interface TeamState {
   readonly url: string | undefined;

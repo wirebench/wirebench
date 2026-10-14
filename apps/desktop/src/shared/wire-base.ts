@@ -2869,7 +2869,14 @@ export const serverMetaWireSchema = z.object({
   version: z.string(),
   apiVersion: z.number(),
   publicUrl: z.string(),
-  auth: z.object({ local: z.boolean(), oidc: z.boolean(), oidcDisplayName: z.string().optional() }),
+  auth: z.object({
+    local: z.boolean(),
+    oidc: z.boolean(),
+    oidcDisplayName: z.string().optional(),
+    /** saml-scim spec §3.1: only from a server with SAML configured. */
+    saml: z.boolean().optional(),
+    samlDisplayName: z.string().optional(),
+  }),
   capabilities: z.array(z.string()),
 });
 export type ServerMetaWire = z.infer<typeof serverMetaWireSchema>;
@@ -3359,11 +3366,58 @@ export const licenseInstallRequestWireSchema = licenseRequestWireSchema.extend({
 });
 export const licenseRemoveResponseWireSchema = z.object({ removed: z.literal(true) });
 
+// --- Provisioning (saml-scim spec §3.4, §3.6, §3.7) ----------------------------------------------
+
+/** What the server answers, restated for the bridge; the renderer imports only the types. */
+export const provisioningRequestWireSchema = z.object({ url: z.string() });
+export const samlInfoWireSchema = z.object({
+  configured: z.boolean(),
+  idpEntityId: z.string().optional(),
+  entityId: z.string(),
+  acsUrl: z.string(),
+  scimBaseUrl: z.string(),
+});
+export type SamlInfoWire = z.infer<typeof samlInfoWireSchema>;
+export const scimTokenSummaryWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type ScimTokenSummaryWire = z.infer<typeof scimTokenSummaryWireSchema>;
+export const scimTokensListResponseWireSchema = z.object({ tokens: z.array(scimTokenSummaryWireSchema) });
+export const scimTokenCreateRequestWireSchema = provisioningRequestWireSchema.extend({
+  name: z.string().min(1).max(64),
+});
+/** Crosses the bridge once, for the copy field; never kept in the renderer's state after it closes. */
+export const scimTokenCreatedWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  token: z.string(),
+  createdAt: z.string(),
+});
+export type ScimTokenCreatedWire = z.infer<typeof scimTokenCreatedWireSchema>;
+export const scimTokenRevokeRequestWireSchema = provisioningRequestWireSchema.extend({ tokenId: z.string() });
+export const scimTokenRevokeResponseWireSchema = z.object({ revoked: z.literal(true) });
+export const scimGroupSummaryWireSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  memberCount: z.number(),
+  team: z.object({ id: z.string(), name: z.string() }).nullable(),
+});
+export type ScimGroupSummaryWire = z.infer<typeof scimGroupSummaryWireSchema>;
+export const scimGroupsListResponseWireSchema = z.object({ groups: z.array(scimGroupSummaryWireSchema) });
+export const scimGroupLinkRequestWireSchema = provisioningRequestWireSchema.extend({
+  groupId: z.string(),
+  /** `null` unlinks. */
+  teamId: z.string().nullable(),
+});
+
 // --- Server audit log (audit-log spec §3.4, §5.3) ------------------------------------------------
 
 /** What `GET /api/v1/audit` answers, restated for the bridge; the renderer imports only the types. */
 export const auditActorWireSchema = z.object({
-  kind: z.enum(['user', 'ci-token', 'system', 'anonymous']),
+  kind: z.enum(['user', 'ci-token', 'system', 'anonymous', 'scim']),
   userId: z.string().optional(),
   email: z.string().optional(),
   tokenId: z.string().optional(),

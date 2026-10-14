@@ -124,6 +124,7 @@ import { HooksService } from './hooks/hooks-service.js';
 import { desktopCaptureSource, linkedServerOf } from './hooks/capture-source.js';
 import { registerCiTokenChannels } from './ipc/ci-tokens.js';
 import { registerLicenseChannels } from './ipc/license.js';
+import { registerProvisioningChannels } from './ipc/provisioning.js';
 import { registerAuditChannels } from './ipc/audit.js';
 import { registerHooksChannels } from './ipc/hooks.js';
 import { AccountService } from './account-service.js';
@@ -1103,6 +1104,7 @@ void app.whenReady().then(() => {
   registerTeamChannels({ client: serverClient, accounts: accountService });
   registerCiTokenChannels({ client: serverClient, accounts: accountService });
   registerLicenseChannels({ client: serverClient, accounts: accountService });
+  registerProvisioningChannels({ client: serverClient, accounts: accountService });
   registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));

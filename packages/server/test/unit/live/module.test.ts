@@ -19,6 +19,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'live-updates',
       'scheduled-runs',
       'audit-log',
+      'sso',
     ]);
   });
 

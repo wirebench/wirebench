@@ -15,6 +15,7 @@ import { notFound, selfChange } from '../errors.js';
 import { requireServerAdmin } from '../guard.js';
 import { createPasswordReset } from '../invitations.js';
 import * as repo from '../repo.js';
+import { setUserDisabled } from '../user-state.js';
 
 async function summaries(env: IdentityEnv, users: readonly repo.UserRow[]): Promise<UserSummary[]> {
   const methods = await repo.signInMethodsOf(
@@ -59,27 +60,18 @@ export const userRoutes =
         if (id === request.caller!.id && (body.serverAdmin === false || body.disabled === true)) throw selfChange();
         const user = await repo.findUserById(env.ctx.db, id);
         if (user === undefined) throw notFound('User');
-        const now = env.now();
         const source = auditSource(request);
         await env.ctx.db.transaction(async (tx) => {
           // Re-read inside the transaction: a concurrent change since the read above must not skip the seat check or record a non-transition.
           const current = (await repo.findUserById(tx, id)) ?? user;
-          const event = (action: 'user.disabled' | 'user.enabled' | 'user.admin_granted' | 'user.admin_revoked') =>
+          const event = (action: 'user.admin_granted' | 'user.admin_revoked') =>
             recordAudit(env.ctx.hooks, tx, { ...source, action, target: { kind: 'user', id } });
           if (body.serverAdmin !== undefined && body.serverAdmin !== current.serverAdmin) {
             await repo.setServerAdmin(tx, id, body.serverAdmin);
             await event(body.serverAdmin ? 'user.admin_granted' : 'user.admin_revoked');
           }
-          if (body.disabled === true && current.disabledAt === null) {
-            await repo.setDisabled(tx, id, now);
-            await repo.revokeTokensOfUser(tx, id, now); // disabling revokes every token (§3.1)
-            await event('user.disabled');
-          } else if (body.disabled === false && current.disabledAt !== null) {
-            // licensing §3.4: only restoring a disabled account takes a seat.
-            await env.ctx.license.assertSeatAvailable(tx);
-            await repo.setDisabled(tx, id, null);
-            await event('user.enabled');
-          }
+          // The same transition SCIM deprovisioning takes (saml-scim plan ruling 4).
+          if (body.disabled !== undefined) await setUserDisabled(env, tx, id, body.disabled, source);
         });
         // Sockets first: a disabled user's sockets close before any access check could look at them.
         if (body.disabled === true) announce(env.ctx.hooks.sessionEnded, { userId: id }, request.log);
