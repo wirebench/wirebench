@@ -26,6 +26,11 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_OIDC_CLIENT_SECRET` | no | — | Client secret registered at the issuer. Required with the issuer. Never logged. |
 | `WIREBENCH_SERVER_OIDC_SCOPES` | no | `openid email profile` | Scopes requested from the issuer, space-separated. |
 | `WIREBENCH_SERVER_OIDC_DISPLAY_NAME` | no | `OIDC` | The label of the *Continue with …* button in the app. |
+| `WIREBENCH_SERVER_SAML_IDP_METADATA` | no | — | The SAML identity provider’s metadata: an https:// URL or an absolute file path. Setting it turns SAML sign-in on (Enterprise). Read at start-up. |
+| `WIREBENCH_SERVER_SAML_DISPLAY_NAME` | no | `SSO` | The label of the SAML *Continue with …* button in the app. |
+| `WIREBENCH_SERVER_SAML_EMAIL_ATTRIBUTE` | no | — | The assertion attribute that carries the email. Unset: the usual email claim names, then an email-format NameID. |
+| `WIREBENCH_SERVER_SAML_NAME_ATTRIBUTE` | no | — | The assertion attribute that carries the display name. Unset: the usual name claim names. |
+| `WIREBENCH_SERVER_SAML_CLOCK_SKEW_SECONDS` | no | `120` | Clock skew allowed on a SAML assertion’s validity window, in seconds (0–300). |
 | `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` | no | `30` | A device token unused for this long expires. |
 | `WIREBENCH_SERVER_TOKEN_MAX_DAYS` | no | `180` | A device token older than this expires whatever its use. |
 | `WIREBENCH_SERVER_INVITATION_DAYS` | no | `7` | How long an invitation or password-reset link stays valid. |
@@ -90,6 +95,24 @@ endpoints are rate-limited to ten attempts a minute per address and per email (o
 the counters reset on restart). Device tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS`
 without use or `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
 in the app, and an admin who disables a user revokes them all.
+
+## SAML and SCIM
+
+On an Enterprise server, `WIREBENCH_SERVER_SAML_IDP_METADATA` (an `https://` URL or an absolute file path)
+turns on SAML sign-in: the app offers _Continue with SSO_ and runs the same loopback flow as OIDC. The IdP
+needs the entity ID `<public URL>/api/v1/auth/saml/metadata` and the ACS URL
+`<public URL>/api/v1/auth/saml/acs`; `serve` logs both. The metadata is read at start-up, so an IdP
+certificate rotation needs a restart. SAML never creates an account: SCIM or an invitation does.
+
+SCIM 2.0 answers at `<public URL>/scim/v2` with a bearer token from the app's Provisioning tab or the
+console. Deactivating a user at the IdP disables the account and revokes its devices; nothing is deleted.
+A server admin links IdP groups to teams, and SCIM removes only the members it added:
+
+    docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin scim-token create "Entra ID"
+    docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin scim-group link Engineering Platform
+
+`admin scim-token list|revoke <id>` and `admin scim-group list|unlink <group>` complete the set. See the
+docs site's _SAML sign-in and SCIM provisioning_ guide for the Entra ID and Okta steps.
 
 ## License
 

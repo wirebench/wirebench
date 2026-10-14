@@ -30,6 +30,7 @@ describeDb('0003_teams (§4.1)', () => {
       'live-updates',
       'scheduled-runs',
       'audit-log',
+      'sso',
     ]);
   });
 

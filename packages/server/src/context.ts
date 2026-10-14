@@ -116,6 +116,8 @@ export function permissiveLicense(): LicenseService {
 export type AuditActorInput =
   | { readonly kind: 'user'; readonly userId: string; readonly email: string; readonly tokenId?: string }
   | { readonly kind: 'ci-token'; readonly tokenId: string; readonly workspaceId: string }
+  /** A SCIM token's write (saml-scim spec §3.5). */
+  | { readonly kind: 'scim'; readonly tokenId: string }
   | { readonly kind: 'system' }
   | { readonly kind: 'anonymous' };
 
@@ -259,19 +261,40 @@ export class MetaRegistry {
   private readonly methods = { local: false, oidc: false };
   private readonly capabilityNames = new Set<string>();
   private oidcName: string | undefined;
+  private saml = false;
+  private samlName: string | undefined;
   private hooksMeta: HooksMeta | undefined;
 
   /** Which sign-in methods the server offers; identity sets them when it registers. Reporting them authorises nothing. */
-  setSignInMethods(update: { local?: boolean; oidc?: boolean; oidcDisplayName?: string }): void {
+  setSignInMethods(update: {
+    local?: boolean;
+    oidc?: boolean;
+    oidcDisplayName?: string;
+    saml?: boolean;
+    samlDisplayName?: string;
+  }): void {
     if (update.local !== undefined) this.methods.local = update.local;
     if (update.oidc !== undefined) this.methods.oidc = update.oidc;
     if (update.oidcDisplayName !== undefined) this.oidcName = update.oidcDisplayName;
+    // saml-scim §3.1: reported only by a server that has the sso module and SAML configured.
+    if (update.saml !== undefined) this.saml = update.saml;
+    if (update.samlDisplayName !== undefined) this.samlName = update.samlDisplayName;
   }
   addCapability(name: string): void {
     this.capabilityNames.add(name);
   }
-  signInMethods(): { local: boolean; oidc: boolean; oidcDisplayName?: string } {
-    return { ...this.methods, ...(this.oidcName !== undefined ? { oidcDisplayName: this.oidcName } : {}) };
+  signInMethods(): {
+    local: boolean;
+    oidc: boolean;
+    oidcDisplayName?: string;
+    saml?: boolean;
+    samlDisplayName?: string;
+  } {
+    return {
+      ...this.methods,
+      ...(this.oidcName !== undefined ? { oidcDisplayName: this.oidcName } : {}),
+      ...(this.saml ? { saml: true, ...(this.samlName !== undefined ? { samlDisplayName: this.samlName } : {}) } : {}),
+    };
   }
   capabilities(): string[] {
     return [...this.capabilityNames].sort();
@@ -307,7 +330,8 @@ export interface ServerModule {
     | 'ci-tokens'
     | 'live-updates'
     | 'scheduled-runs'
-    | 'audit-log';
+    | 'audit-log'
+    | 'sso';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

@@ -136,6 +136,44 @@ describe('SignInDialog', () => {
     expect(screen.getByTestId('sign-in-methods')).toBeTruthy();
   });
 
+  it('SAML: the button shows with meta.auth.saml and its display name, and is absent otherwise', async () => {
+    await reachMethods({ ...META, auth: { ...META.auth, saml: true, samlDisplayName: 'Contoso' } });
+    expect(screen.getByTestId('sign-in-saml').textContent).toBe('Continue with Contoso');
+    cleanup();
+    await reachMethods({ ...META, auth: { local: false, oidc: false, saml: true } });
+    expect(screen.getByTestId('sign-in-saml').textContent).toBe('Continue with SSO');
+    cleanup();
+    await reachMethods();
+    expect(screen.queryByTestId('sign-in-saml')).toBeNull();
+  });
+
+  it('SAML: runs account.startSaml with the shared waiting step and cancel, and signs in', async () => {
+    let settle!: (value: unknown) => void;
+    const startSaml = vi.fn().mockReturnValue(new Promise((resolve) => (settle = resolve)));
+    const cancelSignIn = vi.fn().mockResolvedValue(ok({ cancelled: true }));
+    await reachMethods({ ...META, auth: { ...META.auth, saml: true, samlDisplayName: 'Contoso' } });
+    installWirebenchApi({ account: { startSaml, cancelSignIn, probe: vi.fn() } });
+    await userEvent.click(screen.getByTestId('sign-in-saml'));
+    expect((await screen.findByTestId('sign-in-waiting')).textContent).toContain('Contoso');
+    expect(startSaml).toHaveBeenCalledWith({ url: 'https://wb.test' });
+    await userEvent.click(screen.getByTestId('sign-in-cancel'));
+    expect(cancelSignIn).toHaveBeenCalled();
+    settle(ok({ account: ACCOUNT }));
+    await waitFor(() => expect(useUiStore.getState().signInDialog.open).toBe(false));
+  });
+
+  it.each([
+    ['identity-not-invited', 'No account or open invitation exists for this email. Ask a server admin to invite you.'],
+    ['identity-saml-refused', "The identity provider's response was not accepted."],
+    ['identity-saml-no-email', 'The identity provider did not send an email address for this account.'],
+    ['licensing-feature-required', 'SAML sign-in needs an Enterprise license on this server. Ask a server admin.'],
+  ])('SAML: %s shows its message', async (code, message) => {
+    await reachMethods({ ...META, auth: { ...META.auth, saml: true } });
+    installWirebenchApi({ account: { startSaml: vi.fn().mockResolvedValue(fail(code)), probe: vi.fn() } });
+    await userEvent.click(screen.getByTestId('sign-in-saml'));
+    expect((await screen.findByTestId('sign-in-error')).textContent).toBe(message);
+  });
+
   it('invitation: looks the code up, asks for a name and matching password of the minimum length, then accepts', async () => {
     const lookupInvitation = vi
       .fn()

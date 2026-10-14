@@ -4,7 +4,7 @@
  * before `email_verified` is even consulted, and an unverified email can never link or create.
  */
 import { isWirebenchError } from '@wirebench/engine';
-import { recordAudit, runInvitationAccepted, type AuditSource } from '../context.js';
+import { recordAudit, runInvitationAccepted, type AuditSource, type Querier } from '../context.js';
 import type { IdentityEnv } from './env.js';
 import type { OidcClaims } from './oidc.js';
 import * as repo from './repo.js';
@@ -47,11 +47,35 @@ export function decideLink(facts: LinkFacts): LinkDecision {
 export type LinkOutcome =
   { readonly ok: true; readonly user: repo.UserRow } | { readonly ok: false; readonly code: LinkRefusal };
 
+/**
+ * Where a sign-in method keeps its `(issuer, subject) → user` links: OIDC identities here, SAML identities
+ * in the `sso` module (saml-scim spec §3.3). The rules are the same for both; only the table differs.
+ */
+export interface IdentityLinks {
+  readonly method: 'oidc' | 'saml';
+  find(db: Querier, issuer: string, subject: string): Promise<{ readonly userId: string } | undefined>;
+  insert(
+    db: Querier,
+    input: { readonly issuer: string; readonly subject: string; readonly userId: string; readonly at: Date },
+  ): Promise<void>;
+}
+
+export const OIDC_LINKS: IdentityLinks = {
+  method: 'oidc',
+  find: repo.oidcIdentityOf,
+  insert: repo.insertOidcIdentity,
+};
+
 /** Looks up the facts for `claims`, decides, and writes what the decision needs. */
-export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: AuditSource): Promise<LinkOutcome> {
+export async function linkClaims(
+  env: Pick<IdentityEnv, 'ctx' | 'now'>,
+  claims: OidcClaims,
+  source: AuditSource,
+  links: IdentityLinks = OIDC_LINKS,
+): Promise<LinkOutcome> {
   const db = env.ctx.db;
   const now = env.now();
-  const identity = await repo.oidcIdentityOf(db, claims.issuer, claims.subject);
+  const identity = await links.find(db, claims.issuer, claims.subject);
   const identityUser = identity === undefined ? undefined : await repo.findUserById(db, identity.userId);
   const lower = claims.email === undefined || claims.email.trim() === '' ? undefined : emailLower(claims.email);
   const byEmail = identity === undefined && lower !== undefined ? await repo.findUserByEmail(db, lower) : undefined;
@@ -75,7 +99,7 @@ export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: A
     case 'existing':
       return { ok: true, user: identityUser! };
     case 'link':
-      await repo.insertOidcIdentity(db, {
+      await links.insert(db, {
         issuer: claims.issuer,
         subject: claims.subject,
         userId: decision.userId,
@@ -100,7 +124,7 @@ export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: A
             serverAdmin: decision.serverAdmin,
             at: now,
           });
-          await repo.insertOidcIdentity(tx, {
+          await links.insert(tx, {
             issuer: claims.issuer,
             subject: claims.subject,
             userId: created.id,
@@ -111,7 +135,7 @@ export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: A
             actor: { kind: 'user', userId: created.id, email: created.email },
             action: 'user.created',
             target: { kind: 'user', id: created.id },
-            details: { method: 'oidc', invitationId: decision.invitationId, emailLower: created.emailLower },
+            details: { method: links.method, invitationId: decision.invitationId, emailLower: created.emailLower },
           });
           await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: decision.invitationId, userId: created.id });
           return created;

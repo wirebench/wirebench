@@ -42,7 +42,11 @@ export async function insertAuditEvent(
       actor.kind,
       actor.kind === 'user' ? actor.userId : null,
       actor.kind === 'user' ? actor.email : null,
-      actor.kind === 'user' ? (actor.tokenId ?? null) : actor.kind === 'ci-token' ? actor.tokenId : null,
+      actor.kind === 'user'
+        ? (actor.tokenId ?? null)
+        : actor.kind === 'ci-token' || actor.kind === 'scim'
+          ? actor.tokenId
+          : null,
       row.action,
       row.target.kind,
       row.target.id ?? null,
@@ -108,7 +112,9 @@ function toEvent(raw: Raw): AuditEvent {
       ? { kind, userId: opt(raw['actorUserId']), email: opt(raw['actorEmail']), tokenId: opt(raw['actorTokenId']) }
       : kind === 'ci-token'
         ? { kind, tokenId: opt(raw['actorTokenId']), workspaceId: opt(raw['actorWorkspaceId']) }
-        : { kind };
+        : kind === 'scim'
+          ? { kind, tokenId: opt(raw['actorTokenId']) }
+          : { kind };
   const at = raw['at'];
   const details = raw['details'];
   return {
