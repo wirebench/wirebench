@@ -8,7 +8,7 @@ import {
   slideOverWidthOf,
   writeUi,
 } from '../../src/renderer/state/ui-state.js';
-import { useUiStore } from '../../src/renderer/state/ui.js';
+import { CONSOLE_COLLAPSED_BELOW_PX, hydrateUi, useUiStore } from '../../src/renderer/state/ui.js';
 
 function fakeStorage(): Storage {
   const map = new Map<string, string>();
@@ -418,5 +418,26 @@ describe('the right slide-over width', () => {
   });
   it('keeps a width the user dragged to', () => {
     expect(readUi(stored(500)).slideOver.width).toBe(500);
+  });
+});
+
+describe('hydrateUi in a short window', () => {
+  beforeEach(() => {
+    useUiStore.setState(DEFAULT_UI_STATE);
+  });
+
+  it('starts with the console collapsed, keeping its size for the expand', () => {
+    const storage = fakeStorage();
+    writeUi({ ...DEFAULT_UI_STATE, console: { ...DEFAULT_UI_STATE.console, size: 30, lastSize: 30 } }, storage);
+    hydrateUi(storage, CONSOLE_COLLAPSED_BELOW_PX - 60);
+    expect(useUiStore.getState().console).toMatchObject({ visible: false, lastSize: 30 });
+    // Only the collapse happened, so the saved layout still has the console open.
+    expect(readUi(storage).console.visible).toBe(true);
+  });
+
+  it('leaves the console as it was in a tall enough window', () => {
+    const storage = fakeStorage();
+    hydrateUi(storage, CONSOLE_COLLAPSED_BELOW_PX);
+    expect(useUiStore.getState().console.visible).toBe(true);
   });
 });

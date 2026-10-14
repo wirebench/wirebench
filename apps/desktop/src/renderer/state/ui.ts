@@ -645,13 +645,26 @@ export const useUiStore = create<UiStore>((set, get) => {
 });
 
 /**
+ * A window shorter than this starts with the console collapsed: at 700px its quarter of the
+ * column leaves the editor too little room. The default window (820px) is above it.
+ */
+export const CONSOLE_COLLAPSED_BELOW_PX = 760;
+
+/**
  * Hydrates the store from `localStorage` once, then keeps writing every later change back.
  * Called from the shell on mount; safe to call when storage is unavailable.
  */
-export function hydrateUi(storage: Storage | undefined = globalThis.localStorage): void {
+export function hydrateUi(
+  storage: Storage | undefined = globalThis.localStorage,
+  windowHeight: number | undefined = globalThis.innerHeight,
+): void {
   if (storage === undefined) {
     return;
   }
   useUiStore.setState(readUi(storage));
+  // Before persisting starts, so the collapse alone is not written back as the saved layout.
+  if (windowHeight !== undefined && windowHeight > 0 && windowHeight < CONSOLE_COLLAPSED_BELOW_PX) {
+    useUiStore.getState().collapseConsole();
+  }
   useUiStore.getState().persistTo(storage);
 }
