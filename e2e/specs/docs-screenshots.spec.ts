@@ -40,6 +40,7 @@ import {
   sendRest,
   setMethodAndUrl,
 } from '../helpers/rest.js';
+import { chooseHistoryRowAction } from '../helpers/history.js';
 import { openManageWorkspaces } from '../helpers/sync.js';
 import { joinSharedWorkspace, openConflictResolver, produceRequestConflict, shareWorkspace } from '../helpers/sync.js';
 import {
@@ -499,9 +500,8 @@ test.describe('docs site screenshots', () => {
     await window.getByTestId('activity-bar').getByRole('button', { name: 'History' }).click();
     const rows = window.locator('[data-testid="history-row"]');
     await expect(rows).toHaveCount(2, { timeout: 10_000 });
-    const compareButtons = window.locator('button[title="Compare…"]');
-    await compareButtons.nth(0).click();
-    await compareButtons.nth(1).click();
+    await chooseHistoryRowAction(rows.nth(0), 'Compare…');
+    await chooseHistoryRowAction(rows.nth(1), 'Compare…');
     await expect(window.locator('[role="tab"]', { hasText: 'Compare' })).toBeVisible({ timeout: 10_000 });
     // The picture is the diff. The sidebar goes, since at this window size it clips the history
     // rows, and a clipped row's timing cells would still be masked over the diff. The diff's two
