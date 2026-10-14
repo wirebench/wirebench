@@ -388,6 +388,79 @@ describe('the terminal tab', () => {
     );
   });
 
+  it('keys typed while connecting are kept and sent once the shell opens (#361)', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    connect.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await screen.findByTestId('connect-screen');
+    act(() => {
+      lastTerminal()?.type('ls -l');
+      lastTerminal()?.type('\r');
+    });
+    expect(write).not.toHaveBeenCalled();
+    expect(screen.getByTestId('connect-typed-ahead').textContent).toBe('What you typed is sent when the shell opens.');
+    await act(async () => {
+      answer(OPEN('s1'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(write).toHaveBeenCalledWith({ sessionId: 's1', data: bytesToBase64(new TextEncoder().encode('ls -l\r')) });
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('connect-typed-ahead')).toBeNull();
+    // From now on keys go straight to the shell.
+    act(() => {
+      lastTerminal()?.type('x');
+    });
+    expect(write).toHaveBeenLastCalledWith({ sessionId: 's1', data: bytesToBase64(new TextEncoder().encode('x')) });
+  });
+
+  it('a failed connect drops what was typed for it, and keys typed after the failure go nowhere (#361)', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    connect.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await screen.findByTestId('connect-screen');
+    act(() => {
+      lastTerminal()?.type('rm -rf build\r');
+    });
+    await act(async () => {
+      answer({
+        ok: false,
+        error: {
+          code: 'ssh-auth-failed',
+          message: 'nope',
+          details: { host: 'a:22', tried: ['password'], allowed: [] },
+        },
+      });
+      await Promise.resolve();
+    });
+    await screen.findByTestId('connect-error');
+    expect(screen.queryByTestId('connect-typed-ahead')).toBeNull();
+    act(() => {
+      lastTerminal()?.type('late');
+    });
+    connect.mockResolvedValueOnce(OPEN('s1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(sessionOn('a')).toEqual({ sessionId: 's1', state: 'open' });
+    });
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('the host-key step waits on the trust prompt', async () => {
     connect.mockResolvedValueOnce(NEW_KEY);
     act(() => {

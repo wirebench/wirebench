@@ -314,6 +314,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Pasting control characters into a terminal asks first.** A paste holding an escape or another
+  control character (apart from tabs and line breaks), such as an embedded end of bracketed paste,
+  now waits for a yes even on one line and with the multi-line question turned off. The dialog shows
+  the characters escaped (`\x1b`) and offers no "Don't ask again" (#361).
+
+- **Keys typed while a terminal connects reach the shell.** What you type, or paste, while the
+  connection screen shows a connect under way is kept (up to 4 KB) and sent to the shell as soon as
+  it opens; the screen says so. A connect that fails drops it, and keys typed after a failure or
+  after a session ends still go nowhere (#361).
+
 - **Import and lint findings read as places, not pointers.** The Import dialog labels its URL field by
   the picked format (**Definition URL or file**, or **WSDL URL** only for WSDL), with a placeholder for
   each format; the WSDL authentication select has a visible label, and the OpenAPI face says
@@ -321,6 +331,7 @@ All notable changes to this project are documented here. The format follows
   **Problems**. A lint finding there reads `GET /json › 200 › application/json` instead of a JSON
   pointer (the pointer and position stay in its tooltip), shows its rule id as small text after the
   message, and a click opens the request for that operation, or the API when there is none (#561).
+
 - **A steadier REST request editor.** Send and Cancel take the same width, so the method and URL no
   longer jump when a send starts. While a send is out the response bar reads **Sending… 2.4 s** with a
   running timer, once, and the last response stays on screen, dimmed, until the new one arrives.
@@ -328,6 +339,7 @@ All notable changes to this project are documented here. The format follows
   Choosing a GraphQL body on a GET says **Method changed to POST** with an Undo, and switching the body
   back puts the old method back. The first Escape in a header cell closes the variable list and keeps
   what was typed (#559).
+
 - **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
   response", the response pane names the failure in plain words (**Connection refused**, **Host not
   found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers
@@ -337,12 +349,14 @@ All notable changes to this project are documented here. The format follows
   prompt adds a Problem. The status bar's **last:** now shows the latest send, failures included. A
   URL with `://` but no valid scheme or host (`ht!tp:// bad url`) is refused before sending, with the
   reason under the URL field, where it used to go out as a path under the base URL (#541).
+
 - **History rows read on two lines, and a click opens.** A row shows the method, name and a status
   chip, then the time, host and duration, so the name is never squeezed out at narrow widths.
   Re-send, Compare, Compare with current and a new **Delete** (one entry) are in a **⋯** menu at the
   row's right edge; a click anywhere else on the row opens the entry and never re-sends it. The arrow keys move
   between rows and Enter opens one. An entry's tab is titled with its name and send time, a send with
   no request body gives the tab to the response, and the footer says "1 entry" (#544).
+
 - **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
   how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
   terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a

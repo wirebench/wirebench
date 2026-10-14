@@ -12,6 +12,7 @@ import { setSignInUser, useConnectStore } from './connect-store.js';
 import { OsIcon, osOf } from './os-icon.js';
 import { formatDuration, stepDuration, stepLabel } from './connect-progress.js';
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
+import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
 
 /** How long "Connected in N ms" shows before the screen fades, and how long the fade takes. */
 export const CONNECTED_HOLD_MS = 600;
@@ -32,6 +33,8 @@ export interface ConnectScreenProps {
   /** The attempt shown; none yet while a reconnect waits for its first try. */
   readonly view: ConnectView | undefined;
   readonly reconnect?: ReconnectBanner | undefined;
+  /** Keys typed into the pane while it connects, kept for its shell (#361). */
+  readonly typedAhead?: TypeAheadState | undefined;
   readonly onRetry: () => void;
   /** A security key asked for its PIN (#420): connect again with it. Without it the screen only says so. */
   readonly onPin?: ((pin: string) => void) | undefined;
@@ -41,6 +44,13 @@ export interface ConnectScreenProps {
   readonly onFaded?: (() => void) | undefined;
   /** Over the terminal (a pane), or in place of a Files pane's list. */
   readonly overlay?: boolean;
+}
+
+/** What the screen says about keys typed while connecting. */
+export function typedAheadText({ full }: TypeAheadState): string {
+  return full
+    ? `What you typed is sent when the shell opens, up to ${String(TYPE_AHEAD_LIMIT / 1024)} KB; typing after that is not kept.`
+    : 'What you typed is sent when the shell opens.';
 }
 
 function timeOf(at: number): string {
@@ -375,6 +385,7 @@ export function ConnectScreen({
   purpose,
   view,
   reconnect,
+  typedAhead,
   onRetry,
   onPin,
   onEditHost,
@@ -545,6 +556,12 @@ export function ConnectScreen({
             );
           })}
         </ol>
+
+        {running && typedAhead !== undefined && (typedAhead.bytes > 0 || typedAhead.full) && (
+          <p className="text-sm text-fg-subtle" role="status" data-testid="connect-typed-ahead">
+            {typedAheadText(typedAhead)}
+          </p>
+        )}
 
         {total !== undefined && (
           <p className="text-sm text-status-success" role="status">{`Connected in ${formatDuration(total)}`}</p>

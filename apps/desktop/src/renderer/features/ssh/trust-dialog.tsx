@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { confirmTrust } from './connect.js';
 import { useHostsStore } from './hosts-store.js';
@@ -15,6 +15,8 @@ export function TrustDialog() {
 
 function TrustDialogBody() {
   const [understood, setUnderstood] = useState(false);
+  /** Set by Trust: the connect goes on in its pane, which takes the focus, not what opened the prompt. */
+  const trusted = useRef(false);
   const prompt = useHostsStore((s) => s.trustPrompt);
   const cancelTrust = useHostsStore((s) => s.cancelTrust);
   const changed = prompt?.previous !== undefined;
@@ -33,6 +35,10 @@ function TrustDialogBody() {
         <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
         <AlertDialog.Content
           data-testid="trust-dialog"
+          onCloseAutoFocus={(event) => {
+            if (trusted.current) event.preventDefault();
+            trusted.current = false;
+          }}
           className="fixed top-1/2 left-1/2 w-96 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
           <AlertDialog.Title className="text-md font-medium text-fg-default">
@@ -84,6 +90,7 @@ function TrustDialogBody() {
                 className="rounded bg-accent px-3 py-1.5 text-sm text-fg-on-accent disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => {
                   setUnderstood(false);
+                  trusted.current = true;
                   void confirmTrust(changed);
                 }}
               >
