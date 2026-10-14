@@ -295,6 +295,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Import and lint findings read as places, not pointers.** The Import dialog labels its URL field by
+  the picked format (**Definition URL or file**, or **WSDL URL** only for WSDL), with a placeholder for
+  each format; the WSDL authentication select has a visible label, and the OpenAPI face says
+  **Authentication** once. An OpenAPI import's summary counts the lint findings it filed, linked to
+  **Problems**. A lint finding there reads `GET /json › 200 › application/json` instead of a JSON
+  pointer (the pointer and position stay in its tooltip), shows its rule id as small text after the
+  message, and a click opens the request for that operation, or the API when there is none (#561).
 - **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
   response", the response pane names the failure in plain words (**Connection refused**, **Host not
   found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers

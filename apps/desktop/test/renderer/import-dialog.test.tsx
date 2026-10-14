@@ -73,7 +73,7 @@ describe('ImportDialog', () => {
     const onOpenChange = vi.fn();
     render(<ImportDialog open onOpenChange={onOpenChange} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'not a url' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), { target: { value: 'not a url' } });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     expect(await screen.findByText('Enter a valid URL')).toBeTruthy();
@@ -87,7 +87,9 @@ describe('ImportDialog', () => {
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(importFn).toHaveBeenCalled());
@@ -109,7 +111,9 @@ describe('ImportDialog', () => {
     useUiStore.setState({ selection: { kind: 'project', id: project.id } });
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(importFn).toHaveBeenCalled());
@@ -136,7 +140,9 @@ describe('ImportDialog', () => {
     expect(select.value).toBe('');
 
     // The option's name tracks the field, so the user can see what would be created.
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/Calculator.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/Calculator.wsdl' },
+    });
     expect(select.options[2]?.textContent).toBe('New project “Calculator”');
 
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
@@ -155,7 +161,9 @@ describe('ImportDialog', () => {
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
     fireEvent.change(screen.getByTestId('import-target-project'), { target: { value: second.id } });
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(importFn).toHaveBeenCalled());
@@ -170,7 +178,9 @@ describe('ImportDialog', () => {
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://bad.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://bad.test/service.wsdl' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     expect(await screen.findByText('Could not reach the server')).toBeTruthy();
@@ -192,7 +202,9 @@ describe('ImportDialog', () => {
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition URL or file'), {
+      target: { value: 'http://example.test/service.wsdl' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(importFn).toHaveBeenCalled());
@@ -205,5 +217,35 @@ describe('ImportDialog', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy());
     expect(screen.queryByText('Import was cancelled')).toBeNull();
+  });
+
+  it('labels the URL field by the picked format, never as WSDL under Auto-detect', () => {
+    stubWirebench();
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+    expect(screen.getByLabelText<HTMLInputElement>('Definition URL or file').placeholder).not.toContain('wsdl');
+    expect(screen.queryByLabelText('WSDL URL')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('import-format-select'), { target: { value: 'wsdl' } });
+    expect(screen.getByLabelText<HTMLInputElement>('WSDL URL').placeholder).toContain('?wsdl');
+
+    fireEvent.change(screen.getByTestId('import-format-select'), { target: { value: 'postman' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'URL' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Collection URL').placeholder).toBe(
+      'https://example.test/collection.json',
+    );
+  });
+
+  it('gives the WSDL auth select a visible label', () => {
+    stubWirebench();
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="wsdl" />);
+    const select = screen.getByLabelText('Definition authentication');
+    expect(select.closest('label')?.textContent).toContain('Authentication');
+  });
+
+  it('says Authentication once on the OpenAPI face', () => {
+    stubWirebench();
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="openapi" />);
+    expect(screen.getByTestId('definition-auth')).toBeTruthy();
+    expect(screen.getAllByText('Authentication')).toHaveLength(1);
   });
 });

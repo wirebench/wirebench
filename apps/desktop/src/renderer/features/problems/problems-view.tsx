@@ -3,6 +3,8 @@ import { AlertTriangle, XCircle } from 'lucide-react';
 import { explorerActions } from '../explorer/explorer-actions.js';
 import { revealProblem } from '../request-editor/validate-actions.js';
 import { revealContractProblem } from '../rest-editor/response/contract.js';
+import { revealLintFinding } from '../rest-api/lint-actions.js';
+import { lintLocationLabel } from './lint-location.js';
 import type { Problem, ProblemSeverity } from '../../state/problems.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
@@ -118,7 +120,10 @@ export function ProblemsView() {
         {visible.map((item, index) => {
           const { source, severity, requestId, problem } = item;
           const Icon = severity === 'warning' ? AlertTriangle : XCircle;
-          const location = locationLabel(problem);
+          const isLint = source === 'lint';
+          // A lint finding's pointer reads as a place in the API; the raw pointer and position stay in the tooltip.
+          const location = isLint ? lintLocationLabel(problem.location ?? '') : locationLabel(problem);
+          const locationTitle = isLint ? locationLabel(problem) : undefined;
           const requestName = requestId === undefined ? undefined : requests[requestId]?.name;
           const breadcrumb = breadcrumbOf(item, requests, interfaces, apis, projects, projectOf);
           const body = (
@@ -129,7 +134,14 @@ export function ProblemsView() {
                 className={`mt-0.5 shrink-0 ${severity === 'warning' ? 'text-status-warning' : 'text-status-danger'}`}
               />
               <span className={SOURCE_CLASS}>{problem.source ?? source}</span>
-              <span className="min-w-0 flex-1 text-fg-default">{problem.message}</span>
+              <span className="min-w-0 flex-1 text-fg-default">
+                {problem.message}
+                {isLint && (
+                  <span data-testid="problem-rule" className="ml-2 font-mono text-xs text-fg-faint">
+                    {problem.code}
+                  </span>
+                )}
+              </span>
               {breadcrumb !== undefined && (
                 <span className="shrink-0 truncate text-xs text-fg-faint" title={breadcrumb}>
                   {breadcrumb}
@@ -137,12 +149,36 @@ export function ProblemsView() {
               )}
               {requestName !== undefined && <span className="shrink-0 text-xs text-fg-subtle">{requestName}</span>}
               {location !== undefined && (
-                <span data-testid="problem-location" className="shrink-0 font-mono text-xs text-fg-subtle">
+                <span
+                  data-testid="problem-location"
+                  className="shrink-0 font-mono text-xs text-fg-subtle"
+                  {...(locationTitle !== undefined ? { title: locationTitle } : {})}
+                >
                   {location}
                 </span>
               )}
             </>
           );
+
+          if (isLint) {
+            const apiId = item.groupId.slice('lint:'.length);
+            return (
+              <li key={key(item, index)} role="row" aria-rowindex={index + 1} {...rowProps(index)}>
+                <div role="gridcell">
+                  <button
+                    type="button"
+                    data-testid="problem-row"
+                    onClick={() => {
+                      revealLintFinding(apiId, problem.location ?? '');
+                    }}
+                    className="flex w-full items-start gap-2 rounded px-1 text-left hover:bg-surface-raised"
+                  >
+                    {body}
+                  </button>
+                </div>
+              </li>
+            );
+          }
 
           if (requestId !== undefined) {
             return (
