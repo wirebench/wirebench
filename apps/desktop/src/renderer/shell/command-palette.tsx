@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { CommandCategory } from '@shared/commands.js';
@@ -138,6 +138,37 @@ function groupByCategory(rows: readonly PaletteCommand[]): readonly (readonly [C
   return [...groups.entries()];
 }
 
+/** What {@link rankGroups} scores an item by. */
+interface PaletteNamed {
+  readonly category: string;
+  readonly label: string;
+}
+
+/**
+ * The groups with the best match first, for a non-empty search. cmdk ranks the items inside a group
+ * but leaves the groups in the order they were rendered (alphabetical by category), so "HTTP Log"
+ * used to select a Secrets command over View's Show HTTP Log. Each group scores as its best item,
+ * by the same filter, value and keywords the items are matched on; ties keep order.
+ *
+ * @param nameOf - A group item's command, for groups of palette rows rather than of commands.
+ */
+export function rankGroups<T, G extends readonly [CommandCategory, readonly T[]]>(
+  groups: readonly G[],
+  search: string,
+  nameOf: (item: T) => PaletteNamed = (item) => item as PaletteNamed,
+): readonly G[] {
+  if (search.trim() === '') {
+    return groups;
+  }
+  const score = (named: PaletteNamed): number =>
+    paletteFilter(`${named.category} ${named.label}`, search, paletteKeywords(named));
+  const best = (items: G[1]): number => Math.max(0, ...items.map((item) => score(nameOf(item))));
+  return groups
+    .map((group, index) => ({ group, index, score: best(group[1]) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ group }) => group);
+}
+
 /**
  * ⌘K / ⌘⇧P — everything the app can do, listed from the same registry that drives the
  * keybindings — and ⌘P, the same dialog in quick-open mode over operations and requests.
@@ -151,6 +182,15 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   // last time `context` itself happened to change identity — which, before this, only reliably
   // happened once, coincidentally, from a library's mount-time resize callback.
   const groups = useMemo(() => groupByCategory(listPaletteCommands(context)), [context, open]);
+  const [search, setSearch] = useState('');
+  // A new mode or a reopen starts from an empty search, as the keyed `Command` below does.
+  useEffect(() => {
+    setSearch('');
+  }, [mode, open]);
+  const rankedGroups = useMemo(
+    () => rankGroups(groups, search, (row: PaletteCommand) => row.command),
+    [groups, search],
+  );
   const interfaces = useProjectStore((state) => state.interfaces);
   const requests = useProjectStore((state) => state.requests);
   const projectOf = useProjectStore((state) => state.projectOf);
@@ -308,6 +348,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           >
             <Command.Input
               autoFocus
+              onValueChange={setSearch}
               data-testid={picker ? 'quick-open-input' : 'command-palette-input'}
               placeholder={picker ? title : 'Search or run a command'}
               className="h-10 w-full border-b border-hairline bg-transparent px-3 text-md text-fg-default outline-none placeholder:text-fg-faint"
@@ -430,7 +471,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                 </Command.Group>
               )}
               {!picker &&
-                groups.map(([category, rows]) => (
+                rankedGroups.map(([category, rows]) => (
                   <Command.Group key={category} heading={category} className={GROUP_CLASS}>
                     {rows.map(({ command, disabledReason }) => {
                       const shortcut = effectiveShortcut(command);

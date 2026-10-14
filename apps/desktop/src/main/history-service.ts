@@ -953,4 +953,14 @@ export class HistoryService {
     }
     return cleared;
   }
+
+  /** Drops one entry from whichever open file holds it. Resolves `true` when one was dropped. */
+  async remove(id: string): Promise<boolean> {
+    for (const file of this.files.values()) {
+      if (file.get(id) !== undefined) {
+        return file.remove(id);
+      }
+    }
+    return false;
+  }
 }

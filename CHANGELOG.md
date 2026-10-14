@@ -288,6 +288,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **History rows read on two lines, and a click opens.** A row shows the method, name and a status
+  chip, then the time, host and duration, so the name is never squeezed out at narrow widths.
+  Re-send, Compare, Compare with current and a new **Delete** (one entry) are in a **⋯** menu at the
+  row's right edge; a click anywhere else on the row opens the entry and never re-sends it. The arrow keys move
+  between rows and Enter opens one. An entry's tab is titled with its name and send time, a send with
+  no request body gives the tab to the response, and the footer says "1 entry" (#544).
 - **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
   how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
   terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a
@@ -301,6 +307,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Revealing secrets in the HTTP log asks first.** The palette command is now **Reveal Secrets in HTTP
+  Log…** and, like the log's lock, asks before Authorization headers, cookies and passwords show;
+  hiding them never asks. A new **Show HTTP Log** command is what a search for "HTTP Log" lands on,
+  the palette now puts the category with the best match first, and the lock is an icon rather than an
+  emoji that showed as a box on Linux (#545).
+- **`${name}` in a REST URL is no longer a path parameter.** `/pets/${petId}` used to add an empty
+  `petId` row to the path-parameter table although the send expands the variable; only `{name}` adds
+  a row now, in the editor and in a cURL import (#545).
+- **Import cURL takes only curl commands.** Text that does not start with `curl` (after an optional
+  `$ ` prompt) is refused with the reason, and Import stays disabled; `wget http://example.com` used to
+  import as a GET to `{base}wget`. An imported REST request is named from its method and path, such
+  as `GET /pets/{petId}` (#545).
 - **Renaming a project environment no longer unlinks it from its workspace environment.** Inside a
   workspace a project environment applies through the workspace environment with the same slug; a
   rename re-derived the slug, so its properties, endpoint overrides and protection silently stopped

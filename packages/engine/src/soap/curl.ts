@@ -9,6 +9,7 @@
 import { expandBundles, takesNoValue } from '../http/curl-flags.js';
 import { toCurl } from '../http/curl.js';
 import type { CurlCommand, CurlHeader, ToCurlOptions } from '../http/curl.js';
+import { stripShellPrompt } from '../http/curl-start.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
 import { soapActionHeaders } from './soap-action.js';
 import type { SoapSendInput } from './types.js';
@@ -94,7 +95,8 @@ function tokenize(text: string): string[] {
 }
 
 /** Parses a pasted `curl` command back into a partial {@link SoapSendInput}. */
-export function fromCurl(text: string): FromCurlResult {
+export function fromCurl(pasted: string): FromCurlResult {
+  const text = stripShellPrompt(pasted);
   const problems: string[] = [];
 
   // Pull out a heredoc/here-string body (`<<'EOF' ... EOF` or `@'...'@`) before line-splicing and

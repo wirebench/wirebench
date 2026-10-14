@@ -138,11 +138,11 @@ export function registerProjectCommands(): void {
   });
 
   // No default shortcut: revealing credentials on screen should take a deliberate act, not a
-  // key one finger-slip away.
+  // key one finger-slip away. Revealing asks first; when they are already shown it hides them.
   registerCommand({
     ...catalogEntry('secrets.toggleShowSecrets'),
     run: () => {
-      void useSecretsVisibilityStore.getState().toggle();
+      void useSecretsVisibilityStore.getState().requestToggle();
     },
   });
 

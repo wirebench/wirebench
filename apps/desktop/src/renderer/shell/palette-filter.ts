@@ -19,12 +19,14 @@ export function paletteKeywords(command: { readonly category: string; readonly l
 
 /**
  * The palette's cmdk filter: 1 when the search starts a keyword (a group match), otherwise cmdk's
- * own score scaled below that, and 0 for no match.
+ * own score for the value scaled below that, and 0 for no match. The keywords take no part in the
+ * fuzzy score: the value already holds the category and the label, and counting them twice would
+ * reorder fuzzy matches.
  */
 export function paletteFilter(value: string, search: string, keywords?: string[]): number {
   const query = search.trim().toLowerCase();
   if (query !== '' && keywords?.some((keyword) => keyword.toLowerCase().startsWith(query)) === true) {
     return 1;
   }
-  return defaultFilter(value, search, keywords) * FUZZY_CEILING;
+  return defaultFilter(value, search) * FUZZY_CEILING;
 }

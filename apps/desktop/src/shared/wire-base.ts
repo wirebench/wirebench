@@ -1805,6 +1805,9 @@ export const historyGetRequestSchema = z.object({ id: z.string() });
 /** Response for `history.clear`. */
 export const historyClearResponseSchema = z.object({ cleared: z.number() });
 
+/** Response for `history.remove`: whether an entry with that id was there to drop. */
+export const historyRemoveResponseSchema = z.object({ removed: z.boolean() });
+
 /** Request payload for `history.resend`: re-sends a past entry through the normal send path. */
 export const historyResendRequestSchema = z.object({ id: z.string() });
 

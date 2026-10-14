@@ -714,6 +714,7 @@ export type {
   TemplatedJwtJson,
 } from './http/auth/jwt.js';
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
+export { notCurlReason, stripShellPrompt } from './http/curl-start.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
 export { GRAPHQL_BODY_EXTENSION } from './rest/model.js';
