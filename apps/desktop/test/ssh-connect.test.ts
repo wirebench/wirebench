@@ -92,6 +92,27 @@ describe('createSshConnector', () => {
     });
   });
 
+  it('says a Mosh target is Mosh, with its block, and leaves an SSH one alone (#419)', async () => {
+    const file = parseHostsFile(
+      [
+        'version: 1',
+        'groups:',
+        '  - id: roam',
+        '    name: roam',
+        "    ssh: { user: me, auth: { password: '${secret:a_pw}' }, protocol: mosh }",
+        '    hosts:',
+        '      - { id: m, name: m, address: 10.0.0.4, ssh: { mosh: { server: /opt/mosh-server } } }',
+        '      - { id: plain, name: plain, address: 10.0.0.5 }',
+        '      - { id: off, name: off, address: 10.0.0.6, ssh: { protocol: ssh } }',
+        '',
+      ].join('\n'),
+    );
+    const { connector } = make({ file });
+    expect((await connector.prepareShell(sender(1), 'm')).mosh).toEqual({ settings: { server: '/opt/mosh-server' } });
+    expect((await connector.prepareShell(sender(1), 'plain')).mosh).toEqual({});
+    expect((await connector.prepareShell(sender(1), 'off')).mosh).toBeUndefined();
+  });
+
   it('reads no secret once the connect is abandoned', async () => {
     const { connector } = make();
     await expect(connector.prepareHops(sender(1), 'a', () => true)).rejects.toMatchObject({

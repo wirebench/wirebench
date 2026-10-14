@@ -95,6 +95,7 @@ function make(
     /** What the server answers a forwarding request with; default: granted. */
     agentRefused?: boolean;
     sessionLog?: SshServiceDeps['sessionLog'];
+    openMosh?: SshServiceDeps['openMosh'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -144,6 +145,7 @@ function make(
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.onSessionsChange ? { onSessionsChange: opts.onSessionsChange } : {}),
     ...(opts.sessionLog ? { sessionLog: opts.sessionLog } : {}),
+    ...(opts.openMosh ? { openMosh: opts.openMosh } : {}),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -1234,5 +1236,43 @@ describe('runSnippet', () => {
     await expect(service.previewSnippet(as(s), { snippetId: 'nope', values: {} })).rejects.toMatchObject({
       code: 'snippet-unknown',
     });
+  });
+});
+
+describe('SshService Mosh hosts (#419)', () => {
+  const moshFile = (extra = ''): HostsFile =>
+    parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, env: { STAGE: blue }, ssh: { user: me, auth: { password: '\${secret:a_pw}' }, forwardAgent: true, protocol: mosh${extra} } }\n`,
+    );
+
+  it('opens the host through the Mosh opener with its settings and variables, never the SSH one', async () => {
+    const mosh = fakeSession('m1');
+    const openMosh = vi.fn(() => Promise.resolve(mosh.session));
+    const { service, open, emit } = make({
+      known: [KEY],
+      file: moshFile(", mosh: { ports: '60001:60009' }"),
+      agent: '/tmp/agent.sock',
+      openMosh,
+    });
+    const s = sender(1);
+    const result = await service.connect(as(s), CONNECT);
+    expect(open).not.toHaveBeenCalled();
+    const options = (openMosh.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(options).toMatchObject({ mosh: { ports: '60001:60009' }, env: { STAGE: 'blue' }, cols: 80, rows: 24 });
+    expect(options).not.toHaveProperty('forwardAgent');
+    // Agent forwarding does not apply; the OS probe needs an exec channel a Mosh session lacks.
+    expect(result).toEqual({ sessionId: 'm1' });
+    await flush();
+    expect(mosh.exec).not.toHaveBeenCalled();
+    mosh.pushData(Buffer.from('hello'));
+    expect(emit).toHaveBeenCalledWith(s, expect.objectContaining({ name: 'ssh.data' }), {
+      sessionId: 'm1',
+      data: Buffer.from('hello').toString('base64'),
+    });
+  });
+
+  it('refuses a Mosh host when no Mosh opener is set up', async () => {
+    const { service } = make({ known: [KEY], file: moshFile() });
+    await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({ code: 'mosh-unavailable' });
   });
 });
