@@ -12,6 +12,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useContractRevealStore } from './contract.js';
 import { Download } from 'lucide-react';
 import { showToast } from '../../../components/toast.js';
+import { SendErrorPanel } from '../../../components/send-error-panel.js';
 import { Tabs } from '../../../components/tabs.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
@@ -53,10 +54,25 @@ export interface RestResponsePaneProps {
   readonly state: RestExchangeState | undefined;
   /** The request this response belongs to, which keys the Query view's own expression history. */
   readonly requestId: string;
+  /** Sends the request again from a failed send's panel; absent hides Retry. */
+  readonly onRetry?: (() => void) | undefined;
+  /** Why Retry cannot run now (the same reason Send is disabled). */
+  readonly retryDisabledReason?: string | undefined;
+  /** Opens the request's Settings tab, where its timeout is set. */
+  readonly onOpenTimeoutSetting?: (() => void) | undefined;
+  /** Shows the field an unresolved `${name}` was written in. */
+  readonly onRevealReference?: ((ref: string) => void) | undefined;
 }
 
 /** The response pane. */
-export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
+export function RestResponsePane({
+  state,
+  requestId,
+  onRetry,
+  retryDisabledReason,
+  onOpenTimeoutSetting,
+  onRevealReference,
+}: RestResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('body');
   const exchange = state?.exchange;
   const sending = state?.status === 'sending';
@@ -190,6 +206,14 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
             )}
           </div>
         </>
+      ) : exchange === undefined && state?.error !== undefined && !sending ? (
+        <SendErrorPanel
+          error={state.error}
+          onRetry={onRetry}
+          retryDisabledReason={retryDisabledReason}
+          onOpenTimeoutSetting={onOpenTimeoutSetting}
+          onRevealReference={onRevealReference}
+        />
       ) : exchange === undefined ? (
         <p className="p-3 text-sm text-fg-subtle">{sending ? 'Sending…' : 'Send the request to see its response.'}</p>
       ) : (

@@ -10,6 +10,7 @@ import {
   queryFromUrl,
   syncPathParams,
   urlSegments,
+  urlProblem,
   urlWithQuery,
 } from '../../src/renderer/state/rest-url.js';
 
@@ -94,5 +95,23 @@ describe('queryFromUrl and urlWithQuery', () => {
   it('keeps a path placeholder untouched while the query changes', () => {
     expect(urlWithQuery('/pet/{petId}', [{ name: 'x', value: '1', enabled: true }])).toBe('/pet/{petId}?x=1');
     expect(pathFromUrl('/pet/{petId}?x=1')).toBe('/pet/{petId}');
+  });
+});
+
+describe('urlProblem', () => {
+  it('refuses a scheme that is not one, an unsupported scheme, and a missing host', () => {
+    expect(urlProblem('ht!tp:// bad url')).toContain('"ht!tp" is not a URL scheme');
+    expect(urlProblem('://host/x')).toContain('is not a URL scheme');
+    expect(urlProblem('ftp://host/x')).toContain('not ftp://');
+    expect(urlProblem('http://')).toBeDefined();
+    expect(urlProblem('https://bad host/x')).toBeDefined();
+  });
+
+  it('accepts a good absolute URL, a relative path, and anything a variable may complete', () => {
+    expect(urlProblem('https://api.example.com/pets/{id}?q=1')).toBeUndefined();
+    expect(urlProblem('/pets')).toBeUndefined();
+    expect(urlProblem('/redirect?to=https://example.com')).toBeUndefined();
+    expect(urlProblem('${base}/pets')).toBeUndefined();
+    expect(urlProblem('')).toBeUndefined();
   });
 });

@@ -13,6 +13,11 @@ describe('toHttpError', () => {
     expect(err.code).toBe('timeout');
   });
 
+  it('names the limit a timeout hit, beside the Node code', () => {
+    const err = toHttpError(codedError('UND_ERR_ABORTED'), { userAborted: false, deadlineHit: true, timeoutMs: 5000 });
+    expect(err.details).toEqual({ code: 'UND_ERR_ABORTED', timeoutMs: 5000 });
+  });
+
   it('maps a user abort to aborted', () => {
     const err = toHttpError(new Error('boom'), { userAborted: true, deadlineHit: false });
     expect(err.code).toBe('aborted');

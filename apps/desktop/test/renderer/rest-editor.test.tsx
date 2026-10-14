@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { RestEditor, mergeQuery } from '../../src/renderer/features/rest-editor/rest-editor.js';
+import { RestEditor, mergeQuery, referenceField } from '../../src/renderer/features/rest-editor/rest-editor.js';
 import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
 import { registerRequestCommands } from '../../src/renderer/commands/register-request-commands.js';
 import { registerRestCommands } from '../../src/renderer/kinds/rest/commands.js';
@@ -96,6 +96,16 @@ describe('RestEditor', () => {
     mount();
 
     expect(screen.queryByTestId('rest-url-base')).toBeNull();
+  });
+
+  it('refuses a URL with no valid scheme before sending, and says why at the field', () => {
+    seed(restRequestWire({ url: 'ht!tp:// bad url' }));
+    mount();
+
+    expect(screen.getByTestId('rest-url-problem').textContent).toContain('"ht!tp" is not a URL scheme');
+    expect(screen.getByTestId('rest-send').hasAttribute('disabled')).toBe(true);
+    fireEvent.keyDown(screen.getByTestId('rest-url'), { key: 'Enter' });
+    expect(sendRest).not.toHaveBeenCalled();
   });
 
   it('highlights property references and path placeholders in the URL', () => {
@@ -562,6 +572,20 @@ describe('RestEditor Mod+S in the body editor', () => {
     fireEvent.keyDown(screen.getByLabelText('Request body'), { key: 's', ctrlKey: true });
 
     expect(saveRestRequest).toHaveBeenCalledWith('rest-1', { manual: true });
+  });
+});
+
+describe('referenceField', () => {
+  it('finds where an unresolved reference was written, in the order the editor reads', () => {
+    const request = restRequestWire({
+      url: '/pets/${petId}',
+      query: [{ name: 'tag', value: '${tag}', enabled: true }],
+      headers: [{ name: 'X-Key', value: '${key}', enabled: true }],
+    });
+    expect(referenceField(request, '${petId}')).toBe('url');
+    expect(referenceField(request, '${tag}')).toBe('params');
+    expect(referenceField(request, '${key}')).toBe('headers');
+    expect(referenceField(request, '${elsewhere}')).toBeUndefined();
   });
 });
 

@@ -45,6 +45,43 @@ export function isAbsoluteUrl(url: string): boolean {
 }
 
 /**
+ * Why a URL that means to be absolute (it has `://`) cannot be sent, or `undefined` when it can.
+ *
+ * Without this, `ht!tp:// bad url` failed {@link isAbsoluteUrl} and went out as a path under the
+ * API's base URL, with no word to the user. A URL with a `${…}` reference is left alone: its scheme
+ * or host may be in the variable, and the send resolves and checks it. A relative URL is left alone
+ * too: it is a path, and the base URL decides where it goes.
+ */
+export function urlProblem(url: string): string | undefined {
+  const text = url.trim();
+  const separator = text.indexOf('://');
+  if (separator < 0 || text.includes('${')) {
+    return undefined;
+  }
+  const scheme = text.slice(0, separator);
+  if (/[/?#]/.test(scheme)) {
+    // `/redirect?to=https://…`: a path that only carries a URL in it.
+    return undefined;
+  }
+  if (!/^[a-z][a-z0-9+.-]*$/i.test(scheme)) {
+    return `"${scheme}" is not a URL scheme. Start the URL with http:// or https://.`;
+  }
+  if (!/^https?$/i.test(scheme)) {
+    return `A REST request is sent over http:// or https://, not ${scheme}://.`;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(text);
+  } catch {
+    return 'This URL cannot be read: check the host for spaces or stray characters.';
+  }
+  if (parsed.hostname === '') {
+    return 'The URL has no host after ://.';
+  }
+  return undefined;
+}
+
+/**
  * The path parameter rows a URL implies, keeping the value already typed for a name that is still
  * there. A `{param}` removed from the URL takes its row with it — the row cannot be sent anywhere —
  * and the rows come back in the order the URL names them.

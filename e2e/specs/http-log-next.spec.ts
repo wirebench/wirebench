@@ -34,7 +34,7 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     await setMethodAndUrl(page, 'GET', '/x');
     await sendRest(page);
     // The engine refuses the URL while composing it, before any request is built.
-    await expect(responseStatus(page)).toContainText(/rest-url-incomplete|invalid-url/);
+    await expect(page.getByTestId('send-error-code')).toHaveText(/rest-url-incomplete|invalid-url/);
 
     const row = logRows(page).last();
     await expect(row).toHaveAttribute('data-kind', 'failure');
