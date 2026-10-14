@@ -176,6 +176,7 @@ import {
   historyClearResponseSchema,
   historyGetRequestSchema,
   historyListRequestSchema,
+  historyRemoveResponseSchema,
   hooksCaptureRequestWireSchema,
   hooksCaptureResponseWireSchema,
   hooksCapturedEventWireSchema,
@@ -949,6 +950,8 @@ export const channels = {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),
     get: defineChannel('history.get', historyGetRequestSchema, historyGetResponseSchema),
     clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
+    /** Drops one entry; its id is the `history.get` request's. */
+    remove: defineChannel('history.remove', historyGetRequestSchema, historyRemoveResponseSchema),
     ...soapChannels.history,
     ...restChannels.history,
     ...grpcChannels.history,

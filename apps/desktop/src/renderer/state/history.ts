@@ -25,6 +25,8 @@ export interface HistoryStore extends HistorySnapshot {
   readonly setProjectFilter: (projectId: string | undefined) => void;
   /** Clears every entry, both on disk and in the store. */
   readonly clear: () => Promise<void>;
+  /** Drops one entry, on disk and in the store. */
+  readonly remove: (id: string) => Promise<void>;
   /** Prepends `entry` when it was appended live and matches the current search, if any. */
   readonly onAppended: (entry: HistoryEntryWire) => void;
 }
@@ -102,6 +104,14 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     const result = await ipc().history.clear(undefined);
     if (result.ok) {
       set({ entries: [], total: 0 });
+    }
+  },
+
+  remove: async (id) => {
+    const result = await ipc().history.remove({ id });
+    if (result.ok && result.value.removed) {
+      const { entries, total } = get();
+      set({ entries: entries.filter((entry) => entry.id !== id), total: Math.max(0, total - 1) });
     }
   },
 
