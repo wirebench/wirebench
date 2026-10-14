@@ -4,7 +4,7 @@
  * shows the schema, fetches it through the request, and offers the document's operations.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 
@@ -30,6 +30,11 @@ import {
 } from '../../src/renderer/editor/graphql-language.js';
 import { BodyTab, type BodySchemaSource } from '../../src/renderer/features/rest-editor/body-tab.js';
 import { schemaLabel } from '../../src/renderer/features/rest-editor/graphql-body.js';
+import {
+  forgetGraphqlMethodChange,
+  methodForBodySwitch,
+} from '../../src/renderer/features/rest-editor/graphql-method.js';
+import { showToast } from '../../src/renderer/components/toast.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/kinds/rest/wire.js';
 
@@ -224,6 +229,7 @@ describe('the GraphQL body kind', () => {
   }
 
   beforeEach(() => {
+    forgetGraphqlMethodChange('r1');
     graphqlDiagnostics.mockResolvedValue({ ok: true, value: { query: [], variables: [], operations: [] } });
     useProjectStore.setState({
       apis: { 'api-1': { id: 'api-1', name: 'Shop' } as never },
@@ -241,6 +247,43 @@ describe('the GraphQL body kind', () => {
     expect(screen.getByLabelText('GraphQL query')).toBeTruthy();
     expect(screen.getByLabelText('GraphQL variables')).toBeTruthy();
     expect(screen.getByTestId('rest-graphql-schema').textContent).toBe('No schema');
+  });
+
+  it('says so in a toast whose Undo puts the method back', async () => {
+    const patches: RestRequestPatchWire[] = [];
+    vi.mocked(showToast).mockClear();
+    render(<Host initial={{ kind: 'none' }} onPatch={(patch) => patches.push(patch)} />);
+
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'graphql');
+    const [message, action] = vi.mocked(showToast).mock.calls.at(-1) ?? [];
+    expect(message).toBe('Method changed to POST');
+    expect(action?.label).toBe('Undo');
+    act(() => {
+      action?.onClick();
+    });
+
+    expect(patches.at(-1)).toEqual({ method: 'GET' });
+    // Undone by hand, so leaving GraphQL now changes nothing.
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'none');
+    expect(patches.at(-1)).toEqual({ body: { kind: 'none' } });
+  });
+
+  it('restores the method it changed when the body leaves GraphQL', async () => {
+    const patches: RestRequestPatchWire[] = [];
+    render(<Host initial={{ kind: 'none' }} onPatch={(patch) => patches.push(patch)} />);
+
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'graphql');
+    await userEvent.selectOptions(screen.getByTestId('rest-body-kind'), 'none');
+
+    expect(patches.at(-1)).toEqual({ body: { kind: 'none' }, method: 'GET' });
+  });
+
+  it('keeps a method the user picked after the automatic change', () => {
+    expect(methodForBodySwitch('r9', 'none', 'graphql', 'HEAD')).toEqual({ method: 'POST', autoChangedFrom: 'HEAD' });
+    expect(methodForBodySwitch('r9', 'graphql', 'raw', 'PUT')).toEqual({});
+    // Nothing was changed automatically for a request already on POST.
+    expect(methodForBodySwitch('r9', 'none', 'graphql', 'POST')).toEqual({});
+    expect(methodForBodySwitch('r9', 'graphql', 'none', 'POST')).toEqual({});
   });
 
   it('fetches the schema through the request, for its API', async () => {
