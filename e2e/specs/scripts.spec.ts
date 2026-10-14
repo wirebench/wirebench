@@ -100,5 +100,5 @@ test('a type error in a pre-request script shows in the editor and stops the sen
   await expect(page.getByTestId('script-errors')).toContainText('1 error', { timeout: 30_000 });
 
   await page.getByTestId('rest-send').click();
-  await expect(responseStatus(page)).toContainText('script-type-error', { timeout: 30_000 });
+  await expect(page.getByTestId('send-error-code')).toHaveText('script-type-error', { timeout: 30_000 });
 });

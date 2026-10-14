@@ -1,5 +1,6 @@
 import type { KindId } from '../../shared/kinds/kind-module.js';
-import { explorerRole, kindExplorer } from '../kinds/index.js';
+import { entityIdOf, explorerRole, kindExplorer, TAB_KINDS, tabOwner } from '../kinds/index.js';
+import type { TabContainer } from '../kinds/tab-contribution.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
@@ -91,4 +92,27 @@ export function folderOf(selection: ContainerSelection): string | undefined {
   return selection !== undefined && explorerRole(selection.kind as never)?.dropTarget === true
     ? undefined
     : selection?.folderId;
+}
+
+/** The API (and folder) the active tab sits in, when the tab is one of `kind`'s. */
+export function activeTabContainer(kind: KindId): TabContainer | undefined {
+  const { tabs, activeId } = useEditorsStore.getState();
+  const tab = tabs.find((candidate) => candidate.id === activeId);
+  if (tab === undefined || tabOwner(tab.kind) !== kind) return undefined;
+  const contribution = TAB_KINDS[tab.kind];
+  const id = contribution === undefined ? undefined : entityIdOf(tab, contribution);
+  return id === undefined ? undefined : contribution?.container?.(id, useProjectStore.getState());
+}
+
+/**
+ * Where a `<kind>.new*` command creates: the explorer selection when it sits in one of `kind`'s APIs, otherwise
+ * the API (and folder) of the active tab when that is one of `kind`'s, so the palette works from an open request
+ * as well as from the tree.
+ */
+export function kindTarget(kind: KindId, selection: ContainerSelection): TabContainer | undefined {
+  if (insideKindApi(kind, selection) && selection?.apiId !== undefined) {
+    const folderId = folderOf(selection);
+    return folderId === undefined ? { apiId: selection.apiId } : { apiId: selection.apiId, folderId };
+  }
+  return activeTabContainer(kind);
 }

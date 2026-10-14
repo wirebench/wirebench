@@ -17,6 +17,7 @@ import {
   apiRow,
   chooseContextMenuItem,
   createApi,
+  nameNewRow,
   openRequestTab,
   responseStatus,
   restRequestRow,
@@ -85,17 +86,10 @@ test.describe('GraphQL requests', () => {
     await createApi(page, 'Shop', server.url);
     await chooseContextMenuItem(page, apiRow(page, 'Shop'), 'New GraphQL request');
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
-    // The new request sits under the API, which may still be folded: unfold it to see the badge, then
-    // reopen the request, since a click on the API row opens the API's own tab.
+    // The new request's row is unfolded to and starts in rename mode; keeping its name ends the rename.
+    await nameNewRow(page, 'New GraphQL request');
     const row = restRequestRow(page, 'New GraphQL request');
-    await expect(async () => {
-      if (!(await row.isVisible())) {
-        await apiRow(page, 'Shop').click();
-      }
-      await expect(row.getByTestId('method-badge')).toHaveText('GQL', { timeout: 2_000 });
-    }).toPass({ timeout: 20_000 });
-    await row.dblclick();
-    await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
+    await expect(row.getByTestId('method-badge')).toHaveText('GQL', { timeout: 20_000 });
     await setMethodAndUrl(page, 'POST', '/graphql');
 
     // The body is GraphQL already; its schema is fetched through the request's own URL.

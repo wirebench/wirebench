@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import type { RendererKind } from '../renderer-kind.js';
+import { requestContainer } from '../tab-contribution.js';
 import { registerWsCommands } from './commands.js';
 import { wsRequests, wsHistory, wsSearch, wsLog } from './activity.js';
 import { wsExplorer } from './explorer.js';
@@ -37,6 +38,9 @@ export const wsRenderer: RendererKind = {
   tabs: [
     {
       kind: 'ws-request',
+      treeNode: (id) => `ws:${id}`,
+      container: (id, project) =>
+        requestContainer(project.wsRequests[id], (apiId) => project.wsApis[apiId] !== undefined),
       idField: 'wsRequestId',
       prefix: 'ws:',
       persisted: true,
@@ -46,6 +50,8 @@ export const wsRenderer: RendererKind = {
     },
     {
       kind: 'ws-api',
+      treeNode: (id) => `ws-api:${id}`,
+      container: (id, project) => (project.wsApis[id] === undefined ? undefined : { apiId: id }),
       idField: 'wsApiId',
       prefix: 'ws-api:',
       persisted: true,

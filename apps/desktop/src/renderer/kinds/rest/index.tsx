@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import type { RendererKind } from '../renderer-kind.js';
+import { requestContainer } from '../tab-contribution.js';
 import { registerRestCommands } from './commands.js';
 import { restRequests, restHistory, restSearch, restLog } from './activity.js';
 import { restExplorer } from './explorer.js';
@@ -37,6 +38,10 @@ export const restRenderer: RendererKind = {
   tabs: [
     {
       kind: 'rest-request',
+      treeNode: (id, project) =>
+        project.apis[project.restRequests[id]?.apiId ?? ''] === undefined ? `webhook-request:${id}` : `rest:${id}`,
+      container: (id, project) =>
+        requestContainer(project.restRequests[id], (apiId) => project.apis[apiId] !== undefined),
       idField: 'restRequestId',
       prefix: 'rest:',
       persisted: true,
@@ -46,6 +51,8 @@ export const restRenderer: RendererKind = {
     },
     {
       kind: 'api',
+      treeNode: (id) => `api:${id}`,
+      container: (id, project) => (project.apis[id] === undefined ? undefined : { apiId: id }),
       idField: 'apiId',
       prefix: 'api:',
       persisted: true,
