@@ -46,6 +46,7 @@ import { inheritedSigningOf } from '../webhook-items/signing.js';
 import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
+import { rowsBadge } from './tab-counts.js';
 import { SendMenu } from '../multi-env/send-menu.js';
 import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
 import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
@@ -263,11 +264,18 @@ export function RestEditor({ requestId }: RestEditorProps) {
       <Tabs
         label="Request tabs"
         items={TABS.filter((item) => item.id !== 'signing' || isWebhookItem).map((item) =>
-          item.id === 'scripts' && hasScripts(request.scripts)
-            ? { ...item, badge: '●' }
-            : item.id === 'assertions' && assertionsCount !== undefined
-              ? { ...item, badge: assertionsCount }
-              : item,
+          withBadge(
+            item,
+            item.id === 'scripts' && hasScripts(request.scripts)
+              ? '●'
+              : item.id === 'assertions'
+                ? assertionsCount
+                : item.id === 'params'
+                  ? rowsBadge([...request.pathParams, ...request.query])
+                  : item.id === 'headers'
+                    ? rowsBadge(request.headers)
+                    : undefined,
+          ),
         )}
         active={shownTab}
         onSelect={setTab}
@@ -440,6 +448,14 @@ export function RestEditor({ requestId }: RestEditorProps) {
       )}
     </section>
   );
+}
+
+/** A tab with its count, or as it was when there is nothing to count. */
+function withBadge<T extends { readonly id: string; readonly label: string }>(
+  item: T,
+  badge: string | undefined,
+): T | (T & { readonly badge: string }) {
+  return badge === undefined ? item : { ...item, badge };
 }
 
 /** Where a request's editor shows the text `ref` is written in, checked in the order the editor reads. */

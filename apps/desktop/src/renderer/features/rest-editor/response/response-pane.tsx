@@ -26,6 +26,7 @@ import { CookiesView } from './cookies-view.js';
 import { RedirectsView } from './redirects-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { StatusLine } from './status-line.js';
+import { responseHeadersBadge } from '../tab-counts.js';
 import { ExampleResponse, ExamplesMenu } from './examples-menu.js';
 import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
 import { AssertionResults, assertionResultsBadge } from '../../assertions/assertion-results.js';
@@ -125,6 +126,15 @@ export function RestResponsePane({
     }
     if (item.id === 'script') {
       const badge = scriptResultsBadge(exchange?.script);
+      return badge !== undefined ? { ...item, badge } : item;
+    }
+    if (item.id === 'headers') {
+      const badge =
+        exchange !== undefined
+          ? responseHeadersBadge(exchange.http)
+          : live?.headers !== undefined
+            ? responseHeadersBadge({ headers: live.headers })
+            : undefined;
       return badge !== undefined ? { ...item, badge } : item;
     }
     if (item.id === 'cookies' && exchange !== undefined && exchange.cookies.length > 0) {

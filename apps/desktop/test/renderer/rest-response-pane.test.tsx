@@ -263,7 +263,9 @@ describe('RestResponsePane', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    // The tab counts what it lists, a repeated name twice.
+    expect(screen.getByRole('tab', { name: /^Headers/ }).textContent).toBe('Headers2');
+    fireEvent.click(screen.getByRole('tab', { name: /^Headers/ }));
     const rows = screen.getAllByTestId('rest-response-header-row');
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.textContent)).toEqual(['set-cookiea=1', 'set-cookieb=2']);
@@ -466,7 +468,7 @@ describe('RestResponsePane with an event stream', () => {
         />
       </TooltipPrimitive.Provider>,
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Headers/ }));
     expect(screen.getByTestId('rest-response-headers').textContent).toContain('text/event-stream');
   });
 
