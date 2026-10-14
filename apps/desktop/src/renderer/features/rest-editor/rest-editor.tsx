@@ -55,6 +55,12 @@ const WEBHOOK_TARGET_ERROR_CODES = new Set(['webhook-target-missing', 'webhook-t
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
+/**
+ * Below this width a side-by-side editor stacks its response under the request instead: two
+ * panes side by side at 1024px wide leave the request about 370px, too little for its tables.
+ */
+export const STACK_BELOW_PX = 800;
+
 /** The request tabs, in order. */
 const TABS = [
   { id: 'params', label: 'Params' },
@@ -117,6 +123,22 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const activeEnvironment = useActiveEnvironmentIdFor(requestId);
   const currentValues = useCurrentValuesStore((state) => state.byScope);
   const layout = useEditorLayout(requestId);
+  // The editor's own width, which decides whether a side-by-side layout has room to be one.
+  const [section, setSection] = useState<HTMLElement | null>(null);
+  const [width, setWidth] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (section === null || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setWidth(section.clientWidth);
+    });
+    observer.observe(section);
+    setWidth(section.clientWidth);
+    return () => {
+      observer.disconnect();
+    };
+  }, [section]);
   const [tab, setTab] = useState<TabId>('params');
   const [resolved, setResolved] = useState<PreflightState>({});
   const platform = useMemo(() => detectPlatform(), []);
@@ -195,7 +217,8 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const sending = exchange?.status === 'sending';
   // Only a webhook item has a Signing tab; any other request shows Params rather than nothing.
   const shownTab: TabId = tab === 'signing' && !isWebhookItem ? 'params' : tab;
-  const orientation = groupOrientation(layout);
+  const orientation =
+    width !== undefined && width > 0 && width < STACK_BELOW_PX ? 'vertical' : groupOrientation(layout);
   const relative = !isAbsoluteUrl(request.url);
   const invalidTargetMessage =
     isWebhookItem && resolved.targetErrorCode === 'webhook-target-invalid'
@@ -307,7 +330,13 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const responsePane = <RestResponsePane state={exchange} requestId={requestId} />;
 
   return (
-    <section aria-label={`Request ${request.name}`} data-testid="rest-editor" className="flex h-full min-h-0 flex-col">
+    <section
+      ref={setSection}
+      aria-label={`Request ${request.name}`}
+      data-testid="rest-editor"
+      data-orientation={orientation}
+      className="flex h-full min-h-0 flex-col"
+    >
       <RestBreadcrumb requestId={requestId} />
       {isWebhookItem && (
         <div className="flex h-6 shrink-0 items-center border-b border-hairline bg-surface-base px-3">
