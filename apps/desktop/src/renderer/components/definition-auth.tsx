@@ -86,7 +86,8 @@ export interface DefinitionAuthFieldsProps {
 export function DefinitionAuthFields({ auth, onChange, registerFlush, newSecretRefs }: DefinitionAuthFieldsProps) {
   return (
     <fieldset data-testid="definition-auth" className="flex flex-col gap-2">
-      <legend className="text-xs font-medium text-fg-muted">Authentication</legend>
+      {/* Read by assistive technology only: the scheme row below already says Authentication. */}
+      <legend className="sr-only">Definition authentication</legend>
       <AuthFields
         scope="Definition"
         auth={auth}

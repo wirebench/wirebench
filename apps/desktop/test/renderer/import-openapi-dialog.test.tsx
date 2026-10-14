@@ -6,9 +6,10 @@
  * place a user learns what the document said that this client could not use.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ImportOpenApiDialog, nameFromSource } from '../../src/renderer/features/explorer/import-openapi-dialog.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -304,6 +305,24 @@ describe('the import summary', () => {
     await importAndSummarise(summary());
 
     expect(screen.getByTestId('import-openapi-counts').textContent).toBe('7 requests in 2 folders, 1 deprecated.');
+  });
+
+  it('counts the lint findings the import filed, and opens Problems from them', async () => {
+    useProblemsStore.setState({ items: [] });
+    await importAndSummarise(summary());
+    expect(screen.queryByTestId('import-openapi-lint')).toBeNull();
+
+    act(() => {
+      useProblemsStore.getState().setLint('api-1', [
+        { rule: 'info-description', severity: 'warning', message: 'm', path: '/info', source: 's' },
+        { rule: 'media-example', severity: 'hint', message: 'm', path: '/paths', source: 's' },
+      ]);
+    });
+    const link = screen.getByTestId('import-openapi-lint');
+    expect(link.textContent).toBe('2 lint findings');
+    await userEvent.click(link);
+    expect(useUiStore.getState().console.activeTab).toBe('problems');
+    useProblemsStore.setState({ items: [] });
   });
 
   it('reads naturally for a single request in a single folder', async () => {

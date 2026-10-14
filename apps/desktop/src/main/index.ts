@@ -1,3 +1,4 @@
+import { lookup } from 'node:dns/promises';
 import { existsSync, mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
@@ -72,6 +73,8 @@ import {
 import { SshService, forwardResume } from './ssh-service.js';
 import { localShell, localShellCwd, localShellEnv } from './local-shell.js';
 import { LocalTerminalService } from './local-terminal-service.js';
+import { findMoshClient, isExecutable } from './mosh-client.js';
+import { openMoshSession } from './mosh-session.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpEditService, sweepEditCopies } from './sftp-edit.js';
 import { SftpService } from './sftp-service.js';
@@ -559,6 +562,23 @@ const sessionLogs = new SessionLogStore({
 });
 const sshService = new SshService({
   ...sshConnectDeps,
+  // Mosh hosts (#419): mosh-server is started over SSH, then the installed mosh-client runs in a pty.
+  openMosh: (options) =>
+    openMoshSession(
+      {
+        findClient: () =>
+          findMoshClient({ platform: process.platform, env: process.env, home: homedir(), isExecutable }),
+        load: async () => {
+          const pty = await import('@lydell/node-pty');
+          return pty.spawn;
+        },
+        lookup: async (address) => (await lookup(address)).address,
+        env: () => localShellEnv(process.env),
+        home: homedir(),
+        platform: process.platform,
+      },
+      options,
+    ),
   hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
   emit: emitEvent,
   snippets: (sender: WebContents) => sshScopeOf(scopes, sender).snippets,
