@@ -82,6 +82,33 @@ function authSentence(details: Readonly<Record<string, unknown>>, who: string): 
   return `${capitalise(who)} refused ${triedWords}${as}; it allows ${others.join(', ')}. Change the host's sign-in method.`;
 }
 
+/** The first hop's proxy failed (#417): reaching the proxy itself, or the tunnel it was asked for. */
+function proxySentence(details: Readonly<Record<string, unknown>>, host: string): string {
+  const where = text(details, 'proxy');
+  const proxy = where === undefined ? 'the proxy' : `the proxy ${where}`;
+  const words = text(details, 'proxyDetail');
+  switch (details['proxyReason']) {
+    case 'dns':
+      return `${capitalise(proxy)} could not be found. Check the proxy's address in the host's settings, your DNS or your VPN.`;
+    case 'refused':
+      return words === undefined
+        ? `${capitalise(proxy)} refused the connection: nothing listens on that port. Check the proxy's address and port.`
+        : `${capitalise(proxy)} would not open a tunnel to ${host} (${words}). Check the host's address and port, and that the proxy allows it.`;
+    case 'timeout': {
+      const seconds = typeof details['timeout'] === 'number' ? ` after ${String(details['timeout'])} s` : '';
+      return `No answer from ${proxy}${seconds}. Check its address, your network or VPN.`;
+    }
+    case 'unreachable':
+      return `There is no route to ${proxy}. Check your network or VPN.`;
+    case 'auth':
+      return `${capitalise(proxy)} refused the sign-in${words === undefined ? '' : ` (${words})`}. Check the proxy user and password in the host's settings.`;
+    case 'protocol':
+      return `${capitalise(proxy)} did not answer as ${details['proxyType'] === 'http' ? 'an HTTP' : 'a SOCKS5'} proxy. Check the proxy's type and port.`;
+    default:
+      return `${capitalise(proxy)} closed the connection before the tunnel to ${host} opened. The log below shows how far it got.`;
+  }
+}
+
 function reachSentence(details: Readonly<Record<string, unknown>>, who: string, host: string): string {
   const { address, port } = split(host);
   switch (details['reason']) {
@@ -101,6 +128,8 @@ function reachSentence(details: Readonly<Record<string, unknown>>, who: string, 
       const via = text(details, 'via');
       return `The jump host${via === undefined ? '' : ` ${via}`} could not open a connection to ${host}. Check the target's address and port from the jump host.`;
     }
+    case 'proxy':
+      return proxySentence(details, host);
     default:
       if (details['phase'] === 'shell') return `Signed in, but ${who} would not open a shell.`;
       return `The connection to ${host} failed. The log below shows how far it got.`;

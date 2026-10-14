@@ -54,12 +54,12 @@ export function slug(name: string): string {
 }
 
 /**
- * The secret an inline password is stored as: `<id>_password`, made a valid secret name (ids may hold `-`),
+ * The secret an inline password is stored as: `<id>_password` (`<id>_proxy_password` for the proxy's), made a valid secret name (ids may hold `-`),
  * and numbered past any name already taken so another entry's password is never overwritten.
  */
-export function passwordSecretName(id: string, taken: readonly string[]): string {
+export function passwordSecretName(id: string, taken: readonly string[], suffix = 'password'): string {
   const safe = id.replace(/[^A-Za-z0-9_]/g, '_');
-  const base = `${/^[A-Za-z_]/.test(safe) ? safe : `_${safe}`}_password`;
+  const base = `${/^[A-Za-z_]/.test(safe) ? safe : `_${safe}`}_${suffix}`;
   let name = base;
   for (let n = 2; taken.includes(name); n++) name = `${base}_${String(n)}`;
   return name;
