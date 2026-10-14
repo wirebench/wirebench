@@ -4,3 +4,5 @@ export { freePort, startEchoServer } from './echo-server.js';
 export type { EchoServer } from './echo-server.js';
 export { certFixture, sshdPath, startOpenSshServer } from './openssh-server.js';
 export type { OpenSshServer } from './openssh-server.js';
+export { PROXY_ONLY_NAME, startTestProxy } from './test-proxy.js';
+export type { ProxyRequest, TestProxy, TestProxyOptions } from './test-proxy.js';

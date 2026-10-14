@@ -102,7 +102,7 @@ export class SftpService {
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const { connector } = this.deps;
-    const hops = await connector.prepareHops(sender, request.hostId, stale);
+    const hops = await connector.prepareHops(sender, request.hostId, stale, request.user);
     const verifyHostKey = await connector.verifierFor(sender);
     if (stale()) throw closed();
     let session: SftpSession;
