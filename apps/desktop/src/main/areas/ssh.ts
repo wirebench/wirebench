@@ -1,3 +1,4 @@
+import { userInfo } from 'node:os';
 import { channels } from '../../shared/ipc.js';
 import type { ForwardService } from '../forward-service.js';
 import { registerHandler } from '../ipc/register.js';
@@ -50,6 +51,14 @@ export function registerSshChannels(deps: {
     return saved;
   });
   registerHandler(channels.ssh.secretNames, async () => ({ names: await deps.secrets.names() }));
+  registerHandler(channels.ssh.localUser, () => {
+    // `userInfo` throws for a uid with no passwd entry (some containers): the field then starts empty.
+    try {
+      return Promise.resolve({ name: userInfo().username });
+    } catch {
+      return Promise.resolve({ name: '' });
+    }
+  });
   registerHandler(channels.ssh.setSecret, async (request) => {
     await deps.secrets.set(request.name, request.value);
     return {};

@@ -6,6 +6,7 @@ import { sftpServerPath, startSshFixture, type SshFixture } from '@wirebench/ssh
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { runCommand } from '../helpers/palette.js';
 import { createWorkspace } from '../helpers/project.js';
+import { fillNewHost } from '../helpers/ssh-host.js';
 
 let launched: LaunchedApp | undefined;
 let fixture: SshFixture | undefined;
@@ -76,18 +77,7 @@ test('Files: new folder, copy both ways, rename, chmod, cancel a large copy, cro
   await page.getByRole('button', { name: 'New host' }).click();
   const dialog = page.getByTestId('host-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Name', { exact: true }).fill('box');
-  await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
-  await dialog.getByRole('switch', { name: 'Override Port' }).click();
-  await dialog.getByLabel('Port', { exact: true }).fill(String(fixture.port));
-  await dialog.getByRole('switch', { name: 'Override User' }).click();
-  await dialog.getByLabel('User', { exact: true }).fill('tester');
-  await dialog.getByRole('radio', { name: 'Password', exact: true }).check();
-  await dialog.getByRole('button', { name: 'Set value…' }).click();
-  await dialog.getByLabel('Secret name', { exact: true }).fill('box_pw');
-  await dialog.getByLabel('Secret value', { exact: true }).fill('pw');
-  await dialog.getByRole('button', { name: 'Store' }).click();
-  await expect(dialog.getByLabel('Password secret', { exact: true })).toHaveValue('box_pw');
+  await fillNewHost(dialog, { name: 'box', port: fixture.port, user: 'tester', password: 'pw' });
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 

@@ -5,6 +5,19 @@ export const INPUT_CLASS =
 
 export type Provenance<T> = { value: T | undefined; from: 'host' | 'default' | { group: string } };
 
+/** Where a value comes from, as a row shows it: "22 · default", "deploy · from Production"; nothing when unset. */
+export function sourceText<T>(provenance: Provenance<T>, show: (value: T) => string = String): string | undefined {
+  if (provenance.value === undefined) return undefined;
+  const value = show(provenance.value);
+  if (typeof provenance.from === 'object') return `${value} · from ${provenance.from.group}`;
+  return provenance.from === 'default' ? `${value} · default` : undefined;
+}
+
+/** Whether a group (or Preferences) supplies the value: only then is there something to inherit or override. */
+function fromGroup<T>(provenance: Provenance<T>): boolean {
+  return typeof provenance.from === 'object' && provenance.value !== undefined;
+}
+
 export interface InheritedFieldProps<T extends string | number> {
   readonly label: string;
   /** What the field resolves to without an override here, and where that came from. */
@@ -15,9 +28,13 @@ export interface InheritedFieldProps<T extends string | number> {
   readonly type?: 'text' | 'number';
 }
 
+const SWITCH_CLASS =
+  'inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-hairline-strong px-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-50';
+
 /**
- * One inheritable setting: shows the inherited value greyed with its source ("from prod"); the Override
- * switch makes the field editable, starting from the inherited value, and switching it off inherits again.
+ * One inheritable setting. When a group supplies it, the field shows that value greyed with its source
+ * ("deploy · from Production") and one Override switch makes it editable here. Otherwise it is a plain field:
+ * left empty it takes the default, which shows as its placeholder and source ("22 · default").
  */
 export function InheritedField<T extends string | number>({
   label,
@@ -29,24 +46,28 @@ export function InheritedField<T extends string | number>({
   const id = useId();
   // A cleared field reports `undefined` (inherit) but stays editable until the switch is turned off.
   const [editing, setEditing] = useState(false);
-  const overridden = override !== undefined || editing;
-  const source =
-    typeof provenance.from === 'object'
-      ? `from ${provenance.from.group}`
-      : provenance.from === 'default'
-        ? 'default'
-        : undefined;
-  const shown = overridden ? override : provenance.value;
+  const inheritable = fromGroup(provenance);
+  const overridden = !inheritable || override !== undefined || editing;
+  const source = sourceText(provenance);
+  const shown = override !== undefined ? override : overridden ? undefined : provenance.value;
   return (
-    <div className="flex items-end gap-2">
-      <label htmlFor={id} className="flex flex-1 flex-col gap-1 text-xs">
-        <span className="text-fg-subtle">{label}</span>
+    <div className="flex flex-col gap-1 text-xs">
+      <div className="flex gap-2">
+        <label htmlFor={id} className="text-fg-subtle">
+          {label}
+        </label>
+        {source !== undefined && override === undefined && !editing ? (
+          <span className="truncate text-fg-faint">{source}</span>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
         <input
           id={id}
           type={type}
           disabled={!overridden}
-          className={INPUT_CLASS}
-          value={override === undefined && editing ? '' : shown === undefined ? '' : String(shown)}
+          className={`${INPUT_CLASS} min-w-0 flex-1`}
+          placeholder={!inheritable && provenance.value !== undefined ? String(provenance.value) : undefined}
+          value={shown === undefined ? '' : String(shown)}
           onChange={(e) => {
             if (e.target.value === '') {
               setEditing(true);
@@ -56,21 +77,22 @@ export function InheritedField<T extends string | number>({
             onChange((type === 'number' ? Number(e.target.value) : e.target.value) as T);
           }}
         />
-      </label>
-      {source !== undefined && !overridden ? <span className="pb-1.5 text-xs text-fg-subtle">{source}</span> : null}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={overridden}
-        aria-label={`Override ${label}`}
-        className={`mb-1 inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-hairline-strong px-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${overridden ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
-        onClick={() => {
-          setEditing(!overridden);
-          onChange(overridden ? undefined : (provenance.value ?? ((type === 'number' ? 0 : '') as T)));
-        }}
-      >
-        <span className="size-2.5 rounded-full bg-fg-default" />
-      </button>
+        {inheritable && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={overridden}
+            aria-label={`Override ${label}`}
+            className={`${SWITCH_CLASS} ${overridden ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
+            onClick={() => {
+              setEditing(!overridden);
+              onChange(overridden ? undefined : provenance.value);
+            }}
+          >
+            <span className="size-2.5 rounded-full bg-fg-default" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -84,47 +106,40 @@ export interface InheritedSwitchProps {
   readonly onChange: (next: boolean | undefined) => void;
 }
 
-const SWITCH_CLASS =
-  'inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-hairline-strong px-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-50';
-
 /**
- * {@link InheritedField} for an on/off setting: the inherited value shows on a greyed switch with its source;
- * Override makes it editable, starting from the inherited value, and switching Override off inherits again.
+ * {@link InheritedField} for an on/off setting: one switch for the value, with its source as text while it
+ * inherits ("on · from Production"). Flipping it sets the value here; when a group supplies the value,
+ * Inherit puts it back, and with nothing to inherit, flipping back to the default writes nothing.
  */
 export function InheritedSwitch({ label, provenance, override, onChange }: InheritedSwitchProps) {
-  const overridden = override !== undefined;
-  const on = overridden ? override : (provenance.value ?? false);
-  const source =
-    typeof provenance.from === 'object'
-      ? `from ${provenance.from.group}`
-      : provenance.from === 'default'
-        ? 'default'
-        : undefined;
+  const inheritable = fromGroup(provenance);
+  const fallback = provenance.value ?? false;
+  const on = override ?? fallback;
+  const source = override === undefined ? sourceText(provenance, (v) => (v ? 'on' : 'off')) : undefined;
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="flex-1 text-fg-subtle">{label}</span>
-      {source !== undefined && !overridden ? <span className="text-fg-subtle">{source}</span> : null}
+      {source !== undefined ? <span className="text-fg-faint">{source}</span> : null}
+      {inheritable && override !== undefined ? (
+        <button
+          type="button"
+          aria-label={`Inherit ${label}`}
+          className="rounded px-1 text-fg-subtle hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+          onClick={() => {
+            onChange(undefined);
+          }}
+        >
+          Inherit
+        </button>
+      ) : null}
       <button
         type="button"
         role="switch"
         aria-checked={on}
         aria-label={label}
-        disabled={!overridden}
         className={`${SWITCH_CLASS} ${on ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
         onClick={() => {
-          onChange(!on);
-        }}
-      >
-        <span className="size-2.5 rounded-full bg-fg-default" />
-      </button>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={overridden}
-        aria-label={`Override ${label}`}
-        className={`${SWITCH_CLASS} ${overridden ? 'justify-end bg-accent' : 'justify-start bg-surface-base'}`}
-        onClick={() => {
-          onChange(overridden ? undefined : (provenance.value ?? false));
+          onChange(!inheritable && !on === fallback ? undefined : !on);
         }}
       >
         <span className="size-2.5 rounded-full bg-fg-default" />

@@ -16,7 +16,7 @@ describe('InheritedField', () => {
         onChange={onChange}
       />,
     );
-    expect(screen.getByText('from prod')).toBeDefined();
+    expect(screen.getByText('deploy · from prod')).toBeDefined();
     expect(screen.getByLabelText<HTMLInputElement>('User').disabled).toBe(true);
     await userEvent.click(screen.getByRole('switch', { name: 'Override User' }));
     expect(onChange).toHaveBeenCalledWith('deploy');
@@ -35,18 +35,38 @@ describe('InheritedField', () => {
     await userEvent.click(screen.getByRole('switch', { name: 'Override User' }));
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
-  it('overriding a field with nothing inherited starts empty rather than staying inherited', async () => {
+  it('with no group supplying it, the field is plain: no switch, the default as placeholder and source', async () => {
     const onChange = vi.fn();
     render(
       <InheritedField
-        label="User"
-        provenance={{ value: undefined, from: 'default' }}
+        label="Port"
+        type="number"
+        provenance={{ value: 22, from: 'default' }}
         override={undefined}
         onChange={onChange}
       />,
     );
-    await userEvent.click(screen.getByRole('switch', { name: 'Override User' }));
-    expect(onChange).toHaveBeenCalledWith('');
+    expect(screen.queryByRole('switch')).toBeNull();
+    const port = screen.getByLabelText<HTMLInputElement>('Port');
+    expect(port.disabled).toBe(false);
+    expect(port.value).toBe('');
+    expect(port.placeholder).toBe('22');
+    expect(screen.getByText('22 · default')).toBeDefined();
+    await userEvent.type(port, '2');
+    expect(onChange).toHaveBeenLastCalledWith(2);
+  });
+  it('a user with nothing to inherit is a plain field with no source', () => {
+    render(
+      <InheritedField
+        label="User"
+        provenance={{ value: undefined, from: 'default' }}
+        override="me"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
+    expect(screen.queryByText(/default/)).toBeNull();
   });
   it('clearing a number reports undefined, not 0, and the field stays editable', async () => {
     const onChange = vi.fn();
