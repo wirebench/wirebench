@@ -48,6 +48,7 @@ import {
   useSnippetsStore,
 } from '../features/ssh/snippets/snippets-store.js';
 import { subscribeToSshEvents } from '../features/ssh/terminal-session.js';
+import { SessionLogsDialog } from '../features/ssh/session-logs.js';
 import { SnippetRunDialog } from '../features/ssh/snippets/run-dialog.js';
 import { TrustDialog } from '../features/ssh/trust-dialog.js';
 import { HostDeleteDialog } from '../features/ssh/host-delete.js';
@@ -599,6 +600,7 @@ export function AppShell() {
       {sshEnabled && <HostDeleteDialog />}
       {sshEnabled && <ForwardPrompts />}
       {sshEnabled && <SnippetRunDialog />}
+      {sshEnabled && <SessionLogsDialog />}
       <CollectionExportReportDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>

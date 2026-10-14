@@ -50,7 +50,7 @@ import {
   forwardStopRequestSchema,
 } from './forward-wire.js';
 import {
-  sessionLogHostRequestSchema,
+  sessionLogListRequestSchema,
   sessionLogListResponseSchema,
   sessionLogReadResponseSchema,
   sessionLogRequestSchema,
@@ -1128,7 +1128,7 @@ export const channels = {
   sessionLog: {
     switches: defineChannel('sessionLog.switches', z.object({}), sessionLogSwitchesResponseSchema),
     setSwitch: defineChannel('sessionLog.setSwitch', sessionLogSetSwitchRequestSchema, z.object({})),
-    list: defineChannel('sessionLog.list', sessionLogHostRequestSchema, sessionLogListResponseSchema),
+    list: defineChannel('sessionLog.list', sessionLogListRequestSchema, sessionLogListResponseSchema),
     read: defineChannel('sessionLog.read', sessionLogRequestSchema, sessionLogReadResponseSchema),
     search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
     delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),

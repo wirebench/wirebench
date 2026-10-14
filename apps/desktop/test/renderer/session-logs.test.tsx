@@ -1,7 +1,13 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { groupLogged, useLogSwitchesStore } from '../../src/renderer/features/ssh/session-log-switches.js';
-import { HostSessionLogs } from '../../src/renderer/features/ssh/session-logs.js';
+import {
+  hideSessionLogs,
+  HostSessionLogs,
+  logSummary,
+  SessionLogsDialog,
+  showSessionLogs,
+} from '../../src/renderer/features/ssh/session-logs.js';
 import type { SessionLogEntryWire } from '../../src/shared/session-log-wire.js';
 import type { HostsFileWire } from '../../src/shared/ssh-wire.js';
 
@@ -48,7 +54,12 @@ beforeEach(() => {
   sessionLog.delete.mockResolvedValue(ok({}));
   sessionLog.reveal.mockResolvedValue(ok({}));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  act(() => {
+    hideSessionLogs();
+  });
+});
 
 describe('HostSessionLogs', () => {
   it('is off by default and turns logging on for the host', async () => {
@@ -84,7 +95,7 @@ describe('HostSessionLogs', () => {
     sessionLog.list.mockResolvedValue(ok({ logs: [entry('20261013T183000Z-aaaaaaaa')] }));
     render(<HostSessionLogs hostId="web" path={[]} groupName={groupName} />);
     const row = await screen.findByTestId('session-log-row');
-    expect(within(row).getByText(/exit 0 · 2\.0 KB/)).toBeTruthy();
+    expect(within(row).getByText(/^\d\d:\d\d · 2\.0 KB · exit 0$/)).toBeTruthy();
 
     fireEvent.click(within(row).getByRole('button', { name: 'Open log' }));
     const viewer = await screen.findByTestId('session-log-viewer');
@@ -140,6 +151,62 @@ describe('HostSessionLogs', () => {
     await waitFor(() => {
       expect(sessionLog.list).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('logSummary (#534)', () => {
+  it('reads like "11:09 · 16 B · exit 0"', () => {
+    const at = new Date(2026, 9, 14, 11, 9).toISOString();
+    expect(logSummary(entry('x', { startedAt: at, bytes: 16 }))).toBe('11:09 · 16 B · exit 0');
+    expect(logSummary(entry('x', { startedAt: at, bytes: 3 * 1024 * 1024, live: true }))).toBe(
+      '11:09 · 3.0 MB · running',
+    );
+    expect(logSummary(entry('x', { startedAt: at, reason: 'lost', exitCode: null }))).toBe(
+      '11:09 · 2.0 KB · connection lost',
+    );
+  });
+});
+
+describe('SessionLogsDialog (#534)', () => {
+  it('lists every host’s logs under their day, filters by host and opens one from its host', async () => {
+    sessionLog.list.mockResolvedValue(
+      ok({
+        logs: [
+          entry('20261013T190000Z-bbbbbbbb', { hostId: 'db', hostName: 'Database' }),
+          entry('20261013T183000Z-aaaaaaaa'),
+        ],
+      }),
+    );
+    render(<SessionLogsDialog />);
+    expect(screen.queryByTestId('session-logs-dialog')).toBeNull();
+    act(() => {
+      showSessionLogs();
+    });
+    const dialog = await screen.findByTestId('session-logs-dialog');
+    const rows = await within(dialog).findAllByTestId('session-log-row');
+    expect(sessionLog.list).toHaveBeenCalledWith({});
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringMatching(/^Database\d\d:\d\d · 2\.0 KB · exit 0$/),
+      expect.stringMatching(/^Web\d\d:\d\d · 2\.0 KB · exit 0$/),
+    ]);
+    fireEvent.change(within(dialog).getByLabelText('Filter by host'), { target: { value: 'data' } });
+    expect(within(dialog).getAllByTestId('session-log-row')).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open log' }));
+    await waitFor(() => {
+      expect(sessionLog.read).toHaveBeenCalledWith({ hostId: 'db', id: '20261013T190000Z-bbbbbbbb' });
+    });
+  });
+
+  it('opens from a host’s panel', async () => {
+    render(
+      <>
+        <HostSessionLogs hostId="web" path={[]} groupName={groupName} />
+        <SessionLogsDialog />
+      </>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'All hosts…' }));
+    expect(await screen.findByTestId('session-logs-dialog')).toBeTruthy();
+    expect(await screen.findAllByText('No logs on this machine.')).toHaveLength(2);
   });
 });
 

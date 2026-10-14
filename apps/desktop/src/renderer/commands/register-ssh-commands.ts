@@ -10,6 +10,7 @@ import {
 } from '../features/ssh/forwarding/forward-actions.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { openLocalTerminal } from '../features/ssh/local-terminal.js';
+import { showSessionLogs } from '../features/ssh/session-logs.js';
 import {
   activeTerminal,
   closePane,
@@ -209,6 +210,12 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
       }
       const item = await snippetById(arg);
       if (item !== undefined) startRun(item);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.sessionLogs'),
+    run: () => {
+      showSessionLogs();
     },
   });
   registerCommand({

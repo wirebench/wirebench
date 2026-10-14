@@ -21,9 +21,10 @@ import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { trackPaneModes } from './terminal-modes.js';
 import { attachSnippetSuggestions } from './snippets/ghost.js';
-import { closeSnippetPicker, useSnippetPickerStore } from './snippets/snippet-actions.js';
+import { closeSnippetPicker, openSnippetPicker, useSnippetPickerStore } from './snippets/snippet-actions.js';
 import { TerminalPicker } from './snippets/terminal-picker.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
+import { clipboardChord, TerminalContextMenu, type TerminalMenuActions } from './terminal-menu.js';
 import { BroadcastBanner } from './panes/broadcast-banner.js';
 import {
   broadcastOf,
@@ -78,6 +79,10 @@ interface Live {
   readonly syncSize: () => void;
   /** Tells the snippet suggestions the next input is a paste. */
   readonly markPaste: () => void;
+  /** Copies the selection, as copy-on-select does. */
+  readonly copy: () => void;
+  /** Pastes what the clipboard holds through the paste guard, as a paste event would. */
+  readonly paste: () => void;
 }
 
 const encoder = new TextEncoder();
@@ -358,6 +363,11 @@ function TerminalPane({
   const [findFocus, setFindFocus] = useState(0);
   const [findResults, setFindResults] = useState<FindResults | undefined>(undefined);
   const finder = useMemo(() => finderFor(() => live.current?.search), []);
+  /** Opens this pane's find bar, or gives its query the focus again. */
+  const openFind = (): void => {
+    setFindOpen(true);
+    setFindFocus((n) => n + 1);
+  };
   const reconnector = useRef<Reconnector | null>(null);
   const [reconnect, setReconnect] = useState<ReconnectState>({ kind: 'idle' });
   /** Ticks once a second while a reconnect waits, for the countdown. */
@@ -405,8 +415,40 @@ function TerminalPane({
     const suggestions = attachSnippetSuggestions(term, {
       connected: () => target.current !== undefined && broadcastReceivers(tabId, paneId) === undefined,
     });
+    const copySelection = (): void => {
+      const selected = term.getSelection();
+      if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
+    };
+    /** Text the paste guard lets through goes in as xterm's own paste; anything else waits for the user's yes. */
+    const pasteText = (text: string): void => {
+      if (text === '' || target.current === undefined) return;
+      const receivers = broadcastReceivers(tabId, paneId)?.length ?? 1;
+      if (guardPaste(text, usePreferencesStore.getState().preferences.terminal, receivers) === 'send') {
+        suggestions.markPaste();
+        term.paste(text);
+        return;
+      }
+      setHeldPaste({ text, receivers });
+    };
+    const pasteClipboard = (): void => {
+      void navigator.clipboard
+        .readText()
+        .then(pasteText)
+        .catch(() => undefined);
+    };
     term.attachCustomKeyEventHandler((event) => {
       if (suggestions.handleKey(event)) return false;
+      // Off a Mac, Ctrl+Shift+C / V / A copy, paste and select all; Ctrl+C stays the shell's.
+      const clip = clipboardChord(event, platform);
+      if (clip !== undefined) {
+        if (event.type === 'keydown') {
+          event.preventDefault();
+          if (clip === 'copy') copySelection();
+          else if (clip === 'paste') pasteClipboard();
+          else term.selectAll();
+        }
+        return false;
+      }
       // ⌘+ / ⌘− / ⌘0 size this terminal alone; neither the shell nor the app's zoom sees them.
       const zoomed = zoomChord(event, platform);
       if (zoomed !== undefined) {
@@ -421,8 +463,7 @@ function TerminalPane({
       if (!isFindChord(event, platform)) return true;
       if (event.type === 'keydown') {
         event.preventDefault();
-        setFindOpen(true);
-        setFindFocus((n) => n + 1);
+        openFind();
       }
       return false;
     });
@@ -461,6 +502,8 @@ function TerminalPane({
       markPaste: () => {
         suggestions.markPaste();
       },
+      copy: copySelection,
+      paste: pasteClipboard,
     };
     // A snippet run asks whether the shell turned bracketed paste on.
     const untrackModes = trackPaneModes(paneId, () => term.modes.bracketedPasteMode);
@@ -511,8 +554,7 @@ function TerminalPane({
       clearTimeout(copyTimer);
       copyTimer = setTimeout(() => {
         if (!usePreferencesStore.getState().preferences.terminal.copyOnSelect) return;
-        const selected = term.getSelection();
-        if (selected !== '') void navigator.clipboard.writeText(selected).catch(() => undefined);
+        copySelection();
       }, COPY_ON_SELECT_DEBOUNCE_MS);
     });
     // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
@@ -627,6 +669,11 @@ function TerminalPane({
 
   const exitCode = sessionId !== undefined && exit?.sessionId === sessionId ? exit.code : undefined;
   const ended = sessionId !== undefined && (exitCode !== undefined || session?.state === 'closed');
+  // The find bar belongs to the session it searched: an end, a drop or a Reconnect closes it.
+  const sessionLive = session?.state === 'open' && !ended;
+  useEffect(() => {
+    if (!sessionLive) setFindOpen(false);
+  }, [sessionLive]);
   const stopReconnect = (): void => {
     reconnector.current?.cancel();
   };
@@ -659,6 +706,46 @@ function TerminalPane({
   const closePaste = (): void => {
     setHeldPaste(null);
     live.current?.term.focus();
+  };
+
+  /** Runs `act` on the terminal, then gives it the keys back. */
+  const onTerminal = (act: (current: Live) => void) => (): void => {
+    const current = live.current;
+    if (current === null) return;
+    act(current);
+    current.term.focus();
+  };
+  // The right-click menu runs what the chords, the toolbar and the commands run.
+  const menuActions: TerminalMenuActions = {
+    copy: onTerminal((current) => {
+      current.copy();
+    }),
+    paste: onTerminal((current) => {
+      current.paste();
+    }),
+    selectAll: onTerminal((current) => {
+      current.term.selectAll();
+    }),
+    find: openFind,
+    clear: onTerminal((current) => {
+      current.term.clear();
+    }),
+    splitRight: () => {
+      requestSplit(tabId, 'row', paneId);
+    },
+    splitDown: () => {
+      requestSplit(tabId, 'column', paneId);
+    },
+    runSnippet: () => {
+      focusPane(tabId, paneId);
+      openSnippetPicker();
+    },
+    openFiles: () => {
+      openFiles(hostId);
+    },
+    reconnect: () => {
+      useHostsStore.getState().bumpReconnect(paneId);
+    },
   };
 
   return (
@@ -697,8 +784,28 @@ function TerminalPane({
         }}
       />
       {split && <PaneHeader tabId={tabId} pane={pane} focused={focused} />}
+      {/* A strip above the terminal, pushing it down: it never covers the text or a notice on the screen. */}
+      <TerminalFindBar
+        open={findOpen}
+        focusRequest={findFocus}
+        finder={finder}
+        results={findResults}
+        onClose={() => {
+          setFindOpen(false);
+          live.current?.term.focus();
+        }}
+      />
       <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
+        <TerminalContextMenu
+          platform={detectPlatform()}
+          state={() => ({
+            hasSelection: live.current?.term.hasSelection() ?? false,
+            connected: target.current !== undefined,
+          })}
+          actions={menuActions}
+        >
+          <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
+        </TerminalContextMenu>
         {pickerOpen && (
           <TerminalPicker
             onClose={() => {
@@ -725,20 +832,13 @@ function TerminalPane({
             }}
             onFaded={() => {
               dropAttempt(paneId);
-              if (focusRef.current) live.current?.term.focus();
+              // Not from where the user has moved on to since connecting, such as this pane's find bar.
+              const away = document.activeElement;
+              const idle = away === null || away === document.body || holder.current?.contains(away) === true;
+              if (focusRef.current && idle) live.current?.term.focus();
             }}
           />
         )}
-        <TerminalFindBar
-          open={findOpen}
-          focusRequest={findFocus}
-          finder={finder}
-          results={findResults}
-          onClose={() => {
-            setFindOpen(false);
-            live.current?.term.focus();
-          }}
-        />
       </div>
       {notice !== undefined && (
         <div

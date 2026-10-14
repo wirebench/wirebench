@@ -24,7 +24,8 @@ export const sessionLogSetSwitchRequestSchema = z.strictObject({
 });
 export type SessionLogSetSwitchRequest = z.infer<typeof sessionLogSetSwitchRequestSchema>;
 
-export const sessionLogHostRequestSchema = z.strictObject({ hostId: hostIdSchema });
+/** With no `hostId`, every host's logs in the workspace. */
+export const sessionLogListRequestSchema = z.strictObject({ hostId: hostIdSchema.optional() });
 export const sessionLogRequestSchema = z.strictObject({ hostId: hostIdSchema, id: logIdSchema });
 export type SessionLogRequest = z.infer<typeof sessionLogRequestSchema>;
 
