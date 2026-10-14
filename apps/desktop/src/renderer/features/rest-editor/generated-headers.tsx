@@ -119,7 +119,16 @@ export function GeneratedHeaders({ request, onChange }: GeneratedHeadersProps) {
   return (
     <section aria-label="Generated headers" data-testid="rest-generated-headers" className="mt-3 flex flex-col gap-1">
       <h3 className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Generated</h3>
-      <table className="w-full border-collapse text-sm">
+      {/* Fixed columns: a long value is cut to one line (its full text in the tooltip) rather than
+          wrapping a character per line once the pane is narrow. */}
+      <table className="w-full min-w-[26rem] table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className="w-8" />
+          <col className="w-[30%]" />
+          <col />
+          <col className="w-26" />
+          <col className="w-32" />
+        </colgroup>
         <tbody>
           {rows.map((row, index) => {
             const reason = readOnlyReason(row);
@@ -145,12 +154,17 @@ export function GeneratedHeaders({ request, onChange }: GeneratedHeadersProps) {
                   )}
                 </td>
                 <td
-                  className={`px-2 py-1 font-mono ${row.state === 'sent' || row.state === 'merged' ? 'text-fg-default' : 'text-fg-subtle line-through'}`}
+                  title={row.name}
+                  className={`truncate px-2 py-1 font-mono ${row.state === 'sent' || row.state === 'merged' ? 'text-fg-default' : 'text-fg-subtle line-through'}`}
                 >
                   {row.name}
                 </td>
-                <td className="px-2 py-1 font-mono [overflow-wrap:anywhere] text-fg-muted">{row.value}</td>
-                <td className="px-2 py-1 text-xs whitespace-nowrap text-fg-subtle">{SOURCE_LABEL[row.source]}</td>
+                <td title={row.value} className="truncate px-2 py-1 font-mono text-fg-muted">
+                  {row.value}
+                </td>
+                <td title={SOURCE_LABEL[row.source]} className="truncate px-2 py-1 text-xs text-fg-subtle">
+                  {SOURCE_LABEL[row.source]}
+                </td>
                 <td className="px-2 py-1 text-xs text-fg-subtle">
                   {reason ?? note}
                   {reason === undefined && row.state !== 'overridden' && (
