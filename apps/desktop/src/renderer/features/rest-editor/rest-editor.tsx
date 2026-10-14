@@ -26,6 +26,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { folderChainOf, selectApiOf, useProjectStore } from '../../state/project.js';
 import { isAbsoluteUrl, queryFromUrl, syncPathParams } from '../../state/rest-url.js';
 import { useCurrentValuesStore } from '../../state/current-values.js';
+import { fixedLayout } from '../../state/ui.js';
 import { useActiveEnvironmentIdFor } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import type { RequestPreflightResponse } from '../../../shared/wire-types.js';
@@ -218,7 +219,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
   // Only a webhook item has a Signing tab; any other request shows Params rather than nothing.
   const shownTab: TabId = tab === 'signing' && !isWebhookItem ? 'params' : tab;
   const orientation =
-    width !== undefined && width > 0 && width < STACK_BELOW_PX ? 'vertical' : groupOrientation(layout);
+    !fixedLayout() && width !== undefined && width > 0 && width < STACK_BELOW_PX
+      ? 'vertical'
+      : groupOrientation(layout);
   const relative = !isAbsoluteUrl(request.url);
   const invalidTargetMessage =
     isWebhookItem && resolved.targetErrorCode === 'webhook-target-invalid'

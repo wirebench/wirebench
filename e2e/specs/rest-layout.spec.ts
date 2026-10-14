@@ -19,12 +19,17 @@ const SIZES = [
   { width: 1024, height: 700 },
 ] as const;
 
-/** Sets the window's content area — what the renderer lays out in — to `size`. */
-async function setWindowSize(launched: LaunchedApp, size: { width: number; height: number }): Promise<void> {
-  await launched.app.evaluate(async ({ BrowserWindow }, next) => {
+/**
+ * Sets the window's content area — what the renderer lays out in — to `size`. Returns false when
+ * the screen is too small to give it (a hosted macOS runner's is), so the spec can skip that size.
+ */
+async function setWindowSize(launched: LaunchedApp, size: { width: number; height: number }): Promise<boolean> {
+  return launched.app.evaluate(async ({ BrowserWindow }, next) => {
     const [window] = BrowserWindow.getAllWindows();
     window?.setContentSize(next.width, next.height);
     await new Promise((resolve) => setTimeout(resolve, 300));
+    const [width, height] = window?.getContentSize() ?? [0, 0];
+    return width === next.width && height === next.height;
   }, size);
 }
 
@@ -72,7 +77,7 @@ test.describe('REST editor at small window sizes', () => {
 
   test('fits at 1440×900 and 1024×700, with the code panel open or closed', async () => {
     server = await startTestRestServer();
-    launched = await launchApp();
+    launched = await launchApp({ adaptiveLayout: true });
     const page = launched.window;
 
     await createWorkspace(page, 'Layout');
@@ -84,6 +89,8 @@ test.describe('REST editor at small window sizes', () => {
     await sendRest(page);
     await expect(responseStatus(page)).toContainText('200', { timeout: 20_000 });
 
+    const [wide] = SIZES;
+    test.skip(!(await setWindowSize(launched, wide)), 'The screen is smaller than 1440×900');
     for (const size of SIZES) {
       for (const codePanel of [false, true]) {
         const where = `${String(size.width)}×${String(size.height)}, code panel ${codePanel ? 'open' : 'closed'}`;
@@ -109,19 +116,22 @@ test.describe('REST editor at small window sizes', () => {
 
     // At 1024 wide there is not room for two panes side by side, so the response goes underneath.
     await expect(page.getByTestId('rest-editor')).toHaveAttribute('data-orientation', 'vertical');
-    await setWindowSize(launched, SIZES[0]);
+    await setWindowSize(launched, wide);
     await page.getByTestId('rail-code').click();
     await expect(page.getByTestId('code-panel')).toBeHidden();
     await expect(page.getByTestId('rest-editor')).toHaveAttribute('data-orientation', 'horizontal');
   });
 
   test('a short window starts with the console collapsed', async () => {
-    launched = await launchApp();
+    launched = await launchApp({ adaptiveLayout: true });
     const page = launched.window;
     await createWorkspace(page, 'Short');
-    await expect(page.getByTestId('console')).toBeVisible();
+    // A runner whose screen already clamps the window below the threshold starts collapsed too.
+    if ((await page.evaluate(() => window.innerHeight)) >= 720) {
+      await expect(page.getByTestId('console')).toBeVisible();
+    }
 
-    await setWindowSize(launched, SIZES[1]);
+    expect(await setWindowSize(launched, SIZES[1])).toBe(true);
     await page.reload();
     await page.waitForSelector(SHELL_READY_SELECTOR);
     await expect(page.getByTestId('activity-bar')).toBeVisible();
