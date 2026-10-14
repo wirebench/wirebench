@@ -312,7 +312,9 @@ UDP ports.
 Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts
 appear as written; the filter box matches name, address and tags, and tag chips narrow the list.
 Double-click a host, or press <kbd>Enter</kbd>, to connect. The right-click menu has Connect, Edit,
-Duplicate, Move to…, Delete and Copy address. A group can be deleted once it is empty.
+Duplicate, Move to…, Delete… and Copy address. **Delete…** asks first and says how many open sessions
+will close (each terminal pane on the host, and its Files tab); they close with it. A group can be deleted
+once it is empty.
 
 The hosts you connected to lately show in a **Recent** strip above the list, newest first, with when
 the last connect ended and whether it failed; its connect button opens the terminal again, and
@@ -322,7 +324,7 @@ never credentials. A deleted host drops out of it, and a renamed one shows by it
 
 From the keyboard:
 
-- <kbd>⌘⇧H</kbd> / <kbd>Ctrl+Shift+H</kbd> runs **Connect to Host…**: a searchable list over name,
+- <kbd>⌘⇧H</kbd> / <kbd>Ctrl+Shift+H</kbd> runs **Hosts: Connect to Host…**: a searchable list over name,
   address, group path and tags. The hosts you connected to lately come first, under **Recent**.
   <kbd>Enter</kbd> connects, or focuses the terminal if one for that host is already open.
 - Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests, recent ones first.
@@ -427,7 +429,7 @@ works through jump hosts exactly as the terminal does.
 - **Files** on a terminal tab's toolbar opens the files of the host in the focused pane. **Open
   terminal** on a Files tab's toolbar goes the other way. Each focuses the tab for that host if one is
   already open.
-- **Open Files on Host…** in the palette, and the **Files** group in quick-open (<kbd>⌘P</kbd>).
+- **Hosts: Open Files on Host…** in the palette, and the **Files** group in quick-open (<kbd>⌘P</kbd>).
 
 The tab is named after the host with **· Files**. It has its own SSH connection, separate from any
 terminal to the same host, so it signs in and checks the host key the same way (see
@@ -563,7 +565,7 @@ tab** (in the host's right-click menu and the palette) always opens another.
 **layout**. A tab opened from a layout offers **Update "name"** or **Save as new…** instead.
 
 The **Layouts** view in the SSH sidebar lists each layout with its hosts and pane count, and opens, renames
-or deletes it. **Open Layout…** in the palette and the **Layouts** group in quick-open (<kbd>⌘P</kbd>) list
+or deletes it. **Layouts: Open Layout…** in the palette and the **Layouts** group in quick-open (<kbd>⌘P</kbd>) list
 them too. Opening a layout opens one tab with the saved panes, all connecting at once, titled with the
 layout's name. A pane whose host is no longer in `hosts.yaml` says so and offers **Remove pane**.
 
@@ -672,8 +674,8 @@ the host's terminals**.
 ### Starting and stopping
 
 - **By hand:** **Start** on the rule, in the **Port forwarding** view of the SSH sidebar, in the host details
-  panel, or **Start Port Forward…** in the palette. It runs until you stop it (**Stop**, **Stop Port
-  Forward…**, **Stop All Port Forwards**).
+  panel, or **Forwarding: Start Port Forward…** in the palette. It runs until you stop it (**Stop**,
+  **Forwarding: Stop Port Forward…**, **Forwarding: Stop All Port Forwards**).
 - **With the terminals:** a rule with `autoStart` starts when a terminal to its host opens and stops when the
   host's last terminal closes. Starting it by hand while it runs this way keeps it running after the
   terminals close; stopping it by hand keeps it stopped until the host's next terminal.
@@ -880,14 +882,13 @@ it and press <kbd>Enter</kbd> yourself. **Insert** does the same for one run of 
 
 ### From the keyboard
 
-- <kbd>⌘K</kbd> → **Run Snippet…** opens a list of snippets, matched on name, package, tags and first line.
+- <kbd>⌘K</kbd> → **Snippets: Run Snippet…** opens a list of snippets, matched on name, package, tags and first line.
   <kbd>Enter</kbd> runs the snippet into the terminal in front (through the run dialog when it must ask),
   or opens the run dialog when no terminal is in front.
 - Quick-open (<kbd>⌘P</kbd>) lists snippets under **Snippets**, beside operations, requests and hosts.
 - <kbd>⌘;</kbd> / <kbd>Ctrl+;</kbd> inside a terminal (**Terminal: Snippets…**) opens a picker over that
   terminal. <kbd>Enter</kbd> runs into it, <kbd>⌥Enter</kbd> / <kbd>Alt+Enter</kbd> inserts.
-- The palette also has **Snippets: New Snippet…**, **Snippets: Edit Snippet…** and **Snippets: Run
-  Snippet**.
+- The palette also has **Snippets: New Snippet…** and **Snippets: Edit Snippet…**.
 
 ### Suggestions while you type
 
@@ -1041,7 +1042,7 @@ session is still writing is never deleted.
 row each such as *11:09 · 16 B · exit 0*: the start time, the size and how the session ended.
 **Search logs** finds the logs that contain some text and shows the first line that matches;
 open a log to read it, filtered to the lines that contain your text. Each log can also be revealed in
-the file manager, or deleted. **Session Logs…** in the palette, or **All hosts…** in a host's
+the file manager, or deleted. **Terminal: Session Logs…** in the palette, or **All hosts…** in a host's
 details, lists every host's logs in one place, with a filter by host name.
 
 Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.

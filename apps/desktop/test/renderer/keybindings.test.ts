@@ -46,6 +46,14 @@ describe('formatKeybinding', () => {
     expect(formatKeybinding('Mod+Alt+B', 'linux')).toBe('Ctrl+Alt+B');
     expect(formatKeybinding('Mod+Comma', 'win')).toBe('Ctrl+,');
   });
+
+  it("writes the SSH hints in each platform's notation (#536)", () => {
+    expect(formatKeybinding('Mod+Plus', 'mac')).toBe('⌘+');
+    expect(formatKeybinding('Mod+Minus', 'mac')).toBe('⌘-');
+    expect(formatKeybinding('Mod+Plus', 'linux')).toBe('Ctrl++');
+    expect(formatKeybinding('Alt+Enter', 'mac')).toBe('⌥⏎');
+    expect(formatKeybinding('Alt+Enter', 'win')).toBe('Alt+Enter');
+  });
 });
 
 interface FakeEventInit {

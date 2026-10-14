@@ -34,18 +34,22 @@ files:
   # happened to be installed on the runner, in the wrong architecture for half the builds. The app
   # loads the vendored copy under `Resources/kerberos/` and never this one.
   - '!**/node_modules/kerberos/**'
-  # …and so would everything only `kerberos` depends on: `node-addon-api` (headers for building it)
-  # and the `prebuild-install` tree that fetches a binding at install time. Nothing loads them at
+  # …and so would everything only `kerberos` depends on: the `prebuild-install` tree that fetches a binding at install time. Nothing loads them at
   # runtime. Top-level folders only, and only packages nothing else in the app depends on;
   # `scripts/check-desktop-asar.ts` fails the release if this list ever drops a package some other
   # dependency needs, or if the tree grows a package this list misses.
-  - '!node_modules/{node-addon-api,prebuild-install,base64-js,bl,buffer,chownr,decompress-response,deep-extend,detect-libc,end-of-stream,expand-template,fs-constants,github-from-package,ieee754,inherits,ini,mimic-response,minimist,mkdirp-classic,napi-build-utils,node-abi,once,pump,rc,readable-stream,safe-buffer,simple-concat,simple-get,string_decoder,strip-json-comments,tar-fs,tar-stream,tunnel-agent,util-deprecate,wrappy}/**'
+  # (`node-addon-api`, its build headers, ships: node-hid declares it too.)
+  - '!node_modules/{prebuild-install,base64-js,bl,buffer,chownr,decompress-response,deep-extend,detect-libc,end-of-stream,expand-template,fs-constants,github-from-package,ieee754,inherits,ini,mimic-response,minimist,mkdirp-classic,napi-build-utils,node-abi,once,pump,rc,readable-stream,safe-buffer,simple-concat,simple-get,string_decoder,strip-json-comments,tar-fs,tar-stream,tunnel-agent,util-deprecate,wrappy}/**'
   # ssh2's optional native cipher binding is never built; ssh2 falls back to its pure-JS ciphers.
   - '!**/node_modules/ssh2/lib/protocol/crypto/build/**'
   - '!**/node_modules/cpu-features/**'
   # The local terminal's pty binding as pnpm installed it is only the runner's own platform and CPU. Each
   # platform below maps in the bindings `scripts/vendor-node-pty.ts` vendored instead (#410).
   - '!**/node_modules/@lydell/node-pty-*/**'
+  # node-hid (security keys, #420) loads one of its N-API prebuilds; the hidapi C sources it builds from
+  # when none fits are never used.
+  - '!**/node_modules/node-hid/{hidapi,src}/**'
+  - '!**/node_modules/node-hid/binding.gyp'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve
@@ -71,6 +75,8 @@ asarUnpack:
   # The vendored bindings are mapped in from `build-resources/` (see `files` per platform), and an unpack
   # pattern is matched against where a mapped file comes from.
   - 'build-resources/node-pty/**'
+  # node-hid's binding is a native `.node` the OS loader maps.
+  - '**/node_modules/node-hid/**'
 
 # pnpm's store is already exactly what should ship. The one native module, the Kerberos binding, is
 # vendored per architecture instead of rebuilt (ADR-0019); running npm against a symlinked tree only
@@ -102,7 +108,8 @@ mac:
   # builds, and @electron/universal already skips identical fat Mach-O files; this only matters if
   # the prebuild ever stops being universal.
   # The same goes for the pty bindings: both darwin folders are in both builds, thin and identical.
-  x64ArchFiles: '{Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**}'
+  # node-hid ships both darwin prebuilds in one package, so they too are thin and identical in both builds.
+  x64ArchFiles: '{Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**,Contents/Resources/app.asar.unpacked/node_modules/node-hid/prebuilds/**}'
   # Both pty bindings in every mac build, for the same reason as the Kerberos folders below.
   files:
     - from: build-resources/node-pty

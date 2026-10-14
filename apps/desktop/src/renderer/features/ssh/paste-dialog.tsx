@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { pastePreview } from './paste-guard.js';
+import { hasControlCharacters, pastePreview } from './paste-guard.js';
 
 export interface PasteDialogProps {
   /** The held paste; the dialog is open while this is set. */
@@ -14,8 +14,9 @@ export interface PasteDialogProps {
 }
 
 /**
- * Asks before a multi-line paste reaches the shell. Shows the first lines, how many more there are, and a
- * "Don't ask again" box. Paste is the default button; Cancel closes without sending.
+ * Asks before a multi-line paste, or one holding control characters, reaches the shell. Shows the first lines
+ * (control characters escaped), how many more there are, and a "Don't ask again" box for the multi-line
+ * question only. Paste is the default button; Cancel closes without sending.
  */
 export function PasteDialog(props: PasteDialogProps) {
   // Keyed so a later paste starts with the box unticked.
@@ -24,6 +25,8 @@ export function PasteDialog(props: PasteDialogProps) {
 
 function PasteDialogBody({ text, onConfirm, onCancel, receivers = 1 }: PasteDialogProps) {
   const broadcast = receivers > 1;
+  // The control-character question is always asked, so it offers no way to stop asking.
+  const control = text !== null && hasControlCharacters(text);
   const panes = `${String(receivers)} panes`;
   const [dontAsk, setDontAsk] = useState(false);
   const pasteButton = useRef<HTMLButtonElement>(null);
@@ -47,12 +50,18 @@ function PasteDialogBody({ text, onConfirm, onCancel, receivers = 1 }: PasteDial
           }}
         >
           <Dialog.Title className="text-md font-medium text-fg-default">
-            {broadcast ? `Paste to ${panes}?` : 'Paste multiple lines?'}
+            {broadcast
+              ? `Paste to ${panes}?`
+              : control
+                ? 'Paste text with control characters?'
+                : 'Paste multiple lines?'}
           </Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-fg-subtle">
             {broadcast
               ? `Broadcast is on: the paste goes to all ${panes} at once.`
-              : 'A pasted script runs line by line in the shell.'}
+              : control
+                ? 'The text holds control characters, shown escaped below. The shell or a program in it could act on them, for example to run what follows as if typed.'
+                : 'A pasted script runs line by line in the shell.'}
           </Dialog.Description>
           {preview !== undefined && (
             <div className="mt-2">
@@ -69,7 +78,7 @@ function PasteDialogBody({ text, onConfirm, onCancel, receivers = 1 }: PasteDial
               )}
             </div>
           )}
-          {!broadcast && (
+          {!broadcast && !control && (
             <label className="mt-3 flex items-center gap-2 text-sm text-fg-default">
               <input
                 type="checkbox"
@@ -94,7 +103,7 @@ function PasteDialogBody({ text, onConfirm, onCancel, receivers = 1 }: PasteDial
               type="button"
               className="rounded bg-accent px-3 py-1.5 text-sm text-fg-on-accent"
               onClick={() => {
-                onConfirm(!broadcast && dontAsk);
+                onConfirm(!broadcast && !control && dontAsk);
               }}
             >
               Paste

@@ -11,6 +11,11 @@ export interface CommandCatalogEntry {
   readonly category: CommandCategory;
   readonly shortcut?: string;
   readonly extraShortcuts?: readonly string[];
+  /**
+   * Left out of the palette and the command reference: a command menus run with an argument
+   * (a host, a snippet), whose bare form a palette twin already covers. Keybindings still reach it.
+   */
+  readonly paletteHidden?: boolean;
 }
 
 /**
@@ -131,33 +136,34 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'ssh.connect': {
     id: 'ssh.connect',
-    label: 'Connect to Host',
+    label: 'Hosts: Connect to Host',
     category: 'Hosts',
+    paletteHidden: true,
   },
   'ssh.connectPalette': {
     id: 'ssh.connectPalette',
-    label: 'Connect to Host…',
+    label: 'Hosts: Connect to Host…',
     category: 'Hosts',
     shortcut: 'Mod+Shift+H',
   },
   'ssh.openFiles': {
     id: 'ssh.openFiles',
-    label: 'Open Files on Host…',
+    label: 'Hosts: Open Files on Host…',
     category: 'Hosts',
   },
   'ssh.openInNewTab': {
     id: 'ssh.openInNewTab',
-    label: 'Open Host in New Tab…',
+    label: 'Hosts: Open Host in New Tab…',
     category: 'Hosts',
   },
   'ssh.openLayout': {
     id: 'ssh.openLayout',
-    label: 'Open Layout…',
+    label: 'Layouts: Open Layout…',
     category: 'Hosts',
   },
   'ssh.saveLayout': {
     id: 'ssh.saveLayout',
-    label: 'Terminal: Save Layout…',
+    label: 'Layouts: Save Layout…',
     category: 'Hosts',
   },
   'ssh.toggleBroadcast': {
@@ -209,18 +215,18 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'ssh.startForward': {
     id: 'ssh.startForward',
-    label: 'Start Port Forward…',
-    category: 'Hosts',
+    label: 'Forwarding: Start Port Forward…',
+    category: 'Forwarding',
   },
   'ssh.stopForward': {
     id: 'ssh.stopForward',
-    label: 'Stop Port Forward…',
-    category: 'Hosts',
+    label: 'Forwarding: Stop Port Forward…',
+    category: 'Forwarding',
   },
   'ssh.stopAllForwards': {
     id: 'ssh.stopAllForwards',
-    label: 'Stop All Port Forwards',
-    category: 'Hosts',
+    label: 'Forwarding: Stop All Port Forwards',
+    category: 'Forwarding',
   },
   'ssh.newSnippet': {
     id: 'ssh.newSnippet',
@@ -237,10 +243,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     id: 'ssh.runSnippet',
     label: 'Snippets: Run Snippet',
     category: 'Hosts',
+    paletteHidden: true,
   },
   'ssh.runSnippetPalette': {
     id: 'ssh.runSnippetPalette',
-    label: 'Run Snippet…',
+    label: 'Snippets: Run Snippet…',
     category: 'Hosts',
   },
   // Ctrl+; on Windows and Linux; caught in the terminal so the shell never sees it.
@@ -259,7 +266,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   // Every host's session logs on this machine (#534); a host's own are in its details panel.
   'ssh.sessionLogs': {
     id: 'ssh.sessionLogs',
-    label: 'Session Logs…',
+    label: 'Terminal: Session Logs…',
     category: 'Hosts',
   },
   'sftp.refresh': {

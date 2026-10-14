@@ -12,7 +12,7 @@ import { isLive, type ForwardStartError } from './forwards-store.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
-const CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
+const CONTENT_CLASS = 'z-dropdown min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 const BADGE_CLASS = 'shrink-0 rounded-full border px-1.5 text-[10px] leading-4';
 
 /** The state a row shows: what main reports, else stopped. */

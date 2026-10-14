@@ -10,6 +10,7 @@ import { setSignInUser, useConnectStore } from './connect-store.js';
 import { OsIcon, osOf } from './os-icon.js';
 import { formatDuration, stepDuration, stepLabel } from './connect-progress.js';
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
+import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
 
 /** How long "Connected in N ms" shows before the screen fades, and how long the fade takes. */
 export const CONNECTED_HOLD_MS = 600;
@@ -30,13 +31,24 @@ export interface ConnectScreenProps {
   /** The attempt shown; none yet while a reconnect waits for its first try. */
   readonly view: ConnectView | undefined;
   readonly reconnect?: ReconnectBanner | undefined;
+  /** Keys typed into the pane while it connects, kept for its shell (#361). */
+  readonly typedAhead?: TypeAheadState | undefined;
   readonly onRetry: () => void;
+  /** A security key asked for its PIN (#420): connect again with it. Without it the screen only says so. */
+  readonly onPin?: ((pin: string) => void) | undefined;
   readonly onEditHost: () => void;
   readonly onClose: () => void;
   /** "Connected in N ms" has shown and faded: the caller drops the screen. */
   readonly onFaded?: (() => void) | undefined;
   /** Over the terminal (a pane), or in place of a Files pane's list. */
   readonly overlay?: boolean;
+}
+
+/** What the screen says about keys typed while connecting. */
+export function typedAheadText({ full }: TypeAheadState): string {
+  return full
+    ? `What you typed is sent when the shell opens, up to ${String(TYPE_AHEAD_LIMIT / 1024)} KB; typing after that is not kept.`
+    : 'What you typed is sent when the shell opens.';
 }
 
 function timeOf(at: number): string {
@@ -304,6 +316,46 @@ function PasswordForm({
   );
 }
 
+/** The security key's PIN, typed here and handed straight to the next connect (#420). */
+function PinForm({ wrong, onPin }: { readonly wrong: boolean; readonly onPin: (pin: string) => void }) {
+  const [pin, setPin] = useState('');
+  // CTAP2: at least 4 characters.
+  const ok = [...pin].length >= 4;
+  return (
+    <form
+      data-testid="connect-pin"
+      className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-base p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (ok) onPin(pin);
+      }}
+    >
+      <label className="flex flex-col gap-1 text-xs text-fg-subtle">
+        {wrong ? 'Try the security key PIN again' : 'Security key PIN'}
+        <input
+          type="password"
+          autoComplete="off"
+          autoFocus
+          maxLength={63}
+          className={INPUT_CLASS}
+          value={pin}
+          onChange={(event) => {
+            setPin(event.target.value);
+          }}
+        />
+      </label>
+      <p className="text-xs text-fg-subtle">
+        Used for this connection only and never stored. Touch the key when it blinks.
+      </p>
+      <div>
+        <Button type="submit" variant="primary" disabled={!ok}>
+          Unlock and connect
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /**
  * A connection in progress, failed or reconnecting (#528): this machine → the host, the steps with their
  * timings, one sentence when it failed with Retry / Edit host / Close, and the handshake log (folded while
@@ -314,7 +366,9 @@ export function ConnectScreen({
   purpose,
   view,
   reconnect,
+  typedAhead,
   onRetry,
+  onPin,
   onEditHost,
   onClose,
   onFaded,
@@ -477,12 +531,21 @@ export function ConnectScreen({
           })}
         </ol>
 
+        {running && typedAhead !== undefined && (typedAhead.bytes > 0 || typedAhead.full) && (
+          <p className="text-sm text-fg-subtle" role="status" data-testid="connect-typed-ahead">
+            {typedAheadText(typedAhead)}
+          </p>
+        )}
+
         {total !== undefined && (
           <p className="text-sm text-status-success" role="status">{`Connected in ${formatDuration(total)}`}</p>
         )}
 
         {fix?.ask === 'user' && <SignInAsForm hostId={hostId} paneKey={paneKey} onConnect={onRetry} />}
         {fix?.ask === 'password' && <PasswordForm user={fix.user} secret={fix.secret} onRetry={onRetry} />}
+        {fix?.ask === 'pin' && onPin !== undefined && view !== undefined && (
+          <PinForm key={view.attemptId} wrong={fix.wrong} onPin={onPin} />
+        )}
 
         {showActions && (
           <div className="flex flex-wrap gap-2">

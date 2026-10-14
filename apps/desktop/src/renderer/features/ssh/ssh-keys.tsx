@@ -23,17 +23,28 @@ const KEY_BITS: Readonly<Record<SshKeyAlgorithmWire, readonly number[]>> = {
   ed25519: [],
   ecdsa: [256, 384, 521],
   rsa: [4096, 3072, 2048],
+  'ed25519-sk': [],
+  'ecdsa-sk': [],
 };
 const ALGORITHMS: readonly { id: SshKeyAlgorithmWire; label: string }[] = [
   { id: 'ed25519', label: 'Ed25519' },
   { id: 'ecdsa', label: 'ECDSA' },
   { id: 'rsa', label: 'RSA' },
+  { id: 'ed25519-sk', label: 'Security key (Ed25519)' },
+  { id: 'ecdsa-sk', label: 'Security key (ECDSA)' },
 ];
+const isSecurityKey = (algorithm: SshKeyAlgorithmWire): boolean =>
+  algorithm === 'ed25519-sk' || algorithm === 'ecdsa-sk';
 const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** `ssh-ed25519` → `ed25519`, `ecdsa-sha2-nistp256` → `ecdsa 256`, `ssh-rsa` → `rsa`. */
+/**
+ * `ssh-ed25519` → `ed25519`, `ecdsa-sha2-nistp256` → `ecdsa 256`, `ssh-rsa` → `rsa`, and the security keys
+ * (#420) `sk-ssh-ed25519@openssh.com` → `ed25519-sk`, `sk-ecdsa-sha2-nistp256@openssh.com` → `ecdsa-sk`.
+ */
 export function keyTypeLabel(keyType: string | undefined): string {
   if (keyType === undefined) return '';
+  if (keyType === 'sk-ssh-ed25519@openssh.com') return 'ed25519-sk';
+  if (keyType === 'sk-ecdsa-sha2-nistp256@openssh.com') return 'ecdsa-sk';
   const ecdsa = /^ecdsa-sha2-nistp(\d+)$/.exec(keyType);
   if (ecdsa) return `ecdsa ${ecdsa[1] ?? ''}`;
   return keyType.replace(/^ssh-/, '');
@@ -242,6 +253,8 @@ function GenerateKeyBody({
   const [comment, setComment] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [repeat, setRepeat] = useState('');
+  const [pin, setPin] = useState('');
+  const [verifyRequired, setVerifyRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -250,6 +263,9 @@ function GenerateKeyBody({
   const trimmed = name.trim();
   const nameOk = NAME_PATTERN.test(trimmed);
   const mismatch = passphrase !== repeat;
+  const securityKey = isSecurityKey(algorithm);
+  // A key that asks for the PIN at every sign-in is made with it.
+  const pinMissing = securityKey && verifyRequired && pin === '';
 
   const generate = async (): Promise<void> => {
     setBusy(true);
@@ -260,6 +276,8 @@ function GenerateKeyBody({
       ...(chosenBits === undefined ? {} : { bits: chosenBits }),
       ...(comment.trim() === '' ? {} : { comment: comment.trim() }),
       ...(passphrase === '' ? {} : { passphrase }),
+      ...(securityKey && pin !== '' ? { pin } : {}),
+      ...(securityKey && verifyRequired ? { verifyRequired: true } : {}),
     });
     setBusy(false);
     if (!result.ok) {
@@ -288,7 +306,7 @@ function GenerateKeyBody({
             className="flex flex-col gap-3"
             onSubmit={(e) => {
               e.preventDefault();
-              if (nameOk && !mismatch && !busy) void generate();
+              if (nameOk && !mismatch && !pinMissing && !busy) void generate();
             }}
           >
             <label className={LABEL_CLASS}>
@@ -341,6 +359,38 @@ function GenerateKeyBody({
                 )}
               </div>
             </fieldset>
+            {securityKey && (
+              <div className="flex flex-col gap-2" data-testid="generate-key-security">
+                <p className="text-xs text-fg-subtle">
+                  Made on the security key plugged in, which keeps the private half: the keychain stores only its
+                  handle, and signing in needs the key plugged in and a touch.
+                </p>
+                <label className={LABEL_CLASS}>
+                  Security key PIN (if it has one)
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    maxLength={63}
+                    className={INPUT_CLASS}
+                    value={pin}
+                    onChange={(e) => {
+                      setPin(e.target.value);
+                    }}
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-fg-default">
+                  <input
+                    type="checkbox"
+                    checked={verifyRequired}
+                    onChange={(e) => {
+                      setVerifyRequired(e.target.checked);
+                    }}
+                  />
+                  Ask for the PIN at every sign-in
+                </label>
+                <p className="text-xs text-fg-subtle">The PIN is used to make the key and is never stored.</p>
+              </div>
+            )}
             <label className={LABEL_CLASS}>
               Comment
               <input
@@ -384,6 +434,11 @@ function GenerateKeyBody({
                 : `The passphrase is stored as ${trimmed || 'NAME'}_passphrase, so hosts can sign in with the key unattended.`}
             </p>
             {mismatch && repeat !== '' && <p className="text-sm text-status-danger">The passphrases differ.</p>}
+            {busy && securityKey && (
+              <p role="status" className="text-sm text-status-warning">
+                Touch your security key when it blinks.
+              </p>
+            )}
             {error !== undefined && (
               <p role="alert" className="text-sm text-status-danger">
                 {error}
@@ -393,7 +448,7 @@ function GenerateKeyBody({
               <Button onClick={onClose} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={!nameOk || mismatch || busy}>
+              <Button type="submit" variant="primary" disabled={!nameOk || mismatch || pinMissing || busy}>
                 {busy ? 'Generating…' : 'Generate'}
               </Button>
             </div>

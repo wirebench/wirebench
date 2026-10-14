@@ -7,7 +7,7 @@ import type { Platform } from '../../lib/platform.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-6 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
-const CONTENT_CLASS = 'z-50 min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
+const CONTENT_CLASS = 'z-dropdown min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 
 /** What the menu does; each is the same handler its shortcut, toolbar button or command runs. */
 export interface TerminalMenuActions {

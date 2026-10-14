@@ -82,6 +82,8 @@ export class SshKeysService {
         algorithm: request.algorithm,
         ...(request.bits === undefined ? {} : { bits: request.bits }),
         ...(passphrase === '' ? {} : { passphrase }),
+        ...(request.pin ? { pin: request.pin } : {}),
+        ...(request.verifyRequired ? { verifyRequired: true } : {}),
         comment,
       });
     } catch (error) {

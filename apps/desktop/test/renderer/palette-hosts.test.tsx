@@ -127,7 +127,7 @@ describe('hosts in the palette', () => {
 
   it('⌘K lists Open Files on Host…, which switches to the Files picker', () => {
     render(<Shell />);
-    fireEvent.click(screen.getByText('Open Files on Host…'));
+    fireEvent.click(screen.getByText('Hosts: Open Files on Host…'));
     expect(screen.getByPlaceholderText('Open files on host')).toBeDefined();
     expect(screen.getByText('api-1 · Files')).toBeDefined();
   });
@@ -152,7 +152,9 @@ describe('hosts in the palette', () => {
     const input = screen.getByTestId<HTMLInputElement>('command-palette-input');
     fireEvent.change(input, { target: { value: 'connect' } });
     expect(input.value).toBe('connect');
-    fireEvent.click(screen.getByText('Connect to Host…'));
+    // One Connect to Host… (#536): the menus' twin that takes a host is not listed.
+    expect(screen.getAllByText(/Connect to Host/)).toHaveLength(1);
+    fireEvent.click(screen.getByText('Hosts: Connect to Host…'));
 
     const picker = screen.getByTestId<HTMLInputElement>('quick-open-input');
     expect(picker.value).toBe('');

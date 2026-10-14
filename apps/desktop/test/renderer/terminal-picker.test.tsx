@@ -79,6 +79,16 @@ describe('the terminal picker', () => {
   const names = (): (string | undefined)[] =>
     screen.queryAllByTestId('snippet-picker-item').map((row) => row.dataset['name']);
 
+  it("names the insert key in the platform's notation, not a Mac glyph off a Mac (#536)", () => {
+    const agent = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
+    try {
+      render(<TerminalPicker onClose={() => undefined} />);
+      expect(input().getAttribute('placeholder')).toBe('Run snippet · Alt+Enter inserts');
+    } finally {
+      agent.mockRestore();
+    }
+  });
+
   it('lists the snippets with the same matcher as the palette', () => {
     render(<TerminalPicker onClose={() => undefined} />);
     expect(names()).toEqual(['Tail logs', 'Disk usage']);
