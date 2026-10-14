@@ -100,6 +100,14 @@ is read to build the list. An OAuth 2 header shows only once a token is cached; 
 it is added when the token is fetched at send. A webhook item's signing headers are not listed: they
 are computed at send, over the final body.
 
+### Request settings
+
+The **Settings** tab holds the request's own timeout, redirect, URL-encoding, cookie and connection
+settings. Each one is optional: an empty field shows the value it inherits as greyed-out text, with a
+**from …** link beside it to where that value is set. The timeout comes from the project's **Default
+timeout** (the project tab), and redirects from **Preferences ▸ REST**. A checkbox you have changed
+offers **Inherit** to go back to the inherited value.
+
 ## Send and read the response
 
 Choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The response pane shows:
