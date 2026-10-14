@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Highlighted errors, warnings and addresses in terminals.** SSH and local terminals colour error and
+  warning words, `info`, `notice` and `debug`, and IPv4 and IPv6 addresses in the scheme's red, yellow,
+  blue and cyan, drawn over the output without changing it. Only whole words in the default colours
+  count, so a program's own colours win, and full-screen programs are left alone. **Highlight output**
+  (`terminal.highlightOutput`, on by default) in Preferences → Terminal turns it off and lists the rules
+  (#424).
 - **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
   forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
   (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An

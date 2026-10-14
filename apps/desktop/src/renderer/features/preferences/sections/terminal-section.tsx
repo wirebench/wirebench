@@ -3,14 +3,23 @@ import {
   EnumSetting,
   NumberSetting,
   SettingsGroup,
+  SettingsItem,
   TextSetting,
 } from '../../../components/settings-grid.js';
 import { useInstalledMonospaceFonts } from '../../../lib/installed-fonts.js';
 import { detectPlatform } from '../../../lib/platform.js';
 import { PREFERENCE_LIMITS } from '../../../state/preference-limits.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../../state/preferences-defaults.js';
+import { HIGHLIGHT_RULES } from '../../ssh/output-highlight.js';
 import { APP_SCHEME_ID, schemeLabel, TERMINAL_SCHEMES } from '../../ssh/terminal-schemes.js';
 import type { SectionProps } from './section-props.js';
+
+const RULE_CLASS: Readonly<Record<(typeof HIGHLIGHT_RULES)[number]['kind'], string>> = {
+  error: 'text-status-danger',
+  warning: 'text-status-warning',
+  info: 'text-status-info',
+  address: 'text-accent',
+};
 
 const FONT_HINT = 'Tried first; the app’s monospace font fills in for any character it lacks.';
 
@@ -61,9 +70,25 @@ function FontFamilySetting({
   );
 }
 
+/** The highlighting rules, each in the colour the terminal draws it in. */
+function HighlightRules() {
+  return (
+    <SettingsItem>
+      <ul className="flex flex-col gap-1 text-xs" data-testid="terminal-highlight-rules">
+        {HIGHLIGHT_RULES.map((rule) => (
+          <li key={rule.kind} className="flex gap-2">
+            <span className={`w-24 shrink-0 font-medium ${RULE_CLASS[rule.kind]}`}>{rule.label}</span>
+            <span className="font-mono text-fg-muted">{rule.matches}</span>
+          </li>
+        ))}
+      </ul>
+    </SettingsItem>
+  );
+}
+
 /**
  * Preferences → Terminal: how a terminal looks (a host or group in hosts.yaml may override the scheme and
- * size), what it does with a paste and with a selection, whether it suggests snippets while the user types,
+ * size), what it does with a paste and with a selection, whether it highlights error words and addresses in the output, whether it suggests snippets while the user types,
  * whether a session the network dropped reconnects on its own, how much room session logs take on this machine,
  * and which shell a local terminal runs.
  */
@@ -115,6 +140,18 @@ export function TerminalSection({ preferences, update }: SectionProps) {
           }}
           hint="A host or group can set its own in its form, so production and staging look different."
         />
+      </SettingsGroup>
+      <SettingsGroup title="Highlighting">
+        <BooleanSetting
+          label="Highlight output"
+          setting="terminal.highlightOutput"
+          value={terminal.highlightOutput}
+          onChange={(highlightOutput) => {
+            update({ terminal: { highlightOutput } });
+          }}
+          hint="Colour the words and addresses below wherever the output is in the default colours; text a program coloured itself keeps its colours, and full-screen programs are left alone. Only the display changes, never the output."
+        />
+        <HighlightRules />
       </SettingsGroup>
       <SettingsGroup title="Clipboard">
         <BooleanSetting

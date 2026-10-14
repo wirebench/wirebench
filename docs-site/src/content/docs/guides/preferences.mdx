@@ -109,6 +109,14 @@ app's light or dark colours, and the built-in schemes are **Red background**, **
 [Hosts and terminals](/wirebench/docs/guides/hosts-and-terminals/#terminal-colours-and-font-size). Open
 terminals change as soon as a setting does.
 
+**Highlight output** is `terminal.highlightOutput` and is on by default: in SSH and local terminals,
+error words (`error`, `fail`, `failed`, `fatal`, `denied`, `refused` and a few more) show in the scheme's
+red, warning words (`warn`, `warning`, `deprecated`) in its yellow, `info`, `notice` and `debug` in its
+blue, and IPv4 and IPv6 addresses in its cyan. Only whole words count, so `stderr` and `error_log` stay
+plain. The colours are drawn over the output, which is never changed: copying, find and session logs see
+the text as it arrived. Text a program coloured itself keeps its own colours, and full-screen programs such
+as editors are left alone. The full list of words is under the switch.
+
 **Confirm multi-line paste** is `terminal.confirmMultilinePaste` and is on by default: pasting text
 with more than one line into an SSH terminal first shows its opening lines, because a pasted script
 runs line by line. A single trailing newline does not count as a second line. Ticking **Don't ask
