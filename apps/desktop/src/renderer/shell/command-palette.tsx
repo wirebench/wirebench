@@ -21,6 +21,7 @@ import { listCommands, runCommand } from '../lib/commands.js';
 import { effectiveShortcut, formatKeybinding } from '../lib/keybindings.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
+import { paletteFilter, paletteKeywords } from './palette-filter.js';
 import type { QuickOpenEntry } from './quick-open.js';
 import {
   quickOpenEntries,
@@ -291,6 +292,8 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
           <Command
             key={mode}
             loop
+            // The commands rank a search naming their group first; the pickers keep cmdk's own order.
+            {...(picker ? {} : { filter: paletteFilter })}
             label={
               snippetsPicker
                 ? 'Snippets'
@@ -437,6 +440,7 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                         <Command.Item
                           key={command.id}
                           value={`${command.category} ${command.label}`}
+                          keywords={paletteKeywords(command)}
                           onSelect={() => {
                             onOpenChange(false);
                             void runCommand(command.id, context);

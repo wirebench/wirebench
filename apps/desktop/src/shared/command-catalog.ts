@@ -491,7 +491,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'rest.send': {
     id: 'rest.send',
-    label: 'Send REST Request',
+    label: 'REST: Send Request',
     category: 'Request',
     shortcut: 'Mod+Enter',
   },
@@ -537,7 +537,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'grpc.send': {
     id: 'grpc.send',
-    label: 'Send gRPC Request',
+    label: 'gRPC: Send Request',
     category: 'Request',
     shortcut: 'Mod+Enter',
   },
@@ -612,7 +612,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   // The chord every request editor sends with; an MCP tab is none of theirs.
   'mcp.send': {
     id: 'mcp.send',
-    label: 'Send MCP Request',
+    label: 'MCP: Send Request',
     category: 'Request',
     shortcut: 'Mod+Enter',
   },
