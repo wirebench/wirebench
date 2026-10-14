@@ -131,7 +131,7 @@ test.describe('REST editor at small window sizes', () => {
       await expect(page.getByTestId('console')).toBeVisible();
     }
 
-    expect(await setWindowSize(launched, SIZES[1])).toBe(true);
+    test.skip(!(await setWindowSize(launched, SIZES[1])), 'The screen is smaller than 1024×700');
     await page.reload();
     await page.waitForSelector(SHELL_READY_SELECTOR);
     await expect(page.getByTestId('activity-bar')).toBeVisible();
