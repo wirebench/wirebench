@@ -248,6 +248,21 @@ export function HostDetails() {
             </>
           )}
         </Row>
+        <Row label="Protocol">
+          <span>{host.ssh.protocol?.value === 'mosh' ? 'Mosh' : 'SSH'}</span>
+          {host.ssh.protocol !== undefined &&
+            host.ssh.protocol.from !== 'default' &&
+            muted(provenance(host.ssh.protocol.from))}
+        </Row>
+        {host.ssh.protocol?.value === 'mosh' && (
+          <Row label="Mosh server">
+            <span className="truncate font-mono">
+              {[host.ssh.mosh?.value?.server ?? 'mosh-server', host.ssh.mosh?.value?.ports]
+                .filter(Boolean)
+                .join(' · UDP ')}
+            </span>
+          </Row>
+        )}
         <Row label="Jump host">
           <span className="truncate">{jump === undefined ? '—' : (jumpHost?.name ?? jump)}</span>
           {jump !== undefined && muted(provenance(host.ssh.jump.from))}

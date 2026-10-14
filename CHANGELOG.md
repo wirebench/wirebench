@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
+  `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
+  in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block
+  sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
+  section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
+  `mosh-server` is missing (#419).
 - **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
   `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
   The tree follows the active tab, unfolding to its request and selecting it, and a new request
@@ -312,6 +318,14 @@ All notable changes to this project are documented here. The format follows
   **Problems**. A lint finding there reads `GET /json › 200 › application/json` instead of a JSON
   pointer (the pointer and position stay in its tooltip), shows its rule id as small text after the
   message, and a click opens the request for that operation, or the API when there is none (#561).
+
+- **A steadier REST request editor.** Send and Cancel take the same width, so the method and URL no
+  longer jump when a send starts. While a send is out the response bar reads **Sending… 2.4 s** with a
+  running timer, once, and the last response stays on screen, dimmed, until the new one arrives.
+  Params, Headers and the response Headers tab show how many rows they hold, as Assertions does.
+  Choosing a GraphQL body on a GET says **Method changed to POST** with an Undo, and switching the body
+  back puts the old method back. The first Escape in a header cell closes the variable list and keeps
+  what was typed (#559).
 
 - **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
   response", the response pane names the failure in plain words (**Connection refused**, **Host not
