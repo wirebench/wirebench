@@ -103,17 +103,20 @@ export interface SshConnector {
    * window's secret getter is taken first; `abandoned` is asked once the hosts are read, so a switch
    * meanwhile reads no secret (`ssh-session-closed`).
    */
-  prepareHops(sender: WebContents, hostId: string, abandoned?: () => boolean): Promise<HopCredentials[]>;
+  prepareHops(sender: WebContents, hostId: string, abandoned?: () => boolean, user?: string): Promise<HopCredentials[]>;
   /**
    * {@link prepareHops}, plus the target's environment variables with their secrets read (same getter, same
    * order: credentials first). `secrets` lists the values that came from secrets, for the terminal's masker.
    * `forwardAgent` is set when the target forwards the agent (never a jump host's setting): with the
    * socket to forward, or without one when no agent runs, in which case the shell opens without it.
+   * `user` (both): signs in to the target as this user for this connect only, as typed on the connection
+   * screen (#532); hosts.yaml is not changed.
    */
   prepareShell(
     sender: WebContents,
     hostId: string,
     abandoned?: () => boolean,
+    user?: string,
   ): Promise<{
     hops: HopCredentials[];
     env: Record<string, string>;
@@ -149,6 +152,14 @@ export async function readKnownHosts(file: string): Promise<readonly KnownHostEn
   }
 }
 
+/** The target with `user` in place of its own: only a missing auth is left to make it incomplete. */
+function signInAs(hop: ResolvedHost, user: string): ResolvedHost {
+  const { incomplete, ...rest } = hop;
+  void incomplete;
+  const signed: ResolvedHost = { ...rest, ssh: { ...hop.ssh, user: { ...hop.ssh.user, value: user } } };
+  return hop.ssh.auth.value === undefined ? { ...signed, incomplete: { field: 'auth' } } : signed;
+}
+
 const slotKey = (key: KnownHostEntry): string => `${key.host}\n${key.fingerprint}`;
 
 export function createSshConnector(deps: SshConnectDeps & { readonly refusals: RefusalStore }): SshConnector {
@@ -161,7 +172,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
   const changedKeys = new Map<number, Map<string, string>>();
 
   /** The hops to the host, outermost first, each complete; nothing here touches the network. */
-  const chainFor = async (sender: WebContents, hostId: string): Promise<readonly ResolvedHost[]> => {
+  const chainFor = async (sender: WebContents, hostId: string, user?: string): Promise<readonly ResolvedHost[]> => {
     const hosts = deps.hosts(sender);
     const listing = await hosts.list(); // cached; reads hosts.yaml once per workspace
     const problem = listing.problems[0];
@@ -179,6 +190,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     } catch (error) {
       throw asWirebenchError(error);
     }
+    if (user !== undefined) chain = [...chain.slice(0, -1), signInAs(chain[chain.length - 1] as ResolvedHost, user)];
     for (const hop of chain) {
       if (hop.incomplete) {
         throw new WirebenchError(
@@ -266,21 +278,21 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     return { env, secrets };
   };
 
-  const prepare = async (sender: WebContents, hostId: string, abandoned: () => boolean) => {
+  const prepare = async (sender: WebContents, hostId: string, abandoned: () => boolean, user?: string) => {
     // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
     const getSecret = deps.secretsFor(sender);
-    const chain = await chainFor(sender, hostId);
+    const chain = await chainFor(sender, hostId, user);
     if (abandoned()) throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     return { chain, getSecret, hops: await credentialsFor(chain, getSecret) };
   };
 
   return {
-    async prepareHops(sender, hostId, abandoned = () => false) {
-      return (await prepare(sender, hostId, abandoned)).hops;
+    async prepareHops(sender, hostId, abandoned = () => false, user) {
+      return (await prepare(sender, hostId, abandoned, user)).hops;
     },
 
-    async prepareShell(sender, hostId, abandoned = () => false) {
-      const { chain, getSecret, hops } = await prepare(sender, hostId, abandoned);
+    async prepareShell(sender, hostId, abandoned = () => false, user) {
+      const { chain, getSecret, hops } = await prepare(sender, hostId, abandoned, user);
       const target = chain[chain.length - 1] as ResolvedHost;
       const socket = target.ssh.forwardAgent.value ? deps.agentSocket() : undefined;
       return {

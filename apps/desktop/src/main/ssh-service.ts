@@ -234,7 +234,12 @@ export class SshService {
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const { hops, env, secrets, forwardAgent } = await this.connector.prepareShell(sender, request.hostId, stale);
+    const { hops, env, secrets, forwardAgent } = await this.connector.prepareShell(
+      sender,
+      request.hostId,
+      stale,
+      request.user,
+    );
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
