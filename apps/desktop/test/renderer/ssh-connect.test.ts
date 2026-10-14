@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const connect = vi.fn();
 const trustHostKey = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({ ipc: () => ({ ssh: { connect, trustHostKey } }) }));
-import { confirmTrust, connectToHost } from '../../src/renderer/features/ssh/connect.js';
+import { confirmTrust, connectToHost, connectWithPin } from '../../src/renderer/features/ssh/connect.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { readRecent } from '../../src/renderer/features/ssh/recent-connections.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
@@ -158,4 +158,18 @@ it('a rejected connect clears the connecting state and records a problem', async
   expect(useProblemsStore.getState().items).toMatchObject([
     { groupId: 'ssh:a', problem: { code: 'ssh-connect-failed', message: 'bridge down' } },
   ]);
+});
+
+it('a security key PIN goes with the pane’s next connect only (#420)', async () => {
+  connect.mockResolvedValue({
+    ok: false,
+    error: { code: 'ssh-sk-pin', message: 'pin', details: { reason: 'required' } },
+  });
+  connectWithPin('pa', '2468');
+  await connectToHost(A, SIZE);
+  expect(connect.mock.calls[0]?.[0]).toMatchObject({ hostId: 'a', skPin: '2468' });
+  await connectToHost(B, SIZE);
+  await connectToHost(A, SIZE);
+  expect(connect.mock.calls[1]?.[0]).not.toHaveProperty('skPin');
+  expect(connect.mock.calls[2]?.[0]).not.toHaveProperty('skPin');
 });

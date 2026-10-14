@@ -203,6 +203,11 @@ export const sshConnectRequestSchema = z.strictObject({
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
   attemptId: sshAttemptIdSchema.optional(),
+  /**
+   * The PIN of the security key a hop signs in with (#420), typed on the connection screen after a connect
+   * asked for it (`ssh-sk-pin`). Used for this connect only and never stored.
+   */
+  skPin: z.string().min(1).max(63).optional(),
 });
 /**
  * `agentForwarding` is left out when the host does not forward the agent. `on`: granted; `refused`: the

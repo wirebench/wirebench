@@ -38,7 +38,13 @@ export type ConnectOutcome =
   | { readonly kind: 'connected'; readonly at: number }
   /** The host key is new or changed and the trust prompt is open. */
   | { readonly kind: 'trust'; readonly changed: boolean }
-  | { readonly kind: 'failed'; readonly step: ConnectStepId; readonly sentence: string };
+  | {
+      readonly kind: 'failed';
+      readonly step: ConnectStepId;
+      readonly sentence: string;
+      /** The security key needs its PIN (#420): the screen asks for it; `wrong` after one that was refused. */
+      readonly pin?: { readonly wrong: boolean };
+    };
 
 export interface ConnectView {
   readonly attemptId: string;
@@ -153,7 +159,7 @@ function failedStep(view: ConnectView, error: ConnectError): ConnectStepId {
   const jump = onJumpHost(error.details);
   const phase = error.details?.['phase'];
   if (jump) return view.steps.find((s) => s.id === 'resolve')?.state === 'done' ? 'connect' : 'resolve';
-  if (error.code === 'ssh-auth-failed') return 'auth';
+  if (error.code === 'ssh-auth-failed' || error.code.startsWith('ssh-sk-')) return 'auth';
   if (error.code === 'ssh-host-key-new' || error.code === 'ssh-host-key-changed') return 'host-key';
   if (error.code === 'sftp-unavailable') return 'shell';
   if (phase === 'resolve') return 'resolve';
@@ -174,7 +180,14 @@ export function failedView(view: ConnectView, error: ConnectError, at: number): 
   const sentence = connectFailureSentence(error, view.purpose);
   // The log ends with the same sentence in red, so it says what failed even where no stage logged it.
   const log: ConnectLogLine[] = [...view.log, { at, text: sentence, error: true }];
-  return { ...view, steps, log, outcome: { kind: 'failed', step: id, sentence } };
+  const reason = error.details?.['reason'];
+  const pin = error.code === 'ssh-sk-pin' && (reason === 'required' || reason === 'wrong');
+  return {
+    ...view,
+    steps,
+    log,
+    outcome: { kind: 'failed', step: id, sentence, ...(pin ? { pin: { wrong: reason === 'wrong' } } : {}) },
+  };
 }
 
 /** The host key is new or changed: the step waits on the trust prompt. */

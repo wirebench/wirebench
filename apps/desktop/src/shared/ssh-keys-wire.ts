@@ -5,7 +5,8 @@ import { z } from 'zod';
  * once, on generate, and what comes back is the public half and the names of the secrets that hold the rest.
  */
 
-export const sshKeyAlgorithmSchema = z.enum(['ed25519', 'ecdsa', 'rsa']);
+/** `-sk`: made on the FIDO2 security key plugged in (#420), which keeps the private half. */
+export const sshKeyAlgorithmSchema = z.enum(['ed25519', 'ecdsa', 'rsa', 'ed25519-sk', 'ecdsa-sk']);
 
 export const sshGenerateKeyRequestSchema = z.strictObject({
   /** The secret the private key is stored as; its passphrase (if any) goes to `<name>_passphrase`. */
@@ -16,6 +17,10 @@ export const sshGenerateKeyRequestSchema = z.strictObject({
   /** Absent or blank: `user@host` of this machine. */
   comment: z.string().max(200).optional(),
   passphrase: z.string().optional(),
+  /** A security key only: its PIN, used once and never stored (CTAP2 allows 4 to 63 bytes). */
+  pin: z.string().max(63).optional(),
+  /** A security key only: ask for the PIN at every sign-in as well as the touch. */
+  verifyRequired: z.boolean().optional(),
 });
 
 /**

@@ -757,6 +757,43 @@ argument (never spliced into the script); it only appends to `~/.ssh/authorized_
 and takes group and other write off `~/.ssh` and the file. Tests: `packages/ssh/test/unit/keygen.test.ts`,
 `packages/ssh/test/unit/install.test.ts`, `apps/desktop/test/ssh-keys.test.ts`.
 
+## FIDO2 security keys
+
+A security key (`sk-ssh-ed25519@openssh.com`, `sk-ecdsa-sha2-nistp256@openssh.com`) keeps its private key
+inside the authenticator. The keychain secret is an OpenSSH sk key file, which holds the public key, the
+application (`ssh:`) and the authenticator's key handle, never a private key; it can be encrypted with a
+passphrase like any other key. Signing needs the key plugged in and a touch, and a key made with **Ask for
+the PIN at every sign-in** (OpenSSH's `verify-required`) needs its PIN as well.
+
+- **Talking to the key.** Main opens the FIDO HID device through node-hid and speaks CTAP2 itself
+  (`packages/ssh/src/fido/`): getAssertion for a sign-in, makeCredential for **Generate key…**, and the
+  clientPIN exchange (PIN/UV auth protocols 1 and 2) that turns a PIN into a token. The PIN is sent to the
+  authenticator encrypted under an ECDH key agreed for that exchange, as CTAP2 requires.
+- **The PIN is never stored.** A connect that needs it fails with `ssh-sk-pin`; the terminal's connection
+  screen asks for it and connects again with it. It travels in that one `ssh.connect` request, reaches the
+  key hops of that connect only, and is not written to the keychain, a log, History or the session log. A
+  wrong PIN says how many attempts the key has left before it locks. **Generate key…** takes the PIN the
+  same way, for that one key.
+- **The signature.** ssh2 knows neither sk type, so `packages/ssh/src/sk-auth.ts` writes the publickey
+  request on that connection's protocol object, as the certificate shim does: the sk key as the public key
+  blob, and the authenticator's signature with its flags and counter (PROTOCOL.u2f). The server, not
+  Wirebench, checks that the key was touched and, for `verify-required`, that the PIN was used.
+- **An agent's sk keys.** With `auth: { agent: true }`, ssh2 on its own does not sign with an sk key the
+  local agent holds: it drops sk keys from the agent's listing, and its signature encoding has no room for
+  the flags and counter. Wirebench lists the agent's keys itself and offers its sk keys after its other
+  keys, signed over the agent protocol; the agent asks for the touch (and its own PIN prompt) itself.
+  Pageant has no sk support.
+- **Windows.** Windows lets only elevated programs open a FIDO HID device; others must go through its
+  WebAuthn service, which Wirebench does not use yet. There a stored sk key is refused with
+  `ssh-sk-unavailable` rather than tried.
+- **Several keys.** To sign, the key that holds the credential is found by asking each plugged-in key
+  without a touch. **Generate key…** refuses with several plugged in rather than pick one.
+
+Tests: `packages/ssh/test/unit/sk-key.test.ts`, `packages/ssh/test/unit/fido.test.ts` and
+`packages/ssh/test/integration/sk-auth.test.ts` run against a software authenticator behind the same HID
+framing; the integration test signs in to a real `sshd`, with a `verify-required` key and through an agent.
+A hardware key has not been tried yet.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

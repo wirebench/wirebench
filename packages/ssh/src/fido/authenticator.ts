@@ -46,8 +46,9 @@ function loadNodeHid(): Promise<NodeHid> {
   return nodeHid;
 }
 
-const unavailable = (detail: string): SshModelError =>
-  new SshModelError('ssh-sk-unavailable', `Security keys cannot be used here: ${detail}`);
+/** `cause`: windows | module | u2f | algorithm, so a screen can say it without the message. */
+const unavailable = (cause: string, detail: string): SshModelError =>
+  new SshModelError('ssh-sk-unavailable', `Security keys cannot be used here: ${detail}`, { cause });
 
 /**
  * The FIDO HID devices through node-hid. Windows gives raw FIDO HID access to elevated programs only (the
@@ -57,6 +58,7 @@ export const nodeHidTransport: FidoTransport = {
   async list() {
     if (process.platform === 'win32') {
       throw unavailable(
+        'windows',
         'on Windows only the system’s own security key service may talk to the key, and Wirebench does not use it yet',
       );
     }
@@ -64,7 +66,7 @@ export const nodeHidTransport: FidoTransport = {
     try {
       hid = await loadNodeHid();
     } catch {
-      throw unavailable('the USB HID module did not load');
+      throw unavailable('module', 'the USB HID module did not load');
     }
     const devices = await hid.devicesAsync();
     return devices.flatMap((device) =>
@@ -104,7 +106,7 @@ export interface SkPrompts {
 function asSkError(error: unknown, retries?: number): unknown {
   if (error instanceof SshModelError) return error;
   if (error instanceof CtapHidError) {
-    if (error.kind === 'u2f-only') return new SshModelError('ssh-sk-unavailable', error.message);
+    if (error.kind === 'u2f-only') return new SshModelError('ssh-sk-unavailable', error.message, { cause: 'u2f' });
     return new SshModelError('ssh-sk-failed', error.message);
   }
   if (!(error instanceof CtapError)) return error;
@@ -143,7 +145,9 @@ function asSkError(error: unknown, retries?: number): unknown {
     case CTAP2_ERR.INVALID_CREDENTIAL:
       return new SshModelError('ssh-sk-no-device', 'The security key plugged in did not make this key');
     case CTAP2_ERR.UNSUPPORTED_ALGORITHM:
-      return new SshModelError('ssh-sk-unavailable', 'The security key cannot make a key of this type');
+      return new SshModelError('ssh-sk-unavailable', 'The security key cannot make a key of this type', {
+        cause: 'algorithm',
+      });
     default:
       return new SshModelError('ssh-sk-failed', error.message, { status: error.status });
   }
@@ -289,6 +293,7 @@ export async function skEnroll(options: SkEnrollOptions): Promise<Omit<SkKey, 'c
         options.keyType === SK_ED25519
           ? 'This security key cannot make Ed25519 keys; choose ECDSA'
           : 'This security key cannot make ECDSA keys',
+        { cause: 'algorithm' },
       );
     }
     const pin = options.pin ? await tokenFor(ctap, options.pin) : undefined;

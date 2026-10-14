@@ -46,6 +46,17 @@ export function openTrustPrompt(
   });
 }
 
+/**
+ * A security key PIN typed on a pane's connection screen (#420), waiting for that pane's next connect. It
+ * is taken once and lives only here, in memory: never stored, never sent with a later connect.
+ */
+const pendingPins = new Map<string, string>();
+
+/** Hands `pin` to the pane's next connect (the screen then retries it). */
+export function connectWithPin(paneId: string, pin: string): void {
+  pendingPins.set(paneId, pin);
+}
+
 /** What one connect came to. */
 type ConnectOutcome =
   | { readonly kind: 'open'; readonly sessionId: string }
@@ -68,9 +79,11 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   store.setPane(paneId, { hostId, state: 'connecting' });
   // The pane's connection screen follows this attempt: main reports its stages under the id.
   const attemptId = beginAttempt(paneId, 'terminal');
+  const skPin = pendingPins.get(paneId);
+  pendingPins.delete(paneId);
   let result;
   try {
-    result = await ipc().ssh.connect({ hostId, ...size, attemptId });
+    result = await ipc().ssh.connect({ hostId, ...size, attemptId, ...(skPin === undefined ? {} : { skPin }) });
   } catch (error) {
     store.setPane(paneId, undefined);
     const shaped = error as { code?: unknown; message?: unknown } | null;

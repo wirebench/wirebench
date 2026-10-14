@@ -107,6 +107,25 @@ function reachSentence(details: Readonly<Record<string, unknown>>, who: string, 
   }
 }
 
+function securityKeyPinSentence(details: Readonly<Record<string, unknown>>, purpose: ConnectPurpose): string {
+  switch (details['reason']) {
+    case 'wrong': {
+      const retries = details['retries'];
+      return typeof retries === 'number'
+        ? `Wrong PIN for the security key: ${String(retries)} attempts left before it locks.`
+        : 'Wrong PIN for the security key.';
+    }
+    case 'blocked':
+      return 'The security key is locked after too many wrong PINs. Unplug it and plug it back in, or reset it with its maker’s tool.';
+    case 'not-set':
+      return 'This key asks for a PIN, but the security key has none set. Set one with its maker’s tool.';
+    default:
+      return purpose === 'files'
+        ? 'The security key needs its PIN. Connect from a terminal tab, where you can type it.'
+        : 'The security key needs its PIN to sign in.';
+  }
+}
+
 /** The sentence the screen shows under the red step. */
 export function connectFailureSentence(error: ConnectError, purpose: ConnectPurpose): string {
   const details = error.details ?? {};
@@ -145,6 +164,25 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       return 'The certificate for this host could not be read. Check that it is an OpenSSH user certificate.';
     case 'ssh-cert-mismatch':
       return "The certificate does not belong to this host's key. Pair it with the key it was issued for.";
+    case 'ssh-sk-pin':
+      return securityKeyPinSentence(details, purpose);
+    case 'ssh-sk-not-touched':
+      return 'The security key was not touched in time. Retry, and touch the key when it blinks.';
+    case 'ssh-sk-no-device':
+      return details['reason'] === 'several'
+        ? 'Several security keys are plugged in. Leave only the one to use.'
+        : 'The security key this host signs in with is not plugged in. Plug it in and retry.';
+    case 'ssh-sk-unavailable':
+      switch (details['cause']) {
+        case 'windows':
+          return 'Wirebench cannot reach security keys on Windows yet. Choose another sign-in method for this host.';
+        case 'u2f':
+          return 'This security key speaks only U2F. Signing in needs a FIDO2 key.';
+        default:
+          return 'Wirebench could not open the security key on this machine.';
+      }
+    case 'ssh-sk-failed':
+      return 'The security key did not sign. Unplug it, plug it back in and retry.';
     case 'sftp-unavailable':
       return `Signed in, but ${who} offers no SFTP. Enable the SFTP subsystem on the server to browse its files.`;
     case 'ssh-hosts-invalid':

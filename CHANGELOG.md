@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **FIDO2 security keys for SSH.** A host can sign in with a security key stored in the keychain
+  (`sk-ssh-ed25519@openssh.com` or `sk-ecdsa-sha2-nistp256@openssh.com`): the connection screen says
+  when to touch the key, and asks for its PIN when the key needs one, without storing it. **Generate
+  key…** makes a non-resident security key on the key plugged in, Ed25519 or ECDSA, optionally asking
+  for the PIN at every sign-in. A host that signs in with the SSH agent now also uses security keys the
+  agent holds, which it skipped before. Not available on Windows yet (#420).
 - **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
   Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
   Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select

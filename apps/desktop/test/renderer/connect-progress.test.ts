@@ -264,3 +264,50 @@ describe('the connect error mapping', () => {
     expect(connectFailureSentence({ code: 'x', message: 'y' }, 'files')).toMatch(/^The file browser could not connect/);
   });
 });
+
+describe('security key refusals (#420)', () => {
+  const fail = (code: string, details: Record<string, unknown>) =>
+    failedView(startView('a1', 'terminal', 1000), { code, message: 'raw library text', details }, 1100);
+
+  it('a PIN the key needs fails Authenticating and asks for it; a wrong one asks again with the attempts left', () => {
+    const required = fail('ssh-sk-pin', { reason: 'required', host: HOST });
+    expect(required.outcome).toMatchObject({ kind: 'failed', step: 'auth', pin: { wrong: false } });
+    const wrong = fail('ssh-sk-pin', { reason: 'wrong', retries: 5, host: HOST });
+    expect(wrong.outcome).toMatchObject({
+      kind: 'failed',
+      pin: { wrong: true },
+      sentence: 'Wrong PIN for the security key: 5 attempts left before it locks.',
+    });
+  });
+
+  it('a locked key or one without a PIN set says so and asks for nothing', () => {
+    const blocked = fail('ssh-sk-pin', { reason: 'blocked' });
+    expect(blocked.outcome).not.toHaveProperty('pin');
+    expect(blocked.outcome.kind === 'failed' ? blocked.outcome.sentence : '').toMatch(/^The security key is locked/);
+    expect(fail('ssh-sk-pin', { reason: 'not-set' }).outcome).not.toHaveProperty('pin');
+  });
+
+  it('each other refusal has its own sentence, never the raw message', () => {
+    const cases: [string, Record<string, unknown>, RegExp][] = [
+      ['ssh-sk-not-touched', {}, /not touched in time/],
+      ['ssh-sk-no-device', {}, /is not plugged in/],
+      ['ssh-sk-no-device', { reason: 'several' }, /Several security keys/],
+      ['ssh-sk-unavailable', { cause: 'windows' }, /on Windows yet/],
+      ['ssh-sk-unavailable', { cause: 'u2f' }, /only U2F/],
+      ['ssh-sk-unavailable', {}, /could not open the security key/],
+      ['ssh-sk-failed', {}, /did not sign/],
+    ];
+    for (const [code, details, pattern] of cases) {
+      const view = fail(code, details);
+      expect(view.outcome).toMatchObject({ kind: 'failed', step: 'auth' });
+      expect(view.outcome.kind === 'failed' ? view.outcome.sentence : '').toMatch(pattern);
+      expect(JSON.stringify(view)).not.toContain('raw library text');
+    }
+  });
+
+  it('Files cannot ask for the PIN: it points to a terminal tab', () => {
+    expect(
+      connectFailureSentence({ code: 'ssh-sk-pin', message: 'x', details: { reason: 'required' } }, 'files'),
+    ).toMatch(/Connect from a terminal tab/);
+  });
+});
