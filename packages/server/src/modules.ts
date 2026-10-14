@@ -7,6 +7,7 @@ import { licensingModule } from './licensing/module.js';
 import { liveModule } from './live/module.js';
 import { ssoModule } from './sso/module.js';
 import { syncModule } from './sync/module.js';
+import { schedulesModule } from './schedules/module.js';
 import { teamsModule } from './teams/module.js';
 
 /**
@@ -19,6 +20,8 @@ import { teamsModule } from './teams/module.js';
  * ci-tokens comes after webhook-capture: a CI token may call only that module's capture reads.
  * live-updates comes last. It resolves roles through teams-access, and `@fastify/websocket` wraps
  * only the routes registered after it in the shared scope.
+ * scheduled-runs comes after live-updates, whose hub listens to its announcement; its routes use
+ * teams-access's role guard and read `ctx.license`.
  * audit-log comes last: its routes sit behind identity's guard and read `ctx.license`; its hook is found at
  * call time, so fire sites in earlier modules reach it.
  * sso comes after audit-log: its migration names `teams` and `audit_events`, and its routes use identity's
@@ -32,6 +35,7 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   hooksModule(),
   ciTokensModule(),
   liveModule(),
+  schedulesModule(),
   auditLogModule(),
   ssoModule(),
 ];

@@ -701,6 +701,30 @@ export type {
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
+export { GRAPHQL_BODY_EXTENSION } from './rest/model.js';
+export { graphqlPayload, graphqlPayloadText, lowerGraphqlBody, lowerGraphqlBodyText } from './rest/graphql/body.js';
+export type { GraphqlBody } from './rest/graphql/body.js';
+export {
+  GRAPHQL_DIR,
+  GRAPHQL_SCHEMA_FILE,
+  INTROSPECTION_QUERY,
+  buildGraphqlSchema,
+  cachedGraphqlSchema,
+  graphqlSchemaPath,
+  readGraphqlSchema,
+  removeGraphqlSchema,
+  sdlFromIntrospection,
+  sdlFromSchemaFile,
+  writeGraphqlSchema,
+} from './rest/graphql/schema.js';
+export { GRAPHQL_CHECK_MAX_BYTES, checkGraphqlResponse } from './rest/graphql/check.js';
+export type {
+  GraphqlCheckInput,
+  GraphqlCheckResult,
+  GraphqlDataProblem,
+  GraphqlResponseError,
+  GraphqlSchemaCheck,
+} from './rest/graphql/check.js';
 export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
@@ -1047,6 +1071,7 @@ export type {
   RawLanguage,
   RestApi,
   RestBody,
+  GraphqlSchemaRef,
   RestDefinitionRef,
   RestFolder,
   RestMethod,
@@ -2131,6 +2156,57 @@ export type {
   ScimTokenCreated,
   ScimTokenSummary,
 } from './server-api/saml-scim.js';
+export {
+  ALERT_TARGET_KINDS,
+  SCHEDULE_ALERT_STATES,
+  SCHEDULE_LIMITS,
+  SCHEDULE_RUN_STATUSES,
+  SCHEDULE_RUN_TRIGGERS,
+  SCHEDULE_SECRET_NAME_PATTERN,
+  alertTargetInputSchema,
+  alertTargetSchema,
+  alertTestResponseSchema,
+  scheduleAlertsInputSchema,
+  scheduleCreateSchema,
+  scheduleOptionsSchema,
+  scheduleParamsSchema,
+  scheduleResultSchema,
+  scheduleRunDetailSchema,
+  scheduleRunPageSchema,
+  scheduleRunParamsSchema,
+  scheduleRunSchema,
+  scheduleRunStatusSchema,
+  scheduleRunSummarySchema,
+  scheduleRunsQuerySchema,
+  scheduleSchema,
+  scheduleSecretSummarySchema,
+  scheduleSecretsSchema,
+  scheduleTargetSchema,
+  scheduleUpdateSchema,
+  schedulesResponseSchema,
+} from './server-api/schedules.js';
+export type {
+  AlertTarget,
+  AlertTargetInput,
+  AlertTargetKind,
+  AlertTestResponse,
+  Schedule,
+  ScheduleAlertState,
+  ScheduleAlertsInput,
+  ScheduleCreate,
+  ScheduleOptions,
+  ScheduleResult,
+  ScheduleRun,
+  ScheduleRunDetail,
+  ScheduleRunPage,
+  ScheduleRunStatus,
+  ScheduleRunSummary,
+  ScheduleRunTrigger,
+  ScheduleRunsQuery,
+  ScheduleSecrets,
+  ScheduleTarget,
+  ScheduleUpdate,
+} from './server-api/schedules.js';
 export {
   COMMUNITY_SEATS,
   EDITIONS,

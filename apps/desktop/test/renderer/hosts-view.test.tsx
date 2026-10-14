@@ -40,6 +40,7 @@ const defaults = {
   jump: { value: undefined, from: 'default' },
   keepAlive: { value: 15, from: 'default' },
   connectTimeout: { value: 20, from: 'default' },
+  forwardAgent: { value: false, from: 'default' },
 } as const;
 const STATE = {
   file: {
@@ -66,6 +67,7 @@ const STATE = {
       protected: { value: false, from: 'default' as const },
       ssh: defaults,
       forwards: [],
+      env: [],
       incomplete: { field: 'user' as const },
     },
     {
@@ -77,6 +79,7 @@ const STATE = {
       protected: { value: false, from: 'default' as const },
       ssh: defaults,
       forwards: [],
+      env: [],
     },
   ],
   problems: [{ code: 'ssh-bad-yaml', message: 'could not parse' }],

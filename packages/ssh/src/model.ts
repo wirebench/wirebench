@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { SshModelError } from './errors.js';
 import { forwardsSchema, isOffForm, serializeForward } from './forward-rules.js';
 import type { ForwardEntry } from './forward-rules.js';
+import { envSchema } from './host-env.js';
 import { resolveSettings } from './resolve.js';
+import { SECRET_NAME, SECRET_TOKEN } from './secret-token.js';
 import { walk } from './tree.js';
 
 export { walk };
 
-/** The name grammar of `${secret:NAME}`, shared with snippet variables (`snippets.ts`). */
-export const SECRET_NAME = /[A-Za-z_][A-Za-z0-9_]*/;
-export const SECRET_TOKEN = new RegExp(`^\\$\\{secret:(${SECRET_NAME.source})\\}$`);
+export { SECRET_NAME, SECRET_TOKEN };
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 /** The workspace id grammar, shared with `snippets.yaml`. */
 export const ENTRY_ID = ID;
@@ -30,11 +30,15 @@ const secretRef = z.string().superRefine((value, ctx) => {
 
 const authSchema = z.union([
   z.strictObject({ password: secretRef }).transform((a) => ({ kind: 'password' as const, password: a.password })),
-  z.strictObject({ key: secretRef, passphrase: secretRef.optional() }).transform((a) => ({
-    kind: 'key' as const,
-    key: a.key,
-    ...(a.passphrase === undefined ? {} : { passphrase: a.passphrase }),
-  })),
+  z
+    .strictObject({ key: secretRef, certificate: secretRef.optional(), passphrase: secretRef.optional() })
+    .transform((a) => ({
+      kind: 'key' as const,
+      key: a.key,
+      /** An OpenSSH user certificate for the key (#421): offered first, then the key alone. */
+      ...(a.certificate === undefined ? {} : { certificate: a.certificate }),
+      ...(a.passphrase === undefined ? {} : { passphrase: a.passphrase }),
+    })),
   z.strictObject({ agent: z.literal(true) }).transform(() => ({ kind: 'agent' as const })),
 ]);
 
@@ -46,6 +50,8 @@ const settingsSchema = z
     auth: authSchema.optional(),
     keepAlive: z.number().int().min(0).optional(),
     connectTimeout: z.number().int().min(1).optional(),
+    /** Off by default; a nearer `false` turns an inherited `true` off. */
+    forwardAgent: z.boolean().optional(),
   })
   .default({});
 
@@ -56,6 +62,7 @@ const hostSchema = z.strictObject({
   tags: z.array(z.string().min(1)).default([]),
   protected: z.boolean().optional(),
   ssh: settingsSchema,
+  env: envSchema,
   forwards: forwardsSchema,
 });
 
@@ -69,6 +76,8 @@ export interface GroupEntry {
   /** Runs touching a protected host always confirm; inherited, a nearer `false` lifts it. */
   protected?: boolean | undefined;
   ssh: SshSettings;
+  /** Merged by name down the tree; a nearer level wins per variable. */
+  env?: Record<string, string> | undefined;
   forwards?: ForwardEntry[] | undefined;
   groups: GroupEntry[];
   hosts: HostEntry[];
@@ -81,6 +90,7 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
     tags: z.array(z.string().min(1)).default([]),
     protected: z.boolean().optional(),
     ssh: settingsSchema,
+    env: envSchema,
     forwards: forwardsSchema,
     groups: z.array(groupSchema).default([]),
     hosts: z.array(hostSchema).default([]),
@@ -270,11 +280,16 @@ function settings(ssh: SshSettings): Record<string, unknown> {
       auth.kind === 'password'
         ? { password: auth.password }
         : auth.kind === 'key'
-          ? { key: auth.key, ...(auth.passphrase === undefined ? {} : { passphrase: auth.passphrase }) }
+          ? {
+              key: auth.key,
+              ...(auth.certificate === undefined ? {} : { certificate: auth.certificate }),
+              ...(auth.passphrase === undefined ? {} : { passphrase: auth.passphrase }),
+            }
           : { agent: true };
   }
   if (ssh.keepAlive !== undefined) out['keepAlive'] = ssh.keepAlive;
   if (ssh.connectTimeout !== undefined) out['connectTimeout'] = ssh.connectTimeout;
+  if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
   return out;
 }
 
@@ -285,6 +300,7 @@ function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   if (entry.protected !== undefined) out['protected'] = entry.protected;
   const ssh = settings(entry.ssh);
   if (Object.keys(ssh).length > 0) out['ssh'] = ssh;
+  if (entry.env !== undefined && Object.keys(entry.env).length > 0) out['env'] = { ...entry.env };
   if (entry.forwards !== undefined && entry.forwards.length > 0) out['forwards'] = entry.forwards.map(serializeForward);
   return out;
 }

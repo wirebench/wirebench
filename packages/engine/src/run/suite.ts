@@ -1,30 +1,39 @@
+/**
+ * A whole run as `wirebench run` makes it, as a library (#343): the CLI and a server running a
+ * schedule share the selection, the sequences, the data rows and the baselines. Loading the project,
+ * resolving secrets and reporting stay with the host.
+ */
+import type { CallbackWaiting } from '../assert/callback.js';
+import type { CaptureSource } from '../assert/capture-source.js';
+import type { StepAssertion } from '../assert/model.js';
+import { WirebenchError } from '../errors.js';
+import type { Environment, Project } from '../project/model.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import { createScriptChecker } from '../script/check/host.js';
+import { RequestScripting } from '../script/request-scripts.js';
+import { createScriptSandbox } from '../script/sandbox/host.js';
+import { sequenceFilePath } from '../sequence/file.js';
+import type { SequenceDef } from '../sequence/model.js';
+import { runSequence } from '../sequence/run.js';
+import type { SequenceStepResult, SequenceStepSender } from '../sequence/run.js';
+import type { WorkspaceEnvironment } from '../workspace/model.js';
+import { scopesFor } from './context.js';
+import type { RunContext, RunWorkspace } from './context.js';
+import { pickEnvironment, projectIdOf } from './environment.js';
+import { createPacer, iterationContext, runIterations, tagIteration } from './iterate.js';
+import type { Pacer } from './iterate.js';
+import type { Iteration } from './iterations.js';
 import {
   cappedExchange,
+  checkRunScripts,
   createRunSender,
   errorOf,
-  findStepRequest,
   hasPostResponseScript,
-  runSequence,
-  scopesFor,
-  sequenceFilePath,
-} from '@wirebench/engine';
-import type {
-  CallbackWaiting,
-  CaptureSource,
-  Pacer,
-  Project,
-  RequestResult,
-  RunContext,
-  RunRequestSender,
-  RunResult,
-  SelectedRequest,
-  SentRequest,
-  SequenceDef,
-  SequenceStepResult,
-  SequenceStepSender,
-  StepAssertion,
-} from '@wirebench/engine';
-import { UsageError } from '../args.js';
+  runRequests,
+} from './run.js';
+import type { RequestResult, RunOptions, RunRequestSender, RunResult, SentRequest } from './run.js';
+import { findStepRequest, selectRequests } from './select.js';
+import type { SelectedRequest } from './select.js';
 
 function normalise(selector: string): string {
   return selector.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -32,7 +41,7 @@ function normalise(selector: string): string {
 
 /**
  * The sequences `selectors` name, in the order given: each selector is a sequence's name or its file
- * path (`sequences/<slug>.sequence.yaml`). A selector naming nothing is a usage error, as for requests:
+ * path (`sequences/<slug>.sequence.yaml`). A selector naming nothing is refused (`sequence-not-found`), as for requests:
  * a pipeline that tested nothing must not be told it passed.
  */
 export function selectSequences(project: Project, selectors: readonly string[]): SequenceDef[] {
@@ -49,7 +58,8 @@ export function selectSequences(project: Project, selectors: readonly string[]):
   }
   if (unmatched.length > 0) {
     const names = project.sequences.map((s) => s.name).join(', ');
-    throw new UsageError(
+    throw new WirebenchError(
+      'sequence-not-found',
       `--sequence matched nothing: ${unmatched.join(', ')}${names !== '' ? `; sequences: ${names}` : '; the project has none'}`,
     );
   }
@@ -58,15 +68,19 @@ export function selectSequences(project: Project, selectors: readonly string[]):
 
 /**
  * Every step's request, resolved before anything is sent. A step whose request is missing or cannot
- * run refuses the whole run with a usage error naming it, so a report never has a step it cannot say
+ * run refuses the whole run (`sequence-cannot-run`) naming it, so a report never has a step it cannot say
  * the protocol of, and a broken sequence fails loudly rather than as a red step.
  */
-export function resolveSteps(project: Project, sequences: readonly SequenceDef[]): SelectedRequest[] {
+export function resolveSteps(
+  project: Project,
+  sequences: readonly SequenceDef[],
+  registry?: ProtocolRegistry,
+): SelectedRequest[] {
   const problems: string[] = [];
   const requests = new Map<string, SelectedRequest>();
   for (const sequence of sequences) {
     for (const [index, step] of sequence.steps.entries()) {
-      const target = findStepRequest(project, step.requestId);
+      const target = findStepRequest(project, step.requestId, registry);
       if (target.kind === 'found') {
         requests.set(target.selected.request.id, target.selected);
       } else {
@@ -78,7 +92,7 @@ export function resolveSteps(project: Project, sequences: readonly SequenceDef[]
     }
   }
   if (problems.length > 0) {
-    throw new UsageError(`a sequence cannot run:\n  ${problems.join('\n  ')}`);
+    throw new WirebenchError('sequence-cannot-run', `a sequence cannot run:\n  ${problems.join('\n  ')}`);
   }
   return [...requests.values()];
 }
@@ -169,6 +183,7 @@ export async function runSequences(
           ...(sent.origin !== undefined ? { origin: sent.origin } : {}),
           ...(sent.script !== undefined ? { script: sent.script } : {}),
           ...(sent.scriptsOff === true ? { scriptsOff: true } : {}),
+          ...(sent.checks !== undefined ? { checks: sent.checks } : {}),
         };
       } catch (error) {
         return { error: errorOf(error) };
@@ -265,4 +280,150 @@ function stepResult(
     ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog } : {}),
     ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
   };
+}
+
+/** What a run covers: its environment, the requests to send, and the sequences when it runs sequences. */
+export interface SuiteSelection {
+  readonly environment?: Environment | WorkspaceEnvironment;
+  /** The requests to send: the selection's, or every request the sequences' steps name. */
+  readonly selected: readonly SelectedRequest[];
+  /** Set when the run is of sequences. */
+  readonly sequences?: readonly SequenceDef[];
+}
+
+/** What {@link selectSuite} picks by: the names `wirebench run` takes as `--env`, selectors and `--sequence`. */
+export interface SuiteSelectors {
+  readonly environment?: string;
+  readonly select: readonly string[];
+  readonly sequences?: readonly string[];
+}
+
+/**
+ * The environment and the requests a run covers. Inside a workspace the environment is the workspace's,
+ * as in the app. Everything that would make the run test nothing is refused before any send.
+ *
+ * @throws WirebenchError `environment-required`, `environment-not-found`, `environment-out-of-scope`,
+ *   `sequence-not-found`, `sequence-cannot-run`, `selector-unmatched` or `nothing-to-run`
+ */
+export function selectSuite(
+  project: Project,
+  workspace: RunWorkspace | undefined,
+  selectors: SuiteSelectors,
+  registry?: ProtocolRegistry,
+): SuiteSelection {
+  const environment =
+    workspace === undefined
+      ? pickEnvironment(project.environments, 'project', selectors.environment)
+      : pickEnvironment(workspace.workspace.environments, 'workspace', selectors.environment, projectIdOf(workspace));
+  const at = environment !== undefined ? { environment } : {};
+  if (selectors.sequences !== undefined && selectors.sequences.length > 0) {
+    const sequences = selectSequences(project, selectors.sequences);
+    return { ...at, selected: resolveSteps(project, sequences, registry), sequences };
+  }
+  const { selected, unmatched } = selectRequests(project, selectors.select, registry);
+  if (unmatched.length > 0) {
+    throw new WirebenchError('selector-unmatched', `selector matched nothing: ${unmatched.join(', ')}`);
+  }
+  if (selected.length === 0) {
+    throw new WirebenchError('nothing-to-run', 'nothing to run: the project has no requests');
+  }
+  return { ...at, selected };
+}
+
+/** Options for {@link runSuite}: the run's shape as `wirebench run`'s flags give it. */
+export interface RunSuiteOptions {
+  readonly selection: SuiteSelection;
+  /** The iterations, from `planIterations`: one without data for a plain run. */
+  readonly plan: readonly Iteration[];
+  readonly bail: boolean;
+  readonly requireAssertions: boolean;
+  /** `--sla`: the response-time limit for a request or step that declares none. */
+  readonly slaMs?: number;
+  /** `--delay`: waited before each send, and between iterations. */
+  readonly delayMs?: number;
+  /** Compare responses to the golden files (request runs only). */
+  readonly baseline?: RunOptions['baseline'];
+  /** Rewrite the golden files (request runs only); the CLI's one write. */
+  readonly updateBaseline?: RunOptions['updateBaseline'];
+  /** Each request or step as it finishes, tagged with its iteration. Raw: the host masks it. */
+  readonly onRequestDone?: (result: RequestResult) => void;
+  /** Where callback assertions read captures. */
+  readonly captures: CaptureSource;
+  readonly onCallbackWaiting?: (path: string, waiting: readonly CallbackWaiting[]) => void;
+  /** Whether a value holds a credential the run already knows. */
+  readonly containsKnownSecret: (value: string) => boolean;
+  /** A value a script made secret: every mask built after this must hide it. */
+  readonly onSecretValue: (value: string) => void;
+}
+
+/**
+ * How a run ended: it ran, or its scripts were refused before anything was sent (a wrong path fails
+ * the run up front, the same way in CI as in the app, #63). Errors are raw: the host masks them.
+ */
+export type SuiteOutcome =
+  | { readonly kind: 'ran'; readonly result: RunResult }
+  | { readonly kind: 'scripts-refused'; readonly errors: readonly WirebenchError[] };
+
+/**
+ * Runs a selection the way `wirebench run` does: every script checked first, then each iteration of the
+ * plan in turn through one sender and one pacer, so a definition loads once, an OAuth2 token is shared
+ * and the delay holds between iterations too (#336). `context` is everything but the scripting, which
+ * the suite owns and disposes; its `signal` stops the run, marking what is left skipped.
+ */
+export async function runSuite(
+  context: Omit<RunContext, 'scripting'>,
+  options: RunSuiteOptions,
+): Promise<SuiteOutcome> {
+  const { selection } = options;
+  const signal = context.signal ?? new AbortController().signal;
+  const sandbox = createScriptSandbox();
+  const checker = createScriptChecker();
+  const run: RunContext = {
+    ...context,
+    signal,
+    scripting: new RequestScripting({ sandbox, checker, onSecretValue: options.onSecretValue }),
+  };
+  try {
+    const scriptErrors = await checkRunScripts(selection.selected, run);
+    if (scriptErrors.length > 0) {
+      return { kind: 'scripts-refused', errors: scriptErrors };
+    }
+    const send = createRunSender(run);
+    const pace = createPacer(options.delayMs, signal);
+    const onCallbackWaiting = options.onCallbackWaiting ?? ((): void => undefined);
+    const once = (iteration: Iteration): Promise<RunResult> => {
+      const iterated = iterationContext(run, iteration);
+      const done = (request: RequestResult): void => options.onRequestDone?.(tagIteration(request, iteration));
+      return selection.sequences !== undefined
+        ? runSequences(selection.sequences, iterated, {
+            bail: options.bail,
+            requireAssertions: options.requireAssertions,
+            ...(options.slaMs !== undefined ? { slaMs: options.slaMs } : {}),
+            signal,
+            onStepDone: done,
+            containsKnownSecret: options.containsKnownSecret,
+            captures: options.captures,
+            onCallbackWaiting,
+            send,
+            pace,
+          })
+        : runRequests(selection.selected, iterated, {
+            bail: options.bail,
+            // An API or folder run: its scripts may steer it (#335).
+            runControl: true,
+            ...(options.slaMs !== undefined ? { defaultSlaMs: options.slaMs } : {}),
+            requireAssertions: options.requireAssertions,
+            ...(options.baseline !== undefined ? { baseline: options.baseline } : {}),
+            ...(options.updateBaseline !== undefined ? { updateBaseline: options.updateBaseline } : {}),
+            onRequestDone: done,
+            captures: options.captures,
+            onCallbackWaiting,
+            send,
+            pace,
+          });
+    };
+    return { kind: 'ran', result: await runIterations(options.plan, once, { bail: options.bail, signal }) };
+  } finally {
+    await Promise.all([sandbox.dispose(), checker.dispose()]);
+  }
 }

@@ -24,6 +24,13 @@ export interface ResolvedForward {
   readonly offBy?: ForwardFrom;
 }
 
+/** A variable after inheritance: its value as written (literal or a `${secret:NAME}` token) and its level. */
+export interface ResolvedEnvVar {
+  readonly name: string;
+  readonly value: string;
+  readonly from: ForwardFrom;
+}
+
 export interface ResolvedHost {
   readonly id: string;
   readonly name: string;
@@ -40,13 +47,17 @@ export interface ResolvedHost {
     readonly jump: Provenance<string | undefined>;
     readonly keepAlive: Provenance<number>;
     readonly connectTimeout: Provenance<number>;
+    /** Whether the target's shell forwards the local agent; never a jump host's. */
+    readonly forwardAgent: Provenance<boolean>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
   readonly forwards: readonly ResolvedForward[];
+  /** Merged by name root to leaf: a nearer level wins per variable; a re-set name keeps its first position. */
+  readonly env: readonly ResolvedEnvVar[];
 }
 
-const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
+const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false } as const;
 
 interface Located {
   readonly host: HostEntry;
@@ -118,11 +129,23 @@ function resolveForwards(located: Located): ResolvedForward[] {
   return [...out.values()];
 }
 
+function resolveEnv(located: Located): ResolvedEnvVar[] {
+  const levels: Array<{ env: Readonly<Record<string, string>>; from: ForwardFrom }> = [
+    ...located.chain.map((g) => ({ env: g.env ?? {}, from: { group: g.id } })),
+    { env: located.host.env ?? {}, from: 'host' as const },
+  ];
+  const out = new Map<string, ResolvedEnvVar>();
+  for (const { env, from } of levels) {
+    for (const [name, value] of Object.entries(env)) out.set(name, { name, value, from });
+  }
+  return [...out.values()];
+}
+
 /** Merged values, nearest wins; `auth` is replaced whole, never merged. No defaults, no provenance. */
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
   const out: Record<string, unknown> = {};
-  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout'] as const) {
+  for (const key of ['user', 'port', 'jump', 'auth', 'keepAlive', 'connectTimeout', 'forwardAgent'] as const) {
     const { value } = pick(located, key, undefined);
     if (value !== undefined) out[key] = value;
   }
@@ -142,6 +165,7 @@ function resolveLocated(located: Located): ResolvedHost {
     jump: pick(located, 'jump', undefined),
     keepAlive: pick(located, 'keepAlive', DEFAULTS.keepAlive) as Provenance<number>,
     connectTimeout: pick(located, 'connectTimeout', DEFAULTS.connectTimeout) as Provenance<number>,
+    forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
   };
   const incomplete =
     ssh.user.value === undefined
@@ -159,6 +183,7 @@ function resolveLocated(located: Located): ResolvedHost {
     ssh,
     ...(incomplete ? { incomplete } : {}),
     forwards: resolveForwards(located),
+    env: resolveEnv(located),
   };
 }
 

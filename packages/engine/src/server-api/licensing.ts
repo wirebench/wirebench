@@ -18,8 +18,8 @@ export const EDITIONS = ['community', 'team', 'enterprise'] as const;
 export const editionSchema = z.enum(EDITIONS);
 export type Edition = z.infer<typeof editionSchema>;
 
-/** Names a route or module checks. Later modules add `policies`, `scheduled-runs`. */
-export const FEATURES = ['audit-log', 'sso-provisioning'] as const;
+/** Names a route or module checks. Later modules add `policies`. */
+export const FEATURES = ['audit-log', 'scheduled-runs', 'sso-provisioning'] as const;
 export const featureSchema = z.enum(FEATURES);
 export type Feature = z.infer<typeof featureSchema>;
 

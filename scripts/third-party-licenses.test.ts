@@ -236,6 +236,16 @@ describe('collect', () => {
     expect(found.map((entry) => entry.name)).toEqual(['holder', 'present']);
   });
 
+  it('leaves out an optional binding built for one platform, so every OS writes the same file', async () => {
+    const dir = await project({
+      holder: { optionalDependencies: { 'holder-darwin-arm64': '2.0.0', plain: '2.0.0' } },
+      'holder-darwin-arm64': { os: ['darwin'], cpu: ['arm64'] },
+      plain: {},
+    });
+    const found = await collect([{ name: 'holder', from: dir }]);
+    expect(found.map((entry) => entry.name)).toEqual(['holder', 'plain']);
+  });
+
   it('still throws for a regular dependency that is not installed', async () => {
     const dir = await project({ holder: { dependencies: { absent: '1.0.0' } } });
     await expect(collect([{ name: 'holder', from: dir }])).rejects.toThrow(/Cannot resolve "absent"/);

@@ -28,6 +28,7 @@ describeDb('0003_teams (§4.1)', () => {
       'webhook-capture',
       'ci-tokens',
       'live-updates',
+      'scheduled-runs',
       'audit-log',
       'sso',
     ]);

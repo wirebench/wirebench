@@ -37,8 +37,8 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
   changes a role, and never disables the last enabled server admin.
 - Every sign-in, refusal and provisioning write records an audit event. `details` never carries XML,
   attributes or token secrets.
-- The migration is `sso/0014_saml-scim.sql`. If #343 merges a 0014 first, rename this file to the next free
-  number (migrations are contiguous across modules).
+- The migration is `sso/0015_saml-scim.sql`. #343 merged its 0014 first, so this file is 0015
+  (migration numbers are global across modules).
 - Stay inside `sso/`, `identity/` (only to share linking and sessions), `teams/repo.ts`, the engine's
   `server-api/`, and the desktop's account and team features. `modules.ts` and `context.ts` gain one entry
   each (ruling 11); `serve.ts` is untouched, and `server.ts` only gains redaction keys.
@@ -85,7 +85,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
     the modules a server runs, so an identity-only server cannot load a 0014 that names `teams` and
     `audit_events`. Every file this plan places under `src/identity/` for SAML or SCIM lives under
     `src/sso/` instead (`sso/saml.ts`, `sso/saml-metadata.ts`, `sso/repo.ts`, `sso/scim/…`,
-    `sso/routes/…`), and the migration is `migrations/sso/0014_saml-scim.sql`. `identity` keeps its
+    `sso/routes/…`), and the migration is `migrations/sso/0015_saml-scim.sql`. `identity` keeps its
     sessions, linking and guard, and `sso` calls them. `modules.ts` gains `ssoModule()` after
     `auditLogModule()`, and `ServerModule['name']` gains `'sso'`.
 
@@ -101,7 +101,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
 - Modify `packages/engine/src/index.ts`: exports.
 
 **Server**
-- Create `packages/server/migrations/identity/0014_saml-scim.sql`.
+- Create `packages/server/migrations/identity/0015_saml-scim.sql`.
 - Modify `packages/server/src/config.ts`: the five `SAML_*` variables.
 - Create `identity/saml-metadata.ts`, `identity/saml.ts`, `identity/routes/auth-saml.ts`,
   `identity/user-state.ts`, `identity/scim-tokens.ts`, `identity/routes/scim-tokens.ts`,
@@ -153,7 +153,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
 
 ### Task 3: Migration and repository
 
-- [ ] `0014_saml-scim.sql` exactly as spec §4.
+- [ ] `0015_saml-scim.sql` exactly as spec §4.
 - [ ] Integration tests (`test/integration/identity/saml-scim-repo.test.ts`): insert and look up a SAML
   identity; insert a flow, look it up by relay state, grant it once (`grant_hash is null`, a second grant is
   refused), claim it once; delete expired flows. SCIM tokens: insert, look up by hash, revoke, the name

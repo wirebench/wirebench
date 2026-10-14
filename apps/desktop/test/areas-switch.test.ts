@@ -4,6 +4,7 @@ import {
   enabledAreasFromEnv,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
+  localTerminalFromEnv,
   parseAreaSwitches,
   registerEnabledAreaChannels,
 } from '../src/main/areas.js';
@@ -20,7 +21,10 @@ vi.mock('electron', () => ({
 /** The channel names registering the enabled areas leaves behind; no handler is called. */
 function channelsFor(env: string): string[] {
   registered.clear();
-  registerEnabledAreaChannels(enabledAreasFromEnv({ WIREBENCH_AREAS: env }), {} as never);
+  const environment = { WIREBENCH_AREAS: env };
+  registerEnabledAreaChannels(enabledAreasFromEnv(environment), {
+    localTerminal: localTerminalFromEnv(environment) ? {} : undefined,
+  } as never);
   return [...registered];
 }
 
@@ -82,12 +86,59 @@ describe('area channels', () => {
         .sort(),
     ).toEqual(['forward.freePort', 'forward.list', 'forward.start', 'forward.stop', 'forward.stopAll']);
   });
-  it('with ssh=off no ssh.*, sftp.*, forward.* or layout.* channel exists', () => {
+  it('the SSH area registers its sessionLog.* channels', () => {
+    expect(
+      channelsFor('')
+        .filter((n) => n.startsWith('sessionLog.'))
+        .sort(),
+    ).toEqual([
+      'sessionLog.delete',
+      'sessionLog.list',
+      'sessionLog.read',
+      'sessionLog.reveal',
+      'sessionLog.search',
+      'sessionLog.setSwitch',
+      'sessionLog.switches',
+    ]);
+  });
+  it('with ssh=off no ssh.*, sftp.*, forward.*, layout.* or sessionLog.* channel exists', () => {
     expect(
       channelsFor('ssh=off').filter(
-        (n) => n.startsWith('ssh.') || n.startsWith('sftp.') || n.startsWith('forward.') || n.startsWith('layout.'),
+        (n) =>
+          n.startsWith('ssh.') ||
+          n.startsWith('sftp.') ||
+          n.startsWith('forward.') ||
+          n.startsWith('layout.') ||
+          n.startsWith('sessionLog.'),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('the local terminal switch', () => {
+  it('is on with the SSH area, and off with it', () => {
+    expect(localTerminalFromEnv({})).toBe(true);
+    expect(localTerminalFromEnv({ WIREBENCH_AREAS: 'ssh=off' })).toBe(false);
+  });
+  it('local-terminal=off switches it off on its own, leaving SSH on', () => {
+    const env = { WIREBENCH_AREAS: 'local-terminal=off' };
+    expect(localTerminalFromEnv(env)).toBe(false);
+    expect(enabledAreasFromEnv(env)).toContain('ssh');
+  });
+  it('registers the localTerminal.* channels only while it is on', () => {
+    const local = (env: string) =>
+      channelsFor(env)
+        .filter((n) => n.startsWith('localTerminal.'))
+        .sort();
+    expect(local('')).toEqual([
+      'localTerminal.close',
+      'localTerminal.open',
+      'localTerminal.resize',
+      'localTerminal.write',
+    ]);
+    expect(local('local-terminal=off')).toEqual([]);
+    expect(channelsFor('local-terminal=off')).toContain('ssh.connect');
+    expect(local('ssh=off')).toEqual([]);
   });
 });
 

@@ -230,6 +230,11 @@ class PostmanWriter {
       case 'binary':
         ensureType(body.contentType);
         return { mode: 'file', file: { src: body.source.kind === 'path' ? body.source.path : '' } };
+      case 'graphql':
+        if (body.operationName !== undefined) {
+          this.ctx.report.warn(`${label}: its GraphQL operation name "${body.operationName}" is not represented.`);
+        }
+        return { mode: 'graphql', graphql: { query: body.query, variables: body.variables } };
     }
   }
 

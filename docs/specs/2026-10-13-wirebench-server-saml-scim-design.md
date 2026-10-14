@@ -242,8 +242,8 @@ The server admin who is the last enabled server admin cannot be deactivated thro
 
 ## 4. Data
 
-Migration `sso/0014_saml-scim.sql` (the number is global; if another module lands 0014 first, this file is
-renumbered):
+Migration `sso/0015_saml-scim.sql` (the number is global; scheduled runs took 0014 first, so this is
+0015):
 
 ```sql
 create table saml_identities (

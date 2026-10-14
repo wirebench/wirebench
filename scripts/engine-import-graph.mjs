@@ -84,6 +84,7 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import/collection-v3/map.ts', to: 'ws/model.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'rest/model.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'rest/url.ts', until: 'phase 7' },
+  { from: 'export/tree.ts', to: 'rest/graphql/body.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'soap/model.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'grpc/model.ts', until: 'phase 7' },
   { from: 'export/tree.ts', to: 'ws/model.ts', until: 'phase 7' },

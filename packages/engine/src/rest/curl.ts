@@ -14,6 +14,7 @@
 
 import type { CurlBody, CurlCommand, CurlHeader, ToCurlOptions } from '../http/curl.js';
 import { toCurl } from '../http/curl.js';
+import { lowerGraphqlBodyText } from './graphql/body.js';
 import type { KeyValueEntry, RawLanguage, RestBody, RestMethod, RestRequestSettings } from './model.js';
 import { entry, RAW_LANGUAGE_CONTENT_TYPES } from './model.js';
 import type { RestSendInput } from './send.js';
@@ -43,6 +44,8 @@ export function curlBody(body: RestBody): CurlBody {
   switch (body.kind) {
     case 'raw':
       return { kind: 'raw', text: body.text };
+    case 'graphql':
+      return { kind: 'raw', text: lowerGraphqlBodyText(body).text };
     case 'form':
       return {
         kind: 'form',

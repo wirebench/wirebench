@@ -4,6 +4,7 @@
  */
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type {
+  GraphqlCheckResult,
   GrpcCallResult,
   GrpcResolvedInput,
   GrpcSelected,
@@ -26,12 +27,12 @@ import {
   toWsExchangeSummary,
 } from '../engine-wire.js';
 import { failedExchangeOf } from '../failed-exchange.js';
-import { redactSecretValues } from '../redact.js';
+import { redactSecretText, redactSecretValues } from '../redact.js';
 import type { SendThroughEngineDeps } from './exchange.js';
 import { reportSendFailed } from './host.js';
 import type { ResolvedSendInputWire } from '../../shared/wire-types.js';
 import type { GrpcExchangeSummary } from '../../shared/kinds/grpc/wire.js';
-import type { RestExchangeSummary } from '../../shared/kinds/rest/wire.js';
+import type { GraphqlCheckWire, RestExchangeSummary } from '../../shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '../../shared/kinds/soap/wire.js';
 import type { WsExchangeSummary } from '../../shared/kinds/ws/wire.js';
 import type { FailedExchangeWire } from '../../shared/wire-base.js';
@@ -236,6 +237,8 @@ export function summariseRest(
   exchange: RestExchange,
   contract: RestContractResult | undefined,
   options: {
+    /** A GraphQL request's response, checked (#77). */
+    readonly graphql?: GraphqlCheckResult;
     readonly method: string;
     readonly keyParams?: readonly string[];
     readonly keyHeaders?: readonly string[];
@@ -249,10 +252,30 @@ export function summariseRest(
   };
   const summaryOf = (show: boolean): RestExchangeSummary => {
     const summary = toRestExchangeSummary(exchange, sendId, { ...context, show });
-    return contract === undefined ? summary : { ...summary, contract: toRestContractWire(contract) };
+    return {
+      ...summary,
+      ...(contract !== undefined ? { contract: toRestContractWire(contract) } : {}),
+      ...(options.graphql !== undefined ? { graphql: toGraphqlCheckWire(options.graphql, show) } : {}),
+    };
   };
   service.exchanges.putRest(sendId, summaryOf(true), exchange.body, summaryOf);
   return summaryOf(options.show);
+}
+
+/**
+ * A GraphQL check onto the wire. An error's message is the server's text, so a recorded secret in it
+ * is masked unless the session shows secrets; a data problem names only the schema's side.
+ */
+export function toGraphqlCheckWire(result: GraphqlCheckResult, show: boolean): GraphqlCheckWire {
+  return {
+    schema: result.schema,
+    errors: result.errors.map((error) => ({
+      message: redactSecretText(error.message, { show }),
+      ...(error.path !== undefined ? { path: [...error.path] } : {}),
+      pointer: error.pointer,
+    })),
+    problems: result.problems.map((problem) => ({ pointer: problem.pointer, message: problem.message })),
+  };
 }
 
 /** What a gRPC call sent, as History records it: the call as resolved and its message text. */

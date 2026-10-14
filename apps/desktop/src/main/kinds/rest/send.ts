@@ -30,6 +30,7 @@ export const restSend: KindSend<'rest'> = {
     const exchange = restSent(sent);
     return {
       summary: summariseRest(deps.service, sendId, exchange.rest, exchange.contract as RestContractResult | undefined, {
+        ...(exchange.graphql !== undefined ? { graphql: exchange.graphql } : {}),
         method: exchange.input.request.method,
         ...masks,
         show,

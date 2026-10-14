@@ -2050,6 +2050,9 @@ export const preferencesWireSchema = z.object({
     autoReconnect: z.boolean(),
     reconnectAttempts: z.number(),
     snippetSuggestions: z.boolean(),
+    sessionLogMaxMb: z.number(),
+    sessionLogRaw: z.boolean(),
+    localShell: z.string(),
   }),
   shortcuts: z.record(z.string(), z.string()),
 });

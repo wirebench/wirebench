@@ -31,6 +31,12 @@ export const restRoutes = {
   webhookItems: { method: 'webhookItems', by: 'entity' },
   /** Places the chosen webhooks/callbacks into the API's linked webhook group, creating it if needed. */
   importWebhooks: { method: 'importWebhooks', by: 'entity' },
+  /** An API's GraphQL schema, built, for the GraphQL editor's completion and validation (#77). */
+  graphqlSchemaFor: { method: 'graphqlSchemaFor', by: 'entity' },
+  /** Stores an API's GraphQL schema as SDL and records where it came from. */
+  setGraphqlSchema: { method: 'setGraphqlSchema', by: 'entity' },
+  /** Removes an API's GraphQL schema. */
+  clearGraphqlSchema: { method: 'clearGraphqlSchema', by: 'entity' },
 } as const satisfies Readonly<Record<string, KindRoute<RestHost>>>;
 
 export type RestRouter = KindRouter<RestHost, typeof restRoutes>;

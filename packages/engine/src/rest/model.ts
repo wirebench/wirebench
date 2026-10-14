@@ -69,6 +69,9 @@ export const RAW_LANGUAGE_EXTENSIONS: Readonly<Record<RawLanguage, string>> = Ob
   javascript: 'js',
 });
 
+/** The extension a GraphQL body's query is stored under, beside its request file (#77). */
+export const GRAPHQL_BODY_EXTENSION = 'graphql';
+
 /**
  * One part of a `multipart/form-data` body: either inline text or a file. Distinct from the SOAP
  * transport's `MultipartPart`, which is a MIME part of an already-built message.
@@ -111,7 +114,19 @@ export type RestBody =
     }
   | { readonly kind: 'form'; readonly fields: readonly KeyValueEntry[] }
   | { readonly kind: 'multipart'; readonly parts: readonly MultipartFormPart[] }
-  | { readonly kind: 'binary'; readonly source: AttachmentSource; readonly contentType: string };
+  | { readonly kind: 'binary'; readonly source: AttachmentSource; readonly contentType: string }
+  | {
+      /**
+       * A GraphQL operation (#77): sent as the JSON `{query, variables, operationName}` body the
+       * GraphQL-over-HTTP convention expects. The query lives in a sibling `.body.graphql` file.
+       */
+      readonly kind: 'graphql';
+      readonly query: string;
+      /** The variables as JSON text, edited as such; `''` for none. */
+      readonly variables: string;
+      /** Which operation of a document holding several to run; absent lets the server pick. */
+      readonly operationName?: string;
+    };
 
 /** The body a freshly created request starts with. */
 export const NO_BODY: RestBody = Object.freeze({ kind: 'none' });
@@ -259,6 +274,17 @@ export interface RestDefinitionRef {
   readonly auth?: DefinitionAuth;
 }
 
+/**
+ * Where an API's GraphQL schema came from (#77). The schema itself is SDL in the project, at
+ * `apis/<slug>/graphql/schema.graphql` (`rest/graphql/schema.ts`).
+ */
+export interface GraphqlSchemaRef {
+  /** The URL that was introspected, or the name of the file that was imported. */
+  readonly source: string;
+  /** When it was fetched or imported, as an ISO 8601 instant. */
+  readonly fetchedAt: string;
+}
+
 /** A REST API: a base URL, default credentials, and a tree of folders and requests. */
 export interface RestApi {
   readonly kind: 'rest';
@@ -278,6 +304,8 @@ export interface RestApi {
   /** Scripts run around every request in the API, before its folders' and its own (#334). */
   readonly scripts?: RequestScripts;
   readonly definition?: RestDefinitionRef;
+  /** Set once the API has a GraphQL schema for its GraphQL requests (#77). */
+  readonly graphqlSchema?: GraphqlSchemaRef;
   readonly folders: readonly RestFolder[];
   readonly requests: readonly RestRequestDef[];
 }

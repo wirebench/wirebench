@@ -218,6 +218,14 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_SAML_EMAIL_ATTRIBUTE',
         'WIREBENCH_SERVER_SAML_IDP_METADATA',
         'WIREBENCH_SERVER_SAML_NAME_ATTRIBUTE',
+        'WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS',
+        'WIREBENCH_SERVER_SCHEDULES_CONCURRENCY',
+        'WIREBENCH_SERVER_SCHEDULES_ENABLED',
+        'WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS',
+        'WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB',
+        'WIREBENCH_SERVER_SCHEDULES_SECRET_KEY',
+        'WIREBENCH_SERVER_SMTP_FROM',
+        'WIREBENCH_SERVER_SMTP_URL',
         'WIREBENCH_SERVER_TOKEN_IDLE_DAYS',
         'WIREBENCH_SERVER_TOKEN_MAX_DAYS',
         'WIREBENCH_SERVER_TRUST_PROXY',
@@ -468,5 +476,86 @@ describe('audit chain key (issue #210)', () => {
   it('is documented as an optional secret', () => {
     const variable = CONFIG_VARIABLES.find((v) => v.env === KEY_VAR);
     expect([variable?.key, variable?.secret, variable?.required]).toEqual(['auditChainKey', true, false]);
+  });
+});
+
+describe('scheduled-runs configuration (scheduled-runs §7)', () => {
+  const base = { WIREBENCH_SERVER_DATABASE_URL: 'postgres://x', WIREBENCH_SERVER_PUBLIC_URL: 'https://w.test' };
+  const KEY = Buffer.alloc(32, 7).toString('base64');
+  const problemsOf = (env: NodeJS.ProcessEnv): string[] => {
+    try {
+      loadConfig(env, '1');
+      return [];
+    } catch (error) {
+      return (error as ConfigError).problems.map((p) => p.variable);
+    }
+  };
+
+  it('defaults to on, two at once, 90 days, 50 MB, no key, no mail and no host list', () => {
+    const config = loadConfig(base, '1');
+    expect(config).toMatchObject({
+      schedulesEnabled: true,
+      schedulesConcurrency: 2,
+      schedulesMaxAgeDays: 90,
+      schedulesMaxSnapshotMb: 50,
+    });
+    expect(config.schedulesSecretKey).toBeUndefined();
+    expect(config.smtpUrl).toBeUndefined();
+    expect(config.schedulesAlertHosts).toBeUndefined();
+  });
+
+  it('reads every variable', () => {
+    const config = loadConfig(
+      {
+        ...base,
+        WIREBENCH_SERVER_SCHEDULES_ENABLED: 'false',
+        WIREBENCH_SERVER_SCHEDULES_SECRET_KEY: KEY,
+        WIREBENCH_SERVER_SCHEDULES_CONCURRENCY: '16',
+        WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS: '3650',
+        WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB: '1024',
+        WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS: ' hooks.slack.com, *.Example.com ',
+        WIREBENCH_SERVER_SMTP_URL: 'smtps://user:pass@mail.example.test:465',
+        WIREBENCH_SERVER_SMTP_FROM: 'wirebench@example.test',
+      },
+      '1',
+    );
+    expect(config).toMatchObject({
+      schedulesEnabled: false,
+      schedulesSecretKey: KEY,
+      schedulesConcurrency: 16,
+      schedulesMaxAgeDays: 3650,
+      schedulesMaxSnapshotMb: 1024,
+      schedulesAlertHosts: ['hooks.slack.com', '*.example.com'],
+      smtpUrl: 'smtps://user:pass@mail.example.test:465',
+      smtpFrom: 'wirebench@example.test',
+    });
+  });
+
+  it('refuses values out of range or of the wrong shape', () => {
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_SCHEDULES_SECRET_KEY: 'c2hvcnQ=' })).toEqual([
+      'WIREBENCH_SERVER_SCHEDULES_SECRET_KEY',
+    ]);
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_SCHEDULES_CONCURRENCY: '17' })).toEqual([
+      'WIREBENCH_SERVER_SCHEDULES_CONCURRENCY',
+    ]);
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS: '0' })).toEqual([
+      'WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS',
+    ]);
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS: 'https://hooks.slack.com' })).toEqual([
+      'WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS',
+    ]);
+    expect(
+      problemsOf({ ...base, WIREBENCH_SERVER_SMTP_URL: 'https://mail.test', WIREBENCH_SERVER_SMTP_FROM: 'a@b.test' }),
+    ).toEqual(['WIREBENCH_SERVER_SMTP_URL']);
+    expect(
+      problemsOf({ ...base, WIREBENCH_SERVER_SMTP_URL: 'smtp://mail.test', WIREBENCH_SERVER_SMTP_FROM: 'not mail' }),
+    ).toEqual(['WIREBENCH_SERVER_SMTP_FROM']);
+  });
+
+  it('needs the mail URL and the sender together', () => {
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_SMTP_URL: 'smtp://mail.test:587' })).toEqual([
+      'WIREBENCH_SERVER_SMTP_FROM',
+    ]);
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_SMTP_FROM: 'a@b.test' })).toEqual(['WIREBENCH_SERVER_SMTP_URL']);
   });
 });

@@ -39,6 +39,7 @@ const HOST = {
   protected: { value: false, from: 'default' as const },
   ssh: {} as never,
   forwards: [],
+  env: [],
 };
 
 /** What the app shell does with the palette: holds open and mode, and hands commands a way to reopen it. */

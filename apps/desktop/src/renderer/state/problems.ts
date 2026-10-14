@@ -15,7 +15,17 @@ import type { ImportProblemWire, ValidationProblemWire } from '../../shared/kind
  * API's cached definition (`lint`, whose `location` is a JSON Pointer into the document).
  */
 export type ProblemSource =
-  'import' | 'expansion' | 'send' | 'validation' | 'contract' | 'certificate' | 'hosts' | 'snippets' | 'mock' | 'lint';
+  | 'import'
+  | 'expansion'
+  | 'send'
+  | 'validation'
+  | 'contract'
+  | 'graphql'
+  | 'certificate'
+  | 'hosts'
+  | 'snippets'
+  | 'mock'
+  | 'lint';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';

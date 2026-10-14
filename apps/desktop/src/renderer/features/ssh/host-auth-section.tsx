@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { SshAuthWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
+import type { SshAuthWire } from '../../../shared/ssh-wire.js';
 import { INPUT_CLASS, type Provenance } from './inherited-field.js';
+import { SecretSelect, useSecretNames } from './secret-fields.js';
 
 type Kind = 'inherit' | 'password' | 'key' | 'agent';
 
@@ -17,37 +18,6 @@ function describe(auth: SshAuthWire | undefined): string {
   return auth === undefined ? 'none' : auth.kind === 'agent' ? 'agent' : `${auth.kind} (${auth.secret})`;
 }
 
-function SecretSelect(props: {
-  readonly label: string;
-  readonly value: string;
-  readonly names: readonly SshSecretNameWire[];
-  readonly optional?: boolean;
-  readonly onChange: (name: string) => void;
-}) {
-  const { label, value, names, optional = false, onChange } = props;
-  return (
-    <label className="flex flex-1 flex-col gap-1 text-xs">
-      <span className="text-fg-subtle">{label}</span>
-      <select
-        aria-label={label}
-        className={INPUT_CLASS}
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-        }}
-      >
-        <option value="">{optional ? 'None' : 'Choose a secret…'}</option>
-        {value !== '' && !names.some((n) => n.name === value) && <option value={value}>{`${value} (not set)`}</option>}
-        {names.map((n) => (
-          <option key={n.name} value={n.name}>
-            {n.local || n.external ? n.name : `${n.name} (not set on this machine)`}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 /** The auth block of the host / group form: inherit it, or pick password / key / agent with secret names. */
 export function HostAuthSection(props: {
   readonly value: SshAuthWire | undefined;
@@ -55,16 +25,8 @@ export function HostAuthSection(props: {
   readonly onChange: (next: SshAuthWire | undefined) => void;
 }) {
   const { value, inherited, onChange } = props;
-  const [names, setNames] = useState<readonly SshSecretNameWire[]>([]);
+  const { names, reload: loadNames } = useSecretNames();
   const [setting, setSetting] = useState<{ name: string; value: string; error?: string } | undefined>(undefined);
-
-  const loadNames = async (): Promise<void> => {
-    const result = await ipc().ssh.secretNames(undefined);
-    if (result.ok) setNames(result.value.names);
-  };
-  useEffect(() => {
-    void loadNames();
-  }, []);
 
   // Write-only: the value goes to main and is never read back; the file only ever gets the name.
   const storeValue = async (): Promise<void> => {
@@ -116,9 +78,29 @@ export function HostAuthSection(props: {
             value={value.secret}
             names={names}
             onChange={(secret) => {
-              onChange({ ...value, secret });
+              if (value.kind !== 'key') return onChange({ ...value, secret });
+              // A keychain key's certificate goes with it (`<key>_cert`, #421).
+              const { certificateSecret, ...rest } = value;
+              void certificateSecret;
+              const cert = `${secret}_cert`;
+              onChange(
+                names.some((n) => n.name === cert) ? { ...rest, secret, certificateSecret: cert } : { ...rest, secret },
+              );
             }}
           />
+          {value.kind === 'key' && (
+            <SecretSelect
+              label="Certificate secret"
+              value={value.certificateSecret ?? ''}
+              names={names}
+              optional
+              onChange={(name) => {
+                const { certificateSecret, ...rest } = value;
+                void certificateSecret;
+                onChange(name === '' ? rest : { ...rest, certificateSecret: name });
+              }}
+            />
+          )}
           {value.kind === 'key' && (
             <SecretSelect
               label="Passphrase secret"

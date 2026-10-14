@@ -102,6 +102,9 @@ describe('terminal preferences', () => {
       autoReconnect: true,
       reconnectAttempts: 10,
       snippetSuggestions: true,
+      sessionLogMaxMb: 500,
+      sessionLogRaw: false,
+      localShell: '',
     });
   });
 
@@ -115,6 +118,9 @@ describe('terminal preferences', () => {
       autoReconnect: false,
       reconnectAttempts: 10,
       snippetSuggestions: false,
+      sessionLogMaxMb: 500,
+      sessionLogRaw: false,
+      localShell: '',
     });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
   });
@@ -124,9 +130,25 @@ describe('terminal preferences', () => {
     expect(merged.terminal.confirmMultilinePaste).toBe(true);
   });
 
+  it('reads the session log cap and the raw switch, and clamps a cap read from disk', () => {
+    const merged = mergePreferences({ terminal: { sessionLogMaxMb: 2000, sessionLogRaw: true } });
+    expect(merged.terminal.sessionLogMaxMb).toBe(2000);
+    expect(merged.terminal.sessionLogRaw).toBe(true);
+    expect(mergePreferences({ terminal: { sessionLogMaxMb: 1 } }).terminal.sessionLogMaxMb).toBe(10);
+    expect(mergePreferences({}).terminal.sessionLogRaw).toBe(false);
+  });
+
   it('reads an older file without terminal.snippetSuggestions as on', () => {
     expect(mergePreferences({ terminal: { copyOnSelect: true } }).terminal.snippetSuggestions).toBe(true);
     expect(mergePreferences({}).terminal.snippetSuggestions).toBe(true);
+  });
+
+  it('reads terminal.localShell, empty (the OS default) when missing or not a string', () => {
+    expect(mergePreferences({ terminal: { localShell: '/usr/local/bin/fish' } }).terminal.localShell).toBe(
+      '/usr/local/bin/fish',
+    );
+    expect(mergePreferences({}).terminal.localShell).toBe('');
+    expect(mergePreferences({ terminal: { localShell: 42 } }).terminal.localShell).toBe('');
   });
 
   it('reads and clamps terminal.reconnectAttempts', () => {

@@ -329,6 +329,7 @@ export interface ServerModule {
     | 'webhook-capture'
     | 'ci-tokens'
     | 'live-updates'
+    | 'scheduled-runs'
     | 'audit-log'
     | 'sso';
   /**

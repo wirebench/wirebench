@@ -26,10 +26,13 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
+    "@lydell/node-pty": "1.1.0",
     "@wirebench/engine": "workspace:*",
     "@wirebench/ssh": "workspace:*",
     "@xterm/addon-search": "0.16.0",
     "electron-updater": "^6.8.9",
+    "graphql": "^17.0.2",
+    "graphql-language-service": "^5.7.0",
     "simple-icons": "^16.35.0",
     "yaml": "^2.9",
     "zod": "^4.6.1"

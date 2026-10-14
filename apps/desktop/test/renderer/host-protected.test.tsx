@@ -40,6 +40,7 @@ const defaults = {
   jump: { value: undefined, from: 'default' },
   keepAlive: { value: 15, from: 'default' },
   connectTimeout: { value: 20, from: 'default' },
+  forwardAgent: { value: false, from: 'default' },
 } as const;
 const RESOLVED: ResolvedHostWire[] = [
   {
@@ -51,6 +52,7 @@ const RESOLVED: ResolvedHostWire[] = [
     protected: { value: true, from: { group: 'prod' } },
     ssh: defaults,
     forwards: [],
+    env: [],
   },
   {
     id: 'dev',
@@ -61,6 +63,7 @@ const RESOLVED: ResolvedHostWire[] = [
     protected: { value: false, from: 'default' },
     ssh: defaults,
     forwards: [],
+    env: [],
   },
 ];
 

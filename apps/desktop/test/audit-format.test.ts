@@ -63,6 +63,14 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
     ).toBe('Workspace Integration');
   });
 
+  it('schedule events read as words and name the schedule', () => {
+    expect(ACTION_GROUP_LABELS['schedule']).toBe('Schedules');
+    expect(actionLabel('schedule.secrets_set')).toBe('Secrets set');
+    expect(
+      targetLabel({ action: 'schedule.created', target: { kind: 'schedule', id: 'S1' }, details: { name: 'Smoke' } }),
+    ).toBe('Schedule Smoke');
+  });
+
   it('a desktop event on a workspace shows "Workspace", never the suite or request name', () => {
     expect(
       targetLabel({

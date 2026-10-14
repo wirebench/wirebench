@@ -46,7 +46,7 @@ you press <kbd>Enter</kbd> or move on, and <kbd>Escape</kbd> puts back the previ
 | | **SSL / TLS** | Minimum TLS version, a CA bundle to trust in addition to the system store, the default client keystore, how many days ahead certificate expiry warnings start, and why there's no global "trust all certificates" switch |
 | Workspace | **Git** | The `git` executable Wirebench runs for shared workspaces: auto-detected, or located with a picker |
 | | **Mock services** | Whether a [mock](/wirebench/docs/guides/mock-services/) listens on every network interface instead of this machine only |
-| | **Terminal** | Whether a multi-line paste into an SSH terminal asks first, and whether a selection is copied to the clipboard as soon as it is made |
+| | **Terminal** | Whether a multi-line paste into an SSH terminal asks first, whether a selection is copied to the clipboard as soon as it is made, and the shell a local terminal runs |
 | | **Secrets** | How long a value fetched from a secret manager stays in memory |
 | Account | **Accounts** | Every server you're known to, sign out or remove one, add another, and whether the status bar shows who you're signed in as |
 | | **Devices & tokens** | CI tokens for the open server workspace |
@@ -113,6 +113,17 @@ again after 1, 2, 4, 8 and 16 seconds, then every 30 seconds, showing the attemp
 exited, a sign-in failure or a changed host key never reconnects: the tab shows the reason or the host-key
 prompt as before. **Reconnect attempts** is `terminal.reconnectAttempts`: how many tries before the tab
 stops and offers **Reconnect**. The default is 10, and the range is 1 to 100.
+
+**Session logs size limit** is `terminal.sessionLogMaxMb`: how much room all
+[session logs](/wirebench/docs/guides/hosts-and-terminals/#session-logs) on this machine may take together, in
+megabytes. Past it the oldest logs are deleted first. The default is 500, and the range is 10 to 100000.
+**Keep raw output** is `terminal.sessionLogRaw` and is off by default: when on, each log also keeps the
+stream as the terminal received it, colours and escape sequences included, beside the plain text.
+
+**Local shell** is `terminal.localShell` and is empty by default: a local terminal then runs your login
+shell (`$SHELL`) on macOS and Linux, and PowerShell 7 or else Windows PowerShell on Windows. A path or
+program name (`/bin/bash`, `cmd.exe`, `wsl.exe`) runs that instead; on macOS and Linux it starts as a
+login shell (`-l`). A change applies to the next local terminal you open.
 
 ## Theme
 

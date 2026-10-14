@@ -12,6 +12,7 @@ import {
   createWsRequest,
   entry,
   soapInterfacesOf,
+  withRestApis,
   withSoapInterfaces,
 } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
@@ -24,6 +25,7 @@ import {
   toProjectWire,
   toRequestWires,
 } from '../src/main/project-wire.js';
+import { toEngineBody } from '../src/main/kinds/rest/mutations.js';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
 
@@ -368,5 +370,40 @@ describe('toRequestWires attachments', () => {
     ]);
     // No `part` key at all rather than an explicit undefined, so the wire stays JSON-clean.
     expect(Object.hasOwn(wire!.attachments[1]!, 'part')).toBe(false);
+  });
+});
+
+describe('GraphQL on the wire (#77)', () => {
+  const body = {
+    kind: 'graphql' as const,
+    query: '{ product(id: 1) { name } }',
+    variables: '{"id": 1}',
+    operationName: 'P',
+  };
+  const project: Project = withRestApis(createProject('Shop', { id: 'p1' }), [
+    {
+      ...createApi('Shop', { id: 'api-1', requests: [{ ...createRestRequest('Product', { id: 'r1' }), body }] }),
+      graphqlSchema: { source: 'https://shop.test/graphql', fetchedAt: '2026-10-13T10:00:00.000Z' },
+    },
+  ]);
+  const wire = toProjectWire(project, { dir: '/tmp/shop', dirty: false, problems: [], runtime: new Map() });
+
+  it("carries a GraphQL body and the API's schema reference", () => {
+    const request = wire.restRequests.find((r) => r.id === 'r1')!;
+    expect(request.body).toEqual(body);
+    expect(restRequestWireSchema.parse(request).body).toEqual(body);
+    expect(wire.apis[0]!.graphqlSchema).toEqual({
+      source: 'https://shop.test/graphql',
+      fetchedAt: '2026-10-13T10:00:00.000Z',
+    });
+  });
+
+  it('turns a wire GraphQL body back into the engine one, dropping an empty operation name', () => {
+    expect(toEngineBody(body)).toEqual(body);
+    expect(toEngineBody({ ...body, operationName: '' })).toEqual({
+      kind: 'graphql',
+      query: body.query,
+      variables: '{"id": 1}',
+    });
   });
 });

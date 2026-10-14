@@ -124,6 +124,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Hosts: Import from SSH Config…',
     category: 'Hosts',
   },
+  'ssh.importKnownHosts': {
+    id: 'ssh.importKnownHosts',
+    label: 'Hosts: Import Known Hosts…',
+    category: 'Hosts',
+  },
   'ssh.connect': {
     id: 'ssh.connect',
     label: 'Connect to Host',
@@ -244,6 +249,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Terminal: Snippets…',
     category: 'Hosts',
     shortcut: 'Mod+Semicolon',
+  },
+  'ssh.newLocalTerminal': {
+    id: 'ssh.newLocalTerminal',
+    label: 'Terminal: New Local Terminal',
+    category: 'Hosts',
+    shortcut: 'Mod+Alt+T',
   },
   'sftp.refresh': {
     id: 'sftp.refresh',

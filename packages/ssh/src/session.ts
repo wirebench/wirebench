@@ -4,10 +4,25 @@ import { SshConnectError, dialChain, hostOf } from './dial.js';
 import type { DialOptions, HopCredentials } from './dial.js';
 
 /** After `close()`, `onExit` still fires once with `{ code: null }`. */
-export type OpenSessionOptions = DialOptions & { readonly cols: number; readonly rows: number };
+export type OpenSessionOptions = DialOptions & {
+  readonly cols: number;
+  readonly rows: number;
+  /**
+   * Sent to the target as SSH `env` requests before the shell starts, values already resolved. No reply
+   * is asked for: a server takes only the names its `AcceptEnv` allows and ignores the rest.
+   */
+  readonly env?: Readonly<Record<string, string>>;
+};
+
+/**
+ * `on`: the target granted agent forwarding on the shell. `refused`: it was asked for and the server said no;
+ * the shell opened without it. `off`: not asked for.
+ */
+export type AgentForwarding = 'on' | 'refused' | 'off';
 
 export interface SshSession {
   readonly id: string;
+  readonly agentForwarding: AgentForwarding;
   write(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   close(): void;
@@ -33,23 +48,38 @@ export interface SessionExit {
   readonly reason: SessionEndReason;
 }
 
+/** ssh2's message when the server refuses `auth-agent-req@openssh.com`. */
+const AGENT_REFUSED = /agent forwarding/i;
+
 export async function openSession(options: OpenSessionOptions): Promise<SshSession> {
   const chain = await dialChain(options);
   try {
     const lastHop = options.hops[options.hops.length - 1] as HopCredentials;
-    const channel = await new Promise<ClientChannel>((resolve, reject) =>
-      chain.client.shell({ term: 'xterm-256color', cols: options.cols, rows: options.rows }, (error, ch) =>
-        error
-          ? reject(
-              new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
-                host: hostOf(lastHop),
-                hop: options.hops.length - 1,
-              }),
-            )
-          : resolve(ch),
-      ),
-    );
-    return wrap(channel, chain.client, () => chain.endAll(), chain);
+    const env = options.env !== undefined && Object.keys(options.env).length > 0 ? { ...options.env } : undefined;
+    const shell = (agentForward: boolean): Promise<ClientChannel> =>
+      new Promise((resolve, reject) =>
+        chain.client.shell(
+          { term: 'xterm-256color', cols: options.cols, rows: options.rows },
+          { ...(env === undefined ? {} : { env }), ...(agentForward ? { agentForward: true } : {}) },
+          (error, ch) => (error ? reject(error) : resolve(ch)),
+        ),
+      );
+    const failed = (error: Error): SshConnectError =>
+      new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
+        host: hostOf(lastHop),
+        hop: options.hops.length - 1,
+      });
+    let forwarding: AgentForwarding = options.forwardAgent === undefined ? 'off' : 'on';
+    let channel: ClientChannel;
+    try {
+      channel = await shell(forwarding === 'on');
+    } catch (error) {
+      // ssh2 closes the channel when the server refuses forwarding; like OpenSSH, the shell opens without it.
+      if (forwarding !== 'on' || !AGENT_REFUSED.test((error as Error).message)) throw failed(error as Error);
+      forwarding = 'refused';
+      channel = await shell(false).catch((again: unknown) => Promise.reject(failed(again as Error)));
+    }
+    return wrap(channel, chain.client, () => chain.endAll(), chain, forwarding);
   } catch (error) {
     chain.endAll();
     throw error;
@@ -61,6 +91,7 @@ function wrap(
   client: Client,
   endAll: () => void,
   link: { readonly lost: boolean },
+  agentForwarding: AgentForwarding,
 ): SshSession {
   const dataListeners = new Set<(data: Uint8Array) => void>();
   const exitListeners = new Set<(exit: SessionExit) => void>();
@@ -87,6 +118,7 @@ function wrap(
   channel.on('error', () => exit(null, 'lost'));
   return {
     id: randomUUID(),
+    agentForwarding,
     write: (data) => {
       if (!closed) channel.write(Buffer.from(data));
     },

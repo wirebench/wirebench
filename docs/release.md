@@ -97,10 +97,12 @@ That is expected; only CI builds with the signing secrets produce distributable 
 
 ### pnpm specifics
 
-- `npmRebuild: false`. Wirebench has one native module, the Kerberos binding, and it is vendored
-  per architecture by `scripts/vendor-kerberos.ts` rather than rebuilt
-  ([ADR-0019](adr/0019-kerberos-uses-an-optional-native-module.md)). Running npm's rebuild against
-  pnpm's symlinked store is a good way to flatten a tree that was fine.
+- `npmRebuild: false`. Wirebench has two native modules, the Kerberos binding and the local
+  terminal's pty binding (`@lydell/node-pty`, #410). Both are prebuilt and vendored per architecture
+  rather than rebuilt: Kerberos by `scripts/vendor-kerberos.ts`
+  ([ADR-0019](adr/0019-kerberos-uses-an-optional-native-module.md)), the pty binding by
+  `scripts/vendor-node-pty.ts`. Running npm's rebuild against pnpm's symlinked store is a good way
+  to flatten a tree that was fine.
 - electron-builder resolves pnpm's symlinks itself, including the `@wirebench/engine`
   workspace link — no `node-linker=hoisted`, no `shamefully-hoist`. **Build the engine first**
   (`pnpm build` does): only its `dist/` is packaged, and a stale `dist/` ships stale code.
@@ -125,6 +127,17 @@ universal file in both architecture folders, in every mac build, because the uni
 the x64 and arm64 apps to hold the same files. `@electron/universal` already skips identical fat
 Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
 universal.
+
+The local terminal's pty binding is a package per platform and CPU (`@lydell/node-pty-<platform>-<arch>`)
+that `@lydell/node-pty` requires by name, so it must sit in the app's `node_modules`. pnpm installs only the
+runner's own, which `files` excludes; `scripts/vendor-node-pty.ts` downloads every architecture of the
+platform at the version `apps/desktop` pins, checks each tarball against the integrity `pnpm-lock.yaml`
+records, and writes them to `build-resources/node-pty/`. Each platform's `files` maps them into
+`node_modules/@lydell/`, and `asarUnpack` puts them beside the asar, where the OS can load `pty.node` and
+macOS can run `spawn-helper`, and where they are signed with the app. A Linux or Windows build carries its
+own architecture's binding; every mac build carries both darwin bindings, which are thin and identical in
+the x64 and arm64 apps, so `mac.x64ArchFiles` names them for the universal merge. A machine where the
+binding does not load still runs Wirebench; only the local terminal says it is not available.
 
 The `kerberos` package itself stays out of the asar, and so does everything only it depends on:
 `node-addon-api` and the `prebuild-install` tree it uses to fetch a binding at install time. The
@@ -270,7 +283,7 @@ The Azure signing step is not wired into `release.yml` yet ([#114](https://githu
 Until it is, both signing jobs pass their input through unsigned.
 
 The SignPath app configuration referenced by `vars.SIGNPATH_APP_CONFIGURATION_SLUG` must include
-`**/*.node`, so the Kerberos binding is signed with `Wirebench.exe`. That is a one-time change on
+`**/*.node`, so the Kerberos and pty bindings are signed with `Wirebench.exe`. That is a one-time change on
 SignPath's side, and `win-installers` fails the release when the signed binding is not valid.
 
 ### Setting it up

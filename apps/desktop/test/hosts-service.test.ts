@@ -100,6 +100,18 @@ describe('HostsService', () => {
     expect(changed).toBe(1);
     expect(service.current()?.hosts).toHaveLength(1);
   });
+  it('save and list carry a key certificate by its secret name', async () => {
+    const d = dir();
+    const service = new HostsService({ treeDir: () => d, onChanged: () => undefined });
+    const auth = { kind: 'key' as const, secret: 'k', certificateSecret: 'k_cert', passphraseSecret: 'k_passphrase' };
+    const result = await service.save({
+      version: 1,
+      groups: [],
+      hosts: [{ id: 'a', name: 'A', address: '10.0.0.1', tags: [], ssh: { user: 'me', auth } }],
+    });
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toContain('certificate: ${secret:k_cert}');
+    expect(result.resolved[0]?.ssh.auth).toEqual({ value: auth, from: 'host' });
+  });
   describe('forwarding rules', () => {
     const RULES = `version: 1
 groups:
@@ -240,5 +252,110 @@ groups:
       ['b', { value: false, from: 'host' }],
     ]);
     expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toContain('protected: true');
+  });
+
+  it('forwardAgent crosses the wire both ways and is resolved with its source, off by default', async () => {
+    const d = dir();
+    const service = new HostsService({ treeDir: () => d });
+    const saved = await service.save({
+      version: 1,
+      groups: [
+        {
+          id: 'ops',
+          name: 'ops',
+          tags: [],
+          ssh: { forwardAgent: true },
+          groups: [],
+          hosts: [{ id: 'a', name: 'a', address: 'x', tags: [], ssh: {} }],
+        },
+      ],
+      hosts: [{ id: 'b', name: 'b', address: 'y', tags: [], ssh: {} }],
+    });
+    expect(saved.file.groups[0]?.ssh.forwardAgent).toBe(true);
+    expect(sshListHostsResponseSchema.parse(saved)).toEqual(saved);
+    expect(saved.resolved.map((h) => [h.id, h.ssh.forwardAgent])).toEqual([
+      ['a', { value: true, from: { group: 'ops' } }],
+      ['b', { value: false, from: 'default' }],
+    ]);
+  });
+});
+
+describe('HostsService env', () => {
+  const ENV = `version: 1
+groups:
+  - id: prod
+    name: Production
+    env:
+      LANG: en_US.UTF-8
+      TOKEN: \${secret:prod_token}
+    hosts:
+      - id: api
+        name: api
+        address: 10.0.1.5
+        env:
+          LANG: C.UTF-8
+`;
+
+  it('list carries a variable as text or a secret name, never a token, with its source', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), ENV);
+    const listed = sshListHostsResponseSchema.parse(await new HostsService({ treeDir: () => d }).list());
+    expect(listed.problems).toEqual([]);
+    expect(listed.file.groups[0]?.env).toEqual([
+      { name: 'LANG', value: 'en_US.UTF-8' },
+      { name: 'TOKEN', secret: 'prod_token' },
+    ]);
+    expect(listed.resolved[0]?.env).toEqual([
+      { name: 'LANG', value: 'C.UTF-8', from: 'host' },
+      { name: 'TOKEN', secret: 'prod_token', from: { group: 'prod' } },
+    ]);
+    expect(JSON.stringify(listed)).not.toContain('${secret:');
+  });
+
+  it('saving the listed file writes the variables back unchanged', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), ENV);
+    const service = new HostsService({ treeDir: () => d });
+    const { file } = sshListHostsResponseSchema.parse(await service.list());
+    await service.save(file);
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toBe(ENV);
+  });
+
+  const withEnv = (env: { name: string; value: string }[] | { name: string; secret: string }[]) => ({
+    version: 1 as const,
+    groups: [],
+    hosts: [{ id: 'a', name: 'a', address: 'a', tags: [], ssh: {}, env }],
+  });
+
+  it('save refuses text holding a secret token, without echoing it', async () => {
+    const error: unknown = await new HostsService({ treeDir: () => dir() })
+      .save(withEnv([{ name: 'P', value: 'u:hunter2@${secret:pw}' }]))
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ name: 'WirebenchError', code: 'ssh-hosts-invalid' });
+    expect((error as Error).message).not.toContain('hunter2');
+  });
+
+  it('save refuses a name listed twice, a bad name and a bad secret name', async () => {
+    const service = new HostsService({ treeDir: () => dir() });
+    await expect(
+      service.save(
+        withEnv([
+          { name: 'A', value: '1' },
+          { name: 'A', value: '2' },
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: 'ssh-hosts-invalid' });
+    await expect(service.save(withEnv([{ name: 'BAD-NAME', value: '1' }]))).rejects.toMatchObject({
+      code: 'ssh-hosts-invalid',
+    });
+    await expect(service.save(withEnv([{ name: 'A', secret: 'has space' }]))).rejects.toMatchObject({
+      code: 'ssh-literal-secret',
+    });
+  });
+
+  it('an empty list writes no env key', async () => {
+    const d = dir();
+    await new HostsService({ treeDir: () => d }).save(withEnv([]));
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).not.toContain('env');
   });
 });

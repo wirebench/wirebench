@@ -3,9 +3,11 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
+import { AgentForwardingMark, agentForwardingOf } from '../features/ssh/agent-forwarding.js';
 import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
 import { useFilesStore } from '../features/ssh/files/files-store.js';
 import { filesTitle } from '../features/ssh/files/open-files.js';
+import { localTerminalLabel, useLocalTerminalsStore } from '../features/ssh/local-terminal.js';
 import { useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
 import { useBroadcastStore } from '../features/ssh/panes/broadcast.js';
 import { terminalTitleOf } from '../features/ssh/panes/open-layout.js';
@@ -45,6 +47,11 @@ const SshHome = lazy(async () => {
 const TerminalTab = lazy(async () => {
   const module = await import('../features/ssh/terminal-tab.js');
   return { default: module.TerminalTab };
+});
+
+const LocalTerminalTab = lazy(async () => {
+  const module = await import('../features/ssh/local-terminal-tab.js');
+  return { default: module.LocalTerminalTab };
 });
 
 const FilesTab = lazy(async () => {
@@ -157,6 +164,9 @@ export function EditorArea() {
   // Files tabs too: each holds its own SFTP session and folder.
   const filesTabs = allTabs.filter((tab) => tab.kind === 'ssh-files' && tab.hostId !== undefined);
   const filesPanes = useFilesStore((state) => state.panes);
+  // Local terminals too (#410): each holds its own shell.
+  const localTabs = allTabs.filter((tab) => tab.kind === 'local-terminal');
+  const localSessions = useLocalTerminalsStore((state) => state.sessions);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -260,6 +270,7 @@ export function EditorArea() {
         )
       : undefined) ??
     (tab.kind === 'ssh-files' ? filesLabel(resolvedHosts.find((host) => host.id === tab.hostId)?.name) : undefined) ??
+    (tab.kind === 'local-terminal' ? localTerminalLabel(localSessions[tab.id]) : undefined) ??
     tab.title;
   // Only the request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean => dirtyTabs[tabs.indexOf(tab)] === true;
@@ -356,7 +367,16 @@ export function EditorArea() {
                   )
                 : tab.kind === 'ssh-files'
                   ? filesSessionStatus(filesPanes[tab.id])
-                  : undefined;
+                  : tab.kind === 'local-terminal'
+                    ? sessionStatus(localSessions[tab.id]?.state)
+                    : undefined;
+            const forwarding =
+              tab.kind === 'ssh-terminal' && tab.panes !== undefined
+                ? agentForwardingOf(
+                    paneSessions,
+                    leaves(tab.panes).map((leaf) => leaf.paneId),
+                  )
+                : undefined;
             return (
               // One focusable control per tab. A nested close *button* would be interactive
               // content inside a `tab` widget, which screen readers do not announce reliably, so
@@ -436,6 +456,7 @@ export function EditorArea() {
                   />
                 )}
                 <span className="min-w-0 truncate">{label}</span>
+                {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
                 {broadcasting[tab.id]?.on === true && (
                   // Never missed while on (spec R8): drawn red, and named for screen readers.
                   <span
@@ -588,6 +609,13 @@ export function EditorArea() {
           <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
             <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
               {tab.panes !== undefined && <TerminalTab tabId={tab.id} panes={tab.panes} active={tab.id === activeId} />}
+            </Suspense>
+          </div>
+        ))}
+        {localTabs.map((tab) => (
+          <div key={tab.id} hidden={tab.id !== activeId} className="h-full">
+            <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading terminal…</p>}>
+              <LocalTerminalTab tabId={tab.id} active={tab.id === activeId} />
             </Suspense>
           </div>
         ))}

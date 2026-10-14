@@ -6,6 +6,7 @@ import {
   applySshConfigImport,
   displayPath,
   loadSshConfig,
+  looksLikeCertificate,
   pathsFor,
   planSshConfigImport,
   type SshConfigImportPlan,
@@ -29,7 +30,7 @@ export interface SshImportFs {
   glob(pattern: string): Promise<readonly string[]>;
 }
 
-const nodeImportFs: SshImportFs = {
+export const nodeImportFs: SshImportFs = {
   realpath: (path) => realpath(path),
   stat: (path) => stat(path),
   readFile: (path) => readFile(path, 'utf8'),
@@ -57,7 +58,7 @@ export const CONFIG_MAX_BYTES = 1024 * 1024;
 export const KEY_MAX_BYTES = 64 * 1024;
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
 
-const errnoOf = (error: unknown): string => {
+export const errnoOf = (error: unknown): string => {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' ? code : 'unknown error';
 };
@@ -66,7 +67,7 @@ const errnoOf = (error: unknown): string => {
 const refusal = (code: string): Error => Object.assign(new Error(code), { code });
 
 /** The text of a regular file no bigger than `max`, read through `realpath` (a symlink is followed once). */
-async function readRegular(fs: SshImportFs, path: string, max: number): Promise<string> {
+export async function readRegular(fs: SshImportFs, path: string, max: number): Promise<string> {
   const target = await fs.realpath(path);
   const info = await fs.stat(target);
   if (!info.isFile()) throw refusal('ENOTFILE');
@@ -147,11 +148,16 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
     return {
       previewId: id,
       source: shown,
-      group: plan.group,
-      hosts: [...plan.hosts],
-      keys: plan.keys.map(({ ref, display, hosts, proposedSecret }) => ({
+      // `SetEnv` values stay in main (one may hold a secret); the report notes that they are imported.
+      group: { id: plan.group.id, name: plan.group.name, ssh: plan.group.ssh },
+      hosts: plan.hosts.map(({ env, ...host }) => {
+        void env;
+        return host;
+      }),
+      keys: plan.keys.map(({ ref, display, certificate, hosts, proposedSecret }) => ({
         ref,
         display,
+        ...(certificate === undefined ? {} : { certificate: certificate.display }),
         hosts: [...hosts],
         proposedSecret,
       })),
@@ -199,11 +205,36 @@ export class SshImportService<S extends { readonly id: number } = { readonly id:
       texts.set(choice.secret, text);
     }
 
+    // A used key's CertificateFile is stored as `<secret>_cert`; a secret of that name already there is kept.
+    const certified: string[] = [];
+    const taken = new Set((await this.deps.secrets.names()).map((n) => n.name));
+    for (const { ref, choice } of request.keys) {
+      const certificate = plan.keys.find((k) => k.ref === ref)?.certificate;
+      if (choice.kind === 'agent' || certificate === undefined) continue;
+      certified.push(ref);
+      const name = `${choice.secret}_cert`;
+      if (taken.has(name) || texts.has(name)) continue;
+      let text: string;
+      try {
+        text = await readRegular(this.fs, certificate.path, KEY_MAX_BYTES);
+      } catch (error) {
+        throw new WirebenchError('ssh-key-unreadable', `${certificate.display} could not be read (${errnoOf(error)})`, {
+          details: { file: certificate.display },
+        });
+      }
+      if (!looksLikeCertificate(text)) {
+        throw new WirebenchError('ssh-key-unreadable', `${certificate.display} is not an OpenSSH certificate`, {
+          details: { file: certificate.display },
+        });
+      }
+      texts.set(name, text.trim());
+    }
+
     let merged;
     try {
       merged = applySshConfigImport(
         plan,
-        { groupName: request.groupName, importDuplicates: request.importDuplicates, keys, encrypted },
+        { groupName: request.groupName, importDuplicates: request.importDuplicates, keys, encrypted, certified },
         existing,
       );
     } catch (error) {

@@ -12,6 +12,7 @@ it('matches on name, address, path and tags', () => {
       protected: { value: false, from: 'default' as const },
       ssh: {} as never,
       forwards: [],
+      env: [],
     },
   ]);
   expect(entry).toMatchObject({

@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { basename, join } from 'node:path';
@@ -49,16 +49,27 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import {
   enabledAreasFromEnv,
+  localTerminalFromEnv,
   hostsOnFileChange,
   hostsOnWorkspaceChange,
   registerEnabledAreaChannels,
 } from './areas.js';
 import { SshImportService } from './ssh-import.js';
+import { KnownHostsImportService } from './known-hosts-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
 import { windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
+import {
+  SESSION_LOGS_DIR,
+  SESSION_LOG_SWITCHES_FILE,
+  SessionLogStore,
+  SessionLogSwitches,
+  sessionLogPlanner,
+} from './session-logs.js';
 import { SshService, forwardResume } from './ssh-service.js';
+import { localShell, localShellCwd, localShellEnv } from './local-shell.js';
+import { LocalTerminalService } from './local-terminal-service.js';
 import { RefusalStore, createSshConnector } from './ssh-connect.js';
 import { SftpEditService, sweepEditCopies } from './sftp-edit.js';
 import { SftpService } from './sftp-service.js';
@@ -502,6 +513,8 @@ const secretScans = scoped(scopes, (scope) => scope.secretScans);
 
 /** The areas `WIREBENCH_AREAS` leaves switched on (see `areas.ts`). */
 const enabledAreas = enabledAreasFromEnv();
+/** Whether the local terminal tab (#410) is on: with the SSH area, unless `local-terminal=off`. */
+const localTerminalOn = localTerminalFromEnv();
 
 /**
  * The kinds `WIREBENCH_KINDS` leaves switched on (see `kinds/enabled-kinds.ts`), and the engine
@@ -530,6 +543,18 @@ const sshConnectDeps = {
 /** Keys refused to a terminal or a Files tab: one `ssh.trust` prompt serves both. */
 const sshRefusals = new RefusalStore();
 const sshConnector = createSshConnector({ ...sshConnectDeps, refusals: sshRefusals });
+/** Session logs (#414): per-machine switches, and the logs under `userData/session-logs` within the size limit. */
+const sessionLogSwitches = new SessionLogSwitches(join(app.getPath('userData'), SESSION_LOG_SWITCHES_FILE));
+const sessionLogs = new SessionLogStore({
+  root: join(app.getPath('userData'), SESSION_LOGS_DIR),
+  limits: () => {
+    const terminal = preferencesService.get().terminal;
+    return { maxBytes: terminal.sessionLogMaxMb * 1024 * 1024, raw: terminal.sessionLogRaw };
+  },
+  log: (message) => {
+    console.warn(message);
+  },
+});
 const sshService = new SshService({
   ...sshConnectDeps,
   hostOsFile: join(app.getPath('userData'), 'ssh-host-os.json'),
@@ -541,6 +566,42 @@ const sshService = new SshService({
   onSessionsChange: (sender, hostId, open) => {
     forwardService.sessionsChanged(sender, hostId, open);
   },
+  sessionLog: sessionLogPlanner({
+    store: sessionLogs,
+    switches: sessionLogSwitches,
+    workspaceOf: (sender) => {
+      const workspace = sshScopeOf(scopes, sender).workspace;
+      const id = workspace.openWorkspaceId();
+      if (id === undefined) return undefined;
+      const target = workspace.auditTarget();
+      return { id, ...(target ? { server: { url: target.url, recording: target.recording } } : {}) };
+    },
+    hosts: sshConnectDeps.hosts,
+  }),
+});
+/**
+ * The local terminal tabs' shells (#410), owned per window like the SSH terminals. The pty binding is native and
+ * loads at the first tab, so a machine it does not load on only loses this tab.
+ */
+const localTerminals = new LocalTerminalService({
+  load: async () => {
+    const pty = await import('@lydell/node-pty');
+    return pty.spawn;
+  },
+  emit: emitEvent,
+  shell: () =>
+    localShell({
+      platform: process.platform,
+      env: process.env,
+      preference: preferencesService.get().terminal.localShell,
+      exists: existsSync,
+    }),
+  cwd: (sender) => {
+    const workspace = sshScopeOf(scopes, sender).workspace;
+    const tree = workspace.openWorkspaceId() === undefined ? undefined : workspace.treeDir();
+    return localShellCwd({ tree, userData: app.getPath('userData'), home: homedir(), platform: process.platform });
+  },
+  env: () => localShellEnv(process.env),
 });
 /** The Files tab's SFTP sessions, owned per window like the terminals, dialled through the same connector. */
 const sftpService = new SftpService({ connector: sshConnector, emit: emitEvent });
@@ -593,7 +654,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
   // Only a switch of this window's workspace (or a close) ends this window's SSH and SFTP sessions and forwards; a
   // rename or reload does not, and another window's sessions are its own workspace's.
   const endSshOnSwitch = sshAreaEndsOnSwitch(
-    [sftpTransfers, sftpEdits, sshService, sftpService, forwardService],
+    [sftpTransfers, sftpEdits, sshService, sftpService, forwardService, localTerminals],
     target,
   );
   // `hosts.yaml` in this window's workspace tree; dropped whenever that workspace changes (see the hooks below).
@@ -906,6 +967,7 @@ void app.whenReady().then(() => {
     },
     enabledAreas,
     enabledKinds,
+    localTerminalOn,
   );
   // The calling window's open projects' folders: the containment roots a renderer-named import path may sit in.
   const openProjectDirs = (): readonly string[] =>
@@ -1304,17 +1366,34 @@ void app.whenReady().then(() => {
     transfers: sftpTransfers,
     edits: sftpEdits,
     forward: forwardService,
+    sessionLogs: {
+      logs: sessionLogs,
+      switches: sessionLogSwitches,
+      workspaceOf: (sender) => sshScopeOf(scopes, sender).workspace.openWorkspaceId(),
+      reveal: (path) => {
+        shell.showItemInFolder(path);
+      },
+    },
     keys: sshKeys,
+    localTerminal: localTerminalOn ? localTerminals : undefined,
     importer: new SshImportService<WebContents>({
       home: () => homedir(),
       pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose an SSH config file' }),
       hosts: hostsService,
       secrets: sshSecrets,
     }),
+    knownHostsImporter: new KnownHostsImportService<WebContents>({
+      home: () => homedir(),
+      pick: (sender) => pickFile(sender, dialogPicks, { title: 'Choose a known_hosts file' }),
+      hosts: hostsService,
+      store: sshService,
+    }),
   });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
+  // A lowered size limit, or logs from before a crash, are brought under the limit; prune never throws.
+  void sessionLogs.prune();
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then(
