@@ -22,6 +22,8 @@ export interface OpenSshServer {
   certify(key: string, options?: { principals?: string; validity?: string }): string;
   /** Lets `fixtures/certs/<key>.pub` in without a certificate too (`authorized_keys`). */
   authorize(key: string): void;
+  /** Lets one `authorized_keys` line in (options first, as sshd reads them): a key made during the test. */
+  authorizeLine(line: string): void;
   close(): Promise<void>;
 }
 
@@ -84,23 +86,28 @@ export async function startOpenSshServer(): Promise<OpenSshServer> {
   spawnSync('chmod', ['600', join(dir, 'ca')]);
   writeFileSync(join(dir, 'authorized_keys'), '');
   const port = await freePort();
-  writeFileSync(
-    join(dir, 'sshd_config'),
-    [
-      `Port ${port}`,
-      'ListenAddress 127.0.0.1',
-      `HostKey ${join(dir, 'host_ed25519')}`,
-      `PidFile ${join(dir, 'sshd.pid')}`,
-      `TrustedUserCAKeys ${join(FIXTURES, 'ca.pub')}`,
-      `AuthorizedKeysFile ${join(dir, 'authorized_keys')}`,
-      'AuthenticationMethods publickey',
-      'PasswordAuthentication no',
-      'KbdInteractiveAuthentication no',
-      'StrictModes no',
-      'LogLevel VERBOSE',
-      '',
-    ].join('\n'),
-  );
+  const config = [
+    `Port ${port}`,
+    'ListenAddress 127.0.0.1',
+    `HostKey ${join(dir, 'host_ed25519')}`,
+    `PidFile ${join(dir, 'sshd.pid')}`,
+    `TrustedUserCAKeys ${join(FIXTURES, 'ca.pub')}`,
+    `AuthorizedKeysFile ${join(dir, 'authorized_keys')}`,
+    'AuthenticationMethods publickey',
+    'PasswordAuthentication no',
+    'KbdInteractiveAuthentication no',
+    'StrictModes no',
+    'LogLevel VERBOSE',
+    // OpenSSH 9.8+ shuts out an address after failed sign-ins, which the refusal tests make on purpose.
+    'PerSourcePenalties no',
+    '',
+  ];
+  const configFile = join(dir, 'sshd_config');
+  writeFileSync(configFile, config.join('\n'));
+  // An older sshd does not know the option and would refuse the whole file.
+  if (spawnSync(sshd, ['-t', '-f', configFile], { stdio: 'ignore' }).status !== 0) {
+    writeFileSync(configFile, config.filter((line) => !line.startsWith('PerSourcePenalties')).join('\n'));
+  }
   let output = '';
   const child = spawn(sshd, ['-D', '-e', '-f', join(dir, 'sshd_config')], { stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout?.on('data', (data: Buffer) => (output += data.toString('utf8')));
@@ -123,6 +130,9 @@ export async function startOpenSshServer(): Promise<OpenSshServer> {
     },
     authorize(key) {
       writeFileSync(join(dir, 'authorized_keys'), readFileSync(join(FIXTURES, `${key}.pub`), 'utf8'), { flag: 'a' });
+    },
+    authorizeLine(line) {
+      writeFileSync(join(dir, 'authorized_keys'), `${line.trim()}\n`, { flag: 'a' });
     },
     async close() {
       if (child.exitCode === null) {

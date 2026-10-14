@@ -227,6 +227,12 @@ importers:
       '@wirebench/engine':
         specifier: workspace:*
         version: link:../engine
+      bcrypt-pbkdf:
+        specifier: 1.0.2
+        version: 1.0.2
+      node-hid:
+        specifier: 3.4.0
+        version: 3.4.0
       ssh2:
         specifier: 1.17.0
         version: 1.17.0

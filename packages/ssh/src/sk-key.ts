@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import bcrypt from 'bcrypt-pbkdf';
+import { createRequire } from 'node:module';
 import { SshModelError } from './errors.js';
 
 /**
@@ -36,6 +36,22 @@ export interface SkKey extends SkPublicKey {
   readonly keyHandle: Buffer;
   readonly comment: string;
 }
+
+/**
+ * bcrypt-pbkdf (ssh2's own dependency) ships no types; its one function is typed here. Required rather
+ * than imported so no ambient declaration is needed where this file is compiled from source.
+ */
+const bcrypt = createRequire(import.meta.url)('bcrypt-pbkdf') as {
+  pbkdf(
+    pass: Uint8Array,
+    passlen: number,
+    salt: Uint8Array,
+    saltlen: number,
+    key: Uint8Array,
+    keylen: number,
+    rounds: number,
+  ): number;
+};
 
 const MAGIC = 'openssh-key-v1\0';
 const CIPHER = 'aes256-ctr';

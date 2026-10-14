@@ -21,3 +21,7 @@ export * from './install.js';
 export * from './snippets.js';
 export * from './stream-masker.js';
 export * from './text-log.js';
+export * from './sk-key.js';
+export * from './sk-auth.js';
+export { nodeHidTransport, skEnroll, skSign } from './fido/authenticator.js';
+export type { FidoDeviceInfo, FidoTransport, SkEnrollOptions, SkPrompts } from './fido/authenticator.js';
