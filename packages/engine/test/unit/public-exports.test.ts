@@ -59,6 +59,11 @@ const ADDED = [
   'buildMcpHistoryEntry',
   'historyMcpOf',
   'redactMcpExchange',
+  'refreshMcpCatalogue',
+  'MCP_CATALOGUE_MAX_PAGES',
+  'commandFingerprint',
+  'mcpItemFor',
+  'mcpEffectiveAuth',
 ] as const;
 
 /** 2.x name, 3.0 name. */

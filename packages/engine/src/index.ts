@@ -104,7 +104,11 @@ export { wsApisOf, withWsApis } from './ws/model.js';
 export { mcpServersOf, withMcpServers } from './mcp/model.js';
 export { commandFingerprint } from './mcp/approval.js';
 export type { CommandFingerprintInput } from './mcp/approval.js';
-export { mcpItemFor } from './mcp/run.js';
+export { mcpEffectiveAuth, mcpItemFor } from './mcp/run.js';
+// Refresh catalogue: one session that lists what the server has, through the same gate as a send.
+export { MCP_CATALOGUE_MAX_PAGES, refreshMcpCatalogue } from './mcp/catalogue.js';
+export type { McpCatalogueRefresh, RefreshMcpCatalogueOptions } from './mcp/catalogue.js';
+export type { McpMessage } from './mcp/session.js';
 export type { McpResolvedInput, McpSelected } from './mcp/run.js';
 export type { McpLiveEvent } from './mcp/events.js';
 // One MCP send as History records it, for every host that writes History.

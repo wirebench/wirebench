@@ -173,12 +173,12 @@ the scripting suites.
 
 **Files:** new `mcp/catalogue.ts`, `index.ts`, `public-exports` test, `packages/engine/README.md`.
 
-- [ ] `refreshMcpCatalogue(server, scope, host)`: initialize, then each advertised list, with pages
+- [x] `refreshMcpCatalogue(server, scope, host)`: initialize, then each advertised list, with pages
   followed up to 50. It returns the sorted catalogue and its metadata. It goes through the approval
   gate. It records nothing to History.
-- [ ] Export the model, the storage helpers, `refreshMcpCatalogue`, `commandFingerprint`, the History
+- [x] Export the model, the storage helpers, `refreshMcpCatalogue`, `commandFingerprint`, the History
   helpers and the types the desktop needs.
-- [ ] Tests: pages, an absent capability skipped, a stable result.
+- [x] Tests: pages, an absent capability skipped, a stable result.
 
 ### Task 11: CLI and `wirebench mcp`
 

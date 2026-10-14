@@ -55,10 +55,9 @@ export interface McpOperationCall {
   readonly validateResult?: (result: unknown) => readonly string[];
 }
 
-/** Options for {@link runMcpSession}. */
-export interface McpSessionOptions {
+/** What every session is given, whatever it runs after the handshake. */
+export interface McpSessionBaseOptions {
   readonly transport: McpWireTransport;
-  readonly operation: McpOperationCall;
   /** `clientInfo.version` in `initialize`. */
   readonly clientVersion: string;
   /** The version `initialize` asks for. Default: the latest the bundled SDK knows. */
@@ -68,6 +67,27 @@ export interface McpSessionOptions {
   readonly signal?: AbortSignal;
   /** Called with each message as it is kept, for a live timeline. */
   readonly onMessage?: (message: McpMessage) => void;
+}
+
+/** Options for {@link runMcpSession}. */
+export interface McpSessionOptions extends McpSessionBaseOptions {
+  readonly operation: McpOperationCall;
+}
+
+/**
+ * What a driven session hands its driver once the handshake is done: the server's `initialize`
+ * result, and a way to send one call after another on the same session.
+ */
+export interface McpSessionDriver {
+  /** The server's `initialize` result, as it came. */
+  readonly initialize: Readonly<Record<string, unknown>> | undefined;
+  /**
+   * Sends one call and resolves with its answer. A call whose capability the server did not
+   * advertise is refused before it is sent.
+   *
+   * @throws McpError `mcp-capability-missing`, or the session's failure
+   */
+  call(operation: McpOperationCall): Promise<McpResponse>;
 }
 
 /** One JSON-RPC message of the exchange. */
@@ -126,9 +146,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const byteLength = (text: string): number => Buffer.byteLength(text, 'utf8');
 
-/** Run one session to its end. Never rejects. */
-export async function runMcpSession(options: McpSessionOptions): Promise<McpSessionOutcome> {
-  const { transport, operation } = options;
+/** Run one session to its end: the handshake, `options.operation`, close. Never rejects. */
+export function runMcpSession(options: McpSessionOptions): Promise<McpSessionOutcome> {
+  const { operation } = options;
+  return runDrivenMcpSession(options, (session) => session.call(operation));
+}
+
+/**
+ * Run one session whose calls after the handshake are `drive`'s, as many as it sends: a catalogue
+ * refresh lists each kind and follows its pages on one session. The outcome's `response` is what
+ * `drive` resolves with. A `drive` that throws fails the session with its error. Never rejects.
+ */
+export async function runDrivenMcpSession(
+  options: McpSessionBaseOptions,
+  drive: (session: McpSessionDriver) => Promise<McpResponse | undefined>,
+): Promise<McpSessionOutcome> {
+  const { transport } = options;
   const timeoutMs = options.timeoutMs ?? MCP_DEFAULT_TIMEOUT_MS;
   const startedAt = new Date().toISOString();
   const startedMs = performance.now();
@@ -353,20 +386,32 @@ export async function runMcpSession(options: McpSessionOptions): Promise<McpSess
         { details: { requested, offered: offered ?? null, supported: [...SUPPORTED_PROTOCOL_VERSIONS] } },
       );
     }
-    if (operation.capability !== undefined) {
-      const capabilities = initialize?.['capabilities'];
-      const advertised = isRecord(capabilities) ? capabilities[operation.capability] : undefined;
-      if (advertised === undefined || advertised === null) {
-        throw new McpError(
-          'mcp-capability-missing',
-          `The MCP server does not advertise "${operation.capability}", which ${operation.method} needs`,
-          { details: { capability: operation.capability, method: operation.method } },
-        );
-      }
-    }
-
-    await notify('notifications/initialized');
-    response = await request(operation.method, operation.params, operation.validateResult);
+    const capabilities = initialize?.['capabilities'];
+    // `notifications/initialized` goes once, after the first call's capability check, so a call the
+    // server cannot take is refused before anything follows the handshake.
+    let initialized = false;
+    const driver: McpSessionDriver = {
+      initialize,
+      async call(operation) {
+        if (operation.capability !== undefined) {
+          const advertised = isRecord(capabilities) ? capabilities[operation.capability] : undefined;
+          if (advertised === undefined || advertised === null) {
+            throw new McpError(
+              'mcp-capability-missing',
+              `The MCP server does not advertise "${operation.capability}", which ${operation.method} needs`,
+              { details: { capability: operation.capability, method: operation.method } },
+            );
+          }
+        }
+        if (!initialized) {
+          initialized = true;
+          await notify('notifications/initialized');
+        }
+        return request(operation.method, operation.params, operation.validateResult);
+      },
+    };
+    response = await race(drive(driver));
+    if (!initialized) await notify('notifications/initialized');
   } catch (err) {
     // A step that throws its own error (a refused handshake, a capability the server lacks) closes
     // gracefully; one that lost a race to `failed` already set the failure and how to close.
