@@ -7,11 +7,11 @@
  * too large to reformat, and *Save response* names only the send — the bytes never cross the bridge.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestResponsePane } from '../../src/renderer/features/rest-editor/response/response-pane.js';
 import { hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
-import { statusToneClass } from '../../src/renderer/features/rest-editor/response/status-line.js';
+import { elapsedText, statusToneClass } from '../../src/renderer/features/rest-editor/response/status-line.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
@@ -53,6 +53,14 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+describe('elapsedText', () => {
+  it('reads to the tenth of a second, never negative', () => {
+    expect(elapsedText(2440)).toBe('2.4 s');
+    expect(elapsedText(0)).toBe('0.0 s');
+    expect(elapsedText(-5)).toBe('0.0 s');
+  });
 });
 
 describe('statusToneClass', () => {
@@ -263,7 +271,9 @@ describe('RestResponsePane', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    // The tab counts what it lists, a repeated name twice.
+    expect(screen.getByRole('tab', { name: /^Headers/ }).textContent).toBe('Headers2');
+    fireEvent.click(screen.getByRole('tab', { name: /^Headers/ }));
     const rows = screen.getAllByTestId('rest-response-header-row');
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.textContent)).toEqual(['set-cookiea=1', 'set-cookieb=2']);
@@ -466,7 +476,7 @@ describe('RestResponsePane with an event stream', () => {
         />
       </TooltipPrimitive.Provider>,
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Headers/ }));
     expect(screen.getByTestId('rest-response-headers').textContent).toContain('text/event-stream');
   });
 
@@ -481,6 +491,45 @@ describe('RestResponsePane with an event stream', () => {
     const status = screen.getByTestId('rest-response-status').textContent ?? '';
     expect(status).toContain('Sending');
     expect(status).not.toContain('events');
+  });
+
+  it('keeps the last response, dimmed, under one Sending bar with a running timer', () => {
+    vi.useFakeTimers();
+    try {
+      const startedAt = new Date().toISOString();
+      render(
+        <TooltipPrimitive.Provider>
+          <RestResponsePane
+            requestId="rest-1"
+            state={{ status: 'sending', sendId: 'send-2', startedAt, previous: makeRestExchange() }}
+          />
+        </TooltipPrimitive.Provider>,
+      );
+      const view = screen.getByTestId('rest-response-view');
+      expect(view.className).toContain('opacity-50');
+      expect(view.getAttribute('aria-busy')).toBe('true');
+      expect(screen.getByRole('tab', { name: /^Body/ })).toBeTruthy();
+      // The old answer cannot be saved as if it were the new one.
+      expect(screen.queryByTestId('rest-response-save')).toBeNull();
+      expect(screen.getAllByText('Sending…')).toHaveLength(1);
+      expect(screen.getByTestId('rest-response-elapsed').textContent).toBe(' 0.0 s');
+      act(() => {
+        vi.advanceTimersByTime(2400);
+      });
+      expect(screen.getByTestId('rest-response-elapsed').textContent).toBe(' 2.4 s');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says Sending once, in the bar, when there is no earlier response', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane requestId="rest-1" state={{ status: 'sending', sendId: 'send-1' }} />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getAllByText('Sending…')).toHaveLength(1);
+    expect(screen.queryByTestId('rest-response-view')).toBeNull();
   });
 
   it('does not announce a finished stream, only one that failed', () => {

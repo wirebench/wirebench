@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { KvTable } from '../../src/renderer/components/kv-table.js';
 import {
@@ -121,6 +122,34 @@ describe('a key/value cell inside a request editor', () => {
     fireEvent.keyDown(value, { key: 'Escape' });
     expect(screen.queryByRole('listbox')).toBeNull();
     expect((value as HTMLTextAreaElement).value).toBe('${');
+    // A second Escape, with no list open, is the cell's own: it puts the row back.
+    fireEvent.keyDown(value, { key: 'Escape' });
+    expect((value as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('keeps a header typed through the add row when Escape closes its list, and commits it on blur', async () => {
+    function Headers() {
+      const [rows, setRows] = useState<readonly KeyValueWire[]>([row('X-Host', '')]);
+      return (
+        <VariableAssistContext.Provider value={assist()}>
+          <TooltipPrimitive.Provider>
+            <KvTable label="Headers" rows={rows} onChange={setRows} testidPrefix="h" />
+            <output data-testid="committed">{rows.map((entry) => entry.value).join('|')}</output>
+          </TooltipPrimitive.Provider>
+        </VariableAssistContext.Provider>
+      );
+    }
+    renderBare(<Headers />);
+
+    await userEvent.click(screen.getByTestId('h-value'));
+    await userEvent.keyboard('https://${{ho');
+    expect(screen.getByRole('listbox')).toBeDefined();
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.getByTestId<HTMLTextAreaElement>('h-value').value).toBe('https://${ho');
+    await userEvent.tab();
+    expect(screen.getByTestId('committed').textContent).toBe('https://${ho');
   });
 
   it('hovers a reference with its value, and a masked one without it', () => {
