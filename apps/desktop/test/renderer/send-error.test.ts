@@ -35,7 +35,10 @@ describe('describeSendError', () => {
       kind: 'timeout',
       timeoutMs: 30_000,
     });
-    expect(describeSendError({ code: 'timeout', message: 'x' }).hint).toEqual({ kind: 'timeout', timeoutMs: undefined });
+    expect(describeSendError({ code: 'timeout', message: 'x' }).hint).toEqual({
+      kind: 'timeout',
+      timeoutMs: undefined,
+    });
   });
 
   it('gives refused, DNS and TLS failures one line each', () => {
