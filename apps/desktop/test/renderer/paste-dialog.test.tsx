@@ -53,3 +53,13 @@ it('Cancel and Escape close without sending', async () => {
   expect(onCancel).toHaveBeenCalledTimes(2);
   expect(onConfirm).not.toHaveBeenCalled();
 });
+
+it('text with control characters asks under its own title, shows them escaped and offers no opt-out', async () => {
+  const onConfirm = vi.fn();
+  render(<PasteDialog text={'ls\x1b[201~rm -rf ~\n'} onConfirm={onConfirm} onCancel={vi.fn()} />);
+  expect(screen.getByRole('dialog', { name: 'Paste text with control characters?' })).toBeDefined();
+  expect(screen.getByTestId('paste-preview').textContent).toBe('ls\\x1b[201~rm -rf ~');
+  expect(screen.queryByRole('checkbox', { name: "Don't ask again" })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Paste' }));
+  expect(onConfirm).toHaveBeenCalledWith(false);
+});
