@@ -17,6 +17,17 @@ const SseHistoryBody = lazy(async () => {
 export const restRequests: KindRequests = {
   open: openRestRequestTab,
   exists: (requestId, project) => project.restRequests[requestId] !== undefined,
+  // A webhook item is a REST request in the project's webhook collection, which is not an API.
+  quickOpen: (project) =>
+    Object.values(project.restRequests).map((request) => ({
+      id: request.id,
+      tag: request.body.kind === 'graphql' ? 'GQL' : request.method,
+      name: request.name,
+      apiId: request.apiId,
+      apiName: project.apis[request.apiId]?.name ?? 'Webhooks',
+      ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+      match: request.url,
+    })),
 };
 
 function RestHistoryBadge({ entry, place }: { readonly entry: HistoryEntryWire; readonly place: 'row' | 'header' }) {

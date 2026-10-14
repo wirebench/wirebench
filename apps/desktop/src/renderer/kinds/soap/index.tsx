@@ -37,6 +37,7 @@ export const soapRenderer: RendererKind = {
   tabs: [
     {
       kind: 'request',
+      treeNode: (id) => `req:${id}`,
       idField: 'requestId',
       prefix: 'request:',
       persisted: true,
@@ -48,6 +49,7 @@ export const soapRenderer: RendererKind = {
     },
     {
       kind: 'interface',
+      treeNode: (id) => `iface:${id}`,
       idField: 'interfaceId',
       prefix: 'interface:',
       persisted: true,

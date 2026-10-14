@@ -283,6 +283,13 @@ export function explorerMenuItems(node: ExplorerNode): readonly ExplorerMenuItem
   return explorerMenuGroups(node).flat();
 }
 
+/**
+ * The items that leave a row in inline rename: Rename… itself, and the creators whose new row starts in it. The
+ * menu must not hand focus back to the row it was opened on after one of these, or the rename field would lose
+ * focus at once and commit the name unchanged.
+ */
+const RENAMING_ITEMS: ReadonlySet<string> = new Set(['rename', 'new-folder', 'new-request', 'new-graphql-request']);
+
 /** The right-click menu for one explorer node; the items shown depend on `node.kind`. */
 export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
   const menuGroups = explorerMenuGroups(node);
@@ -317,7 +324,7 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
                   key={item.key}
                   className={ITEM_CLASS}
                   onSelect={() => {
-                    if (item.key === 'rename') {
+                    if (RENAMING_ITEMS.has(item.key)) {
                       isRenamingRef.current = true;
                     }
                     item.run();

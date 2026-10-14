@@ -258,10 +258,15 @@ describe('explorerMenuItems on a REST row', () => {
     expect(useUiStore.getState().folderAuthId).toBe('f1');
   });
 
-  it('offers a REST request duplicate, rename and delete, and no Open', () => {
-    const items = explorerMenuItems(node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }));
+  it('offers a REST request send, copy, run, move, duplicate, rename and delete, and no Open', () => {
+    const groups = explorerMenuGroups(node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    expect(groups.map((group) => group.map((item) => item.label))).toEqual([
+      ['Send', 'Copy as cURL', 'Copy URL'],
+      ['Run…'],
+      ['Duplicate', 'Move to…', 'Rename…'],
+      ['Delete'],
+    ]);
   });
 
   it('keeps the destructive entry in a group of its own on all three', () => {
@@ -493,12 +498,12 @@ describe('Run… in the explorer', () => {
     ]);
   });
 
-  it('runs the selected row from the palette, and nothing a request row would mean', () => {
+  it('runs the selected row from the palette, a REST request on its own', () => {
     expect(runnerTargetOf({ kind: 'project', id: 'p1' })).toBe('p1');
     expect(runnerTargetOf({ kind: 'ws-api', id: 'ws:w1', apiId: 'w1' })).toBe('w1');
     expect(runnerTargetOf({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' })).toBe('f1');
     expect(runnerTargetOf({ kind: 'sequence', id: 'sequence:s1' })).toBe('s1');
-    expect(runnerTargetOf({ kind: 'rest-request', id: 'req:r1', apiId: 'a1', requestId: 'r1' })).toBeUndefined();
+    expect(runnerTargetOf({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' })).toBe('r1');
     expect(runnerTargetOf(undefined)).toBeUndefined();
   });
 });

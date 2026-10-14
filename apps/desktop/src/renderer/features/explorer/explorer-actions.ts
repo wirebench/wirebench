@@ -220,7 +220,10 @@ export const explorerActions = {
       });
   },
 
-  /** Creates a REST request in an API or one of its folders and opens its editor. */
+  /**
+   * Creates a REST request in an API or one of its folders, opens its editor, and puts its row into rename mode:
+   * the tree unfolds to it, so the new request is where the user can see and name it.
+   */
   newRestRequest(apiId: string | undefined, parentId?: string): void {
     if (apiId === undefined) {
       return;
@@ -230,6 +233,7 @@ export const explorerActions = {
       .addRestRequest(apiId, parentId)
       .then((requestId) => {
         openRestRequestTab(requestId);
+        startRenamingNode('rest-request', requestId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New request failed');
@@ -250,6 +254,7 @@ export const explorerActions = {
           body: { kind: 'graphql', query: '', variables: '' },
         });
         openRestRequestTab(requestId);
+        startRenamingNode('rest-request', requestId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New request failed');
@@ -420,6 +425,7 @@ export const explorerActions = {
       .addGrpcRequest(apiId, parentId)
       .then((requestId) => {
         openGrpcRequestTab(requestId);
+        startRenamingNode('grpc-request', requestId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New request failed');
@@ -589,6 +595,7 @@ export const explorerActions = {
       .addWsRequest(apiId, parentId)
       .then((requestId) => {
         openWsRequestTab(requestId);
+        startRenamingNode('ws-request', requestId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New request failed');
@@ -663,6 +670,7 @@ export const explorerActions = {
       .addMcpRequest(apiId, parentId)
       .then((requestId) => {
         openMcpRequestTab(requestId);
+        startRenamingNode('mcp-request', requestId);
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New request failed');
