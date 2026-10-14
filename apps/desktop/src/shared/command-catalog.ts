@@ -266,7 +266,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   // Every host's session logs on this machine (#534); a host's own are in its details panel.
   'ssh.sessionLogs': {
     id: 'ssh.sessionLogs',
-    label: 'Session Logs…',
+    label: 'Terminal: Session Logs…',
     category: 'Hosts',
   },
   'sftp.refresh': {
