@@ -926,7 +926,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   // inventing one here would quietly take a key away from the user's own bindings.
   'history.resend': {
     id: 'history.resend',
-    label: 'History: Re-send Last SOAP Request',
+    label: 'History: Re-send Last Request',
     category: 'History',
   },
   'history.compare': {
