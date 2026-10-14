@@ -195,7 +195,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     const socket = deps.agentSocket();
     if (!socket) {
       throw new WirebenchError('ssh-auth-failed', 'No SSH agent is running (SSH_AUTH_SOCK is unset)', {
-        details: { host: `${hop.address}:${hop.ssh.port.value}`, method: 'agent' },
+        details: { host: `${hop.address}:${hop.ssh.port.value}`, method: 'agent', agent: 'missing' },
       });
     }
     return socket;
@@ -230,6 +230,8 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
             ? {
                 kind: 'key',
                 privateKey: await value(auth.key),
+                // The secret's name, which is how the user knows the key; shown in progress and errors.
+                label: secretNameOf(auth.key),
                 ...(auth.certificate ? { certificate: await value(auth.certificate) } : {}),
                 ...(auth.passphrase ? { passphrase: await value(auth.passphrase) } : {}),
               }

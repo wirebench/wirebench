@@ -288,18 +288,43 @@ From the keyboard:
 The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
 pagers, resize), and a host that is reached through a jump host is dialled hop by hop.
 
+### The connection screen
+
+Until the shell opens, the pane shows how the connection is going. A line runs from this machine to
+the host's OS mark and `user@host:port`. Under it are the steps: **Resolving address**,
+**Connecting**, **Checking host key**, **Authenticating** and **Starting shell**. The step running has a
+spinner and what it is doing: the address it resolved to, the server's software, the key's fingerprint,
+the sign-in method and key name. A finished step gets a tick and how long it took. Once the shell opens,
+the screen says **Connected in N ms** and fades into the terminal. Through a jump host, the jump host's
+part shows under **Connecting**.
+
+A first-seen or changed host key holds **Checking host key** while the host-key prompt is open (see
+[Host keys](#host-keys)); closing the prompt without trusting the key stops the connect there.
+
+When a connect fails, its step turns red, and one sentence says what happened and what to do, for
+example *a:22 refused key id_ed25519 for deploy and allows no other method (publickey)* or *No answer
+from 10.0.4.12:22 after 10 s*. The covered cases include a name that does not resolve, a port nothing
+listens on, a host that never answers, a changed host key, a refused sign-in, a missing secret or agent,
+and a jump host that cannot reach the target. **Retry** connects again, **Edit host** opens the host's
+settings, and **Close** closes the pane. The reason is also in the Problems tab.
+
+**Show log** unfolds the handshake log: timestamped lines for the lookup, the TCP connection, the
+server's software, the host key and its `known_hosts` result, each sign-in attempt and its result, and
+the methods the server allows. It is folded while connecting and opens on its own when a connect fails.
+It never holds a password, passphrase or private key. With **Reduce motion** on in the system settings,
+the screen shows no spinner or moving line, only the ticks.
+
 - Switching to another tab keeps the session alive; closing the tab ends it. Switching to another
   workspace or closing it ends every session.
 - Terminal tabs are not restored when you restart Wirebench.
 - When the remote shell exits, the tab stays and shows **Session ended (code N)** with **Reconnect**.
-  If the connection could not be made, it shows **Could not connect** with **Reconnect**, and the
-  reason is in the Problems tab.
+  If the connection could not be made, the connection screen shows why (see above).
 - When the network drops the connection (Wi-Fi changes, a VPN drops, the laptop sleeps), the tab
-  keeps its scrollback and reconnects on its own: it shows **Reconnecting… attempt N of 10** with a
-  countdown, **Retry now** and **Cancel**, and tries at once when the machine wakes or the network
-  comes back. A shell that exited, a sign-in failure or a changed host key never reconnects. After the
-  last attempt the tab shows the reason with **Reconnect**. **Preferences → Terminal** turns this off
-  and sets the number of attempts.
+  keeps its scrollback and reconnects on its own. The connection screen shows **Reconnecting… attempt
+  N of 10** with a countdown, **Reconnect now** and **Stop**, then the steps of each attempt. It tries
+  at once when the machine wakes or the network comes back. A shell that exited, a sign-in failure or
+  a changed host key never reconnects. After the last attempt the screen shows the last attempt's
+  reason with **Retry**. **Preferences → Terminal** turns this off and sets the number of attempts.
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
@@ -336,7 +361,8 @@ works through jump hosts exactly as the terminal does.
 
 The tab is named after the host with **· Files**. It has its own SSH connection, separate from any
 terminal to the same host, so it signs in and checks the host key the same way (see
-[Host keys](#host-keys)). Like a terminal, it keeps its folders and copies while you switch to
+[Host keys](#host-keys)). While it connects, or after it fails, the host's pane shows the same
+[connection screen](#the-connection-screen) as a terminal, ending in **Starting SFTP**. Like a terminal, it keeps its folders and copies while you switch to
 another tab, ends when you close it or switch workspace, and is not restored on restart.
 
 ### The two panes

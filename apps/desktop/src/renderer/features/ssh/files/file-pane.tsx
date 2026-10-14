@@ -3,13 +3,17 @@ import type { DragEvent } from 'react';
 import { ArrowLeft, ArrowUp, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { IconButton } from '../../../components/icon-button.js';
+import { useEditorsStore } from '../../../state/editors.js';
+import { editHost } from '../connect.js';
+import { ConnectScreen } from '../connect-screen.js';
+import { useConnectStore } from '../connect-store.js';
 import { useHostsStore } from '../hosts-store.js';
 import { DeleteDialog } from './delete-dialog.js';
 import { useEditsStore } from './edits-store.js';
 import { fileActions } from './file-actions.js';
 import { FileList } from './file-list.js';
 import { FileMenu } from './file-menu.js';
-import { otherPaneId, useFilesStore } from './files-store.js';
+import { otherPaneId, tabOfPane, useFilesStore } from './files-store.js';
 import { isFolderLike, joinPath, parentOf, visibleEntries } from './format.js';
 import { PathBar } from './path-bar.js';
 import { PermissionsDialog } from './permissions-dialog.js';
@@ -34,6 +38,7 @@ let dragging: { readonly paneId: string; readonly names: readonly string[] } | u
  */
 export function FilePane({ paneId }: { readonly paneId: string }) {
   const pane = useFilesStore((s) => s.panes[paneId]);
+  const attempt = useConnectStore((s) => s.views[paneId]);
   const showHidden = useFilesStore((s) => s.showHidden);
   const pathEdit = useFilesStore((s) => s.pathEditRequests[paneId] ?? 0);
   const dialog = useFilesStore((s) => s.dialogs[paneId]);
@@ -63,6 +68,32 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
       />
     </div>
   );
+
+  // A host's pane connecting, or failing to, shows the same connection screen as a terminal (#528).
+  if (place.kind === 'remote' && (pane.status === 'connecting' || (pane.status === 'error' && !ready))) {
+    const hostId = place.hostId;
+    return (
+      <div className="flex h-full flex-col" data-testid="files-pane" data-place={place.kind}>
+        {header}
+        <div className="min-h-0 flex-1">
+          <ConnectScreen
+            hostId={hostId}
+            purpose="files"
+            view={attempt}
+            onRetry={() => {
+              void store().connect(paneId, hostId);
+            }}
+            onEditHost={() => {
+              editHost(hostId);
+            }}
+            onClose={() => {
+              useEditorsStore.getState().close(tabOfPane(paneId));
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (pane.status === 'connecting' || pane.status === 'error') {
     return (

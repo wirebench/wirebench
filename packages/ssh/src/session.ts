@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Client, ClientChannel } from 'ssh2';
+import { HopProgress } from './connect-progress.js';
 import { SshConnectError, dialChain, hostOf } from './dial.js';
 import type { DialOptions, HopCredentials } from './dial.js';
 
@@ -55,6 +56,9 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
   const chain = await dialChain(options);
   try {
     const lastHop = options.hops[options.hops.length - 1] as HopCredentials;
+    const progress = new HopProgress(options.onProgress, options.hops.length - 1, options.hops.length, hostOf(lastHop));
+    progress.start('shell', 'xterm-256color');
+    progress.log(`Opening a shell (xterm-256color, ${String(options.cols)}×${String(options.rows)})`);
     const env = options.env !== undefined && Object.keys(options.env).length > 0 ? { ...options.env } : undefined;
     const shell = (agentForward: boolean): Promise<ClientChannel> =>
       new Promise((resolve, reject) =>
@@ -64,11 +68,15 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
           (error, ch) => (error ? reject(error) : resolve(ch)),
         ),
       );
-    const failed = (error: Error): SshConnectError =>
-      new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
+    const failed = (error: Error): SshConnectError => {
+      progress.log('The server would not open a shell');
+      return new SshConnectError('ssh-connect-failed', `${hostOf(lastHop)}: ${error.message}`, {
         host: hostOf(lastHop),
         hop: options.hops.length - 1,
+        reason: 'other',
+        phase: 'shell',
       });
+    };
     let forwarding: AgentForwarding = options.forwardAgent === undefined ? 'off' : 'on';
     let channel: ClientChannel;
     try {
@@ -77,8 +85,11 @@ export async function openSession(options: OpenSessionOptions): Promise<SshSessi
       // ssh2 closes the channel when the server refuses forwarding; like OpenSSH, the shell opens without it.
       if (forwarding !== 'on' || !AGENT_REFUSED.test((error as Error).message)) throw failed(error as Error);
       forwarding = 'refused';
+      progress.log('The server refused agent forwarding; opening the shell without it');
       channel = await shell(false).catch((again: unknown) => Promise.reject(failed(again as Error)));
     }
+    progress.log('Shell open');
+    progress.done('shell', 'xterm-256color');
     return wrap(channel, chain.client, () => chain.endAll(), chain, forwarding);
   } catch (error) {
     chain.endAll();

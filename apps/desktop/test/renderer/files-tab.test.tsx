@@ -49,7 +49,26 @@ it('connects on mount and lists the host’s home folder', async () => {
   await waitFor(() => {
     expect(screen.getByText('notes.txt')).toBeDefined();
   });
-  expect(open).toHaveBeenCalledWith({ hostId: 'a' });
+  expect(open).toHaveBeenCalledWith({ hostId: 'a', attemptId: expect.any(String) as unknown });
+});
+
+it('a failed open shows the connection screen with its reason, and Retry connects again', async () => {
+  open.mockResolvedValueOnce({
+    ok: false,
+    error: { code: 'sftp-unavailable', message: 'a.example:22 offers no SFTP', details: { host: 'a.example:22' } },
+  });
+  render(<Tab />);
+  expect((await screen.findByTestId('connect-error')).textContent).toMatch(
+    /^Signed in, but a\.example:22 offers no SFTP/,
+  );
+  expect(screen.getByTestId('connect-step-shell').textContent).toContain('Starting SFTP');
+  expect(screen.getByTestId('connect-log')).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => {
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  expect(open).toHaveBeenCalledTimes(2);
+  expect(screen.queryByTestId('connect-screen')).toBeNull();
 });
 
 it('Open terminal opens or focuses the host’s terminal tab', async () => {

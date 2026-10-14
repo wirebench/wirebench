@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Connection screen for SSH terminals and Files.** Until the shell opens, a pane shows the steps of
+  the connect: Resolving address, Connecting, Checking host key, Authenticating and Starting shell (or
+  Starting SFTP). Each shows what it is doing, then a tick and how long it took, and the screen ends
+  with **Connected in N ms** before fading into the terminal. A failed step turns red with one plain
+  sentence, such as a refused port, no answer in time, a changed host key or a refused sign-in naming
+  the methods the server allows, and offers **Retry**, **Edit host** and **Close**. **Show log**
+  unfolds a timestamped handshake log that opens on its own when a connect fails and never holds a
+  password, passphrase or key. A dropped session's reconnect shows its countdown on the same screen,
+  with **Reconnect now** and **Stop**. Reduced motion shows no spinner or moving line (#528).
 - **Test MCP servers.** An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and
   WebSocket APIs: a local process over stdio, Streamable HTTP, or the legacy HTTP+SSE transport.
   **New MCP server…** on a project creates one; its tab edits the connection (command, arguments,

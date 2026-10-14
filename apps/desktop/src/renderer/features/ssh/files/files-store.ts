@@ -14,6 +14,7 @@ import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
 import { openTrustPrompt } from '../connect.js';
+import { beginAttempt, dropAttempt, noteFailed, noteTrust } from '../connect-store.js';
 import { folderKey, readFilesPrefs, updateFilesPrefs } from './files-prefs.js';
 import { freeName, joinPath, parentOf } from './format.js';
 
@@ -377,11 +378,14 @@ export const useFilesStore = create<FilesState>()((set, get) => {
         },
       });
       connecting.set(paneId, generation);
-      const opened = await settle(() => ipc().sftp.open({ hostId }), 'The connection could not be started').finally(
-        () => {
-          if (connecting.get(paneId) === generation) connecting.delete(paneId);
-        },
-      );
+      // The pane's connection screen follows this attempt: main reports its stages under the id.
+      const attemptId = beginAttempt(paneId, 'files');
+      const opened = await settle(
+        () => ipc().sftp.open({ hostId, attemptId }),
+        'The connection could not be started',
+      ).finally(() => {
+        if (connecting.get(paneId) === generation) connecting.delete(paneId);
+      });
       const current = () => generationOf(paneId) === generation && get().panes[paneId] !== undefined;
       if (!tabExists(tabOfPane(paneId)) || !current()) {
         // The tab closed, or the pane moved to another place, while the connect ran: nothing will use the session.
@@ -391,6 +395,7 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       if (!opened.ok) {
         const { code, message, details } = opened.error;
         if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
+          noteTrust(paneId, attemptId, code === 'ssh-host-key-changed');
           // The Files pane stands in for the terminal's pane: the prompt resumes the pane's own connect.
           openTrustPrompt(
             { paneId, hostId },
@@ -407,9 +412,12 @@ export const useFilesStore = create<FilesState>()((set, get) => {
           );
           return;
         }
+        noteFailed(paneId, attemptId, opened.error);
         patch(paneId, { status: 'error', error: { code, message } });
         return;
       }
+      // The list takes the pane's place at once; the screen has nothing more to say.
+      dropAttempt(paneId);
       const { sessionId, home } = opened.value;
       patch(paneId, { place: { kind: 'remote', hostId, sessionId }, home, status: 'loading' });
       const remembered = lastFolder(hostId);

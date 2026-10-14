@@ -413,6 +413,7 @@
     "sftp.conflict",
     "sftp.edit",
     "sftp.transfer",
+    "ssh.connectProgress",
     "ssh.data",
     "ssh.exit",
     "ssh.hostOsChanged",

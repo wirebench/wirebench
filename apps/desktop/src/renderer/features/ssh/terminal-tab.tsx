@@ -11,7 +11,10 @@ import { detectPlatform } from '../../lib/platform.js';
 import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { connectToHost, paneIsOpen, reconnectToHost } from './connect.js';
+import { connectToHost, editHost, paneIsOpen, reconnectToHost } from './connect.js';
+import { ConnectScreen } from './connect-screen.js';
+import type { ReconnectBanner } from './connect-screen.js';
+import { dropAttempt, useConnectStore } from './connect-store.js';
 import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
@@ -34,6 +37,7 @@ import {
 import { HostPicker } from './panes/host-picker.js';
 import {
   cancelSplit,
+  closePane,
   completeSplit,
   focusedPaneOf,
   focusPane,
@@ -332,6 +336,8 @@ function TerminalPane({
   const focusRef = useRef(active && focused);
   focusRef.current = active && focused;
   const nonce = useHostsStore((s) => s.reconnectNonce[paneId] ?? 0);
+  // The connection screen's attempt (#528): shown while it runs, on failure, and briefly once connected.
+  const attempt = useConnectStore((s) => s.views[paneId]);
   const session = useHostsStore((s) => s.panes[paneId]);
   // The last connect ended with no session (refused, failed, or the trust prompt dismissed).
   const failed = useHostsStore((s) => s.connectFailed[paneId] === true) && session === undefined;
@@ -557,6 +563,8 @@ function TerminalPane({
       target.current = undefined;
       live.current = null;
       forgetPaneSize(paneId);
+      // A pane closed for good takes its connection screen with it; a Reconnect starts a new attempt anyway.
+      if (!paneIsOpen(paneId)) dropAttempt(paneId);
       term.dispose();
     };
   }, [tabId, paneId, hostId, nonce]);
@@ -582,6 +590,8 @@ function TerminalPane({
       },
       exit: (code, reason) => {
         if (target.current === sessionId) target.current = undefined;
+        // The screen of the connect that opened this session has nothing left to show.
+        if (useConnectStore.getState().views[paneId]?.outcome.kind === 'connected') dropAttempt(paneId);
         setExit({ sessionId, code });
         // Read per drop, so the Preferences switch and limit apply from the next drop on.
         const prefs = usePreferencesStore.getState().preferences.terminal;
@@ -617,21 +627,34 @@ function TerminalPane({
 
   const exitCode = sessionId !== undefined && exit?.sessionId === sessionId ? exit.code : undefined;
   const ended = sessionId !== undefined && (exitCode !== undefined || session?.state === 'closed');
-  const reconnecting = reconnect.kind === 'waiting' || reconnect.kind === 'trying';
-  let notice: string | undefined;
+  const stopReconnect = (): void => {
+    reconnector.current?.cancel();
+  };
+  // A dropped session's reconnect (#407) shows on the connection screen: its countdown, then each attempt.
+  let banner: ReconnectBanner | undefined;
   if (reconnect.kind === 'waiting') {
     const wait = secondsUntil(reconnect.at, now);
-    notice = `Connection lost · Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)} in ${String(wait)}s`;
+    banner = {
+      text: `Connection lost · Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)} in ${String(wait)}s`,
+      onNow: () => {
+        reconnector.current?.retryNow();
+      },
+      onStop: stopReconnect,
+    };
   } else if (reconnect.kind === 'trying') {
-    notice = `Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)}`;
+    banner = {
+      text: `Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)}`,
+      onStop: stopReconnect,
+    };
   } else if (reconnect.kind === 'gave-up') {
     const attempts = `${String(reconnect.attempts)} ${reconnect.attempts === 1 ? 'attempt' : 'attempts'}`;
-    notice = `Connection lost · gave up after ${attempts} (${reconnect.message})`;
-  } else if (failed) {
-    notice = 'Could not connect · see Problems';
-  } else if (ended) {
-    notice = `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`;
+    banner = { text: `Connection lost · gave up after ${attempts}` };
   }
+  const screen = banner !== undefined || attempt !== undefined || failed;
+  const notice =
+    !screen && ended
+      ? `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`
+      : undefined;
 
   const closePaste = (): void => {
     setHeldPaste(null);
@@ -684,6 +707,28 @@ function TerminalPane({
             }}
           />
         )}
+        {screen && (
+          <ConnectScreen
+            overlay
+            hostId={hostId}
+            purpose="terminal"
+            view={attempt}
+            reconnect={banner}
+            onRetry={() => {
+              useHostsStore.getState().bumpReconnect(paneId);
+            }}
+            onEditHost={() => {
+              editHost(hostId);
+            }}
+            onClose={() => {
+              closePane(tabId, paneId);
+            }}
+            onFaded={() => {
+              dropAttempt(paneId);
+              if (focusRef.current) live.current?.term.focus();
+            }}
+          />
+        )}
         <TerminalFindBar
           open={findOpen}
           focusRequest={findFocus}
@@ -702,38 +747,15 @@ function TerminalPane({
           data-testid="ssh-terminal-notice"
         >
           <span className="min-w-0 flex-1 truncate">{notice}</span>
-          {reconnect.kind === 'waiting' && (
-            <button
-              type="button"
-              className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
-              onClick={() => {
-                reconnector.current?.retryNow();
-              }}
-            >
-              Retry now
-            </button>
-          )}
-          {reconnecting ? (
-            <button
-              type="button"
-              className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
-              onClick={() => {
-                reconnector.current?.cancel();
-              }}
-            >
-              Cancel
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
-              onClick={() => {
-                useHostsStore.getState().bumpReconnect(paneId);
-              }}
-            >
-              Reconnect
-            </button>
-          )}
+          <button
+            type="button"
+            className="rounded border border-hairline px-2 py-0.5 text-sm hover:bg-surface-raised"
+            onClick={() => {
+              useHostsStore.getState().bumpReconnect(paneId);
+            }}
+          >
+            Reconnect
+          </button>
         </div>
       )}
     </div>

@@ -115,3 +115,26 @@
   color: var(--wb-fg-subtle);
   font-size: 0.85em;
 }
+
+/* The connection screen's line from this machine to the host while it connects (#528): dashes that run
+   towards the host. Reduced motion stops them; the line stays. */
+.wb-connect-line {
+  height: 2px;
+  background-image: repeating-linear-gradient(90deg, var(--wb-accent-default) 0 6px, transparent 6px 12px);
+  animation: wb-connect-line 0.8s linear infinite;
+}
+
+@keyframes wb-connect-line {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 12px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-connect-line {
+    animation: none;
+  }
+}

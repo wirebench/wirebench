@@ -4,6 +4,7 @@ import { useProblemsStore } from '../../state/problems.js';
 import { findHost, useHostsStore } from './hosts-store.js';
 import { hasHost, leaves, onePane } from './panes/pane-tree.js';
 import type { PaneLeaf } from './panes/pane-tree.js';
+import { beginAttempt, failWaitingAttempt, noteConnected, noteFailed, noteTrust } from './connect-store.js';
 import { useRecentStore } from './recent-connections.js';
 import { isRetryableConnectError } from './reconnect.js';
 import type { AttemptOutcome } from './reconnect.js';
@@ -65,14 +66,17 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   }
   useProblemsStore.getState().clear(`ssh:${hostId}`);
   store.setPane(paneId, { hostId, state: 'connecting' });
+  // The pane's connection screen follows this attempt: main reports its stages under the id.
+  const attemptId = beginAttempt(paneId, 'terminal');
   let result;
   try {
-    result = await ipc().ssh.connect({ hostId, ...size });
+    result = await ipc().ssh.connect({ hostId, ...size, attemptId });
   } catch (error) {
     store.setPane(paneId, undefined);
     const shaped = error as { code?: unknown; message?: unknown } | null;
     const code = typeof shaped?.code === 'string' ? shaped.code : 'ssh-connect-failed';
     const message = typeof shaped?.message === 'string' ? shaped.message : 'The connection could not be started';
+    noteFailed(paneId, attemptId, { code, message });
     recordProblem(pane, code, message);
     return { kind: 'failed', code, message };
   }
@@ -85,14 +89,17 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
       ...(agentForwarding === undefined ? {} : { agentForwarding }),
     });
     useRecentStore.getState().record(hostId, 'connected');
+    noteConnected(paneId, attemptId);
     return { kind: 'open', sessionId: result.value.sessionId };
   }
   store.setPane(paneId, undefined);
   const { code, message, details } = result.error;
   if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
+    noteTrust(paneId, attemptId, code === 'ssh-host-key-changed');
     openTrustPrompt(pane, { size }, details);
     return { kind: 'trust' };
   }
+  noteFailed(paneId, attemptId, result.error);
   recordProblem(pane, code, message);
   return { kind: 'failed', code, message };
 }
@@ -153,6 +160,8 @@ export async function confirmTrust(replace: boolean): Promise<{ sessionId: strin
   }
   // Main no longer holds the refusal (expired, or another window trusted the key): a fresh connect settles it.
   if (code === 'ssh-host-key-unexpected') return again();
+  // The screen waiting on the prompt says why the connect stopped.
+  failWaitingAttempt(prompt.paneId, trusted.error);
   if ('cancel' in resume) {
     resume.cancel();
     useProblemsStore

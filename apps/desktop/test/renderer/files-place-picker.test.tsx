@@ -145,7 +145,7 @@ describe('the place picker', () => {
       expect(within(paneNamed('beta')).getByText('beta.log')).toBeDefined();
     });
     expect(sftp.close).toHaveBeenCalledWith({ sessionId: 's1' });
-    expect(sftp.open).toHaveBeenLastCalledWith({ hostId: 'b' });
+    expect(sftp.open).toHaveBeenLastCalledWith({ hostId: 'b', attemptId: expect.any(String) as unknown });
     expect(useFilesStore.getState().panes[TAB]?.place).toEqual({ kind: 'remote', hostId: 'b', sessionId: 's2' });
     expect(useFilesStore.getState().panes[TAB]?.path).toBe('/home/b');
   });

@@ -3,12 +3,19 @@ import type { SshFixture } from '@wirebench/ssh/test-helpers';
 
 /**
  * Adds host `name` for the fixture's password user from the Hosts view's New host dialog, storing the
- * password as a workspace secret. `beforeSave` fills more of the dialog (forwarding rules) before Save.
+ * password as a workspace secret. `password` and `port` default to the fixture's (`pw`, its port); a
+ * different one makes a host that fails to sign in or to connect. `beforeSave` fills more of the dialog
+ * (forwarding rules) before Save.
  */
 export async function addPasswordHost(
   page: Page,
   fixture: SshFixture,
-  options: { readonly name: string; readonly beforeSave?: (dialog: Locator) => Promise<void> },
+  options: {
+    readonly name: string;
+    readonly password?: string;
+    readonly port?: number;
+    readonly beforeSave?: (dialog: Locator) => Promise<void>;
+  },
 ): Promise<void> {
   await showSshNav(page, 'hosts');
   await page.getByRole('button', { name: 'New host' }).click();
@@ -17,13 +24,13 @@ export async function addPasswordHost(
   await dialog.getByLabel('Name', { exact: true }).fill(options.name);
   await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1');
   await dialog.getByRole('switch', { name: 'Override Port' }).click();
-  await dialog.getByLabel('Port', { exact: true }).fill(String(fixture.port));
+  await dialog.getByLabel('Port', { exact: true }).fill(String(options.port ?? fixture.port));
   await dialog.getByRole('switch', { name: 'Override User' }).click();
   await dialog.getByLabel('User', { exact: true }).fill('tester');
   await dialog.getByRole('radio', { name: 'Password', exact: true }).check();
   await dialog.getByRole('button', { name: 'Set value…' }).click();
   await dialog.getByLabel('Secret name', { exact: true }).fill(`${options.name}_pw`);
-  await dialog.getByLabel('Secret value', { exact: true }).fill('pw');
+  await dialog.getByLabel('Secret value', { exact: true }).fill(options.password ?? 'pw');
   await dialog.getByRole('button', { name: 'Store' }).click();
   await expect(dialog.getByLabel('Password secret', { exact: true })).toHaveValue(`${options.name}_pw`);
   await options.beforeSave?.(dialog);

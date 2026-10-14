@@ -16,6 +16,7 @@ import {
   snippetSecrets,
 } from '@wirebench/ssh';
 import type {
+  ConnectProgress,
   HopCredentials,
   KnownHostEntry,
   Snippet,
@@ -81,6 +82,23 @@ export interface SshServiceDeps extends SshConnectDeps {
     sender: WebContents,
     request: { readonly hostId: string; readonly hops: readonly HopCredentials[] },
   ) => Promise<StartSessionLog | undefined>;
+}
+
+/**
+ * Sends a connect's stages and log lines to the window that asked, under its attempt id (#528); nothing
+ * when the renderer gave none. The events hold no credential: `@wirebench/ssh` builds them from names.
+ */
+export function progressTo(
+  emit: SshServiceDeps['emit'],
+  sender: WebContents,
+  attemptId: string | undefined,
+): { onProgress?: (event: ConnectProgress) => void } {
+  if (attemptId === undefined) return {};
+  return {
+    onProgress: (event) => {
+      if (!sender.isDestroyed()) emit(sender, events.ssh.connectProgress, { attemptId, event });
+    },
+  };
 }
 
 /** The command the OS probe runs: `os-release` on Linux, `uname -s` on the BSDs and macOS, `ver` on Windows. */
@@ -228,6 +246,7 @@ export class SshService {
         cols: request.cols,
         rows: request.rows,
         verifyHostKey,
+        ...progressTo(this.deps.emit, sender, request.attemptId),
         ...(Object.keys(env).length === 0 ? {} : { env }),
         ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
       });

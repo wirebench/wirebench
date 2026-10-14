@@ -195,10 +195,14 @@ export const sshSetSecretRequestSchema = z.strictObject({ name: z.string(), valu
 export type SshSecretNameWire = z.infer<typeof sshSecretNameSchema>;
 
 /** Opens a shell on a host; the answer is the session id the terminal addresses from then on. */
+/** An id the renderer picks per connect, so its `ssh.connectProgress` events reach the screen showing it (#528). */
+export const sshAttemptIdSchema = z.string().min(1).max(100);
+
 export const sshConnectRequestSchema = z.strictObject({
   hostId: z.string(),
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
+  attemptId: sshAttemptIdSchema.optional(),
 });
 /**
  * `agentForwarding` is left out when the host does not forward the agent. `on`: granted; `refused`: the
@@ -241,7 +245,37 @@ export const sshExitEventSchema = z.object({
 });
 export const sshStateEventSchema = z.object({ sessionId: z.string(), state: z.enum(['open', 'closed']) });
 
+/** A hop's stages, in order: lookup, TCP, the server identifying itself, its key, sign-in, the shell or SFTP. */
+export const SSH_CONNECT_PHASES = ['resolve', 'tcp', 'banner', 'host-key', 'auth', 'shell'] as const;
+const hopWhere = {
+  /** 0-based; the target is `hops - 1`. */
+  hop: z.number().int().nonnegative(),
+  hops: z.number().int().positive(),
+  /** The hop's `address:port`. */
+  host: z.string(),
+  /** Milliseconds since the epoch. */
+  at: z.number(),
+};
+/** One stage starting or ending, or one handshake log line; none holds a password, passphrase or key. */
+export const sshConnectProgressWireSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('phase'),
+    phase: z.enum(SSH_CONNECT_PHASES),
+    state: z.enum(['start', 'done']),
+    ...hopWhere,
+    detail: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('log'), ...hopWhere, line: z.string() }),
+]);
+export const sshConnectProgressEventSchema = z.object({
+  attemptId: z.string(),
+  event: sshConnectProgressWireSchema,
+});
+
 export type SshConnectRequest = z.infer<typeof sshConnectRequestSchema>;
+export type SshConnectPhase = (typeof SSH_CONNECT_PHASES)[number];
+export type SshConnectProgressWire = z.infer<typeof sshConnectProgressWireSchema>;
+export type SshConnectProgressEvent = z.infer<typeof sshConnectProgressEventSchema>;
 export type SshConnectResponse = z.infer<typeof sshConnectResponseSchema>;
 export type SshWriteRequest = z.infer<typeof sshWriteRequestSchema>;
 export type SshWriteManyRequest = z.infer<typeof sshWriteManyRequestSchema>;
