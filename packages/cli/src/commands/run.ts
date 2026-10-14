@@ -54,7 +54,7 @@ import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
 import { verboseIssuedTokens } from '../verbose-sts.js';
 import { proxyFromEnv } from '../proxy-env.js';
-import { explainMissingSecret, maskerDetects } from '../secret-advice.js';
+import { explainFailure, maskerDetects } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
 import { renderHtml } from '../reporters/html.js';
@@ -270,7 +270,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     maskNow()(text),
   );
   known = () => [...secrets.values(), ...tokens];
-  const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainMissingSecret(raw, needs));
+  const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainFailure(raw, needs));
   const proxyFor = proxyFromEnv(io.env);
   // Callback assertions read captures with a CI token (callback-assertion §4); masked like every secret.
   const captures = captureSourceFromEnv(io.env, { proxyFor });
@@ -302,6 +302,8 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       onSecretValue: (value) => tokens.add(value),
       // One jar for the whole run: every request, sequence step and iteration shares it.
       cookies: jarCookieHost(new CookieJar()),
+      // `--allow-commands`: every MCP stdio server of the run, sequence steps included, may start.
+      allowCommands: args.allowCommands,
       // `--verbose` reports each token request on stderr: host and status, never the token.
       ...(args.verbose
         ? {

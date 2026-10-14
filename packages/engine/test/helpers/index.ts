@@ -53,7 +53,20 @@ export {
   type NtlmServerOptions,
 } from './ntlm-server.js';
 export { SOURCE_SNIPPET_CASES, type SourceSnippetCase } from './source-snippet-cases.js';
-export { projectWithWss, readCraftedFixture, readFixtureWsdl, readPublicFixture } from './fixtures.js';
+export {
+  MCP_STDIO_FIXTURE,
+  projectWithWss,
+  readCraftedFixture,
+  readFixtureWsdl,
+  readPublicFixture,
+} from './fixtures.js';
+export {
+  fixtureMcpServer,
+  startTestMcpHttpServer,
+  type RecordedMcpHttpRequest,
+  type TestMcpHttpServer,
+  type TestMcpHttpServerOptions,
+} from './mcp-http-server.js';
 export { startTestSts, type StsAnswer, type TestSts } from './test-sts-server.js';
 export {
   startTestWsServer,

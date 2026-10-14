@@ -186,11 +186,11 @@ the scripting suites.
 `commands/ops-output.ts`, `args*.ts` (`--allow-commands` on `send`, `run`, `sequence` and `mcp`),
 `send-host.ts`, `mcp/server.ts`, tests, `docs` CLI reference (in Task 19).
 
-- [ ] MCP items are sendable, and the output is the result JSON. History records them. A body override
+- [x] MCP items are sendable, and the output is the result JSON. History records them. A body override
   is refused.
-- [ ] `--allow-commands` sets the host's `approveCommand` to approve everything. Without it, an
+- [x] `--allow-commands` sets the host's `approveCommand` to approve everything. Without it, an
   `mcp-command-unapproved` failure names the command and says to pass the flag.
-- [ ] Tests: `send` with and without the flag, `run` against the HTTP helper, the MCP server's `send`
+- [x] Tests: `send` with and without the flag, `run` against the HTTP helper, the MCP server's `send`
   tool.
 
 ### Task 12: Desktop shared half

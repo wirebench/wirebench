@@ -5,6 +5,9 @@
  *
  * A WebSocket request is a run's too: the socket opens, the saved messages go out, a reply after the
  * last one (or the run timeout) ends it, and the frames come back as the session recorded them.
+ *
+ * An MCP request runs its one session (#79); its result, or the server's JSON-RPC error, comes back
+ * as JSON in `body`. A stdio server starts only under `--allow-commands`.
  */
 import {
   appendHistory,
@@ -13,9 +16,11 @@ import {
   createScriptSandbox,
   createSecretBytesMasker,
   createSecretMasker,
+  commandDisplay,
   historyWsOf,
   isWirebenchError,
   redactHeaders,
+  redactMcpExchange,
   redactUrl,
   RequestScripting,
   runRequests,
@@ -39,7 +44,7 @@ import { z } from 'zod';
 import { cliSecrets } from '../source-secrets.js';
 import { cliSendHost } from '../send-host.js';
 import { proxyFromEnv } from '../proxy-env.js';
-import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
+import { explainFailure, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { defineOp } from './context.js';
 import type { OpsContext } from './context.js';
@@ -57,19 +62,25 @@ import { createSendMasker, redactAssertions, redactBaseline, redactBody, redactU
 
 export interface SendResult {
   readonly item: string;
-  readonly kind: 'soap' | 'rest' | 'websocket';
+  readonly kind: 'soap' | 'rest' | 'websocket' | 'mcp';
   /** `failed`: an assertion failed. `errored`: an assertion or a script errored. */
   readonly outcome: 'passed' | 'failed' | 'errored';
   /** The request has no assertions of its own. */
   readonly unasserted: boolean;
+  /** An MCP request's: its JSON-RPC method. */
   readonly method: string;
+  /** An MCP request's: its server's URL, or its stdio command line, masked. */
   readonly url: string;
+  /** An MCP request over Streamable HTTP: the status of the `POST` that carried it; else 0. */
   readonly status: number;
   readonly statusText: string;
   readonly durationMs: number;
   /** Response headers, lower-cased, sensitive ones redacted. */
   readonly headers: Readonly<Record<string, string>>;
-  /** A WebSocket request's: every text the server sent, in order, as a JSON array (what assertions read). */
+  /**
+   * A WebSocket request's: every text the server sent, in order, as a JSON array (what assertions
+   * read). An MCP request's: its result, or `{ "error": … }` for a JSON-RPC error, as JSON.
+   */
   readonly body: string;
   readonly bodyTruncated: boolean;
   /**
@@ -91,7 +102,7 @@ const input = z.object({
     .string()
     .min(1)
     .describe(
-      'A saved SOAP, REST or WebSocket request: its path as operations lists it, or its name when only one has it',
+      'A saved SOAP, REST, WebSocket or MCP request: its path as operations lists it, or its name when only one has it',
     ),
   environment: z
     .string()
@@ -107,7 +118,7 @@ const input = z.object({
     .optional()
     .describe(
       'Send this envelope (SOAP) or raw body (REST) instead of the saved one; nothing is saved. ' +
-        'Not for a WebSocket request, which sends its saved messages. ' +
+        'Not for a WebSocket request, which sends its saved messages, nor an MCP request. ' +
         "It is sent as written: ${…} placeholders are refused. The saved request's own body still expands as usual.",
     ),
   baseline: z
@@ -124,10 +135,10 @@ function withBody(item: SendableItem, body: string): SendableItem {
   if (item.kind === 'soap') {
     return { ...item, request: { ...item.request, envelopeXml: body } };
   }
-  if (item.kind === 'websocket') {
+  if (item.kind === 'websocket' || item.kind === 'mcp') {
     throw new OpsError(
       'invalid-input',
-      `"${item.path}" is a WebSocket request; the body override replaces a SOAP envelope or a REST body only`,
+      `"${item.path}" is ${item.kind === 'mcp' ? 'an MCP' : 'a WebSocket'} request; the body override replaces a SOAP envelope or a REST body only`,
       { item: item.path },
     );
   }
@@ -166,9 +177,9 @@ function checkOverride(body: string): void {
   }
 }
 
-/** The engine's refusal, with `wirebench run`'s advice for a secret the environment does not set. */
+/** The engine's refusal, with `wirebench run`'s advice: a secret the environment does not set, or `--allow-commands`. */
 export function sendFailure(result: RequestResult, needs: readonly LocatedSecretNeed[]): OpsError {
-  const explained = explainMissingSecret(result, needs).error ?? {
+  const explained = explainFailure(result, needs).error ?? {
     code: 'send-failed',
     message: `"${result.path}" got no response`,
   };
@@ -243,6 +254,7 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
       env: context.env,
       onSecretValue: (secret) => tokens.add(secret),
       ...(context.cookies !== undefined ? { cookies: context.cookies } : {}),
+      allowCommands: context.gates.commands === true,
     }),
     containsKnownSecret: (text) => knownSecretIn(text, known()),
     ...(input.scripting !== undefined ? { scripting: input.scripting } : {}),
@@ -368,8 +380,33 @@ function wsResultOf(
   };
 }
 
+/** An MCP session's result: the operation's answer as JSON, read from the exchange as History stores it. */
+function mcpResultOf(
+  item: Extract<SendableItem, { kind: 'mcp' }>,
+  result: RequestResult,
+  exchange: Extract<SentExchange, { kind: 'mcp' }>,
+  mask: (text: string) => string,
+  historyId?: string,
+): SendResult {
+  const mcp = redactMcpExchange(exchange.mcp, { text: mask });
+  const answered = 'result' in mcp || mcp.error !== undefined;
+  // What the assertions read: the result, or the JSON-RPC error under `error`.
+  const body = answered ? JSON.stringify(mcp.error !== undefined ? { error: mcp.error } : (mcp.result ?? null)) : '';
+  const post = mcp.httpCalls?.findLast((call) => call.method === 'POST' && call.message?.method === mcp.method);
+  return {
+    ...commonOf(item, result, historyId),
+    method: mcp.method,
+    url: mcp.transport.type === 'stdio' ? commandDisplay(mcp.transport.command, mcp.transport.args) : mcp.transport.url,
+    status: post?.status ?? 0,
+    statusText: '',
+    headers: post?.responseHeaders ?? {},
+    body: cutText(body, MAX_STORED_CHARS),
+    bodyTruncated: body.length > MAX_STORED_CHARS,
+  };
+}
+
 function resultOf(
-  item: Exclude<SendableItem, { kind: 'websocket' }>,
+  item: Exclude<SendableItem, { kind: 'websocket' | 'mcp' }>,
   result: RequestResult,
   exchange: Extract<SentExchange, { kind: 'soap' | 'rest' }>,
   mask: (text: string) => string,
@@ -398,13 +435,15 @@ export const sendOp = defineOp({
   name: 'send',
   title: 'Send a saved request',
   description:
-    'Sends one saved SOAP, REST or WebSocket request as wirebench run does (environment, secrets from ' +
+    'Sends one saved SOAP, REST, WebSocket or MCP request as wirebench run does (environment, secrets from ' +
     'WIREBENCH_SECRET_* variables, scripts, assertions), returns the response and the assertion results, and ' +
     "records the send in the desktop's History. A WebSocket request sends its saved messages, waits for a " +
     'reply after the last one, closes, and returns the frames; a session with no reply before the timeout ' +
     'fails with timeout, with no frames and no History. Needs --allow-send; --env limits the environments ' +
     'it may use. With baseline: true it also compares the response with the golden saved beside the request: ' +
-    'a difference fails the send, and a request with no golden reports baseline status missing.',
+    'a difference fails the send, and a request with no golden reports baseline status missing. An MCP ' +
+    'request returns its result (or JSON-RPC error) as JSON in body; one whose server is a local command is ' +
+    'refused unless the server was started with --allow-commands.',
   input,
   async run(value, context): Promise<SendResult> {
     if (!context.gates.send) {
@@ -455,8 +494,15 @@ export const sendOp = defineOp({
       if (exchange.kind === 'websocket' && item.kind === 'websocket') {
         return wsResultOf(item, result, exchange, { text: mask, base64: maskBase64 }, historyId);
       }
-      // An MCP request is not sendable here yet (#79), so no MCP exchange comes back.
-      if (exchange.kind === 'websocket' || exchange.kind === 'mcp' || item.kind === 'websocket') {
+      if (exchange.kind === 'mcp' && item.kind === 'mcp') {
+        return mcpResultOf(item, result, exchange, mask, historyId);
+      }
+      if (
+        exchange.kind === 'websocket' ||
+        exchange.kind === 'mcp' ||
+        item.kind === 'websocket' ||
+        item.kind === 'mcp'
+      ) {
         throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
       }
       return resultOf(item, result, exchange, mask, historyId);

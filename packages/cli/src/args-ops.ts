@@ -21,6 +21,8 @@ export interface OpArgs {
   readonly source?: string;
   /** `send --body-file`, read when run. */
   readonly bodyFile?: string;
+  /** `send --allow-commands`: an MCP stdio server may start its command (#79). */
+  readonly allowCommands?: true;
   readonly secretSources: CliSecretSourcesOptions;
 }
 
@@ -56,7 +58,7 @@ const USAGE: Readonly<Record<OpName, string>> = {
   import: 'wirebench import <source> [--name <name>]',
   operations: 'wirebench operations [<interface-or-api>]',
   generate: 'wirebench generate <operation> [--optional all|required]',
-  send: 'wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]',
+  send: 'wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--allow-commands] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]',
   validate: 'wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]',
   query: 'wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]',
   history_list: 'wirebench history list [--item <text>] [--limit <n>]',
@@ -154,6 +156,8 @@ export interface McpArgs {
   readonly historyDir?: string;
   readonly allowWrite: boolean;
   readonly allowSend: boolean;
+  /** `--allow-commands`: every tool call may start an MCP stdio server's command (#79). */
+  readonly allowCommands: boolean;
   /** `--env a,b`: the environments `send` may use. Absent: any. */
   readonly environments?: readonly string[];
   /** `--http <port>`: Streamable HTTP on 127.0.0.1 instead of stdio. */
@@ -167,6 +171,7 @@ const MCP_FLAGS = [
   'project',
   'allow-write',
   'allow-send',
+  'allow-commands',
   'env',
   'history-dir',
   'http',
@@ -178,7 +183,7 @@ const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
   import: [...COMMON, 'name'],
   operations: COMMON,
   generate: [...COMMON, 'optional'],
-  send: [...COMMON, 'env', 'body', 'body-file', 'baseline', 'history-dir', ...SECRET_SOURCE_FLAGS],
+  send: [...COMMON, 'env', 'body', 'body-file', 'baseline', 'allow-commands', 'history-dir', ...SECRET_SOURCE_FLAGS],
   validate: [...COMMON, 'operation', 'direction', 'status', 'history-dir'],
   query: [...COMMON, 'namespace', 'direction', 'history-dir'],
   history_list: [...COMMON, 'item', 'limit', 'history-dir'],
@@ -189,14 +194,14 @@ export const OPS_HELP_TEXT = `wirebench import <source> [--name <name>] [--proje
                        Adds a WSDL or OpenAPI document (a file or an http(s) URL), or a folder
                        collection (v3), to the project.
 wirebench operations [<interface-or-api>] [--project <dir>]
-                       Lists SOAP operations, REST endpoints and saved WebSocket requests, with the
-                       references generate and validate take and the saved requests send takes.
+                       Lists SOAP operations, REST endpoints and saved WebSocket and MCP requests, with
+                       the references generate and validate take and the saved requests send takes.
 wirebench generate <operation> [--optional all|required] [--project <dir>]
                        Prints a sample request: a SOAP envelope, or a REST method, path and JSON body.
-wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--project <dir>]
-                       Sends a saved SOAP, REST or WebSocket request as run does, prints the response
-                       (a WebSocket session's frames) and the assertion results, and records it in the
-                       desktop's History.
+wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--allow-commands] [--project <dir>]
+                       Sends a saved SOAP, REST, WebSocket or MCP request as run does, prints the
+                       response (a WebSocket session's frames, an MCP result as JSON) and the
+                       assertion results, and records it in the desktop's History.
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
                        Validates a message against the WSDL schema or the OpenAPI response schema. The
                        source is a file when one exists at that path, else a History id.
@@ -217,7 +222,7 @@ ${EXPORT_USAGE}
 wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources] [--project <dir>]
                        Calls one contract operation with JSON arguments, as its MCP tool does, records it
                        in History, and prints the response.
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [--allow-commands] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]
                        Serves these capabilities as MCP tools over stdio, or on 127.0.0.1 with --http
                        (see wirebench mcp --help).`;
 
@@ -259,6 +264,8 @@ Lists the project's SOAP operations (interface, binding, operation, SOAP action)
 --body, --body-file    Send this envelope or body instead of the saved one. Nothing is saved.
 --baseline             Also compare the response with the golden saved beside the request
                        (<slug>.golden.yaml); a difference fails the send.
+--allow-commands       Let an MCP request's server run its local (stdio) command; without it the
+                       send is refused. HTTP servers need no approval.
 Secrets come from WIREBENCH_SECRET_<NAME> variables, as for run. Exit 1 when an assertion or the baseline failed.`,
   validate: `${USAGE.validate} [--project <dir>] [--history-dir <dir>] [--json]
 
@@ -282,7 +289,7 @@ Builds the request from the arguments, sends it under the interface's or API's e
 secrets, records it in History, and prints the response (--json: the result as JSON).
 --no-secret-sources, --trust-secret-sources, --trust-secret-sources-hash <hash> are as for send. Exit 0 on any
 response, a fault included; 2 for a refused call or bad arguments; 3 when nothing answered.`,
-  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]
+  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [--allow-commands] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]
 
 Serves the project's tools to an MCP client, over stdio unless --http is given: import, operations, generate, send,
 validate, query, history_list, history_diff, and one tool per operation of the imported contracts. stdout carries
@@ -291,6 +298,7 @@ only protocol frames.
 --history-dir <dir>    Where send records History. Default: the desktop's History folder for this OS.
 --allow-write          Let import add definitions to the project. Off by default.
 --allow-send           Let send and the contract tools make requests. Off by default.
+--allow-commands       Let send start an MCP server's local (stdio) command, for every call. Off by default.
 -e, --env <a,b>        The environments send and the contract tools may use. Default: any.
 --http <port>          Serve Streamable HTTP on http://127.0.0.1:<port>/mcp instead of stdio. Every
                        request needs "Authorization: Bearer <token>": WIREBENCH_MCP_TOKEN, or one
@@ -431,6 +439,7 @@ export function parseOpVerb(word: string, rest: readonly string[], values: Optio
     project: str(values, 'project') ?? '.',
     ...(historyDir !== undefined ? { historyDir } : {}),
     json: values['json'] === true,
+    ...(values['allow-commands'] === true ? { allowCommands: true as const } : {}),
     secretSources: secretSourcesOptionsFrom(values),
   };
   const direction = opt('direction', str(values, 'direction'));
@@ -535,6 +544,7 @@ export function parseMcp(rest: readonly string[], values: OptionValues): McpArgs
     ...(historyDir !== undefined ? { historyDir } : {}),
     allowWrite: values['allow-write'] === true,
     allowSend: values['allow-send'] === true,
+    allowCommands: values['allow-commands'] === true,
     ...(environments !== undefined ? { environments } : {}),
     ...(httpPort !== undefined ? { httpPort } : {}),
     ...(tools !== undefined ? { tools } : {}),

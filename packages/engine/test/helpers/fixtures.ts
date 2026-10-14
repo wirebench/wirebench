@@ -14,6 +14,12 @@ import type { WssEntry } from '../../src/wss/model.js';
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 
 /**
+ * The MCP stdio fixture (#79): `node <MCP_STDIO_FIXTURE> <mode>`, `sdk` by default, with the tools
+ * `echo`, `fail` and `env`. Its modes are listed at the top of the file.
+ */
+export const MCP_STDIO_FIXTURE = fileURLToPath(new URL('../fixtures/mcp/stdio-server.mjs', import.meta.url));
+
+/**
  * A `file:` URL for `path`, which a test may write POSIX-style (`/tmp/x.wsdl`). The path is
  * resolved first, so on Windows it gains the current drive letter — `file:///tmp/x.wsdl` has
  * no drive and `fileURLToPath` rejects it there, which is not the thing under test.

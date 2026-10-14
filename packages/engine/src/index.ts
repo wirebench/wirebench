@@ -102,7 +102,7 @@ export { restApisOf, withRestApis } from './rest/model.js';
 export { grpcApisOf, withGrpcApis } from './grpc/model.js';
 export { wsApisOf, withWsApis } from './ws/model.js';
 export { mcpServersOf, withMcpServers } from './mcp/model.js';
-export { commandFingerprint } from './mcp/approval.js';
+export { commandDisplay, commandFingerprint } from './mcp/approval.js';
 export type { CommandFingerprintInput } from './mcp/approval.js';
 export { mcpEffectiveAuth, mcpItemFor } from './mcp/run.js';
 // Refresh catalogue: one session that lists what the server has, through the same gate as a send.

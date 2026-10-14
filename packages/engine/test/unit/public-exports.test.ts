@@ -62,6 +62,7 @@ const ADDED = [
   'refreshMcpCatalogue',
   'MCP_CATALOGUE_MAX_PAGES',
   'commandFingerprint',
+  'commandDisplay',
   'mcpItemFor',
   'mcpEffectiveAuth',
 ] as const;

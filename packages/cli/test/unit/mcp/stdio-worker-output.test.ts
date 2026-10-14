@@ -36,6 +36,7 @@ describe('wirebench mcp on stdio: engine worker output', () => {
         command: 'mcp',
         allowWrite: false,
         allowSend: false,
+        allowCommands: false,
         secretSources: DEFAULT_CLI_SECRET_SOURCES,
         project: fixture.dir,
         historyDir: fixture.historyDir,

@@ -1,6 +1,6 @@
 /**
  * What `wirebench run` and the ops say about secrets: the variable to set for one a run was not
- * given, and whether a text holds one a run resolved.
+ * given, and whether a text holds one a run resolved. Also the flag an MCP stdio command needs.
  */
 import { envVariablesFor } from '@wirebench/engine';
 import type { RequestResult, SecretNeed } from '@wirebench/engine';
@@ -30,6 +30,28 @@ export function explainMissingSecret(result: RequestResult, needs: readonly Secr
     ...result,
     error: { ...result.error, message: `Set ${first ?? ''}${alternatives} to run "${result.path}".` },
   };
+}
+
+/**
+ * An MCP stdio command line the run was not allowed to start (#79): the engine's message names the
+ * command; the advice is the flag that allows it. Every other result is returned as it is.
+ */
+export function explainUnapprovedCommand(result: RequestResult): RequestResult {
+  if (result.error?.code !== 'mcp-command-unapproved') {
+    return result;
+  }
+  return {
+    ...result,
+    error: {
+      ...result.error,
+      message: `${result.error.message}. Pass --allow-commands to let MCP servers run their local commands.`,
+    },
+  };
+}
+
+/** The advice for a result's error: a missing secret's variable, or the flag an unapproved command needs. */
+export function explainFailure(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
+  return explainUnapprovedCommand(explainMissingSecret(result, needs));
 }
 
 /**

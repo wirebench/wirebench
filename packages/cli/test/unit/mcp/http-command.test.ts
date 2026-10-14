@@ -15,6 +15,7 @@ const ARGS = {
   command: 'mcp',
   allowWrite: false,
   allowSend: false,
+  allowCommands: false,
   secretSources: DEFAULT_CLI_SECRET_SOURCES,
 } as const;
 
