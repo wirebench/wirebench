@@ -1,6 +1,6 @@
 /**
- * What a Runner target covers (#336): a project, an API (any kind, a SOAP interface included), a folder
- * or a sequence, found by its id in the open model. Requests come from the engine's own selection, so
+ * What a Runner target covers (#336): a project, an API (any kind, a SOAP interface included), a folder,
+ * one request or a sequence, found by its id in the open model. Requests come from the engine's own selection, so
  * the Runner runs exactly what `wirebench run` would, in the explorer's order; a target's saved order
  * and exclusions are then laid over it.
  */
@@ -48,6 +48,9 @@ export function resolveTarget(
     const folder = foldersOf(inFolder[0]!).find((candidate) => candidate.id === targetId)!;
     return { kind: 'folder', id: targetId, name: folder.name, selected: inFolder };
   }
+  // One request: its iterations and data file, without the rest of its folder.
+  const one = selected.find((item) => item.request.id === targetId);
+  if (one !== undefined) return { kind: 'request', id: targetId, name: one.request.name, selected: [one] };
   return undefined;
 }
 

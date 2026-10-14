@@ -253,7 +253,7 @@ export const COMMAND_WHEN_SCOPES = {
     'a WebSocket API, a folder in one or a WebSocket request is selected, or a WebSocket tab is active',
   'selection.mcpApi': 'an MCP server, a folder in one or an MCP request is selected, or an MCP tab is active',
   'selection.mcpServer': 'an MCP server is selected',
-  'selection.runnable': 'a project, an API, an interface, a folder or a sequence is selected',
+  'selection.runnable': 'a project, an API, an interface, a folder, a REST request or a sequence is selected',
   'wsi.report': 'a WS-I report has been run',
   'history.entries': 'the history has entries',
   'history.pair': 'the history has two or more entries',

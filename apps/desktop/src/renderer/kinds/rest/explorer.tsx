@@ -1,5 +1,12 @@
 import { lintRestDefinition } from '../../features/rest-api/lint-actions.js';
 import { Globe } from 'lucide-react';
+import { showToast } from '../../components/toast.js';
+import { MoveRequestDialog, useMoveRequestStore } from '../../features/explorer/move-request-dialog.js';
+import { copyAsCurl } from '../../features/request-editor/request-actions.js';
+import { openRestRequestTab } from '../../features/rest-editor/rest-actions.js';
+import { restSendBlocked } from '../../features/rest-editor/send-blocked.js';
+import { useExchangesStore } from '../../state/exchanges.js';
+import { useUiStore } from '../../state/ui.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { exportItems, groups, reportRenameFailure } from '../../features/explorer/menu-items.js';
 import type { ExplorerNode } from '../../features/explorer/tree-nodes.js';
@@ -17,6 +24,32 @@ function RestGutter({ node }: { readonly node: ExplorerNode }) {
   ) : (
     <MethodBadge method={node.method} title={`${node.method} ${node.label}`} compact className="w-auto" />
   );
+}
+
+/** **Send** from the row: opens the request's tab, where the response lands, and sends it as its Send button would. */
+function sendFromRow(requestId: string): void {
+  openRestRequestTab(requestId);
+  const blocked = restSendBlocked(requestId);
+  if (blocked !== undefined) {
+    showToast(blocked);
+    return;
+  }
+  void useExchangesStore.getState().sendRest(requestId);
+}
+
+/** **Copy URL**: the request's URL joined to its API's base URL, `${…}` references left as written. */
+async function copyUrl(requestId: string): Promise<void> {
+  const { restRequests, apis } = useProjectStore.getState();
+  const request = restRequests[requestId];
+  if (request === undefined) return;
+  // Loaded on use: the engine's URL helpers stay out of the bundle the explorer is drawn with.
+  const { joinBase } = await import('@wirebench/engine/rest');
+  try {
+    await navigator.clipboard.writeText(joinBase(apis[request.apiId]?.baseUrl ?? '', request.url));
+    showToast('URL copied');
+  } catch {
+    showToast('Could not copy to the clipboard');
+  }
 }
 
 /** REST in the explorer: APIs and their requests. Folders are core; their menu asks {@link newRequestIn}. */
@@ -80,6 +113,8 @@ export const restExplorer: KindExplorer = {
       Gutter: RestGutter,
       click: 'open',
       movable: true,
+      // One request runs in the Runner too: its iterations and data file without the rest of its folder.
+      runTarget: (node) => node.requestId,
       open: (node) => explorerActions.openRestRequest(node.requestId),
       rename: (node, name) => {
         if (node.requestId !== undefined) {
@@ -91,9 +126,20 @@ export const restExplorer: KindExplorer = {
         if (node.requestId === undefined) return [];
         const requestId = node.requestId;
         // No *Open*, for the same reason a SOAP request row has none: a single click already opens it.
+        // Run… follows the first group (see `runTarget`).
         return groups(
           [
+            { key: 'send', label: 'Send', run: () => sendFromRow(requestId) },
+            {
+              key: 'copy-curl',
+              label: 'Copy as cURL',
+              run: () => void copyAsCurl(requestId, useUiStore.getState().slideOver.codeShell),
+            },
+            { key: 'copy-url', label: 'Copy URL', run: () => void copyUrl(requestId) },
+          ],
+          [
             { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
+            { key: 'move', label: 'Move to…', run: () => useMoveRequestStore.getState().open(requestId) },
             { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('rest-request', requestId) },
           ],
           [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
@@ -104,6 +150,7 @@ export const restExplorer: KindExplorer = {
   newRequestIn: (apiId, folderId) => explorerActions.newRestRequest(apiId, folderId),
   importCurlIn: (apiId, folderId) => explorerActions.importCurlInto(apiId, folderId),
   ownsApi: (apiId, project) => project.apis[apiId] !== undefined,
+  Dialogs: MoveRequestDialog,
   deletions: {
     api: { title: 'Delete API?', remove: (id) => useProjectStore.getState().removeApi(id) },
     'rest-request': { title: 'Delete request?', remove: (id) => useProjectStore.getState().removeRestRequest(id) },
