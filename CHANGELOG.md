@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
+  `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
+  The tree follows the active tab, unfolding to its request and selecting it, and a new request
+  starts in rename mode in the tree. In the palette a search naming a group (**REST**, **History**)
+  lists that group first, a protocol's commands also act on its open tab, and a command that
+  can't run stays listed, greyed, with the reason. **History: Re-send Last Request** re-sends the
+  newest entry of any protocol. A REST request's menu gains **Send**, **Copy as cURL**,
+  **Copy URL**, **Run…** (the Runner on that one request) and **Move to…** (#543).
 - **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
   Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
   Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select
