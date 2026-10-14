@@ -35,11 +35,13 @@ export function PaneView({
   const container = useRef<HTMLDivElement>(null);
   const { panes, splits } = layoutOf(node);
   return (
-    <div ref={container} className="relative h-full w-full overflow-hidden">
+    // `overflow-clip`, not `hidden`: a hidden box can still be scrolled (a focused field in a pane brought
+    // into view), which slid the whole layout sideways.
+    <div ref={container} className="relative h-full w-full min-w-0 overflow-clip">
       {leaves(node).map((leaf) => {
         const rect = panes.get(leaf.paneId);
         return rect === undefined ? null : (
-          <div key={leaf.paneId} className="absolute min-h-0 min-w-0" style={placed(rect)}>
+          <div key={leaf.paneId} className="absolute min-h-0 min-w-0 overflow-clip" style={placed(rect)}>
             {renderPane(leaf)}
           </div>
         );

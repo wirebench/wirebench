@@ -12,8 +12,12 @@ import type { PaneNode } from './pane-tree.js';
 export type SplitDir = 'row' | 'column';
 export type FocusDirection = 'left' | 'right' | 'up' | 'down';
 
-/** The fewest columns either half of a split right keeps. */
-export const MIN_SPLIT_COLS = 20;
+/**
+ * The fewest columns either half of a split right keeps. Narrower than this a terminal's prompt wraps
+ * and its find bar no longer fits, so a pane under twice this is refused a further split with a toast
+ * (not stacked: the split's direction is the user's layout, and a saved layout keeps it).
+ */
+export const MIN_SPLIT_COLS = 40;
 /** The fewest rows either half of a split down keeps. */
 export const MIN_SPLIT_ROWS = 5;
 
@@ -44,7 +48,7 @@ export function forgetPaneSize(paneId: string): void {
   sizes.delete(paneId);
 }
 
-/** Whether a pane of this size splits in `dir` with both halves at least 20 columns or 5 rows. */
+/** Whether a pane of this size splits in `dir` with both halves at least 40 columns or 5 rows. */
 export function splitFits(size: { cols: number; rows: number }, dir: SplitDir): boolean {
   return dir === 'row' ? Math.floor(size.cols / 2) >= MIN_SPLIT_COLS : Math.floor(size.rows / 2) >= MIN_SPLIT_ROWS;
 }
