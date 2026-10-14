@@ -945,6 +945,75 @@ describe('split panes', () => {
     expect(lastTerminal()?.keyHandler?.(new KeyboardEvent('keydown', { key: 'd' }))).toBe(true);
   });
 
+  /** Preferences → Terminal with `terminal` patched in. */
+  const terminalPrefs = (terminal: Partial<typeof DEFAULT_PREFERENCES_WIRE.terminal>): void => {
+    usePreferencesStore.setState({
+      preferences: { ...DEFAULT_PREFERENCES_WIRE, terminal: { ...DEFAULT_PREFERENCES_WIRE.terminal, ...terminal } },
+    });
+  };
+  const withTerminal = (host: ResolvedHostWire, scheme?: string, fontSize?: number): ResolvedHostWire => ({
+    ...host,
+    terminal: {
+      scheme: scheme === undefined ? { value: undefined, from: 'default' } : { value: scheme, from: { group: 'prod' } },
+      fontSize: fontSize === undefined ? { value: undefined, from: 'default' } : { value: fontSize, from: 'host' },
+    },
+  });
+  const optionsOf = (term: InstanceType<typeof xterm.FakeTerminal> | undefined) =>
+    term?.options as { fontFamily?: string; fontSize?: number; lineHeight?: number; theme?: { background?: string } };
+
+  it('draws with Preferences → Terminal, and the host’s scheme and size over them', async () => {
+    terminalPrefs({ fontFamily: 'Fira Code', fontSize: 15, lineHeight: 1.2, colorScheme: 'nord' });
+    useHostsStore.setState({ resolved: [withTerminal(resolvedHost('a', 'alpha'), 'red', 18)] });
+    await mount();
+    const options = optionsOf(lastTerminal());
+    expect(options.fontFamily).toMatch(/^"Fira Code", /);
+    expect(options.fontSize).toBe(18);
+    expect(options.lineHeight).toBe(1.2);
+    expect(options.theme?.background).toBe('#2b1215');
+  });
+
+  it('restyles an open terminal when the preferences or the host change', async () => {
+    await mount();
+    const term = lastTerminal();
+    expect(optionsOf(term).fontSize).toBe(13);
+    act(() => {
+      terminalPrefs({ fontSize: 16, colorScheme: 'dracula' });
+    });
+    expect(optionsOf(term).fontSize).toBe(16);
+    expect(optionsOf(term).theme?.background).toBe('#282a36');
+    act(() => {
+      useHostsStore.setState({
+        resolved: [withTerminal(resolvedHost('a', 'alpha'), 'green'), resolvedHost('b', 'beta')],
+      });
+    });
+    expect(optionsOf(term).theme?.background).toBe('#10241a');
+    expect(optionsOf(term).fontSize).toBe(16);
+    expect(lastTerminal()).toBe(term);
+  });
+
+  it('⌘+ / ⌘− / ⌘0 zoom the focused terminal only, and the shell never sees them', async () => {
+    await mount();
+    await splitOnSameHost();
+    const [left, right] = xterm.FakeTerminal.instances;
+    // jsdom's user agent is not a Mac's, so ⌘ here is Ctrl.
+    const press = (key: string): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key, ctrlKey: true, cancelable: true });
+      act(() => {
+        expect(right?.keyHandler?.(event)).toBe(false);
+      });
+      return event;
+    };
+    expect(press('=').defaultPrevented).toBe(true);
+    expect(optionsOf(right).fontSize).toBe(14);
+    expect(optionsOf(left).fontSize).toBe(13);
+    press('-');
+    press('-');
+    expect(optionsOf(right).fontSize).toBe(12);
+    press('0');
+    expect(optionsOf(right).fontSize).toBe(13);
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('focus moves between panes, and Files acts on the focused one', async () => {
     await mount();
     await splitOnSameHost();

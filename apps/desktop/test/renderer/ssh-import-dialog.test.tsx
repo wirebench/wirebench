@@ -60,11 +60,46 @@ async function openReport() {
 }
 
 describe('ImportDialog', () => {
+  it('imports a session list from a picked file only, with the format sent to main', async () => {
+    render(<ImportDialog />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Source' }), 'csv');
+    expect(screen.queryByRole('button', { name: 'Read ~/.ssh/config' })).toBeNull();
+    expect(screen.getByText(/name, address, port, user, group, tags, key, jump/)).toBeDefined();
+    importPreview.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        ...PREVIEW,
+        source: '~/hosts.csv',
+        group: { id: 'csv', name: 'CSV', ssh: { auth: { kind: 'agent' } } },
+        hosts: [
+          {
+            alias: 'db',
+            id: 'db',
+            status: 'new',
+            address: 'db.example.com',
+            ssh: {},
+            folder: 'Prod / Data',
+            tags: ['prod', 'db'],
+            forwards: 2,
+          },
+        ],
+        keys: [],
+      },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Choose a file…' }));
+    expect(importPreview).toHaveBeenCalledWith({ source: 'pick', format: 'csv' });
+    const table = await screen.findByRole('table', { name: 'Hosts to import' });
+    expect(table.textContent).toContain('Folder');
+    expect(table.textContent).toContain('Prod / Data');
+    expect(table.textContent).toContain('prod, db');
+    expect(screen.getByRole('textbox', { name: 'Group name' })).toHaveProperty('value', 'CSV');
+  });
+
   it('offers the default config or a picked file, and asks main by source only', async () => {
     render(<ImportDialog />);
     importPreview.mockResolvedValueOnce({ ok: true, value: { cancelled: true } });
     await userEvent.click(screen.getByRole('button', { name: 'Choose a file…' }));
-    expect(importPreview).toHaveBeenCalledWith({ source: 'pick' });
+    expect(importPreview).toHaveBeenCalledWith({ source: 'pick', format: 'ssh-config' });
     expect(screen.getByRole('button', { name: 'Read ~/.ssh/config' })).toBeDefined();
   });
 

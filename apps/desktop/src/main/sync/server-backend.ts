@@ -604,6 +604,9 @@ export class ServerBackend implements SyncBackend {
         case 'hooks':
           // Webhook nudges (webhook-capture §3.6) are the hooks service's; nothing in the tree changed.
           return;
+        case 'schedule-run':
+          // A scheduled run ended (scheduled-runs §3.5); the app shows schedules in a later release.
+          return;
         default: {
           const unreachable: never = message;
           return unreachable;

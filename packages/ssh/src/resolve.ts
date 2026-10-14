@@ -55,6 +55,11 @@ export interface ResolvedHost {
   readonly forwards: readonly ResolvedForward[];
   /** Merged by name root to leaf: a nearer level wins per variable; a re-set name keeps its first position. */
   readonly env: readonly ResolvedEnvVar[];
+  /** Nearest level wins per field; `default` (value unset) means the app's Terminal preferences apply. */
+  readonly terminal: {
+    readonly scheme: Provenance<string | undefined>;
+    readonly fontSize: Provenance<number | undefined>;
+  };
 }
 
 const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false } as const;
@@ -98,6 +103,20 @@ function pickProtected(located: Located): Provenance<boolean> {
     if (group.protected !== undefined) return { value: group.protected, from: { group: group.id } };
   }
   return { value: false, from: 'default' };
+}
+
+function pickTerminal<K extends 'scheme' | 'fontSize'>(
+  located: Located,
+  key: K,
+): Provenance<NonNullable<GroupEntry['terminal']>[K]> {
+  const own = located.host.terminal?.[key];
+  if (own !== undefined) return { value: own, from: 'host' };
+  for (let i = located.chain.length - 1; i >= 0; i -= 1) {
+    const group = located.chain[i] as GroupEntry;
+    const value = group.terminal?.[key];
+    if (value !== undefined) return { value, from: { group: group.id } };
+  }
+  return { value: undefined, from: 'default' };
 }
 
 /** Walks root to leaf; a re-set id keeps its first position, so new ids append. */
@@ -184,6 +203,7 @@ function resolveLocated(located: Located): ResolvedHost {
     ...(incomplete ? { incomplete } : {}),
     forwards: resolveForwards(located),
     env: resolveEnv(located),
+    terminal: { scheme: pickTerminal(located, 'scheme'), fontSize: pickTerminal(located, 'fontSize') },
   };
 }
 

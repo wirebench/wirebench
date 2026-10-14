@@ -81,4 +81,25 @@ describeDb('scheduled-runs fire sites (scheduled-runs spec §3.9)', () => {
     expect((await call(c.h, c.admin, 'POST', base, body)).status).toBe(500);
     expect((await c.h.db.query('select 1 from schedules')).rowCount).toBe(0);
   });
+
+  it('run now and a cancel are recorded with the run they name', async () => {
+    c = await schedulesHarness();
+    const events = recordingAudit(c.h.hooks);
+    const base = `/workspaces/${c.workspaceId}/schedules`;
+    const created = (await call<Schedule>(c.h, c.admin, 'POST', base, body)).body;
+    const run = (await call<{ id: string }>(c.h, c.admin, 'POST', `${base}/${created.id}/runs`)).body;
+    expect(last(events, 'schedule.run_requested')).toMatchObject({
+      actor: { kind: 'user', userId: c.admin.user.id },
+      target: { kind: 'schedule', id: created.id },
+      workspaceId: c.workspaceId,
+      details: { name: 'Smoke', runId: run.id },
+    });
+    // Run now starts the run at once, so the cancel finds it running.
+    await c.scheduler().runOnce();
+    await call(c.h, c.admin, 'DELETE', `${base}/${created.id}/runs/${run.id}`);
+    expect(last(events, 'schedule.run_cancelled')).toMatchObject({
+      target: { kind: 'schedule', id: created.id },
+      details: { name: 'Smoke', runId: run.id, was: 'running' },
+    });
+  });
 });

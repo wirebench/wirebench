@@ -1,0 +1,198 @@
+---
+title: Scheduled runs
+description: How Wirebench Server runs a workspace's test suites on a schedule, keeps their results, and alerts by email, Slack, Teams or webhook when they fail and when they recover.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Wirebench Server can run a shared workspace's suites on a schedule, the way `wirebench run` runs them
+in a pipeline, and tell you when they start failing and when they pass again. A schedule names a
+project, the environment and the requests or suites to run, a cron expression and a time zone. Each
+run reads the workspace as last pushed, runs it on the server, and keeps the results.
+
+Scheduled runs need the Enterprise edition (see
+[Editions and licenses](/wirebench/docs/guides/server-licensing/)). The
+`wirebench-server admin schedules` console commands, below, work on any edition.
+
+## Setting up the server
+
+| Variable | What it does |
+| --- | --- |
+| `WIREBENCH_SERVER_SCHEDULES_SECRET_KEY` | Encrypts schedule secrets and alert URLs at rest. 32 random bytes, base64: `openssl rand -base64 32`. Without it, secrets and Slack, Teams or webhook alerts are refused. |
+| `WIREBENCH_SERVER_SMTP_URL`, `WIREBENCH_SERVER_SMTP_FROM` | Where email alerts go and who they come from. `smtp://user:pass@mail.example.com:587` upgrades with STARTTLS when the mail server offers it; `smtps://…:465` is TLS from the start. Without them, email alerts are refused. |
+| `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | The only hosts Slack, Teams and webhook alerts may go to, comma-separated, with `*.example.com` for a domain and everything under it. Unset, any `https` host. |
+| `WIREBENCH_SERVER_SCHEDULES_CONCURRENCY` | How many runs execute at once across the server (default 2, 1–16). The rest wait their turn, oldest first. |
+| `WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` | Runs and their results older than this are deleted (default 90). |
+| `WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB` | The most of a workspace a run writes to disk (default 50); a larger one errors with `snapshot-too-large`. |
+| `WIREBENCH_SERVER_SCHEDULES_ENABLED` | `false` removes the schedules API and the scheduler altogether. |
+
+The full list is in the server's [configuration table](/wirebench/docs/guides/wirebench-server/).
+Keep the schedules key safe and stable: a new key cannot open what the old one sealed, so secrets and
+alert URLs would have to be set again.
+
+## Schedules
+
+A workspace's admins create, change and delete its schedules; everyone with a role in the workspace
+can read them and their runs. Every route is under
+`/api/v1/workspaces/<workspaceId>/schedules`.
+
+```json title="POST /api/v1/workspaces/<workspaceId>/schedules"
+{
+  "name": "Billing smoke",
+  "schedule": "*/15 6-22 * * MON-FRI",
+  "timeZone": "Europe/Vienna",
+  "target": { "project": "billing", "environment": "prod" },
+  "options": { "timeoutMinutes": 10 },
+  "alerts": {
+    "targets": [
+      { "kind": "email", "to": ["ops@example.com"] },
+      { "kind": "slack", "url": "https://hooks.slack.com/services/…" }
+    ],
+    "muteAfter": 3
+  }
+}
+```
+
+- **When.** `schedule` is a five-field cron expression (minute, hour, day of month, month, day of week),
+  `@hourly`, `@daily`, `@weekly`, `@monthly`, or `every 5m` / `every 2h` (the minutes must divide an hour
+  and the hours a day). It is read in `timeZone`, an IANA name, across daylight-saving changes. A read
+  shows the cron form and the next run. At most one run a minute.
+- **What.** `target` takes the project's slug or id and the selectors `wirebench run` takes:
+  `environment`, `select` and `sequences`, plus `data: { path, iterations?, overrun? }` for a data file
+  inside the project. The project must be one stored on the server, not a linked folder. It is not
+  checked when the schedule is saved, so a project can arrive in a later push; a run that cannot find it
+  errors with `target-missing`.
+- **Options.** `timeoutMinutes` (default 15, at most 120) ends a run that takes longer; it errors with
+  `timeout`. `bail` stops at the first failure. `allowProtected` lets it run against a protected
+  environment, and `insecureTls` skips certificate checks; both are recorded in the audit log when they
+  change.
+- **Pausing.** `PATCH` with `"enabled": false` stops the schedule; `true` starts it again from now.
+- **Run now.** `POST …/<scheduleId>/runs` queues a run at once without moving the next one.
+
+A workspace holds at most 100 schedules.
+
+### How a run runs
+
+Each run reads the workspace at its latest push, writes it to a private folder on the server, runs it
+with the same engine as `wirebench run`, and removes the folder. A fire while the schedule's previous
+run is still going is recorded as `skipped` with reason `overlap`. A server that was down runs each
+schedule once when it comes back, not once per missed fire.
+
+A run sees only the project, its environment and the schedule's own secrets. It never sees the
+server's environment variables: a `${#System#…}` reference to one is unset, and an unset reference
+errors the request. Callback assertions are not available in scheduled runs yet.
+
+Outcomes: `passed`; `failed` when an assertion or SLA failed; `errored` when a request or the run
+itself errored, with a `reason` such as `timeout`, `target-missing`, `environment-protected`,
+`snapshot-too-large` or `interrupted` (the server running it stopped); `skipped`; or `cancelled`.
+
+## Secrets
+
+A request that reads a secret gets it from the schedule. `PUT …/<scheduleId>/secrets` sets them, by the
+name the CLI reads from its environment without the `WIREBENCH_SECRET_` prefix:
+
+```json title="PUT /api/v1/workspaces/<workspaceId>/schedules/<scheduleId>/secrets"
+{ "BILLING_API_KEY": "…", "OLD_TOKEN": null }
+```
+
+`null` removes a name; a name not mentioned is kept. Values are encrypted with the schedules key and
+never shown again: a read lists each name with its last four characters. Every secret value, and every
+token a run obtains, is masked out of the stored results and the alerts.
+
+## Alerts
+
+A schedule has up to 10 alert targets:
+
+| Kind | Shape | What arrives |
+| --- | --- | --- |
+| `email` | `{ "to": ["…"] }`, up to 20 addresses | A plain-text and HTML message through the server's SMTP settings. |
+| `slack` | `{ "url": "https://hooks.slack.com/…" }` | A Slack message from an incoming webhook. |
+| `teams` | `{ "url": "https://…" }` | An Adaptive Card from a Teams incoming webhook or workflow. |
+| `webhook` | `{ "url": "https://…", "secret": "…" }` | The JSON below, signed when `secret` is set. |
+
+URLs must be `https` and are encrypted like secrets, since a chat webhook URL is itself a credential. A
+read shows the host and the last four characters.
+
+**When.** The first failed or errored run turns the schedule `failing` and sends a failure alert. Each
+further failure alerts while the streak is at most `muteAfter` (default 3, 0 for never); the alert at
+`muteAfter` says further failures are muted. The first pass after failures sends a recovery alert,
+muted or not. Skipped and cancelled runs change nothing.
+
+**What.** The schedule, workspace, project and environment; the outcome, the counts and the duration;
+the first three failing requests with their first failing assertion; the commit; and a link to the
+run. Never a request or response body.
+
+A webhook receives:
+
+```json
+{
+  "event": "schedule.alert",
+  "version": 1,
+  "kind": "failure",
+  "streak": 1,
+  "muted": false,
+  "schedule": { "id": "…", "name": "Billing smoke" },
+  "workspace": { "id": "…", "name": "Payments" },
+  "project": "billing",
+  "environment": "prod",
+  "run": { "id": "…", "status": "failed", "reason": null, "commit": "…", "total": 12, "failed": 1, "errored": 0, "durationMs": 3240, "url": "https://…" },
+  "failures": [{ "path": "Api/Login", "message": "status is 200: expected 200, got 500" }]
+}
+```
+
+With a secret, `X-Wirebench-Signature: sha256=<hex>` is the HMAC-SHA256 of the exact body under it.
+
+**Delivery.** Alerts are queued with the run and sent at least once. A delivery that fails is retried
+after 5 seconds, then 10, 20 and so on up to 5 minutes, eight attempts in all, and is then given up
+and logged. Each attempt has 10 seconds; redirects are never followed. A failed alert never changes the
+run. A run's deliveries and their last error are in `GET …/runs/<runId>`.
+
+**Test.** `POST …/<scheduleId>/alerts/test` sends a test message to every target now and answers with
+each one's result, so a wrong URL shows up before a real failure.
+
+## Run history
+
+- `GET …/<scheduleId>/runs` lists runs, newest first, 50 a page (up to 200 with `limit`), filtered by
+  `status`; `next` is the cursor for the following page.
+- `GET …/<scheduleId>/runs/<runId>` is one run with every request's result as the CLI's JSON report
+  has it. A failed or errored request keeps its exchange.
+- `DELETE …/<scheduleId>/runs/<runId>` cancels a queued or running run.
+
+The app's live connection gets a `schedule-run` message as each run ends. Runs older than
+`WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` are deleted with their results, and sent or given-up alerts
+after a week.
+
+## Console commands
+
+For an operator with the server's database, whatever the license:
+
+```bash
+wirebench-server admin schedules list [--workspace <id>]
+wirebench-server admin schedules disable <scheduleId>
+wirebench-server admin schedules enable <scheduleId>
+wirebench-server admin schedules runs <scheduleId> [--limit <n>]
+```
+
+`runs` writes newline-delimited JSON. Enabling and disabling are recorded in the audit log as the
+system.
+
+## Security
+
+<Aside type="caution">
+A schedule sends requests from the server, inside your network. Workspace admins decide where. Set
+`WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` to bound where alerts go, or
+`WIREBENCH_SERVER_SCHEDULES_ENABLED=false` to turn the feature off.
+</Aside>
+
+- Every write needs a workspace admin; the role is checked before the license.
+- Secrets and alert URLs are encrypted at rest and never returned.
+- Stored results and alerts are masked with every secret the run used.
+- The run's folder is readable by the server's user only and removed after the run.
+- The audit log records schedule changes, secret names (never values), runs requested and cancelled,
+  and each run's outcome. See [Audit log](/wirebench/docs/guides/server-audit-log/).
+
+## Related
+
+- [Wirebench Server](/wirebench/docs/guides/wirebench-server/) — running the server and its configuration.
+- [Run in CI](/wirebench/docs/guides/run-in-ci/) — the same runs from a pipeline.
+- [Editions and licenses](/wirebench/docs/guides/server-licensing/) — what Enterprise includes.

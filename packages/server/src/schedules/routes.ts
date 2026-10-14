@@ -7,8 +7,10 @@ import {
   scheduleSchema,
   scheduleSecretsSchema,
   scheduleUpdateSchema,
+  alertTestResponseSchema,
   schedulesResponseSchema,
   teamWorkspaceParamsSchema,
+  type AlertTestResponse,
   type Schedule,
   type ScheduleRun,
 } from '@wirebench/engine';
@@ -18,6 +20,7 @@ import { isUniqueViolation } from '../db/errors.js';
 import { newId } from '../identity/tokens.js';
 import { jsonSchema } from '../schema.js';
 import { requireWorkspaceRole } from '../teams/roles.js';
+import type { DeliverAlert } from './alerts/outbox.js';
 import { nextFire, parseSchedule } from './cron.js';
 import { scheduleLimit, scheduleNameTaken, scheduleNotFound } from './errors.js';
 import * as repo from './repo.js';
@@ -31,6 +34,8 @@ export interface ScheduleRoutesEnv {
   readonly license: () => LicenseService;
   readonly settings: SchedulesSettings;
   readonly now: () => Date;
+  /** Sends the test alert. */
+  readonly deliver: DeliverAlert;
 }
 
 /** What a read shows: secrets and alert URLs as hints. */
@@ -298,6 +303,47 @@ export const scheduleRoutes =
         });
         const row = await repo.scheduleById(db, workspaceId, scheduleId);
         return viewOf(row!);
+      },
+    );
+
+    // A test message to every target, now and once: no outbox, no retries, each target's own outcome.
+    app.post(
+      '/workspaces/:workspaceId/schedules/:scheduleId/alerts/test',
+      {
+        preHandler: writer,
+        schema: { params: scheduleParams, response: { 200: jsonSchema(alertTestResponseSchema) } },
+      },
+      async (request): Promise<AlertTestResponse> => {
+        const { workspaceId } = request.workspaceAccess!;
+        const { scheduleId } = request.params as { readonly scheduleId: string };
+        const row = await repo.scheduleById(db, workspaceId, scheduleId);
+        if (row === undefined) throw scheduleNotFound();
+        const payload = {
+          kind: 'test',
+          streak: 0,
+          muted: false,
+          schedule: { id: row.id, name: row.name },
+          workspace: { id: workspaceId, name: (await repo.workspaceName(db, workspaceId)) ?? workspaceId },
+          project: row.target.project,
+          environment: row.target.environment ?? null,
+          failures: [],
+        } as const;
+        const results = await Promise.all(
+          row.alerts.targets.map(async (target, index) => {
+            try {
+              await env.deliver(target, payload);
+              return { index, kind: target.kind, ok: true };
+            } catch (error) {
+              return {
+                index,
+                kind: target.kind,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              };
+            }
+          }),
+        );
+        return { results };
       },
     );
   };

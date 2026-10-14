@@ -60,7 +60,7 @@ test('trust a host key from a hashed known_hosts line', async () => {
   const page = launched.window;
   await createWorkspace(page, 'Known hosts');
 
-  await runCommand(page, 'Import from SSH Config');
+  await runCommand(page, 'Import Hosts');
   const configDialog = page.getByTestId('ssh-import-dialog');
   await configDialog.getByRole('button', { name: 'Choose a file…' }).click();
   await configDialog.getByRole('button', { name: 'Import 1 host' }).click();

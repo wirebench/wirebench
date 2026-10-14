@@ -846,3 +846,25 @@ describe('LiveHub — hooksChanged (webhook-capture §3.6)', () => {
     expect(cat.sent).toEqual([]);
   });
 });
+
+describe('LiveHub — scheduleRunFinished (scheduled-runs §3.5)', () => {
+  const SCHEDULE = '01J8ZC5Q0V7R3T9XK2M4N6S001';
+  const RUN = '01J8ZC5Q0V7R3T9XK2M4N6R001';
+
+  it('sends schedule-run to every subscriber of the workspace, and to no other', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A, 'editor');
+    const cat = await joined(f, CAT, 'tok-cat', WS_B);
+    settle(ana, cat);
+
+    f.hub.scheduleRunFinished({ workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' });
+    expect(ana.take()).toEqual([
+      { type: 'schedule-run', workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' },
+    ]);
+    expect(cat.sent).toEqual([]);
+
+    f.hub.closeAll();
+    f.hub.scheduleRunFinished({ workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'passed' });
+    expect(ana.take()).toEqual([]);
+  });
+});

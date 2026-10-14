@@ -96,7 +96,7 @@ interface HostsState {
   filter: string;
   selectedTags: readonly string[];
   dialog: HostsDialog;
-  /** Whether the "Import from SSH config" dialog is open. */
+  /** Whether the "Import hosts" dialog is open. */
   importOpen: boolean;
   /** Whether the "Import known hosts" dialog (Known hosts view) is open. */
   knownHostsImportOpen: boolean;

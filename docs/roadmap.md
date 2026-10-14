@@ -471,8 +471,9 @@ The gated features, in the order they are planned:
 - **Server policies**: refuse sends to named hosts outside a window, require approval before a secret is
   shared, enforce TLS verification, forbid plaintext credentials in project files. Managed preferences
   (#67) cover the client; policy at the server is what a security office signs off.
-- **Scheduled and monitored runs**: the CLI runner's suites run by the server on a schedule, results kept,
-  regressions alerted.
+- **Scheduled and monitored runs** (#343, [spec](specs/2026-10-13-wirebench-server-scheduled-runs-design.md)),
+  **built**: the CLI runner's suites run by the server on a cron schedule in a time zone, results kept by
+  age, failures and recoveries alerted by email, Slack, Teams or a signed webhook.
 - **Usage for the buyer**: seat utilisation, active workspaces, most-called services, so a renewal has a
   page to point at.
 

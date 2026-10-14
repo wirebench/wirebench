@@ -36,6 +36,7 @@ export const DOCS_LINKS = {
   serverLicensing: 'guides/server-licensing',
   serverAuditLog: 'guides/server-audit-log',
   serverSamlScim: 'guides/server-saml-scim',
+  serverScheduledRuns: 'guides/server-scheduled-runs',
   managedPreferences: 'guides/managed-preferences',
   agentsMcp: 'guides/agents-mcp',
   codeSigningPolicy: 'help/code-signing-policy',

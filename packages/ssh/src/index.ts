@@ -1,6 +1,7 @@
 export * from './errors.js';
 export * from './model.js';
 export * from './host-env.js';
+export * from './host-terminal.js';
 export * from './forward-rules.js';
 export * from './socks5.js';
 export * from './resolve.js';
@@ -11,6 +12,7 @@ export * from './forward.js';
 export * from './session.js';
 export * from './sftp.js';
 export * from './openssh-config/index.js';
+export * from './host-import/index.js';
 export * from './os-release.js';
 export * from './keygen.js';
 export * from './certificate.js';

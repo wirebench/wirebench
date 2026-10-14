@@ -70,8 +70,8 @@ const httpsUrl = z
 
 /** What a run covers: the arguments `wirebench run` takes, inside the workspace's project. */
 export const scheduleTargetSchema = z.strictObject({
-  /** The project's slug in the workspace. */
-  project: z.string().regex(/^[a-z0-9][a-z0-9-]{0,99}$/),
+  /** The workspace project's slug or id; a slug keeps case and spaces (`CountryInfo`). */
+  project: z.string().trim().min(1).max(200),
   /** By name, slug or id; required when any environment applies to the project. */
   environment: z.string().min(1).max(200).optional(),
   select: z.array(selector).max(SCHEDULE_LIMITS.maxSelectors).optional(),
@@ -238,7 +238,24 @@ export const scheduleResultSchema = z.looseObject({
 });
 export type ScheduleResult = z.infer<typeof scheduleResultSchema>;
 
-export const scheduleRunDetailSchema = scheduleRunSchema.extend({ results: z.array(scheduleResultSchema) });
+export const ALERT_DELIVERY_STATES = ['pending', 'delivered', 'dead'] as const;
+
+/** One alert a run sent to one target, and how its delivery went. */
+export const scheduleAlertDeliverySchema = z.object({
+  kind: z.enum(['failure', 'recovery']),
+  /** The target's place in the schedule's `alerts.targets`. */
+  target: z.int(),
+  state: z.enum(ALERT_DELIVERY_STATES),
+  attempts: z.int(),
+  /** Why the last attempt failed: the host and status or the error, never a URL. */
+  lastError: z.string().nullable(),
+});
+export type ScheduleAlertDelivery = z.infer<typeof scheduleAlertDeliverySchema>;
+
+export const scheduleRunDetailSchema = scheduleRunSchema.extend({
+  results: z.array(scheduleResultSchema),
+  alerts: z.array(scheduleAlertDeliverySchema),
+});
 export type ScheduleRunDetail = z.infer<typeof scheduleRunDetailSchema>;
 
 export const scheduleRunsQuerySchema = z.strictObject({

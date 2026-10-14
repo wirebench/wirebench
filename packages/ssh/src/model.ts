@@ -4,6 +4,8 @@ import { SshModelError } from './errors.js';
 import { forwardsSchema, isOffForm, serializeForward } from './forward-rules.js';
 import type { ForwardEntry } from './forward-rules.js';
 import { envSchema } from './host-env.js';
+import { terminalSchema } from './host-terminal.js';
+import type { TerminalEntry } from './host-terminal.js';
 import { resolveSettings } from './resolve.js';
 import { SECRET_NAME, SECRET_TOKEN } from './secret-token.js';
 import { walk } from './tree.js';
@@ -63,6 +65,7 @@ const hostSchema = z.strictObject({
   protected: z.boolean().optional(),
   ssh: settingsSchema,
   env: envSchema,
+  terminal: terminalSchema,
   forwards: forwardsSchema,
 });
 
@@ -78,6 +81,8 @@ export interface GroupEntry {
   ssh: SshSettings;
   /** Merged by name down the tree; a nearer level wins per variable. */
   env?: Record<string, string> | undefined;
+  /** Per field, the nearest level wins; unset falls through to the app preferences. */
+  terminal?: TerminalEntry | undefined;
   forwards?: ForwardEntry[] | undefined;
   groups: GroupEntry[];
   hosts: HostEntry[];
@@ -91,6 +96,7 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
     protected: z.boolean().optional(),
     ssh: settingsSchema,
     env: envSchema,
+    terminal: terminalSchema,
     forwards: forwardsSchema,
     groups: z.array(groupSchema).default([]),
     hosts: z.array(hostSchema).default([]),
@@ -301,6 +307,7 @@ function head(entry: HostEntry | GroupEntry): Record<string, unknown> {
   const ssh = settings(entry.ssh);
   if (Object.keys(ssh).length > 0) out['ssh'] = ssh;
   if (entry.env !== undefined && Object.keys(entry.env).length > 0) out['env'] = { ...entry.env };
+  if (entry.terminal !== undefined) out['terminal'] = { ...entry.terminal };
   if (entry.forwards !== undefined && entry.forwards.length > 0) out['forwards'] = entry.forwards.map(serializeForward);
   return out;
 }

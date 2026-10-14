@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SSH_MAX_PANES, SSH_OS_IDS } from './ssh-defaults.js';
+import { SSH_IMPORT_FORMATS, SSH_MAX_PANES, SSH_OS_IDS } from './ssh-defaults.js';
 
 /**
  * Wire shapes of the SSH area. A credential is its secret NAME only: never a `${secret:NAME}` token, never a
@@ -53,6 +53,12 @@ export const envVarWireSchema = z.union([
   z.strictObject({ name: z.string(), secret: z.string() }),
 ]);
 
+/** A level's own `terminal:` block in hosts.yaml; a field left out inherits. */
+export const terminalEntryWireSchema = z.strictObject({
+  scheme: z.string().optional(),
+  fontSize: z.number().optional(),
+});
+
 export const hostEntryWireSchema = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -61,6 +67,7 @@ export const hostEntryWireSchema = z.strictObject({
   protected: z.boolean().optional(),
   ssh: sshSettingsWireSchema,
   env: z.array(envVarWireSchema).optional(),
+  terminal: terminalEntryWireSchema.optional(),
   forwards: z.array(forwardEntryWireSchema).optional(),
 });
 
@@ -72,6 +79,7 @@ export interface HostEntryWire {
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
   env?: EnvVarWire[] | undefined;
+  terminal?: TerminalEntryWire | undefined;
   forwards?: ForwardEntryWire[] | undefined;
 }
 export interface GroupEntryWire {
@@ -81,6 +89,7 @@ export interface GroupEntryWire {
   protected?: boolean | undefined;
   ssh: SshSettingsWire;
   env?: EnvVarWire[] | undefined;
+  terminal?: TerminalEntryWire | undefined;
   forwards?: ForwardEntryWire[] | undefined;
   groups: GroupEntryWire[];
   hosts: HostEntryWire[];
@@ -94,6 +103,7 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
     protected: z.boolean().optional(),
     ssh: sshSettingsWireSchema,
     env: z.array(envVarWireSchema).optional(),
+    terminal: terminalEntryWireSchema.optional(),
     forwards: z.array(forwardEntryWireSchema).optional(),
     groups: z.array(groupEntryWireSchema),
     hosts: z.array(hostEntryWireSchema),
@@ -153,6 +163,8 @@ export const resolvedHostWireSchema = z.object({
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
   env: z.array(resolvedEnvVarWireSchema),
+  /** Nearest level wins per field; `default` with no value means Preferences → Terminal applies. */
+  terminal: z.object({ scheme: prov(z.string().optional()), fontSize: prov(z.number().optional()) }).optional(),
 });
 
 export const sshListHostsResponseSchema = z.object({
@@ -169,6 +181,7 @@ export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
 export type EnvVarWire = z.infer<typeof envVarWireSchema>;
+export type TerminalEntryWire = z.infer<typeof terminalEntryWireSchema>;
 export type ResolvedEnvVarWire = z.infer<typeof resolvedEnvVarWireSchema>;
 export type ResolvedForwardWire = z.infer<typeof resolvedForwardWireSchema>;
 export type SshProblemWire = z.infer<typeof sshProblemSchema>;
@@ -274,11 +287,15 @@ export type SshDetectedOsWire = z.infer<typeof sshDetectedOsSchema>;
 export type SshHostOsWire = z.infer<typeof sshHostOsSchema>;
 
 /**
- * Importing hosts from an OpenSSH client config. The renderer never sends a path: `user-config` is
- * `~/.ssh/config` resolved in main, `pick` runs the native picker. Key rows travel by an opaque `ref`;
- * their paths stay in main, and a key's contents never cross.
+ * Importing hosts from an OpenSSH client config or another client's session list (`format`, default
+ * `ssh-config`). The renderer never sends a path: `user-config` is `~/.ssh/config` resolved in main (an
+ * OpenSSH config only), `pick` runs the native picker. Key rows travel by an opaque `ref`; their paths stay
+ * in main, and a key's contents never cross.
  */
-export const sshImportPreviewRequestSchema = z.strictObject({ source: z.enum(['user-config', 'pick']) });
+export const sshImportPreviewRequestSchema = z.strictObject({
+  source: z.enum(['user-config', 'pick']),
+  format: z.enum(SSH_IMPORT_FORMATS).optional(),
+});
 
 export const sshPlannedAuthWireSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('agent') }),
@@ -302,6 +319,11 @@ export const sshPlannedHostWireSchema = z.strictObject({
   reason: z.string().optional(),
   address: z.string(),
   ssh: sshPlannedSettingsWireSchema,
+  /** The source folder it lands in, as `Production / Web`; a subgroup of the import's group. */
+  folder: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  /** How many port forwards come with it. */
+  forwards: z.number().optional(),
 });
 /** No `path`: a key row is named by `ref` and shown by `display` (`~/.ssh/id_ed25519`). */
 export const sshPlannedKeyWireSchema = z.strictObject({
