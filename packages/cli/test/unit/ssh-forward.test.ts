@@ -301,6 +301,22 @@ describe('wirebench ssh forward', () => {
     expect(stdout).toBe('pg     127.0.0.1:5432 → localhost:5432 via db-1\nsocks  127.0.0.1:1080 SOCKS5 via db-1\n');
   });
 
+  it('reads a hop key certificate from its secret, after the key', async () => {
+    const ws = await workspace({
+      hosts: HOSTS_YAML.replace(
+        'key: ${secret:jump_key}',
+        'key: ${secret:jump_key}\n        certificate: ${secret:jump_cert}',
+      ),
+    });
+    const { code, runner } = await run(ws, args(), { env: { ...ENV, WIREBENCH_SECRET_JUMP_CERT: 'CERT' } });
+    expect(code).toBe(ExitCode.Ok);
+    expect(runner?.options.hops[0]?.auth).toEqual({
+      kind: 'key',
+      privateKey: '-----BEGIN KEY-----',
+      certificate: 'CERT',
+    });
+  });
+
   it('starts only the rules named, on the --port given', async () => {
     const ws = await workspace();
     const { code, runner, stdout } = await run(ws, args({ rules: ['pg'], ports: { pg: 6543 } }));

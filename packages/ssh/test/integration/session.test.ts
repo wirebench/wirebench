@@ -281,4 +281,79 @@ describe('openSession', () => {
     expect(text).toContain('b •••• end2');
     expect(text).not.toContain('pässwört');
   });
+
+  describe('agent forwarding', () => {
+    // Never dialled: with password or key auth the agent is used only once the server opens its channel.
+    const SOCKET =
+      process.platform === 'win32' ? '\\\\.\\pipe\\wirebench-test-agent' : '/tmp/wirebench-test-agent.sock';
+
+    it('is off without forwardAgent: no request, and the session says so', async () => {
+      const f = await fixture('pw');
+      session = await openSession({ hops: [hop(f.port, 'pw')], cols: 80, rows: 24, verifyHostKey: accept });
+      expect(f.agentRequests).toEqual([]);
+      expect(session.agentForwarding).toBe('off');
+    });
+    it('asks on the shell channel; password auth is unchanged', async () => {
+      const f = await fixture('pw');
+      session = await openSession({
+        hops: [hop(f.port, 'pw')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: accept,
+        forwardAgent: SOCKET,
+      });
+      expect(f.agentRequests).toEqual([{ accepted: true }]);
+      expect(session.agentForwarding).toBe('on');
+      const echoed = until(session, (t) => t.includes('fwd'));
+      session.write(Buffer.from('fwd'));
+      expect(await echoed).toContain('fwd');
+    });
+    it('a refused request still opens the shell, without forwarding', async () => {
+      const f = await startSshFixture({ password: { user: 'tester', password: 'pw' }, refuseAgentForwarding: true });
+      open.push(f);
+      session = await openSession({
+        hops: [hop(f.port, 'pw')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: accept,
+        forwardAgent: SOCKET,
+        env: { LANG: 'C' },
+      });
+      expect(f.agentRequests).toEqual([{ accepted: false }]);
+      expect(session.agentForwarding).toBe('refused');
+      expect(f.envRequests.at(-1)).toEqual({ key: 'LANG', val: 'C', accepted: true });
+      const echoed = until(session, (t) => t.includes('plain'));
+      session.write(Buffer.from('plain'));
+      expect(await echoed).toContain('plain');
+    });
+    it('only the target asks; a jump host never does, and exec channels never do', async () => {
+      const jump = await fixture('j', true);
+      const target = await fixture('t');
+      session = await openSession({
+        hops: [hop(jump.port, 'j'), hop(target.port, 't')],
+        cols: 80,
+        rows: 24,
+        verifyHostKey: accept,
+        forwardAgent: SOCKET,
+      });
+      await session.exec('true', 2000);
+      expect(jump.agentRequests).toEqual([]);
+      expect(target.agentRequests).toEqual([{ accepted: true }]);
+    });
+    it('key auth is unchanged with an agent to forward', async () => {
+      const { privateKey } = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+        publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+      });
+      const f = await startSshFixture({
+        password: { user: 'tester', password: 'unused' },
+        key: { user: 'tester', privateKey },
+      });
+      open.push(f);
+      const keyed = { ...hop(f.port, ''), auth: { kind: 'key' as const, privateKey } };
+      session = await openSession({ hops: [keyed], cols: 80, rows: 24, verifyHostKey: accept, forwardAgent: SOCKET });
+      expect(session.agentForwarding).toBe('on');
+    });
+  });
 });

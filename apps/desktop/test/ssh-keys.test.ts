@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { WebContents } from 'electron';
 import { secretPseudoRef } from '@wirebench/engine';
@@ -179,5 +180,69 @@ describe('SshKeysService.install', () => {
     const { keys, connector } = service(chain, { install: vi.fn(() => Promise.reject(refusal)) });
     await expect(keys.install(sender, { secret: 'k', hostId: 'web' })).rejects.toBe(refusal);
     expect(connector.refusalError).toHaveBeenCalledWith(sender, refusal);
+  });
+});
+
+describe('SshKeysService certificates (#421)', () => {
+  // ssh-keygen-made test fixtures, shared with the ssh package's tests.
+  const fixture = (name: string): string =>
+    readFileSync(new URL(`../../../packages/ssh/test/fixtures/certs/${name}`, import.meta.url), 'utf8');
+
+  it("lists a key's <name>_cert with its principals, validity window and key ID", async () => {
+    const chain = keychain({ alice: fixture('user_ed25519'), alice_cert: fixture('user_ed25519-cert.pub') });
+    const [key] = await service(chain).keys.keys(sender);
+    expect(key?.certificate).toEqual({
+      secret: 'alice_cert',
+      keyId: 'alice@example',
+      serial: '42',
+      principals: ['alice', 'deploy'],
+      validAfter: Date.parse('2020-01-01T00:00:00Z'),
+      validBefore: Date.parse('2099-12-31T23:59:59Z'),
+      window: 'from 2020-01-01 00:00:00 UTC to 2099-12-31 23:59:59 UTC',
+      validity: 'valid',
+      caFingerprint: 'SHA256:vB5oARcV1UTfAV+1JF6lo66WAGXVjH4Xx+b4lIQy4Ig',
+      matchesKey: true,
+    });
+  });
+
+  it('marks an expired certificate, one for another key, and a _cert secret that is not a certificate', async () => {
+    const chain = keychain({
+      a: fixture('user_ed25519'),
+      a_cert: fixture('user_ed25519-expired-cert.pub'),
+      b: fixture('user_ecdsa'),
+      b_cert: fixture('user_ed25519-cert.pub'),
+      c: fixture('user_rsa'),
+      c_cert: 'hunter2',
+    });
+    const keys = await service(chain).keys.keys(sender);
+    const byName = new Map(keys.map((k) => [k.name, k]));
+    expect(byName.get('a')?.certificate).toMatchObject({ validity: 'expired', matchesKey: true });
+    expect(byName.get('b')?.certificate).toMatchObject({ validity: 'valid', matchesKey: false });
+    expect(byName.get('c')?.certificate).toBeUndefined();
+    expect(byName.get('c')?.certificateError).toBe('c_cert is not an OpenSSH certificate');
+    expect(JSON.stringify(keys)).not.toContain('hunter2');
+  });
+
+  it('attaches a certificate as <name>_cert, replacing an older one', async () => {
+    const chain = keychain({ alice: fixture('user_ed25519'), alice_cert: fixture('user_ed25519-expired-cert.pub') });
+    const answer = await service(chain).keys.attachCertificate(sender, {
+      secret: 'alice',
+      certificate: `  ${fixture('user_ed25519-cert.pub')}`,
+    });
+    expect(chain.values.get('alice_cert')).toBe(fixture('user_ed25519-cert.pub').trim());
+    expect(answer).toMatchObject({ name: 'alice', certificate: { secret: 'alice_cert', validity: 'valid' } });
+  });
+
+  it('refuses a host certificate, one for another key, and text that is not a certificate, storing nothing', async () => {
+    const chain = keychain({ alice: fixture('user_ed25519') });
+    const { keys } = service(chain);
+    const attach = (certificate: string) => keys.attachCertificate(sender, { secret: 'alice', certificate });
+    await expect(attach(fixture('user_ed25519-host-cert.pub'))).rejects.toMatchObject({ code: 'ssh-cert-invalid' });
+    await expect(attach(fixture('user_ecdsa-cert.pub'))).rejects.toMatchObject({ code: 'ssh-cert-mismatch' });
+    await expect(attach(fixture('user_ed25519.pub'))).rejects.toMatchObject({ code: 'ssh-cert-invalid' });
+    await expect(
+      keys.attachCertificate(sender, { secret: 'nobody', certificate: fixture('user_ed25519-cert.pub') }),
+    ).rejects.toMatchObject({ code: 'secret-missing' });
+    expect(chain.secrets.set).not.toHaveBeenCalled();
   });
 });

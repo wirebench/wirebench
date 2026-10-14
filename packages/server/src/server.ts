@@ -33,6 +33,9 @@ const SECRET_KEYS = [
   'code',
   'currentPassword',
   'newPassword',
+  // The SAML ACS form (saml-scim spec §6.1): the assertion and the flow's RelayState secret.
+  'SAMLResponse',
+  'RelayState',
 ] as const;
 const REDACT_PATHS = [
   'req.headers.authorization',

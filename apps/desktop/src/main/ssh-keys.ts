@@ -2,9 +2,20 @@ import { hostname, userInfo } from 'node:os';
 import type { WebContents } from 'electron';
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
-import { describePrivateKey, generateKey, installPublicKey, looksLikePrivateKey } from '@wirebench/ssh';
-import type { SshKeyInfo } from '@wirebench/ssh';
+import {
+  certificateValidity,
+  describePrivateKey,
+  formatValidity,
+  generateKey,
+  installPublicKey,
+  looksLikePrivateKey,
+  parseCertificate,
+  SshModelError,
+} from '@wirebench/ssh';
+import type { SshCertificate, SshKeyInfo } from '@wirebench/ssh';
 import type {
+  SshAttachCertificateRequest,
+  SshCertificateWire,
   SshGenerateKeyRequest,
   SshInstallKeyRequest,
   SshInstallKeyResponse,
@@ -24,10 +35,14 @@ export interface SshKeysDeps {
   readonly install?: typeof installPublicKey;
   /** `user@host`, as ssh-keygen comments a key it makes; tests pin it. */
   readonly defaultComment?: () => string;
+  /** Milliseconds, for a certificate's validity; tests pin it. */
+  readonly now?: () => number;
 }
 
 /** Where a generated key's passphrase is stored: next to the key, by convention. */
 export const passphraseSecretOf = (name: string): string => `${name}_passphrase`;
+/** Where a key's OpenSSH user certificate is stored (#421), by the same convention. */
+export const certificateSecretOf = (name: string): string => `${name}_cert`;
 
 const systemComment = (): string => {
   try {
@@ -92,7 +107,7 @@ export class SshKeysService {
       if (value === undefined || !looksLikePrivateKey(value)) continue;
       try {
         const { info, passphraseSecret } = await this.open(getSecret, name, value);
-        keys.push(this.wire(name, info, passphraseSecret));
+        keys.push({ ...this.wire(name, info, passphraseSecret), ...(await this.certificateOf(getSecret, name, info)) });
       } catch (error) {
         const code = (error as { code?: unknown }).code;
         if (code === 'ssh-key-locked') keys.push({ name, locked: true });
@@ -125,6 +140,78 @@ export class SshKeysService {
     } catch (error) {
       throw connector.refusalError(sender, error);
     }
+  }
+
+  /**
+   * Stores `request.certificate` as the key's `<secret>_cert`, replacing one there (a renewed certificate).
+   *
+   * @throws WirebenchError `secret-missing` | `ssh-key-invalid` | `ssh-key-locked` | `ssh-cert-invalid` (not a
+   *   certificate, or a host certificate) | `ssh-cert-mismatch` (issued for another key)
+   */
+  async attachCertificate(sender: WebContents, request: SshAttachCertificateRequest): Promise<SshKeyWire> {
+    const getSecret = this.deps.secretsFor(sender);
+    const value = await getSecret(secretPseudoRef(request.secret));
+    if (value === undefined) {
+      throw new WirebenchError('secret-missing', `The secret "${request.secret}" is not on this machine`, {
+        details: { name: request.secret },
+      });
+    }
+    const { info, passphraseSecret } = await this.open(getSecret, request.secret, value);
+    let cert: SshCertificate;
+    try {
+      cert = parseCertificate(request.certificate);
+      if (cert.kind !== 'user') {
+        throw new SshModelError('ssh-cert-invalid', 'This is a host certificate; a key needs a user certificate');
+      }
+      if (cert.publicKeyFingerprint !== info.fingerprint) {
+        throw new SshModelError(
+          'ssh-cert-mismatch',
+          `This certificate was issued for another key than ${request.secret}`,
+        );
+      }
+    } catch (error) {
+      throw asWirebenchError(error);
+    }
+    const name = certificateSecretOf(request.secret);
+    await this.deps.secrets.set(name, cert.line);
+    return { ...this.wire(request.secret, info, passphraseSecret), certificate: this.describe(name, cert, info) };
+  }
+
+  /** The key's `<name>_cert`, described; nothing when there is none or it cannot be read now. */
+  private async certificateOf(
+    getSecret: GetSecret,
+    name: string,
+    info: SshKeyInfo,
+  ): Promise<Pick<SshKeyWire, 'certificate' | 'certificateError'>> {
+    const secret = certificateSecretOf(name);
+    let text: string | undefined;
+    try {
+      text = await getSecret(secretPseudoRef(secret));
+    } catch {
+      return {};
+    }
+    if (text === undefined) return {};
+    try {
+      return { certificate: this.describe(secret, parseCertificate(text), info) };
+    } catch {
+      // The value is not echoed: a secret stored under the wrong name may be anything.
+      return { certificateError: `${secret} is not an OpenSSH certificate` };
+    }
+  }
+
+  private describe(secret: string, cert: SshCertificate, info: SshKeyInfo): SshCertificateWire {
+    return {
+      secret,
+      keyId: cert.keyId,
+      serial: cert.serial,
+      principals: [...cert.principals],
+      validAfter: cert.validAfter,
+      validBefore: cert.validBefore,
+      window: formatValidity(cert),
+      validity: certificateValidity(cert, (this.deps.now ?? Date.now)()),
+      caFingerprint: cert.caFingerprint,
+      matchesKey: cert.publicKeyFingerprint === info.fingerprint,
+    };
   }
 
   /** Opens the key with its `_passphrase` secret when there is one. */

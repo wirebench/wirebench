@@ -74,11 +74,19 @@ describe('app.* IPC', () => {
     expect(registrar.send).not.toHaveBeenCalled();
   });
 
-  it('app.areas answers the enabled area ids', async () => {
+  it('app.areas answers the enabled area ids, and the local terminal off with the SSH area', async () => {
     registerAppChannels(undefined, undefined, undefined, ['explorer', 'history']);
     expect(await invoke('app.areas', undefined, webContents())).toEqual({
       ok: true,
-      value: { enabled: ['explorer', 'history'] },
+      value: { enabled: ['explorer', 'history'], localTerminal: false },
+    });
+  });
+
+  it('app.areas says whether the local terminal is on', async () => {
+    registerAppChannels(undefined, undefined, undefined, ['explorer', 'ssh'], undefined, false);
+    expect(await invoke('app.areas', undefined, webContents())).toEqual({
+      ok: true,
+      value: { enabled: ['explorer', 'ssh'], localTerminal: false },
     });
   });
 

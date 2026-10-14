@@ -12,6 +12,7 @@ import { AuditTab } from './audit-tab.js';
 import { LicenseTab } from './license-tab.js';
 import { useLicenseStore } from '../../state/license.js';
 import { MembersTab } from './members-tab.js';
+import { ProvisioningTab } from './provisioning-tab.js';
 import { INPUT_CLASS, SELECT_CLASS } from './roles.js';
 import { WorkspacesTab } from './workspaces-tab.js';
 
@@ -50,6 +51,8 @@ export function TeamDialog() {
   const adminTabs: TabItem<TeamTab>[] = [
     ...(store.serverAdmin ? [{ id: 'license' as const, label: 'License' }] : []),
     ...(canAudit ? [{ id: 'audit' as const, label: 'Audit' }] : []),
+    // saml-scim §3.7: SAML and SCIM are server-wide, so the tab is a server admin's whatever team is selected.
+    ...(store.serverAdmin ? [{ id: 'provisioning' as const, label: 'Provisioning' }] : []),
   ];
   // A server admin with no team selected still has the License and Audit tabs (plan rulings 10, 15).
   const teamTabs: TabItem<TeamTab>[] = [
@@ -58,7 +61,8 @@ export function TeamDialog() {
     ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
   ];
   const tabs: TabItem<TeamTab>[] = team === undefined ? adminTabs : [...teamTabs, ...adminTabs];
-  const activeTab: TeamTab = team === undefined ? (store.tab === 'audit' ? 'audit' : 'license') : store.tab;
+  const activeTab: TeamTab =
+    team === undefined ? (store.tab === 'audit' || store.tab === 'provisioning' ? store.tab : 'license') : store.tab;
 
   const submitNew = async (): Promise<void> => {
     if (newName.trim().length === 0) return;
@@ -232,6 +236,12 @@ export function TeamDialog() {
                     {activeTab === 'workspaces' && <WorkspacesTab />}
                     {activeTab === 'invitations' && isAdmin && <InvitationsTab />}
                     {activeTab === 'license' && store.serverAdmin && url !== undefined && <LicenseTab url={url} />}
+                    {activeTab === 'provisioning' && store.serverAdmin && url !== undefined && (
+                      <ProvisioningTab
+                        url={url}
+                        teams={store.teams.map((item) => ({ id: item.id, name: item.name }))}
+                      />
+                    )}
                     {activeTab === 'audit' && canAudit && url !== undefined && (
                       <AuditTab
                         url={url}

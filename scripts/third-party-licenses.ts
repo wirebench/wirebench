@@ -11,7 +11,8 @@
  * What counts as "ships":
  *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies` and
  *     `optionalDependencies` (the Kerberos binding), transitively — these are resolved at runtime
- *     from `node_modules` inside the asar.
+ *     from `node_modules` inside the asar. An optional package built for one platform and CPU (a
+ *     prebuilt binding such as `@lydell/node-pty-linux-x64`) is covered by the package requiring it.
  *   * `packages/server`'s `dependencies`, transitively — the container image ships them.
  *   * {@link BUNDLED_DEV_DEPENDENCIES}, transitively. They sit in `devDependencies` because
  *     electron-vite bundles them rather than resolving them at runtime, but their code (React,
@@ -79,6 +80,8 @@ interface PackageManifest {
   readonly licenses?: readonly { readonly type?: string }[];
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly optionalDependencies?: Readonly<Record<string, string>>;
+  readonly os?: readonly string[];
+  readonly cpu?: readonly string[];
 }
 
 /** One package as it appears in the generated file. */
@@ -193,6 +196,11 @@ export async function collect(
       queue.push({ name: dependency, from: dir, optional: true });
     }
     if (OWN_PACKAGES.has(job.name)) {
+      continue;
+    }
+    // A binding built for one platform (`@lydell/node-pty-darwin-arm64`) is installed only there, so listing it
+    // would make the file differ per OS. Its package that requires it is listed, with the same source and license.
+    if (job.optional === true && (manifest.os !== undefined || manifest.cpu !== undefined)) {
       continue;
     }
 

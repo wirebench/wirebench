@@ -43,6 +43,9 @@ files:
   # ssh2's optional native cipher binding is never built; ssh2 falls back to its pure-JS ciphers.
   - '!**/node_modules/ssh2/lib/protocol/crypto/build/**'
   - '!**/node_modules/cpu-features/**'
+  # The local terminal's pty binding as pnpm installed it is only the runner's own platform and CPU. Each
+  # platform below maps in the bindings `scripts/vendor-node-pty.ts` vendored instead (#410).
+  - '!**/node_modules/@lydell/node-pty-*/**'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve
@@ -62,6 +65,12 @@ extraResources:
 asar: true
 asarUnpack:
   - '**/node_modules/xmllint-wasm/**'
+  # The pty binding is a native `.node` the OS loader maps, and macOS starts each shell through its
+  # `spawn-helper` executable: both must be real files, signed with the app.
+  - '**/node_modules/@lydell/node-pty-*/**'
+  # The vendored bindings are mapped in from `build-resources/` (see `files` per platform), and an unpack
+  # pattern is matched against where a mapped file comes from.
+  - 'build-resources/node-pty/**'
 
 # pnpm's store is already exactly what should ship. The one native module, the Kerberos binding, is
 # vendored per architecture instead of rebuilt (ADR-0019); running npm against a symlinked tree only
@@ -92,7 +101,13 @@ mac:
   # A backstop. The Kerberos binding is one universal (fat) file, the same in the x64 and arm64
   # builds, and @electron/universal already skips identical fat Mach-O files; this only matters if
   # the prebuild ever stops being universal.
-  x64ArchFiles: Contents/Resources/kerberos/**
+  # The same goes for the pty bindings: both darwin folders are in both builds, thin and identical.
+  x64ArchFiles: '{Contents/Resources/kerberos/**,Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-*/**}'
+  # Both pty bindings in every mac build, for the same reason as the Kerberos folders below.
+  files:
+    - from: build-resources/node-pty
+      to: node_modules/@lydell
+      filter: ['node-pty-darwin-*/**']
   # Both darwin folders in every mac build: the universal build packs an x64 and an arm64 app and
   # merges them, and the merge refuses two apps whose files differ.
   extraResources:
@@ -128,6 +143,10 @@ win:
   extraResources:
     - from: build-resources/kerberos/win32-${arch}
       to: kerberos/win32-${arch}
+  # Only this build's own pty binding.
+  files:
+    - from: build-resources/node-pty/node-pty-win32-${arch}
+      to: node_modules/@lydell/node-pty-win32-${arch}
 
 nsis:
   artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
@@ -183,6 +202,10 @@ linux:
   extraResources:
     - from: build-resources/kerberos/linux-${arch}
       to: kerberos/linux-${arch}
+  # Only this build's own pty binding.
+  files:
+    - from: build-resources/node-pty/node-pty-linux-${arch}
+      to: node_modules/@lydell/node-pty-linux-${arch}
 
 # Both package formats take their name and file name from the npm package name by default —
 # `@wirebench/desktop`, whose slash becomes a directory the packager never creates.

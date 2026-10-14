@@ -12,6 +12,7 @@ const defaults = {
   jump: { value: undefined, from: 'default' },
   keepAlive: { value: 15, from: 'default' },
   connectTimeout: { value: 20, from: 'default' },
+  forwardAgent: { value: false, from: 'default' },
 } as const;
 const RESPONSE = {
   file: {

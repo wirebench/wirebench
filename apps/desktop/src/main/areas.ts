@@ -1,5 +1,6 @@
 import { enabledAreaIds } from '../shared/area-module.js';
 import type { AreaId } from '../shared/area-module.js';
+import { registerLocalTerminalChannels } from './areas/local-terminal-channels.js';
 import { registerSshChannels } from './areas/ssh.js';
 
 /** `WIREBENCH_AREAS="ssh=off,wss=off"`. Anything that is not `<id>=on|off` is ignored. */
@@ -17,12 +18,29 @@ export function enabledAreasFromEnv(env: NodeJS.ProcessEnv = process.env): reado
   return enabledAreaIds(parseAreaSwitches(env['WIREBENCH_AREAS']));
 }
 
+/** The `WIREBENCH_AREAS` key that switches the local terminal tab (#410) off while leaving SSH on. */
+export const LOCAL_TERMINAL_SWITCH = 'local-terminal';
+
+/**
+ * Whether the local terminal tab is on: it rides with the SSH area (`ssh=off` removes it too), and an enterprise
+ * build can switch it off on its own with `local-terminal=off`.
+ */
+export function localTerminalFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const switches = parseAreaSwitches(env['WIREBENCH_AREAS']);
+  return enabledAreaIds(switches).includes('ssh') && switches[LOCAL_TERMINAL_SWITCH] !== false;
+}
+
 /** Registers the IPC channels of the areas that are switched on; an off area answers nothing. */
 export function registerEnabledAreaChannels(
   enabled: readonly AreaId[],
-  deps: Parameters<typeof registerSshChannels>[0],
+  deps: Parameters<typeof registerSshChannels>[0] & {
+    /** The local terminal's shells; `undefined` while {@link localTerminalFromEnv} has it off. */
+    readonly localTerminal?: Parameters<typeof registerLocalTerminalChannels>[0] | undefined;
+  },
 ): void {
-  if (enabled.includes('ssh')) registerSshChannels(deps);
+  if (!enabled.includes('ssh')) return;
+  registerSshChannels(deps);
+  if (deps.localTerminal !== undefined) registerLocalTerminalChannels(deps.localTerminal);
 }
 
 /**

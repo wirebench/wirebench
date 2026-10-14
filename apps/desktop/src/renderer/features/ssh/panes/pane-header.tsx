@@ -1,6 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
 import { openFiles } from '../files/open-files.js';
+import { AgentForwardingMark, agentForwardingOf } from '../agent-forwarding.js';
 import { findHost, useHostsStore } from '../hosts-store.js';
 import { sessionStatus } from '../session-status.js';
 import { setTicked, useTabBroadcast } from './broadcast.js';
@@ -33,6 +34,7 @@ export function PaneHeader({
   const { paneId, hostId } = pane;
   const name = useHostName(hostId);
   const status = sessionStatus(useHostsStore((s) => s.panes[paneId]?.state));
+  const forwarding = useHostsStore((s) => agentForwardingOf(s.panes, [paneId]));
   const broadcast = useTabBroadcast(tabId);
   return (
     <div
@@ -45,6 +47,7 @@ export function PaneHeader({
         ●
       </span>
       <span className="min-w-0 flex-1 truncate">{name}</span>
+      {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
       {broadcast.on && (
         <input
           type="checkbox"

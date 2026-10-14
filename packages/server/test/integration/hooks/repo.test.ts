@@ -34,6 +34,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'live-updates',
       'scheduled-runs',
       'audit-log',
+      'sso',
     ]);
   });
 

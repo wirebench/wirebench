@@ -115,6 +115,11 @@ const SIGN_IN_MESSAGES: Readonly<Record<string, string>> = {
   'account-sign-in-cancelled': 'Sign-in cancelled.',
   'external-url-refused': 'The server returned a sign-in address that is not http(s); nothing was opened.',
   'identity-flow-invalid': 'The sign-in took too long or was already used. Try again.',
+  'identity-saml-refused': "The identity provider's response was not accepted.",
+  'identity-saml-no-email': 'The identity provider did not send an email address for this account.',
+  'identity-saml-transient-nameid':
+    'The identity provider sent a one-time identifier. Ask your admin to send a persistent NameID.',
+  'licensing-feature-required': 'SAML sign-in needs an Enterprise license on this server. Ask a server admin.',
 };
 
 export function signInErrorMessage(error: IpcError): string {

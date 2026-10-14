@@ -31,6 +31,17 @@ interface XpathApi {
   };
 }
 
+/** The slice of `window.wirebench` the local terminal check calls, declared as `XpathApi` is. */
+interface LocalTerminalApi {
+  readonly localTerminal: {
+    open(request: {
+      readonly cols: number;
+      readonly rows: number;
+    }): Promise<{ readonly ok: true; readonly value: { readonly sessionId: string } } | { readonly ok: false }>;
+    close(request: { readonly sessionId: string }): Promise<unknown>;
+  };
+}
+
 /**
  * The shipped artifact, exercised as an artifact.
  *
@@ -97,6 +108,21 @@ test.describe('packaged app', () => {
 
     await expect(launched.window.getByTestId('workspace-picker')).toBeVisible({ timeout: 60_000 });
     await expect(launched.window.getByTestId('status-bar')).toBeVisible();
+  });
+
+  test('starts a local shell through the pty binding vendored beside the asar', async () => {
+    launched = await launchPackagedApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await expect(page.getByTestId('workspace-picker')).toBeVisible({ timeout: 60_000 });
+    // The binding is the runner's for no build: each is mapped in from build-resources (#410). A wrong
+    // architecture or a file left inside the asar fails the open with local-terminal-unavailable.
+    const opened = await page.evaluate(async () => {
+      const wirebench = (globalThis as unknown as { wirebench: LocalTerminalApi }).wirebench;
+      const result = await wirebench.localTerminal.open({ cols: 80, rows: 24 });
+      if (result.ok) await wirebench.localTerminal.close({ sessionId: result.value.sessionId });
+      return result.ok;
+    });
+    expect(opened).toBe(true);
   });
 
   test('runs XPath (worker) and schema validation (xmllint-wasm) from inside the asar', async () => {
