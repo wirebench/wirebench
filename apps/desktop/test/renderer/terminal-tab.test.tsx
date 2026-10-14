@@ -1,6 +1,6 @@
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // jsdom has no canvas or layout, so the terminal is a recording stand-in.
 const xterm = vi.hoisted(() => {
@@ -201,6 +201,15 @@ const listSnippets = vi.fn();
 const previewSnippet = vi.fn(() => Promise.resolve({ ok: true as const, value: { text: '', revision: '' } }));
 const preferencesUpdate = vi.fn();
 const writeText = vi.fn();
+
+// The editor area loads the terminal and Files tabs lazily. Loading them here keeps that cold import, slow on
+// a busy Windows runner, out of the first test's waits.
+beforeAll(async () => {
+  await Promise.all([
+    import('../../src/renderer/features/ssh/terminal-tab.js'),
+    import('../../src/renderer/features/ssh/files/files-tab.js'),
+  ]);
+});
 
 beforeEach(() => {
   xterm.FakeTerminal.instances = [];
