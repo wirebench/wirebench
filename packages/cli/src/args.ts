@@ -56,7 +56,7 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
                        requests: its steps in order, with their transfers and assertions.
                        Repeatable; cannot be combined with selectors.
     --data <file>      CSV (header row) or JSON (array of objects): one iteration per row, each
-                       column read as \${#Data#column}. Relative to the working directory.
+                       column read as \${column}. Relative to the working directory.
     --iterations <n>   Iterations to run (1-10000). Default: the data file's rows, else 1.
     --data-overrun <mode>
                        stop | wrap | repeat-last: when --iterations exceeds the rows. Default: stop.

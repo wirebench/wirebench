@@ -26,9 +26,25 @@ describe('the Data scope (#336)', () => {
     expect(expand('${#Data#user}', without).unresolved).toMatchObject([{ code: 'missing' }]);
   });
 
-  it('is never reached by the ${name} shorthand', () => {
+  it('is reached by the ${name} shorthand last, so a column never shadows a property (#560)', () => {
     expect(expand('${user}', scopes({ user: 'ann' })).text).toBe('env-user');
-    expect(expand('${only}', scopes({ only: 'x' })).unresolved).toMatchObject([{ name: 'only', code: 'missing' }]);
+    const only = expand('${only}', scopes({ only: 'x' }));
+    expect(only.text).toBe('x');
+    expect(only.unresolved).toEqual([]);
+    expect(only.used).toEqual([{ scope: 'Data', name: 'only' }]);
+    expect(expand('${only}', scopes({})).unresolved).toMatchObject([{ name: 'only', code: 'missing' }]);
+  });
+
+  it('substitutes a cell the shorthand reaches literally too', () => {
+    for (const value of ['${secret:k}', '${#System#HOME}', '${user}', '$${y}']) {
+      const result = expand('v=${cell}', scopes({ cell: value }));
+      expect(result.text).toBe(`v=${value}`);
+      expect(result.unresolved).toEqual([]);
+    }
+  });
+
+  it('reaches a cell by the shorthand from a chained Env value', () => {
+    expect(expand('${#Env#greeting}', scopes({ name: 'ann' }, { greeting: 'hi ${name}' })).text).toBe('hi ann');
   });
 
   it('substitutes a cell literally: its own references are not expanded', () => {
@@ -62,5 +78,6 @@ describe('the Data scope (#336)', () => {
 
   it('never leads secretNamesIn to a secret inside a cell', () => {
     expect(secretNamesIn('${#Data#cell}', scopes({ cell: '${secret:k}' }))).toEqual([]);
+    expect(secretNamesIn('${cell}', scopes({ cell: '${secret:k}' }))).toEqual([]);
   });
 });
