@@ -13,6 +13,7 @@ export {
   type PlannedFolder,
   type PlannedHost,
   type PlannedKey,
+  type PlannedProxy,
   type PlannedSettings,
   type SshConfigImportInput,
   type SshConfigImportPlan,

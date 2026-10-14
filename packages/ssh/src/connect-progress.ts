@@ -37,9 +37,11 @@ export type ConnectProgress =
  * Why a hop could not be reached, in `ssh-connect-failed` details as `reason`: `dns` the name did not
  * resolve, `refused` nothing listens on the port, `timeout` no answer in time, `unreachable` no route,
  * `reset` the server dropped the connection, `jump` a jump host would not open the channel onwards,
- * `other` anything else.
+ * `proxy` the proxy the first hop is dialled through failed (details: `proxy`, `proxyType`, and
+ * `proxyReason`, one of the reasons above for reaching the proxy itself or `auth`, `refused`, `protocol`,
+ * `closed` for its handshake), `other` anything else.
  */
-export type ConnectFailure = 'dns' | 'refused' | 'timeout' | 'unreachable' | 'reset' | 'jump' | 'other';
+export type ConnectFailure = 'dns' | 'refused' | 'timeout' | 'unreachable' | 'reset' | 'jump' | 'proxy' | 'other';
 
 const DNS_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'EAI_FAIL', 'EAI_NODATA', 'EAI_NONAME']);
 const UNREACHABLE_CODES = new Set(['EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL', 'EHOSTDOWN', 'ENETDOWN']);
