@@ -104,6 +104,7 @@ describe('terminal preferences', () => {
       snippetSuggestions: true,
       sessionLogMaxMb: 500,
       sessionLogRaw: false,
+      localShell: '',
     });
   });
 
@@ -119,6 +120,7 @@ describe('terminal preferences', () => {
       snippetSuggestions: false,
       sessionLogMaxMb: 500,
       sessionLogRaw: false,
+      localShell: '',
     });
     expect(mergePreferences({ terminal: { copyOnSelect: 'yes' } }).terminal).toEqual(DEFAULT_PREFERENCES.terminal);
   });
@@ -139,6 +141,14 @@ describe('terminal preferences', () => {
   it('reads an older file without terminal.snippetSuggestions as on', () => {
     expect(mergePreferences({ terminal: { copyOnSelect: true } }).terminal.snippetSuggestions).toBe(true);
     expect(mergePreferences({}).terminal.snippetSuggestions).toBe(true);
+  });
+
+  it('reads terminal.localShell, empty (the OS default) when missing or not a string', () => {
+    expect(mergePreferences({ terminal: { localShell: '/usr/local/bin/fish' } }).terminal.localShell).toBe(
+      '/usr/local/bin/fish',
+    );
+    expect(mergePreferences({}).terminal.localShell).toBe('');
+    expect(mergePreferences({ terminal: { localShell: 42 } }).terminal.localShell).toBe('');
   });
 
   it('reads and clamps terminal.reconnectAttempts', () => {

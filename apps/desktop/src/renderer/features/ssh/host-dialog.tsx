@@ -13,6 +13,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { forwardProblem } from './forwarding/forward-form.js';
 import { ForwardsSection, inheritedForwards } from './forwarding/forwards-section.js';
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
+import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { SSH_DEFAULTS, SSH_OS_IDS } from '../../../shared/ssh-defaults.js';
@@ -298,6 +299,13 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
         onChange={set('connectTimeout')}
       />
       <HostAuthSection value={ssh.auth} inherited={inheritedFrom(chain, 'auth')} onChange={set('auth')} />
+      <AgentForwardingSection
+        override={ssh.forwardAgent}
+        inherited={inheritedForwardAgent(chain)}
+        onChange={(next) => {
+          setSsh((prev) => withField(prev, 'forwardAgent', next));
+        }}
+      />
       <EnvSection own={env} inherited={inheritedEnv(chain)} onChange={setEnv} />
       <ForwardsSection own={forwards} inherited={inheritedForwards(chain)} onChange={setForwards} />
       {failed && problems[0] !== undefined && (

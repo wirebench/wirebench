@@ -2131,6 +2131,32 @@ export {
 } from './server-api/ci-tokens.js';
 export type { CiTokenCreateRequest, CiTokenCreated, CiTokenSummary, CiWhoamiResponse } from './server-api/ci-tokens.js';
 export {
+  SCIM_TOKEN_NAME_MAX_LENGTH,
+  SCIM_TOKEN_PATTERN,
+  samlCompleteRequestSchema,
+  samlInfoResponseSchema,
+  samlStartRequestSchema,
+  samlStartResponseSchema,
+  scimGroupLinkRequestSchema,
+  scimGroupSummarySchema,
+  scimGroupsResponseSchema,
+  scimTokenCreateRequestSchema,
+  scimTokenCreatedSchema,
+  scimTokenSummarySchema,
+  scimTokensResponseSchema,
+} from './server-api/saml-scim.js';
+export type {
+  SamlCompleteRequest,
+  SamlInfoResponse,
+  SamlStartRequest,
+  SamlStartResponse,
+  ScimGroupLinkRequest,
+  ScimGroupSummary,
+  ScimTokenCreateRequest,
+  ScimTokenCreated,
+  ScimTokenSummary,
+} from './server-api/saml-scim.js';
+export {
   ALERT_TARGET_KINDS,
   ALERT_DELIVERY_STATES,
   SCHEDULE_ALERT_STATES,

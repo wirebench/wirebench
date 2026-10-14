@@ -70,6 +70,14 @@ const sections: Section[] = [
     links: [{ label: 'Tamper evidence', slug: DOCS_LINKS.serverAuditLog }],
   },
   {
+    heading: 'SAML sign-in and SCIM provisioning',
+    paragraphs: [
+      'An Enterprise server can sit behind your identity provider, such as Entra ID or Okta. People sign in with Continue with SSO, which goes through the identity provider in the browser and back to the app. The server checks every assertion it is given: the signature, the issuer, the audience, the recipient, the time window, and that it answers a sign-in the app started.',
+      'Over SCIM the identity provider creates accounts, keeps names and emails current, and deactivates leavers, which disables the account, signs out its devices and keeps its data. Groups it pushes can be linked to teams, and SCIM only ever removes the members it added. Nobody gets an account just by signing in: it comes from SCIM or an invitation.',
+    ],
+    links: [{ label: 'Read the SAML and SCIM guide', slug: DOCS_LINKS.serverSamlScim }],
+  },
+  {
     heading: 'Scheduled runs',
     paragraphs: [
       "An Enterprise server runs a shared workspace's suites on a schedule, the way wirebench run runs them in a pipeline: a cron expression in a time zone, the project, the environment and the requests or suites to run. Each run reads the workspace as last pushed, and its results are kept for 90 days unless you set another age.",

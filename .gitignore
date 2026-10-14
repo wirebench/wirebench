@@ -21,3 +21,4 @@ release
 packages/*/LICENSE
 apps/desktop/build-resources/
 !packages/engine/test/fixtures/saml/*.pem
+!packages/server/test/fixtures/saml/*.pem

@@ -1,6 +1,8 @@
 import type { Duplex } from 'node:stream';
 import { Client } from 'ssh2';
 import type { ConnectConfig } from 'ssh2';
+import { certificateAuth } from './cert-auth.js';
+import type { CertificateAuth } from './cert-auth.js';
 import { SshModelError } from './errors.js';
 import { fingerprintOf, keyTypeOf } from './known-hosts.js';
 import type { KnownHostEntry } from './known-hosts.js';
@@ -11,7 +13,13 @@ export interface HopCredentials {
   readonly user: string;
   readonly auth:
     | { kind: 'password'; password: string }
-    | { kind: 'key'; privateKey: string; passphrase?: string }
+    | {
+        kind: 'key';
+        privateKey: string;
+        passphrase?: string;
+        /** An OpenSSH user certificate for the key: offered first, then the key alone. */
+        certificate?: string;
+      }
     | { kind: 'agent'; socket: string };
   /** Seconds; 0 turns keep-alive off. */
   readonly keepAlive: number;
@@ -32,6 +40,11 @@ export interface DialOptions {
     hop: { readonly address: string; readonly port: number },
     key: KnownHostEntry,
   ) => Promise<'accept' | 'reject'>;
+  /**
+   * The local agent's socket, handed to the target's client only so a shell opened on it can forward the
+   * agent ({@link openSession}). The target authenticates as it would without it; jump hosts never see it.
+   */
+  readonly forwardAgent?: string;
 }
 
 export interface DialledChain {
@@ -45,7 +58,10 @@ export interface DialledChain {
   readonly lost: boolean;
 }
 
-/** ssh-host-key-new {host,keyType,fingerprint} · ssh-auth-failed {host,method} · ssh-connect-failed {host,hop} */
+/**
+ * ssh-host-key-new {host,keyType,fingerprint} · ssh-auth-failed {host,method} · ssh-connect-failed {host,hop} ·
+ * ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host}
+ */
 export class SshConnectError extends SshModelError {}
 
 export const hostOf = (hop: HopCredentials): string => `${hop.address}:${hop.port}`;
@@ -58,10 +74,27 @@ function connectHop(
   onLost: () => void,
 ): Promise<Client> {
   return new Promise((resolve, reject) => {
+    let certAuth: CertificateAuth | undefined;
+    if (hop.auth.kind === 'key' && hop.auth.certificate !== undefined) {
+      try {
+        certAuth = certificateAuth({
+          username: hop.user,
+          privateKey: hop.auth.privateKey,
+          certificate: hop.auth.certificate,
+          ...(hop.auth.passphrase ? { passphrase: hop.auth.passphrase } : {}),
+        });
+      } catch (error) {
+        const { code, message, details } = error as SshModelError;
+        const host = hostOf(hop);
+        reject(new SshConnectError(code, `${host}: ${message}`, { ...details, host }));
+        return;
+      }
+    }
     const client = new Client();
     let rejectedKey: KnownHostEntry | undefined;
     let verifierFailed = false;
     const where = { address: hop.address, port: hop.port };
+    const forward = index === options.hops.length - 1 ? options.forwardAgent : undefined;
     const config: ConnectConfig = {
       host: hop.address,
       port: hop.port,
@@ -69,10 +102,15 @@ function connectHop(
       readyTimeout: hop.connectTimeout * 1000,
       keepaliveInterval: hop.keepAlive > 0 ? hop.keepAlive * 1000 : 0,
       ...(hop.auth.kind === 'password' ? { password: hop.auth.password } : {}),
-      ...(hop.auth.kind === 'key'
+      ...(certAuth ? { authHandler: certAuth.authHandler } : {}),
+      ...(hop.auth.kind === 'key' && !certAuth
         ? { privateKey: hop.auth.privateKey, ...(hop.auth.passphrase ? { passphrase: hop.auth.passphrase } : {}) }
         : {}),
       ...(hop.auth.kind === 'agent' ? { agent: hop.auth.socket } : {}),
+      // An agent given only to forward is never offered for auth: the hop keeps to its own method.
+      ...(forward !== undefined && hop.auth.kind !== 'agent'
+        ? { agent: forward, authHandler: ['none', hop.auth.kind === 'password' ? 'password' : 'publickey'] }
+        : {}),
       ...(sock ? { sock } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
         const entry: KnownHostEntry = {
@@ -97,10 +135,12 @@ function connectHop(
       if (rejectedKey && !verifierFailed) {
         reject(new SshConnectError('ssh-host-key-new', `${host} presented an untrusted key`, { ...rejectedKey }));
       } else if (error.level === 'client-authentication') {
+        // With a certificate, both it and the key alone were refused.
+        const method = certAuth ? 'certificate' : hop.auth.kind;
         reject(
-          new SshConnectError('ssh-auth-failed', `${host} refused ${hop.auth.kind} authentication for ${hop.user}`, {
+          new SshConnectError('ssh-auth-failed', `${host} refused ${method} authentication for ${hop.user}`, {
             host,
-            method: hop.auth.kind,
+            method,
           }),
         );
       } else {
@@ -119,6 +159,7 @@ function connectHop(
     client.once('error', onConnectError);
     try {
       client.connect(config);
+      certAuth?.attach(client);
     } catch {
       // The library message can describe the key material, so it is never forwarded.
       const host = hostOf(hop);

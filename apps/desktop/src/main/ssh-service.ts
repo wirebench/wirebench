@@ -34,6 +34,7 @@ import { sshHostOsResponseSchema } from '../shared/ssh-wire.js';
 import type {
   SshCloseRequest,
   SshConnectRequest,
+  SshConnectResponse,
   SshDetectedOsWire,
   SshHostOsWire,
   SshOsId,
@@ -189,7 +190,7 @@ export class SshService {
    *   `ssh-host-incomplete` | `secret-missing` | `ssh-auth-failed` | `ssh-host-key-new` |
    *   `ssh-host-key-changed` | `ssh-connect-failed`
    */
-  async connect(sender: WebContents, request: SshConnectRequest): Promise<{ sessionId: string }> {
+  async connect(sender: WebContents, request: SshConnectRequest): Promise<SshConnectResponse> {
     let flight = this.inFlight.get(sender.id);
     if (!flight) {
       flight = { count: 0, generation: 0 };
@@ -208,14 +209,14 @@ export class SshService {
     sender: WebContents,
     request: SshConnectRequest,
     flight: { readonly generation: number },
-  ): Promise<{ sessionId: string }> {
+  ): Promise<SshConnectResponse> {
     const epoch = this.epoch;
     const generation = flight.generation;
     // A quit, or this window's workspace switching (or the window going), since the connect began.
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const { hops, env, secrets } = await this.connector.prepareShell(sender, request.hostId, stale);
+    const { hops, env, secrets, forwardAgent } = await this.connector.prepareShell(sender, request.hostId, stale);
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
@@ -228,6 +229,7 @@ export class SshService {
         rows: request.rows,
         verifyHostKey,
         ...(Object.keys(env).length === 0 ? {} : { env }),
+        ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
       });
     } catch (error) {
       // A refused key is forgotten with the window, as its sessions are.
@@ -300,7 +302,9 @@ export class SshService {
     this.sessionsChanged(sender, request.hostId);
     const target = hops[hops.length - 1];
     if (target) void this.probeOs(sender, session, `${target.address}:${target.port}`);
-    return { sessionId };
+    if (forwardAgent === undefined) return { sessionId };
+    const forwarding = forwardAgent.socket === undefined ? 'no-agent' : session.agentForwarding;
+    return forwarding === 'off' ? { sessionId } : { sessionId, agentForwarding: forwarding };
   }
 
   /**

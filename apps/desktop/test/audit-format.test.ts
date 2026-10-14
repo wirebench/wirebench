@@ -27,6 +27,8 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
     expect(actionLabel('workspace.default_role_changed')).toBe('Default role changed');
     expect(actionLabel('ci_token.revoked')).toBe('Revoked');
     expect(ACTION_GROUP_LABELS['ci_token']).toBe('CI tokens');
+    expect(ACTION_GROUP_LABELS['scim']).toBe('Provisioning');
+    expect(actorLabel({ kind: 'scim', tokenId: 't' })).toBe('Provisioning (SCIM)');
     expect(actorLabel({ kind: 'user', email: 'a@example.com' })).toBe('a@example.com');
     expect(actorLabel({ kind: 'system' })).toBe('Server console');
     expect(actorLabel({ kind: 'anonymous' })).toBe('Not signed in');

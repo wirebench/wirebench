@@ -63,6 +63,25 @@ describe('applySshConfigImport', () => {
     });
   });
 
+  it('adds a <secret>_cert reference for a key whose certificate was stored', async () => {
+    const plan = await setup(
+      'Host a\n  IdentityFile ~/.ssh/a\n  CertificateFile ~/.ssh/a-cert.pub\nHost b\n  IdentityFile ~/.ssh/b\n  CertificateFile ~/.ssh/b-cert.pub\n',
+    );
+    const result = applySshConfigImport(
+      plan,
+      choose({
+        keys: { k1: { kind: 'store', secret: 'key_a' }, k2: { kind: 'existing', secret: 'team_key' } },
+        certified: ['k1'],
+      }),
+      EMPTY_HOSTS_FILE,
+    );
+    const auth = Object.fromEntries((result.groups[0]?.hosts ?? []).map((h) => [h.id, h.ssh.auth]));
+    expect(auth).toEqual({
+      a: { kind: 'key', key: '${secret:key_a}', certificate: '${secret:key_a_cert}' },
+      b: { kind: 'key', key: '${secret:team_key}' },
+    });
+  });
+
   it('imports a duplicate only when asked', async () => {
     const plan = await setup('Host web\n  HostName web.example.com\n  User deploy\n');
     expect(applySshConfigImport(plan, choose(), EXISTING).groups[1]?.hosts).toEqual([]);

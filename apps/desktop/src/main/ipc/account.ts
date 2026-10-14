@@ -15,6 +15,7 @@ export interface AccountChannelDeps {
     | 'probe'
     | 'signInLocal'
     | 'startOidc'
+    | 'startSaml'
     | 'cancelSignIn'
     | 'lookupInvitation'
     | 'acceptInvitation'
@@ -54,6 +55,14 @@ export function registerAccountChannels(deps: AccountChannelDeps): void {
   registerHandler(channels.account.startOidc, async (request) => ({
     account: toAccountWire(
       await deps.accounts.startOidc({
+        url: request.url,
+        ...(request.deviceName !== undefined ? { deviceName: request.deviceName } : {}),
+      }),
+    ),
+  }));
+  registerHandler(channels.account.startSaml, async (request) => ({
+    account: toAccountWire(
+      await deps.accounts.startSaml({
         url: request.url,
         ...(request.deviceName !== undefined ? { deviceName: request.deviceName } : {}),
       }),

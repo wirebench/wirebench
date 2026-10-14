@@ -5,7 +5,7 @@
 **Goal:** Enterprise servers sign people in with SAML 2.0 beside local accounts and OIDC. An IdP provisions
 and deprovisions users and pushes groups over SCIM 2.0, and a server admin links those groups to teams.
 
-**Architecture:** Everything lives inside the `identity` module (`packages/server/src/identity/`), behind the
+**Architecture:** Everything lives in a new `sso` module (`packages/server/src/sso/`, ruling 11), behind the
 new `sso-provisioning` licence feature. SAML reuses the OIDC loopback flow with its own `saml_flows` table.
 One file, `identity/saml.ts`, wraps `@node-saml/node-saml` behind a `SamlProvider` interface. SCIM is a
 root-level plugin at `/scim/v2` (`registerPublic`), with its own bearer-token hook and its own error shape.
@@ -26,7 +26,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
   Entra ID signs only the assertion by default; the assertion signature is the one that matters),
   `validateInResponseTo: 'always'`, `audience` set, and clock skew from configuration (default 120 s,
   max 300 s). node-saml 5.1 checks neither `SubjectConfirmationData/@Recipient` nor the response's
-  `Destination`, so `saml.ts` checks both itself. SHA-1 signatures are refused. The ACS body is capped at 256 KiB.
+  `Destination`, and applies `idpIssuer` to logout messages only, so `saml.ts` checks all three itself. SHA-1 signatures are refused. The ACS body is capped at 256 KiB.
 - SP-initiated only. A response without `InResponseTo`, or with another flow's, is refused.
 - SAML never creates an account except by accepting an open invitation. SCIM creates accounts.
 - SCIM tokens: `wbscim_` + base64url(32 bytes), SHA-256 stored, constant-time compare, shown once. They work
@@ -37,10 +37,11 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
   changes a role, and never disables the last enabled server admin.
 - Every sign-in, refusal and provisioning write records an audit event. `details` never carries XML,
   attributes or token secrets.
-- The migration is `identity/0014_saml-scim.sql`. If #343 merges a 0014 first, rename this file to the
-  next free number (migrations are contiguous across modules).
-- Stay inside `identity/`, `teams/repo.ts`, the engine's `server-api/`, and the desktop's account and team
-  features. No change to `modules.ts`, `serve.ts` or `server.ts` except adding redaction keys.
+- The migration is `sso/0015_saml-scim.sql`. #343 merged its 0014 first, so this file is 0015
+  (migration numbers are global across modules).
+- Stay inside `sso/`, `identity/` (only to share linking and sessions), `teams/repo.ts`, the engine's
+  `server-api/`, and the desktop's account and team features. `modules.ts` and `context.ts` gain one entry
+  each (ruling 11); `serve.ts` is untouched, and `server.ts` only gains redaction keys.
 - The renderer imports only **types** from `shared/wire-types.ts` (the CSP trap).
 - A new dependency needs `pnpm licenses:third-party`.
 - Never name the products that inspired a feature (`pnpm check:banned-terms`). IdP vendor names (Entra ID,
@@ -75,6 +76,18 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
    `other-key.pem`, `other-cert.pem` (self-signed RSA 2048, generated once with openssl, valid until 2126,
    test-only and labelled so in a README). `test/support/saml-idp.ts` builds and signs responses with
    `xml-crypto` and has helpers for each tampering case.
+10. **Each audit action lands with the task that fires it.** `audit-log/coverage.test.ts` requires every
+    entry of `AUDIT_ACTIONS` to be asserted in `test/integration/audit-log/`. So Task 1 adds only the
+    actor kind, the target kinds and the action group. Tasks 8, 10, 11 and 12 add their actions, each with
+    `test/integration/audit-log/saml-scim.test.ts` cases. `0008_audit-log.sql` limits `actor_kind`, so
+    Task 3's migration widens that check to include `scim`.
+11. **The work is a module of its own, `sso`, registered last.** Migration versions must be contiguous for
+    the modules a server runs, so an identity-only server cannot load a 0014 that names `teams` and
+    `audit_events`. Every file this plan places under `src/identity/` for SAML or SCIM lives under
+    `src/sso/` instead (`sso/saml.ts`, `sso/saml-metadata.ts`, `sso/repo.ts`, `sso/scim/…`,
+    `sso/routes/…`), and the migration is `migrations/sso/0015_saml-scim.sql`. `identity` keeps its
+    sessions, linking and guard, and `sso` calls them. `modules.ts` gains `ssoModule()` after
+    `auditLogModule()`, and `ServerModule['name']` gains `'sso'`.
 
 ## File map
 
@@ -88,7 +101,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
 - Modify `packages/engine/src/index.ts`: exports.
 
 **Server**
-- Create `packages/server/migrations/identity/0014_saml-scim.sql`.
+- Create `packages/server/migrations/identity/0015_saml-scim.sql`.
 - Modify `packages/server/src/config.ts`: the five `SAML_*` variables.
 - Create `identity/saml-metadata.ts`, `identity/saml.ts`, `identity/routes/auth-saml.ts`,
   `identity/user-state.ts`, `identity/scim-tokens.ts`, `identity/routes/scim-tokens.ts`,
@@ -116,8 +129,8 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
 ### Task 1: Engine wire shapes
 
 - [ ] Tests first (`packages/engine/test/unit/server-api/`): `FEATURES` contains `sso-provisioning`, and
-  `grantedFeatures` for an Enterprise licence includes it. The audit enums accept the new actor, targets
-  and actions, and `AUDIT_ACTION_GROUPS` has `scim`. `metaResponseSchema` parses with and without `saml`
+  `grantedFeatures` for an Enterprise licence includes it. The audit enums accept the new actor and
+  targets, and `AUDIT_ACTION_GROUPS` has `scim` (actions: ruling 10). `metaResponseSchema` parses with and without `saml`
   (an older server). The new schemas round-trip, refuse unknown keys where the existing ones do, and the
   SCIM token name is limited to 1–64 characters.
 - [ ] Implement. Re-export from `index.ts`.
@@ -140,7 +153,7 @@ Group links write team memberships through `teams/repo.ts`, recording each one i
 
 ### Task 3: Migration and repository
 
-- [ ] `0014_saml-scim.sql` exactly as spec §4.
+- [ ] `0015_saml-scim.sql` exactly as spec §4.
 - [ ] Integration tests (`test/integration/identity/saml-scim-repo.test.ts`): insert and look up a SAML
   identity; insert a flow, look it up by relay state, grant it once (`grant_hash is null`, a second grant is
   refused), claim it once; delete expired flows. SCIM tokens: insert, look up by hash, revoke, the name

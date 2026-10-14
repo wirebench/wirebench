@@ -42,6 +42,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       probe: fail('account.probe'),
       signInLocal: fail('account.signInLocal'),
       startOidc: fail('account.startOidc'),
+      startSaml: fail('account.startSaml'),
       cancelSignIn: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: false } }),
       lookupInvitation: fail('account.lookupInvitation'),
       acceptInvitation: fail('account.acceptInvitation'),
@@ -308,6 +309,14 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     },
     ciTokens: { list: fail('ciTokens.list'), create: fail('ciTokens.create'), revoke: fail('ciTokens.revoke') },
     license: { get: fail('license.get'), install: fail('license.install'), remove: fail('license.remove') },
+    provisioning: {
+      info: fail('provisioning.info'),
+      listTokens: fail('provisioning.listTokens'),
+      createToken: fail('provisioning.createToken'),
+      revokeToken: fail('provisioning.revokeToken'),
+      listGroups: fail('provisioning.listGroups'),
+      linkGroup: fail('provisioning.linkGroup'),
+    },
     audit: { query: fail('audit.query'), export: fail('audit.export') },
     xml: {
       completions: fail('xml.completions'),

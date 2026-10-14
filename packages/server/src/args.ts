@@ -10,6 +10,12 @@ export type ServerCommand =
   | { readonly command: 'admin-license-install'; readonly file: string }
   | { readonly command: 'admin-license-show' }
   | { readonly command: 'admin-license-remove' }
+  | { readonly command: 'admin-scim-token-create'; readonly name: string }
+  | { readonly command: 'admin-scim-token-list' }
+  | { readonly command: 'admin-scim-token-revoke'; readonly id: string }
+  | { readonly command: 'admin-scim-group-list' }
+  | { readonly command: 'admin-scim-group-link'; readonly group: string; readonly team: string }
+  | { readonly command: 'admin-scim-group-unlink'; readonly group: string }
   | {
       readonly command: 'admin-audit-export';
       readonly from?: string;
@@ -49,6 +55,14 @@ Usage:
                                     Install a license file (replaces any installed license)
   wirebench-server admin license show
   wirebench-server admin license remove
+  wirebench-server admin scim-token create <name>
+                                    Create a SCIM token for the identity provider (printed once)
+  wirebench-server admin scim-token list
+  wirebench-server admin scim-token revoke <id>
+  wirebench-server admin scim-group list
+  wirebench-server admin scim-group link <group> <team>
+                                    Link a SCIM group (id or name) to a team (id or name)
+  wirebench-server admin scim-group unlink <group>
   wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
                                     Write the audit log as NDJSON to stdout
   wirebench-server admin audit verify [--head <seq>:<hex>] [--json]
@@ -107,7 +121,7 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   if (parsed.values.help) return { command: 'help' };
   if (parsed.values.version) return { command: 'version' };
-  const [word, second, third, fourth] = parsed.positionals;
+  const [word, second, third, fourth, fifth] = parsed.positionals;
   if (parsed.values['no-admin'] && !(word === 'admin' && second === 'invite')) {
     throw new UsageError('--no-admin only applies to admin invite');
   }
@@ -206,6 +220,35 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
               return { command: 'admin-license-remove' };
             default:
               throw new UsageError('usage: wirebench-server admin license install <file> | show | remove');
+          }
+        case 'scim-token':
+          switch (third) {
+            case 'create':
+              if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-token create <name>');
+              return { command: 'admin-scim-token-create', name: fourth };
+            case 'list':
+              return { command: 'admin-scim-token-list' };
+            case 'revoke':
+              if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-token revoke <id>');
+              return { command: 'admin-scim-token-revoke', id: fourth };
+            default:
+              throw new UsageError('usage: wirebench-server admin scim-token create <name> | list | revoke <id>');
+          }
+        case 'scim-group':
+          switch (third) {
+            case 'list':
+              return { command: 'admin-scim-group-list' };
+            case 'link':
+              if (fourth === undefined || fifth === undefined)
+                throw new UsageError('usage: wirebench-server admin scim-group link <group> <team>');
+              return { command: 'admin-scim-group-link', group: fourth, team: fifth };
+            case 'unlink':
+              if (fourth === undefined) throw new UsageError('usage: wirebench-server admin scim-group unlink <group>');
+              return { command: 'admin-scim-group-unlink', group: fourth };
+            default:
+              throw new UsageError(
+                'usage: wirebench-server admin scim-group list | link <group> <team> | unlink <group>',
+              );
           }
         default:
           throw new UsageError(`unknown admin command "${second ?? ''}"; try --help`);

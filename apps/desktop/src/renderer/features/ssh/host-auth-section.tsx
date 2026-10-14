@@ -78,9 +78,29 @@ export function HostAuthSection(props: {
             value={value.secret}
             names={names}
             onChange={(secret) => {
-              onChange({ ...value, secret });
+              if (value.kind !== 'key') return onChange({ ...value, secret });
+              // A keychain key's certificate goes with it (`<key>_cert`, #421).
+              const { certificateSecret, ...rest } = value;
+              void certificateSecret;
+              const cert = `${secret}_cert`;
+              onChange(
+                names.some((n) => n.name === cert) ? { ...rest, secret, certificateSecret: cert } : { ...rest, secret },
+              );
             }}
           />
+          {value.kind === 'key' && (
+            <SecretSelect
+              label="Certificate secret"
+              value={value.certificateSecret ?? ''}
+              names={names}
+              optional
+              onChange={(name) => {
+                const { certificateSecret, ...rest } = value;
+                void certificateSecret;
+                onChange(name === '' ? rest : { ...rest, certificateSecret: name });
+              }}
+            />
+          )}
           {value.kind === 'key' && (
             <SecretSelect
               label="Passphrase secret"
