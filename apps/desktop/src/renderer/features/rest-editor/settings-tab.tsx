@@ -1,16 +1,29 @@
 /**
  * The request's own transport settings.
  *
- * Every setting is optional, and an absent one means *inherit* — never *off*. So each row shows the
- * inherited value it would fall back to, and a row the request has not set is left empty rather than
- * pre-filled with that value: a filled field would be indistinguishable from an override, and saving
- * it would freeze today's inherited value into the request.
+ * Every setting is optional, and an absent one means *inherit* — never *off*. So a row the request
+ * has not set is left empty rather than pre-filled: a filled field would be indistinguishable from an
+ * override, and saving it would freeze today's inherited value into the request. The inherited value
+ * shows instead as the empty field's placeholder (or as the checkbox's state), with a short "from …"
+ * link beside it to where that value is set (#560). An overridden on/off row offers "Inherit" to go
+ * back.
  */
 import { BooleanSetting, NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import type { RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
 
-/** The values a request falls back to, for the hints. */
+/** Where an inherited value is set, so the row can say so and open it. */
+export type InheritedSource = 'project' | 'preferences-rest' | 'default';
+
+/** How each source reads in the "from …" link. */
+export const SOURCE_LABEL: Readonly<Record<InheritedSource, string>> = {
+  project: 'Project settings',
+  'preferences-rest': 'Preferences ▸ REST',
+  default: 'the default',
+};
+
+/** The values a request falls back to, for the placeholders. */
 export interface InheritedRestSettings {
+  /** The project's Default timeout, which a send falls back to before any preference. */
   readonly timeoutMs: number;
   readonly followRedirects: boolean;
   readonly maxRedirects: number;
@@ -18,19 +31,64 @@ export interface InheritedRestSettings {
   readonly sendCookies: boolean;
 }
 
+/** Which source each inheriting setting reads; fixed by how a send resolves them (`toRestSendInput`). */
+const SOURCES = {
+  timeoutMs: 'project',
+  followRedirects: 'preferences-rest',
+  maxRedirects: 'preferences-rest',
+  encodeUrl: 'default',
+  sendCookies: 'default',
+} as const satisfies Readonly<Record<keyof InheritedRestSettings, InheritedSource>>;
+
 export interface SettingsTabProps {
   readonly settings: RestSettingsWire;
   readonly inherited: InheritedRestSettings;
   readonly onChange: (patch: RestRequestPatchWire) => void;
+  /** Opens where an inherited value is set: the project's tab, or a Preferences page. */
+  readonly onOpenSource?: (source: Exclude<InheritedSource, 'default'>) => void;
 }
 
-/** The hint one inheriting row shows. */
-function inheritedHint(value: string | number | boolean): string {
-  return `Inherited: ${typeof value === 'boolean' ? (value ? 'on' : 'off') : String(value)}`;
+const LINK = 'shrink-0 text-xs whitespace-nowrap text-fg-subtle hover:text-accent hover:underline';
+
+/** "from Preferences ▸ REST": where an inheriting row's value comes from, a link when it can be opened. */
+function FromSource({
+  source,
+  testId,
+  onOpen,
+}: {
+  readonly source: InheritedSource;
+  readonly testId: string;
+  readonly onOpen: SettingsTabProps['onOpenSource'];
+}) {
+  const text = `from ${SOURCE_LABEL[source]}`;
+  if (source === 'default' || onOpen === undefined) {
+    return (
+      <span data-testid={`${testId}-source`} className="shrink-0 text-xs whitespace-nowrap text-fg-subtle">
+        {text}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-testid={`${testId}-source`}
+      className={LINK}
+      onClick={() => {
+        onOpen(source);
+      }}
+    >
+      {text}
+    </button>
+  );
+}
+
+/** The value an on/off row inherits, in words. */
+function onOff(value: boolean): string {
+  return value ? 'on' : 'off';
 }
 
 /** The Settings tab. */
-export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps) {
+export function SettingsTab({ settings, inherited, onChange, onOpenSource }: SettingsTabProps) {
   const patch = (next: RestSettingsWire): void => {
     onChange({ settings: next });
   };
@@ -41,15 +99,41 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
     patch(next);
   };
 
+  /** Beside a number row: where an empty field's value comes from. */
+  const numberAside = (key: 'timeoutMs' | 'maxRedirects', testId: string) =>
+    settings[key] === undefined ? (
+      <FromSource source={SOURCES[key]} testId={testId} onOpen={onOpenSource} />
+    ) : undefined;
+
+  /** Beside an on/off row: where its value comes from, or a way back to inheriting it. */
+  const booleanAside = (key: 'followRedirects' | 'encodeUrl' | 'sendCookies', testId: string) =>
+    settings[key] === undefined ? (
+      <FromSource source={SOURCES[key]} testId={testId} onOpen={onOpenSource} />
+    ) : (
+      <button
+        type="button"
+        data-testid={`${testId}-inherit`}
+        className={LINK}
+        title={`Inherit ${onOff(inherited[key])} ${`from ${SOURCE_LABEL[SOURCES[key]]}`}`}
+        onClick={() => {
+          clear(key);
+        }}
+      >
+        Inherit
+      </button>
+    );
+
   return (
     <div data-testid="rest-settings" className="overflow-auto p-3">
-      <SettingsGroup title="Transport" hint="An empty field inherits; the inherited value is shown beside it.">
+      <SettingsGroup title="Transport" hint="An empty field inherits the value shown in it, from where it says.">
         <NumberSetting
           label="Timeout (ms)"
           testId="rest-setting-timeout"
           value={settings.timeoutMs}
           min={0}
-          hint={inheritedHint(inherited.timeoutMs)}
+          placeholder={String(inherited.timeoutMs)}
+          hint={`Empty inherits ${String(inherited.timeoutMs)} ms from the project's Default timeout.`}
+          aside={numberAside('timeoutMs', 'rest-setting-timeout')}
           onCommit={(value) => {
             if (value === undefined) {
               clear('timeoutMs');
@@ -63,7 +147,9 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
           testId="rest-setting-max-redirects"
           value={settings.maxRedirects}
           min={0}
-          hint={inheritedHint(inherited.maxRedirects)}
+          placeholder={String(inherited.maxRedirects)}
+          hint={`Empty inherits ${String(inherited.maxRedirects)} from Preferences ▸ REST.`}
+          aside={numberAside('maxRedirects', 'rest-setting-max-redirects')}
           onCommit={(value) => {
             if (value === undefined) {
               clear('maxRedirects');
@@ -76,7 +162,8 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
           label="Follow redirects"
           testId="rest-setting-follow-redirects"
           value={settings.followRedirects ?? inherited.followRedirects}
-          hint={inheritedHint(inherited.followRedirects)}
+          hint={`Unset inherits ${onOff(inherited.followRedirects)} from Preferences ▸ REST.`}
+          aside={booleanAside('followRedirects', 'rest-setting-follow-redirects')}
           onChange={(value) => {
             patch({ ...settings, followRedirects: value });
           }}
@@ -94,7 +181,8 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
           label="Encode the URL"
           testId="rest-setting-encode-url"
           value={settings.encodeUrl ?? inherited.encodeUrl}
-          hint={inheritedHint(inherited.encodeUrl)}
+          hint={`Unset is ${onOff(inherited.encodeUrl)}, the default.`}
+          aside={booleanAside('encodeUrl', 'rest-setting-encode-url')}
           onChange={(value) => {
             patch({ ...settings, encodeUrl: value });
           }}
@@ -103,7 +191,8 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
           label="Send cookies"
           testId="rest-setting-send-cookies"
           value={settings.sendCookies ?? inherited.sendCookies}
-          hint={inheritedHint(inherited.sendCookies)}
+          hint={`Unset is ${onOff(inherited.sendCookies)}, the default: jar cookies go only with a request that turns this on.`}
+          aside={booleanAside('sendCookies', 'rest-setting-send-cookies')}
           onChange={(value) => {
             patch({ ...settings, sendCookies: value });
           }}
@@ -113,7 +202,8 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
           testId="rest-setting-max-size"
           value={settings.maxSizeBytes}
           min={0}
-          hint="Empty uses the preference."
+          placeholder="No limit"
+          hint="Empty reads the whole response."
           onCommit={(value) => {
             if (value === undefined) {
               clear('maxSizeBytes');
@@ -139,6 +229,7 @@ export function SettingsTab({ settings, inherited, onChange }: SettingsTabProps)
           testId="rest-setting-bind-address"
           value={settings.bindAddress ?? ''}
           monospace
+          placeholder="Any"
           hint="The local interface to send from. Empty lets the OS choose."
           onCommit={(value) => {
             if (value === '') {

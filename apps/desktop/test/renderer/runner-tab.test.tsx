@@ -5,8 +5,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { RunnerTab } from '../../src/renderer/features/runner/runner-tab.js';
-import { subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
+import { RunnerTab, resultMark } from '../../src/renderer/features/runner/runner-tab.js';
+import { dataColumnsFor, subscribeToRunnerProgress, useRunnerStore } from '../../src/renderer/state/runner.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type {
   RunnerRequestResult,
@@ -218,5 +218,66 @@ describe('RunnerTab', () => {
     expect(row.querySelector('summary')?.textContent).toBe('✗Files/Read a file8 ms');
     expect(within(row).getByTestId('runner-result-assertion').textContent).toContain('MCP result');
     unsubscribe();
+  });
+});
+
+describe('resultMark (#560)', () => {
+  const checked = [{ type: 'status', label: 'status is 200', outcome: 'passed' as const }];
+
+  it('gives the green tick only to a request whose checks passed', () => {
+    expect(resultMark({ outcome: 'passed', status: 200, assertions: checked })).toMatchObject({
+      mark: '✓',
+      tone: 'text-status-success',
+    });
+  });
+
+  it('marks a request with no checks neutral, not passed', () => {
+    expect(resultMark({ outcome: 'passed', status: 200, assertions: [] })).toMatchObject({
+      mark: '○',
+      tone: 'text-fg-subtle',
+    });
+    expect(resultMark({ outcome: 'passed', assertions: [] }).tone).toBe('text-fg-subtle');
+  });
+
+  it('marks a 4xx or 5xx with no checks amber', () => {
+    for (const status of [404, 500]) {
+      const mark = resultMark({ outcome: 'passed', status, assertions: [] });
+      expect(mark).toMatchObject({ mark: '!', tone: 'text-status-warning' });
+      expect(mark.label).toContain(String(status));
+    }
+  });
+
+  it('keeps the failed, errored and skipped marks', () => {
+    expect(resultMark({ outcome: 'failed', status: 500, assertions: checked }).mark).toBe('✗');
+    expect(resultMark({ outcome: 'errored', assertions: [] })).toMatchObject({
+      mark: '!',
+      tone: 'text-status-danger',
+    });
+    expect(resultMark({ outcome: 'skipped', assertions: [] }).mark).toBe('–');
+  });
+
+  it('gives a request the columns of every open target that runs it with a readable data file', () => {
+    const other: RunnerState = {
+      ...STATE,
+      targetId: 'folder-1',
+      requests: [{ id: 'me', name: 'Me', path: 'Shop/Me', protocol: 'rest' }],
+      data: { name: 'more.csv', columns: ['password', 'otp'], rows: 1 },
+    };
+    const broken: RunnerState = {
+      ...STATE,
+      targetId: 'folder-2',
+      data: { name: 'gone.csv', columns: ['x'], rows: 0, error: { code: 'data-file-unreadable', message: 'gone' } },
+    };
+    const targets = { [STATE.targetId]: STATE, [other.targetId]: other, [broken.targetId]: broken };
+    expect(dataColumnsFor(targets, 'me')).toEqual(['user', 'password', 'otp']);
+    expect(dataColumnsFor(targets, 'login')).toEqual(['user', 'password']);
+    expect(dataColumnsFor(targets, 'elsewhere')).toEqual([]);
+    expect(dataColumnsFor(targets, undefined)).toEqual([]);
+  });
+
+  it('teaches the ${column} form in the hint', async () => {
+    await mount();
+    expect(screen.getByTestId('runner-tab').textContent).toContain('${column}');
+    expect(screen.getByTestId('runner-tab').textContent).not.toContain('#Data#');
   });
 });

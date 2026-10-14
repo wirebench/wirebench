@@ -106,6 +106,12 @@ describe('a data-driven run', () => {
     expect(result.requests.map((r) => r.iteration?.row)).toEqual([0, 1]);
   });
 
+  it('sends each row through the ${column} shorthand too (#560)', async () => {
+    const table = parseDataFile('user\nann\nbob\n', 'csv');
+    const { urls } = await runData(project([lookup('${user}')]), planIterations({ rows: table.rows }));
+    expect(urls.map((url) => new URL(url).searchParams.get('user'))).toEqual(['ann', 'bob']);
+  });
+
   it('lets a post-response script test the row', { timeout: 30_000 }, async () => {
     const request: RestRequestDef = {
       ...lookup('${#Data#user}'),

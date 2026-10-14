@@ -53,6 +53,24 @@ interface RunnerStore {
   readonly closeView: (targetId: string) => void;
 }
 
+/**
+ * The data-file columns a request can read (#560): those of every loaded Runner target that runs it
+ * and has a data file that reads, in first-seen order. Empty when no open Runner has one.
+ */
+export function dataColumnsFor(
+  targets: Readonly<Record<string, RunnerState>>,
+  requestId: string | undefined,
+): readonly string[] {
+  if (requestId === undefined) return [];
+  const columns = new Set<string>();
+  for (const target of Object.values(targets)) {
+    if (target.data === undefined || target.data.error !== undefined) continue;
+    if (!target.requests.some((request) => request.id === requestId)) continue;
+    for (const column of target.data.columns) columns.add(column);
+  }
+  return [...columns];
+}
+
 function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
   const copy = { ...record };
   delete copy[key];
