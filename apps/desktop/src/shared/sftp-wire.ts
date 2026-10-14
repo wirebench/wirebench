@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sshSignInUserSchema } from './ssh-wire.js';
 
 /**
  * Wire shapes of the SSH area's Files tab (`sftp.*`). No request, answer or event carries a credential, a
@@ -37,10 +38,14 @@ export const sftpErrorWireSchema = z.object({
   details: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** `attemptId`: the connect's progress goes to the window as `ssh.connectProgress` under it (#528). */
+/**
+ * `attemptId`: the connect's progress goes to the window as `ssh.connectProgress` under it (#528). `user`:
+ * signs in as this user for this connect only, in place of the host's (#532).
+ */
 export const sftpOpenRequestSchema = z.strictObject({
   hostId: z.string().min(1),
   attemptId: z.string().min(1).max(100).optional(),
+  user: sshSignInUserSchema.optional(),
 });
 /** `home` is the server's login directory, absolute. */
 export const sftpOpenResponseSchema = z.object({ sessionId: z.string(), home: z.string() });

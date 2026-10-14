@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
   **Clear search**. **New rule…** in the Port forwarding view picks a host and adds a rule to it without
   opening the host's settings. The SSH area's first tab is named after the view it shows, with its icon,
   instead of always saying Hosts (#535).
+- **SSH through a SOCKS5 or HTTP proxy.** A host or a group can name a SOCKS5 or HTTP CONNECT proxy (host
+  form → Advanced → Proxy), with an optional user and a password kept as a secret. The first hop of a
+  connection, the host or its outermost jump host, is dialled through it, and the proxy resolves the
+  host's name. Groups pass it down; **None** on a host under a group's proxy connects directly. The
+  connection screen logs the proxy hop and says plainly when the proxy cannot be reached, refuses the
+  sign-in or will not open the tunnel. Terminals, Files, port forwarding and `wirebench ssh forward` all
+  use it, and the `ssh_config` importer maps `ProxyCommand nc -X 5` and `nc -X connect` lines (#417).
+
 - **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
   Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
   Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select
@@ -23,6 +31,7 @@ All notable changes to this project are documented here. The format follows
   drops. A red dot on the tab and the pane header shows a session is being written to a session log.
   **Session Logs…** in the palette, or **All hosts…** in a host's details, lists every host's logs,
   and log rows now read like *11:09 · 16 B · exit 0* under the day they started (#534).
+
 - **Connection screen for SSH terminals and Files.** Until the shell opens, a pane shows the steps of
   the connect: Resolving address, Connecting, Checking host key, Authenticating and Starting shell (or
   Starting SFTP). Each shows what it is doing, then a tick and how long it took, and the screen ends
@@ -32,6 +41,12 @@ All notable changes to this project are documented here. The format follows
   unfolds a timestamped handshake log that opens on its own when a connect fails, shows the lines that
   say what failed in red, and never holds a password, passphrase or key. A dropped session's reconnect shows its countdown on the same screen,
   with **Reconnect now** and **Stop**. Reduced motion shows no spinner or moving line (#528).
+- **Fix a sign-in on the connection screen.** A host with no user starts no step: the screen reports it
+  as a host setting and asks **Sign in as**, for this pane only or, with **Save to host**, into the
+  host's settings. A refused password shows **Password for** *user* with **Save and retry**, which stores
+  it as the host's password secret and connects again. **Retry** stays the main button for network
+  failures only; after a refused sign-in or a host setting the fix comes first. A failed connect's log
+  opens at its end with the failing line highlighted (#532).
 - **Test MCP servers.** An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and
   WebSocket APIs: a local process over stdio, Streamable HTTP, or the legacy HTTP+SSE transport.
   **New MCP server…** on a project creates one; its tab edits the connection (command, arguments,

@@ -13,7 +13,7 @@ import { useEditorsStore } from '../../../state/editors.js';
 import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../../state/workspace.js';
-import { openTrustPrompt } from '../connect.js';
+import { missingUser, openTrustPrompt, signInRequest } from '../connect.js';
 import { beginAttempt, dropAttempt, noteFailed, noteTrust } from '../connect-store.js';
 import { folderKey, readFilesPrefs, updateFilesPrefs } from './files-prefs.js';
 import { freeName, joinPath, parentOf } from './format.js';
@@ -380,8 +380,16 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       connecting.set(paneId, generation);
       // The pane's connection screen follows this attempt: main reports its stages under the id.
       const attemptId = beginAttempt(paneId, 'files');
+      // No user to sign in as: the screen asks for one before anything connects (#532).
+      const unset = missingUser(paneId, hostId);
+      if (unset !== undefined) {
+        connecting.delete(paneId);
+        noteFailed(paneId, attemptId, unset);
+        patch(paneId, { status: 'error', error: { code: unset.code, message: unset.message } });
+        return;
+      }
       const opened = await settle(
-        () => ipc().sftp.open({ hostId, attemptId }),
+        () => ipc().sftp.open({ hostId, attemptId, ...signInRequest(paneId) }),
         'The connection could not be started',
       ).finally(() => {
         if (connecting.get(paneId) === generation) connecting.delete(paneId);

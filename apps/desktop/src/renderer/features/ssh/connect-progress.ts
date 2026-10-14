@@ -4,7 +4,7 @@
  * and the tests drive the same thing.
  */
 import type { SshConnectPhase, SshConnectProgressWire } from '../../../shared/ssh-wire.js';
-import { connectFailureSentence } from './connect-errors.js';
+import { connectErrorKind, connectFailureSentence } from './connect-errors.js';
 import type { ConnectError } from './connect-errors.js';
 
 /** The steps the screen lists, in order. */
@@ -38,7 +38,16 @@ export type ConnectOutcome =
   | { readonly kind: 'connected'; readonly at: number }
   /** The host key is new or changed and the trust prompt is open. */
   | { readonly kind: 'trust'; readonly changed: boolean }
-  | { readonly kind: 'failed'; readonly step: ConnectStepId; readonly sentence: string };
+  /**
+   * `step`: the step it stopped at; none for a host's settings, which stop it before any step runs (#532).
+   * `error` is kept for what the screen offers (its code and details; the message is never shown).
+   */
+  | {
+      readonly kind: 'failed';
+      readonly step: ConnectStepId | undefined;
+      readonly sentence: string;
+      readonly error: ConnectError;
+    };
 
 export interface ConnectView {
   readonly attemptId: string;
@@ -162,8 +171,23 @@ function failedStep(view: ConnectView, error: ConnectError): ConnectStepId {
   return view.steps.find((s) => s.state === 'running' || s.state === 'waiting')?.id ?? 'resolve';
 }
 
-/** The connect ended without a session: the step it stopped at turns red, and one sentence says why. */
+/**
+ * The connect ended without a session: the step it stopped at turns red, and one sentence says why. A host's
+ * settings stop it before anything goes on the network, so no step ran: every step is left pending (#532).
+ */
 export function failedView(view: ConnectView, error: ConnectError, at: number): ConnectView {
+  const sentence = connectFailureSentence(error, view.purpose);
+  // The log ends with the same sentence in red, so it says what failed even where no stage logged it.
+  const log: ConnectLogLine[] = [...view.log, { at, text: sentence, error: true }];
+  const kept: ConnectError = {
+    code: error.code,
+    message: error.message,
+    ...(error.details ? { details: error.details } : {}),
+  };
+  if (connectErrorKind(error.code) === 'settings') {
+    const steps = view.steps.map((step): ConnectStep => ({ id: step.id, state: 'pending' }));
+    return { ...view, steps, log, outcome: { kind: 'failed', step: undefined, sentence, error: kept } };
+  }
   const id = failedStep(view, error);
   const target = indexOf(id);
   const steps = view.steps.map((step, index): ConnectStep => {
@@ -171,10 +195,7 @@ export function failedView(view: ConnectView, error: ConnectError, at: number): 
     if (index === target) return { ...step, state: 'failed', startedAt: step.startedAt ?? at, endedAt: at };
     return { id: step.id, state: 'pending' };
   });
-  const sentence = connectFailureSentence(error, view.purpose);
-  // The log ends with the same sentence in red, so it says what failed even where no stage logged it.
-  const log: ConnectLogLine[] = [...view.log, { at, text: sentence, error: true }];
-  return { ...view, steps, log, outcome: { kind: 'failed', step: id, sentence } };
+  return { ...view, steps, log, outcome: { kind: 'failed', step: id, sentence, error: kept } };
 }
 
 /** The host key is new or changed: the step waits on the trust prompt. */

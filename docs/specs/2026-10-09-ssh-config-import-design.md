@@ -187,7 +187,8 @@ needs `b.jump = a`.
   file, P4).
 
 **M6. `ProxyCommand`.** Only the form equivalent to a jump is recognised: `ssh [-q] -W %h:%p <hop>` (`-W` and
-`-q` in either order, nothing else on the line), mapped as `ProxyJump <hop>`. Every other `ProxyCommand` is
+`-q` in either order, nothing else on the line), mapped as `ProxyJump <hop>`. Since #417,
+`nc [-X 5|connect] -x host[:port] [-P user] %h %p` is mapped to `ssh.proxy` too. Every other `ProxyCommand` is
 skipped; the host is still imported without it and flagged in the report as "will probably not connect the way
 it does today".
 
