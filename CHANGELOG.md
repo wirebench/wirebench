@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
+  `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
+  in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block
+  sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
+  section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
+  `mosh-server` is missing (#419).
 - **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
   Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
   Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select
