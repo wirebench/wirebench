@@ -14,6 +14,7 @@ import type { McpExchange } from './mcp/exchange.js';
 import type { McpRequestDef } from './mcp/model.js';
 import { mcpProtocol } from './mcp/module.js';
 import type { McpSelected } from './mcp/run.js';
+import type { McpRequestSnapshot, McpResponseSnapshot } from './mcp/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
 import { createProtocolRegistry } from './protocol/registry.js';
@@ -129,10 +130,10 @@ export type SentExchange =
 export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent | McpLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
-export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;
+export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot | McpRequestSnapshot;
 
 /** The response snapshot of any built-in protocol that has scripts (spec §3.1). */
-export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | GrpcResponseSnapshot;
+export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | GrpcResponseSnapshot | McpResponseSnapshot;
 
 /**
  * A saved request of any built-in protocol, which is what a lookup by request id can return: the id

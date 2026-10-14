@@ -42,7 +42,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** The server's `serverInfo` from its `initialize` result, when it is the shape the protocol gives it. */
-function serverInfoOf(exchange: McpExchange): HistoryMcp['serverInfo'] {
+export function mcpServerInfo(exchange: McpExchange): HistoryMcp['serverInfo'] {
   const info = exchange.initialize?.['serverInfo'];
   if (!isRecord(info) || typeof info['name'] !== 'string' || typeof info['version'] !== 'string') return undefined;
   return { name: info['name'], version: info['version'] };
@@ -56,7 +56,7 @@ export function mcpResultIsError(result: unknown): boolean {
 /** Builds a {@link HistoryMcp} from a completed send, applying {@link capMcpMessages}. */
 export function historyMcpOf(exchange: McpExchange): HistoryMcp {
   const { messages, truncated, omittedMessages } = capMcpMessages(exchange.messages);
-  const serverInfo = serverInfoOf(exchange);
+  const serverInfo = mcpServerInfo(exchange);
   const answered = 'result' in exchange;
   const resultText = answered ? (JSON.stringify(exchange.result) ?? '') : '';
   const keepResult = answered && Buffer.byteLength(resultText, 'utf8') <= MCP_HISTORY_RESULT_BYTES;

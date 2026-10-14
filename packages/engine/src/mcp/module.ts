@@ -1,6 +1,7 @@
-/** MCP as a protocol module (#79): storage, secrets and runs, until its scripting facet lands. */
+/** MCP as a protocol module (#79). */
 import { defineProtocol } from '../protocol/module.js';
 import { mcpRun } from './run.js';
+import { mcpScripting } from './scripting.js';
 import { mcpSecrets } from './secrets.js';
 import { mcpStorage } from './storage.js';
 
@@ -11,4 +12,5 @@ export const mcpProtocol = defineProtocol({
   storage: mcpStorage,
   secrets: mcpSecrets,
   run: mcpRun,
+  scripting: mcpScripting,
 });

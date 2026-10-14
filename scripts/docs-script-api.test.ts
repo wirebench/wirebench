@@ -17,6 +17,9 @@ describe('docs-site reference/script-api.md', () => {
     expect(apiReference(createBuiltinRegistry()).map((section) => section.title)).toEqual([
       'Every script',
       'Every request script',
+      'MCP: shared by both phases',
+      'MCP: pre-request',
+      'MCP: post-response',
       'REST: shared by both phases',
       'REST: pre-request',
       'REST: post-response',

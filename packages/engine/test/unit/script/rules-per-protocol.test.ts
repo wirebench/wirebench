@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
+import type { McpRequestSnapshot } from '../../../src/mcp/scripting.js';
 import { defaultRegistry } from '../../../src/protocols.js';
 import type { RequestSnapshot } from '../../../src/protocols.js';
 import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
@@ -46,6 +47,31 @@ const GRPC: GrpcRequestSnapshot = {
   method: 'shop.Carts/Get',
   metadata: [['x-trace', '1']],
   message: { id: '${secret:token}' },
+};
+
+const MCP: McpRequestSnapshot = {
+  protocol: 'mcp',
+  transport: 'http',
+  url: 'https://mcp.test:8443/mcp?tenant=1',
+  method: 'tools/call',
+  tool: 'search',
+  arguments: { q: '${secret:token}' },
+};
+const MCP_STDIO: McpRequestSnapshot = { ...MCP, transport: 'stdio', url: '' };
+const MCP_READ: McpRequestSnapshot = {
+  protocol: 'mcp',
+  transport: 'http',
+  url: MCP.url,
+  method: 'resources/read',
+  uri: 'res://a',
+};
+const MCP_PROMPT: McpRequestSnapshot = {
+  protocol: 'mcp',
+  transport: 'sse',
+  url: 'https://mcp.test/sse',
+  method: 'prompts/get',
+  prompt: 'greet',
+  arguments: { name: 'Ada' },
 };
 
 /** What `returned` is refused with, or undefined when it is accepted. */
@@ -279,6 +305,89 @@ describe('gRPC', () => {
 
   it('rule 5: lets a script move a reference the request already held', () => {
     expect(apply(GRPC, { ...GRPC, metadata: [['x-token', '${secret:token}']] })).toMatchObject({ ok: true });
+  });
+});
+
+describe('MCP', () => {
+  it('accepts what a script may change: the tool, the arguments, the URI, the prompt and its arguments, the path', () => {
+    const call = {
+      ...MCP,
+      url: 'https://mcp.test:8443/v2/mcp',
+      tool: 'find',
+      arguments: { q: '${secret:token}', n: 2 },
+    };
+    expect(apply(MCP, call)).toEqual({ ok: true, request: call });
+    const read = { ...MCP_READ, uri: 'res://b' };
+    expect(apply(MCP_READ, read)).toEqual({ ok: true, request: read });
+    const prompt = { ...MCP_PROMPT, prompt: 'farewell', arguments: { name: 'Grace', tone: 'warm' } };
+    expect(apply(MCP_PROMPT, prompt)).toEqual({ ok: true, request: prompt });
+    expect(apply(MCP_STDIO, { ...MCP_STDIO, arguments: [] })).toMatchObject({ ok: true });
+  });
+
+  it('rule 1: refuses a shape it cannot read, and another protocol', () => {
+    for (const returned of [
+      undefined,
+      { protocol: 'mcp' },
+      { ...MCP, tool: 7 },
+      { ...MCP_PROMPT, arguments: { name: 1 } },
+      { ...MCP, transport: 'websocket' },
+      REST,
+      GRPC,
+    ]) {
+      expect(refusal(MCP, returned)).toEqual({ code: 'script-error', message: UNREADABLE });
+    }
+  });
+
+  it('rule 2: refuses another scheme, host or port of an HTTP server', () => {
+    for (const url of ['http://mcp.test:8443/mcp', 'https://evil.test:8443/mcp', 'https://mcp.test/mcp']) {
+      expect(code(MCP, { ...MCP, url })).toBe('script-origin-change');
+    }
+  });
+
+  it('rule 2: a stdio server has no URL, and a script cannot give it one', () => {
+    expect(code(MCP_STDIO, { ...MCP_STDIO, url: 'https://evil.test/mcp' })).toBe('script-origin-change');
+  });
+
+  it('rule 3: refuses another method or another transport', () => {
+    expect(code(MCP, { ...MCP_READ, url: MCP.url })).toBe('script-error');
+    expect(code(MCP_READ, { protocol: 'mcp', transport: 'http', url: MCP.url, method: 'resources/list' })).toBe(
+      'script-error',
+    );
+    expect(code(MCP, { ...MCP, transport: 'sse' })).toBe('script-error');
+  });
+
+  it('rule 4: refuses CR, LF or NUL in the URL, the tool, the URI or the prompt', () => {
+    expect(code(MCP, { ...MCP, url: 'https://mcp.test:8443/mcp\r\nHost: evil.test' })).toBe('script-value-invalid');
+    expect(code(MCP, { ...MCP, tool: 'a\nb' })).toBe('script-value-invalid');
+    expect(code(MCP_READ, { ...MCP_READ, uri: 'res://a\0' })).toBe('script-value-invalid');
+    expect(code(MCP_PROMPT, { ...MCP_PROMPT, prompt: 'a\rb' })).toBe('script-value-invalid');
+  });
+
+  it('rule 5: refuses a secret reference the request did not hold, wherever it is put', () => {
+    for (const [before, changed] of [
+      [MCP, { ...MCP, url: 'https://mcp.test:8443/mcp?k=${secret:other}' }],
+      [MCP, { ...MCP, tool: '${secret:other}' }],
+      [MCP, { ...MCP, arguments: { q: '${secret:token}', k: '${secret:other}' } }],
+      [MCP_READ, { ...MCP_READ, uri: 'res://${secret:other}' }],
+      [MCP_PROMPT, { ...MCP_PROMPT, arguments: { name: '${secret:other}' } }],
+      [MCP_PROMPT, { ...MCP_PROMPT, arguments: { '${secret:other}': 'x' } }],
+    ] as const) {
+      expect(refusal(before, changed)).toMatchObject({
+        code: 'script-secret-denied',
+        message: expect.stringContaining('other') as unknown,
+      });
+    }
+  });
+
+  it('rule 5: lets a script move a reference the request already held', () => {
+    expect(apply(MCP, { ...MCP, arguments: { other: '${secret:token}' } })).toMatchObject({ ok: true });
+  });
+
+  it('its own rule: refuses a tool call with no tool', () => {
+    expect(refusal(MCP, { ...MCP, tool: '' })).toEqual({
+      code: 'script-value-invalid',
+      message: 'A tool call needs the name of a tool',
+    });
   });
 });
 

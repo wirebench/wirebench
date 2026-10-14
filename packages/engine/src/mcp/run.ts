@@ -17,7 +17,7 @@ import { resolveScopes } from '../project/environments.js';
 import type { AuthConfig, Project } from '../project/model.js';
 import { expand } from '../project/properties.js';
 import type { PropertyScopes } from '../project/properties.js';
-import type { ProtocolRun, RunGroup } from '../protocol/module.js';
+import type { ProtocolRun, RunGroup, ScriptedSend } from '../protocol/module.js';
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';
 import { exchangeController } from '../run/exchange.js';
@@ -36,6 +36,7 @@ import {
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
 import { walkTree } from '../run/tree.js';
+import { containerScriptLevels } from '../script/levels.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
 import { approveMcpCommand, commandDisplay, commandFingerprint, sortedEnvNames } from './approval.js';
@@ -51,6 +52,9 @@ import { MCP_DEFAULT_TIMEOUT_MS } from './limits.js';
 import { mcpServersOf } from './model.js';
 import type { McpFolder, McpOperation, McpRequestDef, McpServer, McpTransport } from './model.js';
 import { mcpOperationCall } from './operation.js';
+import { mcpScriptTypes, mcpToolFor } from './script-types.js';
+import { applyMcpSnapshot, mcpRequestSnapshot, mcpResponseSnapshot } from './scripting.js';
+import type { McpRequestSnapshot } from './scripting.js';
 import { runMcpSession } from './session.js';
 import type { McpMessage } from './session.js';
 import { openSseTransport } from './sse-transport.js';
@@ -137,9 +141,11 @@ function transportTexts(transport: McpTransport): string[] {
 }
 
 /**
- * The server's transport resolved for a send: secrets read (never behind a script's placeholders,
- * since the transport is not in a script's snapshot), every string expanded, a stdio folder made
- * absolute. A reference nothing resolves is reported, not thrown.
+ * The server's transport resolved for a send: secrets read, every string expanded, a stdio folder
+ * made absolute. A stdio command line never stands behind a script's placeholders, since it is not
+ * in a script's snapshot and what is approved must be what runs; an HTTP transport's URL is in the
+ * snapshot, so for a scripted send its secrets stand behind them until the script has run. A
+ * reference nothing resolves is reported, not thrown.
  *
  * @throws WirebenchError `secret-missing`, and the Sequence guards' errors
  */
@@ -148,7 +154,8 @@ export async function resolveMcpTransport(
   context: RunContext,
   scopes: PropertyScopes = scopesFor(context),
 ): Promise<McpResolvedTransport> {
-  const withTokens = await withSecrets(transportTexts(server.transport), scopes, context.host.getSecret);
+  const placeholders = server.transport.type === 'stdio' ? undefined : context.secretPlaceholders;
+  const withTokens = await withSecrets(transportTexts(server.transport), scopes, context.host.getSecret, placeholders);
   const { value, unresolved } = expandMcpTransport(server.transport, withTokens);
   const transport: McpTransport =
     value.type === 'stdio' ? { ...value, cwd: resolveMcpCwd(context.projectDir, value.cwd) } : value;
@@ -311,8 +318,9 @@ function rawOf(exchange: McpExchange): SentRequest['raw'] {
 }
 
 /**
- * One MCP request as a run or a host sends it: resolve, connect, one session. A failure before the
- * session (a reference nothing resolves, arguments that are not a JSON object, a command not
+ * One MCP request as a run or a host sends it: resolve, run its pre-request script when `scripts` is
+ * given, connect, one session, then its post-response script. A failure before the session (a
+ * reference nothing resolves, a script, arguments that are not a JSON object, a command not
  * approved, credentials) is told to the host as the prepare stage's. A cancelled session, and any
  * session of a run that could not finish, is the send stage's, with the exchange it recorded.
  */
@@ -321,6 +329,7 @@ async function sendMcpItem(
   context: RunContext,
   controller: ExchangeController<McpLiveEvent>,
   run: boolean,
+  scripts: ScriptedSend | undefined,
 ): Promise<SentRequest> {
   let startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
@@ -348,11 +357,20 @@ async function sendMcpItem(
   let input: McpResolvedInput | undefined;
   let connection: McpConnection;
   let call: ReturnType<typeof mcpOperationCall>;
+  let sent: McpRequestSnapshot | undefined;
   try {
-    const resolved = await resolveMcp(selected, context);
+    const resolved = await resolveMcp(
+      selected,
+      scripts !== undefined ? { ...context, secretPlaceholders: scripts.placeholders } : context,
+    );
     input = resolved.input;
     if (resolved.unresolved.length > 0) {
       throw unresolvedError('mcp-unresolved-properties', selected.path, resolved.unresolved);
+    }
+    if (scripts !== undefined) {
+      const before = mcpRequestSnapshot(input);
+      sent = await scripts.session.pre(before);
+      input = await scripts.placeholders.restore(applyMcpSnapshot(input, before, sent), context.host.getSecret);
     }
     // Arguments that are not a JSON object refuse the send before anything is spawned or dialled.
     call = mcpOperationCall(input.operation);
@@ -394,6 +412,9 @@ async function sendMcpItem(
     exchange: { kind: 'mcp', mcp: exchange },
     checks: [checkMcpResult(exchange)],
     ...(input.transport.type !== 'stdio' ? originOf(input.transport.url) : {}),
+    ...(scripts !== undefined
+      ? { script: await scripts.session.post(sent as McpRequestSnapshot, mcpResponseSnapshot(exchange)) }
+      : {}),
   };
 }
 
@@ -437,16 +458,21 @@ export const mcpRun: ProtocolRun<McpSelected> = {
   open(selected, scope, host, options) {
     const controller = exchangeController<McpLiveEvent>('mcp', options);
     const context: RunContext = { ...scope.context, host, signal: controller.signal };
-    return controller.handle(() => sendMcpItem(selected, context, controller, options.run === true));
+    return controller.handle(() => sendMcpItem(selected, context, controller, options.run === true, options.scripts));
   },
 
   resolve(selected, scope, host) {
     return resolveMcp(selected, { ...scope.context, host });
   },
 
-  scriptTypes() {
-    // No scripting facet yet: a run refuses a scripted request with `script-unsupported` before asking.
-    return Promise.resolve({ generated: '' });
+  scriptTypes(selected) {
+    const tool = mcpToolFor(selected.server.catalogue, selected.request.operation);
+    return Promise.resolve({ generated: mcpScriptTypes(tool) });
+  },
+
+  scriptLevels(selected) {
+    // A server keeps no scripts of its own, so only its folders' run around a request's.
+    return containerScriptLevels(selected.server, 'api', selected.chain);
   },
 
   secretNeeds(selected, project) {

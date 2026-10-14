@@ -162,11 +162,11 @@ shape), `server-api/audit.ts`, `index.ts`, tests (`history-shapes`, redaction).
 **Files:** new `mcp/scripting.ts`, `mcp/script-types.ts`, `protocols.ts` (snapshot unions), tests in
 the scripting suites.
 
-- [ ] The pre-request snapshot: the operation (the method fixed through `inspect`), and the origin for
+- [x] The pre-request snapshot: the operation (the method fixed through `inspect`), and the origin for
   the HTTP transports. The command line is not in it.
-- [ ] The post-response snapshot: the result or error, `isError`, `serverInfo`, the message count and
+- [x] The post-response snapshot: the result or error, `isError`, `serverInfo`, the message count and
   the duration. Declarations and prelude for both phases.
-- [ ] Tests: a script changes the arguments, a method change is refused, an origin change is refused,
+- [x] Tests: a script changes the arguments, a method change is refused, an origin change is refused,
   `tests` and `vars` work, and the per-module rule tests cover `mcp`.
 
 ### Task 10: Catalogue refresh and the engine's public surface

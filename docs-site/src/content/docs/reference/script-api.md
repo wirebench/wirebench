@@ -111,6 +111,83 @@ declare function test(name: string, check: () => void): void;
 declare function expect<T>(actual: T): WbExpectation<T>;
 ```
 
+## MCP: shared by both phases
+
+```ts
+interface WbMcpTarget {
+  readonly transport: 'stdio' | 'http' | 'sse';
+  /**
+   * The server URL, for the HTTP transports; empty for stdio. A script may change the path and query,
+   * never the scheme, host or port.
+   */
+  url: string;
+}
+/** A `tools/call` result, its `structuredContent` typed from the tool's `outputSchema` when the catalogue has it. */
+interface WbMcpResult {
+  readonly content?: readonly unknown[];
+  readonly structuredContent?: WbMcpStructuredContent;
+  readonly isError?: boolean;
+  readonly [key: string]: unknown;
+}
+```
+
+## MCP: pre-request
+
+```ts
+/** Narrow on `request.method` to reach the operation's own fields. The method itself cannot change. */
+declare const request: WbMcpTarget & (
+  | { readonly method: 'tools/list' | 'resources/list' | 'resources/templates/list' | 'prompts/list' }
+  | {
+      readonly method: 'tools/call';
+      /** The tool's name. */
+      tool: string;
+      /** The call's arguments, typed from the tool's `inputSchema` when the catalogue has it. */
+      arguments: WbMcpArguments;
+    }
+  | { readonly method: 'resources/read'; uri: string }
+  | {
+      readonly method: 'prompts/get';
+      /** The prompt's name. */
+      prompt: string;
+      /** The prompt's arguments, which are strings. */
+      arguments: Record<string, string>;
+    });
+```
+
+## MCP: post-response
+
+```ts
+declare const request: Readonly<WbMcpTarget> & (
+  | { readonly method: 'tools/list' | 'resources/list' | 'resources/templates/list' | 'prompts/list' }
+  | {
+      readonly method: 'tools/call';
+      /** The tool's name. */
+      readonly tool: string;
+      /** The call's arguments, typed from the tool's `inputSchema` when the catalogue has it. */
+      readonly arguments: WbMcpArguments;
+    }
+  | { readonly method: 'resources/read'; readonly uri: string }
+  | {
+      readonly method: 'prompts/get';
+      /** The prompt's name. */
+      readonly prompt: string;
+      /** The prompt's arguments, which are strings. */
+      readonly arguments: Record<string, string>;
+    });
+declare const response: {
+  readonly method: string;
+  /** The operation's result: absent when the server answered with an error, or never answered. */
+  readonly result: WbMcpResult | undefined;
+  readonly error: { readonly code: number; readonly message: string; readonly data?: unknown } | undefined;
+  /** True for a `tools/call` result with `isError: true`. */
+  readonly isError: boolean;
+  readonly serverInfo: { readonly name: string; readonly version: string } | undefined;
+  /** Every JSON-RPC message of the session, both ways. */
+  readonly messageCount: number;
+  readonly durationMs: number;
+};
+```
+
 ## REST: shared by both phases
 
 ```ts
