@@ -63,6 +63,8 @@ const TEXT_HINTS: Readonly<Record<string, { readonly title: string; readonly hin
   'too-large': { title: 'Response too large' },
   'too-many-redirects': { title: 'Too many redirects' },
   'invalid-url': { title: 'Invalid URL', hint: 'A URL needs a scheme and a host, such as https://api.example.com.' },
+  'rest-url-incomplete': { title: 'Incomplete URL' },
+  'script-type-error': { title: 'Script type errors' },
 };
 
 /** `${name}` for a reference, whether it arrived with its braces or without them. */
@@ -70,13 +72,19 @@ export function referenceText(ref: string): string {
   return ref.startsWith('${') ? ref : `\${${ref}}`;
 }
 
+/** A whole `${…}` reference: a malformed one (an unclosed `${`) names nothing a link could find. */
+const WHOLE_REFERENCE = /^\$\{[^}]+\}$/;
+
 /** The unresolved references an `…-unresolved-properties` error names, from its details or its message. */
 function unresolvedRefs(error: SendErrorLike): readonly string[] {
   const listed = error.details?.['unresolved'];
   if (Array.isArray(listed)) {
-    const refs = listed.filter((ref): ref is string => typeof ref === 'string');
+    const refs = listed
+      .filter((ref): ref is string => typeof ref === 'string')
+      .map(referenceText)
+      .filter((ref) => WHOLE_REFERENCE.test(ref));
     if (refs.length > 0) {
-      return [...new Set(refs.map(referenceText))];
+      return [...new Set(refs)];
     }
   }
   return [...new Set(error.message.match(/\$\{[^}]*\}/g) ?? [])];

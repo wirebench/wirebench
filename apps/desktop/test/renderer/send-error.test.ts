@@ -15,7 +15,7 @@ describe('describeSendError', () => {
     const view = describeSendError({
       code: 'rest-unresolved-properties',
       message: '"/pets" has property references nothing resolves: ${petId}, ${#Env#token}',
-      details: { path: '/pets', unresolved: ['${petId}', '${#Env#token}', '${petId}'] },
+      details: { path: '/pets', unresolved: ['${petId}', '${#Env#token}', '${petId}', '${'] },
     });
     expect(view.title).toBe('Unresolved variables');
     expect(view.tone).toBe('danger');

@@ -461,7 +461,7 @@ test.describe('docs site screenshots', () => {
     await setMethodAndUrl(window, 'GET', '/nope');
     await addHeader(window, 'Authorization', 'Bearer e2e-placeholder');
     await sendRest(window);
-    await expect(responseStatus(window)).toContainText('connection-refused');
+    await expect(window.getByTestId('send-error-code')).toHaveText('connection-refused');
 
     const rows = logRows(window);
     await expect(rows).toHaveCount(2);
