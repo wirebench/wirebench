@@ -23,6 +23,7 @@ function resolved(user: string | undefined): ResolvedHostWire {
       port: { value: 2222, from },
       auth: { value: { kind: 'password', secret: 'box_pw' }, from },
       jump: { value: undefined, from: 'default' },
+      proxy: { value: undefined, from: 'default' },
       keepAlive: { value: 30, from: 'default' },
       connectTimeout: { value: 10, from: 'default' },
       forwardAgent: { value: false, from: 'default' },
