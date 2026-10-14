@@ -11,7 +11,7 @@ import { sequenceAssertionResultWireSchema } from './wire-base.js';
  */
 
 /** What can be run: the entity's id, and what main found it to be. */
-export const runnerTargetKindSchema = z.enum(['project', 'api', 'folder', 'sequence']);
+export const runnerTargetKindSchema = z.enum(['project', 'api', 'folder', 'request', 'sequence']);
 export type RunnerTargetKind = z.infer<typeof runnerTargetKindSchema>;
 
 /** The settings a target keeps between runs, in main's own storage (spec D4). */

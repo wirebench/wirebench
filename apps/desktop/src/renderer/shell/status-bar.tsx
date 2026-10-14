@@ -10,7 +10,9 @@ import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
 import { SyncBadge } from '../features/sync/sync-badge.js';
 import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { useEditorsStore } from '../state/editors.js';
-import { lastExchangeOf, useExchangesStore } from '../state/exchanges.js';
+import { lastExchangeOf, lastSendOf, useExchangesStore } from '../state/exchanges.js';
+import { describeSendError } from '../features/request-editor/send-error.js';
+import type { FailedExchangeWire } from '../../shared/wire-base.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useProblemsStore } from '../state/problems.js';
@@ -64,6 +66,8 @@ export function StatusBar() {
   const version = useAppVersion();
   const updateLabel = updateStatusLabel(useUpdateStatus());
   const last = useExchangesStore((state) => lastExchangeOf(state.log));
+  // "last:" is the latest send whatever became of it: a failure after a success must not read as fine.
+  const latest = useExchangesStore((state) => lastSendOf(state.log));
   // One label for every open project: `project.save` saves them all, so "saving" is true while
   // any of them is, and the strip must not sprout one row per project.
   const saving = useProjectStore((state) => Object.values(state.saveStatus).some((status) => status === 'saving'));
@@ -234,19 +238,32 @@ export function StatusBar() {
           </>
         )}
       </div>
-      {last === undefined ? (
+      {latest === undefined ? (
         <span data-testid="status-bar-last" className="font-mono">
           no requests sent
         </span>
+      ) : latest.kind === 'failure' ? (
+        <LastFailure failure={latest.failure} />
       ) : (
         <span data-testid="status-bar-last" className="font-mono">
           last:{' '}
-          <span className={toneFor(last) === 'bad' ? 'text-status-danger' : 'text-status-success'}>
-            {'protocol' in last ? last.status : last.http.status}
+          <span className={toneFor(latest.exchange) === 'bad' ? 'text-status-danger' : 'text-status-success'}>
+            {'protocol' in latest.exchange ? latest.exchange.status : latest.exchange.http.status}
           </span>{' '}
-          in {formatDuration(last.durationMs)} · {formatBytes(responseSize(last))}
+          in {formatDuration(latest.exchange.durationMs)} · {formatBytes(responseSize(latest.exchange))}
         </span>
       )}
     </footer>
+  );
+}
+
+/** `last: Connection refused in 3.0 ms` — a send that produced no response, named as the response pane names it. */
+function LastFailure({ failure }: { readonly failure: FailedExchangeWire }) {
+  const view = describeSendError(failure.error);
+  return (
+    <span data-testid="status-bar-last" className="font-mono" title={failure.error.message}>
+      last: <span className={view.tone === 'danger' ? 'text-status-danger' : 'text-fg-muted'}>{view.title}</span> in{' '}
+      {formatDuration(failure.durationMs)}
+    </span>
   );
 }

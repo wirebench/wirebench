@@ -20,6 +20,17 @@ export interface CommandContext {
 export interface Command extends CommandDefinition<CommandContext> {
   /** `arg` carries an optional command-specific payload (e.g. a URL for `definition.import`). */
   readonly run: (context: CommandContext, arg?: unknown) => void | Promise<void>;
+  /**
+   * Why the command cannot run here, for one the palette should list anyway: while `when` says no and this
+   * gives a reason, the palette shows the command disabled with the reason rather than hiding it.
+   */
+  readonly unavailable?: (context: CommandContext) => string | undefined;
+}
+
+/** A palette row: the command, and why it is disabled when it cannot run in this context. */
+export interface PaletteCommand {
+  readonly command: CommandDefinition<CommandContext>;
+  readonly disabledReason?: string;
 }
 
 const registry = new Map<CommandId, Command>();
@@ -53,8 +64,9 @@ export function getCommand(id: CommandId): Command | undefined {
 }
 
 function stripHandler(command: Command): CommandDefinition<CommandContext> {
-  const { run, ...definition } = command;
+  const { run, unavailable, ...definition } = command;
   void run;
+  void unavailable;
   return definition;
 }
 
@@ -89,6 +101,22 @@ export function listAllCommands(): readonly CommandDefinition<CommandContext>[] 
   return [...registry.values()]
     .map((command) => stripHandler(command))
     .sort((a, b) => a.category.localeCompare(b.category) || a.label.localeCompare(b.label));
+}
+
+/**
+ * What the palette lists in `context`: every available command, and every unavailable one that says why
+ * (its `unavailable` reason), disabled. Sorted like {@link listCommands}.
+ */
+export function listPaletteCommands(context: CommandContext): readonly PaletteCommand[] {
+  return [...registry.values()]
+    .flatMap((command): PaletteCommand[] => {
+      if (isAvailable(command, context)) return [{ command: stripHandler(command) }];
+      const disabledReason = command.unavailable?.(context);
+      return disabledReason === undefined ? [] : [{ command: stripHandler(command), disabledReason }];
+    })
+    .sort(
+      (a, b) => a.command.category.localeCompare(b.command.category) || a.command.label.localeCompare(b.command.label),
+    );
 }
 
 /**

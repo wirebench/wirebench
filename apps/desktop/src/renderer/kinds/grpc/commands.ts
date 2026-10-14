@@ -1,4 +1,4 @@
-import { folderOf, insideKindApi } from '../../commands/command-helpers.js';
+import { kindTarget } from '../../commands/command-helpers.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { registerCommand } from '../../lib/commands.js';
@@ -19,10 +19,11 @@ export function registerGrpcCommands(): void {
   });
   registerCommand({
     ...catalogEntry('grpc.newRequest'),
-    when: (ctx) => insideKindApi('grpc', ctx.selection),
+    when: (ctx) => kindTarget('grpc', ctx.selection) !== undefined,
     whenScope: 'selection.grpcApi',
     run: (ctx) => {
-      explorerActions.newGrpcRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+      const target = kindTarget('grpc', ctx.selection);
+      explorerActions.newGrpcRequest(target?.apiId, target?.folderId);
     },
   });
   // And a gRPC tab's, under the same chord for the same reason.

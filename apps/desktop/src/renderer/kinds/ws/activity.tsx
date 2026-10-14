@@ -11,6 +11,16 @@ const WsHistoryBody = lazy(async () => {
 export const wsRequests: KindRequests = {
   open: openWsRequestTab,
   exists: (requestId, project) => project.wsRequests[requestId] !== undefined,
+  quickOpen: (project) =>
+    Object.values(project.wsRequests).map((request) => ({
+      id: request.id,
+      tag: 'WS',
+      name: request.name,
+      apiId: request.apiId,
+      apiName: project.wsApis[request.apiId]?.name ?? 'WebSocket API',
+      ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+      match: request.url,
+    })),
 };
 
 function WsHistoryBadge({ place }: { readonly place: 'row' | 'header' }) {

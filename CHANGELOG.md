@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format follows
   sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
   section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
   `mosh-server` is missing (#419).
+- **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
+  `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
+  The tree follows the active tab, unfolding to its request and selecting it, and a new request
+  starts in rename mode in the tree. In the palette a search naming a group (**REST**, **History**)
+  lists that group first, a protocol's commands also act on its open tab, and a command that
+  can't run stays listed, greyed, with the reason. **History: Re-send Last Request** re-sends the
+  newest entry of any protocol. A REST request's menu gains **Send**, **Copy as cURL**,
+  **Copy URL**, **Run…** (the Runner on that one request) and **Move to…** (#543).
 - **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
   forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
   (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
@@ -293,6 +301,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
+  response", the response pane names the failure in plain words (**Connection refused**, **Host not
+  found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers
+  **Retry**; the code stays as small text under it. A timeout names the limit it hit and links the
+  request's Settings tab; each unresolved `${name}` links to the field it was written in. Your own
+  Cancel reads as a neutral **Cancelled**, and neither a cancel nor a declined protected-environment
+  prompt adds a Problem. The status bar's **last:** now shows the latest send, failures included. A
+  URL with `://` but no valid scheme or host (`ht!tp:// bad url`) is refused before sending, with the
+  reason under the URL field, where it used to go out as a path under the base URL (#541).
 - **History rows read on two lines, and a click opens.** A row shows the method, name and a status
   chip, then the time, host and duration, so the name is never squeezed out at narrow widths.
   Re-send, Compare, Compare with current and a new **Delete** (one entry) are in a **⋯** menu at the

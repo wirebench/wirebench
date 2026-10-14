@@ -622,6 +622,39 @@ describe('ExplorerView with APIs', () => {
     });
   });
 
+  /** {@link seedRest}, with the API folded shut. */
+  function seedRestFolded(): void {
+    seedRest();
+    useUiStore.setState({ workspaces: { w1: { tabs: [], explorerOpen: { 'api:api-1': false } } } });
+  }
+
+  it('unfolds to, and selects, the active tab’s request', async () => {
+    seedRestFolded();
+    mount();
+    expect(screen.queryByText('In folder')).toBeNull();
+
+    act(() => {
+      useEditorsStore.setState({
+        tabs: [{ id: 'rest:rest-deep', kind: 'rest-request', title: 'In folder', restRequestId: 'rest-deep' }],
+        activeId: 'rest:rest-deep',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('treeitem', { selected: true }).textContent).toContain('In folder');
+    });
+    expect(useUiStore.getState().selection?.requestId).toBe('rest-deep');
+  });
+
+  it('starts a rename on a row inside a folded API, unfolding to it first', async () => {
+    seedRestFolded();
+    mount();
+
+    startRenamingNode('rest-request', 'rest-deep');
+
+    expect(await screen.findByDisplayValue('In folder')).toBeTruthy();
+  });
+
   it('triggers inline rename from right-click context menu Rename option', async () => {
     const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
     installWirebenchApi({ project: { mutate } });
