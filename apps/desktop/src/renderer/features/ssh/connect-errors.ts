@@ -217,6 +217,19 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       }
     case 'ssh-sk-failed':
       return 'The security key did not sign. Unplug it, plug it back in and retry.';
+    case 'mosh-server-missing':
+      return `Signed in, but ${text(details, 'server') ?? 'mosh-server'} was not found on ${who}. Install mosh on the server, or set its server command in the host's Advanced settings.`;
+    case 'mosh-bootstrap-failed': {
+      const said = text(details, 'serverSaid');
+      if (details['timedOut'] === true) return `Signed in, but the mosh server on ${who} did not answer in time.`;
+      return `Signed in, but the mosh server on ${who} did not start${said === undefined ? '.' : `: ${said}`}`;
+    }
+    case 'mosh-client-missing':
+      return 'Mosh is not installed on this computer. Install mosh (it provides mosh-client), or switch the host to SSH in its Advanced settings.';
+    case 'mosh-unreachable':
+      return `Mosh connects to ${host} directly over UDP, and that address does not resolve on this computer. A host behind a jump host is often not reachable directly: switch it to SSH.`;
+    case 'mosh-unavailable':
+      return 'Mosh sessions are not available on this computer.';
     case 'sftp-unavailable':
       return `Signed in, but ${who} offers no SFTP. Enable the SFTP subsystem on the server to browse its files.`;
     case 'ssh-hosts-invalid':
@@ -242,6 +255,7 @@ export type ConnectErrorKind = 'network' | 'auth' | 'settings' | 'trust' | 'othe
 export function connectErrorKind(code: string): ConnectErrorKind {
   switch (code) {
     case 'ssh-connect-failed':
+    case 'mosh-unreachable':
       return 'network';
     case 'ssh-auth-failed':
     case 'ssh-cert-expired':
@@ -255,6 +269,8 @@ export function connectErrorKind(code: string): ConnectErrorKind {
     case 'ssh-jump-unknown':
     case 'ssh-jump-cycle':
     case 'ssh-hosts-invalid':
+    case 'mosh-server-missing':
+    case 'mosh-client-missing':
       return 'settings';
     case 'ssh-host-key-new':
     case 'ssh-host-key-changed':

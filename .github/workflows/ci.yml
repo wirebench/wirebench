@@ -177,9 +177,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Install xvfb
+      # mosh: the Mosh spec runs a real mosh-server and mosh-client; elsewhere it skips.
+      - name: Install xvfb and mosh
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb mosh
       - name: Run e2e (Linux, headless via xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm test:e2e

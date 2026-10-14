@@ -10,6 +10,8 @@ export type SshErrorCode =
   | 'ssh-host-key-changed'
   | 'ssh-auth-failed'
   | 'ssh-connect-failed'
+  | 'mosh-server-missing'
+  | 'mosh-bootstrap-failed'
   | 'ssh-session-unknown'
   | 'ssh-config-empty'
   | 'ssh-import-stale'

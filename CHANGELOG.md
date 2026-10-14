@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
   key…** makes a non-resident security key on the key plugged in, Ed25519 or ECDSA, optionally asking
   for the PIN at every sign-in. A host that signs in with the SSH agent now also uses security keys the
   agent holds, which it skipped before. Not available on Windows yet (#420).
+- **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
+  `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
+  in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block
+  sets the server command and the UDP port or range. **Protocol** is under the host form's Advanced
+  section, the details panel shows it, and the connection screen says plainly when `mosh-client` or
+  `mosh-server` is missing (#419).
 - **Findable requests.** Quick Open (`Ctrl+P`/`⌘P`) lists saved requests of every protocol as
   `METHOD name` with project › API › folder under it, and finds a REST request by its URL path too.
   The tree follows the active tab, unfolding to its request and selecting it, and a new request
@@ -301,6 +307,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Import and lint findings read as places, not pointers.** The Import dialog labels its URL field by
+  the picked format (**Definition URL or file**, or **WSDL URL** only for WSDL), with a placeholder for
+  each format; the WSDL authentication select has a visible label, and the OpenAPI face says
+  **Authentication** once. An OpenAPI import's summary counts the lint findings it filed, linked to
+  **Problems**. A lint finding there reads `GET /json › 200 › application/json` instead of a JSON
+  pointer (the pointer and position stay in its tooltip), shows its rule id as small text after the
+  message, and a click opens the request for that operation, or the API when there is none (#561).
 - **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
   response", the response pane names the failure in plain words (**Connection refused**, **Host not
   found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers

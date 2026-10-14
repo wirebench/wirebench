@@ -46,6 +46,7 @@ import type {
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
 import { asWirebenchError } from './hosts-service.js';
+import type { OpenMoshOptions } from './mosh-session.js';
 import type { SessionLogWriter, StartSessionLog } from './session-logs.js';
 import type { SnippetsService } from './snippets-service.js';
 import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
@@ -59,6 +60,8 @@ export interface SshServiceDeps extends SshConnectDeps {
   readonly snippets: (sender: WebContents) => Pick<SnippetsService, 'current' | 'list'>;
   /** Tests inject a fake. */
   readonly open?: typeof openSession;
+  /** Opens a host whose protocol is `mosh` (#419); without it such a host is refused. */
+  readonly openMosh?: (options: OpenMoshOptions) => Promise<SshSession>;
   /** Milliseconds; tests inject a clock. */
   readonly now?: () => number;
   /**
@@ -236,7 +239,7 @@ export class SshService {
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     const prepared = await this.connector.prepareShell(sender, request.hostId, stale, request.user);
-    const { env, secrets, forwardAgent } = prepared;
+    const { env, secrets, forwardAgent, mosh } = prepared;
     // The PIN goes to every key hop; only a security key reads it.
     const pin = request.skPin;
     const hops = pin
@@ -248,15 +251,25 @@ export class SshService {
     const startLog = await this.deps.sessionLog?.(sender, { hostId: request.hostId, hops }).catch(() => undefined);
     let session: SshSession;
     try {
-      session = await (this.deps.open ?? openSession)({
+      const options = {
         hops,
         cols: request.cols,
         rows: request.rows,
         verifyHostKey,
         ...progressTo(this.deps.emit, sender, request.attemptId),
         ...(Object.keys(env).length === 0 ? {} : { env }),
-        ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
-      });
+      };
+      if (mosh !== undefined) {
+        const openMosh = this.deps.openMosh;
+        if (!openMosh) throw new WirebenchError('mosh-unavailable', 'Mosh sessions are not available here');
+        // Agent forwarding is an SSH channel request; a Mosh session has no SSH channel to ask on.
+        session = await openMosh({ ...options, ...(mosh.settings === undefined ? {} : { mosh: mosh.settings }) });
+      } else {
+        session = await (this.deps.open ?? openSession)({
+          ...options,
+          ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
+        });
+      }
     } catch (error) {
       // A refused key is forgotten with the window, as its sessions are.
       if ((error as { code?: unknown }).code === 'ssh-host-key-new' && !stale()) this.watch(sender);
@@ -328,9 +341,10 @@ export class SshService {
     this.deps.emit(sender, events.ssh.state, { sessionId, state: 'open' });
     this.sessionsChanged(sender, request.hostId);
     const target = hops[hops.length - 1];
-    if (target) void this.probeOs(sender, session, `${target.address}:${target.port}`);
+    // A Mosh session has no SSH channel left to ask on: the host keeps its last known label.
+    if (target && mosh === undefined) void this.probeOs(sender, session, `${target.address}:${target.port}`);
     const opened = { sessionId, ...(recording ? { recording: true as const } : {}) };
-    if (forwardAgent === undefined) return opened;
+    if (forwardAgent === undefined || mosh !== undefined) return opened;
     const forwarding = forwardAgent.socket === undefined ? 'no-agent' : session.agentForwarding;
     return forwarding === 'off' ? opened : { ...opened, agentForwarding: forwarding };
   }

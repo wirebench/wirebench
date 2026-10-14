@@ -261,7 +261,8 @@ writes SARIF 2.1.0, which GitHub code scanning reads (upload it with
 A project's own rules live as YAML files in its `lint/` folder: switch a built-in rule off, change
 its severity, or add a rule as a target and a check, such as "every operation's `summary` is at most
 80 characters". The desktop app shows the same findings in **Problems** when you run
-**Lint Definition** on a REST API, and after an import or a definition update. The
+**Lint Definition** on a REST API, and after an import or a definition update: each finding names
+its place (`GET /json › 200 › application/json`), and a click opens the request for that operation. The
 [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#lint-an-openapi-document)
 lists every rule and the rule-set format.
 
