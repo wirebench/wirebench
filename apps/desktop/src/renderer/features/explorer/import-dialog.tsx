@@ -19,6 +19,7 @@
  */
 
 import { lintRestDefinition } from '../rest-api/lint-actions.js';
+import { importUrlCopy } from './import-url-copy.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
@@ -1267,6 +1268,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const isRest = effectiveFormat === 'openapi' || effectiveFormat === 'postman';
   const isProto = effectiveFormat === 'proto';
   const isAsyncApi = effectiveFormat === 'asyncapi';
+  const urlCopy = importUrlCopy(format);
 
   return (
     <Dialog.Root
@@ -1406,16 +1408,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 {tab === 'url' && (
                   <>
                     <label className="text-sm text-fg-subtle" htmlFor="import-url">
-                      {effectiveFormat === 'openapi' || effectiveFormat === 'postman' || isAsyncApi
-                        ? 'Specification URL'
-                        : effectiveFormat === 'proto'
-                          ? '.proto URL'
-                          : 'WSDL URL'}
+                      {urlCopy.label}
                     </label>
                     <input
                       id="import-url"
                       data-testid={format === 'openapi' ? 'import-openapi-url' : 'import-url-input'}
-                      aria-label="WSDL URL"
                       autoFocus
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
@@ -1425,13 +1422,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           void onImport();
                         }
                       }}
-                      placeholder={
-                        effectiveFormat === 'wsdl'
-                          ? 'http://example.test/service.wsdl'
-                          : effectiveFormat === 'proto'
-                            ? 'https://example.test/protos/service.proto'
-                            : 'https://example.test/openapi.json or ?wsdl'
-                      }
+                      placeholder={urlCopy.placeholder}
                       className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                     />
                     {urlError !== undefined && <p className="text-sm text-status-danger">{urlError}</p>}
@@ -1446,18 +1437,23 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
                     {(effectiveFormat === 'wsdl' || effectiveFormat === 'unknown') && (
                       <>
-                        <select
-                          aria-label="Definition authentication"
-                          value={authMode}
-                          onChange={(e) => setAuthMode(e.target.value as 'none' | 'basic' | 'kerberos')}
-                          className="mt-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
-                        >
-                          <option value="none">None</option>
-                          <option value="basic">Basic</option>
-                          <option value="kerberos" disabled={kerberosAvailability?.available === false}>
-                            Kerberos (signed-in ticket)
-                          </option>
-                        </select>
+                        {/* Visibly labelled, as the OpenAPI face's scheme select is; the accessible
+                            name says what the credentials are for. */}
+                        <label className="mt-1 flex items-center gap-2">
+                          <span className="w-28 shrink-0 text-xs text-fg-subtle">Authentication</span>
+                          <select
+                            aria-label="Definition authentication"
+                            value={authMode}
+                            onChange={(e) => setAuthMode(e.target.value as 'none' | 'basic' | 'kerberos')}
+                            className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                          >
+                            <option value="none">None</option>
+                            <option value="basic">Basic</option>
+                            <option value="kerberos" disabled={kerberosAvailability?.available === false}>
+                              Kerberos (signed-in ticket)
+                            </option>
+                          </select>
+                        </label>
                         {kerberosAvailability?.available === false &&
                           kerberosAvailability.reason !== undefined &&
                           kerberosAvailability.reason !== '' && (
