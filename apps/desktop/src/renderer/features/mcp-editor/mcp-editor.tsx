@@ -8,7 +8,7 @@
  * completion come from the server's catalogue, which a refresh wrote into the mirror; a send goes to
  * main, which resolves the transport and asks for a stdio command line's approval.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { Breadcrumb } from '../../components/breadcrumb.js';
 import { Tabs } from '../../components/tabs.js';
@@ -26,6 +26,7 @@ import { ArgumentsTab } from './arguments-tab.js';
 import { McpBadge } from './badge.js';
 import { OperationBar } from './operation-bar.js';
 import { McpSettingsTab } from './settings-tab.js';
+import { mcpRecordOutcome } from './response/status-line.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -82,39 +83,15 @@ export function mcpOutcome(state: McpExchangeState | undefined): string | undefi
   if (state.status === 'error') return state.error?.message ?? 'The send failed';
   const exchange = state.exchange;
   if (exchange === undefined) return undefined;
-  if (exchange.error !== undefined) return `Error ${String(exchange.error.code)} ${exchange.error.message}`;
-  if (exchange.failure !== undefined) return exchange.failure.message;
-  const result = exchange.result;
-  if (typeof result === 'object' && result !== null && (result as { isError?: unknown }).isError === true) {
-    return 'Tool error (isError)';
-  }
-  return 'OK';
+  if (exchange.failure !== undefined && exchange.error === undefined) return exchange.failure.message;
+  return mcpRecordOutcome(exchange).text;
 }
 
-/**
- * The response side, for now: the outcome, the duration and the message count.
- * PLACEHOLDER — the full response pane (result blocks, the messages timeline) takes this slot.
- */
-function McpResponseSlot({ state }: { readonly state: McpExchangeState | undefined }) {
-  const outcome = mcpOutcome(state);
-  const exchange = state?.status === 'done' ? state.exchange : undefined;
-  return (
-    <div data-testid="mcp-response" className="flex h-full min-h-0 flex-col gap-1 p-3 text-sm">
-      {outcome === undefined ? (
-        <p className="text-fg-subtle">Send the request to see the server’s answer.</p>
-      ) : (
-        <p data-testid="mcp-response-status" className="font-medium text-fg-default">
-          {outcome}
-          {exchange !== undefined && (
-            <span className="ml-2 font-normal text-fg-subtle">
-              {`${String(Math.round(exchange.durationMs))} ms · ${String(exchange.messages.length)} messages`}
-            </span>
-          )}
-        </p>
-      )}
-    </div>
-  );
-}
+// Split out of the editor's chunk: the response pane is only drawn once there is something to show.
+const McpResponsePane = lazy(async () => {
+  const module = await import('./response/response-pane.js');
+  return { default: module.McpResponsePane };
+});
 
 /** One MCP request's editor. */
 export function McpEditor({ requestId }: McpEditorProps) {
@@ -190,8 +167,11 @@ export function McpEditor({ requestId }: McpEditorProps) {
     </div>
   );
 
-  // The response pane's slot: the full pane replaces `McpResponseSlot` here.
-  const responsePane = <McpResponseSlot state={exchange} />;
+  const responsePane = (
+    <Suspense fallback={null}>
+      <McpResponsePane state={exchange} transport={server?.transport.type} />
+    </Suspense>
+  );
 
   return (
     <section aria-label={`Request ${request.name}`} data-testid="mcp-editor" className="flex h-full min-h-0 flex-col">

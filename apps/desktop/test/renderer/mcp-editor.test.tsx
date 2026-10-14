@@ -275,7 +275,8 @@ describe('McpEditor — send, cancel and settings', () => {
       draft: { operation: { method: 'tools/call', tool: 'list_dir', arguments: '' } },
     });
     await waitFor(() => {
-      expect(screen.getByTestId('mcp-response-status').textContent).toBe('OK42 ms · 0 messages');
+      expect(screen.getByTestId('mcp-response-outcome').textContent).toBe('OK');
+      expect(screen.getByTestId('mcp-response-status').textContent).toContain('42 ms');
     });
   });
 

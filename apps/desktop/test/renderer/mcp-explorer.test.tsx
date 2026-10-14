@@ -365,7 +365,8 @@ describe('an MCP History entry', () => {
   it('shows how the server answered, the result and the messages', () => {
     render(<McpHistoryBody entry={mcpEntry()} />);
     expect(screen.getByTestId('mcp-history-outcome').textContent).toBe('OK');
-    expect(screen.getByTestId('mcp-history-result').textContent).toContain('"hello"');
+    expect(screen.getByTestId('mcp-history-result').textContent).toContain('hello');
+    expect(screen.getByTestId('mcp-block-text')).not.toBeNull();
     expect(screen.getByTestId('mcp-history-messages').textContent).toContain('tools/call');
   });
 

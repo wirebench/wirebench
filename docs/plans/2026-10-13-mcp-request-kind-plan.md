@@ -266,10 +266,10 @@ tests.
 **Files:** new `features/mcp-editor/response/{response-pane,result-view,messages-view,status-line}.tsx`,
 tests.
 
-- [ ] The status line. The result content blocks (text, image, audio, resource link, embedded
+- [x] The status line. The result content blocks (text, image, audio, resource link, embedded
   resource) and `structuredContent`. The messages timeline, with the HTTP calls or stderr. Warnings
   are shown.
-- [ ] Tests for each block type, an error, `isError`, and the warnings.
+- [x] Tests for each block type, an error, `isError`, and the warnings.
 
 ### Task 18: e2e
 
