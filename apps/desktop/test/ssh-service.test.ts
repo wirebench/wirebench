@@ -1183,6 +1183,15 @@ describe('runSnippet', () => {
     expect(log.ends).toEqual([undefined]);
   });
 
+  it('tells the window the session is recorded only while a log takes its output (#534)', async () => {
+    const logged = make({ known: [KEY], secrets: { a_pw: 'pw' }, sessionLog: fakeLog().sessionLog });
+    expect(await logged.service.connect(as(sender(1)), CONNECT)).toMatchObject({ recording: true });
+    const unlogged = make({ known: [KEY], secrets: { a_pw: 'pw' } });
+    expect(await unlogged.service.connect(as(sender(1)), CONNECT)).not.toHaveProperty('recording');
+    const failing = make({ known: [KEY], secrets: { a_pw: 'pw' }, sessionLog: fakeLog({ fail: true }).sessionLog });
+    expect(await failing.service.connect(as(sender(1)), CONNECT)).not.toHaveProperty('recording');
+  });
+
   it('opens the session unlogged when the log cannot start', async () => {
     const log = fakeLog({ fail: true });
     const { fake, emit } = await connected({ sessionLog: log.sessionLog });

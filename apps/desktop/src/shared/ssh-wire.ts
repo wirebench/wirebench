@@ -206,11 +206,13 @@ export const sshConnectRequestSchema = z.strictObject({
 });
 /**
  * `agentForwarding` is left out when the host does not forward the agent. `on`: granted; `refused`: the
- * server said no; `no-agent`: no local agent runs. The last two open the shell without it.
+ * server said no; `no-agent`: no local agent runs. The last two open the shell without it. `recording` is
+ * there only while the session's output goes to a session log (#414).
  */
 export const sshConnectResponseSchema = z.object({
   sessionId: z.string(),
   agentForwarding: z.enum(['on', 'refused', 'no-agent']).optional(),
+  recording: z.literal(true).optional(),
 });
 /** `data` is base64: terminal bytes are not always valid UTF-8. */
 export const sshWriteRequestSchema = z.strictObject({ sessionId: z.string(), data: z.string() });
