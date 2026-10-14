@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';
 import type { CommandCategory, CommandDefinition } from '@shared/commands.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
+import { RENDERER_KINDS, rendererKind } from '../kinds/index.js';
 import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
 import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
@@ -24,6 +25,7 @@ import type { QuickOpenEntry } from './quick-open.js';
 import {
   quickOpenEntries,
   quickOpenHostEntries,
+  quickOpenKindEntries,
   quickOpenLayoutEntries,
   quickOpenSnippetEntries,
   splitRecentHosts,
@@ -158,9 +160,25 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
     () => Object.fromEntries(Object.entries(projects).map(([id, project]) => [id, project.name])),
     [projects],
   );
+  // Every other kind's saved requests, each kind listing its own (a switched-off kind lists none).
+  const project = useProjectStore((state) => state);
+  const enabledKinds = useUiStore((state) => state.enabledKinds);
+  const kindRequests = useMemo(
+    () =>
+      mode === 'quick-open'
+        ? RENDERER_KINDS.filter((kind) => enabledKinds.includes(kind.kind)).flatMap((kind) =>
+            quickOpenKindEntries(kind.kind, kind.requests.quickOpen?.(project) ?? [], {
+              folders: project.folders,
+              projectOf,
+              projectNames,
+            }),
+          )
+        : [],
+    [mode, enabledKinds, project, projectOf, projectNames],
+  );
   const entries = useMemo(
-    () => (mode === 'quick-open' ? quickOpenEntries(interfaces, requests, projectOf, projectNames) : []),
-    [mode, interfaces, requests, projectOf, projectNames],
+    () => (mode === 'quick-open' ? quickOpenEntries(interfaces, requests, projectOf, projectNames, kindRequests) : []),
+    [mode, interfaces, requests, projectOf, projectNames, kindRequests],
   );
   // A switched-off ssh area contributes no hosts, in quick-open or in the host picker.
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
@@ -313,9 +331,12 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     key={entry.key}
                     value={entry.value}
                     data-testid="quick-open-item"
+                    data-kind={entry.requestKind ?? 'soap'}
                     onSelect={() => {
                       onOpenChange(false);
-                      if (entry.kind === 'request') {
+                      if (entry.requestKind !== undefined && entry.requestId !== undefined) {
+                        rendererKind(entry.requestKind).requests.open(entry.requestId);
+                      } else if (entry.kind === 'request') {
                         explorerActions.openRequest(entry.requestId);
                       } else {
                         explorerActions.newRequest(entry.interfaceId, entry.bindingName, entry.operationName);
