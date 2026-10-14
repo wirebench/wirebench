@@ -38,6 +38,8 @@ export const restRenderer: RendererKind = {
   tabs: [
     {
       kind: 'rest-request',
+      treeNode: (id, project) =>
+        project.apis[project.restRequests[id]?.apiId ?? ''] === undefined ? `webhook-request:${id}` : `rest:${id}`,
       container: (id, project) =>
         requestContainer(project.restRequests[id], (apiId) => project.apis[apiId] !== undefined),
       idField: 'restRequestId',
@@ -49,6 +51,7 @@ export const restRenderer: RendererKind = {
     },
     {
       kind: 'api',
+      treeNode: (id) => `api:${id}`,
       container: (id, project) => (project.apis[id] === undefined ? undefined : { apiId: id }),
       idField: 'apiId',
       prefix: 'api:',

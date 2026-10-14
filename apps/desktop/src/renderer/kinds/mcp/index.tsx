@@ -28,6 +28,7 @@ export const mcpRenderer: RendererKind = {
   tabs: [
     {
       kind: 'mcp-request',
+      treeNode: (id) => `mcp:${id}`,
       container: (id, project) =>
         requestContainer(project.mcpRequests[id], (apiId) => project.mcpServers[apiId] !== undefined),
       idField: 'mcpRequestId',
@@ -39,6 +40,7 @@ export const mcpRenderer: RendererKind = {
     },
     {
       kind: 'mcp-api',
+      treeNode: (id) => `mcp-api:${id}`,
       container: (id, project) => (project.mcpServers[id] === undefined ? undefined : { apiId: id }),
       idField: 'mcpApiId',
       prefix: 'mcp-api:',

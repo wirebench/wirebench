@@ -7,6 +7,7 @@ import {
   chooseContextMenuItem,
   createApi,
   folderRow,
+  nameNewRow,
   openApiTab,
   openResponseTab,
   responseStatus,
@@ -66,12 +67,8 @@ test('an API’s and a folder’s scripts run around a request in the folder, AP
   // A request in the folder, with no scripts of its own.
   await chooseContextMenuItem(page, folderRow(page, 'Folder 1'), 'New request');
   await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
-  const breadcrumbName = page.getByTestId('rest-breadcrumb-name');
-  await breadcrumbName.dblclick();
-  const input = page.getByTestId('rest-breadcrumb-name-input');
-  await input.fill('Echo');
-  await input.press('Enter');
-  await expect(breadcrumbName).toHaveText('Echo');
+  await nameNewRow(page, 'Echo');
+  await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText('Echo');
   await setMethodAndUrl(page, 'GET', '/echo');
   await saveRequest(page);
 

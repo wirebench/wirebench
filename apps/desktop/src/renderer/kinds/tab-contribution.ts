@@ -60,6 +60,8 @@ export interface TabContribution {
    * Unset, or `undefined`, for a tab that is not in one of its kind's APIs.
    */
   container?(id: string, project: ProjectSnapshot): TabContainer | undefined;
+  /** The explorer row the tab's entity is: what the tree reveals and selects while the tab is active. */
+  treeNode?(id: string, project: ProjectSnapshot): string | undefined;
   /** Whether the entity has unsaved edits; only the request kinds carry drafts. */
   dirty?(id: string, drafts: DraftsState): boolean;
 }

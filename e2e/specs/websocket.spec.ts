@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { chooseContextMenuItem } from '../helpers/rest.js';
+import { chooseContextMenuItem, nameNewRow } from '../helpers/rest.js';
 import { createProject, createWorkspace, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestWsServer, type TestWsServer } from '../helpers/test-server.js';
 
@@ -56,10 +56,7 @@ test.describe('WebSocket: a request owns a session, its transcript, and its own 
     await chooseContextMenuItem(page, apiRow, 'New request');
     await expect(page.getByTestId('ws-editor')).toBeVisible({ timeout: 20_000 });
     const breadcrumbName = page.getByTestId('ws-breadcrumb-name');
-    await breadcrumbName.dblclick();
-    const nameInput = page.getByTestId('ws-breadcrumb-name-input');
-    await nameInput.fill('Echo');
-    await nameInput.press('Enter');
+    await nameNewRow(page, 'Echo');
     await expect(breadcrumbName).toHaveText('Echo');
 
     // One axe pass over the open editor, before the session changes anything on screen.

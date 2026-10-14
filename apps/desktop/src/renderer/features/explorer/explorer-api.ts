@@ -66,17 +66,49 @@ export function startRenamingProject(projectId: string): void {
 }
 
 function startRenaming(nodeId: string): void {
-  const trigger = () => {
+  revealNode(nodeId, { focus: true, rename: true });
+}
+
+/** How many frames {@link revealNode} waits for a row that is not in the tree yet (one just created). */
+const REVEAL_FRAMES = 30;
+
+/** What {@link revealNode} does once the row is shown. */
+export interface RevealOptions {
+  /** Move keyboard focus to the row; off, focus stays where it is (in an editor, say). */
+  readonly focus?: boolean;
+  /** Start an inline rename of the row. */
+  readonly rename?: boolean;
+}
+
+/**
+ * Unfolds a row's ancestors, selects it and scrolls it into view. A row that is not in the tree yet — one a
+ * mutation has just created, before the tree re-rendered — is waited for, a frame at a time, and given up on
+ * after {@link REVEAL_FRAMES}.
+ */
+export function revealNode(nodeId: string, options: RevealOptions = {}): void {
+  let frames = 0;
+  const attempt = (): void => {
     const tree = treeApi;
-    if (tree === null) {
+    if (tree === null) return;
+    // A collapsed ancestor keeps the row out of the visible list, where `get` looks.
+    tree.openParents(nodeId);
+    const node = tree.get(nodeId);
+    if (node === null) {
+      frames += 1;
+      if (frames < REVEAL_FRAMES) nextFrame(attempt);
       return;
     }
-    void tree.get(nodeId)?.edit();
+    if (!node.isSelected) tree.select(nodeId, { focus: options.focus === true });
+    else if (options.focus === true) node.focus();
+    if (options.rename === true) void node.edit();
   };
+  nextFrame(attempt);
+}
 
+function nextFrame(run: () => void): void {
   if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(trigger);
+    requestAnimationFrame(run);
   } else {
-    trigger();
+    run();
   }
 }

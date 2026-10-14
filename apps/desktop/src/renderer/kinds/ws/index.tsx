@@ -38,6 +38,7 @@ export const wsRenderer: RendererKind = {
   tabs: [
     {
       kind: 'ws-request',
+      treeNode: (id) => `ws:${id}`,
       container: (id, project) =>
         requestContainer(project.wsRequests[id], (apiId) => project.wsApis[apiId] !== undefined),
       idField: 'wsRequestId',
@@ -49,6 +50,7 @@ export const wsRenderer: RendererKind = {
     },
     {
       kind: 'ws-api',
+      treeNode: (id) => `ws-api:${id}`,
       container: (id, project) => (project.wsApis[id] === undefined ? undefined : { apiId: id }),
       idField: 'wsApiId',
       prefix: 'ws-api:',

@@ -110,13 +110,20 @@ describe('explorerActions for REST nodes', () => {
     const addFolder = vi.fn().mockResolvedValue('folder-new');
     useProjectStore.setState({ addFolder, folders: { 'folder-1': restFolderWire({ name: 'Folder 1' }) } });
     const edit = vi.fn();
-    registerExplorerTree({ get: () => ({ edit }) } as unknown as Parameters<typeof registerExplorerTree>[0]);
+    const openParents = vi.fn();
+    registerExplorerTree({
+      get: () => ({ edit, isSelected: false }),
+      openParents,
+      select: vi.fn(),
+    } as unknown as Parameters<typeof registerExplorerTree>[0]);
 
     explorerActions.newFolder('api-1');
     await vi.waitFor(() => {
       expect(edit).toHaveBeenCalled();
     });
     expect(addFolder).toHaveBeenCalledWith('api-1', undefined, 'Folder 2');
+    // A collapsed API would hide the new row from the rename: it is unfolded to first.
+    expect(openParents).toHaveBeenCalledWith('folder:folder-new');
     registerExplorerTree(null);
   });
 
