@@ -17,6 +17,7 @@ import { ForwardsSection, inheritedForwards } from './forwarding/forwards-sectio
 import { EnvSection, envProblem, inheritedEnv } from './env-section.js';
 import { AgentForwardingSection, inheritedForwardAgent } from './agent-forwarding.js';
 import { inheritedMosh, inheritedProtocol, MoshSection, moshProblem } from './mosh-section.js';
+import { cleanProxy, proxyProblem, ProxySection } from './proxy-section.js';
 import { OS_LABELS } from './os-icon.js';
 import { HostAuthSection } from './host-auth-section.js';
 import { cleanTerminal, HostTerminalSection, inheritedTerminal, terminalProblem } from './host-terminal-section.js';
@@ -103,6 +104,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const [tags, setTags] = useState((existing?.tags ?? []).join(', '));
   const [ssh, setSsh] = useState<SshSettingsWire>(existing?.ssh ?? {});
   const [password, setPassword] = useState('');
+  const [proxyPassword, setProxyPassword] = useState('');
   const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
   const [forwards, setForwards] = useState<ForwardEntryWire[]>(existing?.forwards ?? []);
   const [env, setEnv] = useState<EnvVarWire[]>(existing?.env ?? []);
@@ -149,7 +151,9 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const forwardsReady = forwards.every((entry) => !('type' in entry) || forwardProblem(entry) === undefined);
   const sectionProblems = [
     ...(forwardsReady ? [] : ['A forwarding rule is incomplete (Advanced)']),
-    ...[envProblem(env), terminalProblem(terminal), moshProblem(ssh.mosh)].filter((p): p is string => p !== undefined),
+    ...[envProblem(env), terminalProblem(terminal), proxyProblem(ssh.proxy), moshProblem(ssh.mosh)].filter(
+      (p): p is string => p !== undefined,
+    ),
   ];
   const missing = missingFields({
     isHost,
@@ -186,6 +190,27 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       // A save main refuses next keeps the stored name, so trying again does not store a second copy.
       setSsh(clean);
       setPassword('');
+      setSecretError(undefined);
+    }
+    const proxy = cleanProxy(clean.proxy);
+    if (proxy !== undefined) clean = { ...clean, proxy };
+    // The proxy's typed password, the same way: stored first, then only its name is written.
+    if (proxy !== undefined && proxy !== false && proxyPassword !== '') {
+      const secret =
+        proxy.passwordSecret ??
+        passwordSecretName(
+          id,
+          secretNames.map((n) => n.name),
+          'proxy_password',
+        );
+      const stored = await ipc().ssh.setSecret({ name: secret, value: proxyPassword });
+      if (!stored.ok) {
+        setSecretError(stored.error.message);
+        return;
+      }
+      clean = { ...clean, proxy: { ...proxy, passwordSecret: secret } };
+      setSsh(clean);
+      setProxyPassword('');
       setSecretError(undefined);
     }
     const guard = protectedHere === undefined ? {} : { protected: protectedHere };
@@ -419,6 +444,16 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             onMosh={(next) => {
               setSsh((prev) => withField(prev, 'mosh', next));
             }}
+          />
+          <ProxySection
+            own={ssh.proxy}
+            inherited={inheritedFrom(chain, 'proxy')}
+            onChange={(next) => {
+              setSsh((prev) => withField(prev, 'proxy', next));
+            }}
+            names={secretNames}
+            password={proxyPassword}
+            onPasswordChange={setProxyPassword}
           />
           <AgentForwardingSection
             override={ssh.forwardAgent}

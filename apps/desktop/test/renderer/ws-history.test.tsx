@@ -12,6 +12,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { wsRequestWire } from '../helpers/wire-defaults.js';
+import { rowActions } from '../helpers/history-row-menu.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -61,12 +62,12 @@ afterEach(() => {
 });
 
 describe('a WebSocket entry in History', () => {
-  it('marks its row WS', () => {
+  it('marks its row WS', async () => {
     useHistoryStore.setState({ entries: [wsEntry()], total: 1 });
     render(<HistoryView />);
     expect(screen.getByTestId('history-ws-badge').textContent).toBe('WS');
     // No ↻: a session is not replayed from History.
-    expect(screen.queryByRole('button', { name: 'Re-send Lobby' })).toBeNull();
+    expect(await rowActions('Lobby')).not.toContain('Re-send');
   });
 
   it('shows the status line and a read-only timeline, without a composer or Re-send', async () => {
@@ -114,7 +115,7 @@ describe('a WebSocket entry in History', () => {
 });
 
 describe('re-send in History is SOAP, gRPC and REST', () => {
-  it('offers ↻ on a SOAP row (or one with no kind), a gRPC row and a REST row, and not on a WebSocket row', () => {
+  it('offers ↻ on a SOAP row (or one with no kind), a gRPC row and a REST row, and not on a WebSocket row', async () => {
     const base = wsEntry();
     const soap = { ...base, id: 's', kind: 'soap' as const, requestName: 'Soap', ws: undefined };
     const legacy = { ...base, id: 'l', kind: undefined, requestName: 'Legacy', ws: undefined };
@@ -122,11 +123,11 @@ describe('re-send in History is SOAP, gRPC and REST', () => {
     const grpc = { ...base, id: 'g', kind: 'grpc' as const, requestName: 'Grpc', ws: undefined };
     useHistoryStore.setState({ entries: [soap, legacy, rest, grpc, base], total: 5 });
     render(<HistoryView />);
-    expect(screen.getByRole('button', { name: 'Re-send Soap' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Re-send Legacy' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Re-send Grpc' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Re-send Rest' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Re-send Lobby' })).toBeNull();
+    expect(await rowActions('Soap')).toContain('Re-send');
+    expect(await rowActions('Legacy')).toContain('Re-send');
+    expect(await rowActions('Grpc')).toContain('Re-send');
+    expect(await rowActions('Rest')).toContain('Re-send');
+    expect(await rowActions('Lobby')).not.toContain('Re-send');
   });
 
   it('offers Re-send in a SOAP, gRPC or REST entry’s tab and not in a WebSocket one’s', () => {

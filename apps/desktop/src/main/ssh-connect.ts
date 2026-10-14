@@ -2,7 +2,14 @@ import { readFile } from 'node:fs/promises';
 import type { WebContents } from 'electron';
 import { WirebenchError, secretPseudoRef } from '@wirebench/engine';
 import type { GetSecret } from '@wirebench/engine';
-import { checkKnownHost, envSecretName, jumpChain, parseKnownHosts, secretNameOf } from '@wirebench/ssh';
+import {
+  checkKnownHost,
+  envSecretName,
+  jumpChain,
+  parseKnownHosts,
+  proxyCredentialsOf,
+  secretNameOf,
+} from '@wirebench/ssh';
 import type {
   DialOptions,
   HopCredentials,
@@ -240,7 +247,10 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
   const credentialsFor = async (chain: readonly ResolvedHost[], getSecret: GetSecret): Promise<HopCredentials[]> => {
     const value = (token: string): Promise<string> => secretValue(token, getSecret);
     const hops: HopCredentials[] = [];
-    for (const hop of chain) {
+    // The first hop's own proxy (#417): the hops after it are reached through it, never through a proxy.
+    const proxySetting = chain[0]?.ssh.proxy.value;
+    const proxy = proxySetting === undefined ? undefined : await proxyCredentialsOf(proxySetting, value);
+    for (const [index, hop] of chain.entries()) {
       const auth = hop.ssh.auth.value;
       const user = hop.ssh.user.value;
       if (!auth || user === undefined) continue; // unreachable: chainFor refused incomplete hops
@@ -264,6 +274,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
         auth: credentials,
         keepAlive: hop.ssh.keepAlive.value,
         connectTimeout: hop.ssh.connectTimeout.value,
+        ...(index === 0 && proxy !== undefined ? { proxy } : {}),
       });
     }
     return hops;

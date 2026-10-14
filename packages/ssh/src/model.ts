@@ -45,6 +45,18 @@ const authSchema = z.union([
   z.strictObject({ agent: z.literal(true) }).transform(() => ({ kind: 'agent' as const })),
 ]);
 
+/**
+ * A SOCKS5 or HTTP CONNECT proxy the first hop of a connection is dialled through (#417). The password is a
+ * `${secret:NAME}` token only, like every credential here.
+ */
+const proxySchema = z.strictObject({
+  type: z.enum(['socks5', 'http']),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  user: z.string().min(1).optional(),
+  password: secretRef.optional(),
+});
+
 const settingsSchema = z
   .strictObject({
     user: z.string().min(1).optional(),
@@ -59,6 +71,8 @@ const settingsSchema = z
     protocol: protocolSchema,
     /** Taken whole from the nearest level that sets it. */
     mosh: moshSchema,
+    /** `false` connects directly though a group above sets a proxy. */
+    proxy: z.union([z.literal(false), proxySchema]).optional(),
   })
   .default({});
 
@@ -76,6 +90,7 @@ const hostSchema = z.strictObject({
 
 export type SshAuth = z.infer<typeof authSchema>;
 export type SshSettings = z.infer<typeof settingsSchema>;
+export type SshProxy = z.infer<typeof proxySchema>;
 export type HostEntry = z.infer<typeof hostSchema>;
 export interface GroupEntry {
   id: string;
@@ -303,6 +318,17 @@ function settings(ssh: SshSettings): Record<string, unknown> {
   if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
   if (ssh.protocol !== undefined) out['protocol'] = ssh.protocol;
   if (ssh.mosh !== undefined) out['mosh'] = { ...ssh.mosh };
+  if (ssh.proxy === false) out['proxy'] = false;
+  else if (ssh.proxy !== undefined) {
+    const { type, host, port, user, password } = ssh.proxy;
+    out['proxy'] = {
+      type,
+      host,
+      port,
+      ...(user === undefined ? {} : { user }),
+      ...(password === undefined ? {} : { password }),
+    };
+  }
   return out;
 }
 

@@ -30,6 +30,14 @@ export const moshSettingsWireSchema = z.strictObject({
   ports: z.string().optional(),
 });
 export type MoshSettingsWire = z.infer<typeof moshSettingsWireSchema>;
+/** A proxy the first hop is dialled through (#417); its password is a secret NAME, never a value. */
+export const sshProxyWireSchema = z.strictObject({
+  type: z.enum(['socks5', 'http']),
+  host: z.string(),
+  port: z.number(),
+  user: z.string().optional(),
+  passwordSecret: z.string().optional(),
+});
 
 export const sshSettingsWireSchema = z.strictObject({
   user: z.string().optional(),
@@ -42,6 +50,8 @@ export const sshSettingsWireSchema = z.strictObject({
   /** `mosh` starts a mosh server over SSH, then runs the session over UDP (#419). */
   protocol: sshProtocolWireSchema.optional(),
   mosh: moshSettingsWireSchema.optional(),
+  /** `false` connects directly though a group above sets a proxy. */
+  proxy: z.union([z.literal(false), sshProxyWireSchema]).optional(),
 });
 
 const forwardTypeWireSchema = z.enum(['local', 'remote', 'dynamic']);
@@ -175,6 +185,8 @@ export const resolvedHostWireSchema = z.object({
     /** Main always sends both; absent reads as SSH with no mosh block. */
     protocol: prov(sshProtocolWireSchema).optional(),
     mosh: prov(moshSettingsWireSchema.optional()).optional(),
+    /** Used when this host is the first hop; `undefined` connects directly. */
+    proxy: prov(sshProxyWireSchema.optional()),
   }),
   incomplete: z.object({ field: z.enum(['user', 'auth']) }).optional(),
   forwards: z.array(resolvedForwardWireSchema),
@@ -193,6 +205,7 @@ export const sshSaveHostsRequestSchema = z.strictObject({ file: hostsFileWireSch
 
 export type SshAuthWire = z.infer<typeof sshAuthWireSchema>;
 export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
+export type SshProxyWire = z.infer<typeof sshProxyWireSchema>;
 export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
@@ -375,6 +388,9 @@ export const sshPlannedSettingsWireSchema = z.strictObject({
   keepAlive: z.number().optional(),
   connectTimeout: z.number().optional(),
   forwardAgent: z.boolean().optional(),
+  proxy: z
+    .strictObject({ type: z.enum(['socks5', 'http']), host: z.string(), port: z.number(), user: z.string().optional() })
+    .optional(),
 });
 export const sshPlannedHostWireSchema = z.strictObject({
   alias: z.string(),

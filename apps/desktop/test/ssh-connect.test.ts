@@ -183,3 +183,34 @@ describe('createSshConnector', () => {
     expect(refusals.of(1)).toEqual([]);
   });
 });
+
+describe('proxies (#417)', () => {
+  const PROXIED = parseHostsFile(
+    [
+      'version: 1',
+      'groups:',
+      '  - id: corp',
+      '    name: Corp',
+      "    ssh: { proxy: { type: socks5, host: proxy.corp, port: 1080, user: me, password: '${secret:proxy_pw}' } }",
+      '    hosts:',
+      "      - { id: bastion, name: bastion, address: 10.0.0.9, ssh: { user: jump, auth: { password: '${secret:jump_pw}' } } }",
+      "      - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, jump: bastion, auth: { password: '${secret:a_pw}' } } }",
+      '',
+    ].join('\n'),
+  );
+
+  it('gives the first hop its proxy with the password read from the secret store; later hops get none', async () => {
+    const { connector } = make({ file: PROXIED, secrets: { jump_pw: 'jpw', a_pw: 'apw', proxy_pw: 'ppw' } });
+    const hops = await connector.prepareHops(sender(1), 'a');
+    expect(hops[0]?.proxy).toEqual({ type: 'socks5', host: 'proxy.corp', port: 1080, user: 'me', password: 'ppw' });
+    expect(hops[1]?.proxy).toBeUndefined();
+  });
+
+  it('a missing proxy password is secret-missing with its name', async () => {
+    const { connector } = make({ file: PROXIED, secrets: { jump_pw: 'jpw', a_pw: 'apw' } });
+    await expect(connector.prepareHops(sender(1), 'bastion')).rejects.toMatchObject({
+      code: 'secret-missing',
+      details: { name: 'proxy_pw' },
+    });
+  });
+});

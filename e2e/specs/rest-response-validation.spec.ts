@@ -198,12 +198,8 @@ test.describe('REST response validation', () => {
     }
     const rows = page.getByTestId('history-row');
     await expect(rows).toHaveCount(3, { timeout: 20_000 });
-    // The row's own Open button: the middle of a row is its Re-send button.
-    await rows
-      .filter({ hasText: '503' })
-      .first()
-      .getByRole('button', { name: /^Open / })
-      .click();
+    // A click anywhere on the row opens it.
+    await rows.filter({ hasText: '503' }).first().click();
     await expect(page.getByTestId('rest-contract-chip').filter({ hasText: 'Unexpected status' }).first()).toBeVisible({
       timeout: 20_000,
     });

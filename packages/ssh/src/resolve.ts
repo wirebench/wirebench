@@ -3,7 +3,7 @@ import { defaultBind, isOffForm, parseTarget } from './forward-rules.js';
 import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
 import type { MoshSettings, SessionProtocol } from './host-mosh.js';
-import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshSettings } from './model.js';
+import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshProxy, SshSettings } from './model.js';
 
 export type Provenance<T> = { readonly value: T; readonly from: 'host' | 'default' | { readonly group: string } };
 
@@ -54,6 +54,12 @@ export interface ResolvedHost {
     readonly protocol: Provenance<SessionProtocol>;
     /** The nearest level's block, whole; read only when the protocol is `mosh`. */
     readonly mosh: Provenance<MoshSettings | undefined>;
+    /**
+     * The proxy this host is dialled through when it is the first hop; `undefined` connects directly (a
+     * nearer `proxy: false` gives that, with its level as `from`). A jump host's own setting is the one used
+     * for it, never the target's.
+     */
+    readonly proxy: Provenance<SshProxy | undefined>;
   };
   readonly incomplete?: { readonly field: 'user' | 'auth' };
   /** Merged by id root to leaf: a nearer rule replaces a farther one whole; an off form switches it off. */
@@ -165,6 +171,11 @@ function resolveEnv(located: Located): ResolvedEnvVar[] {
   return [...out.values()];
 }
 
+/** `false` (connect directly) resolves to no proxy, keeping the level that said so. */
+function proxyOf(picked: Provenance<SshSettings['proxy']>): Provenance<SshProxy | undefined> {
+  return picked.value === false ? { value: undefined, from: picked.from } : { value: picked.value, from: picked.from };
+}
+
 /** Merged values, nearest wins; `auth` is replaced whole, never merged. No defaults, no provenance. */
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
@@ -179,6 +190,7 @@ export function resolveSettings(file: HostsFile, id: string): SshSettings {
     'forwardAgent',
     'protocol',
     'mosh',
+    'proxy',
   ] as const) {
     const { value } = pick(located, key, undefined);
     if (value !== undefined) out[key] = value;
@@ -202,6 +214,7 @@ function resolveLocated(located: Located): ResolvedHost {
     forwardAgent: pick(located, 'forwardAgent', DEFAULTS.forwardAgent) as Provenance<boolean>,
     protocol: pick(located, 'protocol', DEFAULTS.protocol) as Provenance<SessionProtocol>,
     mosh: pick(located, 'mosh', undefined),
+    proxy: proxyOf(pick(located, 'proxy', undefined)),
   };
   const incomplete =
     ssh.user.value === undefined

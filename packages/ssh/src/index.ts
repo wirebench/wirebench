@@ -9,6 +9,7 @@ export * from './resolve.js';
 export * from './known-hosts.js';
 export * from './known-hosts-file.js';
 export * from './connect-progress.js';
+export * from './proxy.js';
 export * from './dial.js';
 export * from './forward.js';
 export * from './session.js';
