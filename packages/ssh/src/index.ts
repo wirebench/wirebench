@@ -12,6 +12,7 @@ export * from './connect-progress.js';
 export * from './dial.js';
 export * from './forward.js';
 export * from './session.js';
+export * from './mosh.js';
 export * from './sftp.js';
 export * from './openssh-config/index.js';
 export * from './host-import/index.js';
