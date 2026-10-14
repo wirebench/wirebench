@@ -4,7 +4,15 @@ import { useProblemsStore } from '../../state/problems.js';
 import { findHost, useHostsStore } from './hosts-store.js';
 import { hasHost, leaves, onePane } from './panes/pane-tree.js';
 import type { PaneLeaf } from './panes/pane-tree.js';
-import { beginAttempt, failWaitingAttempt, noteConnected, noteFailed, noteTrust } from './connect-store.js';
+import {
+  beginAttempt,
+  failWaitingAttempt,
+  noteConnected,
+  noteFailed,
+  noteTrust,
+  signInUserOf,
+} from './connect-store.js';
+import type { ConnectError } from './connect-errors.js';
 import { useRecentStore } from './recent-connections.js';
 import { isRetryableConnectError } from './reconnect.js';
 import type { AttemptOutcome } from './reconnect.js';
@@ -24,6 +32,26 @@ function recordProblem({ paneId, hostId }: PaneLeaf, code: string, message: stri
   useProblemsStore
     .getState()
     .add([{ groupId: `ssh:${hostId}`, source: 'hosts', severity: 'error', problem: { code, message } }]);
+}
+
+/**
+ * The host has no user and none was typed on the pane's screen: nothing connects, and the screen asks for
+ * one (#532). Main would refuse the same way, but only after the screen showed a step running.
+ */
+export function missingUser(key: string, hostId: string): ConnectError | undefined {
+  const host = useHostsStore.getState().resolved.find((h) => h.id === hostId);
+  if (host?.incomplete?.field !== 'user' || signInUserOf(key) !== undefined) return undefined;
+  return {
+    code: 'ssh-host-incomplete',
+    message: `${host.name} has no user; set it on the host or one of its groups`,
+    details: { hostId, field: 'user' },
+  };
+}
+
+/** The user typed on the pane's screen, as the connect request carries it. */
+export function signInRequest(key: string): { user?: string } {
+  const user = signInUserOf(key);
+  return user === undefined ? {} : { user };
 }
 
 /** How a trust prompt resumes: a terminal pane's connect at its size, or another caller's own retry. */
@@ -68,9 +96,16 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   store.setPane(paneId, { hostId, state: 'connecting' });
   // The pane's connection screen follows this attempt: main reports its stages under the id.
   const attemptId = beginAttempt(paneId, 'terminal');
+  const unset = missingUser(paneId, hostId);
+  if (unset !== undefined) {
+    store.setPane(paneId, undefined);
+    noteFailed(paneId, attemptId, unset);
+    recordProblem(pane, unset.code, unset.message);
+    return { kind: 'failed', code: unset.code, message: unset.message };
+  }
   let result;
   try {
-    result = await ipc().ssh.connect({ hostId, ...size, attemptId });
+    result = await ipc().ssh.connect({ hostId, ...size, attemptId, ...signInRequest(paneId) });
   } catch (error) {
     store.setPane(paneId, undefined);
     const shaped = error as { code?: unknown; message?: unknown } | null;

@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   unfolds a timestamped handshake log that opens on its own when a connect fails, shows the lines that
   say what failed in red, and never holds a password, passphrase or key. A dropped session's reconnect shows its countdown on the same screen,
   with **Reconnect now** and **Stop**. Reduced motion shows no spinner or moving line (#528).
+- **Fix a sign-in on the connection screen.** A host with no user starts no step: the screen reports it
+  as a host setting and asks **Sign in as**, for this pane only or, with **Save to host**, into the
+  host's settings. A refused password shows **Password for** *user* with **Save and retry**, which stores
+  it as the host's password secret and connects again. **Retry** stays the main button for network
+  failures only; after a refused sign-in or a host setting the fix comes first. A failed connect's log
+  opens at its end with the failing line highlighted (#532).
 - **Test MCP servers.** An MCP server is a fifth container beside SOAP interfaces and REST, gRPC and
   WebSocket APIs: a local process over stdio, Streamable HTTP, or the legacy HTTP+SSE transport.
   **New MCP server…** on a project creates one; its tab edits the connection (command, arguments,

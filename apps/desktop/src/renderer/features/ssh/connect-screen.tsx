@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import type { FormEvent, RefObject } from 'react';
 import { Check, ChevronDown, ChevronRight, Circle, CircleDot, KeyRound, Laptop, Loader2, X } from 'lucide-react';
 import { Button } from '../../components/button.js';
-import { osKeyOf, useHostsStore } from './hosts-store.js';
+import { ipc } from '../../state/ipc-client.js';
+import { findHost, osKeyOf, upsertHost, useHostsStore } from './hosts-store.js';
+import { INPUT_CLASS } from './inherited-field.js';
+import { connectFix } from './connect-errors.js';
+import { setSignInUser, useConnectStore } from './connect-store.js';
 import { OsIcon, osOf } from './os-icon.js';
 import { formatDuration, stepDuration, stepLabel } from './connect-progress.js';
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
@@ -70,9 +75,42 @@ const STATE_WORDS: Readonly<Record<ConnectStep['state'], string>> = {
   waiting: 'waiting for you',
 };
 
-function Log({ lines, failed }: { readonly lines: readonly ConnectLogLine[]; readonly failed: boolean }) {
+/**
+ * The line that says what failed: the last flagged line main logged, or else the sentence the screen
+ * added at the end.
+ */
+export function failingLine(lines: readonly ConnectLogLine[], sentence: string | undefined): number | undefined {
+  let fallback: number | undefined;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (line?.error !== true) continue;
+    if (line.text !== sentence) return index;
+    fallback ??= index;
+  }
+  return fallback;
+}
+
+function Log({
+  lines,
+  failed,
+  sentence,
+}: {
+  readonly lines: readonly ConnectLogLine[];
+  readonly failed: boolean;
+  readonly sentence: string | undefined;
+}) {
+  const box = useRef<HTMLPreElement>(null);
+  const failing = useRef<HTMLSpanElement>(null);
+  const failingIndex = failed ? failingLine(lines, sentence) : undefined;
+  // A failed attempt's log opens at its end, the failing line in view (#532); lines that land late keep it there.
+  useEffect(() => {
+    if (!failed || box.current === null) return;
+    box.current.scrollTop = box.current.scrollHeight;
+    failing.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [failed, lines.length]);
   return (
     <pre
+      ref={box}
       data-testid="connect-log"
       className={`max-h-72 overflow-auto rounded-md border ${failed ? 'border-status-danger/60' : 'border-hairline'} bg-surface-base p-2 font-mono text-xs whitespace-pre-wrap text-fg-muted select-text`}
     >
@@ -81,13 +119,188 @@ function Log({ lines, failed }: { readonly lines: readonly ConnectLogLine[]; rea
         : lines.map((line, index) => (
             <span
               key={index}
-              className={line.error ? 'block text-status-danger' : 'block'}
+              ref={index === failingIndex ? failing : undefined}
+              className={`block ${line.error ? 'text-status-danger' : ''} ${
+                index === failingIndex ? 'rounded-sm bg-status-danger/15 font-medium' : ''
+              }`}
               data-error={line.error ? 'true' : undefined}
+              data-failing={index === failingIndex ? 'true' : undefined}
             >
               <span className={line.error ? undefined : 'text-fg-faint'}>{timeOf(line.at)}</span> {line.text}
             </span>
           ))}
     </pre>
+  );
+}
+
+/** Focuses the field when it appears: the form is what the screen asks of the user next. */
+function useFocus<T extends HTMLElement>(): RefObject<T | null> {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return ref;
+}
+
+const SIGN_IN_USER = /^[^\s\p{Cc}]+$/u;
+
+/**
+ * "Sign in as [user] [Connect] ☐ Save to host" for a host with no user (#532). Saved, the user goes into
+ * the host's own settings through the hosts file; not saved, it signs this pane's connects in only.
+ */
+function SignInAsForm({
+  hostId,
+  paneKey,
+  onConnect,
+}: {
+  readonly hostId: string;
+  readonly paneKey: string | undefined;
+  readonly onConnect: () => void;
+}) {
+  const [user, setUser] = useState('');
+  const [save, setSave] = useState(false);
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const field = useFocus<HTMLInputElement>();
+  const submit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    const name = user.trim();
+    if (!SIGN_IN_USER.test(name)) {
+      setError('Enter a user name without spaces.');
+      return;
+    }
+    setBusy(true);
+    if (save) {
+      const hosts = useHostsStore.getState();
+      const entry = findHost(hosts.file, hostId);
+      const saved =
+        entry !== undefined &&
+        (await hosts.save(upsertHost(hosts.file, { ...entry, ssh: { ...entry.ssh, user: name } })));
+      if (!saved) {
+        setBusy(false);
+        setError('The host could not be saved. Edit the host to set its user.');
+        return;
+      }
+      if (paneKey !== undefined) setSignInUser(paneKey, undefined);
+    } else if (paneKey !== undefined) {
+      setSignInUser(paneKey, name);
+    }
+    setBusy(false);
+    onConnect();
+  };
+  return (
+    <form
+      data-testid="connect-sign-in"
+      className="flex flex-col gap-2"
+      onSubmit={(event) => {
+        void submit(event);
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg-default">
+          <span className="shrink-0">Sign in as</span>
+          <input
+            ref={field}
+            aria-label="Sign in as"
+            autoComplete="username"
+            spellCheck={false}
+            className={`${INPUT_CLASS} min-w-0 flex-1`}
+            value={user}
+            onChange={(e) => {
+              setUser(e.target.value);
+              setError(undefined);
+            }}
+          />
+        </label>
+        <Button type="submit" variant="primary" disabled={busy || user.trim() === ''}>
+          Connect
+        </Button>
+      </div>
+      <label className="flex items-center gap-2 text-xs text-fg-muted">
+        <input
+          type="checkbox"
+          checked={save}
+          onChange={(e) => {
+            setSave(e.target.checked);
+          }}
+        />
+        Save to host
+      </label>
+      {error !== undefined && (
+        <p role="alert" className="text-sm text-status-danger">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/**
+ * "Password for <user> [____] [Save and retry]" when the target refused its password, or its password is
+ * not on this machine (#532). The value goes to the host's secret in the secret store, write-only: it is
+ * never read back, and never reaches the hosts file or the log.
+ */
+function PasswordForm({
+  user,
+  secret,
+  onRetry,
+}: {
+  readonly user: string | undefined;
+  readonly secret: string;
+  readonly onRetry: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const field = useFocus<HTMLInputElement>();
+  const label = user === undefined ? 'Password' : `Password for ${user}`;
+  const submit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (value === '') return;
+    setBusy(true);
+    const stored = await ipc().ssh.setSecret({ name: secret, value });
+    setValue('');
+    setBusy(false);
+    if (!stored.ok) {
+      setError(stored.error.message);
+      return;
+    }
+    onRetry();
+  };
+  return (
+    <form
+      data-testid="connect-password"
+      className="flex flex-col gap-2"
+      onSubmit={(event) => {
+        void submit(event);
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg-default">
+          <span className="shrink-0">{label}</span>
+          <input
+            ref={field}
+            type="password"
+            aria-label={label}
+            autoComplete="off"
+            className={`${INPUT_CLASS} min-w-0 flex-1`}
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setError(undefined);
+            }}
+          />
+        </label>
+        <Button type="submit" variant="primary" disabled={busy || value === ''}>
+          Save and retry
+        </Button>
+      </div>
+      {error !== undefined && (
+        <p role="alert" className="text-sm text-status-danger">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -108,6 +321,9 @@ export function ConnectScreen({
   overlay = false,
 }: ConnectScreenProps) {
   const host = useHostsStore((s) => s.resolved.find((h) => h.id === hostId));
+  // What the screen connects (a pane), from the attempt it shows: a user typed here is kept under it.
+  const paneKey = useConnectStore((s) => (view === undefined ? undefined : s.attempts[view.attemptId]));
+  const typedUser = useConnectStore((s) => (paneKey === undefined ? undefined : s.users[paneKey]));
   const os = useHostsStore((s) => (host === undefined ? undefined : osOf(s.osByHost[osKeyOf(host)])));
   const outcome = view?.outcome.kind;
   const failed = outcome === 'failed';
@@ -137,16 +353,23 @@ export function ConnectScreen({
     };
   }, [connected, attemptId]);
 
+  const user = typedUser ?? host?.ssh.user.value;
   const target =
     host === undefined
       ? hostId
-      : `${host.ssh.user.value === undefined ? '' : `${host.ssh.user.value}@`}${host.address}:${String(host.ssh.port.value)}`;
+      : `${user === undefined ? '' : `${user}@`}${host.address}:${String(host.ssh.port.value)}`;
   const running = view === undefined || outcome === 'running' || outcome === 'trust';
   const steps = view?.steps;
   const total = view !== undefined && view.outcome.kind === 'connected' ? view.outcome.at - view.startedAt : undefined;
   const showActions = failed || (reconnect === undefined && view === undefined);
   // A host's settings stopped it before any step ran: the steps are not the story (#532).
   const settings = view?.outcome.kind === 'failed' && view.outcome.step === undefined ? view.outcome : undefined;
+  // Retry leads only where trying again can work; a refused sign-in or a setting is fixed first (#532).
+  const fix =
+    view?.outcome.kind === 'failed'
+      ? connectFix(view.outcome.error, host === undefined ? undefined : { hostId, user, auth: host.ssh.auth.value })
+      : undefined;
+  const retryPrimary = fix?.retryPrimary ?? true;
 
   return (
     <div
@@ -258,12 +481,17 @@ export function ConnectScreen({
           <p className="text-sm text-status-success" role="status">{`Connected in ${formatDuration(total)}`}</p>
         )}
 
+        {fix?.ask === 'user' && <SignInAsForm hostId={hostId} paneKey={paneKey} onConnect={onRetry} />}
+        {fix?.ask === 'password' && <PasswordForm user={fix.user} secret={fix.secret} onRetry={onRetry} />}
+
         {showActions && (
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" onClick={onRetry}>
+            <Button variant={retryPrimary ? 'primary' : 'secondary'} onClick={onRetry}>
               Retry
             </Button>
-            <Button onClick={onEditHost}>Edit host</Button>
+            <Button variant={!retryPrimary && fix?.ask === undefined ? 'primary' : 'secondary'} onClick={onEditHost}>
+              Edit host
+            </Button>
             <Button variant="ghost" onClick={onClose}>
               Close
             </Button>
@@ -289,7 +517,11 @@ export function ConnectScreen({
       {/* Wider than the steps: log lines are long, and wrapping each one makes the log hard to read. */}
       {view !== undefined && logOpen && (
         <div className="mt-2 w-full max-w-3xl">
-          <Log lines={view.log} failed={failed} />
+          <Log
+            lines={view.log}
+            failed={failed}
+            sentence={view.outcome.kind === 'failed' ? view.outcome.sentence : undefined}
+          />
         </div>
       )}
     </div>
