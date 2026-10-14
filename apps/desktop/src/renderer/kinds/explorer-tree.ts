@@ -8,6 +8,7 @@ import type { InterfaceSummary } from '../../shared/kinds/soap/wire.js';
 import type {
   ExplorerConflictTargets,
   ExplorerGrpcData,
+  ExplorerMcpData,
   ExplorerNode,
   ExplorerNodeKind,
   ExplorerRestData,
@@ -25,6 +26,7 @@ export interface ProjectTreeData {
   readonly rest: ExplorerRestData | undefined;
   readonly grpc: ExplorerGrpcData | undefined;
   readonly ws: ExplorerWsData | undefined;
+  readonly mcp: ExplorerMcpData | undefined;
 }
 
 /** A container row and its place in the project's shared `order` space. */

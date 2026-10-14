@@ -20,6 +20,8 @@ export type TabIdField =
   | 'grpcApiId'
   | 'wsRequestId'
   | 'wsApiId'
+  | 'mcpRequestId'
+  | 'mcpApiId'
   | 'environmentId'
   | 'projectId'
   | 'sequenceId'

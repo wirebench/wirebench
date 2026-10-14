@@ -14,6 +14,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
+import type { McpMessageWire, McpTransportWire } from '../../src/shared/kinds/mcp/wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
   NO_REST,
@@ -22,6 +23,8 @@ import {
   restApiWire,
   restFolderWire,
   restRequestWire,
+  mcpRequestWire,
+  mcpServerWire,
   wsApiWire,
   wsRequestWire,
 } from '../helpers/wire-defaults.js';
@@ -1245,5 +1248,168 @@ describe('useProjectStore with REST data', () => {
 
     expect(useEditorsStore.getState().tabs).toEqual([]);
     expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
+  });
+});
+
+describe('useProjectStore with MCP data (#79)', () => {
+  const mcpWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+    projectWire({
+      mcpServers: [mcpServerWire()],
+      folders: [restFolderWire({ id: 'folder-1', apiId: 'mcp-api-1' })],
+      mcpRequests: [mcpRequestWire({ folderId: 'folder-1' })],
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    resetStore();
+    useDraftsStore.getState().reset();
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useExchangesStore.getState().reset();
+    installWirebenchApi();
+  });
+
+  it('indexes servers and requests, and lays a staged edit over the request', () => {
+    useProjectStore.getState().applySnapshot('proj-1', mcpWire());
+    useProjectStore.getState().editMcpRequest('mcp-1', { operation: { method: 'resources/read', uri: 'file:///a' } });
+    useProjectStore.getState().applySnapshot('proj-1', mcpWire());
+
+    const state = useProjectStore.getState();
+    expect(state.mcpServers['mcp-api-1']?.name).toBe('Files');
+    expect(state.projectOf['mcp-1']).toBe('proj-1');
+    expect(state.mcpRequests['mcp-1']?.operation).toEqual({ method: 'resources/read', uri: 'file:///a' });
+    expect(state.mcp['proj-1']?.requests.map((request) => request.operation.method)).toEqual(['resources/read']);
+    expect(useDraftsStore.getState().isMcpRequestDirty('mcp-1')).toBe(true);
+  });
+
+  it('writes a staged edit with update-mcp-request and clears the draft', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: { project: mcpWire() } });
+    installWirebenchApi({ project: { mutate } });
+    useProjectStore.getState().applySnapshot('proj-1', mcpWire());
+    useProjectStore.getState().editMcpRequest('mcp-1', { name: 'Renamed' });
+
+    expect(await useProjectStore.getState().commitMcpRequest('mcp-1')).toBe(true);
+
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'update-mcp-request', requestId: 'mcp-1', patch: { name: 'Renamed' } },
+    });
+    expect(useDraftsStore.getState().isMcpRequestDirty('mcp-1')).toBe(false);
+  });
+
+  it('adds a server with its transport and returns its id', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: { project: mcpWire(), createdId: 'mcp-api-1' } });
+    installWirebenchApi({ project: { mutate } });
+    useProjectStore.getState().applySnapshot('proj-1', projectWire());
+    const transport: McpTransportWire = { type: 'http', url: 'https://mcp.test/mcp', headers: [] };
+
+    expect(await useProjectStore.getState().addMcpServer('proj-1', 'Files', transport)).toBe('mcp-api-1');
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'add-mcp-server', name: 'Files', transport },
+    });
+  });
+
+  it('reads the fresh project from main once a refresh saved the catalogue', async () => {
+    const refreshed = mcpWire({
+      mcpServers: [mcpServerWire({ catalogue: { tools: [{ name: 'read_file', inputSchema: {} }] } })],
+    });
+    const api = installWirebenchApi({
+      api: {
+        refreshMcpCatalogue: vi.fn().mockResolvedValue({
+          ok: true,
+          value: {
+            projectId: 'proj-1',
+            info: { fetchedAt: 'now', serverInfo: { name: 'files', version: '1' }, protocolVersion: 'v' },
+            counts: { tools: 1, resources: 0, resourceTemplates: 0, prompts: 0 },
+            warnings: [],
+          },
+        }),
+      },
+      project: { snapshot: vi.fn().mockResolvedValue({ ok: true, value: { project: refreshed } }) },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', mcpWire());
+
+    const result = await useProjectStore.getState().refreshMcpCatalogue('mcp-api-1');
+
+    expect(result.counts.tools).toBe(1);
+    expect(api.api.refreshMcpCatalogue).toHaveBeenCalledWith({ apiId: 'mcp-api-1' });
+    expect(useProjectStore.getState().mcpServers['mcp-api-1']?.catalogue?.tools?.[0]?.name).toBe('read_file');
+  });
+
+  it('throws what main refused a refresh with', async () => {
+    installWirebenchApi({
+      api: {
+        refreshMcpCatalogue: vi
+          .fn()
+          .mockResolvedValue({ ok: false, error: { code: 'mcp-approval-cancelled', message: 'Not approved' } }),
+      },
+    });
+    await expect(useProjectStore.getState().refreshMcpCatalogue('mcp-api-1')).rejects.toThrow('Not approved');
+  });
+
+  it('forgets the tab, draft and send in flight of every request a removed server took', async () => {
+    const cancelMcp = vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } });
+    installWirebenchApi({
+      project: {
+        mutate: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { project: mcpWire({ mcpServers: [], folders: [], mcpRequests: [] }) },
+        }),
+      },
+      request: { cancelMcp },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', mcpWire());
+    useDraftsStore.getState().stageMcpRequest('mcp-1', { name: 'Unsaved' });
+    useEditorsStore.getState().open({ id: 'mcp:mcp-1', kind: 'mcp-request', title: 'List', mcpRequestId: 'mcp-1' });
+    useEditorsStore
+      .getState()
+      .open({ id: 'mcp-api:mcp-api-1', kind: 'mcp-api', title: 'Files', mcpApiId: 'mcp-api-1' });
+    useExchangesStore.setState({ mcpByRequest: { 'mcp-1': { status: 'sending', sendId: 'send-1' } } });
+
+    await useProjectStore.getState().removeMcpServer('mcp-api-1');
+
+    expect(cancelMcp).toHaveBeenCalledWith({ sendId: 'send-1' });
+    expect(useExchangesStore.getState().mcpByRequest['mcp-1']).toBeUndefined();
+    expect(useDraftsStore.getState().isMcpRequestDirty('mcp-1')).toBe(false);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+  });
+
+  it('sends with the unsaved draft, shows live messages, then keeps the exchange', async () => {
+    let resolveSend: (value: unknown) => void = () => undefined;
+    const sendMcp = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    installWirebenchApi({ request: { sendMcp } });
+    useProjectStore.getState().applySnapshot('proj-1', mcpWire());
+    useProjectStore.getState().editMcpRequest('mcp-1', { name: 'Edited' });
+
+    const sending = useExchangesStore.getState().sendMcp('mcp-1');
+    await vi.waitFor(() => {
+      expect(sendMcp).toHaveBeenCalled();
+    });
+    const { sendId } = sendMcp.mock.calls[0]?.[0] as { sendId: string };
+    expect(sendMcp).toHaveBeenCalledWith({ sendId, requestId: 'mcp-1', draft: { name: 'Edited' } });
+    const message: McpMessageWire = {
+      direction: 'sent',
+      at: 'now',
+      size: 10,
+      kind: 'request',
+      method: 'initialize',
+      text: '{}',
+      warnings: [],
+    };
+    useExchangesStore.getState().applyMcpLive({ kind: 'message', sendId, message });
+    useExchangesStore.getState().applyMcpLive({ kind: 'message', sendId: 'other', message });
+    expect(useExchangesStore.getState().mcpByRequest['mcp-1']?.live?.messages).toEqual([message]);
+
+    const exchange = { sendId, method: 'tools/list', messages: [message], warnings: [] };
+    resolveSend({ ok: true, value: exchange });
+    await sending;
+
+    expect(useExchangesStore.getState().mcpByRequest['mcp-1']).toEqual({ status: 'done', sendId, exchange });
+    // History is an MCP send's record; the HTTP Log keeps none.
+    expect(useExchangesStore.getState().log).toEqual([]);
   });
 });

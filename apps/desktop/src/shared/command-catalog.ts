@@ -583,6 +583,38 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'WebSocket: Copy as Command',
     category: 'Request',
   },
+  'mcp.newServer': {
+    id: 'mcp.newServer',
+    label: 'MCP: New Server',
+    category: 'Explorer',
+  },
+  'mcp.newRequest': {
+    id: 'mcp.newRequest',
+    label: 'MCP: New Request',
+    category: 'Explorer',
+  },
+  'mcp.refreshCatalogue': {
+    id: 'mcp.refreshCatalogue',
+    label: 'MCP: Refresh Catalogue',
+    category: 'Explorer',
+  },
+  'mcp.newRequestFromTool': {
+    id: 'mcp.newRequestFromTool',
+    label: 'MCP: New Request from Tool',
+    category: 'Explorer',
+  },
+  // The chord every request editor sends with; an MCP tab is none of theirs.
+  'mcp.send': {
+    id: 'mcp.send',
+    label: 'Send MCP Request',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+  },
+  'mcp.cancel': {
+    id: 'mcp.cancel',
+    label: 'MCP: Cancel Request',
+    category: 'Request',
+  },
   'sequence.new': {
     id: 'sequence.new',
     label: 'Sequence: New Sequence',

@@ -30,6 +30,7 @@ describe('unsaved request drafts across sessions', () => {
     useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<unsaved/>' });
     useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
     useDraftsStore.getState().stageWsRequest('ws-1', { url: 'wss://example.test' });
+    useDraftsStore.getState().stageMcpRequest('mcp-1', { name: 'Call' });
 
     await stashDrafts('w1');
 
@@ -39,6 +40,7 @@ describe('unsaved request drafts across sessions', () => {
       restRequests: { 'rest-1': { url: '/pets' } },
       grpcRequests: {},
       wsRequests: { 'ws-1': { url: 'wss://example.test' } },
+      mcpRequests: { 'mcp-1': { name: 'Call' } },
     });
   });
 
@@ -60,6 +62,7 @@ describe('unsaved request drafts across sessions', () => {
       restRequests: {},
       grpcRequests: {},
       wsRequests: {},
+      mcpRequests: {},
     });
 
     const flush = (on.mock.calls as [string, (payload: unknown) => void][]).find(

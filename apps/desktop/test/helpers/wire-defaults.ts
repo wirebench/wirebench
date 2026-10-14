@@ -10,6 +10,7 @@ import type { GrpcApiWire, GrpcRequestWire } from '../../src/shared/kinds/grpc/w
 import type { RestApiWire, RestRequestWire } from '../../src/shared/kinds/rest/wire.js';
 import type { RequestPropertiesWire } from '../../src/shared/kinds/soap/wire.js';
 import type { WsApiWire, WsRequestWire } from '../../src/shared/kinds/ws/wire.js';
+import type { McpRequestWire, McpServerWire } from '../../src/shared/kinds/mcp/wire.js';
 import type { ProjectSettingsWire, RestFolderWire, SequenceWire } from '../../src/shared/wire-base.js';
 
 /** The default §6.3 request properties, as the renderer mirrors them. */
@@ -159,6 +160,36 @@ export function wsRequestWire(overrides: Partial<WsRequestWire> = {}): WsRequest
     auth: { type: 'inherit' },
     settings: {},
     messages: [],
+    assertions: [],
+    ...overrides,
+  };
+}
+
+/** One MCP server on the wire: a stdio server with no catalogue unless the caller says otherwise. */
+export function mcpServerWire(overrides: Partial<McpServerWire> = {}): McpServerWire {
+  return {
+    kind: 'mcp',
+    id: 'mcp-api-1',
+    name: 'Files',
+    slug: 'files',
+    order: 0,
+    transport: { type: 'stdio', command: 'node', args: ['server.js'], env: [] },
+    settings: {},
+    ...overrides,
+  };
+}
+
+/** One MCP request on the wire, listing the server's tools unless the caller says otherwise. */
+export function mcpRequestWire(overrides: Partial<McpRequestWire> = {}): McpRequestWire {
+  return {
+    kind: 'mcp',
+    id: 'mcp-1',
+    apiId: 'mcp-api-1',
+    name: 'List tools',
+    slug: 'list-tools',
+    order: 0,
+    operation: { method: 'tools/list' },
+    settings: {},
     assertions: [],
     ...overrides,
   };

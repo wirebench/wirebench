@@ -10,9 +10,11 @@ function tabEntityId(tab: EditorTab): string | undefined {
     tab.restRequestId ??
     tab.grpcRequestId ??
     tab.wsRequestId ??
+    tab.mcpRequestId ??
     tab.apiId ??
     tab.grpcApiId ??
     tab.wsApiId ??
+    tab.mcpApiId ??
     tab.interfaceId ??
     tab.projectId ??
     tab.environmentId

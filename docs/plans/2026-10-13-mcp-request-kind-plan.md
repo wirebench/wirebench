@@ -235,10 +235,10 @@ commands.ts,history-body.tsx}`, `renderer/kinds/index.ts`, `explorer-trees.ts`,
 `state/{editors,ui,project,drafts,exchanges}.ts`, the new `features/mcp-api/new-server-dialog.tsx`,
 tests.
 
-- [ ] The project menu gains *New MCP server…*. Server rows have *New request*, *Refresh catalogue* and
+- [x] The project menu gains *New MCP server…*. Server rows have *New request*, *Refresh catalogue* and
   *New request from tool…*. Request rows show the method badge.
-- [ ] The kind's commands. The History body for an MCP entry, read-only.
-- [ ] Tests: the explorer rows, the menu items, the dialog, `renderer-kinds`.
+- [x] The kind's commands. The History body for an MCP entry, read-only.
+- [x] Tests: the explorer rows, the menu items, the dialog, `renderer-kinds`.
 
 ### Task 15: Renderer: server tab
 

@@ -11,6 +11,7 @@ import {
   activeRestRequestId,
   activeSequenceId,
   activeWsRequestId,
+  activeMcpRequestId,
   ui,
 } from './command-helpers.js';
 
@@ -111,6 +112,10 @@ export function registerRequestCommands(): void {
       if (wsRequestId !== undefined) {
         return useExchangesStore.getState().wsByRequest[wsRequestId]?.status === 'connecting';
       }
+      const mcpRequestId = activeMcpRequestId();
+      if (mcpRequestId !== undefined) {
+        return useExchangesStore.getState().mcpByRequest[mcpRequestId]?.status === 'sending';
+      }
       const grpcRequestId = activeGrpcRequestId();
       return (
         grpcRequestId !== undefined && useExchangesStore.getState().grpcByRequest[grpcRequestId]?.status === 'sending'
@@ -130,6 +135,11 @@ export function registerRequestCommands(): void {
       const wsRequestId = activeWsRequestId();
       if (wsRequestId !== undefined) {
         void useExchangesStore.getState().cancelWs(wsRequestId);
+        return;
+      }
+      const mcpRequestId = activeMcpRequestId();
+      if (mcpRequestId !== undefined) {
+        void useExchangesStore.getState().cancelMcp(mcpRequestId);
         return;
       }
       const grpcRequestId = activeGrpcRequestId();

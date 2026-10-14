@@ -15,18 +15,16 @@ import { wsApiTabId } from '../../src/renderer/features/ws-api/ws-api-actions.js
 import { sequenceTabId } from '../../src/renderer/features/sequence/sequence-actions.js';
 import { wsTabId } from '../../src/renderer/features/ws-editor/ws-actions.js';
 import { runnerTabId } from '../../src/renderer/features/runner/runner-actions.js';
-
-/** Kinds whose shared half is built and whose renderer half is not yet: MCP's is #79's next slices. */
-const NO_RENDERER_HALF_YET: readonly string[] = ['mcp'];
-const WITH_RENDERER_HALF = KINDS.filter((kind) => !NO_RENDERER_HALF_YET.includes(kind.kind));
+import { mcpApiTabId } from '../../src/renderer/features/mcp-api/mcp-api-actions.js';
+import { mcpTabId } from '../../src/renderer/features/mcp-editor/mcp-actions.js';
 
 describe('renderer kinds (kind modules spec §6)', () => {
   it('has one renderer half per shared kind, in the same order', () => {
-    expect(RENDERER_KINDS.map((kind) => kind.kind)).toEqual(WITH_RENDERER_HALF.map((kind) => kind.kind));
+    expect(RENDERER_KINDS.map((kind) => kind.kind)).toEqual(KINDS.map((kind) => kind.kind));
   });
 
   it('gives each kind the request and container tabs its shared half names', () => {
-    for (const kind of WITH_RENDERER_HALF) {
+    for (const kind of KINDS) {
       const renderer = RENDERER_KINDS.find((candidate) => candidate.kind === kind.kind);
       expect(renderer?.tabs.map((tab) => tab.kind).sort()).toEqual([kind.tabs.request, kind.tabs.container].sort());
     }
@@ -49,6 +47,8 @@ describe('renderer kinds (kind modules spec §6)', () => {
       'grpc-api': grpcApiTabId,
       'ws-request': wsTabId,
       'ws-api': wsApiTabId,
+      'mcp-request': mcpTabId,
+      'mcp-api': mcpApiTabId,
       environment: (id) => environmentTabId({ kind: 'environment', id }),
       project: projectTabId,
       sequence: sequenceTabId,

@@ -2,6 +2,7 @@ import type { GrpcApiWire, GrpcMethodKindWire, GrpcRequestWire } from '../../../
 import type { RestApiWire, RestRequestWire, WebhookCollectionWire } from '../../../shared/kinds/rest/wire.js';
 import type { InterfaceSummary } from '../../../shared/kinds/soap/wire.js';
 import type { WsApiWire, WsRequestWire } from '../../../shared/kinds/ws/wire.js';
+import type { McpRequestWire, McpServerWire } from '../../../shared/kinds/mcp/wire.js';
 import type { RestFolderWire, ScriptValueWire, UnsupportedContainerWire } from '../../../shared/wire-base.js';
 import type { KindId } from '../../../shared/kinds/kind-module.js';
 import { EXPLORER_TREES } from '../../kinds/explorer-trees.js';
@@ -28,6 +29,9 @@ export type ExplorerNodeKind =
   | 'grpc-request'
   | 'ws-api'
   | 'ws-request'
+  /** An MCP server (#79): a container like an API, holding folders and requests. */
+  | 'mcp-api'
+  | 'mcp-request'
   /** A project's webhook collection (openapi-webhooks-import §3.1): its root, one per project. */
   | 'webhook-collection'
   | 'webhook-folder'
@@ -88,7 +92,10 @@ export interface ExplorerNode {
   readonly apiId?: string;
   /** Set on `folder` nodes (the folder itself) and on nodes sitting inside one (their parent). */
   readonly folderId?: string;
-  /** Set on `rest-request` nodes: the HTTP method its badge shows. */
+  /**
+   * Set on `rest-request` nodes: the HTTP method its badge shows. Set on `mcp-request` nodes: the
+   * operation's JSON-RPC method (`tools/call`, …), which the badge shortens.
+   */
   readonly method?: string;
   /** Set on `rest-request` nodes whose body is GraphQL (#77): the badge reads `GQL`. */
   readonly graphql?: true;
@@ -195,6 +202,15 @@ export interface ExplorerGrpcData {
 export interface ExplorerWsData {
   readonly apis: readonly WsApiWire[];
   readonly requests: readonly WsRequestWire[];
+}
+
+/**
+ * What one project contributes to the tree for MCP (#79). Folders ride in
+ * {@link ExplorerRestData.folders}, as a WebSocket API's do.
+ */
+export interface ExplorerMcpData {
+  readonly servers: readonly McpServerWire[];
+  readonly requests: readonly McpRequestWire[];
 }
 
 /** What one project contributes to the tree besides its interfaces. */
@@ -400,6 +416,9 @@ export function webhooksNode(webhooks: ExplorerWebhooks): ExplorerNode {
  * @param webhookCollections each project's webhook collection, by project id (openapi-webhooks-import
  *   §3.1). A project with none shows no Webhooks node. Its folders and requests are read from `rest`
  *   (they ride in the same `folders`/`requests` lists, told apart by `apiId`).
+ * @param placeholders each project's containers of a kind that is off or unknown, by project id.
+ * @param mcp each project's MCP servers and requests, by project id; last, so every caller from before
+ *   the MCP kind keeps its arguments.
  */
 export function buildExplorerTree(
   projects: readonly ExplorerProject[],
@@ -416,12 +435,14 @@ export function buildExplorerTree(
   values: Readonly<Record<string, readonly ScriptValueWire[]>> = {},
   mocks: Readonly<Record<string, readonly ExplorerMock[]>> = {},
   placeholders: Readonly<Record<string, readonly UnsupportedContainerWire[]>> = {},
+  mcp: Readonly<Record<string, ExplorerMcpData>> = {},
 ): ExplorerNode[] {
   // Every request, interface, API and folder whose scripts are switched off, whichever protocol it is.
   const owners: readonly { readonly id: string; readonly scripts?: { readonly enabled: boolean } | undefined }[] = [
     ...requests,
     ...Object.values(rest).flatMap((data) => [...data.requests, ...data.apis, ...data.folders]),
     ...Object.values(grpc).flatMap((data) => [...data.requests, ...data.apis]),
+    ...Object.values(mcp).flatMap((data) => data.requests),
     ...Object.values(interfaces),
   ];
   const scriptsOff = new Set(owners.filter((owner) => owner.scripts?.enabled === false).map((owner) => owner.id));
@@ -449,6 +470,7 @@ export function buildExplorerTree(
             rest: rest[project.id],
             grpc: grpc[project.id],
             ws: ws[project.id],
+            mcp: mcp[project.id],
           },
           project.id,
           placeholders[project.id] ?? [],

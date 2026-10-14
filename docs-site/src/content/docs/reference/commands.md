@@ -151,6 +151,10 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | gRPC: New Request | — | — |
 | WebSocket: New API | — | — |
 | WebSocket: New Request | — | — |
+| MCP: New Server | — | — |
+| MCP: New Request | — | — |
+| MCP: Refresh Catalogue | — | — |
+| MCP: New Request from Tool | — | — |
 | Sequence: New Sequence | — | — |
 | Runner: Run Selection… | — | — |
 | Scripts: Clear Session Values | — | — |
@@ -169,6 +173,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | WebSocket: Disconnect | — | — |
 | WebSocket: Send Selected Message | — | — |
 | WebSocket: Copy as Command | — | — |
+| Send MCP Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
+| MCP: Cancel Request | — | — |
 | Sequence: Run | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Sequence: Cancel Run | — | — |
 | Mock: Start | — | — |

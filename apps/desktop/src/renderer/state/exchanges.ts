@@ -14,6 +14,7 @@ import type { GrpcExchangeSummary, GrpcLiveEvent, GrpcResponseMessageWire } from
 import type { RestExchangeSummary, RestLiveEvent, SseRowWire } from '../../shared/kinds/rest/wire.js';
 import type { ExchangeSummary } from '../../shared/kinds/soap/wire.js';
 import type { WsExchangeSummary, WsFrameWire, WsHandshakeWire, WsLiveEvent } from '../../shared/kinds/ws/wire.js';
+import type { McpExchangeSummary, McpLiveEvent, McpMessageWire } from '../../shared/kinds/mcp/wire.js';
 import type { ExchangeFailedEvent, FailedExchangeWire, UnresolvedRefWire } from '../../shared/wire-base.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
@@ -334,6 +335,25 @@ export interface WsExchangeState {
   readonly error?: IpcError;
 }
 
+/**
+ * What one MCP send has said and heard so far (#79): its JSON-RPC messages, one at a time from
+ * `events.mcp.live`. The finished `exchange` carries the same messages whole and replaces it.
+ */
+export interface McpLiveState {
+  readonly messages: readonly McpMessageWire[];
+}
+
+/** What is known about the most recent send of one MCP request. */
+export interface McpExchangeState {
+  readonly status: ExchangeStatus;
+  readonly sendId?: string;
+  readonly exchange?: McpExchangeSummary;
+  readonly error?: IpcError;
+  readonly startedAt?: string;
+  /** Present while the session runs; dropped when the exchange arrives. */
+  readonly live?: McpLiveState;
+}
+
 /** The exchanges store's serialisable state. */
 export interface ExchangesSnapshot {
   readonly byRequest: Record<string, ExchangeState>;
@@ -347,6 +367,8 @@ export interface ExchangesSnapshot {
   readonly grpcByRequest: Record<string, GrpcExchangeState>;
   /** The WebSocket fourth, keyed by WebSocket request id, apart for the same reason. */
   readonly wsByRequest: Record<string, WsExchangeState>;
+  /** The MCP fifth, keyed by MCP request id. Its sends are not logged: History is their record. */
+  readonly mcpByRequest: Record<string, McpExchangeState>;
   /**
    * Newest-last log of every send this session, SOAP and REST alike, finished or failed: the
    * console's HTTP Log is a protocol-neutral surface, and a send that never produced a response
@@ -482,6 +504,17 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly clearWsRequest: (requestId: string) => void;
   /** Folds one `ws.live` event into the request whose session it belongs to. */
   readonly applyWsLive: (event: WsLiveEvent) => void;
+  /**
+   * Runs one MCP session for the request (connect, initialize, its operation, close), its unsaved
+   * draft named; main resolves the transport and asks for a stdio command line's approval.
+   */
+  readonly sendMcp: (requestId: string) => Promise<void>;
+  /** Ends the request's session in flight, if any. */
+  readonly cancelMcp: (requestId: string) => Promise<void>;
+  /** Clears the MCP exchange state for a removed request, ending a send still in flight. */
+  readonly clearMcpRequest: (requestId: string) => void;
+  /** Folds one `mcp.live` event into the request whose send it belongs to. */
+  readonly applyMcpLive: (event: McpLiveEvent) => void;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -554,6 +587,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     restByRequest: {},
     grpcByRequest: {},
     wsByRequest: {},
+    mcpByRequest: {},
     log: [],
     filter: EMPTY_FILTER,
     sort: undefined,
@@ -567,6 +601,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         restByRequest: {},
         grpcByRequest: {},
         wsByRequest: {},
+        mcpByRequest: {},
         log: preserveLog ? log : [],
         filter: preserveLog ? filter : EMPTY_FILTER,
         sort: preserveLog ? sort : undefined,
@@ -896,6 +931,91 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           }
         }),
       );
+    },
+
+    sendMcp: async (requestId) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
+      if (useProjectStore.getState().mcpRequests[requestId] === undefined) {
+        update((draft) => {
+          draft.mcpByRequest[requestId] = {
+            status: 'error',
+            error: { code: 'unknown-request', message: `No MCP request with id "${requestId}"` },
+          };
+        });
+        return;
+      }
+      useProblemsStore.getState().clearSource('send', requestId);
+      const sendId = crypto.randomUUID();
+      update((draft) => {
+        draft.mcpByRequest[requestId] = {
+          status: 'sending',
+          sendId,
+          startedAt: new Date().toISOString(),
+          live: { messages: [] },
+        };
+      });
+      const draftPatch = useDraftsStore.getState().peekMcpRequest(requestId);
+      const result = await ipc().request.sendMcp({
+        sendId,
+        requestId,
+        ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+      });
+      if (get().mcpByRequest[requestId]?.sendId !== sendId) {
+        return;
+      }
+      if (!result.ok) {
+        update((draft) => {
+          draft.mcpByRequest[requestId] = { status: 'error', sendId, error: result.error };
+        });
+        offerSecretAction(requestId, result.error);
+        useProblemsStore.getState().add([
+          {
+            groupId: `send:${requestId}`,
+            source: 'send',
+            severity: 'error',
+            requestId,
+            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
+          },
+        ]);
+        return;
+      }
+      update((draft) => {
+        // No log row: MCP sends are kept in History, which is their record.
+        draft.mcpByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
+      });
+    },
+
+    cancelMcp: async (requestId) => {
+      const entry = get().mcpByRequest[requestId];
+      if (entry?.sendId === undefined || entry.status !== 'sending') {
+        return;
+      }
+      await ipc().request.cancelMcp({ sendId: entry.sendId });
+    },
+
+    clearMcpRequest: (requestId) => {
+      const entry = get().mcpByRequest[requestId];
+      if (entry?.status === 'sending' && entry.sendId !== undefined) {
+        void ipc()
+          .request.cancelMcp({ sendId: entry.sendId })
+          .catch(() => undefined);
+      }
+      update((draft) => {
+        delete draft.mcpByRequest[requestId];
+      });
+    },
+
+    applyMcpLive: (event) => {
+      update((draft) => {
+        const state = Object.values(draft.mcpByRequest).find((candidate) => candidate.sendId === event.sendId);
+        // An event for a send this request has replaced, or one whose exchange has arrived, is dropped.
+        if (state?.status !== 'sending' || state.live === undefined) {
+          return;
+        }
+        state.live.messages.push(event.message);
+      });
     },
 
     clearWsRequest: (requestId) => {
@@ -1385,6 +1505,16 @@ export function subscribeToGrpcLive(): () => void {
 export function subscribeToWsLive(): () => void {
   return window.wirebench.on('ws.live', ((payload: WsLiveEvent) => {
     useExchangesStore.getState().applyWsLive(payload);
+  }) as (payload: unknown) => void);
+}
+
+/**
+ * Subscribes the MCP panes to `mcp.live`, the messages of a send still in flight. Called once from
+ * the shell; returns the unsubscribe for symmetry with React effects.
+ */
+export function subscribeToMcpLive(): () => void {
+  return window.wirebench.on('mcp.live', ((payload: McpLiveEvent) => {
+    useExchangesStore.getState().applyMcpLive(payload);
   }) as (payload: unknown) => void);
 }
 

@@ -84,6 +84,7 @@ function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
         { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
         { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
         { key: 'new-ws-api', label: 'New WebSocket API…', run: () => explorerActions.newWsApi(projectId) },
+        { key: 'new-mcp-server', label: 'New MCP server…', run: () => explorerActions.newMcpServer(projectId) },
         { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
         { key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) },
       ],

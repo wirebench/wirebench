@@ -35,6 +35,7 @@ import {
   subscribeToGrpcLive,
   subscribeToRestLive,
   subscribeToWsLive,
+  subscribeToMcpLive,
 } from '../state/exchanges.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
@@ -348,6 +349,7 @@ export function AppShell() {
   useEffect(() => subscribeToGrpcLive(), []);
   useEffect(() => subscribeToRestLive(), []);
   useEffect(() => subscribeToWsLive(), []);
+  useEffect(() => subscribeToMcpLive(), []);
   useEffect(() => subscribeToSequenceProgress(), []);
   useEffect(() => subscribeToRunnerProgress(), []);
   useEffect(() => subscribeToMocks(), []);
