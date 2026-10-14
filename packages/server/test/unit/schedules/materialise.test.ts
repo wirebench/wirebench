@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import type { SyncFile } from '@wirebench/engine';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { materialise } from '../../../src/schedules/materialise.js';
@@ -34,7 +34,12 @@ async function tree(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile())
-    .map((entry) => join(entry.parentPath, entry.name).slice(dir.length + 1))
+    .map((entry) =>
+      join(entry.parentPath, entry.name)
+        .slice(dir.length + 1)
+        .split(sep)
+        .join('/'),
+    )
     .sort();
 }
 
@@ -43,7 +48,8 @@ describe('materialise (scheduled-runs spec §3.2 step 1)', () => {
     const snapshot = await materialise({ root, runId: 'R1', files: FILES, maxBytes: 1024 });
     expect(snapshot.dir).toBe(join(root, 'R1'));
     expect(await tree(snapshot.dir)).toEqual(['environments/prod.yaml', 'workspace.yaml']);
-    expect((await stat(snapshot.dir)).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX modes: the folder's privacy there is its ACL, inherited from the data dir.
+    if (process.platform !== 'win32') expect((await stat(snapshot.dir)).mode & 0o777).toBe(0o700);
     await snapshot.addProject('Billing API');
     expect(await tree(snapshot.dir)).toEqual([
       'environments/prod.yaml',
