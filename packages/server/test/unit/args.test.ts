@@ -112,4 +112,42 @@ describe('admin commands (§3.7)', () => {
     expect(() => parseServerArgs(['admin', 'audit', 'verify', '--from', '2026-10-01T00:00:00Z'])).toThrow(/--from/);
     expect(() => parseServerArgs(['admin', 'audit', 'frobnicate'])).toThrow(/\| verify \[--head <seq>:<hex>\]/);
   });
+
+  it('parses admin schedules list, enable, disable and runs, with --workspace and --limit where they apply', () => {
+    expect(parseServerArgs(['admin', 'schedules', 'list'])).toEqual({ command: 'admin-schedules-list' });
+    expect(parseServerArgs(['admin', 'schedules', 'list', '--workspace', 'W1'])).toEqual({
+      command: 'admin-schedules-list',
+      workspace: 'W1',
+    });
+    expect(parseServerArgs(['admin', 'schedules', 'enable', 'S1'])).toEqual({
+      command: 'admin-schedules-enable',
+      id: 'S1',
+    });
+    expect(parseServerArgs(['admin', 'schedules', 'disable', 'S1'])).toEqual({
+      command: 'admin-schedules-disable',
+      id: 'S1',
+    });
+    expect(parseServerArgs(['admin', 'schedules', 'runs', 'S1'])).toEqual({
+      command: 'admin-schedules-runs',
+      id: 'S1',
+      limit: 50,
+    });
+    expect(parseServerArgs(['admin', 'schedules', 'runs', 'S1', '--limit', '200'])).toEqual({
+      command: 'admin-schedules-runs',
+      id: 'S1',
+      limit: 200,
+    });
+    for (const bad of ['0', '201', '2.5', 'many']) {
+      expect(() => parseServerArgs(['admin', 'schedules', 'runs', 'S1', '--limit', bad])).toThrow(
+        /--limit must be a whole number from 1 to 200/,
+      );
+    }
+    expect(() => parseServerArgs(['admin', 'schedules', 'enable'])).toThrow(/usage: wirebench-server admin schedules/);
+    expect(() => parseServerArgs(['admin', 'schedules'])).toThrow(/\| runs <id> \[--limit <n>\]/);
+    expect(() => parseServerArgs(['admin', 'schedules', 'list', '--limit', '5'])).toThrow(
+      /--limit applies to admin schedules runs only/,
+    );
+    expect(() => parseServerArgs(['admin', 'schedules', 'runs', 'S1', '--workspace', 'W1'])).toThrow(/--workspace/);
+    expect(() => parseServerArgs(['admin', 'license', 'show', '--workspace', 'W1'])).toThrow(/--workspace/);
+  });
 });

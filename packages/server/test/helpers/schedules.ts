@@ -6,6 +6,7 @@ import type { Feature } from '@wirebench/engine';
 import { auditLogModule } from '../../src/audit-log/module.js';
 import type { ServerModule } from '../../src/context.js';
 import { schedulesModule } from '../../src/schedules/module.js';
+import type { Scheduler } from '../../src/schedules/scheduler.js';
 import { upsertGrant } from '../../src/teams/repo.js';
 import { signedInUser, type IdentityHarness, type SignedInUser, type TestClock } from './identity.js';
 import { license, licensingHarness, testKeys } from './licensing.js';
@@ -27,8 +28,18 @@ export interface SchedulesCast {
   /** On the server, in no team. */
   readonly stranger: SignedInUser;
   readonly workspaceId: string;
+  /** The module's scheduler, which passes only when the test asks (`runOnce`). */
+  scheduler(): Scheduler;
+  /** Runs the scheduler started, each held until it is aborted or the test releases it. */
+  readonly started: HeldRun[];
   install(edition: 'team' | 'enterprise', features?: readonly Feature[]): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface HeldRun {
+  readonly runId: string;
+  readonly signal: AbortSignal;
+  release(): void;
 }
 
 export async function schedulesHarness(
@@ -42,11 +53,28 @@ export async function schedulesHarness(
 ): Promise<SchedulesCast> {
   const keys = testKeys();
   const timers = manualTimers();
+  const started: HeldRun[] = [];
+  let scheduler: Scheduler | undefined;
+  const execute = (runId: string, signal: AbortSignal): Promise<void> =>
+    new Promise<void>((done) => {
+      // A run claimed during a stop starts already aborted.
+      if (signal.aborted) done();
+      else signal.addEventListener('abort', () => done(), { once: true });
+      started.push({ runId, signal, release: done });
+    });
   const h = await licensingHarness(keys, {
     env: { WIREBENCH_SERVER_SCHEDULES_SECRET_KEY: SCHEDULES_KEY, ...options.env },
     extra: (clock) =>
       options.modules?.(clock, timers) ?? [
-        schedulesModule({ now: () => clock.now }),
+        schedulesModule({
+          now: () => clock.now,
+          setTimer: timers.setTimer,
+          startScheduler: false,
+          execute,
+          onScheduler: (made) => {
+            scheduler = made;
+          },
+        }),
         auditLogModule({ now: () => clock.now, setTimer: timers.setTimer }),
       ],
   });
@@ -72,5 +100,21 @@ export async function schedulesHarness(
   if (options.enterprise !== false) {
     await install('enterprise');
   }
-  return { h, timers, root, admin, editor, viewer, stranger, workspaceId, install, close: () => h.close() };
+  return {
+    h,
+    timers,
+    root,
+    admin,
+    editor,
+    viewer,
+    stranger,
+    workspaceId,
+    scheduler: () => {
+      if (scheduler === undefined) throw new Error('this harness has no scheduled-runs module');
+      return scheduler;
+    },
+    started,
+    install,
+    close: () => h.close(),
+  };
 }

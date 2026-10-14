@@ -15,6 +15,7 @@
  */
 import { z } from 'zod';
 import { DEVICE_TOKEN_PATTERN, identityIdSchema } from './identity.js';
+import { scheduleRunStatusSchema } from './schedules.js';
 import { syncCommitIdSchema } from './sync.js';
 import { teamsIdSchema } from './teams.js';
 
@@ -109,5 +110,13 @@ export const liveServerMessageSchema = z.discriminatedUnion('type', [
     captureId: teamsIdSchema,
   }),
   z.object({ type: z.literal('hooks'), workspaceId: teamsIdSchema }),
+  /** A scheduled run of the workspace finished (scheduled-runs spec §3.5): its outcome, never its results. */
+  z.object({
+    type: z.literal('schedule-run'),
+    workspaceId: teamsIdSchema,
+    scheduleId: teamsIdSchema,
+    runId: teamsIdSchema,
+    status: scheduleRunStatusSchema,
+  }),
 ]);
 export type LiveServerMessage = z.infer<typeof liveServerMessageSchema>;

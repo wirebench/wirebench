@@ -66,6 +66,9 @@ export const AUDIT_ACTIONS = [
   'schedule.updated',
   'schedule.deleted',
   'schedule.secrets_set',
+  'schedule.run_requested',
+  'schedule.run_cancelled',
+  'schedule.run_finished',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;

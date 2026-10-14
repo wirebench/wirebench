@@ -70,8 +70,8 @@ const httpsUrl = z
 
 /** What a run covers: the arguments `wirebench run` takes, inside the workspace's project. */
 export const scheduleTargetSchema = z.strictObject({
-  /** The project's slug in the workspace. */
-  project: z.string().regex(/^[a-z0-9][a-z0-9-]{0,99}$/),
+  /** The workspace project's slug or id; a slug keeps case and spaces (`CountryInfo`). */
+  project: z.string().trim().min(1).max(200),
   /** By name, slug or id; required when any environment applies to the project. */
   environment: z.string().min(1).max(200).optional(),
   select: z.array(selector).max(SCHEDULE_LIMITS.maxSelectors).optional(),

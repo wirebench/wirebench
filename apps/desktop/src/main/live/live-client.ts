@@ -87,6 +87,7 @@ const KNOWN: Record<LiveServerMessage['type'], true> = {
   pong: true,
   capture: true,
   hooks: true,
+  'schedule-run': true,
 };
 
 /** `min(60 s, 1 s × 2^attempt)`, times a random factor in [0.5, 1] (§3.4). */

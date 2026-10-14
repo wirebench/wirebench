@@ -16,6 +16,7 @@ import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
 import { MISSING_SERVER_ID, serverId as readServerId } from '../licensing/repo.js';
 import { runLicenseCommand } from '../licensing/cli.js';
+import { runSchedulesCommand } from '../schedules/cli.js';
 import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
@@ -65,6 +66,15 @@ export async function runAdmin(
     }
     if (command.command === 'admin-audit-verify') {
       return await runVerifyCommand(command, { db, hooks, key: config.auditChainKey }, io);
+    }
+    // No license either: a server whose license lapsed can still have its schedules switched off.
+    if (
+      command.command === 'admin-schedules-list' ||
+      command.command === 'admin-schedules-enable' ||
+      command.command === 'admin-schedules-disable' ||
+      command.command === 'admin-schedules-runs'
+    ) {
+      return await runSchedulesCommand(command, { db, hooks, now }, io);
     }
     // Only now: before migrations the server_identity table may not exist.
     const serverId = await readServerId(db).catch((error: unknown) => {

@@ -39,9 +39,13 @@ describe('scheduled-runs wire shapes (scheduled-runs §3.7)', () => {
       data: { path: 'data/users.csv', overrun: 'wrap', iterations: 3 },
     };
     expect(scheduleCreateSchema.parse({ name: 'x', schedule: '@hourly', target: full }).target).toEqual(full);
+    // A slug keeps case and spaces, so a project is named as the workspace names it.
     expect(
-      scheduleCreateSchema.safeParse({ name: 'x', schedule: '@hourly', target: { project: 'Bad Slug' } }).success,
-    ).toBe(false);
+      scheduleCreateSchema.parse({ name: 'x', schedule: '@hourly', target: { project: 'Country Info' } }).target,
+    ).toEqual({ project: 'Country Info' });
+    expect(scheduleCreateSchema.safeParse({ name: 'x', schedule: '@hourly', target: { project: ' ' } }).success).toBe(
+      false,
+    );
     expect(
       scheduleCreateSchema.safeParse({ name: 'x', schedule: '@hourly', target: { ...target, path: '/etc' } }).success,
     ).toBe(false);

@@ -9,6 +9,7 @@ import type {
   GitCli,
   HooksMeta,
   LicenseState,
+  ScheduleRunStatus,
 } from '@wirebench/engine';
 import type { ServerConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
@@ -71,6 +72,14 @@ export interface CaptureReceived {
 /** A workspace's catch URLs changed: created, changed, rotated, deleted or cleared (webhook-capture §3.6). */
 export interface HooksChanged {
   readonly workspaceId: string;
+}
+
+/** A scheduled run ended, by its executor or a cancel (scheduled-runs spec §3.5); fired after the commit. */
+export interface ScheduleRunFinished {
+  readonly workspaceId: string;
+  readonly scheduleId: string;
+  readonly runId: string;
+  readonly status: ScheduleRunStatus;
 }
 
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
@@ -150,7 +159,8 @@ export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
  * - **Hooks** (`invitationAccepted` (teams-access §3.4) and `audit` (audit-log §3.1)) run inside the caller's transaction
  *   and are awaited. Their writes commit with the caller's, and a throw rolls the caller back.
  * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3;
- *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6; `licenseChanged`; licensing spec §3.9) run through {@link announce} after
+ *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6; `licenseChanged`; licensing spec §3.9;
+ *   `scheduleRunFinished`; scheduled-runs spec §3.5) run through {@link announce} after
  *   the caller's statement or transaction has resolved, on the success path. They are never awaited
  *   and never run inside a transaction, and a throw is logged and swallowed. A rolled-back
  *   transaction never reaches the line that announces.
@@ -164,6 +174,7 @@ export interface ServerHooks {
   readonly captureReceived: Announcement<CaptureReceived>[];
   readonly hooksChanged: Announcement<HooksChanged>[];
   readonly licenseChanged: Announcement<LicenseChanged>[];
+  readonly scheduleRunFinished: Announcement<ScheduleRunFinished>[];
 }
 
 /**
@@ -180,6 +191,7 @@ export function serverHooks(): ServerHooks {
     captureReceived: [],
     hooksChanged: [],
     licenseChanged: [],
+    scheduleRunFinished: [],
   };
 }
 

@@ -76,7 +76,7 @@ describeDb('the schedules API (scheduled-runs §3.7)', () => {
     const code = async (payload: object) => (await create(c!, payload)).body.code;
     expect(await code({ ...body, schedule: 'every 7m' })).toBe('schedules-cron-invalid');
     expect(await code({ ...body, timeZone: 'Mars/Olympus' })).toBe('schedules-zone-invalid');
-    expect((await create(c, { ...body, target: { project: 'Not A Slug' } })).status).toBe(400);
+    expect((await create(c, { ...body, target: { project: '' } })).status).toBe(400);
     expect((await create(c, { ...body, alerts: { targets: [{ kind: 'slack', url: 'http://x.test' }] } })).status).toBe(
       400,
     );
