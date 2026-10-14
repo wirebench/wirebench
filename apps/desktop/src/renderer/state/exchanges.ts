@@ -20,6 +20,7 @@ import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
+import { isChosenOutcome } from '../features/request-editor/send-error.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
@@ -89,6 +90,26 @@ function offerSecretAction(requestId: string, error: IpcError): void {
   });
 }
 
+/**
+ * Puts a failed send in Problems, beside everything else wrong with the request — unless the
+ * person chose it: a cancel, or a protected environment's prompt they declined, is not a problem
+ * to fix and must not turn the console's counter red.
+ */
+function recordSendProblem(requestId: string, error: IpcError): void {
+  if (isChosenOutcome(error.code)) {
+    return;
+  }
+  useProblemsStore.getState().add([
+    {
+      groupId: `send:${requestId}`,
+      source: 'send',
+      severity: 'error',
+      requestId,
+      problem: { code: error.code, message: `${error.code}: ${error.message}` },
+    },
+  ]);
+}
+
 /** The HTTP status classes the filter bar offers, plus `failed` for a send that produced none. */
 export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
 
@@ -145,7 +166,12 @@ export function lastStsSendIdOf(log: readonly LogEntry[]): string | undefined {
   return undefined;
 }
 
-/** The newest finished exchange in the log, skipping failures — what the status bar's "last:" reads. */
+/** The newest row in the log, failure or not — what the status bar's "last:" reads. */
+export function lastSendOf(log: readonly LogEntry[]): LogEntry | undefined {
+  return log.at(-1);
+}
+
+/** The newest finished exchange in the log, skipping failures — what the status bar's TLS label reads. */
 export function lastExchangeOf(log: readonly LogEntry[]): AnyExchangeSummary | undefined {
   for (let index = log.length - 1; index >= 0; index -= 1) {
     const entry = log[index];
@@ -663,15 +689,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           draft.grpcByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
         offerSecretAction(requestId, result.error);
-        useProblemsStore.getState().add([
-          {
-            groupId: `send:${requestId}`,
-            source: 'send',
-            severity: 'error',
-            requestId,
-            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
-          },
-        ]);
+        recordSendProblem(requestId, result.error);
         return;
       }
       const unresolved = result.value.unresolved ?? [];
@@ -813,15 +831,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           draft.wsByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
         offerSecretAction(requestId, result.error);
-        useProblemsStore.getState().add([
-          {
-            groupId: `send:${requestId}`,
-            source: 'send',
-            severity: 'error',
-            requestId,
-            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
-          },
-        ]);
+        recordSendProblem(requestId, result.error);
         return;
       }
       // `live` goes: the exchange holds the handshake and every frame it held, and holding both
@@ -970,15 +980,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           draft.mcpByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
         offerSecretAction(requestId, result.error);
-        useProblemsStore.getState().add([
-          {
-            groupId: `send:${requestId}`,
-            source: 'send',
-            severity: 'error',
-            requestId,
-            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
-          },
-        ]);
+        recordSendProblem(requestId, result.error);
         return;
       }
       update((draft) => {
@@ -1138,15 +1140,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
         offerSecretAction(requestId, result.error);
-        useProblemsStore.getState().add([
-          {
-            groupId: `send:${requestId}`,
-            source: 'send',
-            severity: 'error',
-            requestId,
-            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
-          },
-        ]);
+        recordSendProblem(requestId, result.error);
         return;
       }
 
@@ -1322,15 +1316,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         offerSecretAction(requestId, result.error);
         // A failed send is not just a red status line that the next send erases: it belongs in
         // Problems alongside everything else that went wrong with this request.
-        useProblemsStore.getState().add([
-          {
-            groupId: `send:${requestId}`,
-            source: 'send',
-            severity: 'error',
-            requestId,
-            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
-          },
-        ]);
+        recordSendProblem(requestId, result.error);
         return;
       }
 

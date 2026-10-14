@@ -91,7 +91,93 @@ describe('RestResponsePane', () => {
       </TooltipPrimitive.Provider>,
     );
 
-    expect(screen.getByTestId('rest-response-status').textContent).toContain('dns');
+    expect(screen.getByTestId('rest-response-status').textContent).toBe('Host not found');
+    // The panel replaces "Send the request…": the full message, a hint and the code, small.
+    expect(screen.queryByText('Send the request to see its response.')).toBeNull();
+    expect(screen.getByTestId('send-error-message').textContent).toBe('not found');
+    expect(screen.getByTestId('send-error-hint').textContent).toContain('did not resolve');
+    expect(screen.getByTestId('send-error-code').textContent).toBe('dns');
+    // No Retry without someone to send it.
+    expect(screen.queryByTestId('send-error-retry')).toBeNull();
+  });
+
+  it('retries from the panel, and holds Retry back for the reason Send is held', () => {
+    const onRetry = vi.fn();
+    const state = {
+      status: 'error',
+      sendId: 's1',
+      error: { code: 'connection-refused', message: 'Connection refused.' },
+    } as const;
+    const { rerender } = render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane requestId="rest-1" state={state} onRetry={onRetry} />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByTestId('send-error-retry'));
+    expect(onRetry).toHaveBeenCalledOnce();
+
+    rerender(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane requestId="rest-1" state={state} onRetry={onRetry} retryDisabledReason="Fix the URL" />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('send-error-retry').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('reads a cancel as a neutral "Cancelled", not a failure', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{ status: 'error', sendId: 's1', error: { code: 'aborted', message: 'The request was aborted.' } }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    const status = screen.getByTestId('rest-response-status');
+    expect(status.textContent).toBe('Cancelled');
+    expect(status.className).not.toContain('danger');
+    expect(screen.getByTestId('send-error-title').className).not.toContain('danger');
+  });
+
+  it('names the timeout and links its setting, and links each unresolved reference', () => {
+    const onOpenTimeoutSetting = vi.fn();
+    const onRevealReference = vi.fn();
+    const { rerender } = render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: { code: 'timeout', message: 'The request timed out.', details: { timeoutMs: 5000 } },
+          }}
+          onOpenTimeoutSetting={onOpenTimeoutSetting}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('send-error-hint').textContent).toContain('5 s limit');
+    fireEvent.click(screen.getByTestId('send-error-timeout-setting'));
+    expect(onOpenTimeoutSetting).toHaveBeenCalledOnce();
+
+    rerender(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'error',
+            sendId: 's1',
+            error: {
+              code: 'rest-unresolved-properties',
+              message: '"/pets" has property references nothing resolves: ${petId}',
+              details: { unresolved: ['${petId}'] },
+            },
+          }}
+          onRevealReference={onRevealReference}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByTestId('send-error-reference'));
+    expect(onRevealReference).toHaveBeenCalledWith('${petId}');
   });
 
   it('calls out a redirect that changed the method', () => {

@@ -16,10 +16,23 @@ authentication every request under it inherits.
 
 1. Right-click a project in the explorer and choose **New API…**. The API tab opens; set its
    **Base URL**.
-2. Right-click the API and choose **New request**. Name it by double-clicking the breadcrumb.
+2. Right-click the API and choose **New request**. Its row opens in the tree ready to rename: type
+   a name and press Enter. (Double-clicking the breadcrumb renames it later.)
 3. Set the method in the method picker and the path or URL next to it.
 
 </Steps>
+
+## Find a request again
+
+- **Go to Operation or Request…** (`Ctrl+P`, `⌘P` on macOS) lists every saved request as its method
+  and name, with the project, API and folder under it. Typing part of the URL path finds it too.
+- The tree follows the active tab: switching tabs unfolds to the request's row and selects it.
+- In the command palette, typing **REST** lists the REST commands first. They act on the selected
+  API, folder or request, or on the open REST tab when the selection is elsewhere. One that can't
+  run there stays listed, greyed, with the reason.
+- Right-click a request for **Send**, **Copy as cURL**, **Copy URL** (the URL joined to the API's
+  base URL), **Run…** (the Runner on that one request), **Move to…** (another folder in the same
+  API), **Duplicate**, **Rename…** and **Delete**.
 
 ## Path and query parameters
 

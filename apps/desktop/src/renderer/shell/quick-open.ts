@@ -12,12 +12,15 @@ import type { SnippetListItemWire } from '../../shared/snippets-wire.js';
 import type { ResolvedHostWire } from '../../shared/ssh-wire.js';
 import { layoutHosts, layoutPaneCount } from '../features/ssh/panes/open-layout.js';
 import type { InterfaceSummary, RequestWire } from '../../shared/kinds/soap/wire.js';
+import type { KindId } from '../../shared/kinds/kind-module.js';
 
 /** One quick-open row. */
 export interface QuickOpenEntry {
   /** `request:<id>` or `operation:<interfaceId>/<binding>/<name>` — unique, and a React key. */
   readonly key: string;
   readonly kind: 'request' | 'operation' | 'host' | 'layout' | 'snippet';
+  /** Set for a `request` a protocol kind other than SOAP lists: whose `requests.open` opens it. */
+  readonly requestKind?: KindId;
   /** What the row shows: the request name, or the operation name. */
   readonly label: string;
   /** The breadcrumb under it: `project › interface › binding › operation`. */
@@ -51,19 +54,22 @@ export interface QuickOpenEntry {
  * @param requests - Every open project's saved requests, keyed by id.
  * @param projectOf - Entity id (interface, request) → owning project id.
  * @param projectNames - Project id → display name.
+ * @param kindRequests - The other kinds' saved requests, from {@link quickOpenKindEntries}; they sort in
+ *   among the SOAP ones.
  */
 export function quickOpenEntries(
   interfaces: Readonly<Record<string, InterfaceSummary>>,
   requests: Readonly<Record<string, RequestWire>>,
   projectOf: Readonly<Record<string, string>> = {},
   projectNames: Readonly<Record<string, string>> = {},
+  kindRequests: readonly QuickOpenEntry[] = [],
 ): readonly QuickOpenEntry[] {
   const projectNameOf = (entityId: string): string | undefined => {
     const projectId = projectOf[entityId];
     return projectId === undefined ? undefined : projectNames[projectId];
   };
 
-  const requestEntries: QuickOpenEntry[] = [];
+  const requestEntries: QuickOpenEntry[] = [...kindRequests];
   const covered = new Set<string>();
 
   for (const request of Object.values(requests)) {
@@ -110,6 +116,78 @@ export function quickOpenEntries(
   requestEntries.sort((a, b) => a.value.localeCompare(b.value));
   operationEntries.sort((a, b) => a.value.localeCompare(b.value));
   return [...requestEntries, ...operationEntries];
+}
+
+/** One saved request a protocol kind lists in Quick Open (its `requests.quickOpen`). */
+export interface KindQuickOpenItem {
+  readonly id: string;
+  /** What leads the row: a REST method, or the kind's short name (`gRPC`, `WS`, `MCP`). */
+  readonly tag: string;
+  readonly name: string;
+  /** The API (or server) it belongs to, and that container's name. */
+  readonly apiId: string;
+  readonly apiName: string;
+  /** The folder it sits in; absent at the container's root. */
+  readonly folderId?: string;
+  /** More text the row matches on but does not show: a URL, a service and method. */
+  readonly match?: string;
+}
+
+/** Where a kind's requests sit, for their breadcrumbs. */
+export interface QuickOpenPlaces {
+  /** Folders by id, every kind's: a name and the folder holding it. */
+  readonly folders: Readonly<Record<string, { readonly name: string; readonly parentId?: string | undefined }>>;
+  /** Entity id → owning project id. */
+  readonly projectOf: Readonly<Record<string, string>>;
+  /** Project id → display name. */
+  readonly projectNames: Readonly<Record<string, string>>;
+}
+
+/** The folder names from the container's root down to `folderId`. A cycle or a missing folder ends the walk. */
+function folderPath(folderId: string | undefined, folders: QuickOpenPlaces['folders']): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (let id = folderId; id !== undefined && !seen.has(id); id = folders[id]?.parentId) {
+    seen.add(id);
+    const folder = folders[id];
+    if (folder === undefined) break;
+    names.unshift(folder.name);
+  }
+  return names;
+}
+
+/**
+ * One kind's saved requests as quick-open rows: `METHOD name`, with `project › API › folder` under it. The
+ * match also covers what the kind adds (a REST request's URL), so a path finds the request.
+ *
+ * @param kind - The kind whose `requests.open` opens a row.
+ * @param items - The kind's `requests.quickOpen` list.
+ * @param places - Folder names and the projects, for the breadcrumb.
+ */
+export function quickOpenKindEntries(
+  kind: KindId,
+  items: readonly KindQuickOpenItem[],
+  places: QuickOpenPlaces,
+): QuickOpenEntry[] {
+  return items.map((item) => {
+    const projectId = places.projectOf[item.id] ?? places.projectOf[item.apiId];
+    const projectName = projectId === undefined ? undefined : places.projectNames[projectId];
+    const label = `${item.tag} ${item.name}`;
+    const detail = [
+      ...(projectName === undefined ? [] : [projectName]),
+      item.apiName,
+      ...folderPath(item.folderId, places.folders),
+    ].join(' › ');
+    return {
+      key: `${kind}-request:${item.id}`,
+      kind: 'request',
+      requestKind: kind,
+      label,
+      detail,
+      value: [label, detail, item.match ?? ''].filter((part) => part !== '').join(' '),
+      requestId: item.id,
+    };
+  });
 }
 
 /**

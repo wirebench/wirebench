@@ -1,4 +1,4 @@
-import { activeMcpRequestId, folderOf, insideKindApi } from '../../commands/command-helpers.js';
+import { activeMcpRequestId, kindTarget } from '../../commands/command-helpers.js';
 import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../../features/explorer/explorer-actions.js';
 import { registerCommand } from '../../lib/commands.js';
@@ -16,10 +16,11 @@ export function registerMcpCommands(): void {
   });
   registerCommand({
     ...catalogEntry('mcp.newRequest'),
-    when: (ctx) => insideKindApi('mcp', ctx.selection),
+    when: (ctx) => kindTarget('mcp', ctx.selection) !== undefined,
     whenScope: 'selection.mcpApi',
     run: (ctx) => {
-      explorerActions.newMcpRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+      const target = kindTarget('mcp', ctx.selection);
+      explorerActions.newMcpRequest(target?.apiId, target?.folderId);
     },
   });
   // The server's own actions, offered on its row.

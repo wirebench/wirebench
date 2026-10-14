@@ -508,6 +508,7 @@ export async function sendHttp(
           deadlineHit: deadlineController.signal.aborted,
           hadProxy: req.proxy !== undefined,
           host: currentUrl.host,
+          timeoutMs: req.timeoutMs,
         });
       }
 
@@ -616,6 +617,7 @@ export async function sendHttp(
           deadlineHit: deadlineController.signal.aborted,
           hadProxy: req.proxy !== undefined,
           host: currentUrl.host,
+          timeoutMs: req.timeoutMs,
         });
       }
       const { data: rawBodyRaw, truncated } = read;
