@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   the hosts that use them, adds and edits them, and asks before deleting one in use; the host form
   has an **Identity** select above **User**, and the connection screen saves a typed password or user
   to the identity the host signs in through (#416).
+- **FIDO2 security keys for SSH.** A host can sign in with a security key stored in the keychain
+  (`sk-ssh-ed25519@openssh.com` or `sk-ecdsa-sha2-nistp256@openssh.com`): the connection screen says
+  when to touch the key, and asks for its PIN when the key needs one, without storing it. **Generate
+  key…** makes a non-resident security key on the key plugged in, Ed25519 or ECDSA, optionally asking
+  for the PIN at every sign-in. A host that signs in with the SSH agent now also uses security keys the
+  agent holds, which it skipped before. Not available on Windows yet (#420).
 - **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
   `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
   in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block
@@ -350,6 +356,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **SSH quick wins.** Deleting a host asks first, naming how many open sessions will close, and those
+  terminal panes and its Files tab close with it; Delete is drawn as a danger item. Dialogs share one
+  layer scale (menus, then dialogs, then toasts), so a split divider no longer draws through the Save
+  layout dialog and the trust prompt shows over a pane's connection screen. Shortcuts in the SSH views and
+  Terminal settings read in the platform's notation (Alt+Enter, Ctrl++ off a Mac). The palette lists one
+  Connect to Host…, and every SSH command starts with its area: Hosts, Terminal, Files, Forwarding,
+  Layouts or Snippets, with Forwarding in a category of its own (#536).
 - **Revealing secrets in the HTTP log asks first.** The palette command is now **Reveal Secrets in HTTP
   Log…** and, like the log's lock, asks before Authorization headers, cookies and passwords show;
   hiding them never asks. A new **Show HTTP Log** command is what a search for "HTTP Log" lands on,

@@ -72,7 +72,7 @@ export function PaneHeader({
         <DropdownMenu.Portal>
           <DropdownMenu.Content
             align="end"
-            className="z-50 min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+            className="z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           >
             <DropdownMenu.Item
               className={ITEM_CLASS}

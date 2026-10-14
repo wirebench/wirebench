@@ -61,7 +61,9 @@ export function renderCommandReference(entries: readonly CommandCatalogEntry[]):
 }
 
 async function main(): Promise<void> {
-  const rendered = renderCommandReference(Object.values(COMMAND_CATALOG));
+  const rendered = renderCommandReference(
+    Object.values(COMMAND_CATALOG).filter((entry) => entry.paletteHidden !== true),
+  );
   const check = process.argv.includes('--check');
   const current = await readFile(target, 'utf-8').catch(() => undefined);
 

@@ -33,6 +33,8 @@ export interface ConnectScreenProps {
   readonly view: ConnectView | undefined;
   readonly reconnect?: ReconnectBanner | undefined;
   readonly onRetry: () => void;
+  /** A security key asked for its PIN (#420): connect again with it. Without it the screen only says so. */
+  readonly onPin?: ((pin: string) => void) | undefined;
   readonly onEditHost: () => void;
   readonly onClose: () => void;
   /** "Connected in N ms" has shown and faded: the caller drops the screen. */
@@ -323,6 +325,46 @@ function PasswordForm({
   );
 }
 
+/** The security key's PIN, typed here and handed straight to the next connect (#420). */
+function PinForm({ wrong, onPin }: { readonly wrong: boolean; readonly onPin: (pin: string) => void }) {
+  const [pin, setPin] = useState('');
+  // CTAP2: at least 4 characters.
+  const ok = [...pin].length >= 4;
+  return (
+    <form
+      data-testid="connect-pin"
+      className="flex flex-col gap-2 rounded-md border border-hairline bg-surface-base p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (ok) onPin(pin);
+      }}
+    >
+      <label className="flex flex-col gap-1 text-xs text-fg-subtle">
+        {wrong ? 'Try the security key PIN again' : 'Security key PIN'}
+        <input
+          type="password"
+          autoComplete="off"
+          autoFocus
+          maxLength={63}
+          className={INPUT_CLASS}
+          value={pin}
+          onChange={(event) => {
+            setPin(event.target.value);
+          }}
+        />
+      </label>
+      <p className="text-xs text-fg-subtle">
+        Used for this connection only and never stored. Touch the key when it blinks.
+      </p>
+      <div>
+        <Button type="submit" variant="primary" disabled={!ok}>
+          Unlock and connect
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /**
  * A connection in progress, failed or reconnecting (#528): this machine → the host, the steps with their
  * timings, one sentence when it failed with Retry / Edit host / Close, and the handshake log (folded while
@@ -334,6 +376,7 @@ export function ConnectScreen({
   view,
   reconnect,
   onRetry,
+  onPin,
   onEditHost,
   onClose,
   onFaded,
@@ -512,6 +555,9 @@ export function ConnectScreen({
         )}
         {fix?.ask === 'password' && (
           <PasswordForm user={fix.user} secret={fix.secret} identity={authIdentity?.name} onRetry={onRetry} />
+        )}
+        {fix?.ask === 'pin' && onPin !== undefined && view !== undefined && (
+          <PinForm key={view.attemptId} wrong={fix.wrong} onPin={onPin} />
         )}
 
         {showActions && (

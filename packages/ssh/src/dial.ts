@@ -8,8 +8,12 @@ import type { CertificateAuth } from './cert-auth.js';
 import { HopProgress, connectFailureOf } from './connect-progress.js';
 import type { ConnectFailure, ConnectProgress } from './connect-progress.js';
 import { SshModelError } from './errors.js';
+import type { FidoTransport } from './fido/authenticator.js';
 import { fingerprintOf, keyTypeOf } from './known-hosts.js';
 import type { KnownHostEntry } from './known-hosts.js';
+import { agentSkSigners, skAuth, storedSkSigner } from './sk-auth.js';
+import type { SkAuth, SkSigner } from './sk-auth.js';
+import { isSkPrivateKey, parseSkPrivateKey } from './sk-key.js';
 import { ProxyError, openProxyTunnel, proxyTargetOf } from './proxy.js';
 import type { ProxyCredentials } from './proxy.js';
 
@@ -27,6 +31,8 @@ export interface HopCredentials {
         certificate?: string;
         /** The key's name as the user knows it (its secret's name), for progress and errors; never the key. */
         label?: string;
+        /** A security key's PIN (#420), asked for on the spot and never stored; only an sk key uses it. */
+        pin?: string;
       }
     | { kind: 'agent'; socket: string };
   /** Seconds; 0 turns keep-alive off. */
@@ -60,7 +66,15 @@ export interface DialOptions {
   readonly forwardAgent?: string;
   /** Told each hop's stages and log lines as they happen (#528); none of them holds a credential. */
   readonly onProgress?: (event: ConnectProgress) => void;
+  /** Where security keys are found (#420); node-hid unless a test injects a software authenticator. */
+  readonly fido?: FidoTransport;
 }
+
+/**
+ * Extra seconds a hop that signs with a security key gets on top of its connect timeout: the person has to
+ * find the key and touch it (an authenticator gives up on its own after about 30 s).
+ */
+export const SK_TOUCH_SECONDS = 60;
 
 export interface DialledChain {
   /** The client connected to the last hop. */
@@ -75,7 +89,8 @@ export interface DialledChain {
 
 /**
  * ssh-host-key-new {host,keyType,fingerprint,hop} · ssh-auth-failed {host,method,hop,tried,allowed,key?} ·
- * ssh-connect-failed {host,hop,reason,phase?,timeout?,proxy?,proxyType?,proxyReason?,proxyDetail?} · ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host}
+ * ssh-connect-failed {host,hop,reason,phase?,timeout?,proxy?,proxyType?,proxyReason?,proxyDetail?} · ssh-cert-expired {host,validity,validAfter,validBefore,window} · ssh-cert-invalid · ssh-cert-mismatch {host} ·
+ * ssh-sk-pin {host,hop,reason,retries?} · ssh-sk-no-device · ssh-sk-not-touched · ssh-sk-unavailable · ssh-sk-failed {host,hop}
  */
 export class SshConnectError extends SshModelError {}
 
@@ -363,8 +378,63 @@ async function connectHop(
       throw new SshConnectError(code, `${host}: ${message}`, { ...details, host, hop: index });
     }
   }
+  const sk = await securityKeyAuth(hop, index, options, progress);
   const socket = sock ?? (await openSocket(hop, index, progress));
-  return handshake(hop, index, options, socket, onLost, progress, certAuth);
+  return handshake(hop, index, options, socket, onLost, progress, certAuth, sk);
+}
+
+/**
+ * The hop's security key attempts (#420): a stored sk key, or the sk keys its agent holds (ssh2 drops
+ * those). Undefined when there are none. A stored key is read here, before any network.
+ */
+async function securityKeyAuth(
+  hop: HopCredentials,
+  index: number,
+  options: DialOptions,
+  progress: HopProgress,
+): Promise<SkAuth | undefined> {
+  const host = hostOf(hop);
+  let signers: SkSigner[];
+  if (hop.auth.kind === 'key' && isSkPrivateKey(hop.auth.privateKey)) {
+    const { auth } = hop;
+    const refuse = (error: unknown): never => {
+      const { code, message, details } = error as SshModelError;
+      throw new SshConnectError(code, `${host}: ${message}`, { ...details, host, hop: index });
+    };
+    if (auth.certificate !== undefined) {
+      refuse(new SshModelError('ssh-cert-invalid', 'A certificate for a security key cannot be used yet'));
+    }
+    let key;
+    try {
+      key = parseSkPrivateKey(auth.privateKey, auth.passphrase || undefined);
+    } catch (error) {
+      return refuse(error);
+    }
+    if (key === undefined) return undefined;
+    signers = [
+      storedSkSigner(key, auth.label === undefined ? 'the security key' : `security key ${auth.label}`, {
+        ...(auth.pin ? { pin: auth.pin } : {}),
+        ...(options.fido ? { transport: options.fido } : {}),
+        onTouch: () => {
+          progress.start('auth', 'touch your security key');
+          progress.log('Waiting for you to touch the security key');
+        },
+      }),
+    ];
+  } else if (hop.auth.kind === 'agent') {
+    signers = await agentSkSigners(hop.auth.socket);
+    if (signers.length === 0) return undefined;
+    progress.log(`The agent holds ${String(signers.length)} security key${signers.length === 1 ? '' : 's'}`);
+  } else {
+    return undefined;
+  }
+  return skAuth(hop.user, signers, (signer) => {
+    progress.log(
+      signer.via === 'agent'
+        ? `Signing with ${signer.label}: touch it if it blinks`
+        : `Signing with ${signer.label}${hop.auth.kind === 'key' && hop.auth.pin ? ' and its PIN' : ''}`,
+    );
+  });
 }
 
 function handshake(
@@ -375,6 +445,7 @@ function handshake(
   onLost: () => void,
   progress: HopProgress,
   certAuth: CertificateAuth | undefined,
+  sk: SkAuth | undefined,
 ): Promise<Client> {
   return new Promise((resolve, reject) => {
     const client = new Client();
@@ -388,17 +459,23 @@ function handshake(
       host: hop.address,
       port: hop.port,
       username: hop.user,
-      readyTimeout: hop.connectTimeout * 1000,
+      readyTimeout: (hop.connectTimeout + (sk ? SK_TOUCH_SECONDS : 0)) * 1000,
       keepaliveInterval: hop.keepAlive > 0 ? hop.keepAlive * 1000 : 0,
       ...(hop.auth.kind === 'password' ? { password: hop.auth.password } : {}),
       ...(certAuth ? { authHandler: certAuth.authHandler } : {}),
-      ...(hop.auth.kind === 'key' && !certAuth
+      // ssh2 cannot read an sk key: it is offered only through the sk attempts.
+      ...(sk && hop.auth.kind === 'key' ? { authHandler: sk.handler(['none']) } : {}),
+      ...(sk && hop.auth.kind === 'agent' ? { authHandler: sk.handler(['none', 'agent']) } : {}),
+      ...(hop.auth.kind === 'key' && !certAuth && !sk
         ? { privateKey: hop.auth.privateKey, ...(hop.auth.passphrase ? { passphrase: hop.auth.passphrase } : {}) }
         : {}),
       ...(hop.auth.kind === 'agent' ? { agent: hop.auth.socket } : {}),
       // An agent given only to forward is never offered for auth: the hop keeps to its own method.
       ...(forward !== undefined && hop.auth.kind !== 'agent'
-        ? { agent: forward, authHandler: ['none', hop.auth.kind === 'password' ? 'password' : 'publickey'] }
+        ? {
+            agent: forward,
+            authHandler: sk ? sk.handler(['none']) : ['none', hop.auth.kind === 'password' ? 'password' : 'publickey'],
+          }
         : {}),
       sock,
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
@@ -443,7 +520,17 @@ function handshake(
       client.on('error', () => undefined);
       const host = hostOf(hop);
       const phase = progress.current;
-      if (rejectedKey && !verifierFailed) {
+      const skFailure = sk?.failure as SshModelError | undefined;
+      if (skFailure instanceof SshModelError) {
+        progress.fail(skFailure.message);
+        reject(
+          new SshConnectError(skFailure.code, `${host}: ${skFailure.message}`, {
+            ...skFailure.details,
+            host,
+            hop: index,
+          }),
+        );
+      } else if (rejectedKey && !verifierFailed) {
         reject(
           new SshConnectError('ssh-host-key-new', `${host} presented an untrusted key`, { ...rejectedKey, hop: index }),
         );
@@ -503,6 +590,7 @@ function handshake(
     try {
       client.connect(config);
       certAuth?.attach(client);
+      sk?.attach(client);
     } catch {
       // ssh2 never took the socket over, so nothing else will close it.
       sock.destroy();

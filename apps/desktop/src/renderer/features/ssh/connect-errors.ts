@@ -137,6 +137,25 @@ function reachSentence(details: Readonly<Record<string, unknown>>, who: string, 
   }
 }
 
+function securityKeyPinSentence(details: Readonly<Record<string, unknown>>, purpose: ConnectPurpose): string {
+  switch (details['reason']) {
+    case 'wrong': {
+      const retries = details['retries'];
+      return typeof retries === 'number'
+        ? `Wrong PIN for the security key: ${String(retries)} attempts left before it locks.`
+        : 'Wrong PIN for the security key.';
+    }
+    case 'blocked':
+      return 'The security key is locked after too many wrong PINs. Unplug it and plug it back in, or reset it with its maker’s tool.';
+    case 'not-set':
+      return 'This key asks for a PIN, but the security key has none set. Set one with its maker’s tool.';
+    default:
+      return purpose === 'files'
+        ? 'The security key needs its PIN. Connect from a terminal tab, where you can type it.'
+        : 'The security key needs its PIN to sign in.';
+  }
+}
+
 /** The sentence the screen shows under the red step. */
 export function connectFailureSentence(error: ConnectError, purpose: ConnectPurpose): string {
   const details = error.details ?? {};
@@ -179,6 +198,25 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       return 'The certificate for this host could not be read. Check that it is an OpenSSH user certificate.';
     case 'ssh-cert-mismatch':
       return "The certificate does not belong to this host's key. Pair it with the key it was issued for.";
+    case 'ssh-sk-pin':
+      return securityKeyPinSentence(details, purpose);
+    case 'ssh-sk-not-touched':
+      return 'The security key was not touched in time. Retry, and touch the key when it blinks.';
+    case 'ssh-sk-no-device':
+      return details['reason'] === 'several'
+        ? 'Several security keys are plugged in. Leave only the one to use.'
+        : 'The security key this host signs in with is not plugged in. Plug it in and retry.';
+    case 'ssh-sk-unavailable':
+      switch (details['cause']) {
+        case 'windows':
+          return 'Wirebench cannot reach security keys on Windows yet. Choose another sign-in method for this host.';
+        case 'u2f':
+          return 'This security key speaks only U2F. Signing in needs a FIDO2 key.';
+        default:
+          return 'Wirebench could not open the security key on this machine.';
+      }
+    case 'ssh-sk-failed':
+      return 'The security key did not sign. Unplug it, plug it back in and retry.';
     case 'mosh-server-missing':
       return `Signed in, but ${text(details, 'server') ?? 'mosh-server'} was not found on ${who}. Install mosh on the server, or set its server command in the host's Advanced settings.`;
     case 'mosh-bootstrap-failed': {
@@ -223,6 +261,7 @@ export function connectErrorKind(code: string): ConnectErrorKind {
     case 'ssh-cert-expired':
     case 'ssh-cert-invalid':
     case 'ssh-cert-mismatch':
+    case 'ssh-sk-pin':
       return 'auth';
     case 'ssh-host-incomplete':
     case 'secret-missing':
@@ -251,7 +290,7 @@ export interface SignIn {
 /**
  * What the screen offers for a failed connect. `retryPrimary`: Retry is the main button, since trying again
  * can work. `ask`: a field on the screen fixes it there: the user to sign in as, or the password for `user`,
- * stored under the host's secret `secret`.
+ * stored under the host's secret `secret`, or the security key's PIN for the next connect.
  */
 export type ConnectFix =
   | { readonly kind: ConnectErrorKind; readonly retryPrimary: boolean; readonly ask?: undefined }
@@ -262,13 +301,19 @@ export type ConnectFix =
       readonly ask: 'password';
       readonly secret: string;
       readonly user: string | undefined;
-    };
+    }
+  /** The security key needs its PIN (#420); `wrong` after one it refused. */
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean };
 
 /** Retry stays primary unless the same attempt would fail the same way: a refused sign-in or a setting. */
 export function connectFix(error: ConnectError, target: SignIn | undefined): ConnectFix {
   const kind = connectErrorKind(error.code);
   const details = error.details ?? {};
   const retryPrimary = kind !== 'auth' && kind !== 'settings';
+  const reason = details['reason'];
+  if (error.code === 'ssh-sk-pin' && (reason === 'required' || reason === 'wrong')) {
+    return { kind, retryPrimary: false, ask: 'pin', wrong: reason === 'wrong' };
+  }
   if (target === undefined || retryPrimary) return { kind, retryPrimary };
   const hostId = details['hostId'];
   if (

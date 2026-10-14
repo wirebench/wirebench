@@ -47,7 +47,7 @@ export function PermissionsDialog({ target, onCancel, onApply }: PermissionsDial
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
         {target !== null && <PermissionsBody key={target.name} target={target} onCancel={onCancel} onApply={onApply} />}
       </Dialog.Portal>
     </Dialog.Root>
@@ -78,7 +78,7 @@ function PermissionsBody({
     <Dialog.Content
       data-testid="files-permissions"
       aria-describedby={undefined}
-      className="fixed top-1/2 left-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
+      className="fixed top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
     >
       <Dialog.Title className="truncate text-md font-medium text-fg-default">Permissions of {target.name}</Dialog.Title>
       <table className="mt-3 w-full text-sm text-fg-default">

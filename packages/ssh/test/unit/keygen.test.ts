@@ -8,6 +8,7 @@ import {
   generateKey,
   looksLikePrivateKey,
 } from '../../src/index.js';
+import { SoftAuthenticator, softTransport } from '../helpers/fido-authenticator.js';
 
 const LINE = /^[a-z0-9@.-]+ [A-Za-z0-9+/]+={0,2}( .+)?$/;
 
@@ -144,5 +145,42 @@ describe('describePublicKey', () => {
     expect(() => describePublicKey(`${key.publicKey}\nssh-ed25519 ${blob}`)).toThrow(
       expect.objectContaining({ code: 'ssh-key-invalid' }),
     );
+  });
+});
+
+describe('security key generation (#420)', { timeout: 30_000 }, () => {
+  it('makes an sk key on the authenticator and describes it from its key handle file', async () => {
+    const authenticator = new SoftAuthenticator();
+    for (const [algorithm, keyType] of [
+      ['ed25519-sk', 'sk-ssh-ed25519@openssh.com'],
+      ['ecdsa-sk', 'sk-ecdsa-sha2-nistp256@openssh.com'],
+    ] as const) {
+      const touched: string[] = [];
+      const key = await generateKey({
+        algorithm,
+        comment: 'me@laptop',
+        passphrase: 'pp',
+        transport: softTransport(authenticator),
+        onTouch: () => touched.push(algorithm),
+      });
+      expect(touched).toEqual([algorithm]);
+      expect(key.keyType).toBe(keyType);
+      expect(key.publicKey).toMatch(LINE);
+      expect(key.publicKey.endsWith(' me@laptop')).toBe(true);
+      expect(describePrivateKey(key.privateKey, 'pp')).toEqual({
+        keyType,
+        fingerprint: key.fingerprint,
+        publicKey: key.publicKey,
+      });
+      expect(() => describePrivateKey(key.privateKey)).toThrow(expect.objectContaining({ code: 'ssh-key-locked' }));
+      expect(describePublicKey(key.publicKey).fingerprint).toBe(key.fingerprint);
+    }
+  });
+
+  it('passes the security key refusals through', async () => {
+    await expect(generateKey({ algorithm: 'ed25519-sk', transport: softTransport() })).rejects.toMatchObject({
+      code: 'ssh-sk-no-device',
+    });
+    expect(SSH_KEY_BITS['ecdsa-sk']).toEqual([]);
   });
 });

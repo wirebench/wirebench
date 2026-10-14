@@ -11,7 +11,7 @@ import {
   trustView,
 } from '../../src/renderer/features/ssh/connect-progress.js';
 import type { ConnectView } from '../../src/renderer/features/ssh/connect-progress.js';
-import { connectFailureSentence } from '../../src/renderer/features/ssh/connect-errors.js';
+import { connectFailureSentence, connectFix } from '../../src/renderer/features/ssh/connect-errors.js';
 
 type PhaseEvent = Extract<SshConnectProgressWire, { kind: 'phase' }>;
 
@@ -262,5 +262,66 @@ describe('the connect error mapping', () => {
   it('an unknown code falls back to a generic sentence', () => {
     expect(sentence('brand-new-code')).toBe('The connection could not be started. The log below shows how far it got.');
     expect(connectFailureSentence({ code: 'x', message: 'y' }, 'files')).toMatch(/^The file browser could not connect/);
+  });
+});
+
+describe('security key refusals (#420)', () => {
+  const fail = (code: string, details: Record<string, unknown>) =>
+    failedView(startView('a1', 'terminal', 1000), { code, message: 'raw library text', details }, 1100);
+
+  const fixOf = (code: string, details: Record<string, unknown>) =>
+    connectFix({ code, message: 'x', details }, undefined);
+
+  it('a PIN the key needs fails Authenticating and asks for it; a wrong one asks again with the attempts left', () => {
+    const required = fail('ssh-sk-pin', { reason: 'required', host: HOST });
+    expect(required.outcome).toMatchObject({ kind: 'failed', step: 'auth' });
+    expect(fixOf('ssh-sk-pin', { reason: 'required' })).toMatchObject({
+      ask: 'pin',
+      wrong: false,
+      retryPrimary: false,
+    });
+    const wrong = fail('ssh-sk-pin', { reason: 'wrong', retries: 5, host: HOST });
+    expect(wrong.outcome).toMatchObject({
+      kind: 'failed',
+      sentence: 'Wrong PIN for the security key: 5 attempts left before it locks.',
+    });
+    expect(fixOf('ssh-sk-pin', { reason: 'wrong', retries: 5 })).toMatchObject({ ask: 'pin', wrong: true });
+  });
+
+  it('a locked key or one without a PIN set says so and asks for nothing', () => {
+    const blocked = fail('ssh-sk-pin', { reason: 'blocked' });
+    expect(blocked.outcome.kind === 'failed' ? blocked.outcome.sentence : '').toMatch(/^The security key is locked/);
+    expect(fixOf('ssh-sk-pin', { reason: 'blocked' }).ask).toBeUndefined();
+    expect(fixOf('ssh-sk-pin', { reason: 'not-set' }).ask).toBeUndefined();
+  });
+
+  it('an untouched or unplugged key leaves Retry as the main button', () => {
+    expect(fixOf('ssh-sk-not-touched', {}).retryPrimary).toBe(true);
+    expect(fixOf('ssh-sk-no-device', {}).retryPrimary).toBe(true);
+  });
+
+  it('each other refusal has its own sentence, never the raw message', () => {
+    const cases: [string, Record<string, unknown>, RegExp][] = [
+      ['ssh-sk-not-touched', {}, /not touched in time/],
+      ['ssh-sk-no-device', {}, /is not plugged in/],
+      ['ssh-sk-no-device', { reason: 'several' }, /Several security keys/],
+      ['ssh-sk-unavailable', { cause: 'windows' }, /on Windows yet/],
+      ['ssh-sk-unavailable', { cause: 'u2f' }, /only U2F/],
+      ['ssh-sk-unavailable', {}, /could not open the security key/],
+      ['ssh-sk-failed', {}, /did not sign/],
+    ];
+    for (const [code, details, pattern] of cases) {
+      const view = fail(code, details);
+      expect(view.outcome).toMatchObject({ kind: 'failed', step: 'auth' });
+      expect(view.outcome.kind === 'failed' ? view.outcome.sentence : '').toMatch(pattern);
+      // What the screen shows: the sentence, and the log that ends with it.
+      expect(JSON.stringify(view.log)).not.toContain('raw library text');
+    }
+  });
+
+  it('Files cannot ask for the PIN: it points to a terminal tab', () => {
+    expect(
+      connectFailureSentence({ code: 'ssh-sk-pin', message: 'x', details: { reason: 'required' } }, 'files'),
+    ).toMatch(/Connect from a terminal tab/);
   });
 });

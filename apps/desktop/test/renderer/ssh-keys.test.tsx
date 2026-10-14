@@ -104,6 +104,8 @@ describe('keyTypeLabel', () => {
     expect(keyTypeLabel('ssh-ed25519')).toBe('ed25519');
     expect(keyTypeLabel('ecdsa-sha2-nistp384')).toBe('ecdsa 384');
     expect(keyTypeLabel('ssh-rsa')).toBe('rsa');
+    expect(keyTypeLabel('sk-ssh-ed25519@openssh.com')).toBe('ed25519-sk');
+    expect(keyTypeLabel('sk-ecdsa-sha2-nistp256@openssh.com')).toBe('ecdsa-sk');
   });
 });
 
@@ -149,6 +151,37 @@ describe('Keychain keys', () => {
       expect(screen.queryByTestId('generate-key-dialog')).toBeNull();
     });
     expect(secretNames).toHaveBeenCalledTimes(2);
+  });
+
+  it('Generate key… makes a security key with its PIN, asks for the touch, and needs the PIN to verify every sign-in', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    generateKey.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(<SshHome />);
+    await userEvent.click(screen.getByRole('button', { name: /Generate key/ }));
+    const dialog = await screen.findByTestId('generate-key-dialog');
+    expect(within(dialog).queryByTestId('generate-key-security')).toBeNull();
+    await userEvent.type(within(dialog).getByLabelText('Secret name'), 'yubi');
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Security key (ECDSA)' }));
+    expect(within(dialog).getByTestId('generate-key-security')).toBeDefined();
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Ask for the PIN at every sign-in' }));
+    expect(within(dialog).getByRole('button', { name: 'Generate' })).toHaveProperty('disabled', true);
+    await userEvent.type(within(dialog).getByLabelText('Security key PIN (if it has one)'), '2468');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Generate' }));
+    expect(generateKey).toHaveBeenCalledWith({
+      name: 'yubi',
+      algorithm: 'ecdsa-sk',
+      pin: '2468',
+      verifyRequired: true,
+    });
+    expect(within(dialog).getByRole('status').textContent).toBe('Touch your security key when it blinks.');
+    finish({ ok: true, value: { ...KEY, name: 'yubi', keyType: 'sk-ecdsa-sha2-nistp256@openssh.com' } });
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('generate-key-dialog')).toBeNull();
+    });
   });
 
   it('Generate key… shows main refusing a taken name and keeps the dialog open', async () => {

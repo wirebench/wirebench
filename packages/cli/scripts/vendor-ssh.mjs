@@ -1,7 +1,8 @@
 /**
  * Copies the built `@wirebench/ssh` into `dist/vendor/ssh` before the CLI is packed. `@wirebench/ssh` stays
  * private: the published CLI carries its own copy, which `publishConfig.imports` points `#ssh` at, and lists
- * that copy's dependencies (`ssh2`, `yaml`, `zod`) as its own. In the workspace `#ssh` is the package itself.
+ * that copy's dependencies (`ssh2`, `bcrypt-pbkdf`, `node-hid`, `yaml`, `zod`) as its own. In the workspace
+ * `#ssh` is the package itself.
  *
  * `node scripts/vendor-ssh.mjs <dir>` does the same for a CLI copied out by `pnpm deploy` (the container
  * image), which applies neither `prepack` nor `publishConfig`: the copy goes into `<dir>/dist/vendor/ssh` and
