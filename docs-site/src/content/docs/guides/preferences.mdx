@@ -122,9 +122,9 @@ pressing Enter.
 **Reconnect dropped sessions** is `terminal.autoReconnect` and is on by default. When the network drops
 a session (a reset, a timeout, a jump host's connection ending), the tab keeps its scrollback and tries
 again after 1, 2, 4, 8 and 16 seconds, then every 30 seconds, showing the attempt and a countdown with
-**Retry now** and **Cancel**. Waking from sleep, or the network coming back, tries at once. A shell that
-exited, a sign-in failure or a changed host key never reconnects: the tab shows the reason or the host-key
-prompt as before. **Reconnect attempts** is `terminal.reconnectAttempts`: how many tries before the tab
+**Reconnect now** and **Stop** on the connection screen. Waking from sleep, or the network coming back, tries at once. A shell that
+exited, a sign-in failure or a changed host key never reconnects: the connection screen shows the reason
+or the host-key prompt. **Reconnect attempts** is `terminal.reconnectAttempts`: how many tries before the tab
 stops and offers **Reconnect**. The default is 10, and the range is 1 to 100.
 
 **Session logs size limit** is `terminal.sessionLogMaxMb`: how much room all

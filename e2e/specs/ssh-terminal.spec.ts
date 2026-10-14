@@ -128,6 +128,7 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   await expect(connected).toBeVisible();
 
   // A connection the network drops reconnects on its own, into the same terminal: the scrollback stays.
+  // The countdown shows on the connection screen, over the terminal, until an attempt opens a session.
   fixture.drop();
   await expect(page.getByTestId('ssh-terminal-notice')).toContainText('Reconnecting', { timeout: 30_000 });
   await expect(terminal).toContainText('reconnected', { timeout: 30_000 });
