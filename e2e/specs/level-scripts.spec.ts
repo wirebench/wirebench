@@ -44,11 +44,11 @@ test('an API’s and a folder’s scripts run around a request in the folder, AP
   await createProject(page, 'Shop');
   await createApi(page, 'Shop API', server.url);
 
-  // The folder's script, in its Scripts… dialog. A new folder lands in inline rename mode; Escape
-  // keeps the name it was given, and the API row is opened to reveal it.
+  // The folder's script, in its Scripts… dialog. A new folder lands in inline rename mode, with the API
+  // unfolded to it; Escape keeps the name it was given.
   await chooseContextMenuItem(page, apiRow(page, 'Shop API'), 'New folder');
+  await expect(page.getByTestId('explorer-rename-input')).toBeFocused({ timeout: 20_000 });
   await page.keyboard.press('Escape');
-  await apiRow(page, 'Shop API').click();
   await chooseContextMenuItem(page, folderRow(page, 'Folder 1'), 'Scripts…');
   const dialog = page.getByTestId('folder-scripts-dialog');
   await expect(dialog).toBeVisible({ timeout: 20_000 });
