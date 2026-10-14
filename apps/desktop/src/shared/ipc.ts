@@ -7,6 +7,10 @@ import {
   sshDataEventSchema,
   sshExitEventSchema,
   sshImportApplyRequestSchema,
+  sshKnownHostsImportApplyRequestSchema,
+  sshKnownHostsImportApplyResponseSchema,
+  sshKnownHostsImportPreviewRequestSchema,
+  sshKnownHostsImportPreviewResponseSchema,
   sshImportApplyResponseSchema,
   sshImportPreviewRequestSchema,
   sshImportPreviewResponseSchema,
@@ -26,6 +30,15 @@ import {
   sshWriteRequestSchema,
 } from './ssh-wire.js';
 import {
+  localTerminalCloseRequestSchema,
+  localTerminalDataEventSchema,
+  localTerminalExitEventSchema,
+  localTerminalOpenRequestSchema,
+  localTerminalOpenResponseSchema,
+  localTerminalResizeRequestSchema,
+  localTerminalWriteRequestSchema,
+} from './local-terminal-wire.js';
+import {
   forwardFreePortRequestSchema,
   forwardFreePortResponseSchema,
   forwardListRequestSchema,
@@ -35,6 +48,16 @@ import {
   forwardStopAllRequestSchema,
   forwardStopRequestSchema,
 } from './forward-wire.js';
+import {
+  sessionLogHostRequestSchema,
+  sessionLogListResponseSchema,
+  sessionLogReadResponseSchema,
+  sessionLogRequestSchema,
+  sessionLogSearchRequestSchema,
+  sessionLogSearchResponseSchema,
+  sessionLogSetSwitchRequestSchema,
+  sessionLogSwitchesResponseSchema,
+} from './session-log-wire.js';
 import {
   sshListSnippetsResponseSchema,
   sshPreviewSnippetRequestSchema,
@@ -75,6 +98,7 @@ import {
   sftpTransferRequestSchema,
 } from './sftp-wire.js';
 import {
+  sshAttachCertificateRequestSchema,
   sshGenerateKeyRequestSchema,
   sshInstallKeyRequestSchema,
   sshInstallKeyResponseSchema,
@@ -178,6 +202,16 @@ import {
   licenseRemoveResponseWireSchema,
   licenseRequestWireSchema,
   licenseStateWireSchema,
+  provisioningRequestWireSchema,
+  samlInfoWireSchema,
+  scimGroupLinkRequestWireSchema,
+  scimGroupsListResponseWireSchema,
+  scimGroupSummaryWireSchema,
+  scimTokenCreatedWireSchema,
+  scimTokenCreateRequestWireSchema,
+  scimTokenRevokeRequestWireSchema,
+  scimTokenRevokeResponseWireSchema,
+  scimTokensListResponseWireSchema,
   logExportHarResponseSchema,
   logResendRequestSchema,
   mockCheckResponseSchema,
@@ -424,7 +458,12 @@ export const channels = {
      */
     checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
     /** The sidebar areas this run has switched on (`WIREBENCH_AREAS`); the renderer hides the rest. */
-    areas: defineChannel('app.areas', z.undefined(), z.object({ enabled: z.array(z.string()) })),
+    // `localTerminal`: whether the local terminal tab (#410) is on; it rides with the SSH area.
+    areas: defineChannel(
+      'app.areas',
+      z.undefined(),
+      z.object({ enabled: z.array(z.string()), localTerminal: z.boolean() }),
+    ),
     /** The protocol kinds this run has switched on (`WIREBENCH_KINDS`); the renderer shows the rest as placeholders. */
     kinds: defineChannel('app.kinds', z.undefined(), z.object({ enabled: z.array(z.string()) })),
     /**
@@ -496,6 +535,8 @@ export const channels = {
     signInLocal: defineChannel('account.signInLocal', accountSignInLocalRequestSchema, accountResponseSchema),
     /** Resolves when the browser hand-off has completed; `cancelSignIn` ends it early. */
     startOidc: defineChannel('account.startOidc', accountStartOidcRequestSchema, accountResponseSchema),
+    /** The SAML hand-off (saml-scim spec §3.7): the same request and loopback as OIDC. */
+    startSaml: defineChannel('account.startSaml', accountStartOidcRequestSchema, accountResponseSchema),
     cancelSignIn: defineChannel('account.cancelSignIn', z.undefined(), accountCancelResponseSchema),
     lookupInvitation: defineChannel(
       'account.lookupInvitation',
@@ -582,6 +623,31 @@ export const channels = {
     get: defineChannel('license.get', licenseRequestWireSchema, licenseStateWireSchema),
     install: defineChannel('license.install', licenseInstallRequestWireSchema, licenseStateWireSchema),
     remove: defineChannel('license.remove', licenseRequestWireSchema, licenseRemoveResponseWireSchema),
+  },
+  /** SAML and SCIM settings of a server (saml-scim spec §3.7): server admins on Enterprise; main adds the token. */
+  provisioning: {
+    info: defineChannel('provisioning.info', provisioningRequestWireSchema, samlInfoWireSchema),
+    listTokens: defineChannel(
+      'provisioning.listTokens',
+      provisioningRequestWireSchema,
+      scimTokensListResponseWireSchema,
+    ),
+    createToken: defineChannel(
+      'provisioning.createToken',
+      scimTokenCreateRequestWireSchema,
+      scimTokenCreatedWireSchema,
+    ),
+    revokeToken: defineChannel(
+      'provisioning.revokeToken',
+      scimTokenRevokeRequestWireSchema,
+      scimTokenRevokeResponseWireSchema,
+    ),
+    listGroups: defineChannel(
+      'provisioning.listGroups',
+      provisioningRequestWireSchema,
+      scimGroupsListResponseWireSchema,
+    ),
+    linkGroup: defineChannel('provisioning.linkGroup', scimGroupLinkRequestWireSchema, scimGroupSummaryWireSchema),
   },
   /** The server's audit log (audit-log spec §3.6): server admins on Enterprise; main adds the token and picks the export file. */
   audit: {
@@ -981,10 +1047,23 @@ export const channels = {
     setHostOs: defineChannel('ssh.setHostOs', sshSetHostOsRequestSchema, z.object({})),
     importPreview: defineChannel('ssh.importPreview', sshImportPreviewRequestSchema, sshImportPreviewResponseSchema),
     importApply: defineChannel('ssh.importApply', sshImportApplyRequestSchema, sshImportApplyResponseSchema),
+    // Trusted keys from a known_hosts file (#418): the file's path never crosses.
+    knownHostsImportPreview: defineChannel(
+      'ssh.knownHostsImportPreview',
+      sshKnownHostsImportPreviewRequestSchema,
+      sshKnownHostsImportPreviewResponseSchema,
+    ),
+    knownHostsImportApply: defineChannel(
+      'ssh.knownHostsImportApply',
+      sshKnownHostsImportApplyRequestSchema,
+      sshKnownHostsImportApplyResponseSchema,
+    ),
     // Keychain keys (#409): only the public half crosses; the private key and passphrase stay in main.
     generateKey: defineChannel('ssh.generateKey', sshGenerateKeyRequestSchema, sshKeyWireSchema),
     keys: defineChannel('ssh.keys', z.undefined(), sshKeysResponseSchema),
     installKey: defineChannel('ssh.installKey', sshInstallKeyRequestSchema, sshInstallKeyResponseSchema),
+    // A key's OpenSSH user certificate (#421), stored as `<secret>_cert`; it is public, so it may cross.
+    attachCertificate: defineChannel('ssh.attachCertificate', sshAttachCertificateRequestSchema, sshKeyWireSchema),
     // Snippets (#356): scripts cross with `${secret:NAME}` tokens only, never a value.
     listSnippets: defineChannel('ssh.listSnippets', z.undefined(), sshListSnippetsResponseSchema),
     saveSnippets: defineChannel('ssh.saveSnippets', sshSaveSnippetsRequestSchema, sshListSnippetsResponseSchema),
@@ -995,6 +1074,14 @@ export const channels = {
       sshPreviewSnippetRequestSchema,
       sshPreviewSnippetResponseSchema,
     ),
+  },
+  // The local terminal tab (#410): a shell on this machine. Registered only while the SSH area is on and
+  // `WIREBENCH_AREAS` leaves `local-terminal` on.
+  localTerminal: {
+    open: defineChannel('localTerminal.open', localTerminalOpenRequestSchema, localTerminalOpenResponseSchema),
+    write: defineChannel('localTerminal.write', localTerminalWriteRequestSchema, z.object({})),
+    resize: defineChannel('localTerminal.resize', localTerminalResizeRequestSchema, z.object({})),
+    close: defineChannel('localTerminal.close', localTerminalCloseRequestSchema, z.object({})),
   },
   // Saved terminal layouts (SSH area, panes slice 3): per machine, scoped to the calling window's workspace.
   // Registered only while the SSH area is on.
@@ -1029,6 +1116,16 @@ export const channels = {
     stop: defineChannel('forward.stop', forwardStopRequestSchema, z.object({})),
     stopAll: defineChannel('forward.stopAll', forwardStopAllRequestSchema, z.object({})),
     freePort: defineChannel('forward.freePort', forwardFreePortRequestSchema, forwardFreePortResponseSchema),
+  },
+  // Session logs (#414). Registered only while the SSH area is on; each acts on the calling window's workspace.
+  sessionLog: {
+    switches: defineChannel('sessionLog.switches', z.object({}), sessionLogSwitchesResponseSchema),
+    setSwitch: defineChannel('sessionLog.setSwitch', sessionLogSetSwitchRequestSchema, z.object({})),
+    list: defineChannel('sessionLog.list', sessionLogHostRequestSchema, sessionLogListResponseSchema),
+    read: defineChannel('sessionLog.read', sessionLogRequestSchema, sessionLogReadResponseSchema),
+    search: defineChannel('sessionLog.search', sessionLogSearchRequestSchema, sessionLogSearchResponseSchema),
+    delete: defineChannel('sessionLog.delete', sessionLogRequestSchema, z.object({})),
+    reveal: defineChannel('sessionLog.reveal', sessionLogRequestSchema, z.object({})),
   },
   xpath: soapChannels.xpath,
   validate: soapChannels.validate,
@@ -1067,6 +1164,12 @@ export const events = {
     state: defineEvent('ssh.state', sshStateEventSchema),
     /** The machine woke from sleep: a terminal waiting to reconnect tries at once. To every window. */
     resumed: defineEvent('ssh.resumed', z.object({})),
+  },
+  localTerminal: {
+    /** The local shell's output, base64, to the window that opened it only. */
+    data: defineEvent('localTerminal.data', localTerminalDataEventSchema),
+    /** The local shell ended on its own; the session id is gone. */
+    exit: defineEvent('localTerminal.exit', localTerminalExitEventSchema),
   },
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),

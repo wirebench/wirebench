@@ -36,7 +36,7 @@ function sender(id: number, destroyed = false) {
 }
 type FakeSender = ReturnType<typeof sender>;
 
-function fakeSession(id = 's1') {
+function fakeSession(id = 's1', agentForwarding: SshSession['agentForwarding'] = 'off') {
   const data = new Set<(d: Uint8Array) => void>();
   const exit = new Set<Parameters<SshSession['onExit']>[0]>();
   const write = vi.fn();
@@ -45,6 +45,7 @@ function fakeSession(id = 's1') {
   const exec = vi.fn<SshSession['exec']>(() => Promise.resolve(''));
   const session: SshSession = {
     id,
+    agentForwarding,
     write,
     resize,
     close,
@@ -91,6 +92,9 @@ function make(
     /** A fresh session (`s1`, `s2`, …) per connect, kept in `opened`. */
     fresh?: boolean;
     snippets?: SnippetsFile;
+    /** What the server answers a forwarding request with; default: granted. */
+    agentRefused?: boolean;
+    sessionLog?: SshServiceDeps['sessionLog'];
   } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-ssh-')), 'ssh-known-hosts.json');
@@ -109,6 +113,9 @@ function make(
       }
     }
     await opts.gate;
+    if (options.forwardAgent !== undefined) {
+      return { ...fake.session, agentForwarding: opts.agentRefused ? ('refused' as const) : ('on' as const) };
+    }
     if (!opts.fresh) return fake.session;
     const next = fakeSession(`s${String(opened.length + 1)}`);
     opened.push(next);
@@ -136,6 +143,7 @@ function make(
     open,
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.onSessionsChange ? { onSessionsChange: opts.onSessionsChange } : {}),
+    ...(opts.sessionLog ? { sessionLog: opts.sessionLog } : {}),
   });
   return { service, open, emit, fake, opened, knownHostsFile, hostOsFile, list };
 }
@@ -316,6 +324,25 @@ describe('SshService', () => {
     await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
   });
 
+  it('changeKnownHosts writes what the change returns, and the written key settles a pending prompt', async () => {
+    const { service, knownHostsFile } = make();
+    const s = sender(1);
+    await expect(service.connect(as(s), CONNECT)).rejects.toMatchObject({ code: 'ssh-host-key-new' });
+    const result = await service.changeKnownHosts((known) => ({ entries: [...known, KEY], added: 1 }));
+    expect(result.added).toBe(1);
+    expect(JSON.parse(readFileSync(knownHostsFile, 'utf8'))).toEqual([KEY]);
+    // The refusal the connect left is settled: trusting it now is unexpected, not a second write.
+    await expect(service.trust(as(s), { ...KEY, replace: false })).rejects.toMatchObject({
+      code: 'ssh-host-key-unexpected',
+    });
+  });
+
+  it('changeKnownHosts writes nothing when the change keeps every key', async () => {
+    const { service, knownHostsFile } = make();
+    await service.changeKnownHosts((known) => ({ entries: known }));
+    expect(() => readFileSync(knownHostsFile)).toThrow();
+  });
+
   it('forgetting a key that is not trusted writes nothing', async () => {
     const { service, knownHostsFile } = make();
     await service.forgetHostKey({ host: 'nowhere:22', keyType: 'ssh-ed25519' });
@@ -403,6 +430,24 @@ describe('SshService', () => {
     expect(JSON.stringify(result)).not.toContain('pw');
   });
 
+  it('resolves a key with its certificate and passphrase into openSession', async () => {
+    const file = parseHostsFile(
+      `version: 1\nhosts:\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { key: '\${secret:k}', certificate: '\${secret:k_cert}', passphrase: '\${secret:k_passphrase}' } } }\n`,
+    );
+    const { service, open } = make({
+      known: [KEY],
+      file,
+      secrets: { k: 'PRIVATE', k_cert: 'CERT', k_passphrase: 'pass' },
+    });
+    await service.connect(as(sender(1)), CONNECT);
+    expect(open.mock.calls[0]![0].hops[0]!.auth).toEqual({
+      kind: 'key',
+      privateKey: 'PRIVATE',
+      certificate: 'CERT',
+      passphrase: 'pass',
+    });
+  });
+
   it('a missing secret is secret-missing with the name, before any connection', async () => {
     const { service, open } = make({ known: [KEY], secrets: {} });
     await expect(service.connect(as(sender(1)), CONNECT)).rejects.toMatchObject({
@@ -465,6 +510,58 @@ describe('SshService', () => {
     const some = make({ known: [KEY], file: agentFile, agent: '/tmp/agent.sock' });
     await some.service.connect(as(sender(1)), CONNECT);
     expect(some.open.mock.calls[0]![0].hops[0]!.auth).toEqual({ kind: 'agent', socket: '/tmp/agent.sock' });
+  });
+
+  describe('agent forwarding', () => {
+    const fileWith = (target: string, jump = ''): HostsFile =>
+      parseHostsFile(
+        `version: 1\nhosts:\n  - { id: j, name: j, address: 10.0.0.9, ssh: { user: jb, auth: { password: '\${secret:a_pw}' }${jump} } }\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, auth: { password: '\${secret:a_pw}' }${target} } }\n`,
+      );
+    const J: KnownHostEntry = { host: '10.0.0.9:22', keyType: 'ssh-ed25519', fingerprint: 'SHA256:j' };
+
+    it('passes the agent socket for a host that forwards and reports it on', async () => {
+      const { service, open } = make({
+        known: [KEY],
+        file: fileWith(', forwardAgent: true'),
+        agent: '/tmp/agent.sock',
+      });
+      const result = await service.connect(as(sender(1)), CONNECT);
+      expect(open.mock.calls[0]![0].forwardAgent).toBe('/tmp/agent.sock');
+      expect(open.mock.calls[0]![0].hops[0]!.auth).toEqual({ kind: 'password', password: 'pw' });
+      expect(result).toMatchObject({ agentForwarding: 'on' });
+    });
+
+    it('connects without forwarding when no agent runs, and says so', async () => {
+      const { service, open } = make({ known: [KEY], file: fileWith(', forwardAgent: true') });
+      const result = await service.connect(as(sender(1)), CONNECT);
+      expect(open.mock.calls[0]![0].forwardAgent).toBeUndefined();
+      expect(result).toMatchObject({ agentForwarding: 'no-agent' });
+    });
+
+    it('reports a refusal from the server', async () => {
+      const { service } = make({
+        known: [KEY],
+        file: fileWith(', forwardAgent: true'),
+        agent: '/tmp/agent.sock',
+        agentRefused: true,
+      });
+      expect(await service.connect(as(sender(1)), CONNECT)).toMatchObject({ agentForwarding: 'refused' });
+    });
+
+    it('is off by default, and a jump host that forwards does not make its target forward', async () => {
+      const { service, open } = make({
+        known: [KEY, J],
+        keys: [J, KEY],
+        file: parseHostsFile(
+          `version: 1\nhosts:\n  - { id: j, name: j, address: 10.0.0.9, ssh: { user: jb, auth: { password: '\${secret:a_pw}' }, forwardAgent: true } }\n  - { id: a, name: a, address: 10.0.0.1, ssh: { user: me, jump: j, auth: { password: '\${secret:a_pw}' } } }\n`,
+        ),
+        agent: '/tmp/agent.sock',
+      });
+      const result = await service.connect(as(sender(1)), CONNECT);
+      expect(open.mock.calls[0]![0].hops).toHaveLength(2);
+      expect(open.mock.calls[0]![0].forwardAgent).toBeUndefined();
+      expect(result).not.toHaveProperty('agentForwarding');
+    });
   });
 
   it('a changed key on a jump hop is ssh-host-key-changed for that hop, with the previous fingerprint', async () => {
@@ -1015,6 +1112,64 @@ describe('runSnippet', () => {
     await vi.waitFor(() => expect(shown(emit)).toContain('x'));
     expect(shown(emit)).toBe(' curl -H •••• x\r');
     expect(shown(emit)).not.toContain('pässwört');
+  });
+
+  /** A session log that keeps what it was given. */
+  function fakeLog(opts: { fail?: boolean } = {}) {
+    const pushed: string[] = [];
+    const ends: unknown[] = [];
+    const sessions: string[] = [];
+    const sessionLog = vi.fn<NonNullable<SshServiceDeps['sessionLog']>>(() =>
+      opts.fail
+        ? Promise.reject(new Error('disk full'))
+        : Promise.resolve((sessionId: string) => {
+            sessions.push(sessionId);
+            return {
+              push: (data: Uint8Array) => pushed.push(Buffer.from(data).toString('utf8')),
+              end: (exit: unknown) => {
+                ends.push(exit);
+                return Promise.resolve();
+              },
+              settled: () => Promise.resolve(),
+            };
+          }),
+    );
+    return { sessionLog, pushed, ends, sessions };
+  }
+
+  it('logs what the screen shows, a snippet secret masked, and ends the log with the exit', async () => {
+    const log = fakeLog();
+    const { service, fake, s } = await connected({ sessionLog: log.sessionLog });
+    expect(log.sessionLog.mock.calls[0]?.[1]).toMatchObject({
+      hostId: 'a',
+      hops: [{ address: '10.0.0.1', auth: { kind: 'password', password: 'pw' } }],
+    });
+    expect(log.sessions).toEqual(['s1']);
+    fake.write.mockImplementation((bytes: Uint8Array) => {
+      for (const byte of Buffer.from(bytes)) fake.pushData(Buffer.from([byte]));
+    });
+    await service.runSnippet(as(s), run('token'));
+    await vi.waitFor(() => expect(log.pushed.join('')).toContain('x'));
+    expect(log.pushed.join('')).toBe(' curl -H •••• x\r');
+    fake.pushExit(0);
+    expect(log.ends).toEqual([{ code: 0, reason: 'exit' }]);
+  });
+
+  it('ends the log, with what the masker held, when the window closes the session', async () => {
+    const log = fakeLog();
+    const { service, fake, s } = await connected({ sessionLog: log.sessionLog });
+    await service.runSnippet(as(s), run('token'));
+    fake.pushData(Buffer.from('$ pä'));
+    service.close(as(s), { sessionId: 's1' });
+    expect(log.pushed.join('')).toBe('$ pä');
+    expect(log.ends).toEqual([undefined]);
+  });
+
+  it('opens the session unlogged when the log cannot start', async () => {
+    const log = fakeLog({ fail: true });
+    const { fake, emit } = await connected({ sessionLog: log.sessionLog });
+    fake.pushData(Buffer.from('hi'));
+    expect(shown(emit)).toBe('hi');
   });
 
   it('releases a held tail after 150 ms of quiet, and before the exit event', async () => {

@@ -57,8 +57,14 @@ const NO_FORWARD = {
   freePort: vi.fn(),
   hostsChanged: vi.fn(() => Promise.resolve()),
 };
+const NO_SESSION_LOGS = {
+  logs: { list: vi.fn(), read: vi.fn(), search: vi.fn(), remove: vi.fn(), pathOf: vi.fn() },
+  switches: { all: vi.fn(), set: vi.fn() },
+  workspaceOf: (): string | undefined => undefined,
+  reveal: vi.fn(),
+};
 const NO_IMPORT = { preview: vi.fn(), apply: vi.fn() };
-const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn() };
+const NO_KEYS = { generate: vi.fn(), keys: vi.fn(), install: vi.fn(), attachCertificate: vi.fn() };
 const NO_SFTP = {
   open: vi.fn(),
   close: vi.fn(),
@@ -84,11 +90,13 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -113,11 +121,13 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -132,11 +142,13 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -161,11 +173,13 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -187,11 +201,13 @@ describe('ssh channels', () => {
       secrets: { names, set: vi.fn() },
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -207,11 +223,13 @@ describe('ssh channels', () => {
       secrets: { names: vi.fn(), set },
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -232,11 +250,13 @@ describe('ssh channels', () => {
       secrets: service,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -251,11 +271,13 @@ describe('ssh channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -285,11 +307,13 @@ describe('ssh channels', () => {
         secrets: NO_SECRETS,
         ssh,
         importer: NO_IMPORT,
+        knownHostsImporter: NO_IMPORT,
         keys: NO_KEYS,
         sftp: NO_SFTP,
         snippets: NO_SNIPPETS,
         layouts: NO_LAYOUTS,
         forward: NO_FORWARD,
+        sessionLogs: NO_SESSION_LOGS,
         transfers: NO_TRANSFERS,
         edits: NO_EDITS,
       });
@@ -359,11 +383,13 @@ describe('known hosts channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -382,11 +408,13 @@ describe('known hosts channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -411,11 +439,13 @@ describe('host OS channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -433,11 +463,13 @@ describe('host OS channels', () => {
       secrets: NO_SECRETS,
       ssh,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -456,11 +488,13 @@ describe('ssh snippet run channels', () => {
       secrets: NO_SECRETS,
       ssh: { ...NO_SSH, runSnippet, previewSnippet },
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -487,11 +521,13 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: { preview, apply },
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -513,16 +549,51 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: { preview, apply: vi.fn() },
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
     expect(await invoke('ssh.importPreview', { source: 'pick', path: '/etc/passwd' })).toMatchObject({ ok: false });
     expect(preview).not.toHaveBeenCalled();
+  });
+
+  it('known_hosts channels pass the calling window and refuse a path', async () => {
+    const preview = vi.fn().mockResolvedValue({ cancelled: true });
+    const apply = vi.fn().mockResolvedValue({ added: 0, replaced: 0, kept: 0 });
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      knownHostsImporter: { preview, apply },
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
+      transfers: NO_TRANSFERS,
+      edits: NO_EDITS,
+    });
+    const window = { id: 7 };
+    expect(await invokeAs(window, 'ssh.knownHostsImportPreview', { source: 'user-known-hosts' })).toEqual({
+      ok: true,
+      value: { cancelled: true },
+    });
+    expect(preview).toHaveBeenCalledWith(window, { source: 'user-known-hosts' });
+    const request = { previewId: 'p', replace: [{ host: 'a:22', keyType: 'ssh-ed25519' }] };
+    await invokeAs(window, 'ssh.knownHostsImportApply', request);
+    expect(apply).toHaveBeenCalledWith(window, request);
+    expect(
+      await invoke('ssh.knownHostsImportPreview', { source: 'pick', path: '/home/u/.ssh/known_hosts' }),
+    ).toMatchObject({ ok: false });
+    expect(preview).toHaveBeenCalledTimes(1);
   });
 
   it('sftp channels act for the sender, who owns the session', async () => {
@@ -536,11 +607,13 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -571,6 +644,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers,
@@ -578,6 +652,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     const window = { id: 4 };
     const copy = {
@@ -609,6 +684,7 @@ describe('ssh import channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
@@ -616,6 +692,7 @@ describe('ssh import channels', () => {
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     const window = { id: 4 };
     const request = { sessionId: 's1', path: '/etc/app.conf', confirmedLarge: true };
@@ -638,17 +715,20 @@ describe('ssh key channels', () => {
       generate: vi.fn(),
       keys: vi.fn(() => Promise.resolve([{ name: 'k', locked: true }])),
       install: vi.fn(() => Promise.resolve({ result: 'added' as const })),
+      attachCertificate: vi.fn(),
     };
     registerSshChannels({
       hosts: NO_HOSTS,
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys,
       sftp: NO_SFTP,
       snippets: NO_SNIPPETS,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
       transfers: NO_TRANSFERS,
       edits: NO_EDITS,
     });
@@ -663,6 +743,12 @@ describe('ssh key channels', () => {
       value: { result: 'added' },
     });
     expect(keys.install).toHaveBeenCalledWith(window, { secret: 'k', hostId: 'web' });
+    keys.attachCertificate.mockResolvedValue({ name: 'k', locked: false });
+    expect(await invokeAs(window, 'ssh.attachCertificate', { secret: 'k', certificate: 'c' })).toEqual({
+      ok: true,
+      value: { name: 'k', locked: false },
+    });
+    expect(keys.attachCertificate).toHaveBeenCalledWith(window, { secret: 'k', certificate: 'c' });
     const stray = (await invoke('ssh.generateKey', { name: 'k', algorithm: 'ed25519', privateKey: 'x' })) as {
       ok: boolean;
     };
@@ -684,6 +770,7 @@ describe('snippet channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
@@ -691,6 +778,7 @@ describe('snippet channels', () => {
       snippets,
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     expect(await invoke('ssh.listSnippets', undefined)).toEqual({ ok: true, value: EMPTY_SNIPPETS });
     await invoke('ssh.saveSnippets', { file: EMPTY_SNIPPETS.file });
@@ -704,6 +792,7 @@ describe('snippet channels', () => {
       secrets: NO_SECRETS,
       ssh: NO_SSH,
       importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
       keys: NO_KEYS,
       sftp: NO_SFTP,
       transfers: NO_TRANSFERS,
@@ -711,6 +800,7 @@ describe('snippet channels', () => {
       snippets: new SnippetsService({ treeDir: () => dir }),
       layouts: NO_LAYOUTS,
       forward: NO_FORWARD,
+      sessionLogs: NO_SESSION_LOGS,
     });
     const snippet = { id: 'Bad Id', name: 'x', tags: [], variables: [], script: 'ls', enter: true, confirm: false };
     const refused = (await invoke('ssh.saveSnippets', {
@@ -723,5 +813,60 @@ describe('snippet channels', () => {
     };
     expect(stray.ok).toBe(false);
     expect(stray.error.code).not.toBe('snippets-invalid');
+  });
+});
+
+describe('session log channels', () => {
+  const window = { id: 9 };
+  function register(sessionLogs: Parameters<typeof registerSshChannels>[0]['sessionLogs']) {
+    registerSshChannels({
+      hosts: NO_HOSTS,
+      secrets: NO_SECRETS,
+      ssh: NO_SSH,
+      importer: NO_IMPORT,
+      knownHostsImporter: NO_IMPORT,
+      keys: NO_KEYS,
+      sftp: NO_SFTP,
+      snippets: NO_SNIPPETS,
+      layouts: NO_LAYOUTS,
+      forward: NO_FORWARD,
+      sessionLogs,
+      transfers: NO_TRANSFERS,
+      edits: NO_EDITS,
+    });
+  }
+
+  it('act on the calling window’s workspace, and refuse when none is open', async () => {
+    const logs = { ...NO_SESSION_LOGS.logs, list: vi.fn().mockResolvedValue([]) };
+    const switches = {
+      all: vi.fn().mockResolvedValue({ 'host:web': true }),
+      set: vi.fn().mockResolvedValue(undefined),
+    };
+    const workspaceOf = vi.fn((sender: { id: number }) => (sender.id === 9 ? 'ws-1' : undefined));
+    register({ ...NO_SESSION_LOGS, logs, switches, workspaceOf });
+    expect(await invokeAs(window, 'sessionLog.switches', {})).toEqual({
+      ok: true,
+      value: { switches: { 'host:web': true } },
+    });
+    await invokeAs(window, 'sessionLog.setSwitch', { target: { kind: 'group', id: 'prod' }, on: null });
+    expect(switches.set).toHaveBeenCalledWith('ws-1', { kind: 'group', id: 'prod' }, null);
+    await invokeAs(window, 'sessionLog.list', { hostId: 'web' });
+    expect(logs.list).toHaveBeenCalledWith('ws-1', 'web');
+    expect(await invokeAs({ id: 3 }, 'sessionLog.list', { hostId: 'web' })).toMatchObject({
+      ok: false,
+      error: { code: 'workspace-not-open' },
+    });
+  });
+
+  it('reveal the file main found for the log, never a path the renderer names', async () => {
+    const logs = { ...NO_SESSION_LOGS.logs, pathOf: vi.fn().mockResolvedValue('/data/session-logs/ws-1/web/x.log') };
+    const reveal = vi.fn();
+    register({ ...NO_SESSION_LOGS, logs, reveal, workspaceOf: () => 'ws-1' });
+    await invokeAs(window, 'sessionLog.reveal', { hostId: 'web', id: '20261013T183000Z-aaaaaaaa' });
+    expect(logs.pathOf).toHaveBeenCalledWith('ws-1', 'web', '20261013T183000Z-aaaaaaaa');
+    expect(reveal).toHaveBeenCalledWith('/data/session-logs/ws-1/web/x.log');
+    expect(await invokeAs(window, 'sessionLog.reveal', { hostId: 'web', id: 'x', path: '/etc' })).toMatchObject({
+      ok: false,
+    });
   });
 });

@@ -128,6 +128,35 @@ describe('SetEnv', () => {
   });
 });
 
+describe('ForwardAgent', () => {
+  it('maps yes and no; a host leaves out what equals the group', async () => {
+    const p = await plan('Host a\n  ForwardAgent yes\nHost b\n  ForwardAgent no\nHost c\n');
+    expect(host(p, 'a').ssh.forwardAgent).toBe(true);
+    expect(host(p, 'b').ssh.forwardAgent).toBeUndefined();
+    expect(host(p, 'c').ssh.forwardAgent).toBeUndefined();
+    expect(p.group.ssh.forwardAgent).toBeUndefined();
+    expect(p.report.skipped).toEqual([]);
+    const file = merged(p);
+    expect(resolveHost(file, 'a').ssh.forwardAgent.value).toBe(true);
+    expect(resolveHost(file, 'b').ssh.forwardAgent.value).toBe(false);
+  });
+  it('puts Host * yes on the group; a host that says no keeps false', async () => {
+    const p = await plan('Host a\n  ForwardAgent no\nHost b\nHost *\n  ForwardAgent yes\n');
+    expect(p.group.ssh.forwardAgent).toBe(true);
+    expect(host(p, 'a').ssh.forwardAgent).toBe(false);
+    expect(host(p, 'b').ssh.forwardAgent).toBeUndefined();
+    const file = merged(p);
+    expect(resolveHost(file, 'a').ssh.forwardAgent).toEqual({ value: false, from: 'host' });
+    expect(resolveHost(file, 'b').ssh.forwardAgent).toEqual({ value: true, from: { group: 'ssh-config' } });
+  });
+  it('notes a socket path or variable instead of yes or no, without quoting it', async () => {
+    const p = await plan('Host a\n  ForwardAgent /tmp/MARKER.sock\n');
+    expect(host(p, 'a').ssh.forwardAgent).toBeUndefined();
+    expect(p.report.notes).toContain('a: ForwardAgent is not yes or no; not imported');
+    expect(JSON.stringify(p.report)).not.toMatch(/MARKER/);
+  });
+});
+
 describe('group defaults (M1)', () => {
   it('puts Host * values on the group and leaves them off hosts that share them', async () => {
     const p = await plan('Host root-box\n  User root\nHost web\nHost *\n  User deploy\n  Port 22\n');
@@ -205,6 +234,45 @@ describe('keys (M4)', () => {
       expect.arrayContaining([
         "a: IdentityFile ~/.ssh/%r could not be resolved to a file; the host uses the group's authentication",
         'Authenticate through the SSH agent (no IdentityFile): a, b',
+      ]),
+    );
+  });
+});
+
+describe('certificates (#421)', () => {
+  it('carries CertificateFile with its key: a key with another certificate is another row', async () => {
+    const p = await plan(
+      'Host a\n  IdentityFile ~/.ssh/id\n  CertificateFile ~/.ssh/id-cert.pub\nHost b\n  IdentityFile ~/.ssh/id\n',
+    );
+    expect(p.keys).toEqual([
+      {
+        ref: 'k1',
+        path: '/home/u/.ssh/id',
+        display: '~/.ssh/id',
+        certificate: { path: '/home/u/.ssh/id-cert.pub', display: '~/.ssh/id-cert.pub' },
+        hosts: ['a'],
+        proposedSecret: 'ssh_key_id',
+      },
+      { ref: 'k2', path: '/home/u/.ssh/id', display: '~/.ssh/id', hosts: ['b'], proposedSecret: 'ssh_key_id_2' },
+    ]);
+    expect(p.report.skipped.map((s) => s.keyword)).not.toContain('certificatefile');
+  });
+  it('puts a key and certificate every host shares on the group', async () => {
+    const p = await plan('Host a b\nHost *\n  IdentityFile ~/.ssh/id\n  CertificateFile ~/.ssh/id-cert.pub\n');
+    expect(p.group.ssh.auth).toEqual({ kind: 'key', ref: 'k1' });
+    expect(p.keys[0]?.certificate?.display).toBe('~/.ssh/id-cert.pub');
+    expect(host(p, 'a').ssh.auth).toBeUndefined();
+  });
+  it('notes a certificate it cannot use', async () => {
+    const p = await plan(
+      'Host a\n  CertificateFile ~/.ssh/c-cert.pub\nHost b\n  IdentityFile ~/.ssh/k\n  CertificateFile ~/.ssh/%r\n',
+    );
+    expect(p.keys).toHaveLength(1);
+    expect(p.keys[0]?.certificate).toBeUndefined();
+    expect(p.report.notes).toEqual(
+      expect.arrayContaining([
+        'a: CertificateFile without an IdentityFile is not imported',
+        'b: CertificateFile ~/.ssh/%r could not be resolved to a file; the key is used without it',
       ]),
     );
   });

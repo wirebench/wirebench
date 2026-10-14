@@ -8,6 +8,49 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **SAML sign-in and SCIM provisioning on Wirebench Server (Enterprise).** With
+  `WIREBENCH_SERVER_SAML_IDP_METADATA` set, the Sign in dialog offers **Continue with SSO** (the label is
+  `WIREBENCH_SERVER_SAML_DISPLAY_NAME`), which signs in through the identity provider in the browser. The
+  server checks the assertion's signature (SHA-256 or stronger), issuer, audience, recipient, validity
+  window and that it answers the app's own request, once. SCIM 2.0 at `/scim/v2` creates, updates and
+  deactivates accounts and stores groups; deactivating disables the account and revokes its devices,
+  keeping its data. A server admin links IdP groups to teams, and SCIM removes only the members it added.
+  The Team dialog gains a **Provisioning** tab for SCIM tokens, the values to give the identity provider
+  and the group links; the server gains `admin scim-token` and `admin scim-group` commands. Neither
+  creates an account at sign-in: accounts come from SCIM or an invitation (#344).
+
+- **SSH certificates.** A key sign-in in `hosts.yaml` can carry its OpenSSH user certificate:
+  `auth: { key, certificate, passphrase? }`, the certificate being a `${secret:NAME}`, inherited with
+  the rest of `auth`. On connect the certificate is offered first, then the key alone; an expired or
+  not-yet-valid certificate fails before connecting with `ssh-cert-expired` and its validity window.
+  The keychain gains **Attach certificate…** on a key, stores it as `<key>_cert`, and shows its key ID,
+  principals and validity, with a badge when it has expired or belongs to another key. The host form
+  picks up a key's certificate with the key, `wirebench ssh forward` signs in with it too, and importing
+  an SSH config maps `CertificateFile` (#421).
+- **Import trusted keys from known_hosts.** The Known hosts view (and **Hosts: Import Known Hosts…**)
+  reads `~/.ssh/known_hosts` or a chosen file and trusts its keys for the hosts in `hosts.yaml` they
+  name: plain and `[host]:port` names, comma lists, wildcard patterns with `!` negation, and hashed
+  names, which are matched against each host's address and port. The preview lists the keys to trust,
+  the keys that differ from one already trusted (kept unless you tick **Replace**, which then needs the
+  same changed-key confirmation as a connect) and what is not imported: `@cert-authority` and
+  `@revoked` lines, lines that name no host, a second key of a type a host already has, and lines that
+  cannot be read (#418).
+
+- **Session logs for SSH terminals.** A host's details gain **Session logs**: a **Log sessions** switch
+  (also on a group's menu, inherited by the hosts inside) and the logs this machine kept, newest first,
+  which can be searched, opened and filtered, revealed in the file manager or deleted. A log is the
+  session's output as plain text with escape sequences removed, beside a `.json` file with the host,
+  user, start, end and exit code; what a full-screen program draws is left out. Passwords, keys and
+  passphrases used to connect, and secrets typed by a snippet, are masked, and only output is written.
+  Logs and switches stay on this machine. Settings › Terminal sets the size limit for all logs (500 MB
+  by default; the oldest go first) and can keep the raw stream too (#414).
+- **Local terminal.** **Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>, or
+  **New local terminal** in the SSH sidebar) opens a tab with a shell on this machine, beside the SSH
+  terminals: your login shell on macOS and Linux, PowerShell 7 (else Windows PowerShell) on Windows,
+  or the program **Preferences → Terminal → Local shell** names. It starts in a shared workspace's
+  own folder, otherwise in your home folder. It keeps the SSH terminal's theme, paste guard, copy on
+  select and find, and shows **Shell ended (code N)** with **Restart**. `WIREBENCH_AREAS=ssh=off`
+  removes it with the SSH area, and `WIREBENCH_AREAS=local-terminal=off` removes it alone (#410).
 - **GraphQL requests.** A REST request's body can be **GraphQL**: a query or mutation, its variables
   and, for a document with several operations, the one to run. It goes out as the JSON body a
   GraphQL server reads, with the API's auth, environments, History, scripts, runs and sequences. An
@@ -20,12 +63,21 @@ All notable changes to this project are documented here. The format follows
   errors** check, even on HTTP 200. `data` that does not match the schema is a warning. Postman,
   OpenCollection and `.http` GraphQL requests now import as GraphQL, and a Postman export writes them
   back as GraphQL (#77).
+
 - **Environment variables per host or group.** `hosts.yaml` takes `env: { NAME: value }` on hosts
   and groups, merged by name down the tree so a nearer level wins for each variable; a value is
   text or a `${secret:NAME}` token. They are sent as SSH `env` requests when a terminal opens (the
   server keeps the names its `AcceptEnv` allows), and a value read from a secret is masked on
   screen. The host form edits them and shows the inherited ones with their group, the details panel
   lists where each comes from, and importing an SSH config now maps `SetEnv` (#412).
+
+- **SSH agent forwarding per host or group.** `hosts.yaml` takes `ssh.forwardAgent: true`, inherited
+  down the tree and off by default. A terminal on such a host forwards your local agent, so `git pull`
+  or another `ssh` on the remote can use your keys; a jump host never gets it. The host form shows the
+  inherited value and a warning while it is on, the terminal tab shows a key while the agent is
+  forwarded (and says why when the server refused or no agent runs), the details panel and its `ssh`
+  command show it, and importing an SSH config now maps `ForwardAgent` (#413).
+
 - **Environments can apply to selected projects.** A workspace environment's page has **Applies to:
   All projects | Selected projects**, with a project list that starts with every project ticked. A
   project is offered only the environments that apply to it, in the title-bar switcher (grouped as

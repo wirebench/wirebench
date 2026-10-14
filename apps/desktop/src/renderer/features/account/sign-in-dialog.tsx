@@ -47,6 +47,8 @@ export function SignInDialog() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  /** Which provider the browser hand-off is waiting on, for the waiting line. */
+  const [browserMethod, setBrowserMethod] = useState<'oidc' | 'saml'>('oidc');
 
   const clearSecrets = (): void => {
     setPassword('');
@@ -111,12 +113,14 @@ export function SignInDialog() {
     finished(result.value.account);
   };
 
-  const startOidc = async (): Promise<void> => {
+  /** OIDC and SAML share the browser hand-off, the waiting step and its cancel (saml-scim spec §3.7). */
+  const startBrowser = async (method: 'oidc' | 'saml'): Promise<void> => {
     if (busy) return;
     setBusy(true);
     setError(undefined);
+    setBrowserMethod(method);
     setStep('waiting');
-    const result = await ipc().account.startOidc({ url });
+    const result = await (method === 'saml' ? ipc().account.startSaml({ url }) : ipc().account.startOidc({ url }));
     setBusy(false);
     if (!result.ok) {
       setStep('methods');
@@ -183,6 +187,7 @@ export function SignInDialog() {
   };
 
   const providerName = meta?.auth.oidcDisplayName ?? 'OIDC';
+  const samlName = meta?.auth.samlDisplayName ?? 'SSO';
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -266,10 +271,22 @@ export function SignInDialog() {
                   <Button
                     data-testid="sign-in-oidc"
                     disabled={busy}
-                    onClick={() => void startOidc()}
+                    onClick={() => void startBrowser('oidc')}
                     className="w-full justify-center"
                   >
                     Continue with {providerName}
+                  </Button>
+                </div>
+              )}
+              {meta.auth.saml === true && (
+                <div className={meta.auth.local || meta.auth.oidc ? 'mt-3 border-t border-hairline pt-3' : 'mt-3'}>
+                  <Button
+                    data-testid="sign-in-saml"
+                    disabled={busy}
+                    onClick={() => void startBrowser('saml')}
+                    className="w-full justify-center"
+                  >
+                    Continue with {samlName}
                   </Button>
                 </div>
               )}
@@ -289,7 +306,8 @@ export function SignInDialog() {
 
           {step === 'waiting' && (
             <div data-testid="sign-in-waiting" className="mt-3 text-sm text-fg-subtle">
-              Waiting for the browser… Finish signing in with {providerName}, then come back here.
+              Waiting for the browser… Finish signing in with {browserMethod === 'saml' ? samlName : providerName}, then
+              come back here.
             </div>
           )}
 

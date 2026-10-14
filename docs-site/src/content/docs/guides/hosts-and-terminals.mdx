@@ -61,7 +61,8 @@ The rules:
 - `id` is stable and unique across the whole file, made of lowercase letters, digits and hyphens
   (`api-1`, `eu`). `name` is free text and can change; the id is what `jump` points at.
 - `ssh` on a group or a host holds `user`, `port`, `jump`, `auth`, `keepAlive` and
-  `connectTimeout` (both in seconds). Every field is optional at every level. A host must end up
+  `connectTimeout` (both in seconds), and `forwardAgent` (see [Agent forwarding](#agent-forwarding)).
+  Every field is optional at every level. A host must end up
   with a `user` and an `auth`, from itself or a group above it; otherwise connecting says which
   field is missing and where it can be set. The port defaults to 22, the keep-alive to 15 seconds
   and the connect timeout to 20 seconds.
@@ -69,8 +70,9 @@ The rules:
   behaviour.
 - `jump` names the id of another host. Chains are followed through that host's own `jump`; an
   unknown id or a loop is refused when the file is read.
-- `auth` is exactly one of `{ password }`, `{ key, passphrase? }` or `{ agent: true }`. The agent
-  option signs with your local SSH agent.
+- `auth` is exactly one of `{ password }`, `{ key, certificate?, passphrase? }` or `{ agent: true }`.
+  The agent option signs with your local SSH agent; `certificate` is the key's OpenSSH certificate
+  (see [Certificates](#certificates)).
 - `env` on a group or a host maps variable names to values; see
   [Environment variables](#environment-variables).
 
@@ -106,6 +108,42 @@ When you connect, a name resolves like any other secret in the app: a name mappe
 its source, and any other name comes from the value stored for this workspace on this machine. A
 missing value fails the connect with `secret-missing` and the name. Project secrets don't apply: a
 secret you set on a project is not visible to a host.
+
+## Certificates
+
+If your organisation runs an SSH certificate authority, the servers trust the CA instead of each
+person's key, and you sign in with your key plus the short-lived certificate the CA issued for it
+(the `-cert.pub` file `ssh-keygen -s` writes). Give the key a `certificate`, a secret holding that
+certificate line:
+
+```yaml
+ssh:
+  user: alice
+  auth:
+    key: ${secret:work_key}
+    certificate: ${secret:work_key_cert}
+```
+
+On connect Wirebench offers the certificate first and then the key alone, as `ssh` does, so a server
+that also lists the key in `authorized_keys` still lets you in. `certificate` is part of `auth`, so a
+group's key and certificate are inherited together.
+
+Before connecting, the certificate is checked against the key and the clock. A certificate outside
+its validity window fails with `ssh-cert-expired` and says when it was valid (for example
+`The certificate has expired: it was valid from 2026-10-01 09:00:00 UTC to 2026-10-01 17:00:00 UTC`);
+ask your CA for a new one. A host certificate, or a certificate issued for another key, is refused too.
+Ed25519, ECDSA and RSA keys are supported; certificates for security keys (`sk-…`) are not.
+
+**In the keychain.** A key's row has **Attach certificate…**: paste the certificate and Wirebench
+checks that it is a user certificate for that key, then stores it as the secret `<key>_cert`, next to
+`<key>_passphrase`. The row then shows the certificate's key ID, its principals (the user names it is
+valid for) and its validity window, with a badge when it has expired, is not valid yet or belongs to
+another key. When a certificate is renewed, **Replace certificate…** stores the new one under the same
+name, so every host that uses it picks it up. In the host form, choosing a key that has a `<key>_cert`
+fills in **Certificate secret** for you.
+
+Trusting servers by a host CA (`@cert-authority` in `known_hosts`) is separate from this: host keys are
+still trusted as described in [Host keys](#host-keys).
 
 ## Environment variables
 
@@ -147,6 +185,48 @@ with the group they come from. **Override** copies one onto this level to change
 variable** adds a new one, as text or as a secret picked by name. The host details panel lists every
 variable the host ends up with and where each one comes from.
 
+## Agent forwarding
+
+Agent forwarding lets a shell on the remote host use the keys in your local SSH agent: `git pull` from a
+private repository, or `ssh` on to another server, without copying a key to the host.
+
+```yaml
+groups:
+  - id: build
+    name: Build servers
+    ssh:
+      forwardAgent: true
+    hosts:
+      - id: runner-1
+        name: runner-1
+        address: 10.0.4.2
+      - id: vault
+        name: vault
+        address: 10.0.4.9
+        ssh:
+          forwardAgent: false
+```
+
+- It is off unless a host or a group above it turns it on, and it is inherited like the other `ssh`
+  settings: **runner-1** above forwards, **vault** does not.
+- It needs an SSH agent running on your machine (`SSH_AUTH_SOCK`, or Pageant on Windows). The host can
+  still sign in with a key or a password; only the shell uses the agent.
+- Only the terminal's shell on the target host gets it. A jump host never does, and neither do Files tabs,
+  port forwards or the check that finds the host's OS.
+- If the server refuses (`AllowAgentForwarding no`) or no agent is running, the terminal opens anyway,
+  without forwarding.
+
+<Aside type="caution" title="Forward the agent only to hosts you trust">
+While you are connected, anyone with root on the remote host can use the keys in your agent, for example
+to sign in to other servers as you. An agent that asks before each use (`ssh-add -c`) limits the damage.
+</Aside>
+
+In the host form, **Forward SSH agent** shows the inherited value with its group; turn on its override
+switch to set it on this level. A warning shows while it is on. A terminal tab draws a key while the agent
+is forwarded, and a faint key whose tooltip says why when it is not (the server refused it, or no local
+agent runs); in a split tab each pane's header shows its own. The host details panel lists the setting
+with its source, and its `ssh` command gains `-A`.
+
 ## Opening a terminal
 
 Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts
@@ -187,6 +267,23 @@ pagers, resize), and a host that is reached through a jump host is dialled hop b
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
+
+## Local terminal
+
+**Terminal: New Local Terminal** (<kbd>⌘⌥T</kbd> / <kbd>Ctrl+Alt+T</kbd>), or **New local terminal**
+at the foot of the SSH sidebar, opens a tab with a shell on this machine, for the `git`, `curl` or
+build you run next to the remote sessions. It sits with the SSH terminals and behaves like one: the
+same colours, the multi-line paste prompt, copy on select and <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd> find.
+
+- On macOS and Linux it runs your login shell (`$SHELL`), so it reads your profile. On Windows it runs
+  PowerShell 7 when it is installed, otherwise Windows PowerShell. **Preferences → Terminal → Local
+  shell** runs another program instead, such as `/bin/bash`, `cmd.exe` or `wsl.exe`.
+- It starts in the workspace's folder when the workspace is shared from a folder of yours (a git clone
+  or a synced folder), and in your home folder otherwise.
+- When the shell exits, the tab shows **Shell ended (code N)** with **Restart**. Closing the tab, or
+  switching to another workspace, ends the shell.
+- A local terminal holds one shell: it does not split, join a layout or take broadcast input.
+- `WIREBENCH_AREAS=local-terminal=off` removes it while keeping SSH; `ssh=off` removes both.
 
 ## Files
 
@@ -689,8 +786,10 @@ user, port, jump host and authentication, the lines that will not come across, a
 | `Port`, `User`                             | port and user                                                                   |
 | `ProxyJump a,b`, `ProxyCommand ssh -W %h:%p a` | the jump host; a hop that names no host in the file becomes a new host        |
 | `IdentityFile`                             | the key you choose for it (below)                                               |
+| `CertificateFile`                          | the key's certificate, stored as `NAME_cert` with the key (below)               |
 | `ServerAliveInterval`, `ConnectTimeout`    | keep-alive and connect timeout                                                  |
 | `SetEnv NAME=value …`                      | environment variables; the first value of a name wins                           |
+| `ForwardAgent yes` / `no`                  | [agent forwarding](#agent-forwarding); a socket path or variable is not imported |
 | `Host *` and lines before the first `Host` | settings on the new group, inherited by its hosts                               |
 
 Each alias gets the settings `ssh` itself would use: the first value found for each option, in file
@@ -704,6 +803,11 @@ order, across the blocks whose patterns match. `Include` is followed one level d
   encrypted key also gets a `NAME_passphrase` reference; set its value in the host form.
 - **Use an existing secret** that already holds the key.
 
+A host with a `CertificateFile` shows the certificate on its key row. With a stored or existing secret
+`NAME`, the certificate file is read on **Import** and stored as `NAME_cert` (a secret of that name that
+already exists is kept), and the host gets `certificate: '${secret:NAME_cert}'`. With the agent it is
+not read.
+
 A key file is never opened unless you choose to store it, and its contents never reach the interface.
 
 **Environment variables.** `SetEnv` values are written to `hosts.yaml` as they are, and the dialog
@@ -711,15 +815,48 @@ does not show them; a note says so. Replace any secret among them with `${secret
 import. An entry that is not `NAME=value`, or that already holds `${secret:…}`, is skipped with a note.
 
 **What is not imported.** `Match` blocks, other `ProxyCommand`s, an `Include` inside an included file,
-and options such as `LocalForward`, `ForwardAgent` or `SendEnv` are listed by option name, file and line.
+and options such as `LocalForward` or `SendEnv` are listed by option name, file and line.
 Their values are never shown, because a config can hold credentials in unexpected places. Options
 with no meaning here (`IdentitiesOnly`, `StrictHostKeyChecking`, `UserKnownHostsFile` and a few
-others) are counted. Known-hosts files are not imported: host keys are still trusted on first use.
+others) are counted. Known-hosts files are not read here; import their keys from the **Known hosts**
+view (see [Importing known_hosts](#importing-known_hosts)).
 
 **Existing hosts.** Every import adds one new group, named "SSH config" by default, and never changes
 a host or group you already have. A host with the same address, port and user as an existing one is
 skipped (you can import it anyway), and an id that is taken gets a suffix (`web-2`). Importing the
 same file again adds only the hosts that are new.
+
+## Session logs
+
+A session log keeps what a terminal printed, so you can look back after the tab is closed: what a
+migration reported, or what was run on a production host. Logging is off until you turn it on.
+
+**Turning it on.** In a host's details, **Session logs** has a **Log sessions** switch. On a group,
+right-click it and tick **Log sessions**: every host in the group, and in the groups inside it, is
+logged unless a nearer group or the host itself says otherwise. The details show where a host's
+setting comes from, and **Follow group** drops the host's own switch. The switches are kept on this
+machine, never in `hosts.yaml`, so a shared workspace cannot turn logging on for someone else.
+
+**What is written.** Only the output, as plain text: colours and other escape sequences are removed,
+a line a progress bar rewrote is kept as it last looked, and what a full-screen program (an editor, a
+pager, `top`) draws is replaced by one line saying it was not logged. What you type reaches a log only
+as the host echoes it, so a password typed at a prompt that does not echo is never in one. Every
+password, key and passphrase used to connect, and every secret a snippet typed, is masked as `••••`.
+**Keep raw output** in Settings › Terminal also keeps the stream as the terminal received it, with
+the same masking.
+
+**Where logs live.** In Wirebench's data folder on this machine, under `session-logs/`, one folder per
+workspace and host. Each log is a `.log` text file with a `.json` file beside it that records the
+host, address, user, start, end and exit code. All logs together stay under **Session logs size
+limit** (Settings › Terminal, 500 MB by default): past it the oldest logs are deleted first. A log a
+session is still writing is never deleted.
+
+**Reading them.** The host's details list its logs, newest first, with how the session ended and the
+size. **Search logs** finds the logs that contain some text and shows the first line that matches;
+open a log to read it, filtered to the lines that contain your text. Each log can also be revealed in
+the file manager, or deleted.
+
+Logs from a workspace shared through Wirebench Server stay on this machine too: nothing is uploaded.
 
 ## Host keys
 
@@ -734,12 +871,35 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   **Replace key and connect**. A changed key can mean the machine was reinstalled, or that something
   is in the way; find out which before you replace it.
 
+The **Known hosts** view lists the trusted keys; **Forget** one and the next connection asks again.
+
+### Importing known_hosts
+
+Hosts you already reach with `ssh` are usually in its `known_hosts` file. In the **Known hosts** view,
+choose **Import known hosts…** (or run **Hosts: Import Known Hosts…**), then **Read ~/.ssh/known_hosts**
+or **Choose a file…**. Nothing is written until you confirm the preview.
+
+Only the hosts in `hosts.yaml` gain a key. Each host is looked up the way `ssh` does it: by its address
+on port 22, or as `[address]:port` on any other port. A line matches through a comma list of names, a
+pattern with `*` and `?` (a matching `!pattern` excludes the host), or a hashed name (`|1|…`, written
+by `HashKnownHosts`), which is checked against each host's address.
+
+The preview shows:
+
+- **Keys to trust**: hosts with no trusted key of that type yet.
+- **Different from a trusted key**: the stored and the file's fingerprint side by side. The stored
+  key stays unless you tick **Replace**; replacing then asks you to tick **I understand these keys
+  changed**, as a changed key does on connect.
+- **Not imported**, by line: `@cert-authority` lines (they trust a signing key, not a host key),
+  `@revoked` lines, lines that name no host in `hosts.yaml`, a second key of a type a host already
+  got from an earlier line, and lines that are not a key Wirebench can read.
+
 ## Security notes
 
 - A password, key or passphrase is read only in the main process, when you connect. It is handed to
   the SSH client and stays inside that client for the life of the session; Wirebench keeps no other
-  copy, and nothing stores, sends to the interface or logs a value. The interface only ever sees
-  secret _names_.
+  copy, and nothing stores, sends to the interface or logs a value; a [session log](#session-logs)
+  masks it. The interface only ever sees secret _names_.
 - `hosts.yaml` cannot hold a literal secret, and the host form cannot write one.
 - A window can only write to, resize or close sessions it opened itself, and acts only on its own
   Files sessions, copies, edits and forwards.
@@ -748,8 +908,8 @@ machine, never in the workspace. A shared workspace therefore cannot pre-trust a
   forwarded byte is logged.
 - The Files tab's local pane reaches any file your account can; see
   [Access to this machine's files](#access-to-this-machines-files).
-- Host keys are trusted on first use, by an explicit click, and replaced only by a separate explicit
-  confirmation.
+- Host keys are trusted on first use, by an explicit click, or imported from a known_hosts file you
+  choose after reviewing them, and replaced only by a separate explicit confirmation.
 - A snippet's secret is read and typed by the main process, only into a script saved in `snippets.yaml` and
   only into a terminal the same window opened; the interface never receives the value. Its output is masked
   as described in [Secrets in snippets](#secrets-in-snippets), with the limits listed there.
@@ -769,6 +929,13 @@ its quick-open entries, the Port forwarding, Layouts and Snippets views (with **
 suggestions) and the status bar item are gone, and the area's
 channels are not registered in the main process, so nothing can reach it. Entries that aren't `<id>=on|off` are ignored.
 
+The local terminal goes with the area. To keep SSH and remove only the local terminal (its command, its
+sidebar entry and its channels), set `local-terminal=off`:
+
+```sh
+WIREBENCH_AREAS="local-terminal=off"
+```
+
 ## What is not here yet
 
 This part does not include:
@@ -778,7 +945,7 @@ This part does not include:
 - sending requests through a host or a forward,
 - agent, X11 or UDP forwarding, or SOCKS with a password,
 - audit entries for sessions,
-- a local terminal, SSH agent forwarding to the remote, or session recording.
+- SSH agent forwarding to the remote, or session recording with replay.
 
 ## Related
 

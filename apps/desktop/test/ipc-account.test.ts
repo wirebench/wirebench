@@ -44,6 +44,7 @@ function fakeService() {
     }),
     signInLocal: vi.fn().mockResolvedValue(ACCOUNT),
     startOidc: vi.fn().mockResolvedValue(ACCOUNT),
+    startSaml: vi.fn().mockResolvedValue(ACCOUNT),
     cancelSignIn: vi.fn(() => ({ cancelled: true })),
     lookupInvitation: vi.fn().mockResolvedValue({ email: 'alice@example.com', methods: { local: true, oidc: false } }),
     acceptInvitation: vi.fn().mockResolvedValue(ACCOUNT),
@@ -84,6 +85,8 @@ describe('account.* channels', () => {
     });
     expect(accounts.signInLocal).toHaveBeenCalledWith({ url: 'https://wb.test', email: 'a', password: 'p' });
     expect(await invoke('account.startOidc', { url: 'https://wb.test' })).toMatchObject({ ok: true });
+    expect(await invoke('account.startSaml', { url: 'https://wb.test' })).toMatchObject({ ok: true });
+    expect(accounts.startSaml).toHaveBeenCalledWith({ url: 'https://wb.test' });
     expect(await invoke('account.cancelSignIn', undefined)).toEqual({ ok: true, value: { cancelled: true } });
     expect(await invoke('account.lookupInvitation', { url: 'https://wb.test', secret: 's' })).toMatchObject({
       ok: true,

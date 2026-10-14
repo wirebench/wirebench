@@ -19,6 +19,7 @@ import { runLicenseCommand } from '../licensing/cli.js';
 import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
+import { runScimGroupCommand, runScimTokenCommand } from '../sso/cli.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
 import * as repo from './repo.js';
@@ -126,6 +127,14 @@ export async function runAdmin(
           { db, publicKeys, now: env.now, serverId, license: env.ctx.license, hooks: env.ctx.hooks },
           io,
         );
+      case 'admin-scim-token-create':
+      case 'admin-scim-token-list':
+      case 'admin-scim-token-revoke':
+        return await runScimTokenCommand(command, env, io);
+      case 'admin-scim-group-list':
+      case 'admin-scim-group-link':
+      case 'admin-scim-group-unlink':
+        return await runScimGroupCommand(command, env, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

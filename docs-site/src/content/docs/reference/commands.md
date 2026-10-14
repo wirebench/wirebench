@@ -53,6 +53,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: New Group… | — | — |
 | Hosts: Edit Host… | — | — |
 | Hosts: Import from SSH Config… | — | — |
+| Hosts: Import Known Hosts… | — | — |
 | Connect to Host | — | — |
 | Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
 | Open Files on Host… | — | — |
@@ -75,6 +76,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Snippets: Run Snippet | — | — |
 | Run Snippet… | — | — |
 | Terminal: Snippets… | <kbd>⌘;</kbd> | <kbd>Ctrl+;</kbd> |
+| Terminal: New Local Terminal | <kbd>⌘⌥T</kbd> | <kbd>Ctrl+Alt+T</kbd> |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |

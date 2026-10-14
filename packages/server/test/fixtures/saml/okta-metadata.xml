@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shaped like an Okta app's IdP metadata, anonymised: org example.okta.com, app id exk000000000000000, the test IdP's certificate. -->
+<md:EntityDescriptor entityID="http://www.okta.com/exk000000000000000" xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata">
+  <md:IDPSSODescriptor WantAuthnRequestsSigned="false" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>MIIDNzCCAh+gAwIBAgIUK4Itc7fsTUQVRj+WarKEaYJvkO0wDQYJKoZIhvcNAQELBQAwKjEoMCYGA1UEAwwfd2lyZWJlbmNoLXRlc3QtaWRwLXNhbWwtc2lnbmluZzAgFw0yNjEwMTMyMDA4MjRaGA8yMTI2MDkxOTIwMDgyNFowKjEoMCYGA1UEAwwfd2lyZWJlbmNoLXRlc3QtaWRwLXNhbWwtc2lnbmluZzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANplHazAKHMlPaXFkbC2ixkHeuQ/S5eW+Q9XqSjt94lVTne/mq2vqbug6+zJVemv3NE1QraDSOCwpPGlJSmscgYARiSrxAoHPWSWJDP9D44UG+hS+O9HSRu1ikzpO+IkXhwvDx1Rkb1OBUffJJ008d6lBA8w5CRWkbXsYd/pZq6B5VnG6AbtI7qSA7apC8YZoB2Lq825eirTM0O4SAes366yvYxqxt81u/8NU4ftbsKdH4mZRKR9R0mj8wrsEtVWld6xz9wQ+D6KJFudk3BTQfrBGhkO80zxqmZX5R80kJJIAz+rlqfecYXf+G88M4a5zk94XWjoa86RxPt8620YtasCAwEAAaNTMFEwHQYDVR0OBBYEFLb/SYnL4c6aeGA0k0EOWK+hClyCMB8GA1UdIwQYMBaAFLb/SYnL4c6aeGA0k0EOWK+hClyCMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAG81ZNykzCcjESBU63oW2KIDzxwnwfTclU+FLLUX85eezfAXFnuWkMae+1g7OCATWBfvNs6yQrHQD3IxyIie4xgr4XbPo3MgOjD1PD2HSvUnVzhul3i0JsRyHuHUSS0OY+zYAQQuCjdeUl6n2MsGK9gDAKgFH+3WIpINkJNqPs0cVDixSgiwXKG1tOz3953pEfpLA/YpUdy9V6M7zJbWBY9w29x/hOgbswkW6sVZuZNx7sgHIBbyOBqQunJ9iiirl574aTXIPBLdc4f8QRzMUAujrw1b/zeMqpt4aKX1xq07ZwzEDcENjgiByihYgP/zxMIwD6HHly1wkY7Gv7XNiag=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://example.okta.com/app/example_wirebench_1/exk000000000000000/sso/saml"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://example.okta.com/app/example_wirebench_1/exk000000000000000/sso/saml"/>
+  </md:IDPSSODescriptor>
+</md:EntityDescriptor>

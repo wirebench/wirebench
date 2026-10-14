@@ -27,6 +27,8 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
     expect(actionLabel('workspace.default_role_changed')).toBe('Default role changed');
     expect(actionLabel('ci_token.revoked')).toBe('Revoked');
     expect(ACTION_GROUP_LABELS['ci_token']).toBe('CI tokens');
+    expect(ACTION_GROUP_LABELS['scim']).toBe('Provisioning');
+    expect(actorLabel({ kind: 'scim', tokenId: 't' })).toBe('Provisioning (SCIM)');
     expect(actorLabel({ kind: 'user', email: 'a@example.com' })).toBe('a@example.com');
     expect(actorLabel({ kind: 'system' })).toBe('Server console');
     expect(actorLabel({ kind: 'anonymous' })).toBe('Not signed in');
@@ -59,6 +61,14 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
         details: { name: 'Integration' },
       }),
     ).toBe('Workspace Integration');
+  });
+
+  it('schedule events read as words and name the schedule', () => {
+    expect(ACTION_GROUP_LABELS['schedule']).toBe('Schedules');
+    expect(actionLabel('schedule.secrets_set')).toBe('Secrets set');
+    expect(
+      targetLabel({ action: 'schedule.created', target: { kind: 'schedule', id: 'S1' }, details: { name: 'Smoke' } }),
+    ).toBe('Schedule Smoke');
   });
 
   it('a desktop event on a workspace shows "Workspace", never the suite or request name', () => {

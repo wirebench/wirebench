@@ -21,6 +21,7 @@ export const AUDIT_ACTIONS = [
   'user.admin_granted',
   'user.admin_revoked',
   'user.password_reset_issued',
+  'user.updated',
   'team.created',
   'team.renamed',
   'team.deleted',
@@ -54,6 +55,17 @@ export const AUDIT_ACTIONS = [
   'desktop.request_sent',
   'desktop.run_finished',
   'desktop.events_dropped',
+  'scim.token_created',
+  'scim.token_revoked',
+  'scim.group_created',
+  'scim.group_updated',
+  'scim.group_deleted',
+  'scim.group_linked',
+  'scim.group_unlinked',
+  'schedule.created',
+  'schedule.updated',
+  'schedule.deleted',
+  'schedule.secrets_set',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -70,10 +82,12 @@ export const AUDIT_ACTION_GROUPS = [
   'license',
   'audit',
   'desktop',
+  'scim',
+  'schedule',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
-export const AUDIT_ACTOR_KINDS = ['user', 'ci-token', 'system', 'anonymous'] as const;
+export const AUDIT_ACTOR_KINDS = ['user', 'ci-token', 'system', 'anonymous', 'scim'] as const;
 export type AuditActorKind = (typeof AUDIT_ACTOR_KINDS)[number];
 
 export const AUDIT_TARGET_KINDS = [
@@ -85,6 +99,9 @@ export const AUDIT_TARGET_KINDS = [
   'hook',
   'ci-token',
   'license',
+  'scim-token',
+  'scim-group',
+  'schedule',
 ] as const;
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 

@@ -77,6 +77,34 @@ const auditForwardUrlText = z.string().superRefine((value, ctx) => {
   return undefined;
 });
 
+/** `smtp://…` or `smtps://…` with a host; credentials may ride in the URL, which is never printed. */
+const smtpUrlText = z.string().superRefine((value, ctx) => {
+  if (!URL.canParse(value)) {
+    ctx.addIssue({ code: 'custom', message: 'must be a URL' });
+    return;
+  }
+  const url = new URL(value);
+  if (url.protocol !== 'smtp:' && url.protocol !== 'smtps:')
+    ctx.addIssue({ code: 'custom', message: 'must be smtp://host:port or smtps://host:port' });
+  else if (url.hostname === '') ctx.addIssue({ code: 'custom', message: 'must name a host' });
+});
+
+/** Host names, or `*.example.com` for a domain and every host under it, separated by commas. */
+const alertHostsText = z
+  .string()
+  .transform((value) =>
+    value
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter((host) => host.length > 0),
+  )
+  .refine(
+    (hosts) =>
+      hosts.length > 0 &&
+      hosts.every((host) => /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)),
+    'must be host names or *.domain patterns, separated by commas',
+  );
+
 const inputSchema = z.object({
   databaseUrl: z.string().min(1),
   publicUrl: originText,
@@ -98,6 +126,11 @@ const inputSchema = z.object({
     .default('openid email profile')
     .transform((value) => value.split(/\s+/).filter((scope) => scope.length > 0)),
   oidcDisplayName: z.string().min(1).max(60).default('OIDC'),
+  samlIdpMetadata: z.string().min(1).optional(),
+  samlDisplayName: z.string().min(1).max(60).default('SSO'),
+  samlEmailAttribute: z.string().min(1).max(256).optional(),
+  samlNameAttribute: z.string().min(1).max(256).optional(),
+  samlClockSkewSeconds: integerText(0, 300, '120'),
   tokenIdleDays: integerText(1, 3650, '30'),
   tokenMaxDays: integerText(1, 3650, '180'),
   invitationDays: integerText(1, 365, '7'),
@@ -118,6 +151,14 @@ const inputSchema = z.object({
     .string()
     .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, 'must be at least 32 bytes')
     .optional(),
+  schedulesEnabled: booleanText('true'),
+  schedulesSecretKey: keyText.optional(),
+  schedulesConcurrency: integerText(1, 16, '2'),
+  schedulesMaxAgeDays: integerText(1, 3650, '90'),
+  schedulesMaxSnapshotMb: integerText(1, 1024, '50'),
+  schedulesAlertHosts: alertHostsText.optional(),
+  smtpUrl: smtpUrlText.optional(),
+  smtpFrom: z.email().optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -263,6 +304,45 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description: 'The label of the *Continue with …* button in the app.',
   },
   {
+    env: 'WIREBENCH_SERVER_SAML_IDP_METADATA',
+    key: 'samlIdpMetadata',
+    required: false,
+    secret: false,
+    description:
+      'The SAML identity provider’s metadata: an https:// URL or an absolute file path. Setting it turns SAML sign-in on (Enterprise). Read at start-up.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_DISPLAY_NAME',
+    key: 'samlDisplayName',
+    required: false,
+    defaultText: 'SSO',
+    secret: false,
+    description: 'The label of the SAML *Continue with …* button in the app.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_EMAIL_ATTRIBUTE',
+    key: 'samlEmailAttribute',
+    required: false,
+    secret: false,
+    description:
+      'The assertion attribute that carries the email. Unset: the usual email claim names, then an email-format NameID.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_NAME_ATTRIBUTE',
+    key: 'samlNameAttribute',
+    required: false,
+    secret: false,
+    description: 'The assertion attribute that carries the display name. Unset: the usual name claim names.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SAML_CLOCK_SKEW_SECONDS',
+    key: 'samlClockSkewSeconds',
+    required: false,
+    defaultText: '120',
+    secret: false,
+    description: 'Clock skew allowed on a SAML assertion’s validity window, in seconds (0–300).',
+  },
+  {
     env: 'WIREBENCH_SERVER_TOKEN_IDLE_DAYS',
     key: 'tokenIdleDays',
     required: false,
@@ -390,6 +470,69 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     description:
       'Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 bytes, kept outside the database and never changed. Unset, nothing is sealed.',
   },
+  {
+    env: 'WIREBENCH_SERVER_SCHEDULES_ENABLED',
+    key: 'schedulesEnabled',
+    required: false,
+    defaultText: 'true',
+    secret: false,
+    description: 'Run scheduled runs (Enterprise): the scheduler and the schedules API. False, neither exists.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SCHEDULES_SECRET_KEY',
+    key: 'schedulesSecretKey',
+    required: false,
+    secret: true,
+    description:
+      'Encrypts schedule secrets and alert URLs at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, they are refused.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SCHEDULES_CONCURRENCY',
+    key: 'schedulesConcurrency',
+    required: false,
+    defaultText: '2',
+    secret: false,
+    description: 'Scheduled runs that execute at once across the server (1–16); the rest wait their turn.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS',
+    key: 'schedulesMaxAgeDays',
+    required: false,
+    defaultText: '90',
+    secret: false,
+    description: 'Scheduled runs and their results older than this many days are deleted (1–3650).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB',
+    key: 'schedulesMaxSnapshotMb',
+    required: false,
+    defaultText: '50',
+    secret: false,
+    description: 'The most of a workspace a scheduled run writes to disk to run it (1–1024); a larger one errors.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS',
+    key: 'schedulesAlertHosts',
+    required: false,
+    secret: false,
+    description:
+      'The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SMTP_URL',
+    key: 'smtpUrl',
+    required: false,
+    secret: true,
+    description:
+      'Where email alerts are sent: `smtp://user:pass:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_SMTP_FROM',
+    key: 'smtpFrom',
+    required: false,
+    secret: false,
+    description: 'The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -501,11 +644,32 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
         message: 'is for syslog+tls:// and https:// forwarding only; unset it with an http:// URL',
       });
   }
-  if (!config.localAuth && config.oidcIssuer === undefined) {
+  if (config.samlIdpMetadata !== undefined && !isAbsolute(config.samlIdpMetadata)) {
+    let scheme: string | undefined;
+    try {
+      scheme = new URL(config.samlIdpMetadata).protocol;
+    } catch {
+      scheme = undefined;
+    }
+    if (!(scheme === 'https:' || (scheme === 'http:' && config.allowInsecurePublicUrl)))
+      problems.push({
+        variable: 'WIREBENCH_SERVER_SAML_IDP_METADATA',
+        message:
+          'must be an https:// URL or an absolute file path; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for an http:// development URL',
+      });
+  }
+  if ((config.smtpUrl === undefined) !== (config.smtpFrom === undefined)) {
+    problems.push(
+      config.smtpUrl === undefined
+        ? { variable: 'WIREBENCH_SERVER_SMTP_URL', message: 'is required when WIREBENCH_SERVER_SMTP_FROM is set' }
+        : { variable: 'WIREBENCH_SERVER_SMTP_FROM', message: 'is required when WIREBENCH_SERVER_SMTP_URL is set' },
+    );
+  }
+  if (!config.localAuth && config.oidcIssuer === undefined && config.samlIdpMetadata === undefined) {
     problems.push({
       variable: 'WIREBENCH_SERVER_LOCAL_AUTH',
       message:
-        'identity-no-method: at least one sign-in method must be on; set it to true or set WIREBENCH_SERVER_OIDC_ISSUER',
+        'identity-no-method: at least one sign-in method must be on; set it to true, or set WIREBENCH_SERVER_OIDC_ISSUER or WIREBENCH_SERVER_SAML_IDP_METADATA',
     });
   }
   if (problems.length > 0) throw new ConfigError(problems);

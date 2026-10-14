@@ -35,6 +35,7 @@ export const DOCS_LINKS = {
   wirebenchServer: 'guides/wirebench-server',
   serverLicensing: 'guides/server-licensing',
   serverAuditLog: 'guides/server-audit-log',
+  serverSamlScim: 'guides/server-saml-scim',
   managedPreferences: 'guides/managed-preferences',
   agentsMcp: 'guides/agents-mcp',
   codeSigningPolicy: 'help/code-signing-policy',

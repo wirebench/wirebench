@@ -15,7 +15,14 @@ import {
   snippetRevision,
   snippetSecrets,
 } from '@wirebench/ssh';
-import type { KnownHostEntry, Snippet, SnippetListItem, SshSession, StreamMasker } from '@wirebench/ssh';
+import type {
+  HopCredentials,
+  KnownHostEntry,
+  Snippet,
+  SnippetListItem,
+  SshSession,
+  StreamMasker,
+} from '@wirebench/ssh';
 import { events } from '../shared/ipc.js';
 import type {
   SshPreviewSnippetRequest,
@@ -27,6 +34,7 @@ import { sshHostOsResponseSchema } from '../shared/ssh-wire.js';
 import type {
   SshCloseRequest,
   SshConnectRequest,
+  SshConnectResponse,
   SshDetectedOsWire,
   SshHostOsWire,
   SshOsId,
@@ -37,6 +45,7 @@ import type {
   SshWriteRequest,
 } from '../shared/ssh-wire.js';
 import { asWirebenchError } from './hosts-service.js';
+import type { SessionLogWriter, StartSessionLog } from './session-logs.js';
 import type { SnippetsService } from './snippets-service.js';
 import { RefusalStore, createSshConnector, readKnownHosts } from './ssh-connect.js';
 import type { SshConnectDeps, SshConnector } from './ssh-connect.js';
@@ -63,6 +72,15 @@ export interface SshServiceDeps extends SshConnectDeps {
    * port forwards start with a host's first terminal and stop with its last (spec R2).
    */
   readonly onSessionsChange?: (sender: WebContents, hostId: string, open: number) => void;
+  /**
+   * Session logs (#414): asked once per connect, before the session opens, with the hops and their
+   * credentials; answers how to start the log, or `undefined` when the host is not logged. A failure here
+   * opens the session unlogged.
+   */
+  readonly sessionLog?: (
+    sender: WebContents,
+    request: { readonly hostId: string; readonly hops: readonly HopCredentials[] },
+  ) => Promise<StartSessionLog | undefined>;
 }
 
 /** The command the OS probe runs: `os-release` on Linux, `uname -s` on the BSDs and macOS, `ver` on Windows. */
@@ -172,7 +190,7 @@ export class SshService {
    *   `ssh-host-incomplete` | `secret-missing` | `ssh-auth-failed` | `ssh-host-key-new` |
    *   `ssh-host-key-changed` | `ssh-connect-failed`
    */
-  async connect(sender: WebContents, request: SshConnectRequest): Promise<{ sessionId: string }> {
+  async connect(sender: WebContents, request: SshConnectRequest): Promise<SshConnectResponse> {
     let flight = this.inFlight.get(sender.id);
     if (!flight) {
       flight = { count: 0, generation: 0 };
@@ -191,17 +209,18 @@ export class SshService {
     sender: WebContents,
     request: SshConnectRequest,
     flight: { readonly generation: number },
-  ): Promise<{ sessionId: string }> {
+  ): Promise<SshConnectResponse> {
     const epoch = this.epoch;
     const generation = flight.generation;
     // A quit, or this window's workspace switching (or the window going), since the connect began.
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const { hops, env, secrets } = await this.connector.prepareShell(sender, request.hostId, stale);
+    const { hops, env, secrets, forwardAgent } = await this.connector.prepareShell(sender, request.hostId, stale);
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
+    const startLog = await this.deps.sessionLog?.(sender, { hostId: request.hostId, hops }).catch(() => undefined);
     let session: SshSession;
     try {
       session = await (this.deps.open ?? openSession)({
@@ -210,6 +229,7 @@ export class SshService {
         rows: request.rows,
         verifyHostKey,
         ...(Object.keys(env).length === 0 ? {} : { env }),
+        ...(forwardAgent?.socket === undefined ? {} : { forwardAgent: forwardAgent.socket }),
       });
     } catch (error) {
       // A refused key is forgotten with the window, as its sessions are.
@@ -225,9 +245,17 @@ export class SshService {
     const masker = createStreamMasker();
     // A variable read from a secret is masked too, should the shell print it (`env`, `echo $TOKEN`).
     masker.add(secrets);
+    // The log is written what the screen is shown, so a snippet's or a variable's secret is masked in it too.
+    let log: SessionLogWriter | undefined;
+    try {
+      log = startLog?.(sessionId);
+    } catch {
+      log = undefined;
+    }
     let quiet: ReturnType<typeof setTimeout> | undefined;
     const send = (data: Uint8Array): void => {
       if (data.length === 0) return;
+      log?.push(data);
       this.deps.emit(sender, events.ssh.data, { sessionId, data: Buffer.from(data).toString('base64') });
     };
     const release = (): void => {
@@ -243,6 +271,8 @@ export class SshService {
     });
     const offExit = session.onExit((exit) => {
       release();
+      void log?.end({ code: exit.code, reason: exit.reason, ...(exit.signal ? { signal: exit.signal } : {}) });
+      log = undefined;
       this.deps.emit(sender, events.ssh.exit, {
         sessionId,
         code: exit.code,
@@ -260,6 +290,11 @@ export class SshService {
         clearTimeout(quiet);
         offData();
         offExit();
+        // Closed by the window (or its going): the screen is gone, but what the masker held belongs in the log.
+        if (log) {
+          log.push(masker.flush());
+          void log.end(undefined);
+        }
       },
     });
     this.watch(sender);
@@ -267,7 +302,9 @@ export class SshService {
     this.sessionsChanged(sender, request.hostId);
     const target = hops[hops.length - 1];
     if (target) void this.probeOs(sender, session, `${target.address}:${target.port}`);
-    return { sessionId };
+    if (forwardAgent === undefined) return { sessionId };
+    const forwarding = forwardAgent.socket === undefined ? 'no-agent' : session.agentForwarding;
+    return forwarding === 'off' ? { sessionId } : { sessionId, agentForwarding: forwarding };
   }
 
   /**
@@ -542,6 +579,32 @@ export class SshService {
     let open = 0;
     for (const live of this.live.values()) if (live.sender.id === sender.id && live.hostId === hostId) open += 1;
     hook(sender, hostId, open);
+  }
+
+  /**
+   * Rewrites the trusted host keys from what `change` makes of them, read now, in the same queue as
+   * {@link trust} so neither loses the other's entry. Every key it writes settles that host and key type
+   * for every window, as a trust does.
+   */
+  changeKnownHosts<T extends { readonly entries: readonly KnownHostEntry[] }>(
+    change: (known: readonly KnownHostEntry[]) => T,
+  ): Promise<T> {
+    const run = this.trustQueue.then(async () => {
+      const known = await readKnownHosts(this.deps.knownHostsFile);
+      const changed = change(known);
+      const written = changed.entries.filter(
+        (e) => !known.some((k) => k.host === e.host && k.keyType === e.keyType && k.fingerprint === e.fingerprint),
+      );
+      if (written.length === 0 && changed.entries.length === known.length) return changed;
+      await writeFileAtomic(nodeFs, this.deps.knownHostsFile, serializeKnownHosts(changed.entries));
+      for (const entry of written) this.refusals.settle(entry);
+      return changed;
+    });
+    this.trustQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   /** The host keys trusted on this machine, for the Known hosts view. */

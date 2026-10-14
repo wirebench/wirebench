@@ -11,6 +11,7 @@ const sshKeys = vi.fn();
 const generateKey = vi.fn();
 const installKey = vi.fn();
 const trustHostKey = vi.fn();
+const attachCertificate = vi.fn();
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({
     ssh: {
@@ -23,6 +24,7 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
       generateKey,
       installKey,
       trustHostKey,
+      attachCertificate,
     },
   }),
 }));
@@ -37,6 +39,7 @@ const defaults = {
   jump: { value: undefined, from: 'default' },
   keepAlive: { value: 15, from: 'default' },
   connectTimeout: { value: 20, from: 'default' },
+  forwardAgent: { value: false, from: 'default' },
 } as const;
 const FILE = {
   version: 1 as const,
@@ -163,6 +166,58 @@ describe('Keychain keys', () => {
 });
 
 describe('Install public key on host', () => {
+  it("shows a key's certificate: key ID, principals and validity window, and a badge when expired", async () => {
+    const certificate = {
+      secret: 'deploy_cert',
+      keyId: 'alice@example',
+      serial: '42',
+      principals: ['alice', 'deploy'],
+      validAfter: 0,
+      validBefore: 1,
+      window: 'from 2000-01-01 00:00:00 UTC to 2001-01-01 00:00:00 UTC',
+      validity: 'expired',
+      caFingerprint: 'SHA256:ca',
+      matchesKey: true,
+    };
+    sshKeys.mockResolvedValue({ ok: true, value: { keys: [{ ...KEY, certificate }] } });
+    render(<SshHome />);
+    const line = await screen.findByTestId('certificate-deploy_cert');
+    expect(line.textContent).toBe(
+      'Certificate alice@example · alice, deploy · from 2000-01-01 00:00:00 UTC to 2001-01-01 00:00:00 UTC' + 'expired',
+    );
+    const row = screen.getByTestId('secret-row-deploy');
+    expect(within(row).getByRole('button', { name: 'Replace certificate…' })).toBeDefined();
+  });
+
+  it('Attach certificate… sends the pasted text to main, shows a refusal, and lists the key again on success', async () => {
+    attachCertificate
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'ssh-cert-mismatch', message: 'This certificate was issued for another key than deploy' },
+      })
+      .mockResolvedValueOnce({ ok: true, value: KEY });
+    render(<SshHome />);
+    const row = await screen.findByTestId('secret-row-deploy');
+    await userEvent.click(await within(row).findByRole('button', { name: 'Attach certificate…' }));
+    const dialog = await screen.findByTestId('attach-certificate-dialog');
+    await userEvent.type(
+      within(dialog).getByRole('textbox', { name: 'Certificate' }),
+      'ssh-ed25519-cert-v01@openssh.com AAAA',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Attach' }));
+    expect(attachCertificate).toHaveBeenCalledWith({
+      secret: 'deploy',
+      certificate: 'ssh-ed25519-cert-v01@openssh.com AAAA',
+    });
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('another key');
+    const listings = sshKeys.mock.calls.length;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Attach' }));
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('attach-certificate-dialog')).toBeNull();
+    });
+    expect(sshKeys.mock.calls.length).toBeGreaterThan(listings);
+  });
+
   it('installs from the key row, then switches the host to the key with its passphrase', async () => {
     installKey.mockResolvedValue({ ok: true, value: { result: 'added' } });
     render(<SshHome />);

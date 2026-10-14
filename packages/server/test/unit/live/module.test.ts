@@ -17,7 +17,9 @@ describe('live-updates module wiring (§5.1)', () => {
       'webhook-capture',
       'ci-tokens',
       'live-updates',
+      'scheduled-runs',
       'audit-log',
+      'sso',
     ]);
   });
 

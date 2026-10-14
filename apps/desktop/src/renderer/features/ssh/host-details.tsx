@@ -18,6 +18,7 @@ import { HostActionsButton } from './host-menus.js';
 import { findHost, flattenGroups, hostStatusOf, osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
 import { ProtectedMark } from './protected-mark.js';
+import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 
 /** Whether the details slide-over is in front: the Hosts tab is showing, a host is picked, and it was not put away. */
@@ -72,6 +73,7 @@ export function sshCommandOf(host: ResolvedHostWire, jumpAddress: string | undef
   const parts = ['ssh'];
   const port = host.ssh.port.value;
   if (port !== 22) parts.push('-p', String(port));
+  if (host.ssh.forwardAgent.value) parts.push('-A');
   if (jumpAddress !== undefined) parts.push('-J', jumpAddress);
   const user = host.ssh.user.value;
   parts.push(user === undefined ? host.address : `${user}@${host.address}`);
@@ -256,6 +258,12 @@ export function HostDetails() {
                 {muted(secretState(auth.secret))}
               </Row>
             )}
+            {auth.kind === 'key' && auth.certificateSecret !== undefined && (
+              <Row label="Certificate">
+                <span className="truncate font-mono">{auth.certificateSecret}</span>
+                {muted(secretState(auth.certificateSecret))}
+              </Row>
+            )}
             {auth.kind === 'key' && auth.passphraseSecret !== undefined && (
               <Row label="Passphrase">
                 <span className="truncate font-mono">{auth.passphraseSecret}</span>
@@ -264,6 +272,12 @@ export function HostDetails() {
             )}
           </>
         )}
+      </Section>
+      <Section title="Agent">
+        <Row label="Agent forwarding">
+          <span>{host.ssh.forwardAgent.value ? 'On' : 'Off'}</span>
+          {muted(provenance(host.ssh.forwardAgent.from))}
+        </Row>
       </Section>
       <Section title="Host key">
         {keys.length === 0 ? (
@@ -297,6 +311,7 @@ export function HostDetails() {
         <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">Port forwarding</h3>
         <HostForwards hostId={host.id} />
       </section>
+      <HostSessionLogs hostId={host.id} path={host.path} groupName={groupName} refreshKey={hostStatus} />
       <Section title="Timing">
         <Row label="Keep-alive">
           <span>{host.ssh.keepAlive.value}s</span>

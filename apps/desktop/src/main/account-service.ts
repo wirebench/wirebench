@@ -64,6 +64,12 @@ const LOOPBACK_MESSAGES: Readonly<Record<string, string>> = {
   'identity-oidc-refused': 'The identity provider refused the sign-in.',
   'identity-oidc-failed': 'The identity provider did not complete the sign-in.',
   'licensing-seat-limit': 'This server has no free seat for a new account.',
+  'licensing-feature-required': 'SAML sign-in needs an Enterprise license on this server.',
+  'identity-saml-no-email': 'The identity provider did not send an email address for this account.',
+  'identity-saml-transient-nameid':
+    'The identity provider sent a one-time identifier. Ask your admin to send a persistent NameID.',
+  // Every saml-* reason the server records (saml-scim spec §6.1) collapses to this one for the person signing in.
+  'identity-saml-refused': "The identity provider's response was not accepted.",
 };
 
 export class AccountService {
@@ -167,7 +173,19 @@ export class AccountService {
    * we built), wait for the grant on the loopback, and trade it plus the PKCE verifier for a
    * device token. One flow at a time, as the OAuth2 request flow behaves.
    */
-  async startOidc(input: { readonly url: string; readonly deviceName?: string }): Promise<ServerAccount> {
+  startOidc(input: { readonly url: string; readonly deviceName?: string }): Promise<ServerAccount> {
+    return this.browserSignIn('oidc', input);
+  }
+
+  /** The SAML hand-off (saml-scim spec §3.2, §3.7): the same loopback flow on the server's SAML paths. */
+  startSaml(input: { readonly url: string; readonly deviceName?: string }): Promise<ServerAccount> {
+    return this.browserSignIn('saml', input);
+  }
+
+  private async browserSignIn(
+    kind: 'oidc' | 'saml',
+    input: { readonly url: string; readonly deviceName?: string },
+  ): Promise<ServerAccount> {
     if (this.pending !== undefined || this.starting)
       throw new WirebenchError('account-sign-in-pending', 'A sign-in is already waiting for the browser');
     // Guards the window between this check and the loopback binding below, which is async: two
@@ -200,11 +218,10 @@ export class AccountService {
     void listener.result.catch(() => undefined);
     if (this.cancelRequested) listener.cancel();
     try {
-      const started = await this.deps.client.startOidc(origin, {
-        device: { name: deviceName },
-        codeChallenge: pair.challenge,
-        loopbackPort: listener.port,
-      });
+      const body = { device: { name: deviceName }, codeChallenge: pair.challenge, loopbackPort: listener.port };
+      const started = await (kind === 'saml'
+        ? this.deps.client.startSaml(origin, body)
+        : this.deps.client.startOidc(origin, body));
       flowId = started.flowId;
       await this.deps.openExternal(started.authorizationUrl);
       const params = await listener.result;
@@ -213,16 +230,16 @@ export class AccountService {
       // it becomes a WirebenchError code the renderer switches on (SIGN_IN_MESSAGES), so an
       // arbitrary value must not pass through as one — only a code this app actually recognises.
       if (error !== null) {
-        const code = error in LOOPBACK_MESSAGES ? error : 'account-sign-in-failed';
-        throw new WirebenchError(code, LOOPBACK_MESSAGES[error] ?? 'The sign-in was refused.');
+        const known = error.startsWith('saml-') ? 'identity-saml-refused' : error;
+        const code = known in LOOPBACK_MESSAGES ? known : 'account-sign-in-failed';
+        throw new WirebenchError(code, LOOPBACK_MESSAGES[known] ?? 'The sign-in was refused.');
       }
       const grant = params.get('grant');
       if (grant === null) throw new WirebenchError('account-sign-in-failed', 'The browser came back without a grant.');
-      const response = await this.deps.client.completeOidc(origin, {
-        flowId: started.flowId,
-        grant,
-        codeVerifier: pair.verifier,
-      });
+      const complete = { flowId: started.flowId, grant, codeVerifier: pair.verifier };
+      const response = await (kind === 'saml'
+        ? this.deps.client.completeSaml(origin, complete)
+        : this.deps.client.completeOidc(origin, complete));
       return await this.store(origin, response, deviceName);
     } catch (error) {
       listener.cancel();
