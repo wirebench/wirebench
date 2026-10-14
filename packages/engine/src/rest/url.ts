@@ -85,10 +85,20 @@ function percentEncode(char: string, value: string, index: number): string {
   );
 }
 
+/**
+ * A `{name}` path placeholder in a URL as it is saved. A `${name}` is a variable the send expands,
+ * not a placeholder, so a brace after a lone `$` is skipped; `$${name}` is the escape for a literal
+ * `$` (an imported contract writes its own `${` that way), so the brace after it is a placeholder.
+ * A fresh regex each call, because a shared `/g` one carries its `lastIndex` from caller to caller.
+ */
+export function pathParamPattern(): RegExp {
+  return /(?<!(?:^|[^$])\$)\{([^{}/?#$]+)\}/g;
+}
+
 /** Every `{name}` in `url`, in the order they appear, without duplicates. */
 export function parseUrlParams(url: string): string[] {
   const names: string[] = [];
-  for (const match of url.matchAll(/\{([^{}/?#]+)\}/g)) {
+  for (const match of url.matchAll(pathParamPattern())) {
     const name = match[1]!;
     if (!names.includes(name)) {
       names.push(name);
@@ -256,6 +266,7 @@ export function composeUrl(
     }
   }
 
+  // The URL is expanded by now, so a `${` left in it is literal text (or reported as unresolved).
   const filled = path.replace(/\{([^{}/?#]+)\}/g, (whole, name: string) => {
     const value = values.get(name);
     if (value === undefined || value === '') {

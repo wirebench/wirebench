@@ -22,7 +22,7 @@ import { applyAuth } from '../http/auth/apply-auth.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
 import { expandBundles, takesNoValue } from '../http/curl-flags.js';
 import { isOmitted, omittedBasic } from './request-headers.js';
-import { composeUrl, splitQuery, trimTrailingSlashes } from './url.js';
+import { composeUrl, pathParamPattern, splitQuery, trimTrailingSlashes } from './url.js';
 
 /** What a redacted secret reads as in an exported command. Matches the host's own marker. */
 export const CURL_REDACTED = '<redacted>';
@@ -587,7 +587,7 @@ function splitAgainstBase(
 /** One row per `{param}` the path names, so the table is filled in as the editor expects. */
 function paramRows(path: string): KeyValueEntry[] {
   const rows: KeyValueEntry[] = [];
-  for (const match of path.matchAll(/\{([^{}/?#]+)\}/g)) {
+  for (const match of path.matchAll(pathParamPattern())) {
     const name = match[1] as string;
     if (!rows.some((row) => row.name === name)) {
       rows.push(entry(name, ''));
