@@ -11,7 +11,7 @@ import { detectPlatform } from '../../lib/platform.js';
 import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
-import { connectToHost, editHost, paneIsOpen, reconnectToHost } from './connect.js';
+import { connectToHost, connectWithPin, editHost, paneIsOpen, reconnectToHost } from './connect.js';
 import { ConnectScreen } from './connect-screen.js';
 import type { ReconnectBanner } from './connect-screen.js';
 import { dropAttempt, useConnectStore } from './connect-store.js';
@@ -822,6 +822,10 @@ function TerminalPane({
             view={attempt}
             reconnect={banner}
             onRetry={() => {
+              useHostsStore.getState().bumpReconnect(paneId);
+            }}
+            onPin={(pin) => {
+              connectWithPin(paneId, pin);
               useHostsStore.getState().bumpReconnect(paneId);
             }}
             onEditHost={() => {

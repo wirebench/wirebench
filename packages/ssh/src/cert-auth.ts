@@ -21,8 +21,8 @@ const { utils } = ssh2;
  * reads the protocol object's packet writer, session id and auth queue.
  */
 
-/** The parts of ssh2's (private) protocol object the shim uses. */
-interface Protocol {
+/** The parts of ssh2's (private) protocol object the shim uses (also the sk shim, `sk-auth.ts`). */
+export interface AuthProtocol {
   authPK(username: string, key: unknown, keyAlgo?: unknown, cbSign?: unknown): void;
   _authsQueue: string[];
   _kex: { sessionID: Buffer };
@@ -82,7 +82,7 @@ function signatureOf(key: ParsedKey, algorithms: Algorithms, data: Buffer): Buff
 }
 
 /** As ssh2's own `sendPacket`: held back while a key exchange runs. */
-function send(proto: Protocol, payload: Buffer): void {
+export function sendAuthRequest(proto: AuthProtocol, payload: Buffer): void {
   const writer = proto._packetRW.write;
   const packet = writer.alloc(payload.length);
   packet.set(payload, writer.allocStart);
@@ -93,7 +93,13 @@ function send(proto: Protocol, payload: Buffer): void {
 }
 
 /** USERAUTH_REQUEST (RFC 4252 §7) for the certificate: a query first, then (on PK_OK) the signed request. */
-function certAuthPK(proto: Protocol, username: string, cert: SshCertificate, key: ParsedKey, signed: boolean): void {
+function certAuthPK(
+  proto: AuthProtocol,
+  username: string,
+  cert: SshCertificate,
+  key: ParsedKey,
+  signed: boolean,
+): void {
   const algorithms = algorithmsOf(cert);
   const request = Buffer.concat([
     Buffer.from([50]), // SSH_MSG_USERAUTH_REQUEST
@@ -104,9 +110,12 @@ function certAuthPK(proto: Protocol, username: string, cert: SshCertificate, key
     sshString(algorithms.pk),
     sshString(cert.blob),
   ]);
-  if (!signed) return send(proto, request);
+  if (!signed) return sendAuthRequest(proto, request);
   const signature = signatureOf(key, algorithms, Buffer.concat([sshString(proto._kex.sessionID), request]));
-  send(proto, Buffer.concat([request, sshString(Buffer.concat([sshString(algorithms.sig), sshString(signature)]))]));
+  sendAuthRequest(
+    proto,
+    Buffer.concat([request, sshString(Buffer.concat([sshString(algorithms.sig), sshString(signature)]))]),
+  );
 }
 
 export interface CertificateAuth {
@@ -166,7 +175,7 @@ export function certificateAuth(options: {
       { type: 'publickey', username: options.username, key } as AuthMethod,
     ],
     attach(client) {
-      const proto = (client as unknown as { _protocol: Protocol })._protocol;
+      const proto = (client as unknown as { _protocol: AuthProtocol })._protocol;
       const original = proto.authPK.bind(proto);
       proto.authPK = (username, pubKey, keyAlgo, cbSign) => {
         if (pubKey !== certKey) return original(username, pubKey, keyAlgo, cbSign);

@@ -209,7 +209,8 @@ export class SshService {
   /**
    * @throws WirebenchError `workspace-not-open` | a hosts.yaml refusal | `ssh-host-unknown` | `ssh-jump-unknown` |
    *   `ssh-host-incomplete` | `secret-missing` | `ssh-auth-failed` | `ssh-host-key-new` |
-   *   `ssh-host-key-changed` | `ssh-connect-failed`
+   *   `ssh-host-key-changed` | `ssh-connect-failed` | `ssh-sk-pin` (the security key needs its PIN: the screen asks
+   *   for it and connects again with `skPin`) | `ssh-sk-no-device` | `ssh-sk-not-touched` | `ssh-sk-unavailable`
    */
   async connect(sender: WebContents, request: SshConnectRequest): Promise<SshConnectResponse> {
     let flight = this.inFlight.get(sender.id);
@@ -237,12 +238,13 @@ export class SshService {
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const { hops, env, secrets, forwardAgent, mosh } = await this.connector.prepareShell(
-      sender,
-      request.hostId,
-      stale,
-      request.user,
-    );
+    const prepared = await this.connector.prepareShell(sender, request.hostId, stale, request.user);
+    const { env, secrets, forwardAgent, mosh } = prepared;
+    // The PIN goes to every key hop; only a security key reads it.
+    const pin = request.skPin;
+    const hops = pin
+      ? prepared.hops.map((hop) => (hop.auth.kind === 'key' ? { ...hop, auth: { ...hop.auth, pin } } : hop))
+      : prepared.hops;
     const verifyHostKey = await this.connector.verifierFor(sender);
     // A switch while the secrets were read: they must not go to the hosts of the workspace left.
     if (stale()) throw closed();
