@@ -7,7 +7,19 @@ import type { PaneSort, SortColumn } from './files-store.js';
 import { formatModified, formatSize, isFolderLike, modeString } from './format.js';
 
 const ROW_HEIGHT = 26;
-const GRID = 'grid grid-cols-[minmax(0,1fr)_6rem_11rem_7rem] items-center gap-3 px-3';
+/**
+ * The columns by the list's own width (it is a container): Name is never narrower than 10rem, Modified
+ * shows from 560px and Permissions from 440px, so a narrow pane keeps its names rather than scrolling
+ * sideways. A hidden cell takes no track, so a row still fills the grid in order.
+ */
+const GRID =
+  'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[440px]:grid-cols-[minmax(10rem,1fr)_6rem_7rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_11rem_7rem] items-center gap-3 px-3';
+
+/** Per column: the classes that show its header button and its cells only from the column's width. */
+const SHOWN: Partial<Record<SortColumn, { readonly header: string; readonly cell: string }>> = {
+  mtime: { header: 'hidden @min-[560px]:flex', cell: 'hidden @min-[560px]:block' },
+  mode: { header: 'hidden @min-[440px]:flex', cell: 'hidden @min-[440px]:block' },
+};
 
 const COLUMNS: readonly { readonly column: SortColumn; readonly label: string; readonly end?: boolean }[] = [
   { column: 'name', label: 'Name' },
@@ -150,7 +162,7 @@ export function FileList({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="@container flex min-h-0 min-w-0 flex-1 flex-col">
       <div role="row" className={`${GRID} h-7 shrink-0 border-b border-hairline text-xs text-fg-subtle`}>
         {COLUMNS.map(({ column, label, end }) => {
           const active = sort.column === column;
@@ -164,9 +176,9 @@ export function FileList({
               onClick={() => {
                 onSort({ column, descending: active ? !sort.descending : false });
               }}
-              className={`flex items-center gap-1 hover:text-fg-default ${end === true ? 'justify-end' : ''} ${
-                active ? 'text-fg-default' : ''
-              }`}
+              className={`${SHOWN[column]?.header ?? 'flex'} items-center gap-1 hover:text-fg-default ${
+                end === true ? 'justify-end' : ''
+              } ${active ? 'text-fg-default' : ''}`}
             >
               {label}
               {active && <Arrow size={12} aria-hidden="true" />}
@@ -182,7 +194,7 @@ export function FileList({
         tabIndex={0}
         data-testid="files-list"
         onKeyDown={onKeyDown}
-        className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-inset"
+        className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-inset"
       >
         {entries.length === 0 && <p className="px-3 py-4 text-sm text-fg-subtle">This folder is empty.</p>}
         <div style={{ height: `${String(virtualizer.getTotalSize())}px` }} className="relative w-full">
@@ -223,8 +235,12 @@ export function FileList({
                   {renderName?.(entry) ?? <span className="truncate text-fg-default">{entry.name}</span>}
                 </span>
                 <span className="text-right tabular-nums">{isFolderLike(entry) ? '—' : formatSize(entry.size)}</span>
-                <span className="truncate tabular-nums">{formatModified(entry.mtime)}</span>
-                <span className="font-mono text-xs">{entry.mode === undefined ? '' : modeString(entry.mode)}</span>
+                <span className={`${SHOWN.mtime?.cell ?? ''} truncate tabular-nums`}>
+                  {formatModified(entry.mtime)}
+                </span>
+                <span className={`${SHOWN.mode?.cell ?? ''} font-mono text-xs`}>
+                  {entry.mode === undefined ? '' : modeString(entry.mode)}
+                </span>
               </div>
             );
           })}
