@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { monacoModelText } from '../helpers/editor.js';
+import { chooseHistoryRowAction } from '../helpers/history.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProject,
@@ -82,13 +83,12 @@ test.describe('history', () => {
     await expect(reopenedRows).toHaveCount(2, { timeout: 10_000 });
 
     // --- Re-send produces a third entry ---------------------------------------
-    await launched.window.locator('button[title="Re-send"]').first().click();
+    await chooseHistoryRowAction(reopenedRows.first(), 'Re-send');
     await expect(reopenedRows).toHaveCount(3, { timeout: 10_000 });
 
     // --- Compare the first two rows opens a diff tab with both labels ---------
-    const compareButtons = launched.window.locator('button[title="Compare…"]');
-    await compareButtons.nth(0).click();
-    await compareButtons.nth(1).click();
+    await chooseHistoryRowAction(reopenedRows.nth(0), 'Compare…');
+    await chooseHistoryRowAction(reopenedRows.nth(1), 'Compare…');
 
     const diffTab = launched.window.locator('[role="tab"]', { hasText: 'Compare' });
     await expect(diffTab).toBeVisible({ timeout: 10_000 });
@@ -114,9 +114,22 @@ test.describe('history', () => {
     const rows = page.getByTestId('history-row');
     await expect(rows).toHaveCount(1, { timeout: 20_000 });
 
-    // A click on the row's text opens the entry, titled with its send time, and sends nothing. Its
-    // left side: in a narrow sidebar the right half is under the hover actions.
-    await rows.first().click({ position: { x: 12, y: 12 } });
+    // In a narrow window the sidebar is narrow too: the row's ⋯ stays at its right edge, clear of
+    // the row's middle.
+    await launched.app.evaluate(async ({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setContentSize(760, 600);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    const rowBox = await rows.first().boundingBox();
+    const menuBox = await rows.first().getByTestId('history-row-actions').boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThan(rowBox!.x + rowBox!.width - 40);
+    expect(menuBox!.x).toBeGreaterThan(rowBox!.x + rowBox!.width / 2);
+
+    // A click in the middle of the row opens the entry, titled with its send time, and sends nothing.
+    await rows.first().click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(
       page.getByRole('tablist', { name: 'Open editors' }).getByRole('tab', { name: /Echo · \d\d:\d\d:\d\d/ }),
     ).toBeVisible({ timeout: 20_000 });
@@ -124,16 +137,15 @@ test.describe('history', () => {
     expect(rest.requests.filter((request) => request.url.startsWith('/echo?'))).toHaveLength(1);
 
     // ↻ sends the entry again through its saved request; the result is a second entry.
-    await page.getByRole('button', { name: 'Re-send Echo' }).click();
+    await chooseHistoryRowAction(rows.first(), 'Re-send');
     await expect(rows).toHaveCount(2, { timeout: 20_000 });
     // The re-send reaches the server exactly as the original did: same URL, same header.
     const echoes = rest.requests.filter((request) => request.url.startsWith('/echo?'));
     expect(echoes.map((request) => request.url)).toEqual(['/echo?x=1', '/echo?x=1']);
     expect(echoes[1]!.headers['x-trace']).toBe('abc');
 
-    const compareButtons = page.locator('button[title="Compare…"]');
-    await compareButtons.nth(0).click();
-    await compareButtons.nth(1).click();
+    await chooseHistoryRowAction(rows.nth(0), 'Compare…');
+    await chooseHistoryRowAction(rows.nth(1), 'Compare…');
 
     const views = page.getByRole('tablist', { name: 'Compare views' });
     await expect(views.getByRole('tab', { name: 'Response' })).toHaveAttribute('aria-selected', 'true', {

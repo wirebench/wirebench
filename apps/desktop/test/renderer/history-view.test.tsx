@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeRestExchange } from '../mocks/wire-fixtures.js';
+import { chooseRowAction, rowActions } from '../helpers/history-row-menu.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
@@ -126,6 +127,18 @@ describe('HistoryView', () => {
     expect(row.textContent).toContain('200');
   });
 
+  it('keeps its actions behind the ⋯ button, which opens a menu and not the entry', async () => {
+    const resend = vi.fn();
+    installWirebenchApi({ history: { resend } });
+    useHistoryStore.setState({ entries: [makeEntry({ id: 'a' })], total: 1 });
+    render(<HistoryView />);
+
+    expect(screen.queryByRole('button', { name: 'Re-send Add' })).toBeNull();
+    expect(await rowActions('Add')).toEqual(['Re-send', 'Compare…', 'Compare with current', 'Delete']);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+    expect(resend).not.toHaveBeenCalled();
+  });
+
   it('moves with the arrow keys and opens the focused row on Enter', async () => {
     useHistoryStore.setState({
       entries: [makeEntry({ id: 'a' }), makeEntry({ id: 'b', requestName: 'Subtract' })],
@@ -151,7 +164,7 @@ describe('HistoryView', () => {
     });
     render(<HistoryView />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Delete Subtract' }));
+    await chooseRowAction('Subtract', 'Delete');
 
     expect(remove).toHaveBeenCalledWith({ id: 'b' });
     await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(1));
@@ -165,11 +178,11 @@ describe('HistoryView', () => {
     });
     render(<HistoryView />);
 
-    const compareButtons = screen.getAllByTitle('Compare…');
-    await userEvent.click(compareButtons[0]!);
-    expect(compareButtons[0]?.getAttribute('aria-pressed')).toBe('true');
+    await chooseRowAction('First', 'Compare…');
+    expect(screen.getAllByTestId('history-row')[0]?.getAttribute('data-compare-armed')).toBe('true');
+    expect(await rowActions('First')).toContain('Cancel compare');
 
-    await userEvent.click(compareButtons[1]!);
+    await chooseRowAction('Second', 'Compare…');
 
     const { tabs, activeId } = useEditorsStore.getState();
     expect(tabs).toHaveLength(1);
@@ -244,12 +257,11 @@ describe('HistoryView', () => {
       });
       render(<HistoryView />);
 
-      await userEvent.click(screen.getByRole('button', { name: 'Re-send Add' }));
+      await chooseRowAction('Add', 'Re-send');
       expect(resend).toHaveBeenCalledWith({ id: 'a' });
 
-      const compareButtons = screen.getAllByTitle('Compare…');
-      await userEvent.click(compareButtons[0]!);
-      await userEvent.click(compareButtons[1]!);
+      await chooseRowAction('Add', 'Compare…');
+      await chooseRowAction('Forecast', 'Compare…');
 
       const { tabs } = useEditorsStore.getState();
       expect(tabs[0]?.kind).toBe('diff');
@@ -304,7 +316,7 @@ describe('HistoryView with REST entries', () => {
       useHistoryStore.setState({ entries: [makeEntry({ id: 'g', kind: 'grpc', requestName: 'SayHello' })], total: 1 });
       render(<HistoryView />);
 
-      await userEvent.click(screen.getByRole('button', { name: 'Re-send SayHello' }));
+      await chooseRowAction('SayHello', 'Re-send');
       expect(resendGrpc).toHaveBeenCalledWith({ id: 'g' });
       expect(resend).not.toHaveBeenCalled();
     });
@@ -317,7 +329,7 @@ describe('HistoryView with REST entries', () => {
       useHistoryStore.setState({ entries: [makeEntry({ id: 'g', kind: 'grpc', requestName: 'SayHello' })], total: 1 });
       render(<HistoryView />);
 
-      await userEvent.click(screen.getByRole('button', { name: 'Re-send SayHello' }));
+      await chooseRowAction('SayHello', 'Re-send');
       await waitFor(() => expect(showToast).toHaveBeenCalledWith(message));
     });
   });
@@ -367,28 +379,31 @@ describe('HistoryView re-sending and comparing REST rows', () => {
     useHistoryStore.setState({ entries: [restEntry({ id: 'r' }), streamed], total: 2 });
     render(<HistoryView />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Re-send Pet' }));
+    await chooseRowAction('Pet', 'Re-send');
     expect(resendRest).toHaveBeenCalledWith({ id: 'r' });
     expect(resend).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Re-send Ticks' })).toBeNull();
+    expect(await rowActions('Ticks')).not.toContain('Re-send');
   });
 
   it('opens Response and Request texts for two REST rows, and one body diff for a mixed pair', async () => {
     useHistoryStore.setState({
-      entries: [restEntry({ id: 'a' }), restEntry({ id: 'b', status: 404 }), makeEntry({ id: 'c' })],
+      entries: [
+        restEntry({ id: 'a' }),
+        restEntry({ id: 'b', status: 404, requestName: 'Missing pet' }),
+        makeEntry({ id: 'c' }),
+      ],
       total: 3,
     });
     render(<HistoryView />);
-    const compareButtons = screen.getAllByTitle('Compare…');
 
-    await userEvent.click(compareButtons[0]!);
-    await userEvent.click(compareButtons[1]!);
+    await chooseRowAction('Pet', 'Compare…');
+    await chooseRowAction('Missing pet', 'Compare…');
     const rest = useEditorsStore.getState().tabs[0]?.diff?.rest;
     expect(rest?.response.left.split('\n')[0]).toBe('200 OK');
     expect(rest?.request.left.split('\n')[0]).toBe('GET https://api.test/pet/1');
 
-    await userEvent.click(compareButtons[0]!);
-    await userEvent.click(compareButtons[2]!);
+    await chooseRowAction('Pet', 'Compare…');
+    await chooseRowAction('Add', 'Compare…');
     const mixed = useEditorsStore.getState().tabs[0]?.diff;
     expect(mixed?.rest).toBeUndefined();
     expect(mixed?.leftXml).toBe('{"id":1}');
@@ -402,7 +417,7 @@ describe('HistoryView re-sending and comparing REST rows', () => {
     useHistoryStore.setState({ entries: [restEntry({ id: 'a' })], total: 1 });
     render(<HistoryView />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Compare Pet with current' }));
+    await chooseRowAction('Pet', 'Compare with current');
 
     const diff = useEditorsStore.getState().tabs[0]?.diff;
     expect(diff?.rightLabel).toBe('Current');

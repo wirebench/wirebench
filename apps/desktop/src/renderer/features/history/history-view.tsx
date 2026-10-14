@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { rendererKindOf } from '../../kinds/index.js';
 import { Button } from '../../components/button.js';
@@ -35,7 +37,9 @@ const TONE_CLASS: Record<Tone, string> = {
   neutral: 'bg-surface-hover text-fg-subtle',
 };
 
-const ACTION_CLASS = 'px-1.5';
+const ITEM_CLASS =
+  'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
+const CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 
 interface RowProps {
   readonly entry: HistoryEntryWire;
@@ -55,9 +59,9 @@ interface RowProps {
 
 /**
  * One recorded send, on two lines: what it was (kind badge, name, status) and when and where it
- * went (time · host · duration). A click anywhere on it opens the entry; the actions sit in an
- * overlay at the right edge that shows on hover or focus, so a click aimed at the row's text
- * never lands on Re-send.
+ * went (time · host · duration). A click anywhere on it opens the entry. Its actions are behind
+ * one 24px ⋯ button at the far right, so however narrow the sidebar, a click on the row never
+ * re-sends, compares or deletes: each of those is a menu choice.
  */
 function Row({
   entry,
@@ -80,13 +84,14 @@ function Row({
       data-testid="history-row"
       {...rowProps}
       onKeyDown={(event) => {
-        // Enter on the row itself; a focused action button handles its own Enter.
+        // Enter on the row itself; the focused ⋯ button handles its own Enter.
         if (event.key === 'Enter' && event.target === event.currentTarget) {
           event.preventDefault();
           onOpen();
         }
       }}
-      className={`group relative flex h-full items-stretch border-b border-hairline text-xs ${
+      data-compare-armed={compareArmed ? 'true' : undefined}
+      className={`flex h-full items-stretch border-b border-hairline text-xs ${
         compareArmed ? 'bg-surface-selected' : 'hover:bg-surface-hover'
       }`}
     >
@@ -116,55 +121,41 @@ function Row({
           </span>
         </button>
       </div>
-      <div
-        role="gridcell"
-        aria-colindex={2}
-        data-testid="history-row-actions"
-        className={`absolute inset-y-0 right-0 flex items-center gap-0.5 bg-surface-raised px-1 shadow-sm ${
-          compareArmed ? 'opacity-100' : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
-        }`}
-      >
-        {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST event
-            stream resend from their request. */}
-        {canResendHistoryEntry(entry) && (
-          <Button
-            variant="ghost"
-            className={ACTION_CLASS}
-            onClick={onResend}
-            title="Re-send"
-            aria-label={`Re-send ${entry.requestName}`}
-          >
-            ↻
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          className={ACTION_CLASS}
-          onClick={onCompare}
-          title="Compare…"
-          aria-label={`Compare ${entry.requestName}…`}
-          aria-pressed={compareArmed}
-        >
-          ⇄
-        </Button>
-        <Button
-          variant="ghost"
-          className={ACTION_CLASS}
-          onClick={onCompareWithCurrent}
-          title="Compare with current"
-          aria-label={`Compare ${entry.requestName} with current`}
-        >
-          ⇄*
-        </Button>
-        <Button
-          variant="ghost"
-          className={ACTION_CLASS}
-          onClick={onDelete}
-          title="Delete"
-          aria-label={`Delete ${entry.requestName}`}
-        >
-          ✕
-        </Button>
+      <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center pr-1">
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              data-testid="history-row-actions"
+              aria-label={`Actions for ${entry.requestName}`}
+              title="Actions"
+              className="inline-flex size-6 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
+            >
+              <MoreHorizontal size={14} aria-hidden="true" />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content align="end" className={CONTENT_CLASS}>
+              {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST
+                  event stream resend from their request. */}
+              {canResendHistoryEntry(entry) && (
+                <DropdownMenu.Item className={ITEM_CLASS} onSelect={onResend}>
+                  Re-send
+                </DropdownMenu.Item>
+              )}
+              <DropdownMenu.Item className={ITEM_CLASS} onSelect={onCompare}>
+                {compareArmed ? 'Cancel compare' : 'Compare…'}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className={ITEM_CLASS} onSelect={onCompareWithCurrent}>
+                Compare with current
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
+              <DropdownMenu.Item className={ITEM_CLASS} onSelect={onDelete}>
+                Delete
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
     </div>
   );
