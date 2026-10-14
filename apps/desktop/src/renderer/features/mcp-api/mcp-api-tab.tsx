@@ -1,29 +1,92 @@
 /**
- * An MCP server's tab (#79). A holding view until the connection and catalogue sections arrive: it
- * says how the server is reached and when its catalogue was fetched. Loaded lazily.
+ * An MCP server's tab (#79): its name, how a session reaches it, its settings, and the catalogue of
+ * its last refresh. Every edit is one `update-mcp-server` patch through the project store, as the
+ * WebSocket API tab's are, so the project goes dirty and saves the same way. Loaded lazily.
  */
-import { EmptyState } from '../../components/empty-state.js';
+import { NumberSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { useProjectStore } from '../../state/project.js';
+import type { McpServerPatchWire } from '../../../shared/kinds/mcp/wire.js';
+import { CatalogueSection } from './catalogue-section.js';
+import { ConnectionSection } from './connection-section.js';
 
-export function McpApiTab({ apiId }: { readonly apiId: string }) {
+export interface McpApiTabProps {
+  readonly apiId: string;
+}
+
+export function McpApiTab({ apiId }: McpApiTabProps) {
   const server = useProjectStore((state) => state.mcpServers[apiId]);
+  const updateMcpServer = useProjectStore((state) => state.updateMcpServer);
+
   if (server === undefined) {
-    return <EmptyState title="Server not found" description="This MCP server is no longer in the project." />;
+    return <p className="p-4 text-sm text-fg-subtle">This MCP server is no longer in the project.</p>;
   }
-  const { transport, catalogueInfo } = server;
-  const reach =
-    transport.type === 'stdio'
-      ? [transport.command, ...transport.args].join(' ')
-      : `${transport.type} ${transport.url}`;
+
+  const patch = (changes: McpServerPatchWire): void => {
+    void updateMcpServer(apiId, changes);
+  };
+  const { settings } = server;
+
   return (
-    <div data-testid="mcp-api-tab" className="flex h-full flex-col gap-1 p-4">
-      <h2 className="text-lg font-medium text-fg-default">{server.name}</h2>
-      <p className="font-mono text-sm text-fg-muted">{reach}</p>
-      {catalogueInfo !== undefined && (
-        <p className="text-sm text-fg-subtle">
-          Fetched {catalogueInfo.fetchedAt} from {catalogueInfo.serverInfo.name} {catalogueInfo.serverInfo.version}
-        </p>
-      )}
-    </div>
+    <section aria-label={`MCP server ${server.name}`} data-testid="mcp-api-tab" className="h-full overflow-auto p-3">
+      <SettingsGroup title="MCP server">
+        <TextSetting
+          label="Name"
+          testId="mcp-api-name"
+          value={server.name}
+          onCommit={(name) => {
+            if (name.trim().length > 0) {
+              patch({ name: name.trim() });
+            }
+          }}
+        />
+        <TextSetting
+          label="Description"
+          testId="mcp-api-description"
+          value={server.description ?? ''}
+          onCommit={(description) => {
+            patch({ description: description === '' ? null : description });
+          }}
+        />
+      </SettingsGroup>
+
+      <ConnectionSection
+        apiId={apiId}
+        transport={server.transport}
+        onChange={(transport) => {
+          patch({ transport });
+        }}
+      />
+
+      <SettingsGroup title="Settings" hint="Every request on this server uses these unless it says otherwise.">
+        <NumberSetting
+          label="Timeout"
+          testId="mcp-api-timeout"
+          unit="ms"
+          min={1}
+          placeholder="Default"
+          value={settings.timeoutMs}
+          onCommit={(timeoutMs) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+            const { timeoutMs: _dropped, ...rest } = settings;
+            patch({ settings: timeoutMs === undefined ? rest : { ...rest, timeoutMs } });
+          }}
+        />
+        <TextSetting
+          label="Protocol version"
+          testId="mcp-api-protocol-version"
+          monospace
+          trim
+          placeholder="The newest this build speaks"
+          value={settings.protocolVersion ?? ''}
+          onCommit={(protocolVersion) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+            const { protocolVersion: _dropped, ...rest } = settings;
+            patch({ settings: protocolVersion === '' ? rest : { ...rest, protocolVersion } });
+          }}
+        />
+      </SettingsGroup>
+
+      <CatalogueSection apiId={apiId} name={server.name} info={server.catalogueInfo} catalogue={server.catalogue} />
+    </section>
   );
 }

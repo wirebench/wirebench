@@ -244,10 +244,10 @@ tests.
 
 **Files:** new `features/mcp-api/{mcp-api-tab,connection-section,catalogue-section}.tsx`, tests.
 
-- [ ] Connection editing for each transport: the env and header tables, and auth through the shared
+- [x] Connection editing for each transport: the env and header tables, and auth through the shared
   auth editor.
-- [ ] The catalogue list, with *Refresh* and *New request* on a tool row.
-- [ ] Tests for each transport's form, refresh, and creating a request from a tool.
+- [x] The catalogue list, with *Refresh* and *New request* on a tool row.
+- [x] Tests for each transport's form, refresh, and creating a request from a tool.
 
 ### Task 16: Renderer: request editor and approval dialog
 

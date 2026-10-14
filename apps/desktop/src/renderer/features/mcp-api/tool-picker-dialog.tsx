@@ -5,9 +5,8 @@
 import { useEffect, useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
-import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
-import { openMcpRequestTab } from '../mcp-editor/mcp-actions.js';
+import { newMcpRequestFromTool } from './mcp-api-actions.js';
 import { useMcpToolPicker } from './tool-picker-state.js';
 
 const CONTENT_CLASS =
@@ -39,15 +38,7 @@ export function McpToolPickerDialog() {
   const pick = (tool: string): void => {
     if (apiId === undefined) return;
     close();
-    void useProjectStore
-      .getState()
-      .addMcpRequest(apiId, undefined, tool, { method: 'tools/call', tool, arguments: '' })
-      .then((requestId) => {
-        openMcpRequestTab(requestId);
-      })
-      .catch((error: unknown) => {
-        showToast(error instanceof Error ? error.message : 'New request failed');
-      });
+    newMcpRequestFromTool(apiId, tool);
   };
 
   return (
