@@ -13,6 +13,7 @@ import { realTimer } from '../live/module.js';
 import { TMP_DIR } from '../repos/repo-store.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { CommitStore } from '../sync/commit-store.js';
+import { AlertOutbox, alertDelivery, type DeliverAlert } from './alerts/outbox.js';
 import { deleteOutboxBefore, deleteRunsBefore } from './repo.js';
 import { scheduleRunRoutes } from './run-routes.js';
 import { scheduleRoutes } from './routes.js';
@@ -40,6 +41,10 @@ export interface SchedulesOptions {
   readonly execute?: SchedulerEnv['execute'];
   /** Hands the module's scheduler out, for tests. */
   readonly onScheduler?: (scheduler: Scheduler) => void;
+  /** Sends one alert; SMTP and HTTPS by default. A test seam. */
+  readonly deliver?: DeliverAlert;
+  /** Hands the module's alert outbox out, for tests. */
+  readonly onOutbox?: (outbox: AlertOutbox) => void;
 }
 
 export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
@@ -79,7 +84,10 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
         ...(options.execute !== undefined ? { execute: options.execute } : {}),
       });
       options.onScheduler?.(scheduler);
-      scheduleRoutes({ db: ctx.db, hooks: ctx.hooks, license, settings, now })(app);
+      const deliver = options.deliver ?? alertDelivery(settings);
+      const outbox = new AlertOutbox({ db: ctx.db, now, setTimer, log: ctx.log, license, deliver });
+      options.onOutbox?.(outbox);
+      scheduleRoutes({ db: ctx.db, hooks: ctx.hooks, license, settings, now, deliver })(app);
       scheduleRunRoutes({
         db: ctx.db,
         hooks: ctx.hooks,
@@ -121,10 +129,12 @@ export function schedulesModule(options: SchedulesOptions = {}): ServerModule {
       ];
       if (options.startScheduler !== false) {
         scheduler.start();
+        outbox.start();
         for (const sweeper of sweepers) sweeper.start();
       }
       app.addHook('onClose', async () => {
         await scheduler.stop();
+        await outbox.stop();
         await Promise.all(sweepers.map((sweeper) => sweeper.stop()));
       });
     },

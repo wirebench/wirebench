@@ -238,7 +238,24 @@ export const scheduleResultSchema = z.looseObject({
 });
 export type ScheduleResult = z.infer<typeof scheduleResultSchema>;
 
-export const scheduleRunDetailSchema = scheduleRunSchema.extend({ results: z.array(scheduleResultSchema) });
+export const ALERT_DELIVERY_STATES = ['pending', 'delivered', 'dead'] as const;
+
+/** One alert a run sent to one target, and how its delivery went. */
+export const scheduleAlertDeliverySchema = z.object({
+  kind: z.enum(['failure', 'recovery']),
+  /** The target's place in the schedule's `alerts.targets`. */
+  target: z.int(),
+  state: z.enum(ALERT_DELIVERY_STATES),
+  attempts: z.int(),
+  /** Why the last attempt failed: the host and status or the error, never a URL. */
+  lastError: z.string().nullable(),
+});
+export type ScheduleAlertDelivery = z.infer<typeof scheduleAlertDeliverySchema>;
+
+export const scheduleRunDetailSchema = scheduleRunSchema.extend({
+  results: z.array(scheduleResultSchema),
+  alerts: z.array(scheduleAlertDeliverySchema),
+});
 export type ScheduleRunDetail = z.infer<typeof scheduleRunDetailSchema>;
 
 export const scheduleRunsQuerySchema = z.strictObject({

@@ -92,7 +92,7 @@ describe('scheduled-runs wire shapes (scheduled-runs §3.7)', () => {
     expect(scheduleRunsQuerySchema.safeParse({ limit: '201' }).success).toBe(false);
   });
 
-  it('a run detail keeps each result as the json report has it', () => {
+  it('a run detail keeps each result as the json report has it, and its alert deliveries', () => {
     const result = {
       path: 'A/b',
       group: 'A',
@@ -115,7 +115,9 @@ describe('scheduled-runs wire shapes (scheduled-runs §3.7)', () => {
       finishedAt: null,
       summary: { total: 1, passed: 0, failed: 1, errored: 0, skipped: 0, durationMs: 12 },
       results: [result],
+      alerts: [{ kind: 'failure', target: 0, state: 'dead', attempts: 8, lastError: 'answered 410' }],
     });
     expect(detail.results[0]).toEqual(result);
+    expect(detail.alerts[0]?.state).toBe('dead');
   });
 });

@@ -5,7 +5,10 @@
 import type { Feature } from '@wirebench/engine';
 import { auditLogModule } from '../../src/audit-log/module.js';
 import type { ServerModule } from '../../src/context.js';
+import type { AlertOutbox, DeliverAlert } from '../../src/schedules/alerts/outbox.js';
+import type { AlertPayload } from '../../src/schedules/alerts/render.js';
 import { schedulesModule } from '../../src/schedules/module.js';
+import type { StoredAlertTarget } from '../../src/schedules/seal.js';
 import type { Scheduler } from '../../src/schedules/scheduler.js';
 import { upsertGrant } from '../../src/teams/repo.js';
 import { signedInUser, type IdentityHarness, type SignedInUser, type TestClock } from './identity.js';
@@ -32,6 +35,12 @@ export interface SchedulesCast {
   scheduler(): Scheduler;
   /** Runs the scheduler started, each held until it is aborted or the test releases it. */
   readonly started: HeldRun[];
+  /** The module's alert outbox, which passes only when the test asks (`runOnce`). */
+  outbox(): AlertOutbox;
+  /** Every alert that arrived, in order. */
+  readonly deliveries: { readonly target: StoredAlertTarget; readonly payload: AlertPayload }[];
+  /** From now on every delivery fails with `message`; `undefined` lets them through again. */
+  failDeliveries(message: string | undefined): void;
   install(edition: 'team' | 'enterprise', features?: readonly Feature[]): Promise<void>;
   close(): Promise<void>;
 }
@@ -55,6 +64,14 @@ export async function schedulesHarness(
   const timers = manualTimers();
   const started: HeldRun[] = [];
   let scheduler: Scheduler | undefined;
+  let outbox: AlertOutbox | undefined;
+  const deliveries: SchedulesCast['deliveries'] = [];
+  let failure: string | undefined;
+  const deliver: DeliverAlert = (target, payload) => {
+    if (failure !== undefined) return Promise.reject(new Error(failure));
+    deliveries.push({ target, payload });
+    return Promise.resolve();
+  };
   const execute = (runId: string, signal: AbortSignal): Promise<void> =>
     new Promise<void>((done) => {
       signal.addEventListener('abort', () => done(), { once: true });
@@ -71,6 +88,10 @@ export async function schedulesHarness(
           execute,
           onScheduler: (made) => {
             scheduler = made;
+          },
+          deliver,
+          onOutbox: (made) => {
+            outbox = made;
           },
         }),
         auditLogModule({ now: () => clock.now, setTimer: timers.setTimer }),
@@ -112,6 +133,14 @@ export async function schedulesHarness(
       return scheduler;
     },
     started,
+    outbox: () => {
+      if (outbox === undefined) throw new Error('this harness has no scheduled-runs module');
+      return outbox;
+    },
+    deliveries,
+    failDeliveries: (message) => {
+      failure = message;
+    },
     install,
     close: () => h.close(),
   };

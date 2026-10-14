@@ -1,4 +1,4 @@
-import type { Schedule } from '@wirebench/engine';
+import type { AlertTestResponse, Schedule } from '@wirebench/engine';
 import { afterEach, expect, it } from 'vitest';
 import { describeDb } from '../../helpers/database.js';
 import { schedulesHarness, type SchedulesCast } from '../../helpers/schedules.js';
@@ -109,6 +109,52 @@ describeDb('the schedules API (scheduled-runs §3.7)', () => {
       { kind: 'email', to: ['ops@example.test'] },
       { kind: 'slack', host: 'hooks.slack.com', hint: 'abcd' },
     ]);
+  });
+
+  it('test alerts go to every target now, each with its own outcome; admins only', async () => {
+    c = await schedulesHarness({
+      env: { WIREBENCH_SERVER_SMTP_URL: 'smtp://mail.example.test:587', WIREBENCH_SERVER_SMTP_FROM: 'wb@example.test' },
+    });
+    const created = await create(c, {
+      ...body,
+      target: { project: 'billing', environment: 'prod' },
+      alerts: {
+        targets: [
+          { kind: 'email', to: ['ops@example.test'] },
+          { kind: 'slack', url: SLACK },
+        ],
+      },
+    });
+    const url = `${base(c)}/${created.body.id}/alerts/test`;
+    expect((await call(c.h, c.editor, 'POST', url, {})).status).toBe(403);
+    const sent = await call<AlertTestResponse>(c.h, c.admin, 'POST', url, {});
+    expect(sent.status).toBe(200);
+    expect(sent.body.results).toEqual([
+      { index: 0, kind: 'email', ok: true },
+      { index: 1, kind: 'slack', ok: true },
+    ]);
+    expect(c.deliveries.map((d) => d.payload)).toEqual([
+      expect.objectContaining({
+        kind: 'test',
+        schedule: { id: created.body.id, name: 'Smoke' },
+        workspace: { id: c.workspaceId, name: 'Smoke' },
+        project: 'billing',
+        environment: 'prod',
+        failures: [],
+      }) as unknown,
+      expect.anything(),
+    ]);
+    expect(c.deliveries[0]!.payload.run).toBeUndefined();
+    c.failDeliveries('the alert to hooks.slack.example was answered 404');
+    const failed = await call<AlertTestResponse>(c.h, c.admin, 'POST', url, {});
+    expect(failed.body.results[1]).toEqual({
+      index: 1,
+      kind: 'slack',
+      ok: false,
+      error: 'the alert to hooks.slack.example was answered 404',
+    });
+    // A test touches neither the alert state nor the outbox.
+    expect((await c.h.db.query('select 1 from schedule_alert_outbox')).rows).toEqual([]);
   });
 
   it('never hands back an alert URL or a secret value', async () => {

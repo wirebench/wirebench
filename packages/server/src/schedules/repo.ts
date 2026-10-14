@@ -1,5 +1,6 @@
 /** The scheduled-runs tables (scheduled-runs spec §4). Raw SQL over `Querier`, like every module's repo. */
 import type {
+  ScheduleAlertDelivery,
   ScheduleAlertState,
   ScheduleOptions,
   ScheduleRun,
@@ -336,20 +337,29 @@ export async function claimQueuedRuns(tx: Querier, limit: number, at: Date): Pro
     .map((row) => row.id);
 }
 
+/** A run {@link interruptStaleRuns} ended. */
+export type InterruptedRun = {
+  readonly id: string;
+  readonly scheduleId: string;
+  readonly commit: string | null;
+  readonly environment: string | null;
+};
+
 /**
  * Every run still `running` a minute past its schedule's deadline: the server running it would have
  * aborted it by then, so that server is gone. It ends `errored` with reason `interrupted`. A deadline,
- * not "every running run", because servers sharing a database each run their own. Returns how many.
+ * not "every running run", because servers sharing a database each run their own. Returns those runs.
  */
-export async function interruptStaleRuns(db: Querier, now: Date): Promise<number> {
-  const result = await db.query(
+export async function interruptStaleRuns(db: Querier, now: Date): Promise<InterruptedRun[]> {
+  const result = await db.query<InterruptedRun>(
     `update schedule_runs r set status = 'errored', reason = 'interrupted', finished_at = $1
      from schedules s
      where s.id = r.schedule_id and r.status = 'running'
-       and r.started_at + make_interval(mins => (s.options->>'timeoutMinutes')::int + 1) < $1`,
+       and r.started_at + make_interval(mins => (s.options->>'timeoutMinutes')::int + 1) < $1
+     returning r.id, r.schedule_id as "scheduleId", r.commit_id as "commit", r.environment`,
     [now],
   );
-  return result.rowCount ?? 0;
+  return result.rows;
 }
 
 /** A page of a schedule's runs, newest first, after the `(queuedAt, id)` cursor when given. */
@@ -429,6 +439,22 @@ export async function deleteOutboxBefore(db: Querier, cutoff: Date, limit: numbe
     [cutoff, limit],
   );
   return result.rowCount ?? 0;
+}
+
+/** The alerts a run sent, by when they were queued then by target. */
+export async function alertsOfRun(db: Querier, runId: string): Promise<ScheduleAlertDelivery[]> {
+  const rows = await db.query<ScheduleAlertDelivery & Record<string, unknown>>(
+    `select kind, target_index as target, state, attempts, last_error as "lastError"
+     from schedule_alert_outbox where run_id = $1 order by created_at, target_index`,
+    [runId],
+  );
+  return rows.rows;
+}
+
+/** A workspace's name, for an alert. */
+export async function workspaceName(db: Querier, workspaceId: string): Promise<string | undefined> {
+  const rows = await db.query<{ name: string }>('select name from workspaces where id = $1', [workspaceId]);
+  return rows.rows[0]?.name;
 }
 
 /** Every schedule, or a workspace's, ordered by workspace then name: the operator's view. */
