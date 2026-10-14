@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
 import type { Readable } from 'node:stream';
 import type { Attributes, SFTPWrapper } from 'ssh2';
+import { HopProgress } from './connect-progress.js';
 import { dialChain, hostOf } from './dial.js';
 import type { DialOptions, DialledChain, HopCredentials } from './dial.js';
 import { SshModelError } from './errors.js';
@@ -128,8 +129,12 @@ export function remoteEntryOf(
 export async function openSftp(options: DialOptions): Promise<SftpSession> {
   const chain = await dialChain(options);
   const lastHop = options.hops[options.hops.length - 1] as HopCredentials;
+  const progress = new HopProgress(options.onProgress, options.hops.length - 1, options.hops.length, hostOf(lastHop));
+  progress.start('shell', 'sftp');
+  progress.log('Starting the SFTP subsystem');
   const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
     const refused = (): void => {
+      progress.log('The server offers no SFTP');
       chain.endAll();
       const host = hostOf(lastHop);
       reject(new SftpError('sftp-unavailable', `${host} offers no SFTP`, { host }));
@@ -140,6 +145,8 @@ export async function openSftp(options: DialOptions): Promise<SftpSession> {
       refused();
     }
   });
+  progress.log('SFTP ready');
+  progress.done('shell', 'sftp');
   return wrapSftp(sftp, chain);
 }
 

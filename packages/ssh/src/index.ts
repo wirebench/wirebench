@@ -7,6 +7,7 @@ export * from './socks5.js';
 export * from './resolve.js';
 export * from './known-hosts.js';
 export * from './known-hosts-file.js';
+export * from './connect-progress.js';
 export * from './dial.js';
 export * from './forward.js';
 export * from './session.js';

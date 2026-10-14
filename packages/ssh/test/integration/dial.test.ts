@@ -1,7 +1,9 @@
+import net from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Client } from 'ssh2';
-import { dialChain } from '../../src/index.js';
-import type { DialledChain } from '../../src/index.js';
+import { dialChain, openSession } from '../../src/index.js';
+import type { ConnectProgress, DialledChain } from '../../src/index.js';
 import { startSshFixture } from '../helpers/ssh-fixture.js';
 import type { SshFixture } from '../helpers/ssh-fixture.js';
 
@@ -100,5 +102,106 @@ describe('dialChain', () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(chain.lost).toBe(false);
     expect(fired).toBe(0);
+  });
+});
+
+/** The phase events of a connect as `hop:phase:state`, in order. */
+function phases(events: readonly ConnectProgress[]): string[] {
+  return events.flatMap((e) => (e.kind === 'phase' ? [`${String(e.hop)}:${e.phase}:${e.state}`] : []));
+}
+function logOf(events: readonly ConnectProgress[]): string {
+  return events.flatMap((e) => (e.kind === 'log' ? [e.line] : [])).join('\n');
+}
+/** A port nothing listens on: bound, read, then closed again. */
+async function freePort(): Promise<number> {
+  const server = net.createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+describe('connect progress (#528)', () => {
+  it('reports every stage of a shell connect in order, with the server and the method', async () => {
+    const f = await fixture('pw');
+    const events: ConnectProgress[] = [];
+    const session = await openSession({
+      hops: [hop(f.port, 'pw')],
+      verifyHostKey: accept,
+      cols: 80,
+      rows: 24,
+      onProgress: (e) => events.push(e),
+    });
+    session.close();
+    const done = phases(events).filter((p) => p.endsWith(':done'));
+    expect(done).toEqual([
+      '0:resolve:done',
+      '0:tcp:done',
+      '0:banner:done',
+      '0:host-key:done',
+      '0:auth:done',
+      '0:shell:done',
+    ]);
+    const auth = events.find((e) => e.kind === 'phase' && e.phase === 'auth' && e.state === 'done');
+    expect(auth).toMatchObject({ detail: 'password', hop: 0, hops: 1, host: `127.0.0.1:${String(f.port)}` });
+    const log = logOf(events);
+    expect(log).toContain('Trying password for tester');
+    expect(log).toContain(f.hostKey.fingerprint);
+    // The password never reaches a line or a detail.
+    expect(JSON.stringify(events)).not.toContain('"pw"');
+  });
+  it('a wrong password names what was tried and what the server allows, and logs no secret', async () => {
+    const f = await fixture('right-secret');
+    const events: ConnectProgress[] = [];
+    await expect(
+      dialChain({ hops: [hop(f.port, 'wrong-secret')], verifyHostKey: accept, onProgress: (e) => events.push(e) }),
+    ).rejects.toMatchObject({
+      code: 'ssh-auth-failed',
+      details: { hop: 0, tried: ['password'], allowed: expect.arrayContaining(['password']) as unknown },
+    });
+    expect(logOf(events)).toContain('password refused');
+    expect(JSON.stringify(events)).not.toContain('secret');
+  });
+  it('a port nothing listens on fails in the TCP stage as refused', async () => {
+    const port = await freePort();
+    const events: ConnectProgress[] = [];
+    await expect(
+      dialChain({ hops: [hop(port, 'pw')], verifyHostKey: accept, onProgress: (e) => events.push(e) }),
+    ).rejects.toMatchObject({ code: 'ssh-connect-failed', details: { reason: 'refused', phase: 'tcp', hop: 0 } });
+    expect(phases(events)).toEqual(['0:resolve:start', '0:resolve:done', '0:tcp:start']);
+  });
+  it('a name that does not resolve fails in the resolve stage', async () => {
+    await expect(
+      dialChain({ hops: [{ ...hop(22, 'pw'), address: 'no-such-host.invalid' }], verifyHostKey: accept }),
+    ).rejects.toMatchObject({ code: 'ssh-connect-failed', details: { reason: 'dns', phase: 'resolve' } });
+  });
+  it('a server that never identifies itself times out in the banner stage', async () => {
+    const held: net.Socket[] = [];
+    const silent = net.createServer((socket) => held.push(socket));
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    const { port } = silent.address() as AddressInfo;
+    try {
+      await expect(
+        dialChain({ hops: [{ ...hop(port, 'pw'), connectTimeout: 1 }], verifyHostKey: accept }),
+      ).rejects.toMatchObject({
+        code: 'ssh-connect-failed',
+        details: { reason: 'timeout', phase: 'banner', timeout: 1 },
+      });
+    } finally {
+      for (const socket of held) socket.destroy();
+      await new Promise<void>((resolve) => silent.close(() => resolve()));
+    }
+  });
+  it('a jump reports the target through the jump host', async () => {
+    const inner = await fixture('in');
+    const outer = await fixture('out', true);
+    const events: ConnectProgress[] = [];
+    chain = await dialChain({
+      hops: [hop(outer.port, 'out'), hop(inner.port, 'in')],
+      verifyHostKey: accept,
+      onProgress: (e) => events.push(e),
+    });
+    const tcp = events.find((e) => e.kind === 'phase' && e.hop === 1 && e.phase === 'tcp' && e.state === 'done');
+    expect(tcp).toMatchObject({ detail: `through 127.0.0.1:${String(outer.port)}`, hops: 2 });
   });
 });
