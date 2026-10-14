@@ -1,0 +1,226 @@
+---
+title: SAML sign-in and SCIM provisioning
+description: How a server admin connects Wirebench Server to an identity provider such as Entra ID or Okta, so people sign in with SAML and accounts, deactivations and team membership arrive over SCIM.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench Server can sit behind your identity provider (IdP) in two ways, which work together or apart:
+
+- **SAML sign-in.** The app's Sign in dialog offers _Continue with SSO_ (or the name you configure). The
+  browser signs in at the IdP and comes back to the app with a device token, as OpenID Connect does.
+- **SCIM provisioning.** The IdP creates accounts, keeps names and emails current, deactivates leavers,
+  and pushes groups that you link to teams.
+
+Both need the Enterprise edition (see [Editions and licenses](/wirebench/docs/guides/server-licensing/)).
+On another edition the button still shows when SAML is configured, and signing in says the server needs
+an Enterprise license; SCIM requests answer `403`.
+
+<Aside>
+SAML sign-in never creates an account on its own. A person needs an account first, created by SCIM or
+by accepting an invitation, or an open invitation for their email. Sign-in starts in the app only: an
+IdP-started sign-in, such as a tile on an IdP's app portal, is refused.
+</Aside>
+
+## What to give the IdP
+
+Open **Account: Manage teams…** in the app as a server admin, and choose the **Provisioning** tab. It shows
+each value with a copy button:
+
+| Value         | Where it comes from                        | IdP field names                                          |
+| ------------- | ------------------------------------------ | -------------------------------------------------------- |
+| Entity ID     | `<public URL>/api/v1/auth/saml/metadata`   | Identifier, Audience URI, SP entity ID                   |
+| ACS URL       | `<public URL>/api/v1/auth/saml/acs`        | Reply URL, Single sign-on URL, Assertion consumer service |
+| SCIM base URL | `<public URL>/scim/v2`                     | Tenant URL, SCIM connector base URL                      |
+| SCIM token    | **Create** in the Provisioning tab, or CLI | Secret token, API token (bearer)                         |
+
+The entity ID is also the address of this server's SP metadata, so an IdP that imports metadata from a URL
+can read it there. `wirebench-server serve` logs the entity ID, the ACS URL and the SCIM base URL when SAML
+is on.
+
+## Configure the server
+
+Set `WIREBENCH_SERVER_SAML_IDP_METADATA` to the IdP's metadata, either an `https://` URL or an absolute
+path to the XML file, and restart. The other variables are optional:
+
+| Variable                                   | Default | Meaning                                                                                         |
+| ------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------- |
+| `WIREBENCH_SERVER_SAML_IDP_METADATA`       | —       | Turns SAML sign-in on. Read at start-up.                                                        |
+| `WIREBENCH_SERVER_SAML_DISPLAY_NAME`       | `SSO`   | The label of the _Continue with …_ button.                                                      |
+| `WIREBENCH_SERVER_SAML_EMAIL_ATTRIBUTE`    | —       | The attribute that carries the email. Unset: the usual email claim names, then an email NameID. |
+| `WIREBENCH_SERVER_SAML_NAME_ATTRIBUTE`     | —       | The attribute that carries the display name. Unset: the usual name claim names.                 |
+| `WIREBENCH_SERVER_SAML_CLOCK_SKEW_SECONDS` | `120`   | Clock skew allowed on an assertion's validity window (0–300).                                   |
+
+The server takes the IdP's entity ID, its HTTP-Redirect sign-on URL and every signing certificate from
+the metadata. If the metadata cannot be read, does not parse or lacks one of these, the server does not
+start. An `http://` metadata URL is refused unless `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` is `true`.
+
+SCIM needs no variable: it answers at `/scim/v2` on an Enterprise server, to anyone holding a SCIM token.
+Behind a reverse proxy, forward `/scim/v2/` as well as `/api/v1/` (see
+[Behind a reverse proxy](/wirebench/docs/guides/wirebench-server/#behind-a-reverse-proxy)).
+
+### What an assertion must be
+
+The server accepts a response only when its assertion:
+
+- is signed by a certificate from the metadata, with SHA-256 or stronger (SHA-1 is refused anywhere in the
+  response);
+- comes from the IdP's entity ID, names this server as its audience and the ACS URL as its recipient;
+- is inside its validity window, give or take the clock skew;
+- answers the sign-in the app started, once.
+
+The response may also be signed as a whole; the assertion's own signature is the one that counts.
+Encrypted assertions are not supported yet.
+
+The NameID should be **persistent**, which is what the server asks for. A transient NameID is refused,
+because it would be a new person at every sign-in.
+
+### Attribute mapping
+
+Unless the variables above name other attributes, the server reads:
+
+- the email from `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress`, `email`, `mail` or
+  `urn:oid:0.9.2342.19200300.100.1.3`, in that order, then from the NameID when its format is
+  `emailAddress`;
+- the display name from `http://schemas.microsoft.com/identity/claims/displayname`,
+  `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` or `displayName`.
+
+The first sign-in links the IdP's NameID to the account with the same email, or accepts an open
+invitation for it. Later sign-ins use the NameID alone, so a changed email at the IdP still signs in to
+the same account.
+
+<Aside type="caution" title="The IdP vouches for the email">
+SAML has no "verified email" flag, so the server trusts the email an assertion carries, as it trusts a
+verified email from OpenID Connect. Whoever administers the IdP can sign in as any account whose email they
+can assign to someone. That is the trust you give the IdP by configuring it.
+</Aside>
+
+## Entra ID
+
+<Steps>
+
+1. In the Entra admin center, open **Enterprise applications → New application → Create your own
+   application**, name it, and choose the non-gallery option.
+2. Under **Single sign-on**, choose **SAML**. In **Basic SAML Configuration**, set **Identifier (Entity
+   ID)** to the entity ID and **Reply URL** to the ACS URL.
+3. In **Attributes & Claims**, edit **Unique User Identifier (Name ID)**: choose the **Persistent** format
+   and a source that never changes, such as `user.objectid`. The default email and name claims match what
+   the server reads.
+4. Copy the **App Federation Metadata Url** into `WIREBENCH_SERVER_SAML_IDP_METADATA` and restart the
+   server.
+5. Under **Users and groups**, assign the people and groups who should use Wirebench.
+6. Under **Provisioning**, choose **Automatic**. Set **Tenant URL** to the SCIM base URL and **Secret
+   Token** to a new SCIM token, then **Test Connection** and save.
+7. In **Mappings**, keep both the user and the group mappings on. `userPrincipalName` maps to `userName`:
+   make sure it is the person's email, or map `mail` to `userName` instead.
+8. Set **Provisioning Status** to **On**. Entra ID provisions on its own cycle, about every 40 minutes;
+   **Provision on demand** pushes one person or group at once.
+
+</Steps>
+
+## Okta
+
+<Steps>
+
+1. In the Okta admin console, open **Applications → Create App Integration → SAML 2.0**.
+2. Set **Single sign-on URL** to the ACS URL and **Audience URI (SP Entity ID)** to the entity ID. Choose
+   **Persistent** as the **Name ID format** and **Email** as the **Application username**.
+3. Add the attribute statements `email` → `user.email` and `displayName` → `user.displayName`.
+4. On the **Sign On** tab, copy the **Metadata URL** into `WIREBENCH_SERVER_SAML_IDP_METADATA` and restart
+   the server.
+5. On the **General** tab, turn on **SCIM provisioning**. On the **Provisioning** tab, set the **SCIM
+   connector base URL** to the SCIM base URL, **Unique identifier field for users** to `userName`, the
+   supported actions to **Push New Users**, **Push Profile Updates** and **Push Groups**, and
+   **Authentication Mode** to **HTTP Header** with a new SCIM token. Test and save.
+6. Under **Provisioning → To App**, turn on **Create Users**, **Update User Attributes** and **Deactivate
+   Users**.
+7. Assign people and groups on the **Assignments** tab, and choose the groups to send on **Push Groups**.
+
+</Steps>
+
+## SCIM tokens
+
+A SCIM token is shown once, when it is created. Keep it in the IdP and nowhere else. The list shows when
+each token was created and last used (updated at most once a minute). Revoking a token stops it at once. A
+SCIM token reaches only `/scim/v2`, and a device token never reaches `/scim/v2`.
+
+From the console:
+
+```sh
+wirebench-server admin scim-token create "Entra ID"
+wirebench-server admin scim-token list
+wirebench-server admin scim-token revoke <id>
+```
+
+Failed SCIM authentications are rate-limited per address and recorded in the audit log as failed
+sign-ins, at most once a minute per address.
+
+## What SCIM changes
+
+| The IdP…                      | Wirebench…                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| creates a user                | creates the account, which takes a seat (refused when none is free), and accepts any open invitation |
+| changes the email or name     | updates the account                                                                      |
+| deactivates or deletes a user | disables the account (see [Deprovisioning](#deprovisioning))                             |
+| reactivates a user            | enables the account again, if a seat is free                                             |
+| creates or changes a group    | stores the group and its members                                                         |
+| deletes a group               | removes the group and the team memberships it added                                      |
+
+The last enabled server admin cannot be deactivated through SCIM: the IdP gets `409` and nothing changes.
+Every change is in the audit log with the SCIM token as the actor.
+
+## Group links
+
+A group does nothing until a server admin links it to a team, in the Provisioning tab's **Groups** list or
+from the console:
+
+```sh
+wirebench-server admin scim-group list
+wirebench-server admin scim-group link <group> <team>
+wirebench-server admin scim-group unlink <group>
+```
+
+The console takes a group or team by its id or its name. A group links to one team; a team may have
+several groups.
+
+- Linking adds every enabled member of the group who is not on the team yet, as a **member**. People
+  already on the team stay as they are.
+- When the group gains someone, they join the same way. When it loses someone, or is unlinked or deleted,
+  they leave the team only if SCIM added them, no other linked group of the team still lists them, and
+  they are still a **member**. Someone a team admin promoted, or added by hand, stays.
+- Removing a provisioned member by hand works, but the next change to that group adds them back. Remove
+  them from the group at the IdP instead.
+
+## Deprovisioning
+
+Deactivating a person at the IdP disables their account; nothing is deleted. In the same moment every
+device token they hold is revoked and their live connections close, so the app's next request is refused.
+Their seat is freed. Their identities and provisioned team memberships stay, so reactivating them restores
+the same account with the same access. What they created, such as workspaces, pushes and shared secrets,
+stays as it was.
+
+## Certificate rotation
+
+The metadata is read once, at start-up. When the IdP rotates its signing certificate:
+
+<Steps>
+
+1. At the IdP, add the new certificate while the old one is still active, so the metadata lists both.
+2. Restart the server. It accepts every certificate the metadata lists.
+3. Make the new certificate active at the IdP, and remove the old one once nothing uses it.
+4. Restart again, so the server stops accepting the old certificate.
+
+</Steps>
+
+## Before a release: the manual checklist
+
+The automated tests sign responses with a test key. Before each release that changes sign-in or SCIM, run
+these against a real Entra ID tenant and a real Okta org:
+
+- [ ] Sign in from the app with _Continue with …_; the status bar shows the account.
+- [ ] A person created at the IdP appears as an account, with the right name and email.
+- [ ] Changing their name at the IdP changes it in Wirebench.
+- [ ] Deactivating them disables the account and signs their app out.
+- [ ] Reactivating them lets them sign in again.
+- [ ] A pushed group linked to a team adds its members; removing someone from the group removes them.
+- [ ] A sign-in started from the IdP's app portal is refused.

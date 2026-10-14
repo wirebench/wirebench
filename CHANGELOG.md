@@ -17,6 +17,17 @@ All notable changes to this project are documented here. The format follows
   tags become tags. Passwords are never imported, and the notes say how many were left behind. The
   registry itself is never read (#423).
 
+- **SAML sign-in and SCIM provisioning on Wirebench Server (Enterprise).** With
+  `WIREBENCH_SERVER_SAML_IDP_METADATA` set, the Sign in dialog offers **Continue with SSO** (the label is
+  `WIREBENCH_SERVER_SAML_DISPLAY_NAME`), which signs in through the identity provider in the browser. The
+  server checks the assertion's signature (SHA-256 or stronger), issuer, audience, recipient, validity
+  window and that it answers the app's own request, once. SCIM 2.0 at `/scim/v2` creates, updates and
+  deactivates accounts and stores groups; deactivating disables the account and revokes its devices,
+  keeping its data. A server admin links IdP groups to teams, and SCIM removes only the members it added.
+  The Team dialog gains a **Provisioning** tab for SCIM tokens, the values to give the identity provider
+  and the group links; the server gains `admin scim-token` and `admin scim-group` commands. Neither
+  creates an account at sign-in: accounts come from SCIM or an invitation (#344).
+
 - **SSH certificates.** A key sign-in in `hosts.yaml` can carry its OpenSSH user certificate:
   `auth: { key, certificate, passphrase? }`, the certificate being a `${secret:NAME}`, inherited with
   the rest of `auth`. On connect the certificate is offered first, then the key alone; an expired or

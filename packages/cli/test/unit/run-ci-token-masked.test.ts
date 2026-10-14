@@ -12,7 +12,7 @@ const CI_TOKEN = 'wbs_abc123def456ghi789abc123def456ghi789abc123d';
 
 vi.mock('@wirebench/engine', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@wirebench/engine')>()),
-  runRequests: () => Promise.reject(new Error(`read failed, Authorization: Bearer ${CI_TOKEN}`)),
+  runSuite: () => Promise.reject(new Error(`read failed, Authorization: Bearer ${CI_TOKEN}`)),
 }));
 
 const FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'runner-project');

@@ -18,6 +18,19 @@ import {
   catchUrlsResponseSchema,
   invitationLookupResponseSchema,
   licenseStateSchema,
+  samlInfoResponseSchema,
+  samlStartResponseSchema,
+  scimGroupSummarySchema,
+  scimGroupsResponseSchema,
+  scimTokenCreatedSchema,
+  scimTokensResponseSchema,
+  type SamlInfoResponse,
+  type SamlStartRequest,
+  type SamlStartResponse,
+  type SamlCompleteRequest,
+  type ScimGroupSummary,
+  type ScimTokenCreated,
+  type ScimTokenSummary,
   type LicenseState,
   meResponseSchema,
   metaResponseSchema,
@@ -180,6 +193,14 @@ export class ServerClient {
 
   completeOidc(url: string, body: OidcCompleteRequest): Promise<SignInResponse> {
     return this.call(url, { method: 'POST', path: '/api/v1/auth/oidc/complete', body, schema: signInResponseSchema });
+  }
+
+  startSaml(url: string, body: SamlStartRequest): Promise<SamlStartResponse> {
+    return this.call(url, { method: 'POST', path: '/api/v1/auth/saml/start', body, schema: samlStartResponseSchema });
+  }
+
+  completeSaml(url: string, body: SamlCompleteRequest): Promise<SignInResponse> {
+    return this.call(url, { method: 'POST', path: '/api/v1/auth/saml/complete', body, schema: signInResponseSchema });
   }
 
   async signOut(url: string, token: string): Promise<void> {
@@ -570,6 +591,57 @@ export class ServerClient {
 
   async removeLicense(url: string, token: string): Promise<void> {
     await this.call<unknown>(url, { method: 'DELETE', path: '/api/v1/license', token });
+  }
+
+  // ---- provisioning (saml-scim spec §3.4, §3.6, §3.7): server admins on Enterprise ---------------
+
+  samlInfo(url: string, token: string): Promise<SamlInfoResponse> {
+    return this.call(url, { method: 'GET', path: '/api/v1/auth/saml/info', token, schema: samlInfoResponseSchema });
+  }
+
+  listScimTokens(url: string, token: string): Promise<ScimTokenSummary[]> {
+    return this.call(url, { method: 'GET', path: '/api/v1/scim-tokens', token, schema: scimTokensResponseSchema });
+  }
+
+  createScimToken(url: string, token: string, name: string): Promise<ScimTokenCreated> {
+    return this.call(url, {
+      method: 'POST',
+      path: '/api/v1/scim-tokens',
+      token,
+      body: { name },
+      schema: scimTokenCreatedSchema,
+    });
+  }
+
+  async revokeScimToken(url: string, token: string, tokenId: string): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'DELETE',
+      path: `/api/v1/scim-tokens/${encodeURIComponent(tokenId)}`,
+      token,
+    });
+  }
+
+  listScimGroups(url: string, token: string): Promise<ScimGroupSummary[]> {
+    return this.call(url, { method: 'GET', path: '/api/v1/scim-groups', token, schema: scimGroupsResponseSchema });
+  }
+
+  linkScimGroup(url: string, token: string, groupId: string, teamId: string): Promise<ScimGroupSummary> {
+    return this.call(url, {
+      method: 'PUT',
+      path: `/api/v1/scim-groups/${encodeURIComponent(groupId)}/team`,
+      token,
+      body: { teamId },
+      schema: scimGroupSummarySchema,
+    });
+  }
+
+  unlinkScimGroup(url: string, token: string, groupId: string): Promise<ScimGroupSummary> {
+    return this.call(url, {
+      method: 'DELETE',
+      path: `/api/v1/scim-groups/${encodeURIComponent(groupId)}/team`,
+      token,
+      schema: scimGroupSummarySchema,
+    });
   }
 
   // ---- audit log (audit-log spec §3.4): server admins on Enterprise ------------------------------

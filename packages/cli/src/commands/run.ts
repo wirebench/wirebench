@@ -1,31 +1,22 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  checkRunScripts,
   CookieJar,
-  createPacer,
-  createRunSender,
-  createScriptChecker,
   createIssuedTokenSource,
-  createScriptSandbox,
   createSourceCache,
   createSecretMasker,
   dataFormatOf,
   isProtectedEnvironment,
   isWirebenchError,
-  iterationContext,
   jarCookieHost,
   loadProject,
   loadWorkspace,
   parseDataFile,
   planIterations,
   readGoldenFile,
-  RequestScripting,
-  runIterations,
-  runRequests,
+  runSuite,
   secretNeedsOf,
-  selectRequests,
-  tagIteration,
+  selectSuite,
   workspaceProjectDir,
   writeGoldenFile,
 } from '@wirebench/engine';
@@ -34,14 +25,13 @@ import type {
   DataTable,
   Environment,
   GoldenFile,
-  Iteration,
   Project,
-  RequestResult,
   RunContext,
   RunResult,
   RunWorkspace,
   SelectedRequest,
   SequenceDef,
+  SuiteSelection,
   WorkspaceEnvironment,
 } from '@wirebench/engine';
 import { UsageError } from '../args.js';
@@ -49,8 +39,6 @@ import type { RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { cliSecrets } from '../source-secrets.js';
-import { pickEnvironment, projectIdOf } from '../ops/environment.js';
-import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
 import { verboseIssuedTokens } from '../verbose-sts.js';
 import { proxyFromEnv } from '../proxy-env.js';
@@ -65,7 +53,6 @@ import type { Reporter } from '../reporters/types.js';
 import { writeReport } from '../reporters/write.js';
 import { cliVersion } from '../version.js';
 import { enclosingWorkspace, exists } from '../workspace-lookup.js';
-import { resolveSteps, runSequences, selectSequences } from './sequence.js';
 
 /** `{ name, version }` for the `json` report's `tool` field, read from the CLI's own `package.json`. */
 function cliTool(): { readonly name: string; readonly version: string } {
@@ -163,43 +150,21 @@ export async function loadSelection(
     throw error;
   }
 
-  let environment: Environment | WorkspaceEnvironment | undefined;
+  let selection: SuiteSelection;
   try {
-    environment =
-      workspace === undefined
-        ? pickEnvironment(project.environments, 'project', args.env)
-        : pickEnvironment(workspace.workspace.environments, 'workspace', args.env, projectIdOf(workspace));
+    selection = selectSuite(project, workspace, {
+      ...(args.env !== undefined ? { environment: args.env } : {}),
+      select: args.selectors,
+      ...(args.sequences !== undefined ? { sequences: args.sequences } : {}),
+    });
   } catch (error) {
-    // `wirebench run` reports a bad environment as a usage error, as it always has.
-    if (error instanceof OpsError) {
+    // A bad environment, sequence or selector is a usage error, as it always has been.
+    if (isWirebenchError(error)) {
       throw new UsageError(error.message);
     }
     throw error;
   }
-  if (args.sequences !== undefined && args.sequences.length > 0) {
-    const sequences = selectSequences(project, args.sequences);
-    const selected = resolveSteps(project, sequences);
-    return {
-      project,
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(environment !== undefined ? { environment } : {}),
-      selected,
-      sequences,
-    };
-  }
-  const { selected, unmatched } = selectRequests(project, args.selectors);
-  if (unmatched.length > 0) {
-    throw new UsageError(`selector matched nothing: ${unmatched.join(', ')}`);
-  }
-  if (selected.length === 0) {
-    throw new UsageError('nothing to run: the project has no requests');
-  }
-  return {
-    project,
-    ...(workspace !== undefined ? { workspace } : {}),
-    ...(environment !== undefined ? { environment } : {}),
-    selected,
-  };
+  return { project, ...(workspace !== undefined ? { workspace } : {}), ...selection };
 }
 
 /**
@@ -280,8 +245,6 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   const onCallbackWaiting = (path: string, waiting: readonly CallbackWaiting[]): void =>
     output.onCallbackWaiting(path, waiting);
 
-  const sandbox = createScriptSandbox();
-  const checker = createScriptChecker();
   const controller = new AbortController();
   let interrupted = false;
   const onSigint = (): void => {
@@ -289,7 +252,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     controller.abort();
   };
   process.once('SIGINT', onSigint);
-  const context: RunContext = {
+  const context: Omit<RunContext, 'scripting'> = {
     project,
     projectDir: args.path,
     ...(workspace !== undefined ? { workspace } : {}),
@@ -316,72 +279,53 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     insecure: args.insecure,
     signal: controller.signal,
     containsKnownSecret: maskerDetects(maskNow),
-    scripting: new RequestScripting({ sandbox, checker, onSecretValue: (value) => tokens.add(value) }),
   };
   let result: RunResult;
   try {
-    // Every script is checked before anything is sent: a wrong path fails the run up front, the
-    // same way in CI as in the app (#63).
-    const scriptErrors = await checkRunScripts(selected, context);
-    if (scriptErrors.length > 0) {
-      for (const error of scriptErrors) {
+    const outcome = await runSuite(context, {
+      selection: {
+        ...(environment !== undefined ? { environment } : {}),
+        selected,
+        ...(sequences !== undefined ? { sequences } : {}),
+      },
+      plan,
+      bail: args.bail,
+      requireAssertions: args.requireAssertions,
+      ...(args.slaMs !== undefined ? { slaMs: args.slaMs } : {}),
+      ...(args.delayMs !== undefined ? { delayMs: args.delayMs } : {}),
+      ...(args.baseline
+        ? {
+            baseline: {
+              // Read from the folder the project was loaded from; nothing is written (#36).
+              source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
+              require: args.requireBaseline,
+            },
+          }
+        : {}),
+      ...(args.updateBaseline
+        ? {
+            updateBaseline: {
+              // The runner's one write (#217): golden sidecars beside the requests, nothing else.
+              source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
+              sink: (item: SelectedRequest, golden: GoldenFile) =>
+                writeGoldenFile(args.path, project, item.request.id, golden),
+            },
+          }
+        : {}),
+      onRequestDone: (request) => output.onRequestDone(request),
+      captures: captures.source,
+      onCallbackWaiting,
+      containsKnownSecret: maskerDetects(maskNow),
+      onSecretValue: (value) => tokens.add(value),
+    });
+    if (outcome.kind === 'scripts-refused') {
+      // A wrong script path fails the run up front, the same way in CI as in the app (#63).
+      for (const error of outcome.errors) {
         io.stderr.write(`${error.code}: ${maskNow()(error.message)}\n`);
       }
       return ExitCode.Usage;
     }
-    // One sender and one pacer for the whole run: a definition loads once, an OAuth2 token is shared,
-    // and the delay holds between iterations too (#336).
-    const send = createRunSender(context);
-    const pace = createPacer(args.delayMs, controller.signal);
-    const once = (iteration: Iteration): Promise<RunResult> => {
-      const iterated = iterationContext(context, iteration);
-      const done = (request: RequestResult): void => output.onRequestDone(tagIteration(request, iteration));
-      return sequences !== undefined
-        ? runSequences(sequences, iterated, {
-            bail: args.bail,
-            requireAssertions: args.requireAssertions,
-            ...(args.slaMs !== undefined ? { slaMs: args.slaMs } : {}),
-            signal: controller.signal,
-            onStepDone: done,
-            containsKnownSecret: maskerDetects(maskNow),
-            captures: captures.source,
-            onCallbackWaiting,
-            send,
-            pace,
-          })
-        : runRequests(selected, iterated, {
-            bail: args.bail,
-            // An API or folder run: its scripts may steer it (#335).
-            runControl: true,
-            ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
-            requireAssertions: args.requireAssertions,
-            ...(args.baseline
-              ? {
-                  baseline: {
-                    // Read from the folder the project was loaded from; nothing is written (#36).
-                    source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
-                    require: args.requireBaseline,
-                  },
-                }
-              : {}),
-            ...(args.updateBaseline
-              ? {
-                  updateBaseline: {
-                    // The runner's one write (#217): golden sidecars beside the requests, nothing else.
-                    source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
-                    sink: (item: SelectedRequest, golden: GoldenFile) =>
-                      writeGoldenFile(args.path, project, item.request.id, golden),
-                  },
-                }
-              : {}),
-            onRequestDone: done,
-            captures: captures.source,
-            onCallbackWaiting,
-            send,
-            pace,
-          });
-    };
-    result = await runIterations(plan, once, { bail: args.bail, signal: controller.signal });
+    result = outcome.result;
   } catch (error) {
     // An unexpected failure is printed by `main`; its message must not carry a value either. Only
     // the message is masked: `main` never prints `error.stack`, which still holds the raw text. A
@@ -392,7 +336,6 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     throw error;
   } finally {
     process.removeListener('SIGINT', onSigint);
-    await Promise.all([sandbox.dispose(), checker.dispose()]);
   }
 
   await output.onRunDone(result);

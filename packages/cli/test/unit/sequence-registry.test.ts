@@ -8,11 +8,11 @@ import {
   createGrpcRequest,
   createProject,
   createProtocolRegistry,
+  runSequences,
   unavailableCaptureSource,
 } from '@wirebench/engine';
 import type { ProtocolModule, ProtocolRegistry, Project, RunContext, SequenceDef } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { runSequences } from '../../src/commands/sequence.js';
 
 const project: Project = {
   ...createProject('Registry', { id: 'proj-registry' }),

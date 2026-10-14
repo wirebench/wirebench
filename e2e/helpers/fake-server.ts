@@ -70,6 +70,13 @@ export interface FakeServerOptions {
    * webhooks spec drives answer, and `/hooks/<secret>` captures and pushes `capture` over `/live`.
    */
   readonly hooks?: boolean;
+  /**
+   * Offer SAML sign-in (saml-scim spec §3.2). The fake IdP signs `email` in at once: the authorization URL
+   * redirects straight to the app's loopback with a grant, so whatever opens it plays the browser.
+   */
+  readonly saml?: { readonly email: string; readonly displayName?: string };
+  /** SCIM groups the IdP has pushed, as the Provisioning tab lists them (§3.7). */
+  readonly scimGroups?: readonly { readonly displayName: string; readonly memberCount: number }[];
 }
 
 /** One request the fake answered, for specs that assert what the app sent (or did not). */
@@ -397,13 +404,22 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           edition: installedLicense.edition,
           status: 'active',
           seats: { used: users.size, limit: installedLicense.seats },
-          features: installedLicense.edition === 'enterprise' ? ['audit-log'] : ([] as string[]),
+          features: installedLicense.edition === 'enterprise' ? ['audit-log', 'sso-provisioning'] : ([] as string[]),
           licenseId: installedLicense.id,
           customer: installedLicense.customer,
           issuedAt: installedLicense.issuedAt,
           expiresAt: installedLicense.expiresAt,
         };
   const auditEvents = [...(options.auditEvents ?? [])];
+  /** Pending SAML flows by id: the loopback port, the PKCE challenge and, once the IdP answered, the grant. */
+  const samlFlows = new Map<string, { port: number; challenge: string; grant?: string }>();
+  const scimTokens: { id: string; name: string; createdAt: string; lastUsedAt: null }[] = [];
+  const scimGroups = (options.scimGroups ?? []).map((group) => ({
+    id: generateId(),
+    displayName: group.displayName,
+    memberCount: group.memberCount,
+    teamId: null as string | null,
+  }));
   const signOuts: string[] = [];
   const requests: FakeRequest[] = [];
   let url = '';
@@ -1153,12 +1169,52 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           version: '0.0.0-e2e',
           apiVersion: API_VERSION,
           publicUrl: url,
-          auth: { local: true, oidc: options.oidc ?? false },
+          auth: {
+            local: true,
+            oidc: options.oidc ?? false,
+            ...(options.saml !== undefined
+              ? {
+                  saml: true,
+                  ...(options.saml.displayName !== undefined ? { samlDisplayName: options.saml.displayName } : {}),
+                }
+              : {}),
+          },
           capabilities,
           edition: installedLicense?.edition ?? 'community',
           ...(options.hooks === true ? { hooks: HOOKS_META } : {}),
         });
         return;
+      }
+      if (options.saml !== undefined && request.method === 'POST' && path.pathname === '/api/v1/auth/saml/start') {
+        const body = (await readJson(request)) as { codeChallenge: string; loopbackPort: number };
+        const flowId = generateId();
+        samlFlows.set(flowId, { port: body.loopbackPort, challenge: body.codeChallenge });
+        return send(response, 201, {
+          flowId,
+          authorizationUrl: `${url}/fake-idp/sso?flow=${flowId}`,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        });
+      }
+      if (options.saml !== undefined && request.method === 'GET' && path.pathname === '/fake-idp/sso') {
+        // The IdP and the ACS in one step: the user is signed in, the browser goes back to the loopback.
+        const flowId = path.searchParams.get('flow') ?? '';
+        const flow = samlFlows.get(flowId);
+        if (flow === undefined) return problem(response, 400, 'identity-flow-invalid');
+        flow.grant = createHash('sha256').update(`grant:${flowId}`).digest('base64url');
+        response.writeHead(302, {
+          location: `http://127.0.0.1:${String(flow.port)}/callback?flow=${flowId}&grant=${flow.grant}`,
+        });
+        response.end();
+        return;
+      }
+      if (options.saml !== undefined && request.method === 'POST' && path.pathname === '/api/v1/auth/saml/complete') {
+        const body = (await readJson(request)) as { flowId: string; grant: string; codeVerifier: string };
+        const flow = samlFlows.get(body.flowId);
+        const challenge = createHash('sha256').update(body.codeVerifier).digest('base64url');
+        if (flow?.grant === undefined || flow.grant !== body.grant || flow.challenge !== challenge)
+          return problem(response, 400, 'identity-flow-invalid');
+        samlFlows.delete(body.flowId);
+        return issue(response, options.saml.email);
       }
       if (request.method === 'POST' && path.pathname === '/api/v1/auth/local/sign-in') {
         const body = (await readJson(request)) as { email: string; password: string };
@@ -1195,6 +1251,84 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       if (request.method === 'GET' && path.pathname === '/api/v1/me') {
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
         return send(response, 200, { user: userOf(email), methods: { local: true, oidc: [] } });
+      }
+      if (
+        path.pathname === '/api/v1/auth/saml/info' ||
+        path.pathname.startsWith('/api/v1/scim-tokens') ||
+        path.pathname.startsWith('/api/v1/scim-groups')
+      ) {
+        if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
+        if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
+        if (!licenseState().features.includes('sso-provisioning'))
+          return problem(response, 403, 'licensing-feature-required');
+        const parts = path.pathname
+          .replace(/^\/api\/v1\//, '')
+          .split('/')
+          .map(decodeURIComponent);
+        if (request.method === 'GET' && parts[0] === 'auth') {
+          return send(response, 200, {
+            configured: options.saml !== undefined,
+            ...(options.saml !== undefined ? { idpEntityId: 'https://idp.example.test/entity' } : {}),
+            entityId: `${url}/api/v1/auth/saml/metadata`,
+            acsUrl: `${url}/api/v1/auth/saml/acs`,
+            scimBaseUrl: `${url}/scim/v2`,
+          });
+        }
+        const summary = (group: (typeof scimGroups)[number]) => {
+          const team = group.teamId === null ? undefined : teams.get(group.teamId);
+          return {
+            id: group.id,
+            displayName: group.displayName,
+            memberCount: group.memberCount,
+            team: team === undefined ? null : { id: team.id, name: team.name },
+          };
+        };
+        if (parts[0] === 'scim-tokens') {
+          if (request.method === 'GET' && parts.length === 1)
+            return send(
+              response,
+              200,
+              [...scimTokens].sort((a, b) => a.name.localeCompare(b.name)),
+            );
+          if (request.method === 'POST' && parts.length === 1) {
+            const body = (await readJson(request)) as { name: string };
+            if (scimTokens.some((token) => token.name === body.name))
+              return problem(response, 409, 'sso-scim-token-name-taken');
+            const created = { id: generateId(), name: body.name, createdAt: at(), lastUsedAt: null };
+            scimTokens.push(created);
+            const secret = createHash('sha256').update(`scim:${created.id}`).digest('base64url');
+            return send(response, 201, {
+              id: created.id,
+              name: created.name,
+              token: `wbscim_${secret}`,
+              createdAt: created.createdAt,
+            });
+          }
+          if (request.method === 'DELETE' && parts.length === 2) {
+            const index = scimTokens.findIndex((token) => token.id === parts[1]);
+            if (index < 0) return problem(response, 404, 'sso-scim-token-not-found');
+            scimTokens.splice(index, 1);
+            return send(response, 204);
+          }
+        }
+        if (parts[0] === 'scim-groups') {
+          if (request.method === 'GET' && parts.length === 1) return send(response, 200, scimGroups.map(summary));
+          const group = scimGroups.find((item) => item.id === parts[1]);
+          if (parts.length === 3 && parts[2] === 'team') {
+            if (group === undefined) return problem(response, 404, 'sso-scim-group-not-found');
+            if (request.method === 'PUT') {
+              const body = (await readJson(request)) as { teamId: string };
+              if (!teams.has(body.teamId)) return problem(response, 404, 'teams-team-not-found');
+              group.teamId = body.teamId;
+              return send(response, 200, summary(group));
+            }
+            if (request.method === 'DELETE') {
+              group.teamId = null;
+              return send(response, 200, summary(group));
+            }
+          }
+        }
+        return problem(response, 404, 'not-found');
       }
       if (path.pathname === '/api/v1/license') {
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');

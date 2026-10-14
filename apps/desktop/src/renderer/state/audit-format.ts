@@ -31,6 +31,8 @@ export const ACTION_GROUPS = [
   'license',
   'audit',
   'desktop',
+  'scim',
+  'schedule',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -44,6 +46,8 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   license: 'License',
   audit: 'Audit log',
   desktop: 'Desktop activity',
+  scim: 'Provisioning',
+  schedule: 'Schedules',
 };
 
 export function actionLabel(action: string): string {
@@ -61,6 +65,8 @@ export function actorLabel(
       return 'CI token';
     case 'system':
       return 'Server console';
+    case 'scim':
+      return 'Provisioning (SCIM)';
     default:
       return 'Not signed in';
   }
@@ -98,6 +104,12 @@ export function targetLabel(event: {
       return `CI token ${str(d['name']) ?? ''}`.trim();
     case 'license':
       return 'License';
+    case 'scim-token':
+      return `SCIM token ${str(d['name']) ?? ''}`.trim();
+    case 'scim-group':
+      return `Group ${str(d['displayName']) ?? ''}`.trim();
+    case 'schedule':
+      return `Schedule ${str(d['name']) ?? ''}`.trim();
     default:
       return event.target.kind;
   }
