@@ -10,9 +10,20 @@ const knownHosts = vi.fn();
 const forgetHostKey = vi.fn();
 const setHostOs = vi.fn();
 const sshKeys = vi.fn(() => Promise.resolve({ ok: true, value: { keys: [] } }));
+const localUser = vi.fn(() => Promise.resolve({ ok: true, value: { name: 'me' } }));
 vi.mock('../../src/renderer/state/ipc-client.js', () => ({
   ipc: () => ({
-    ssh: { listHosts, saveHosts, secretNames, setSecret, knownHosts, forgetHostKey, setHostOs, keys: sshKeys },
+    ssh: {
+      listHosts,
+      saveHosts,
+      secretNames,
+      setSecret,
+      knownHosts,
+      forgetHostKey,
+      setHostOs,
+      keys: sshKeys,
+      localUser,
+    },
   }),
 }));
 import { HostsView } from '../../src/renderer/features/ssh/hosts-view.js';
@@ -246,7 +257,7 @@ describe('Hosts tab', () => {
     render(<SshArea />);
     fireEvent.contextMenu(screen.getByTestId('host-row-a'));
     await userEvent.click(await screen.findByText('Edit…'));
-    expect(await screen.findByText('from Production')).toBeDefined();
+    expect(await screen.findByText('deploy · from Production')).toBeDefined();
     expect(screen.getByLabelText<HTMLInputElement>('User').disabled).toBe(true);
   });
   it('double-clicking a host opens its terminal tab', async () => {
@@ -284,15 +295,122 @@ describe('Hosts tab', () => {
     render(<SshArea />);
     expect(screen.getByLabelText('connected')).toBeDefined();
   });
-  it('saving a new host sends the whole file', async () => {
+  it('saving a new host stores its password as a secret and sends the whole file with only the name', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
     await userEvent.type(await screen.findByLabelText('Name'), 'gamma');
     await userEvent.type(screen.getByLabelText('Address'), 'gamma.example');
+    // No group supplies a user: a plain field, prefilled with this machine's login name.
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
+    });
+    expect(screen.queryByRole('switch', { name: 'Override User' })).toBeNull();
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Password' }).checked).toBe(true);
+    expect(screen.queryByRole('radio', { name: 'Inherit' })).toBeNull();
+    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(setSecret).toHaveBeenCalledWith({ name: 'gamma_password', value: 'pw' });
     expect(saveHosts).toHaveBeenCalledTimes(1);
     const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
     expect(sent.file.hosts.map((h) => h.id)).toEqual(['b', 'gamma']);
+    expect(sent.file.hosts[1]?.ssh).toEqual({ user: 'me', auth: { kind: 'password', secret: 'gamma_password' } });
+    expect(JSON.stringify(sent.file)).not.toContain('"pw"');
+  });
+  it('a disabled Save lists what is missing', async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    const missing = () => screen.getByRole('list', { name: 'Needed to save' }).textContent;
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
+    });
+    expect(missing()).toContain('Name is required');
+    expect(missing()).toContain('Address is required');
+    expect(missing()).toContain('Password is required');
+    await userEvent.type(screen.getByLabelText('Name'), 'x');
+    await userEvent.type(screen.getByLabelText('Address'), 'y');
+    await userEvent.clear(screen.getByLabelText('User'));
+    expect(missing()).not.toContain('Name is required');
+    expect(missing()).toContain('User is required');
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
+    await userEvent.type(screen.getByLabelText('User'), 'u');
+    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
+    expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
+  });
+  it('the Group select starts on the active group chip; the group then supplies the user', async () => {
+    useHostsStore.setState({ groupFilter: 'g' });
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    expect((await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Group' })).value).toBe('g');
+    expect(screen.getByText('deploy · from Production')).toBeDefined();
+    expect(screen.getByLabelText<HTMLInputElement>('User').disabled).toBe(true);
+    await userEvent.type(screen.getByLabelText('Name'), 'delta');
+    await userEvent.type(screen.getByLabelText('Address'), 'delta.example');
+    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    expect(sent.file.groups[0]?.hosts.map((h) => h.id)).toEqual(['a', 'delta']);
+    expect(sent.file.groups[0]?.hosts[1]?.ssh).toEqual({ auth: { kind: 'password', secret: 'delta_password' } });
+
+    // Moving it to No group brings the login name back, as nothing supplies one there.
+    cleanup();
+    useHostsStore.setState({ groupFilter: 'g', dialog: null });
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Group' }), '');
+    await vi.waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('me');
+    });
+  });
+  it("a group's Add host opens the dialog on that group", async () => {
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: 'Add a host to Production' }));
+    expect((await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Group' })).value).toBe('g');
+  });
+  it('a new password on an edited host replaces the value of the secret it already names', async () => {
+    const file = {
+      ...STATE.file,
+      hosts: [{ ...STATE.file.hosts[0]!, ssh: { user: 'u', auth: { kind: 'password' as const, secret: 'beta_pw' } } }],
+    };
+    listHosts.mockResolvedValue({ ok: true, value: { file, resolved: STATE.resolved, problems: [] } });
+    useHostsStore.setState({ file });
+    render(<SshArea />);
+    fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+    await userEvent.click(await screen.findByText('Edit…'));
+    const field = await screen.findByLabelText<HTMLInputElement>('Password', { selector: 'input[type="password"]' });
+    expect(field.value).toBe('');
+    expect(field.placeholder).toBe('Saved as beta_pw · type to replace');
+    await userEvent.type(field, 'new');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(setSecret).toHaveBeenCalledWith({ name: 'beta_pw', value: 'new' });
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof file };
+    expect(sent.file.hosts[0]?.ssh.auth).toEqual({ kind: 'password', secret: 'beta_pw' });
+  });
+  it("an edited host's Group select moves it", async () => {
+    render(<SshArea />);
+    fireEvent.contextMenu(screen.getByTestId('host-row-b'));
+    await userEvent.click(await screen.findByText('Edit…'));
+    const group = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Group' });
+    expect(group.value).toBe('');
+    await userEvent.selectOptions(group, 'g');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const sent = saveHosts.mock.calls[0]?.[0] as { file: typeof STATE.file };
+    expect(sent.file.hosts).toEqual([]);
+    expect(sent.file.groups[0]?.hosts.map((h) => h.id)).toEqual(['a', 'b']);
+  });
+  it('a password that could not be stored stops the save and says why', async () => {
+    setSecret.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'workspace-not-open', message: 'Open a workspace first' },
+    });
+    render(<SshArea />);
+    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
+    await userEvent.type(await screen.findByLabelText('Name'), 'gamma');
+    await userEvent.type(screen.getByLabelText('Address'), 'gamma.example');
+    await userEvent.type(screen.getByLabelText('Password', { selector: 'input[type="password"]' }), 'pw');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Open a workspace first');
+    expect(saveHosts).not.toHaveBeenCalled();
   });
   it('duplicating twice makes two distinct copies', async () => {
     render(<SshArea />);
@@ -320,12 +438,16 @@ describe('Hosts tab', () => {
     expect(sent.file.hosts).toEqual([]);
     expect(sent.file.groups[0]?.hosts.map((h) => h.id)).toEqual(['a', 'b']);
   });
-  it('the auth picker lists names with a hint for unset ones and Set value stores write-only', async () => {
+  it('Choose a stored secret lists the names, with a hint for unset ones; Key keeps Set value… write-only', async () => {
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
-    await userEvent.click(await screen.findByRole('radio', { name: 'Password' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose a stored secret' }));
     expect(await screen.findByRole('option', { name: 'DEPLOY_KEY' })).toBeDefined();
     expect(screen.getByRole('option', { name: 'UNSET (not set on this machine)' })).toBeDefined();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Password secret' }), 'DEPLOY_KEY');
+    expect(screen.queryByLabelText('Password', { selector: 'input[type="password"]' })).toBeNull();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Key' }));
     await userEvent.click(screen.getByRole('button', { name: 'Set value…' }));
     await userEvent.type(screen.getByLabelText('Secret name'), 'NEW_ONE');
     await userEvent.type(screen.getByLabelText('Secret value'), 'pw');
@@ -335,14 +457,6 @@ describe('Hosts tab', () => {
     await vi.waitFor(() => {
       expect(secretNames.mock.calls.length).toBeGreaterThan(before);
     });
-  });
-  it('Save stays disabled until a password secret is chosen', async () => {
-    render(<SshArea />);
-    await userEvent.click(screen.getByRole('button', { name: /New host/ }));
-    await userEvent.type(await screen.findByLabelText('Name'), 'x');
-    await userEvent.type(screen.getByLabelText('Address'), 'y');
-    await userEvent.click(screen.getByRole('radio', { name: 'Password' }));
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
   });
 });
 

@@ -218,8 +218,8 @@ export function TerminalTab({
     [tabId],
   );
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-end gap-1 border-b border-hairline px-2 py-0.5">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 border-b border-hairline px-2 py-0.5">
         <button
           type="button"
           className={TOOL_CLASS}
@@ -272,7 +272,7 @@ export function TerminalTab({
         </button>
       </div>
       <BroadcastBanner tabId={tabId} paneIds={paneIds} />
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1">
         <PaneView
           tabId={tabId}
           node={panes}
@@ -663,7 +663,7 @@ function TerminalPane({
 
   return (
     <div
-      className={`flex h-full flex-col ${
+      className={`flex h-full min-w-0 flex-col ${
         receiving
           ? 'outline-2 -outline-offset-2 outline-status-danger'
           : split && focused
@@ -697,7 +697,7 @@ function TerminalPane({
         }}
       />
       {split && <PaneHeader tabId={tabId} pane={pane} focused={focused} />}
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
         {pickerOpen && (
           <TerminalPicker

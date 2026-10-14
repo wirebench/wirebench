@@ -96,7 +96,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('InheritedSwitch', () => {
-  it('shows the inherited value greyed with its source; Override starts from it, and off inherits again', async () => {
+  it('one switch: it shows the inherited value with its source, flips it here, and Inherit takes it back', async () => {
     const onChange = vi.fn();
     const { rerender } = render(
       <InheritedSwitch
@@ -106,39 +106,63 @@ describe('InheritedSwitch', () => {
         onChange={onChange}
       />,
     );
+    expect(screen.getAllByRole('switch')).toHaveLength(1);
     const value = screen.getByRole('switch', { name: 'Protected' });
     expect(value.getAttribute('aria-checked')).toBe('true');
-    expect((value as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('from Production')).toBeDefined();
-    await userEvent.click(screen.getByRole('switch', { name: 'Override Protected' }));
-    expect(onChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByText('on · from Production')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Inherit Protected' })).toBeNull();
+    await userEvent.click(value);
+    expect(onChange).toHaveBeenLastCalledWith(false);
     rerender(
       <InheritedSwitch
         label="Protected"
         provenance={{ value: true, from: { group: 'Production' } }}
+        override={false}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByText('on · from Production')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Inherit Protected' }));
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it('with nothing to inherit, flipping back to the default writes nothing', async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <InheritedSwitch
+        label="Protected"
+        provenance={{ value: false, from: 'default' }}
+        override={undefined}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText('off · default')).toBeDefined();
+    await userEvent.click(screen.getByRole('switch', { name: 'Protected' }));
+    expect(onChange).toHaveBeenLastCalledWith(true);
+    rerender(
+      <InheritedSwitch
+        label="Protected"
+        provenance={{ value: false, from: 'default' }}
         override={true}
         onChange={onChange}
       />,
     );
+    expect(screen.queryByRole('button', { name: 'Inherit Protected' })).toBeNull();
     await userEvent.click(screen.getByRole('switch', { name: 'Protected' }));
-    expect(onChange).toHaveBeenLastCalledWith(false);
-    await userEvent.click(screen.getByRole('switch', { name: 'Override Protected' }));
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 });
 
 describe('Protected in the host and group forms', () => {
-  it('a host under a protected group shows Protected on, greyed, from Production', () => {
+  it('a host under a protected group shows Protected on, from Production', () => {
     render(<HostForm file={FILE} dialog={{ mode: 'edit-host', id: 'api' }} embedded />);
     const value = screen.getByRole('switch', { name: 'Protected' });
     expect(value.getAttribute('aria-checked')).toBe('true');
-    expect((value as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('from Production')).toBeDefined();
+    expect(screen.getByText('on · from Production')).toBeDefined();
   });
 
-  it('Override on writes protected on the host, and off removes it', async () => {
+  it('flipping it writes protected on the host, and Inherit removes it', async () => {
     render(<HostForm file={FILE} dialog={{ mode: 'edit-host', id: 'api' }} embedded />);
-    await userEvent.click(screen.getByRole('switch', { name: 'Override Protected' }));
     await userEvent.click(screen.getByRole('switch', { name: 'Protected' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(saved().groups[0]?.hosts[0]).toMatchObject({ id: 'api', protected: false });
@@ -150,7 +174,7 @@ describe('Protected in the host and group forms', () => {
     };
     useHostsStore.setState({ file: lifted });
     render(<HostForm file={lifted} dialog={{ mode: 'edit-host', id: 'api' }} embedded />);
-    await userEvent.click(screen.getByRole('switch', { name: 'Override Protected' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Inherit Protected' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(saved().groups[0]?.hosts[0]).not.toHaveProperty('protected');
   });
@@ -158,7 +182,6 @@ describe('Protected in the host and group forms', () => {
   it("a group's dialog sets protected on the group, and saving it again keeps it", async () => {
     render(<HostForm file={FILE} dialog={{ mode: 'new-group' }} embedded />);
     await userEvent.type(screen.getByLabelText('Name'), 'Staging');
-    await userEvent.click(screen.getByRole('switch', { name: 'Override Protected' }));
     await userEvent.click(screen.getByRole('switch', { name: 'Protected' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(saved().groups.at(-1)).toMatchObject({ id: 'staging', protected: true });
