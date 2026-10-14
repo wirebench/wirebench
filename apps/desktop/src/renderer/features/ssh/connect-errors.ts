@@ -53,8 +53,9 @@ function joinWords(words: readonly string[]): string {
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1] ?? ''}`;
 }
 
+/** Starts a sentence: "the server" and "the jump host …" take a capital; an address is left as it is. */
 function capitalise(sentence: string): string {
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  return sentence.startsWith('the ') ? `T${sentence.slice(1)}` : sentence;
 }
 
 function authSentence(details: Readonly<Record<string, unknown>>, who: string): string {

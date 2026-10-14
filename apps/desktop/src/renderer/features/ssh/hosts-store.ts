@@ -10,6 +10,7 @@ import type {
   SshProblemWire,
 } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
+import { failWaitingAttempt } from './connect-store.js';
 import { useProblemsStore } from '../../state/problems.js';
 
 /** Which host / group form is open, if any. `parent` is the group a new entry is created in. */
@@ -265,6 +266,12 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   cancelTrust: () => {
     const prompt = get().trustPrompt;
     if (prompt === null) return;
+    // The connect that waited on the prompt stops here: its screen says the key was not trusted.
+    failWaitingAttempt(prompt.paneId, {
+      code: prompt.previous === undefined ? 'ssh-host-key-new' : 'ssh-host-key-changed',
+      message: '',
+      details: { host: prompt.host },
+    });
     if (prompt.cancel !== undefined) {
       set({ trustPrompt: null });
       prompt.cancel();

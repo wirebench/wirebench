@@ -342,21 +342,66 @@ describe('the terminal tab', () => {
     expect(screen.queryByText(/Session ended/)).toBeNull();
   });
 
-  it('a refused connect offers Reconnect, which connects again', async () => {
-    connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-auth-failed', message: 'nope' } });
+  it('a refused connect shows why on the connection screen, and Retry connects again', async () => {
+    connect.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'ssh-auth-failed', message: 'nope', details: { host: 'a:22', tried: ['password'], allowed: [] } },
+    });
     act(() => {
       openTerminalFor('a');
     });
     render(<EditorArea />);
-    expect(await screen.findByText('Could not connect · see Problems')).toBeDefined();
+    expect((await screen.findByTestId('connect-error')).textContent).toBe(
+      "a:22 refused the password. Check the host's sign-in settings.",
+    );
+    expect(screen.getByTestId('connect-step-auth').dataset['state']).toBe('failed');
+    // The log opens on its own when a connect fails.
+    expect(screen.getByTestId('connect-log')).toBeDefined();
+    expect(screen.queryByText('nope')).toBeNull();
 
     connect.mockResolvedValueOnce(OPEN('s1'));
-    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => {
       expect(sessionOn('a')).toEqual({ sessionId: 's1', state: 'open' });
     });
     expect(connect).toHaveBeenCalledTimes(2);
-    expect(screen.queryByText(/Could not connect/)).toBeNull();
+    expect(screen.queryByTestId('connect-error')).toBeNull();
+    expect(await screen.findByText(/^Connected in /)).toBeDefined();
+    // The screen fades into the terminal.
+    await waitFor(
+      () => {
+        expect(screen.queryByTestId('connect-screen')).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('the host-key step waits on the trust prompt', async () => {
+    connect.mockResolvedValueOnce(NEW_KEY);
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    await waitFor(() => {
+      expect(screen.getByTestId('connect-step-host-key').dataset['state']).toBe('waiting');
+    });
+    expect(screen.getByTestId('connect-step-connect').dataset['state']).toBe('done');
+    expect(screen.queryByTestId('connect-log')).toBeNull();
+  });
+
+  it('Edit host opens the host for editing, and Close closes the pane', async () => {
+    connect.mockResolvedValueOnce({ ok: false, error: { code: 'ssh-connect-failed', message: 'x' } });
+    act(() => {
+      openTerminalFor('a');
+    });
+    render(<EditorArea />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit host' }));
+    expect(useHostsStore.getState().dialog).toEqual({ mode: 'edit-host', id: 'a' });
+    act(() => {
+      useEditorsStore.getState().activate(terminalTab());
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+    expect(useEditorsStore.getState().tabs.some((t) => t.kind === 'ssh-terminal')).toBe(false);
   });
 
   it('a dismissed trust prompt offers Reconnect', async () => {
@@ -368,11 +413,12 @@ describe('the terminal tab', () => {
     await waitFor(() => {
       expect(useHostsStore.getState().trustPrompt).not.toBeNull();
     });
-    expect(screen.queryByText(/Could not connect/)).toBeNull();
+    expect(screen.queryByTestId('connect-error')).toBeNull();
     act(() => {
       useHostsStore.getState().cancelTrust();
     });
-    expect(await screen.findByRole('button', { name: 'Reconnect' })).toBeDefined();
+    expect((await screen.findByTestId('connect-error')).textContent).toMatch(/^You did not trust the key/);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
   });
 
   it('connecting again from the tree retries in the open tab', async () => {
@@ -381,7 +427,7 @@ describe('the terminal tab', () => {
       openTerminalFor('a');
     });
     render(<EditorArea />);
-    await screen.findByText('Could not connect · see Problems');
+    await screen.findByTestId('connect-error');
 
     connect.mockResolvedValueOnce(OPEN('s1'));
     act(() => {
@@ -596,7 +642,11 @@ describe('the terminal tab', () => {
   describe('reconnecting a dropped session', () => {
     const UNREACHABLE = {
       ok: false,
-      error: { code: 'ssh-connect-failed', message: 'a.example:22: connect ETIMEDOUT' },
+      error: {
+        code: 'ssh-connect-failed',
+        message: 'a.example:22: connect ETIMEDOUT',
+        details: { host: 'a.example:22', hop: 0, hops: 1, reason: 'timeout', phase: 'tcp', timeout: 10 },
+      },
     };
     const decoder = new TextDecoder();
     const notice = () => screen.queryByTestId('ssh-terminal-notice')?.textContent ?? null;
@@ -671,8 +721,11 @@ describe('the terminal tab', () => {
       expect(notice()).toContain('attempt 2 of 2 in 1s');
       await advance(1000);
       expect(connect).toHaveBeenCalledTimes(3);
-      expect(notice()).toContain('Connection lost · gave up after 2 attempts (a.example:22: connect ETIMEDOUT)');
-      expect(screen.getByRole('button', { name: 'Reconnect' })).toBeDefined();
+      expect(notice()).toContain('Connection lost · gave up after 2 attempts');
+      // The raw reason is not shown; the last attempt's screen says it plainly.
+      expect(notice()).not.toContain('ETIMEDOUT');
+      expect(screen.getByTestId('connect-error').textContent).toMatch(/^No answer from a\.example:22 after 10 s\./);
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
       await advance(120_000);
       expect(connect).toHaveBeenCalledTimes(3);
     });
@@ -681,7 +734,8 @@ describe('the terminal tab', () => {
       await dropped('lost');
       connect.mockResolvedValue({ ok: false, error: { code: 'ssh-auth-failed', message: 'refused' } });
       await advance(1000);
-      expect(notice()).toContain('Could not connect · see Problems');
+      expect(screen.getByTestId('connect-step-auth').dataset['state']).toBe('failed');
+      expect(notice()).toBeNull();
       await advance(120_000);
       expect(connect).toHaveBeenCalledTimes(2);
     });
@@ -705,7 +759,7 @@ describe('the terminal tab', () => {
 
     it('Cancel stops the attempts and leaves Reconnect', async () => {
       await dropped('lost');
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
       expect(notice()).toContain('Session ended');
       expect(screen.getByRole('button', { name: 'Reconnect' })).toBeDefined();
       await advance(120_000);
@@ -715,7 +769,7 @@ describe('the terminal tab', () => {
     it('Retry now, waking from sleep and the network coming back all skip the wait', async () => {
       await dropped('lost');
       connect.mockResolvedValue(UNREACHABLE);
-      fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reconnect now' }));
       await advance(0);
       expect(connect).toHaveBeenCalledTimes(2);
       expect(notice()).toContain('attempt 2 of 10 in 2s');
