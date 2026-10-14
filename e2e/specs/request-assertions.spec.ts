@@ -20,7 +20,14 @@ import {
   saveAll,
   workspaceProjectDir,
 } from '../helpers/project.js';
-import { chooseContextMenuItem, createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  chooseContextMenuItem,
+  createApi,
+  createRestRequest,
+  nameNewRow,
+  sendRest,
+  setMethodAndUrl,
+} from '../helpers/rest.js';
 import {
   startTestRestServer,
   startTestWsServer,
@@ -94,10 +101,7 @@ test.describe('request assertions', () => {
     await chooseContextMenuItem(page, wsApiRow, 'New request');
     await expect(page.getByTestId('ws-editor')).toBeVisible({ timeout: 20_000 });
     const breadcrumbName = page.getByTestId('ws-breadcrumb-name');
-    await breadcrumbName.dblclick();
-    const nameInput = page.getByTestId('ws-breadcrumb-name-input');
-    await nameInput.fill('Echo');
-    await nameInput.press('Enter');
+    await nameNewRow(page, 'Echo');
     await expect(breadcrumbName).toHaveText('Echo');
     await saveAll(page);
 

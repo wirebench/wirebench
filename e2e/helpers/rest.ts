@@ -54,6 +54,18 @@ export function apiRow(page: Page, name: string): Locator {
 }
 
 /**
+ * Names the row the explorer has just created and put into inline rename: a new request or folder.
+ * Returns once the rename is committed.
+ */
+export async function nameNewRow(page: Page, name: string): Promise<void> {
+  const input = page.getByTestId('explorer-rename-input');
+  await expect(input).toBeVisible({ timeout: 20_000 });
+  await input.fill(name);
+  await input.press('Enter');
+  await expect(input).toBeHidden({ timeout: 20_000 });
+}
+
+/**
  * Creates a REST request at the root of `apiName` through the API row's context menu, names it, and
  * leaves its editor open.
  */
@@ -63,13 +75,9 @@ export async function createRestRequest(page: Page, apiName: string, name: strin
   await chooseContextMenuItem(page, row, 'New request');
 
   await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
-  // The breadcrumb renames in place on a double-click, which is how a request is named.
-  const breadcrumbName = page.getByTestId('rest-breadcrumb-name');
-  await breadcrumbName.dblclick();
-  const input = page.getByTestId('rest-breadcrumb-name-input');
-  await input.fill(name);
-  await input.press('Enter');
-  await expect(breadcrumbName).toHaveText(name);
+  // A new request's row starts in rename mode, unfolded to, which is where it is named.
+  await nameNewRow(page, name);
+  await expect(page.getByTestId('rest-breadcrumb-name')).toHaveText(name);
 }
 
 /** Sets the open REST request's method and URL. */

@@ -16,6 +16,7 @@ import type { LogEntry } from '../state/exchanges.js';
 import type { ProjectSnapshot } from '../state/project.js';
 import type { PendingNodeDeletion } from '../state/ui.js';
 import type { TabContribution } from './tab-contribution.js';
+import type { KindQuickOpenItem } from '../shell/quick-open.js';
 
 /** How the explorer treats one node kind a protocol kind owns. */
 export interface ExplorerNodeRole {
@@ -77,6 +78,8 @@ export interface KindRequests {
   open(requestId: string, fallbackTitle?: string): void;
   /** Whether an open project still holds the request. */
   exists(requestId: string, project: ProjectSnapshot): boolean;
+  /** The kind's saved requests as Quick Open (⌘P) lists them. Unset, Quick Open builds them itself (SOAP). */
+  quickOpen?(project: ProjectSnapshot): readonly KindQuickOpenItem[];
 }
 
 /** What a History re-send answers: its IPC reply, with the error when it failed. */

@@ -214,10 +214,10 @@ test.describe('secrets', () => {
 
     // A folder: a Bearer token.
     await chooseContextMenuItem(page, apiRow(page, 'Secure'), 'New folder');
-    // A new folder lands in inline rename mode; Escape keeps the name it was given. The API row is
-    // still folded shut, so the folder has to be revealed before it can be right-clicked.
+    // A new folder lands in inline rename mode, with the API unfolded to it; Escape keeps the name it
+    // was given.
+    await expect(page.getByTestId('explorer-rename-input')).toBeFocused({ timeout: 20_000 });
     await page.keyboard.press('Escape');
-    await apiRow(page, 'Secure').click();
     await chooseContextMenuItem(page, folderRow(page, 'Folder 1'), 'Auth…');
     const dialog = page.getByTestId('folder-auth-dialog');
     await expect(dialog).toBeVisible({ timeout: 20_000 });

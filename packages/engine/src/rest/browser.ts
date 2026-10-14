@@ -20,6 +20,8 @@ export {
   type UrlProblem,
 } from './url.js';
 export type { KeyValueEntry } from './model.js';
+// Which request calls a definition's operation, so a lint finding in Problems opens that request.
+export { matchOperation, type RestOperationRef } from './openapi/match.js';
 // Whether pasted text is a curl command, so the import dialog refuses what main would refuse.
 export { notCurlReason } from '../http/curl-start.js';
 // The `${secret:name}` name rule, so the renderer's secret review checks a name typed into it
