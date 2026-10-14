@@ -157,11 +157,28 @@ describe('RestEditor', () => {
     ]);
   });
 
+  it('counts the rows Params and Headers send on their tabs, and nothing on an empty one', () => {
+    seed(
+      restRequestWire({
+        url: '/pet/{id}?status=sold',
+        pathParams: [{ name: 'id', value: '1', enabled: true }],
+        query: [
+          { name: 'status', value: 'sold', enabled: true },
+          { name: 'tag', value: 'a', enabled: false },
+        ],
+      }),
+    );
+    mount();
+
+    expect(screen.getByRole('tab', { name: /^Params/ }).textContent).toBe('Params2');
+    expect(screen.getByRole('tab', { name: /^Headers/ }).textContent).toBe('Headers');
+  });
+
   it('writes the query table back into the URL', () => {
     seed(restRequestWire({ url: '/pet', query: [{ name: 'status', value: 'sold', enabled: true }] }));
     mount();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Params' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Params/ }));
     const value = screen.getAllByTestId('rest-query-value')[0]!;
     fireEvent.change(value, { target: { value: 'pending' } });
     fireEvent.keyDown(value, { key: 'Enter' });
@@ -174,7 +191,7 @@ describe('RestEditor', () => {
     seed(restRequestWire({ url: '/pet?status=sold', query: [{ name: 'status', value: 'sold', enabled: true }] }));
     mount();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Params' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Params/ }));
     fireEvent.click(screen.getAllByTestId('rest-query-enabled')[0]!);
 
     expect(staged()?.['url']).toBe('/pet');
@@ -190,7 +207,7 @@ describe('RestEditor', () => {
     seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{}' } }));
     mount();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Headers/ }));
     expect(screen.queryByTestId('rest-header-computed-row')).toBeNull();
     expect((await screen.findByTestId('rest-generated-header')).textContent).toContain('application/json');
 
@@ -521,7 +538,7 @@ describe('RestEditor for a webhook item', () => {
     await waitFor(() => {
       expect(restSendBlocked('wh-1')).toBe(problem);
     });
-    fireEvent.click(screen.getByRole('tab', { name: 'Params' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Params/ }));
     await waitFor(() => {
       expect(restSendBlocked('wh-1')).toBeUndefined();
     });

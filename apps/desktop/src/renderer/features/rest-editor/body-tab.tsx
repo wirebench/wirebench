@@ -22,6 +22,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { selectApiOf, useProjectStore } from '../../state/project.js';
 import { GraphqlBody } from './graphql-body.js';
+import { forgetGraphqlMethodChange, methodForBodySwitch } from './graphql-method.js';
 import { JsonFormView } from './json-form-view.js';
 import type { RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/kinds/rest/wire.js';
 import type { KeyValueWire } from '../../../shared/wire-base.js';
@@ -225,13 +226,25 @@ export function BodyTab({
       return;
     }
     const next = drafts[kind] ?? emptyBody(kind);
-    // A GraphQL request is a POST: a GET or HEAD would carry no body (#77).
-    if (kind === 'graphql' && (method === 'GET' || method === 'HEAD')) {
-      setDrafts((current) => ({ ...current, [next.kind]: next }));
-      onChange({ body: next, method: 'POST' });
+    // A GraphQL request is a POST: a GET or HEAD would carry no body (#77). Said out loud, with an
+    // Undo, and taken back when the body leaves GraphQL.
+    const change = method === undefined ? {} : methodForBodySwitch(requestId, body.kind, kind, method);
+    if (change.method === undefined) {
+      set(next);
       return;
     }
-    set(next);
+    setDrafts((current) => ({ ...current, [next.kind]: next }));
+    onChange({ body: next, method: change.method });
+    const previous = change.autoChangedFrom;
+    if (previous !== undefined) {
+      showToast('Method changed to POST', {
+        label: 'Undo',
+        onClick: () => {
+          forgetGraphqlMethodChange(requestId);
+          onChange({ method: previous });
+        },
+      });
+    }
   };
 
   const escapeToggle = (

@@ -114,7 +114,9 @@ function useDraft(
         }
         save(draft);
       }
-      if (event.key === 'Escape') {
+      // An Escape something on top of the cell already used — the variable list closing — is spent:
+      // reverting as well would throw away what was just typed. The next press reverts.
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         setDraft(value);
         // Escape in a table cell means "undo this edit", not "close the dialog behind it".
         event.stopPropagation();
