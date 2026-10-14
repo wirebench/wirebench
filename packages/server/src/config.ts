@@ -480,7 +480,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Where email alerts are sent: `smtp://user:pass:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused.',
+      'Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused.',
   },
   {
     env: 'WIREBENCH_SERVER_SMTP_FROM',

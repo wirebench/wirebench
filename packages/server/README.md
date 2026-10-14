@@ -48,7 +48,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` | no | `90` | Scheduled runs and their results older than this many days are deleted (1–3650). |
 | `WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB` | no | `50` | The most of a workspace a scheduled run writes to disk to run it (1–1024); a larger one errors. |
 | `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` | no | — | The only hosts Slack, Teams and webhook alerts may go to: names or `*.example.com`, comma-separated. Unset, any https host. |
-| `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Never logged. |
+| `WIREBENCH_SERVER_SMTP_URL` | no | — | Where email alerts are sent: `smtp://user:pass@mail.example.com:587` (STARTTLS when offered) or `smtps://…:465`. Unset, email alerts are refused. Never logged. |
 | `WIREBENCH_SERVER_SMTP_FROM` | no | — | The sender address of email alerts; required with WIREBENCH_SERVER_SMTP_URL. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
@@ -244,3 +244,29 @@ editors and admins create, change, rotate, clear and delete.
 - **Turning it off:** `WIREBENCH_SERVER_HOOKS_ENABLED=false` registers neither the public route nor the
   management routes, and the app hides its Webhooks node. The age sweep keeps running, so captures
   already stored still expire.
+
+## Scheduled runs
+
+Enterprise. A workspace's admins schedule its suites to run on the server, on a cron expression in a
+time zone, and alert by email, Slack, Teams or a signed webhook when they fail and when they recover.
+The routes live under `/api/v1/workspaces/:workspaceId/schedules`; `/api/v1/meta` lists the
+`scheduled-runs` capability when the module is on. The user guide's _Scheduled runs_ page covers the
+API, alerts and muting.
+
+- **Set the key first.** `WIREBENCH_SERVER_SCHEDULES_SECRET_KEY` seals schedule secrets and alert URLs.
+  Without it they are refused. A new key cannot open what the old one sealed.
+- **Email** needs `WIREBENCH_SERVER_SMTP_URL` and `WIREBENCH_SERVER_SMTP_FROM`.
+  `WIREBENCH_SERVER_SCHEDULES_ALERT_HOSTS` bounds where Slack, Teams and webhook alerts may go.
+- **One scheduler per database is not required.** Servers sharing a database claim due schedules and
+  queued runs with `skip locked`, so each fire runs once. A run left `running` by a server that died
+  ends `interrupted` a minute after its deadline.
+- **Disk.** Each run writes the workspace to `<dataDir>/tmp/schedules/<runId>/` (mode 0700, at most
+  `WIREBENCH_SERVER_SCHEDULES_MAX_SNAPSHOT_MB`) and removes it after.
+- **A run never sees the server's environment.** It gets the project, its environment and the
+  schedule's own sealed secrets only.
+- **Retention.** Runs and results older than `WIREBENCH_SERVER_SCHEDULES_MAX_AGE_DAYS` are deleted in
+  batches; delivered and given-up alerts after 7 days.
+- **Console commands**, on any edition: `wirebench-server admin schedules list [--workspace <id>]`,
+  `disable <id>`, `enable <id>` and `runs <id> [--limit n]` (NDJSON).
+- **Turning it off:** `WIREBENCH_SERVER_SCHEDULES_ENABLED=false` registers neither the routes nor the
+  scheduler.
