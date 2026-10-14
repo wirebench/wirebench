@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
   count, so a program's own colours win, and full-screen programs are left alone. **Highlight output**
   (`terminal.highlightOutput`, on by default) in Preferences → Terminal turns it off and lists the rules
   (#424).
+- **FIDO2 security keys for SSH.** A host can sign in with a security key stored in the keychain
+  (`sk-ssh-ed25519@openssh.com` or `sk-ecdsa-sha2-nistp256@openssh.com`): the connection screen says
+  when to touch the key, and asks for its PIN when the key needs one, without storing it. **Generate
+  key…** makes a non-resident security key on the key plugged in, Ed25519 or ECDSA, optionally asking
+  for the PIN at every sign-in. A host that signs in with the SSH agent now also uses security keys the
+  agent holds, which it skipped before. Not available on Windows yet (#420).
 - **Mosh sessions.** A host or group can set `protocol: mosh`: Wirebench signs in over SSH, starts
   `mosh-server` there, and runs the session over UDP with the `mosh-client` installed on your computer,
   in the same terminal tab, so it survives dropped packets and network changes. An optional `mosh` block

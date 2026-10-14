@@ -70,8 +70,11 @@ const OWN_PACKAGES = new Set([
   '@wirebench/ssh',
 ]);
 
-/** File names that may carry a license or notice, in the order they are looked for. */
-const LICENSE_FILE_PATTERN = /^(licen[cs]e|notice|copying)(\.(md|txt|markdown))?$/i;
+/**
+ * File names that may carry a license or notice, in the order they are looked for. A suffixed name
+ * (`LICENSE-bsd.txt`) counts too: node-hid ships only the license of the hidapi code compiled into it.
+ */
+const LICENSE_FILE_PATTERN = /^(licen[cs]e|notice|copying)(-[a-z0-9]+)?(\.(md|txt|markdown))?$/i;
 
 interface PackageManifest {
   readonly name?: string;

@@ -162,7 +162,7 @@ function failedStep(view: ConnectView, error: ConnectError): ConnectStepId {
   const jump = onJumpHost(error.details);
   const phase = error.details?.['phase'];
   if (jump) return view.steps.find((s) => s.id === 'resolve')?.state === 'done' ? 'connect' : 'resolve';
-  if (error.code === 'ssh-auth-failed') return 'auth';
+  if (error.code === 'ssh-auth-failed' || error.code.startsWith('ssh-sk-')) return 'auth';
   if (error.code === 'ssh-host-key-new' || error.code === 'ssh-host-key-changed') return 'host-key';
   if (error.code === 'sftp-unavailable') return 'shell';
   if (phase === 'resolve') return 'resolve';
