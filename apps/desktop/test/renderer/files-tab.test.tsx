@@ -49,7 +49,7 @@ it('connects on mount and lists the host’s home folder', async () => {
   await waitFor(() => {
     expect(screen.getByText('notes.txt')).toBeDefined();
   });
-  expect(open).toHaveBeenCalledWith({ hostId: 'a' });
+  expect(open).toHaveBeenCalledWith({ hostId: 'a', attemptId: expect.any(String) as unknown });
 });
 
 it('Open terminal opens or focuses the host’s terminal tab', async () => {

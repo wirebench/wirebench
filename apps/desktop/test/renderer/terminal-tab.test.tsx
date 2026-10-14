@@ -272,7 +272,7 @@ describe('the terminal tab', () => {
     await waitFor(() => {
       expect(sessionOn('a')).toEqual({ sessionId: 's1', state: 'open' });
     });
-    expect(connect).toHaveBeenCalledWith({ hostId: 'a', cols: 80, rows: 24 });
+    expect(connect).toHaveBeenCalledWith({ hostId: 'a', cols: 80, rows: 24, attemptId: expect.any(String) as unknown });
 
     act(() => {
       useEditorsStore.getState().showStart();
@@ -635,7 +635,12 @@ describe('the terminal tab', () => {
       connect.mockResolvedValueOnce(OPEN('s2'));
       await advance(1000);
       expect(sessionOn('a')).toEqual({ sessionId: 's2', state: 'open' });
-      expect(connect).toHaveBeenLastCalledWith({ hostId: 'a', cols: 80, rows: 24 });
+      expect(connect).toHaveBeenLastCalledWith({
+        hostId: 'a',
+        cols: 80,
+        rows: 24,
+        attemptId: expect.any(String) as unknown,
+      });
       expect(xterm.FakeTerminal.instances).toHaveLength(1);
       expect(lastTerminal()?.disposed).toBe(false);
       expect(

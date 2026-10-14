@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { confirmTrust } from './connect.js';
+import { failWaitingAttempt } from './connect-store.js';
 import { useHostsStore } from './hosts-store.js';
 
 /**
@@ -24,6 +25,11 @@ function TrustDialogBody() {
       onOpenChange={(open) => {
         // Trust clears the prompt before this runs, so a prompt still here was dismissed.
         if (!open) {
+          // The connect that waited on the prompt stops here: its screen says the key was not trusted.
+          if (prompt !== null) {
+            const code = prompt.previous === undefined ? 'ssh-host-key-new' : 'ssh-host-key-changed';
+            failWaitingAttempt(prompt.paneId, { code, message: '', details: { host: prompt.host } });
+          }
           cancelTrust();
           setUnderstood(false);
         }

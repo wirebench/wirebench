@@ -1,3 +1,5 @@
+import type { SshConnectProgressEvent } from '../../../shared/ssh-wire.js';
+import { noteProgress } from './connect-store.js';
 import { useHostsStore } from './hosts-store.js';
 import { reconnectNow } from './reconnect.js';
 import type { SessionEndReason } from './reconnect.js';
@@ -167,6 +169,9 @@ export function subscribeToSshEvents(): () => void {
     window.wirebench.on('ssh.resumed', reconnectNow),
     window.wirebench.on('ssh.state', ((event: StateEvent) => {
       useHostsStore.getState().noteSessionState(event.sessionId, event.state);
+    }) as Listener),
+    window.wirebench.on('ssh.connectProgress', ((event: SshConnectProgressEvent) => {
+      noteProgress(event.attemptId, event.event);
     }) as Listener),
   ];
   window.addEventListener('online', reconnectNow);
