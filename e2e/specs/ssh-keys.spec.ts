@@ -52,7 +52,10 @@ test('generate a key in the keychain, install it on a host and switch the host t
 
   // Generate an Ed25519 key: the keychain lists it by type and fingerprint, never by its value.
   await page.getByTestId('ssh-nav-keychain').click();
-  await page.getByRole('button', { name: /Generate key/ }).click();
+  await page
+    .getByTestId('ssh-view-header')
+    .getByRole('button', { name: /Generate key/ })
+    .click();
   const generate = page.getByTestId('generate-key-dialog');
   await generate.getByLabel('Secret name', { exact: true }).fill('box_key');
   await generate.getByRole('button', { name: 'Generate' }).click();

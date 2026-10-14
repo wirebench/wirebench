@@ -29,7 +29,7 @@ test('attach a certificate to a keychain key and sign in with it', async () => {
 
   // The key as a keychain secret, then its certificate pasted onto it.
   await showSshNav(page, 'keychain');
-  await page.getByRole('button', { name: 'New secret' }).click();
+  await page.getByTestId('ssh-view-header').getByRole('button', { name: 'New secret' }).click();
   const form = page.getByRole('form', { name: 'Store a secret' });
   await form.getByLabel('Secret name', { exact: true }).fill('ci_key');
   await form.getByLabel('Secret value', { exact: true }).fill(certFixture('user_ed25519'));

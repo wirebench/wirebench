@@ -300,7 +300,7 @@ export function HostCards({
             openDialog({ mode: 'new-host' });
           }}
         >
-          <Plus size={13} aria-hidden /> New host
+          <Plus size={13} aria-hidden /> Add host
         </Button>
         <Button
           onClick={() => {

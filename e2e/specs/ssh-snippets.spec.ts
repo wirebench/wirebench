@@ -68,7 +68,7 @@ test('snippets: create, run with a variable, mask a secret, palette, picker, gho
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Ops' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'New snippet', exact: true }).click();
+  await page.getByTestId('ssh-view-header').getByRole('button', { name: 'New snippet', exact: true }).click();
   const editor = page.getByTestId('snippet-editor');
   await editor.getByLabel('Name', { exact: true }).fill('Greet');
   await editor.getByLabel('Package', { exact: true }).selectOption({ label: 'Ops' });
@@ -95,7 +95,7 @@ test('snippets: create, run with a variable, mask a secret, palette, picker, gho
 
   // A snippet with a secret: the value is stored from the editor, the script names it only.
   await showSnippets(page);
-  await page.getByRole('button', { name: 'New snippet', exact: true }).click();
+  await page.getByTestId('ssh-view-header').getByRole('button', { name: 'New snippet', exact: true }).click();
   await editor.getByLabel('Name', { exact: true }).fill('Token');
   await editor.getByLabel('Insert secret', { exact: true }).selectOption({ label: 'New secret…' });
   await editor.getByLabel('Secret name', { exact: true }).fill('snip_tok');

@@ -496,7 +496,7 @@ describe('Hosts tab view', () => {
     useHostsStore.setState({ file: { version: 1, groups: [], hosts: [] }, resolved: [] });
     render(<SshHome />);
     expect(screen.getByTestId('hosts-empty')).toBeDefined();
-    expect(within(screen.getByTestId('hosts-empty')).getByRole('button', { name: /New host/ })).toBeDefined();
+    expect(within(screen.getByTestId('hosts-empty')).getByRole('button', { name: /Add host/ })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Import hosts…' })).toBeDefined();
   });
   it('a search that hides every host offers Clear search', async () => {
