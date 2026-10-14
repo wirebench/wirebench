@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format follows
   key…** makes a non-resident security key on the key plugged in, Ed25519 or ECDSA, optionally asking
   for the PIN at every sign-in. A host that signs in with the SSH agent now also uses security keys the
   agent holds, which it skipped before. Not available on Windows yet (#420).
+- **SSH through a SOCKS5 or HTTP proxy.** A host or a group can name a SOCKS5 or HTTP CONNECT proxy (host
+  form → Advanced → Proxy), with an optional user and a password kept as a secret. The first hop of a
+  connection, the host or its outermost jump host, is dialled through it, and the proxy resolves the
+  host's name. Groups pass it down; **None** on a host under a group's proxy connects directly. The
+  connection screen logs the proxy hop and says plainly when the proxy cannot be reached, refuses the
+  sign-in or will not open the tunnel. Terminals, Files, port forwarding and `wirebench ssh forward` all
+  use it, and the `ssh_config` importer maps `ProxyCommand nc -X 5` and `nc -X connect` lines (#417).
+
 - **Terminal right-click menu, docked find bar and recording dot.** Right-clicking a terminal offers
   Copy, Paste, Select all, Find…, Clear, Split right, Split down, Run snippet…, Open files and
   Reconnect, each with its shortcut; on Windows and Linux Ctrl+Shift+C, V and A copy, paste and select
@@ -22,6 +30,7 @@ All notable changes to this project are documented here. The format follows
   drops. A red dot on the tab and the pane header shows a session is being written to a session log.
   **Session Logs…** in the palette, or **All hosts…** in a host's details, lists every host's logs,
   and log rows now read like *11:09 · 16 B · exit 0* under the day they started (#534).
+
 - **Connection screen for SSH terminals and Files.** Until the shell opens, a pane shows the steps of
   the connect: Resolving address, Connecting, Checking host key, Authenticating and Starting shell (or
   Starting SFTP). Each shows what it is doing, then a tick and how long it took, and the screen ends

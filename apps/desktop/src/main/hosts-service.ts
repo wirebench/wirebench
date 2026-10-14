@@ -18,6 +18,7 @@ import type {
   ResolvedEnvVar,
   ResolvedHost,
   SshAuth,
+  SshProxy,
   SshSettings,
 } from '@wirebench/ssh';
 import type {
@@ -31,6 +32,7 @@ import type {
   SshAuthWire,
   SshListHostsResponse,
   SshProblemWire,
+  SshProxyWire,
   SshSettingsWire,
 } from '../shared/ssh-wire.js';
 
@@ -181,13 +183,30 @@ function authFromWire(auth: SshAuthWire | undefined): SshAuth | undefined {
     ...(auth.passphraseSecret ? { passphrase: token(auth.passphraseSecret) } : {}),
   };
 }
-function settingsToWire({ auth, ...rest }: SshSettings): SshSettingsWire {
-  const wire = authToWire(auth);
-  return { ...rest, ...(wire ? { auth: wire } : {}) };
+function proxyToWire(proxy: SshProxy): SshProxyWire {
+  const { password, ...rest } = proxy;
+  return { ...rest, ...(password === undefined ? {} : { passwordSecret: secretNameOf(password) }) };
 }
-function settingsFromWire({ auth, ...rest }: SshSettingsWire): SshSettings {
+function proxyFromWire(proxy: SshProxyWire | false): SshProxy | false {
+  if (proxy === false) return false;
+  const { passwordSecret, ...rest } = proxy;
+  return { ...rest, ...(passwordSecret === undefined ? {} : { password: token(passwordSecret) }) };
+}
+function settingsToWire({ auth, proxy, ...rest }: SshSettings): SshSettingsWire {
+  const wire = authToWire(auth);
+  return {
+    ...rest,
+    ...(wire ? { auth: wire } : {}),
+    ...(proxy === undefined ? {} : { proxy: proxy === false ? false : proxyToWire(proxy) }),
+  };
+}
+function settingsFromWire({ auth, proxy, ...rest }: SshSettingsWire): SshSettings {
   const model = authFromWire(auth);
-  return { ...rest, ...(model ? { auth: model } : {}) };
+  return {
+    ...rest,
+    ...(model ? { auth: model } : {}),
+    ...(proxy === undefined ? {} : { proxy: proxyFromWire(proxy) }),
+  };
 }
 function forwardFromWire(f: ForwardEntryWire): ForwardEntry {
   if (!('type' in f)) return { id: f.id, enabled: false };
@@ -274,7 +293,11 @@ const resolvedToWire = (h: ResolvedHost): ResolvedHostWire => ({
   ...h,
   tags: [...h.tags],
   path: [...h.path],
-  ssh: { ...h.ssh, auth: { value: authToWire(h.ssh.auth.value), from: h.ssh.auth.from } },
+  ssh: {
+    ...h.ssh,
+    auth: { value: authToWire(h.ssh.auth.value), from: h.ssh.auth.from },
+    proxy: { value: h.ssh.proxy.value && proxyToWire(h.ssh.proxy.value), from: h.ssh.proxy.from },
+  },
   forwards: [...h.forwards],
   env: h.env.map(resolvedEnvToWire),
 });

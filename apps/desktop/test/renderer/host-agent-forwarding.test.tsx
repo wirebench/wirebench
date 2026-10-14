@@ -51,6 +51,7 @@ const resolvedHost = (
     keepAlive: { value: 15, from: 'default' },
     connectTimeout: { value: 20, from: 'default' },
     forwardAgent,
+    proxy: { value: undefined, from: 'default' },
   },
   forwards: [],
   env: [],

@@ -6,3 +6,5 @@ export { certFixture, sshdPath, startOpenSshServer } from './openssh-server.js';
 export type { OpenSshServer } from './openssh-server.js';
 export { SoftAuthenticator, softTransport } from './fido-authenticator.js';
 export type { SoftAuthenticatorOptions } from './fido-authenticator.js';
+export { PROXY_ONLY_NAME, startTestProxy } from './test-proxy.js';
+export type { ProxyRequest, TestProxy, TestProxyOptions } from './test-proxy.js';
