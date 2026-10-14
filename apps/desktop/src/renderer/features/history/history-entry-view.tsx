@@ -79,6 +79,22 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
         <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading…</p>}>
           <kind.history.Body entry={entry} />
         </Suspense>
+      ) : requestBody.trim().length === 0 ? (
+        // A GET (or any send with no body) has nothing to show on the request side: the response
+        // takes the whole tab rather than sitting beside an empty editor.
+        <div className="flex min-h-0 flex-1 flex-col">
+          <p data-testid="history-no-request-body" className="shrink-0 px-3 py-1 text-xs text-fg-faint">
+            The request had no body.
+          </p>
+          <div className="min-h-0 flex-1">
+            <CodeEditor
+              ariaLabel="History response body"
+              language={sniffLanguage(responseBody)}
+              value={prettyPrintBody(responseBody)}
+              readOnly
+            />
+          </div>
+        </div>
       ) : (
         <div className="min-h-0 flex-1">
           <Group orientation="horizontal" className="flex h-full">

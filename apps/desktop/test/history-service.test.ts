@@ -243,6 +243,27 @@ describe('HistoryService', () => {
     expect(cleared).toBe(2);
     expect(history.list().entries).toEqual([]);
   });
+
+  it('remove drops one entry from whichever open file holds it', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-r1');
+    await history.open('proj-r2');
+    const send = (projectId: string, requestName: string) =>
+      history.recordSend(projectId, {
+        requestName,
+        interfaceName: 'Weather',
+        operationName: 'Get',
+        input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' },
+        durationMs: 1,
+      });
+    await send('proj-r1', 'First');
+    await send('proj-r2', 'Second');
+    const second = history.list({ projectId: 'proj-r2' }).entries[0]!;
+
+    expect(await history.remove(second.id)).toBe(true);
+    expect(await history.remove(second.id)).toBe(false);
+    expect(history.list().entries.map((entry) => entry.requestName)).toEqual(['First']);
+  });
   it("finds a request's newest REST entry in its own project", async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {

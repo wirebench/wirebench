@@ -679,9 +679,17 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Environment',
     shortcut: 'Mod+Alt+E',
   },
+  // "HTTP Log" in the palette should land on the log itself, not on the command that reveals
+  // credentials in it: this one ranks first for that search.
+  'view.showHttpLog': {
+    id: 'view.showHttpLog',
+    label: 'Show HTTP Log',
+    category: 'View',
+  },
+  // Kept under its old id so a key someone bound to it still works; it now asks before revealing.
   'secrets.toggleShowSecrets': {
     id: 'secrets.toggleShowSecrets',
-    label: 'Toggle Show Secrets in HTTP Log',
+    label: 'Reveal Secrets in HTTP Log…',
     category: 'Secrets',
   },
   'secrets.setTokenValue': {

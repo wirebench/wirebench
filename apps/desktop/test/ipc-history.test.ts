@@ -164,6 +164,11 @@ function fakeHistory(entries: HistoryEntryWire[]) {
       entries.splice(0, entries.length, ...kept);
       return Promise.resolve(n);
     }),
+    remove: vi.fn((id: string) => {
+      const index = entries.findIndex((e) => e.id === id);
+      if (index !== -1) entries.splice(index, 1);
+      return Promise.resolve(index !== -1);
+    }),
     openProjectIds: vi.fn((): readonly string[] => ['proj-1']),
     open: vi.fn(() => Promise.resolve()),
     close: vi.fn(),
@@ -229,6 +234,15 @@ describe('registerHistoryChannels', () => {
 
     const result = await invoke('history.clear', undefined);
     expect(result).toEqual({ ok: true, value: { cleared: 2 } });
+  });
+
+  it('history.remove drops one entry and says whether it was there', async () => {
+    const entries = [makeEntry({ id: 'a' }), makeEntry({ id: 'b' })];
+    registerHistoryChannelsWithKinds(fakeHistory(entries) as never, { project: noLiveRequests() });
+
+    expect(await invoke('history.remove', { id: 'a' })).toEqual({ ok: true, value: { removed: true } });
+    expect(await invoke('history.remove', { id: 'a' })).toEqual({ ok: true, value: { removed: false } });
+    expect(entries.map((e) => e.id)).toEqual(['b']);
   });
 
   it.each(['websocket', 'rest', 'grpc'] as const)(

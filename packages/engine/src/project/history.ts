@@ -378,10 +378,12 @@ export interface HistoryFile {
   get(id: string): HistoryEntry | undefined;
   /** Empties the file and the cache. Returns the number of entries that were cleared. */
   clear(): Promise<number>;
+  /** Drops the entry with this id from the file and the cache. Resolves `true` when it was there. */
+  remove(id: string): Promise<boolean>;
   count(): number;
   /**
    * Rereads the file when it is not the version this handle last read or wrote — another process
-   * wrote it. Resolves `true` when it reread. Serialised with `append` and `clear`.
+   * wrote it. Resolves `true` when it reread. Serialised with `append`, `clear` and `remove`.
    */
   refresh(): Promise<boolean>;
   /** Corrupt lines skipped while loading the file. */
@@ -691,6 +693,21 @@ export async function openHistory(file: string, options: HistoryOptions = {}): P
           cache = [];
           await write('');
           return cleared;
+        }),
+      );
+    },
+
+    remove(id) {
+      return enqueue(() =>
+        withLock(file, options.lock, async () => {
+          await reload();
+          const kept = cache.filter((entry) => entry.id !== id);
+          if (kept.length === cache.length) {
+            return false;
+          }
+          cache = kept;
+          await write(serialise(cache));
+          return true;
         }),
       );
     },

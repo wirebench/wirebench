@@ -103,6 +103,7 @@
     "history.clear",
     "history.get",
     "history.list",
+    "history.remove",
     "history.resend",
     "history.resendGrpc",
     "history.resendRest",

@@ -12,6 +12,7 @@
 import { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { notCurlReason } from '@wirebench/engine/rest';
 import { Button } from '../../components/button.js';
 import { importCurl } from './request-actions.js';
 import { describeCurlProblem, previewCurl, type CurlPreview } from './curl-preview.js';
@@ -94,7 +95,9 @@ export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: Im
   const [command, setCommand] = useState('');
   const [busy, setBusy] = useState(false);
   const preview = useMemo(() => previewCurl(command, target.kind), [command, target.kind]);
-  const canImport = command.trim().length > 0 && !busy;
+  // The same check main makes: text that is not a curl command imports nothing, and says why.
+  const notCurl = notCurlReason(command);
+  const canImport = command.trim().length > 0 && notCurl === undefined && !busy;
 
   return (
     <Dialog.Root
@@ -139,7 +142,17 @@ export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: Im
             className="mt-1 min-h-0 flex-1 resize-none rounded-md border border-hairline bg-surface-base p-2 font-mono text-sm text-fg-default"
           />
 
-          <Preview preview={preview} target={target.kind} />
+          {notCurl === undefined ? (
+            <Preview preview={preview} target={target.kind} />
+          ) : (
+            <p
+              role="alert"
+              data-testid="import-curl-not-curl"
+              className="mt-3 rounded-md border border-hairline bg-surface-sunken p-2 text-sm text-fg-muted"
+            >
+              {notCurl}
+            </p>
+          )}
 
           <div className="mt-3 flex justify-end gap-2">
             <Dialog.Close asChild>
