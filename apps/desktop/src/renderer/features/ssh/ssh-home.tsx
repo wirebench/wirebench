@@ -80,7 +80,7 @@ const SORT_LABELS: Readonly<Record<HostsSort, string>> = {
   recent: 'Recently connected',
 };
 
-const MENU_CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
+const MENU_CONTENT_CLASS = 'z-dropdown min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 const MENU_ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 

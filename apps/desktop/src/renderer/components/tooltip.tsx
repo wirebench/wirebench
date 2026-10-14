@@ -17,7 +17,7 @@ export function Tooltip({ label, shortcut, side = 'bottom', children }: TooltipP
         <RadixTooltip.Content
           side={side}
           sideOffset={6}
-          className="z-50 flex items-center gap-2 rounded-md border border-hairline bg-surface-overlay px-2 py-1 text-sm text-fg-default shadow-lg"
+          className="z-dialog flex items-center gap-2 rounded-md border border-hairline bg-surface-overlay px-2 py-1 text-sm text-fg-default shadow-lg"
         >
           {label}
           {shortcut !== undefined && <span className="font-mono text-xs text-fg-subtle">{shortcut}</span>}

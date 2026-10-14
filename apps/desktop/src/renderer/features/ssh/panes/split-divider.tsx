@@ -62,7 +62,7 @@ export function SplitDivider({
       aria-orientation={row ? 'vertical' : 'horizontal'}
       aria-label="Resize panes"
       data-testid="ssh-pane-divider"
-      className={`absolute z-10 bg-hairline hover:bg-accent ${row ? 'cursor-col-resize' : 'cursor-row-resize'}`}
+      className={`absolute z-[1] bg-hairline hover:bg-accent ${row ? 'cursor-col-resize' : 'cursor-row-resize'}`}
       style={style}
       onPointerDown={start}
       onDoubleClick={() => {

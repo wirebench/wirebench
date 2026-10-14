@@ -76,7 +76,7 @@ export function WorkspaceSwitcher() {
           ref={contentRef}
           align="start"
           sideOffset={4}
-          className="min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          className="z-dropdown min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
         >
           {rows.map((row) => (
             <DropdownMenu.Item

@@ -118,7 +118,7 @@ describe('snippets in the palette', () => {
     render(<Shell />);
     const input = screen.getByTestId<HTMLInputElement>('command-palette-input');
     fireEvent.change(input, { target: { value: 'run snip' } });
-    fireEvent.click(screen.getByText('Run Snippet…'));
+    fireEvent.click(screen.getByText('Snippets: Run Snippet…'));
     const picker = screen.getByTestId<HTMLInputElement>('quick-open-input');
     expect(picker.value).toBe('');
     expect(picker.placeholder).toBe('Run snippet');

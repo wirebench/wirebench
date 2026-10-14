@@ -90,7 +90,7 @@ export function EndpointSelect({ summary, bindingName, value, onChange, onEditEn
             side="bottom"
             align="end"
             sideOffset={4}
-            className="max-w-[32rem] min-w-64 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+            className="z-dropdown max-w-[32rem] min-w-64 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           >
             {options.map((option) => (
               <DropdownMenu.Item

@@ -150,7 +150,7 @@ export function EnvSwitcher() {
           side="bottom"
           align="end"
           sideOffset={4}
-          className="min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          className="z-dropdown min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
         >
           {group('All projects', groups.allProjects)}
           {group(projectName ?? 'This project', groups.project)}

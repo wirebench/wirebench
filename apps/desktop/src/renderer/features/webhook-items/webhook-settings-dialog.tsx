@@ -220,7 +220,7 @@ export function WebhookSettingsDialog() {
                       side="bottom"
                       align="end"
                       sideOffset={4}
-                      className="min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+                      className="z-dialog min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
                     >
                       {hooks.length === 0 ? (
                         <p className="px-2 py-1.5 text-sm text-fg-subtle">No catch URLs yet</p>

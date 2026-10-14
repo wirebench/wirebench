@@ -349,6 +349,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **SSH quick wins.** Deleting a host asks first, naming how many open sessions will close, and those
+  terminal panes and its Files tab close with it; Delete is drawn as a danger item. Dialogs share one
+  layer scale (menus, then dialogs, then toasts), so a split divider no longer draws through the Save
+  layout dialog and the trust prompt shows over a pane's connection screen. Shortcuts in the SSH views and
+  Terminal settings read in the platform's notation (Alt+Enter, Ctrl++ off a Mac). The palette lists one
+  Connect to Host…, and every SSH command starts with its area: Hosts, Terminal, Files, Forwarding,
+  Layouts or Snippets, with Forwarding in a category of its own (#536).
 - **Revealing secrets in the HTTP log asks first.** The palette command is now **Reveal Secrets in HTTP
   Log…** and, like the log's lock, asks before Authorization headers, cookies and passwords show;
   hiding them never asks. A new **Show HTTP Log** command is what a search for "HTTP Log" lands on,

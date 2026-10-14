@@ -67,7 +67,7 @@ export function ToastViewport() {
       role="status"
       aria-live="polite"
       data-testid="toast-viewport"
-      className="pointer-events-none fixed right-4 bottom-8 z-50 flex flex-col items-end gap-2"
+      className="pointer-events-none fixed right-4 bottom-8 z-toast flex flex-col items-end gap-2"
     >
       {visible.map((toast) => (
         <div
