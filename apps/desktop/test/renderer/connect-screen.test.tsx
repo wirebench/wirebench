@@ -27,6 +27,7 @@ function resolved(user: string | undefined): ResolvedHostWire {
       keepAlive: { value: 30, from: 'default' },
       connectTimeout: { value: 10, from: 'default' },
       forwardAgent: { value: false, from: 'default' },
+      proxy: { value: undefined, from: 'default' },
     },
     ...(user === undefined ? { incomplete: { field: 'user' as const } } : {}),
     forwards: [],

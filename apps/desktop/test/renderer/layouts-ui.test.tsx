@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const list = vi.fn();
@@ -114,9 +114,21 @@ describe('the Layouts view', () => {
   it('shows the empty state with none', async () => {
     list.mockResolvedValue(listed([]));
     render(<LayoutsPanel />);
-    expect((await screen.findByTestId('layouts-empty')).textContent).toBe(
-      'Split a terminal tab and choose Save layout… to add one.',
-    );
+    const empty = await screen.findByTestId('layouts-empty');
+    expect(empty.textContent).toContain('choose Save layout…');
+    fireEvent.click(within(empty).getByRole('button', { name: /Open a host/ }));
+    expect(useHostsStore.getState().homeView).toBe('hosts');
+  });
+
+  it('the search narrows by name or host and offers Clear search when nothing is left', async () => {
+    render(<LayoutsPanel />);
+    await screen.findByTestId('layout-row');
+    fireEvent.change(screen.getByLabelText('Filter layouts'), { target: { value: 'database 2' } });
+    expect(screen.getByTestId('layout-row')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('Filter layouts'), { target: { value: 'staging' } });
+    expect(screen.queryByTestId('layout-row')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByTestId('layout-row')).toBeDefined();
   });
 
   it('Open opens one tab titled by the layout with every pane', async () => {

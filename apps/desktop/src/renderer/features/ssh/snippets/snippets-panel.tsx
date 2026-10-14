@@ -2,7 +2,7 @@
  * The Snippets view in the SSH area's fixed first tab: the workspace's `snippets.yaml` as packages of rows,
  * then the snippets in no package, with a filter and tag chips.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
@@ -13,7 +13,6 @@ import {
   MoreHorizontal,
   Play,
   Plus,
-  Search,
   ShieldAlert,
   SquareTerminal,
   TextCursorInput,
@@ -22,8 +21,6 @@ import {
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import type { SnippetListItemWire, SnippetsFileWire } from '../../../../shared/snippets-wire.js';
-import { formatKeybinding } from '@shared/keybinding-format.js';
-import { detectPlatform } from '../../../lib/platform.js';
 import { INPUT_CLASS as FIELD_CLASS } from '../inherited-field.js';
 import {
   addPackage,
@@ -35,9 +32,9 @@ import {
 } from './snippet-edit.js';
 import { startRun } from './run.js';
 import { filterSnippets, useSnippetsStore } from './snippets-store.js';
+import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from '../ssh-view-frame.js';
+import { SSH_VIEWS } from '../ssh-views.js';
 
-const INPUT_CLASS =
-  'w-full rounded-md border border-hairline-strong bg-surface-base px-2 py-1 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent';
 const CHIP_CLASS = 'rounded-full border px-2 py-0.5 text-xs';
 const MENU_CONTENT_CLASS = 'z-dropdown min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 const MENU_ITEM_CLASS =
@@ -91,9 +88,6 @@ export function SnippetsPanel() {
   const toggleTag = useSnippetsStore((s) => s.toggleTag);
   const openEditor = useSnippetsStore((s) => s.openEditor);
   const [naming, setNaming] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const platform = detectPlatform();
-  const mac = platform === 'mac';
   const tags = [...new Set(snippets.flatMap((s) => s.tags))].sort();
   const filtering = filter.trim() !== '' || selectedTags.length > 0;
   const sections = sectionsOf(file.packages, filterSnippets(snippets, filter, selectedTags), filtering);
@@ -105,89 +99,54 @@ export function SnippetsPanel() {
       .catch(() => undefined); // the problems banner stays as it was; the next change reads again
   }, []);
 
-  // ⌘F (Ctrl+F elsewhere) goes to the filter while this view is in front.
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent): void => {
-      if ((mac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [mac]);
-
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-2 flex items-baseline gap-2 text-lg font-medium text-fg-default">
-          Snippets <span className="text-sm font-normal text-fg-subtle">{snippets.length}</span>
-        </h2>
-        <label className="relative flex max-w-md min-w-48 flex-1 items-center">
-          <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2 text-fg-subtle" />
-          <input
-            ref={searchRef}
-            type="search"
-            aria-label="Filter snippets"
-            placeholder="Search snippets…"
-            className={`${INPUT_CLASS} pr-12 pl-7`}
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && filter !== '') {
-                e.stopPropagation();
-                setFilter('');
-              }
-            }}
-          />
-          <kbd className="pointer-events-none absolute right-2 rounded border border-hairline px-1 font-sans text-xs text-fg-subtle">
-            {formatKeybinding('Mod+F', platform)}
-          </kbd>
-        </label>
-        <div className="ml-auto flex">
-          <Button
-            variant="primary"
-            className={SPLIT_HEAD_CLASS}
-            onClick={() => {
-              openEditor({ mode: 'new' });
-            }}
-          >
-            <Plus size={13} aria-hidden /> New snippet
-          </Button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <Button variant="primary" aria-label="More ways to add" className={SPLIT_TAIL_CLASS}>
-                <ChevronDown size={13} aria-hidden="true" />
-              </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
-                <DropdownMenu.Item
-                  className={MENU_ITEM_CLASS}
-                  onSelect={() => {
-                    openEditor({ mode: 'new' });
-                  }}
-                >
-                  <SquareTerminal size={13} aria-hidden="true" /> New snippet
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  className={MENU_ITEM_CLASS}
-                  onSelect={() => {
-                    setNaming(true);
-                  }}
-                >
-                  <FolderPlus size={13} aria-hidden="true" /> New package
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      </div>
+    <SshView>
+      <SshViewHeader
+        title={SSH_VIEWS.snippets.label}
+        count={snippets.length}
+        search={{ value: filter, onChange: setFilter, label: 'Filter snippets', placeholder: 'Search snippets…' }}
+        description="Commands you run often, with their variables, to run on one host or many."
+        actions={
+          <div className="ml-auto flex">
+            <Button
+              variant="primary"
+              className={SPLIT_HEAD_CLASS}
+              onClick={() => {
+                openEditor({ mode: 'new' });
+              }}
+            >
+              <Plus size={13} aria-hidden /> New snippet
+            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <Button variant="primary" aria-label="More ways to add" className={SPLIT_TAIL_CLASS}>
+                  <ChevronDown size={13} aria-hidden="true" />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
+                  <DropdownMenu.Item
+                    className={MENU_ITEM_CLASS}
+                    onSelect={() => {
+                      openEditor({ mode: 'new' });
+                    }}
+                  >
+                    <SquareTerminal size={13} aria-hidden="true" /> New snippet
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className={MENU_ITEM_CLASS}
+                    onSelect={() => {
+                      setNaming(true);
+                    }}
+                  >
+                    <FolderPlus size={13} aria-hidden="true" /> New package
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
+        }
+      />
       <NameDialog
         open={naming}
         title="New package"
@@ -228,14 +187,32 @@ export function SnippetsPanel() {
           ))}
         </ul>
       )}
-      {sections.length === 0 ? (
-        <p className="text-sm text-fg-subtle">
-          {filtering ? 'No snippet matches the filter.' : 'No snippets yet. They are kept in snippets.yaml.'}
-        </p>
+      {snippets.length === 0 && file.packages.length === 0 ? (
+        <SshEmptyState
+          icon={SquareTerminal}
+          text="Save the commands you run often, then run them on one host or many at once."
+          testId="snippets-empty"
+        >
+          <Button
+            variant="primary"
+            onClick={() => {
+              openEditor({ mode: 'new' });
+            }}
+          >
+            <Plus size={13} aria-hidden /> New snippet
+          </Button>
+        </SshEmptyState>
+      ) : sections.length === 0 ? (
+        <SshNoMatches
+          text="No snippet matches the search."
+          onClear={() => {
+            useSnippetsStore.setState({ filter: '', selectedTags: [] });
+          }}
+        />
       ) : (
         sections.map((section) => <SnippetSection key={section.id} section={section} />)
       )}
-    </div>
+    </SshView>
   );
 }
 
