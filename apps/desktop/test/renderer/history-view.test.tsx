@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryView } from '../../src/renderer/features/history/history-view.js';
+import { historyTabTitle } from '../../src/renderer/features/history/history-row-text.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
@@ -98,8 +99,63 @@ describe('HistoryView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open Add' }));
 
     const { tabs, activeId } = useEditorsStore.getState();
-    expect(tabs).toEqual([{ id: 'history:a', kind: 'history', title: 'Add', historyId: 'a' }]);
+    expect(tabs).toEqual([{ id: 'history:a', kind: 'history', title: historyTabTitle(makeEntry()), historyId: 'a' }]);
     expect(activeId).toBe('history:a');
+  });
+
+  it('opens the entry from a click anywhere on the row, and never re-sends it', async () => {
+    const resend = vi.fn();
+    installWirebenchApi({ history: { resend } });
+    useHistoryStore.setState({ entries: [makeEntry({ id: 'a' })], total: 1 });
+    render(<HistoryView />);
+
+    // The details line sits in the middle of the row, where Re-send used to be.
+    await userEvent.click(screen.getByText(/calc\.test/));
+
+    expect(useEditorsStore.getState().activeId).toBe('history:a');
+    expect(resend).not.toHaveBeenCalled();
+  });
+
+  it('shows the time, host and duration on the second line', () => {
+    useHistoryStore.setState({ entries: [makeEntry()], total: 1 });
+    render(<HistoryView />);
+
+    const row = screen.getByTestId('history-row');
+    expect(row.textContent).toContain('calc.test');
+    expect(row.textContent).toContain('Add');
+    expect(row.textContent).toContain('200');
+  });
+
+  it('moves with the arrow keys and opens the focused row on Enter', async () => {
+    useHistoryStore.setState({
+      entries: [makeEntry({ id: 'a' }), makeEntry({ id: 'b', requestName: 'Subtract' })],
+      total: 2,
+    });
+    render(<HistoryView />);
+
+    const rows = screen.getAllByTestId('history-row');
+    rows[0]!.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await waitFor(() => expect(document.activeElement).toBe(rows[1]));
+    await userEvent.keyboard('{Enter}');
+
+    expect(useEditorsStore.getState().activeId).toBe('history:b');
+  });
+
+  it('deletes one entry through history.remove', async () => {
+    const remove = vi.fn().mockResolvedValue({ ok: true, value: { removed: true } });
+    installWirebenchApi({ history: { remove } });
+    useHistoryStore.setState({
+      entries: [makeEntry({ id: 'a' }), makeEntry({ id: 'b', requestName: 'Subtract' })],
+      total: 2,
+    });
+    render(<HistoryView />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Subtract' }));
+
+    expect(remove).toHaveBeenCalledWith({ id: 'b' });
+    await waitFor(() => expect(screen.getAllByTestId('history-row')).toHaveLength(1));
+    expect(screen.getByText('1 entry')).toBeDefined();
   });
 
   it('Compare mode arms on the first row and opens a diff tab on the second', async () => {

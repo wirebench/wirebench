@@ -114,6 +114,14 @@ test.describe('history', () => {
     const rows = page.getByTestId('history-row');
     await expect(rows).toHaveCount(1, { timeout: 20_000 });
 
+    // A click in the middle of the row opens the entry, titled with its send time, and sends nothing.
+    await rows.first().click();
+    await expect(
+      page.getByRole('tablist', { name: 'Open editors' }).getByRole('tab', { name: /Echo · \d\d:\d\d:\d\d/ }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(rows).toHaveCount(1);
+    expect(rest.requests.filter((request) => request.url.startsWith('/echo?'))).toHaveLength(1);
+
     // ↻ sends the entry again through its saved request; the result is a second entry.
     await page.getByRole('button', { name: 'Re-send Echo' }).click();
     await expect(rows).toHaveCount(2, { timeout: 20_000 });

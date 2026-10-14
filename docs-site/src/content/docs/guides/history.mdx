@@ -13,21 +13,29 @@ sends.
 ## Browse and search
 
 Open **History** from the activity bar, or press <kbd>⌘⇧Y</kbd> / <kbd>Ctrl+Shift+Y</kbd>. Each
-row shows when the request was sent, its project (when more than one is open), its method or
-protocol badge, its name and operation, the endpoint's host, its status and its duration.
+row has two lines: its method or protocol badge, its name and operation and a status chip; then when
+it was sent, its project (when more than one is open), the endpoint's host and its duration. The
+footer counts the entries.
 
 <Steps>
 
 1. Type into the search field to filter by request name, operation, interface, endpoint, status,
    fault reason or tag.
 2. Use the project dropdown to narrow to one open project, or leave it on **All projects**.
-3. Click a row to open it as a read-only tab with the request and response bodies side by side.
+3. Click anywhere on a row, or move to it with the arrow keys and press <kbd>Enter</kbd>, to open
+   it as a read-only tab with the request and response bodies side by side. The tab is titled with
+   the request's name and the time it was sent. A send with no request body, such as a GET, gives
+   the whole tab to the response.
+
+A row's actions show at its right edge when you hover over it or move to it: **↻** Re-send,
+**⇄** Compare, **⇄\*** Compare with current and **✕** Delete, which removes that one entry.
+Clicking the row itself only opens the entry; it never sends anything.
 
 </Steps>
 
 ## Re-send an entry
 
-Click the **↻** button on a row (or **Re-send** on an open entry's tab) to send it again. This
+Click **↻** in a row's actions (or **Re-send** on an open entry's tab) to send it again. This
 resends the original request as recorded — it doesn't reopen the request for editing first. The
 result appears as a new History entry. SOAP, gRPC and REST entries can be re-sent; a WebSocket
 session, or a REST request whose response was an event stream, is sent again from its request.
