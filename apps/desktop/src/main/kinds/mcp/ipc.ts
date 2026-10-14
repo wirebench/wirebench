@@ -12,6 +12,7 @@ import { toSendDeps } from '../../ipc/request.js';
 import type { McpApprovals, McpPromptWindow } from '../../mcp-approvals.js';
 import { appSendScope, sendThroughEngine } from '../../send/exchange.js';
 import type { KindChannelDeps } from '../kind-main.js';
+import { mcpArgumentsCheck } from './arguments-check.js';
 import { toMcpMessageWire } from './send.js';
 
 /** A window as the approval prompt reaches it: `mcp.approval` sent to it, and told when it goes away. */
@@ -55,6 +56,9 @@ export function registerMcpChannels(deps: KindChannelDeps): void {
     }),
   );
   registerHandler(channels.request.cancelMcp, (request) => Promise.resolve(sendDeps.registry.cancel(request.sendId)));
+  registerHandler(channels.request.mcpArgumentsCheck, (request) =>
+    Promise.resolve({ problems: mcpArgumentsCheck(request.text, request.schema) }),
+  );
 
   registerHandler(channels.api.refreshMcpCatalogue, async (request, sender) => {
     const sendId = request.sendId ?? `refresh:${request.apiId}`;

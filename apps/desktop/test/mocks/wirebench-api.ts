@@ -125,6 +125,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       wsSend: fail('request.wsSend'),
       wsClose: fail('request.wsClose'),
       preflightWs: fail('request.preflightWs'),
+      mcpArgumentsCheck: vi.fn().mockResolvedValue({ ok: true, value: { problems: [] } }),
       variables: vi.fn().mockResolvedValue({ ok: true, value: { entries: [], secretNames: [] } }),
     },
     theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os: 'dark' } }) },

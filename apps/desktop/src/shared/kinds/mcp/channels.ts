@@ -16,6 +16,8 @@ import {
   mcpLiveEventSchema,
   requestCancelMcpRequestSchema,
   requestCancelMcpResponseSchema,
+  requestMcpArgumentsCheckRequestSchema,
+  requestMcpArgumentsCheckResponseSchema,
   requestSendMcpRequestSchema,
 } from './wire.js';
 
@@ -30,6 +32,15 @@ export const mcpChannels = {
     sendMcp: defineChannel('request.sendMcp', requestSendMcpRequestSchema, mcpExchangeSummarySchema),
     /** Ends the session in flight under `sendId`. `{ cancelled: false }` when there is none. */
     cancelMcp: defineChannel('request.cancelMcp', requestCancelMcpRequestSchema, requestCancelMcpResponseSchema),
+    /**
+     * The tools/call Arguments editor's markers: the text as typed checked as JSON, then against the
+     * tool's `inputSchema`. Nothing is sent anywhere.
+     */
+    mcpArgumentsCheck: defineChannel(
+      'request.mcpArgumentsCheck',
+      requestMcpArgumentsCheckRequestSchema,
+      requestMcpArgumentsCheckResponseSchema,
+    ),
   },
   api: {
     /**

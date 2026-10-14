@@ -48,6 +48,7 @@ import type {
 
 const sendMcp = vi.fn();
 const cancelMcp = vi.fn();
+const mcpArgumentsCheck = vi.fn();
 
 const READ_FILE_SCHEMA = {
   type: 'object',
@@ -118,7 +119,8 @@ beforeEach(() => {
   cancelMcp.mockReset().mockResolvedValue({ ok: true, value: { cancelled: true } });
   completion.set.mockReset();
   completion.clear.mockReset();
-  installWirebenchApi({ request: { sendMcp, cancelMcp } });
+  mcpArgumentsCheck.mockReset().mockResolvedValue({ ok: true, value: { problems: [] } });
+  installWirebenchApi({ request: { sendMcp, cancelMcp, mcpArgumentsCheck } });
   useDraftsStore.getState().reset();
   useEditorsStore.getState().reset();
   useExchangesStore.setState({ mcpByRequest: {} });
@@ -230,6 +232,30 @@ describe('McpEditor — the arguments', () => {
     });
     expect(completion.set).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('mcp-arguments-hint').textContent).toContain('not in the catalogue');
+  });
+
+  it('asks main to check the arguments against the tool’s schema once typing pauses', async () => {
+    seed(mcpRequestWire({ operation: { method: 'tools/call', tool: 'read_file', arguments: '{}' } }));
+    mount();
+    await waitFor(() => {
+      expect(mcpArgumentsCheck).toHaveBeenCalledWith({ text: '{}', schema: READ_FILE_SCHEMA });
+    });
+
+    fireEvent.change(screen.getByLabelText('Tool arguments'), { target: { value: '{"path":' } });
+    fireEvent.change(screen.getByLabelText('Tool arguments'), { target: { value: '{"path":1}' } });
+    await waitFor(() => {
+      expect(mcpArgumentsCheck).toHaveBeenLastCalledWith({ text: '{"path":1}', schema: READ_FILE_SCHEMA });
+    });
+    // Debounced: the text typed in between was never checked.
+    expect(mcpArgumentsCheck.mock.calls.map(([request]) => (request as { text: string }).text)).toEqual([
+      '{}',
+      '{"path":1}',
+    ]);
+
+    fireEvent.change(screen.getByTestId('mcp-tool'), { target: { value: 'nowhere' } });
+    await waitFor(() => {
+      expect(mcpArgumentsCheck).toHaveBeenLastCalledWith({ text: '{"path":1}' });
+    });
   });
 
   it('edits a prompt’s arguments as a table and adds the declared ones it lacks', () => {

@@ -177,6 +177,7 @@
     "request.grpcHalfClose",
     "request.grpcPush",
     "request.importCurl",
+    "request.mcpArgumentsCheck",
     "request.openWs",
     "request.preflight",
     "request.preflightGrpc",

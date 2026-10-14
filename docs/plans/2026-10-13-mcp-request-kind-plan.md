@@ -271,6 +271,21 @@ tests.
   are shown.
 - [x] Tests for each block type, an error, `isError`, and the warnings.
 
+### Task 17a: Renderer: Arguments markers
+
+**Files:** new `apps/desktop/src/main/kinds/mcp/arguments-check.ts`, `main/kinds/mcp/ipc.ts`,
+`shared/kinds/mcp/{wire,channels}.ts`, new `features/mcp-editor/arguments-markers.ts`,
+`arguments-tab.tsx`, `test/fixtures/ipc-names.json`, tests.
+
+- [x] `request.mcpArgumentsCheck` in main: the text as typed checked as JSON (an error, where the
+  parse stopped; text a `${…}` makes JSON only once expanded is let be), then against the tool's
+  `inputSchema` with the engine's `validateJsonSchema` (warnings, at each problem's pointer, as a send
+  only warns). Blank text is checked as the `{}` it sends.
+- [x] The Arguments editor shows the answer as Monaco markers, once typing pauses, as the GraphQL
+  editor's diagnostics are; an answer for text the editor no longer holds is dropped.
+- [x] Tests: the channel (valid, a type mismatch, a missing required property, a parse error), the
+  marker mapping, and the editor's debounced check.
+
 ### Task 18: e2e
 
 **Files:** new `e2e/specs/mcp-request.spec.ts`, and an e2e fixture server (stdio) under `e2e/fixtures/`.

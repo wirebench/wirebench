@@ -336,6 +336,27 @@ export type RequestCancelMcpRequest = z.infer<typeof requestCancelMcpRequestSche
 export const requestCancelMcpResponseSchema = z.object({ cancelled: z.boolean() });
 
 /**
+ * One problem with a tool call's arguments as typed, for the editor's markers: located by a JSON
+ * pointer into the value, or, for text that is not JSON, by the 1-based place the parse stopped.
+ */
+export const mcpArgumentsProblemWireSchema = z.object({
+  severity: z.enum(['error', 'warning']),
+  message: z.string(),
+  pointer: z.string(),
+  keyword: z.string().optional(),
+  position: z.object({ line: z.number(), column: z.number() }).optional(),
+});
+export type McpArgumentsProblemWire = z.infer<typeof mcpArgumentsProblemWireSchema>;
+
+/** Request payload for `request.mcpArgumentsCheck`: the arguments text, and the tool's `inputSchema` if known. */
+export const requestMcpArgumentsCheckRequestSchema = z.object({ text: z.string(), schema: z.unknown().optional() });
+export type RequestMcpArgumentsCheckRequest = z.infer<typeof requestMcpArgumentsCheckRequestSchema>;
+
+/** Response for `request.mcpArgumentsCheck`. */
+export const requestMcpArgumentsCheckResponseSchema = z.object({ problems: z.array(mcpArgumentsProblemWireSchema) });
+export type RequestMcpArgumentsCheckResponse = z.infer<typeof requestMcpArgumentsCheckResponseSchema>;
+
+/**
  * The session record of an MCP History entry: the engine's `HistoryMcp`, its messages capped at
  * both ends as a WebSocket session's frames are. Stored redacted.
  */

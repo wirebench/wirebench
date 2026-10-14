@@ -193,4 +193,16 @@ describe('the MCP channels', () => {
       cancelled: false,
     });
   });
+
+  it("checks a tool call's arguments against the input schema, sending nothing", async () => {
+    const schema = { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] };
+    const sender = mockRenderer('cancel');
+    expect(await invoke('request.mcpArgumentsCheck', { text: '{"text":"hi"}', schema }, sender.sender)).toEqual({
+      problems: [],
+    });
+    expect(await invoke('request.mcpArgumentsCheck', { text: '{"text":1}', schema }, sender.sender)).toEqual({
+      problems: [expect.objectContaining({ severity: 'warning', pointer: '/text', keyword: 'type' })],
+    });
+    expect(sender.sent).toEqual([]);
+  });
 });

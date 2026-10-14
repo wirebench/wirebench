@@ -5,9 +5,10 @@
  * arguments offered. The other methods take none, and the tab says so.
  *
  * The completion source is registered against this editor's model alone, as the gRPC message
- * editor's is, so no other JSON editor in the app gains the tool's fields.
+ * editor's is, so no other JSON editor in the app gains the tool's fields. Markers come from main,
+ * once typing pauses: the text checked as JSON, then against the tool's `inputSchema`.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type * as Monaco from 'monaco-editor';
 import { Button } from '../../components/button.js';
 import { EmptyState } from '../../components/empty-state.js';
@@ -22,6 +23,7 @@ import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import type { McpCatalogueWire, McpOperationWire } from '../../../shared/kinds/mcp/wire.js';
 import { useEditorVariableAssist } from '../environments/variable-assist-provider.js';
 import { toolArgumentsSource } from './arguments-completion.js';
+import { MCP_ARGUMENTS_CHECK_DEBOUNCE_MS, refreshMcpArgumentsMarkers } from './arguments-markers.js';
 
 type ToolCall = Extract<McpOperationWire, { method: 'tools/call' }>;
 type PromptGet = Extract<McpOperationWire, { method: 'prompts/get' }>;
@@ -62,6 +64,8 @@ function ToolArguments({
   const attachVariables = useEditorVariableAssist();
   const [modelUri, setModelUri] = useState<string | undefined>(undefined);
   const inputSchema = tool?.inputSchema;
+  const monacoRef = useRef<typeof Monaco | undefined>(undefined);
+  const modelRef = useRef<Monaco.editor.ITextModel | null>(null);
 
   // Keyed on the schema, not set once at mount: naming another tool changes what this same editor
   // completes against, and the editor is not remounted for it.
@@ -74,6 +78,19 @@ function ToolArguments({
       clearJsonCompletionSource(modelUri);
     };
   }, [modelUri, inputSchema]);
+
+  // Checked as typed, once typing pauses, and again when the tool named (so its schema) changes.
+  useEffect(() => {
+    if (modelUri === undefined) {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      void refreshMcpArgumentsMarkers(monacoRef.current, modelRef.current, operation.arguments, inputSchema);
+    }, MCP_ARGUMENTS_CHECK_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [modelUri, operation.arguments, inputSchema]);
 
   const hint =
     operation.tool === ''
@@ -108,6 +125,8 @@ function ToolArguments({
               return;
             }
             registerJsonCompletionOnce(monacoNS as typeof Monaco);
+            monacoRef.current = monacoNS as typeof Monaco;
+            modelRef.current = model;
             setModelUri(model.uri.toString());
           }}
         />
