@@ -3,9 +3,14 @@ import { defaultBind, isOffForm, parseTarget } from './forward-rules.js';
 import { walk } from './tree.js';
 import type { ForwardEntry, ForwardType } from './forward-rules.js';
 import type { MoshSettings, SessionProtocol } from './host-mosh.js';
-import type { GroupEntry, HostEntry, HostsFile, SshAuth, SshProxy, SshSettings } from './model.js';
+import type { GroupEntry, HostEntry, HostsFile, IdentityEntry, SshAuth, SshProxy, SshSettings } from './model.js';
 
 export type Provenance<T> = { readonly value: T; readonly from: 'host' | 'default' | { readonly group: string } };
+/** `user` and `auth` may also come from the identity a level names (#416). */
+export type LoginProvenance<T> = {
+  readonly value: T;
+  readonly from: Provenance<T>['from'] | { readonly identity: string };
+};
 
 export interface ForwardRule {
   readonly id: string;
@@ -42,9 +47,11 @@ export interface ResolvedHost {
   /** Whether a run touching this host confirms first; nearest wins, `false` by default. */
   readonly protected: Provenance<boolean>;
   readonly ssh: {
-    readonly user: Provenance<string | undefined>;
+    /** The nearest `identity:` (#416); it supplies `user` and `auth` where its own level sets neither. */
+    readonly identity: Provenance<string | undefined>;
+    readonly user: LoginProvenance<string | undefined>;
     readonly port: Provenance<number>;
-    readonly auth: Provenance<SshAuth | undefined>;
+    readonly auth: LoginProvenance<SshAuth | undefined>;
     readonly jump: Provenance<string | undefined>;
     readonly keepAlive: Provenance<number>;
     readonly connectTimeout: Provenance<number>;
@@ -78,6 +85,7 @@ const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: fa
 interface Located {
   readonly host: HostEntry;
   readonly chain: readonly GroupEntry[];
+  readonly identities: ReadonlyMap<string, IdentityEntry>;
 }
 
 /** `code` tells the asked-for host (`ssh-host-unknown`) from a hop on its jump chain (`ssh-jump-unknown`). */
@@ -91,7 +99,28 @@ function locate(
   for (const item of items) if (item.kind === 'group') groups.set(item.entry.id, item.entry as GroupEntry);
   const found = items.find((item) => item.kind === 'host' && item.entry.id === id);
   if (!found) throw new SshModelError(code, `"${id}" is not a host`, { id });
-  return { host: found.entry as HostEntry, chain: found.path.map((gid) => groups.get(gid) as GroupEntry) };
+  return {
+    host: found.entry as HostEntry,
+    chain: found.path.map((gid) => groups.get(gid) as GroupEntry),
+    identities: new Map((file.identities ?? []).map((i) => [i.id, i])),
+  };
+}
+
+/**
+ * Nearest level first; at each level its own value wins, then the identity it names. An identity that
+ * leaves the field unset passes on to the levels further out, and none at all means no value (`default`).
+ */
+function pickLogin<K extends 'user' | 'auth'>(located: Located, key: K): LoginProvenance<SshSettings[K]> {
+  const levels: Array<{ ssh: SshSettings; from: Provenance<unknown>['from'] }> = [
+    { ssh: located.host.ssh, from: 'host' },
+    ...[...located.chain].reverse().map((g) => ({ ssh: g.ssh, from: { group: g.id } })),
+  ];
+  for (const { ssh, from } of levels) {
+    if (ssh[key] !== undefined) return { value: ssh[key], from };
+    const identity = ssh.identity === undefined ? undefined : located.identities.get(ssh.identity);
+    if (identity?.[key] !== undefined) return { value: identity[key], from: { identity: identity.id } };
+  }
+  return { value: undefined, from: 'default' };
 }
 
 function pick<K extends keyof SshSettings>(
@@ -176,15 +205,21 @@ function proxyOf(picked: Provenance<SshSettings['proxy']>): Provenance<SshProxy 
   return picked.value === false ? { value: undefined, from: picked.from } : { value: picked.value, from: picked.from };
 }
 
-/** Merged values, nearest wins; `auth` is replaced whole, never merged. No defaults, no provenance. */
+/**
+ * Merged values, nearest wins; `auth` is replaced whole, never merged, and `user` and `auth` take the
+ * identities into account. No defaults, no provenance.
+ */
 export function resolveSettings(file: HostsFile, id: string): SshSettings {
   const located = locate(file, id);
   const out: Record<string, unknown> = {};
+  for (const key of ['user', 'auth'] as const) {
+    const { value } = pickLogin(located, key);
+    if (value !== undefined) out[key] = value;
+  }
   for (const key of [
-    'user',
+    'identity',
     'port',
     'jump',
-    'auth',
     'keepAlive',
     'connectTimeout',
     'forwardAgent',
@@ -205,9 +240,10 @@ export function resolveHost(file: HostsFile, id: string): ResolvedHost {
 
 function resolveLocated(located: Located): ResolvedHost {
   const ssh = {
-    user: pick(located, 'user', undefined),
+    identity: pick(located, 'identity', undefined),
+    user: pickLogin(located, 'user'),
     port: pick(located, 'port', DEFAULTS.port) as Provenance<number>,
-    auth: pick(located, 'auth', undefined),
+    auth: pickLogin(located, 'auth'),
     jump: pick(located, 'jump', undefined),
     keepAlive: pick(located, 'keepAlive', DEFAULTS.keepAlive) as Provenance<number>,
     connectTimeout: pick(located, 'connectTimeout', DEFAULTS.connectTimeout) as Provenance<number>,

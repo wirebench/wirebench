@@ -408,3 +408,54 @@ groups:
     ).rejects.toMatchObject({ code: 'ssh-hosts-invalid' });
   });
 });
+
+describe('HostsService: identities (#416)', () => {
+  const FILE = [
+    'version: 1',
+    'identities:',
+    "  - { id: deploy, name: Deploy, user: deploy, auth: { key: '${secret:deploy_key}' } }",
+    'groups:',
+    '  - id: prod',
+    '    name: Prod',
+    '    ssh: { identity: deploy }',
+    '    hosts:',
+    '      - { id: web, name: web, address: 10.0.0.2 }',
+    '',
+  ].join('\n');
+
+  it('list carries identities with secret names and resolves user and auth from them', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), FILE);
+    const result = sshListHostsResponseSchema.parse(await new HostsService({ treeDir: () => d }).list());
+    expect(result.file.identities).toEqual([
+      { id: 'deploy', name: 'Deploy', user: 'deploy', auth: { kind: 'key', secret: 'deploy_key' } },
+    ]);
+    const web = result.resolved[0];
+    expect(web?.ssh.user).toEqual({ value: 'deploy', from: { identity: 'deploy' } });
+    expect(web?.ssh.auth).toEqual({ value: { kind: 'key', secret: 'deploy_key' }, from: { identity: 'deploy' } });
+    expect(web?.ssh.identity).toEqual({ value: 'deploy', from: { group: 'prod' } });
+    expect(JSON.stringify(result)).not.toContain('${secret:');
+  });
+
+  it('saving the listed file writes the identities back unchanged; none writes no key', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), FILE);
+    const service = new HostsService({ treeDir: () => d });
+    await service.save((await service.list()).file);
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toContain('key: ${secret:deploy_key}');
+    expect((await service.list()).file.identities?.[0]?.user).toBe('deploy');
+    await service.save({ version: 1, identities: [], groups: [], hosts: [] });
+    expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).not.toContain('identities');
+  });
+
+  it('save refuses a reference to an identity that is not in the file', async () => {
+    const service = new HostsService({ treeDir: () => dir() });
+    await expect(
+      service.save({
+        version: 1,
+        groups: [],
+        hosts: [{ id: 'a', name: 'a', address: 'a', tags: [], ssh: { identity: 'ghost' } }],
+      }),
+    ).rejects.toMatchObject({ code: 'ssh-identity-unknown' });
+  });
+});
