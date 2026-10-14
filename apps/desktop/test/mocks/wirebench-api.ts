@@ -355,6 +355,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       list: fail('history.list'),
       get: fail('history.get'),
       clear: fail('history.clear'),
+      remove: fail('history.remove'),
       resend: fail('history.resend'),
       resendGrpc: fail('history.resendGrpc'),
       resendRest: fail('history.resendRest'),

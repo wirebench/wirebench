@@ -5,6 +5,7 @@ import { HttpLog } from '../../src/renderer/features/console/http-log.js';
 import { EMPTY_FILTER, useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import type { LogEntry } from '../../src/renderer/state/exchanges.js';
 import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
+import { RevealSecretsDialog } from '../../src/renderer/features/console/reveal-secrets-dialog.js';
 import { b64, logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { formatClockTime } from '../../src/renderer/lib/format-size.js';
@@ -25,7 +26,7 @@ function logTab(name: string): HTMLElement {
 describe('HttpLog', () => {
   beforeEach(() => {
     useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
-    useSecretsVisibilityStore.setState({ show: false });
+    useSecretsVisibilityStore.setState({ show: false, confirmingReveal: false });
     installWirebenchApi();
   });
 
@@ -231,7 +232,12 @@ describe('HttpLog', () => {
     });
     useExchangesStore.setState({ log: [logExchange(redacted)] });
 
-    render(<HttpLog />);
+    render(
+      <>
+        <HttpLog />
+        <RevealSecretsDialog />
+      </>,
+    );
     await userEvent.click(rows()[0]!);
     await userEvent.click(logTab('Request'));
     expect(screen.getByLabelText('Raw request').textContent).toContain('Authorization: <redacted>');
@@ -239,6 +245,9 @@ describe('HttpLog', () => {
     // Main re-redacts the cached exchange against the new flag; the log swaps in its answer.
     get.mockResolvedValue({ ok: true, value: revealed });
     await userEvent.click(screen.getByRole('button', { name: 'Show secrets' }));
+    // Revealing asks first; nothing is fetched until the answer is yes.
+    expect(get).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByTestId('reveal-secrets-confirm'));
 
     expect(get).toHaveBeenLastCalledWith({ sendId: 'a' });
     expect(screen.getByLabelText('Raw request').textContent).toContain('Authorization: Basic YWxpY2U6');
@@ -251,11 +260,17 @@ describe('HttpLog', () => {
       secrets: { setShowSecrets: vi.fn().mockResolvedValue({ ok: true, value: { show: true } }) },
     });
     useExchangesStore.setState({ log: [failure] });
-    render(<HttpLog />);
+    render(
+      <>
+        <HttpLog />
+        <RevealSecretsDialog />
+      </>,
+    );
 
     await userEvent.click(rows()[0]!);
     expect(screen.getByTestId('log-detail-request-headers').textContent).toContain('<redacted>');
     await userEvent.click(screen.getByRole('button', { name: 'Show secrets' }));
+    await userEvent.click(screen.getByTestId('reveal-secrets-confirm'));
 
     expect(screen.getByTestId('log-detail-request-headers').textContent).toContain('<redacted>');
     expect(get).not.toHaveBeenCalled();
@@ -347,7 +362,7 @@ describe('HttpLog', () => {
 describe('HttpLog — prepare-stage failures', () => {
   beforeEach(() => {
     useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
-    useSecretsVisibilityStore.setState({ show: false });
+    useSecretsVisibilityStore.setState({ show: false, confirmingReveal: false });
     installWirebenchApi();
   });
 
@@ -376,7 +391,7 @@ describe('HttpLog — prepare-stage failures', () => {
 describe('HttpLog — keyboard scrolling', () => {
   beforeEach(() => {
     useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
-    useSecretsVisibilityStore.setState({ show: false });
+    useSecretsVisibilityStore.setState({ show: false, confirmingReveal: false });
     installWirebenchApi();
   });
 
@@ -401,7 +416,7 @@ describe('HttpLog — keyboard scrolling', () => {
 describe('HttpLog — Export HAR', () => {
   beforeEach(() => {
     useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
-    useSecretsVisibilityStore.setState({ show: false });
+    useSecretsVisibilityStore.setState({ show: false, confirmingReveal: false });
   });
 
   afterEach(() => {

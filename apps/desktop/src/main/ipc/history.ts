@@ -1,5 +1,5 @@
 /**
- * Registers the `history.*` IPC channels: list/search, read one entry, clear, and re-send. Every
+ * Registers the `history.*` IPC channels: list/search, read one entry, remove one, clear, and re-send. Every
  * re-send goes through the engine (`sendThroughEngine`), the path `request.*` sends take, so it is
  * itself recorded as a new history entry. `history.resend` replays a SOAP entry's saved request as
  * it is now, or the entry itself once its request is gone. `history.resendGrpc` calls a gRPC entry's
@@ -349,4 +349,6 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
   registerHandler(channels.history.get, (request) => Promise.resolve({ entry: history.get(request.id) }));
 
   registerHandler(channels.history.clear, async () => ({ cleared: await history.clear(deps.projectIds?.()) }));
+
+  registerHandler(channels.history.remove, async (request) => ({ removed: await history.remove(request.id) }));
 }
