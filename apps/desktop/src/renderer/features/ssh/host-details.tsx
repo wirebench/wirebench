@@ -37,7 +37,8 @@ type Provenance = ResolvedHostWire['ssh']['port']['from'];
 
 function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[6.5rem_1fr] items-baseline gap-2 py-1">
+    // The label above the value in a panel narrower than 360px, beside it from there.
+    <div className="grid grid-cols-1 items-baseline gap-x-2 gap-y-0.5 py-1 @min-[360px]:grid-cols-[6.5rem_1fr]">
       <dt className="text-xs text-fg-subtle">{label}</dt>
       <dd className="flex min-w-0 items-baseline gap-2 text-sm text-fg-default">{children}</dd>
     </div>
