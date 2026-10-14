@@ -1059,6 +1059,8 @@ pg  127.0.0.1:5432 → localhost:5432 via db-1
 - **Secrets.** As `wirebench run` resolves them: `WIREBENCH_SECRET_<NAME>` for `${secret:NAME}`, then the
   workspace's secret sources under the same trust flags. The app's own secrets are not read. An agent host
   uses `SSH_AUTH_SOCK` (Pageant on Windows).
+- **Proxy.** A first hop with `ssh.proxy` is dialled through that SOCKS5 or HTTP CONNECT proxy, as in the
+  app; its password is a `${secret:NAME}` resolved like the others.
 - **Host keys.** Every hop's key is checked against the app's trusted keys file, `ssh-known-hosts.json` in
   its data folder (`--known-hosts <file>` names another). The file is only read, never written. A key it
   does not hold, or one that changed, refuses the run and prints the hop, the key type and the fingerprint;

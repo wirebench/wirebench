@@ -395,6 +395,19 @@ All are `WirebenchError`s with `details`, so the Problems tab, toasts and logs r
   one. The host form shows a warning while it is on. A server that refuses forwarding, or no local agent
   running, still opens the shell without it, and the terminal tab shows which; the tab's key mark shows
   when it is on. The `ssh_config` importer maps `ForwardAgent yes` and `no`.
+- **A9. Proxies (#417).** `ssh.proxy: { type: socks5 | http, host, port, user?, password? }` on a host or a
+  group dials a connection's first hop (the host, or its outermost jump host) through a SOCKS5 or HTTP
+  CONNECT proxy; the hops after it are reached through that hop, never through a proxy. It is inherited whole,
+  like `auth`, and a nearer `proxy: false` connects directly. Each hop is resolved on its own, so a jump
+  chain uses the outermost jump host's proxy, not the target's (as `ProxyCommand` on the first host does).
+  The password is a `${secret:NAME}` only. The proxy resolves the hop's name (SOCKS5 sends it as a domain
+  name; HTTP asks `CONNECT name:port`), so a host only the proxy's network knows can be reached. SOCKS5 uses
+  no authentication, or user and password when a user is set (RFC 1929); HTTP sends `Proxy-Authorization:
+  Basic` when a user is set. A proxy failure is `ssh-connect-failed` with `reason: 'proxy'` and the proxy's
+  address, type and `proxyReason` (how reaching the proxy failed, or `auth`, `refused`, `protocol`,
+  `closed`) in `details`; the connection screen logs the proxy hop and names the proxy in its sentence. The
+  `ssh_config` importer maps `ProxyCommand nc [-X 5|connect] -x host[:port] [-P user] %h %p` (default ports
+  1080 and 3128); the password `nc` asks for is not imported.
 
 ## Docs
 
