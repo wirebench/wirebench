@@ -24,13 +24,15 @@ const HOP = { address: '10.0.0.1', port: 22 };
 
 const sender = (id: number) => ({ id, isDestroyed: () => false, on: vi.fn(), once: vi.fn() }) as unknown as WebContents;
 
-function make(opts: { secrets?: Record<string, string>; known?: KnownHostEntry[]; now?: () => number } = {}) {
+function make(
+  opts: { secrets?: Record<string, string>; known?: KnownHostEntry[]; now?: () => number; file?: typeof FILE } = {},
+) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-connect-')), 'ssh-known-hosts.json');
   if (opts.known) writeFileSync(knownHostsFile, JSON.stringify(opts.known));
   const secrets = opts.secrets ?? { jump_pw: 'jpw', a_pw: 'apw' };
   const deps = {
     hosts: () => ({
-      current: () => FILE,
+      current: () => opts.file ?? FILE,
       list: (): Promise<SshListHostsResponse> =>
         Promise.resolve({ file: { version: 1, groups: [], hosts: [] }, resolved: [], problems: [] }),
     }),
@@ -58,6 +60,35 @@ describe('createSshConnector', () => {
     await expect(connector.prepareHops(sender(1), 'a')).rejects.toMatchObject({
       code: 'secret-missing',
       details: { name: 'a_pw' },
+    });
+  });
+
+  it('signs in to the target as the user typed for the connect, leaving the jump host its own (#532)', async () => {
+    const { connector } = make();
+    const hops = await connector.prepareHops(sender(1), 'a', undefined, 'typed');
+    expect(hops.map((h) => h.user)).toEqual(['jump', 'typed']);
+  });
+
+  it('a host with no user connects as the user typed; without one it is incomplete (#532)', async () => {
+    const file = parseHostsFile(
+      [
+        'version: 1',
+        'hosts:',
+        "  - { id: nouser, name: nouser, address: 10.0.0.2, ssh: { auth: { password: '${secret:a_pw}' } } }",
+        '  - { id: bare, name: bare, address: 10.0.0.3 }',
+        '',
+      ].join('\n'),
+    );
+    const { connector } = make({ file });
+    await expect(connector.prepareHops(sender(1), 'nouser')).rejects.toMatchObject({
+      code: 'ssh-host-incomplete',
+      details: { hostId: 'nouser', field: 'user' },
+    });
+    const hops = await connector.prepareShell(sender(1), 'nouser', undefined, 'typed');
+    expect(hops.hops.map((h) => [h.user, h.auth])).toEqual([['typed', { kind: 'password', password: 'apw' }]]);
+    await expect(connector.prepareHops(sender(1), 'bare', undefined, 'typed')).rejects.toMatchObject({
+      code: 'ssh-host-incomplete',
+      details: { hostId: 'bare', field: 'auth' },
     });
   });
 

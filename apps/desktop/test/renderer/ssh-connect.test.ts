@@ -9,6 +9,8 @@ import { readRecent } from '../../src/renderer/features/ssh/recent-connections.j
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { WorkspaceWire } from '../../src/shared/wire-base.js';
+import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
+import { setSignInUser, useConnectStore } from '../../src/renderer/features/ssh/connect-store.js';
 
 const SIZE = { cols: 80, rows: 24 };
 const A = { paneId: 'pa', hostId: 'a' };
@@ -172,4 +174,25 @@ it('a security key PIN goes with the pane’s next connect only (#420)', async (
   await connectToHost(A, SIZE);
   expect(connect.mock.calls[1]?.[0]).not.toHaveProperty('skPin');
   expect(connect.mock.calls[2]?.[0]).not.toHaveProperty('skPin');
+});
+
+it('a host with no user connects nothing and fails as a settings problem; a typed user is sent (#532)', async () => {
+  useHostsStore.setState({
+    resolved: [{ id: 'a', name: 'a', incomplete: { field: 'user' } } as unknown as ResolvedHostWire],
+  });
+  expect(await connectToHost(A, SIZE)).toBeUndefined();
+  expect(connect).not.toHaveBeenCalled();
+  expect(useConnectStore.getState().views['pa']?.outcome).toMatchObject({
+    kind: 'failed',
+    step: undefined,
+    error: { code: 'ssh-host-incomplete', details: { hostId: 'a', field: 'user' } },
+  });
+  expect(useProblemsStore.getState().items).toMatchObject([{ problem: { code: 'ssh-host-incomplete' } }]);
+
+  setSignInUser('pa', 'typed');
+  connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+  expect(await connectToHost(A, SIZE)).toEqual({ sessionId: 's1' });
+  expect(connect).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'a', user: 'typed' }));
+  setSignInUser('pa', undefined);
+  useHostsStore.setState({ resolved: [] });
 });

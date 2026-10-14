@@ -235,7 +235,7 @@ export class SshService {
     const stale = (): boolean => epoch !== this.epoch || generation !== flight.generation || sender.isDestroyed();
     const closed = (): WirebenchError =>
       new WirebenchError('ssh-session-closed', 'The session closed before it opened');
-    const prepared = await this.connector.prepareShell(sender, request.hostId, stale);
+    const prepared = await this.connector.prepareShell(sender, request.hostId, stale, request.user);
     const { env, secrets, forwardAgent } = prepared;
     // The PIN goes to every key hop; only a security key reads it.
     const pin = request.skPin;

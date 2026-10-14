@@ -197,12 +197,20 @@ export type SshSecretNameWire = z.infer<typeof sshSecretNameSchema>;
 /** Opens a shell on a host; the answer is the session id the terminal addresses from then on. */
 /** An id the renderer picks per connect, so its `ssh.connectProgress` events reach the screen showing it (#528). */
 export const sshAttemptIdSchema = z.string().min(1).max(100);
+/** A user typed on the connection screen (#532) to sign in as for one connect: no spaces or control characters. */
+export const sshSignInUserSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[^\s\p{Cc}]+$/u);
 
 export const sshConnectRequestSchema = z.strictObject({
   hostId: z.string(),
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
   attemptId: sshAttemptIdSchema.optional(),
+  /** Signs in as this user for this connect only, in place of the host's (#532). */
+  user: sshSignInUserSchema.optional(),
   /**
    * The PIN of the security key a hop signs in with (#420), typed on the connection screen after a connect
    * asked for it (`ssh-sk-pin`). Used for this connect only and never stored.

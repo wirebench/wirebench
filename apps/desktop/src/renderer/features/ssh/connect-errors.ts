@@ -2,6 +2,7 @@
  * One plain sentence for a connect that failed (#528): what happened and what to do. Built from the
  * error's code and details only, never its message: a library's exception text is not for the screen.
  */
+import type { SshAuthWire } from '../../../shared/ssh-wire.js';
 import type { ConnectPurpose } from './connect-progress.js';
 
 /** A connect's refusal as the IPC result carries it. */
@@ -151,6 +152,10 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
       return `The secret ${name === undefined ? 'this host signs in with' : `"${name}"`} is not on this machine. Set it in the host's settings.`;
     }
     case 'ssh-host-incomplete':
+      if (details['field'] === 'user') return 'This host has no user to sign in as. Enter one to connect.';
+      if (details['field'] === 'auth') {
+        return 'This host has no sign-in method (password, key or agent). Edit the host to choose one.';
+      }
       return 'This host is missing a setting it needs to connect (its user or sign-in method). Edit the host to fill it in.';
     case 'ssh-host-unknown':
       return 'This host is no longer in the hosts file.';
@@ -195,4 +200,98 @@ export function connectFailureSentence(error: ConnectError, purpose: ConnectPurp
         ? 'The file browser could not connect. The log below shows how far it got.'
         : 'The connection could not be started. The log below shows how far it got.';
   }
+}
+
+/**
+ * What stopped a connect, which decides what the screen offers (#532). `network`: the host could not be
+ * reached, so trying again can work. `auth`: the server refused the sign-in, or its credential is unusable.
+ * `settings`: the host's own settings stop it before anything goes on the network. `trust`: the host key
+ * was not trusted.
+ */
+export type ConnectErrorKind = 'network' | 'auth' | 'settings' | 'trust' | 'other';
+
+export function connectErrorKind(code: string): ConnectErrorKind {
+  switch (code) {
+    case 'ssh-connect-failed':
+      return 'network';
+    case 'ssh-auth-failed':
+    case 'ssh-cert-expired':
+    case 'ssh-cert-invalid':
+    case 'ssh-cert-mismatch':
+    case 'ssh-sk-pin':
+      return 'auth';
+    case 'ssh-host-incomplete':
+    case 'secret-missing':
+    case 'ssh-host-unknown':
+    case 'ssh-jump-unknown':
+    case 'ssh-jump-cycle':
+    case 'ssh-hosts-invalid':
+      return 'settings';
+    case 'ssh-host-key-new':
+    case 'ssh-host-key-changed':
+      return 'trust';
+    default:
+      return 'other';
+  }
+}
+
+/** The target host's sign-in, as far as the screen's fixes need it. */
+export interface SignIn {
+  readonly hostId: string;
+  readonly user: string | undefined;
+  readonly auth: SshAuthWire | undefined;
+}
+
+/**
+ * What the screen offers for a failed connect. `retryPrimary`: Retry is the main button, since trying again
+ * can work. `ask`: a field on the screen fixes it there: the user to sign in as, or the password for `user`,
+ * stored under the host's secret `secret`, or the security key's PIN for the next connect.
+ */
+export type ConnectFix =
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: boolean; readonly ask?: undefined }
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'user' }
+  | {
+      readonly kind: ConnectErrorKind;
+      readonly retryPrimary: false;
+      readonly ask: 'password';
+      readonly secret: string;
+      readonly user: string | undefined;
+    }
+  /** The security key needs its PIN (#420); `wrong` after one it refused. */
+  | { readonly kind: ConnectErrorKind; readonly retryPrimary: false; readonly ask: 'pin'; readonly wrong: boolean };
+
+/** Retry stays primary unless the same attempt would fail the same way: a refused sign-in or a setting. */
+export function connectFix(error: ConnectError, target: SignIn | undefined): ConnectFix {
+  const kind = connectErrorKind(error.code);
+  const details = error.details ?? {};
+  const retryPrimary = kind !== 'auth' && kind !== 'settings';
+  const reason = details['reason'];
+  if (error.code === 'ssh-sk-pin' && (reason === 'required' || reason === 'wrong')) {
+    return { kind, retryPrimary: false, ask: 'pin', wrong: reason === 'wrong' };
+  }
+  if (target === undefined || retryPrimary) return { kind, retryPrimary };
+  const hostId = details['hostId'];
+  if (
+    error.code === 'ssh-host-incomplete' &&
+    details['field'] === 'user' &&
+    (hostId ?? target.hostId) === target.hostId
+  ) {
+    return { kind, retryPrimary: false, ask: 'user' };
+  }
+  const { auth } = target;
+  const hop = details['hop'];
+  const hops = details['hops'];
+  const jump = typeof hop === 'number' && typeof hops === 'number' && hop < hops - 1;
+  // Only the target's own password: a jump host's, a key or the agent is fixed in the host's settings.
+  if (auth?.kind !== 'password' || auth.secret === '' || jump) return { kind, retryPrimary };
+  const refused = error.code === 'ssh-auth-failed' && details['agent'] !== 'missing' && details['unusableKey'] !== true;
+  const missing = error.code === 'secret-missing' && text(details, 'name') === auth.secret;
+  if (!refused && !missing) return { kind, retryPrimary };
+  return {
+    kind,
+    retryPrimary: false,
+    ask: 'password',
+    secret: auth.secret,
+    user: text(details, 'user') ?? target.user,
+  };
 }
