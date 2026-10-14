@@ -114,9 +114,10 @@ describe('the connect phase reducer', () => {
     expect(view.steps[4]).toMatchObject({ startedAt: 1100, endedAt: 1120 });
   });
 
-  it('ignores progress that arrives after the attempt ended', () => {
+  it('after the attempt ended, ignores stages but keeps log lines that land late', () => {
     const done = connectedView(startView('a1', 'terminal', 1000), 1100);
-    expect(reduceProgress(done, log('late', 1200))).toBe(done);
+    expect(reduceProgress(done, phase('shell', 'start', 1200))).toBe(done);
+    expect(reduceProgress(done, log('late', 1200)).log).toEqual([{ at: 1200, text: 'late' }]);
   });
 
   it('a refused port fails Connecting, leaves the rest pending and says what to do', () => {

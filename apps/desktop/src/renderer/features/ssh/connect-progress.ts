@@ -106,15 +106,19 @@ function finish(steps: readonly ConnectStep[], id: ConnectStepId, at: number, de
   );
 }
 
-/** Folds one reported stage or log line into the view; anything after the attempt ended is ignored. */
+/**
+ * Folds one reported stage or log line into the view. A log line is kept even after the attempt ended:
+ * main's events can land after the connect's own answer, and a failed connect's log is the one that matters.
+ * A stage after the end is ignored, so the steps stay as the end left them.
+ */
 export function reduceProgress(view: ConnectView, event: SshConnectProgressWire): ConnectView {
-  if (view.outcome.kind !== 'running') return view;
   const target = event.hop === event.hops - 1;
   if (event.kind === 'log') {
     const text = target ? event.line : `[${event.host}] ${event.line}`;
     const log = [...view.log, { at: event.at, text }];
     return { ...view, log: log.length > CONNECT_LOG_LIMIT ? log.slice(-CONNECT_LOG_LIMIT) : log };
   }
+  if (view.outcome.kind !== 'running') return view;
   const { step, ends } = stepOf(event.phase, target);
   // A step already passed is not reopened: the target's address resolving through the jump host, say.
   if (view.steps.find((s) => s.id === step)?.state === 'done') return view;
