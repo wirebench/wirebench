@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { ArrowLeftRight, Plus } from 'lucide-react';
+import { Button } from '../../../components/button.js';
 import type { ForwardStateWire } from '../../../../shared/forward-wire.js';
 import type { ResolvedForwardWire, ResolvedHostWire } from '../../../../shared/ssh-wire.js';
 import { flattenGroups, useHostsStore } from '../hosts-store.js';
 import { forwardKey, routeOf } from './forward-format.js';
 import { ForwardRow } from './forward-row.js';
 import { isLive, useForwardsStore } from './forwards-store.js';
+import { NewRuleDialog } from './new-rule-dialog.js';
+import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from '../ssh-view-frame.js';
+import { SSH_VIEWS } from '../ssh-views.js';
 
 /** One row of the view: a resolved rule of a host, with what runs of it in this window. */
 export interface ForwardRowData {
@@ -94,6 +98,7 @@ export function ForwardingPanel() {
   const byKey = useForwardsStore((s) => s.byKey);
   const [filter, setFilter] = useState('');
   const [chip, setChip] = useState<Chip>('all');
+  const [adding, setAdding] = useState(false);
   const rows = useMemo(() => forwardRows(resolved, byKey), [resolved, byKey]);
   const needle = filter.trim().toLowerCase();
   const shown = rows.filter(
@@ -102,25 +107,32 @@ export function ForwardingPanel() {
       (chip === 'all' || (chip === 'running' ? isLive(row.state) : row.state?.status.state === 'failed')),
   );
 
+  const newRule = (
+    <Button
+      variant="primary"
+      onClick={() => {
+        setAdding(true);
+      }}
+    >
+      <Plus size={13} aria-hidden /> New rule…
+    </Button>
+  );
+
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-fg-subtle">
-        Tunnels through your hosts. Rules are set on a host or a group in its settings; they run until stopped, or with
-        the host&apos;s terminals when marked auto.
-      </p>
-      <div className="flex items-center gap-2">
-        <label className="flex flex-1 items-center gap-2 rounded-md border border-hairline-strong bg-surface-base px-2 py-1">
-          <Search size={14} aria-hidden="true" className="text-fg-subtle" />
-          <input
-            aria-label="Filter forwards"
-            placeholder="Filter by rule, host, port or target"
-            className="w-full bg-transparent text-sm text-fg-default outline-none placeholder:text-fg-faint"
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value);
-            }}
-          />
-        </label>
+    <SshView>
+      <SshViewHeader
+        title={SSH_VIEWS.forwarding.label}
+        {...(loaded ? { count: rows.length } : {})}
+        search={{
+          value: filter,
+          onChange: setFilter,
+          label: 'Filter forwards',
+          placeholder: 'Search by rule, host, port or target…',
+        }}
+        description="Tunnels through your hosts. They run until stopped, or with the host's terminals when marked auto."
+        actions={newRule}
+      />
+      {rows.length > 0 && (
         <div role="group" aria-label="Show" className="flex gap-1">
           {CHIPS.map(({ id, label }) => (
             <button
@@ -140,17 +152,28 @@ export function ForwardingPanel() {
             </button>
           ))}
         </div>
-      </div>
+      )}
       {!loaded ? null : rows.length === 0 ? (
-        <p data-testid="forwards-empty" className="text-sm text-fg-subtle">
-          No host has a forwarding rule yet. Add one in a host&apos;s or group&apos;s settings, under Port forwarding.
-        </p>
+        <SshEmptyState
+          icon={ArrowLeftRight}
+          text="Reach a port behind one of your hosts, a database or a web console, as if it were on this machine."
+          testId="forwards-empty"
+        >
+          {newRule}
+        </SshEmptyState>
       ) : shown.length === 0 ? (
-        <p className="text-sm text-fg-subtle">No forward matches.</p>
+        <SshNoMatches
+          text="No forward matches."
+          onClear={() => {
+            setFilter('');
+            setChip('all');
+          }}
+        />
       ) : (
         <RowList rows={shown} label="Forwards" showHost />
       )}
-    </div>
+      <NewRuleDialog open={adding} onOpenChange={setAdding} />
+    </SshView>
   );
 }
 

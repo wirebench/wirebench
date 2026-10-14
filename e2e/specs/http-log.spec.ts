@@ -41,7 +41,7 @@ test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
     // A credential header, so the row has something redacted and the Headers tab explains it.
     await addHeader(page, 'Authorization', 'Bearer e2e-placeholder');
     await sendRest(page);
-    await expect(responseStatus(page)).toContainText('connection-refused');
+    await expect(page.getByTestId('send-error-code')).toHaveText('connection-refused');
 
     const rows = page.locator('[data-testid="http-log-row"]');
     await expect(rows).toHaveCount(2);

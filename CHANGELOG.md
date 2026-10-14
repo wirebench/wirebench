@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **One frame for the SSH views, and New rule… in Port forwarding.** Hosts, Snippets, Layouts, Port
+  forwarding, Keychain and Known hosts open on the same header: the view's name and count, a search
+  (<kbd>⌘F</kbd>), its main action at the right and one line on what it is for, all at one width. An
+  empty view says what it is for and offers its first step, and a search that hides everything offers
+  **Clear search**. **New rule…** in the Port forwarding view picks a host and adds a rule to it without
+  opening the host's settings. The SSH area's first tab is named after the view it shows, with its icon,
+  instead of always saying Hosts (#535).
 - **SSH through a SOCKS5 or HTTP proxy.** A host or a group can name a SOCKS5 or HTTP CONNECT proxy (host
   form → Advanced → Proxy), with an optional user and a password kept as a secret. The first hop of a
   connection, the host or its outermost jump host, is dialled through it, and the proxy resolves the
@@ -289,6 +296,16 @@ All notable changes to this project are documented here. The format follows
   connection screen shows a connect under way is kept (up to 4 KB) and sent to the shell as soon as
   it opens; the screen says so. A connect that fails drops it, and keys typed after a failure or
   after a session ends still go nowhere (#361).
+
+- **A failed REST send says what happened and offers Retry.** In place of "Send the request to see its
+  response", the response pane names the failure in plain words (**Connection refused**, **Host not
+  found**, **Timed out**, **Unresolved variables**), shows the whole message and one hint, and offers
+  **Retry**; the code stays as small text under it. A timeout names the limit it hit and links the
+  request's Settings tab; each unresolved `${name}` links to the field it was written in. Your own
+  Cancel reads as a neutral **Cancelled**, and neither a cancel nor a declined protected-environment
+  prompt adds a Problem. The status bar's **last:** now shows the latest send, failures included. A
+  URL with `://` but no valid scheme or host (`ht!tp:// bad url`) is refused before sending, with the
+  reason under the URL field, where it used to go out as a path under the base URL (#541).
 
 - **History rows read on two lines, and a click opens.** A row shows the method, name and a status
   chip, then the time, host and duration, so the name is never squeezed out at narrow widths.

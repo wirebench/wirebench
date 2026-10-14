@@ -3,12 +3,14 @@
  *
  * The status is coloured by class rather than by "did it work": a 404 is a perfectly good answer to
  * a request that asked for something absent, so it reads as a client error rather than as a failure
- * of the app. A transport failure has no status at all and replaces the line.
+ * of the app. A transport failure has no status at all: the line names it in plain words, and the
+ * panel under it says the rest.
  */
 import type { IpcError } from '../../../../shared/ipc.js';
 import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
 import type { RestLiveState } from '../../../state/exchanges.js';
+import { describeSendError } from '../../request-editor/send-error.js';
 import { ContractChip } from './contract-chip.js';
 import { GraphqlChip } from './graphql-chip.js';
 
@@ -53,14 +55,16 @@ function liveLastEventId(live: RestLiveState): string {
 /** The `200 OK · 12 ms · 1.2 KB · HTTP/1.1` line. */
 export function StatusLine({ exchange, error, sending = false, live }: StatusLineProps) {
   if (error !== undefined) {
+    // The title alone: the panel below carries the message, the hint and the code.
+    const view = describeSendError(error);
     return (
       <p
         role="status"
         data-testid="rest-response-status"
-        className="truncate px-2 font-mono text-xs text-status-danger"
+        className={`truncate px-2 text-xs font-medium ${view.tone === 'danger' ? 'text-status-danger' : 'text-fg-muted'}`}
         title={error.message}
       >
-        <span className="font-medium">{error.code}</span> · {error.message}
+        {view.title}
       </p>
     );
   }
