@@ -464,8 +464,10 @@ The gated features, in the order they are planned:
   roles, pushes, secrets, catch URLs, CI tokens and license changes, written inside the action's
   transaction on every edition, retained by age, read and exported as newline-delimited JSON by server
   admins on Enterprise. Server events only; what the app sends where is a later ruling.
-- **SCIM provisioning and finer roles**: groups pushed from the identity provider, deprovisioning on the
-  leaver's day, roles beyond admin and member.
+- **SAML sign-in and SCIM provisioning** (built, #344,
+  `docs/specs/2026-10-13-wirebench-server-saml-scim-design.md`): sign-in through the identity provider,
+  accounts and deactivation over SCIM, IdP groups linked to teams. **Finer roles**, beyond admin and
+  member, are still to come.
 - **Server policies**: refuse sends to named hosts outside a window, require approval before a secret is
   shared, enforce TLS verification, forbid plaintext credentials in project files. Managed preferences
   (#67) cover the client; policy at the server is what a security office signs off.

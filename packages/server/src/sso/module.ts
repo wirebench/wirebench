@@ -63,6 +63,16 @@ export function ssoModule(options: SsoOptions = {}): ServerModule {
           },
         };
         ctx.meta.setSignInMethods({ saml: true, samlDisplayName: settings.displayName });
+        // §3.1: what an operator gives the IdP, without opening the app.
+        ctx.log.info(
+          {
+            idpEntityId: metadata.entityId,
+            entityId: urls.entityId,
+            acsUrl: urls.acsUrl,
+            scimBaseUrl: urls.scimBaseUrl,
+          },
+          'saml sign-in on',
+        );
       }
       const env: SsoEnv = {
         ctx,
