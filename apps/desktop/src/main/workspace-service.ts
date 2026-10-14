@@ -122,6 +122,7 @@ import type { KindRouters } from './kinds/kind-main.js';
 import { KIND_ENTITY_IDS, KIND_ROUTES, type KindEntityIds } from './kinds/kind-routes.js';
 import { requireKindEnabled } from './project-mutations.js';
 import type { KindId } from '../shared/kinds/kind-module.js';
+import type { MainKindId } from './kinds/enabled-kinds.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
@@ -1074,6 +1075,8 @@ export class WorkspaceService implements ProjectRouter {
         restDrafts: { ...this.restDrafts },
         grpcDrafts: { ...this.grpcDrafts },
         wsDrafts: { ...this.wsDrafts },
+        // MCP has no editor yet, so nothing of it is ever stashed.
+        mcpDrafts: {},
         notices,
       };
 
@@ -2714,6 +2717,7 @@ export class WorkspaceService implements ProjectRouter {
         restDrafts: {},
         grpcDrafts: {},
         wsDrafts: {},
+        mcpDrafts: {},
         notices: [],
       }
     );
@@ -3563,7 +3567,7 @@ export function* kindEntityIds(
 }
 
 function routeKinds(): void {
-  for (const [kind, routes] of Object.entries(KIND_ROUTES) as [KindId, (typeof KIND_ROUTES)[KindId]][]) {
+  for (const [kind, routes] of Object.entries(KIND_ROUTES) as [MainKindId, (typeof KIND_ROUTES)[MainKindId]][]) {
     for (const [name, route] of Object.entries(routes)) {
       const forward = function (this: WorkspaceService, ...args: unknown[]): unknown {
         // A kind this run switched off has no channels, but its host is refused here too.

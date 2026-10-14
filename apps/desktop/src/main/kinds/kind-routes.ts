@@ -4,7 +4,7 @@
  * Kept apart from `kind-main.ts` so `window-scope.ts` and `WorkspaceService` do not import the
  * kinds' IPC modules, which import them back.
  */
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { MainKindId } from './enabled-kinds.js';
 import type { ProjectWire } from '../../shared/wire-types.js';
 import { grpcEntityIds, grpcRoutes } from './grpc/router.js';
 import type { KindRoute } from './kind-main.js';
@@ -14,7 +14,9 @@ import { wsEntityIds, wsRoutes } from './ws/router.js';
 
 /** Every kind's router table, by kind. */
 export const KIND_ROUTES: {
-  readonly [K in KindId]: Readonly<Record<string, { readonly method: string; readonly by: KindRoute<unknown>['by'] }>>;
+  readonly [K in MainKindId]: Readonly<
+    Record<string, { readonly method: string; readonly by: KindRoute<unknown>['by'] }>
+  >;
 } = {
   soap: soapRoutes,
   rest: restRoutes,
@@ -30,7 +32,7 @@ export type KindEntityIds = (project: ProjectWire) => Iterable<string>;
  * `WorkspaceService`'s routing index adds each kind's, so a new kind's entities route without an edit
  * there.
  */
-export const KIND_ENTITY_IDS: { readonly [K in KindId]: KindEntityIds } = {
+export const KIND_ENTITY_IDS: { readonly [K in MainKindId]: KindEntityIds } = {
   soap: soapEntityIds,
   rest: restEntityIds,
   grpc: grpcEntityIds,

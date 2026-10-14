@@ -199,17 +199,17 @@ the scripting suites.
 `shared/kinds/kind-module.ts`, `shared/ipc.ts`, `shared/wire-types.ts`, `shared/wire-base.ts`,
 `shared/commands.ts`, `shared/command-catalog.ts`, `test/fixtures/ipc-names.json`, the kind tests.
 
-- [ ] `mcpKind` with the tabs `mcp-request` / `mcp-api`. Wire schemas for the server, request, patch,
+- [x] `mcpKind` with the tabs `mcp-request` / `mcp-api`. Wire schemas for the server, request, patch,
   exchange summary, live event and catalogue. Add the `ProjectWire` fields and the `ProjectChange`
   members (add, update, delete and move, for servers, folders and requests).
-- [ ] Channels:
+- [x] Channels:
   - `request.sendMcp`, `request.cancelMcp`;
   - `api.refreshMcpCatalogue`;
   - `app.mcpApprovals` (list and revoke), `app.mcpApprove`, the approval prompt event;
   - `mcp.live`.
 
   All pinned.
-- [ ] The guard tests (`kind-modules`, `kind-literals` and the others) know `mcp`.
+- [x] The guard tests (`kind-modules`, `kind-literals` and the others) know `mcp`.
 
 ### Task 13: Desktop main half
 

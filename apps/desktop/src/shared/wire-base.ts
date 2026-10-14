@@ -114,7 +114,7 @@ const httpRequestSummarySchema = z.object({
   headers: z.record(z.string(), z.string()),
 });
 
-const timingsWireSchema = z.object({
+export const timingsWireSchema = z.object({
   startedAt: z.string(),
   totalMs: z.number(),
   dnsMs: z.number().optional(),
@@ -2529,7 +2529,7 @@ export const searchMatchSchema = z.object({
    * reads as what it was. It decides both the badge in the results list and which editor a click
    * opens — a REST request id in a SOAP tab would open an editor with nothing in it.
    */
-  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']).optional(),
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket', 'mcp']).optional(),
   /**
    * Which project of the open workspace the match came from, and its display name — search
    * spans every open project, so a row has to say where it is before it can be revealed.

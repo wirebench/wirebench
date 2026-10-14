@@ -23,7 +23,7 @@ import type { HistoryService } from '../history-service.js';
 import type { WorkspaceService } from '../workspace-service.js';
 import type { ChannelRequest, ChannelResponse, channels } from '../../shared/ipc.js';
 import type { SearchDocument } from '../search.js';
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { MainKindId } from './enabled-kinds.js';
 import type { ProjectChange } from '../../shared/wire-types.js';
 import type { RestFolderPatchWire } from '../../shared/kinds/rest/wire.js';
 import type { ProjectHostCore } from '../project-host-core.js';
@@ -254,7 +254,7 @@ export interface KindChannelDeps {
   readonly showSaveHtml: (options: { defaultPath: string; title: string }) => Promise<string | undefined>;
 }
 
-export interface MainKind<K extends KindId = KindId> {
+export interface MainKind<K extends MainKindId = MainKindId> {
   readonly kind: K;
   /** Its share of the project host: caches and methods, built once per open project. */
   createHost(core: ProjectHostCore): KindHosts[K];
@@ -274,7 +274,7 @@ export interface MainKind<K extends KindId = KindId> {
 }
 
 /** Any one kind's main half. */
-export type AnyMainKind = { [K in KindId]: MainKind<K> }[KindId];
+export type AnyMainKind = { [K in MainKindId]: MainKind<K> }[MainKindId];
 
 export const MAIN_KINDS: readonly AnyMainKind[] = [soapMain, restMain, grpcMain, wsMain];
 

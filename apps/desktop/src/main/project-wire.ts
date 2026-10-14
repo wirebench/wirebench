@@ -844,6 +844,9 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     grpcRequests: grpcTree.requests,
     wsApis: wsApisOf(project).map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
     wsRequests: wsTree.requests,
+    // MCP has no main half yet: it is off, so its servers load as placeholders in `unsupported`.
+    mcpServers: [],
+    mcpRequests: [],
     sequences: project.sequences.map(toSequenceWire),
     mocks: project.mocks.map(toMockWire),
     properties: { ...project.properties },

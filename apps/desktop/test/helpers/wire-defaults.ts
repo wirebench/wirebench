@@ -27,7 +27,17 @@ export const PROJECT_SETTINGS: ProjectSettingsWire = { ...DEFAULT_PROJECT_SETTIN
  */
 export const NO_REST: Pick<
   ProjectWire,
-  'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests' | 'wsApis' | 'wsRequests' | 'sequences' | 'mocks'
+  | 'apis'
+  | 'folders'
+  | 'restRequests'
+  | 'grpcApis'
+  | 'grpcRequests'
+  | 'wsApis'
+  | 'wsRequests'
+  | 'mcpServers'
+  | 'mcpRequests'
+  | 'sequences'
+  | 'mocks'
 > = {
   apis: [],
   folders: [],
@@ -36,6 +46,8 @@ export const NO_REST: Pick<
   grpcRequests: [],
   wsApis: [],
   wsRequests: [],
+  mcpServers: [],
+  mcpRequests: [],
   sequences: [],
   mocks: [],
 };

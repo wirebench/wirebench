@@ -93,6 +93,7 @@ describe('unsaved request drafts across sessions', () => {
       restDrafts: {},
       grpcDrafts: {},
       wsDrafts: {},
+      mcpDrafts: {},
       notices: [],
     });
 
@@ -110,6 +111,7 @@ describe('unsaved request drafts across sessions', () => {
       restDrafts: {},
       grpcDrafts: {},
       wsDrafts: {},
+      mcpDrafts: {},
       notices: [],
     });
 
@@ -124,6 +126,7 @@ describe('unsaved request drafts across sessions', () => {
       restDrafts: {},
       grpcDrafts: {},
       wsDrafts: {},
+      mcpDrafts: {},
       notices: [
         {
           projectId: 'p1',

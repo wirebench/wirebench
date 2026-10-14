@@ -19,7 +19,8 @@ const SHELL_FILES = [
 ];
 
 /** A kind's id, or one of its tab or explorer row kinds (`rest-request`, `grpc-api`, …). */
-const KIND_LITERAL = /'(?:soap|rest|grpc|websocket)'|'(?:soap|rest|grpc|ws)-(?:request|api|operation|interface)'/;
+const KIND_LITERAL =
+  /'(?:soap|rest|grpc|websocket|mcp)'|'(?:soap|rest|grpc|ws|mcp)-(?:request|api|operation|interface)'/;
 
 /**
  * Lines that may still name one. A union member declares a row kind rather than branching on it, and
@@ -44,6 +45,7 @@ describe('the shell files', () => {
   it('would catch one', () => {
     expect(KIND_LITERAL.test("if (item.kind === 'websocket') {")).toBe(true);
     expect(KIND_LITERAL.test("node.kind === 'grpc-api'")).toBe(true);
+    expect(KIND_LITERAL.test("tab.kind === 'mcp-request'")).toBe(true);
     expect(KIND_LITERAL.test("'ws-session-exists'")).toBe(false);
   });
 });

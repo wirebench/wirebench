@@ -12,14 +12,9 @@ import { KINDS, kindById, toKindId } from '../src/shared/kinds/kind-module.js';
 
 const kindsDir = join(dirname(fileURLToPath(import.meta.url)), '../src/shared/kinds');
 
-/** Engine protocols the desktop has no kind for yet; `kindRegistry` keeps them off. MCP's desktop half is #79's. */
-const NOT_YET_ON_THE_DESKTOP = ['mcp'];
-
 describe('KINDS', () => {
   it('lists the engine’s built-in protocols, in their order, with their feature descriptors', () => {
-    expect(KINDS.map((kind) => kind.kind)).toEqual(
-      BUILTIN_PROTOCOLS.map((module) => module.kind).filter((kind) => !NOT_YET_ON_THE_DESKTOP.includes(kind)),
-    );
+    expect(KINDS.map((kind) => kind.kind)).toEqual(BUILTIN_PROTOCOLS.map((module) => module.kind));
     for (const kind of KINDS) {
       expect(kind.feature).toEqual(BUILTIN_PROTOCOLS.find((module) => module.kind === kind.kind)?.feature);
     }
@@ -33,6 +28,7 @@ describe('KINDS', () => {
   it('looks a kind up, and narrows a string from outside', () => {
     expect(kindById('websocket').label).toBe('WebSocket');
     expect(toKindId('grpc')).toBe('grpc');
+    expect(kindById('mcp').tabs).toEqual({ request: 'mcp-request', container: 'mcp-api' });
     expect(toKindId('graphql')).toBeUndefined();
   });
 

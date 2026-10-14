@@ -73,6 +73,8 @@ const SNAPSHOT = {
   grpcRequests: [],
   wsApis: [],
   wsRequests: [],
+  mcpServers: [],
+  mcpRequests: [],
   sequences: [],
   mocks: [],
   properties: {},

@@ -46,8 +46,10 @@ describe('WIREBENCH_KINDS', () => {
     expect(registry.status('rest')).toBe('enabled');
   });
 
-  it('keeps an engine protocol the desktop has no kind for off, whatever the switches say', () => {
-    expect(kindRegistry(['soap', 'rest', 'grpc', 'websocket']).status('mcp')).toBe('disabled');
+  it('keeps a kind with no main half yet (MCP) off, whatever the switches say', () => {
+    const enabled = enabledKindsFromEnv({ WIREBENCH_KINDS: 'mcp=on' });
+    expect(enabled).not.toContain('mcp');
+    expect(kindRegistry(enabled).status('mcp')).toBe('disabled');
   });
 });
 

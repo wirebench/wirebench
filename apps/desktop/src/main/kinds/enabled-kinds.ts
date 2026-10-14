@@ -14,24 +14,31 @@ import type { UnsupportedContainerWire } from '../../shared/wire-base.js';
 import { KINDS, type KindId } from '../../shared/kinds/kind-module.js';
 import { parseAreaSwitches } from '../areas.js';
 
+/**
+ * Kinds whose shared half is in `KINDS` but whose main half is not built yet: MCP's is #79's next
+ * slice. They are off whatever `WIREBENCH_KINDS` says, so their containers load as placeholders and
+ * are saved untouched, and main's kind tables leave them out ({@link MainKindId}).
+ */
+const NO_MAIN_HALF_YET = ['mcp'] as const satisfies readonly KindId[];
+
+/** The kinds main has a half of: every key of `KindHosts`, `KIND_SENDS` and `KIND_ROUTES`. */
+export type MainKindId = Exclude<KindId, (typeof NO_MAIN_HALF_YET)[number]>;
+
 /** The kinds `WIREBENCH_KINDS` leaves on, in the kinds' order. Anything not `<kind>=on|off` is ignored. */
 export function enabledKindsFromEnv(env: NodeJS.ProcessEnv = process.env): readonly KindId[] {
   const switches = parseAreaSwitches(env['WIREBENCH_KINDS']);
-  return KINDS.filter((kind) => switches[kind.kind] !== false).map((kind) => kind.kind);
+  return KINDS.filter(
+    (kind) => switches[kind.kind] !== false && !(NO_MAIN_HALF_YET as readonly KindId[]).includes(kind.kind),
+  ).map((kind) => kind.kind);
 }
 
 /**
  * The engine registry for this run: the built-in protocols with the kinds that are off switched off,
- * so a project's containers of those kinds load as placeholders and are saved untouched. An engine
- * protocol the desktop has no kind for yet is off too, for the same reason.
+ * so a project's containers of those kinds load as placeholders and are saved untouched.
  */
 export function kindRegistry(enabled: readonly KindId[]): ProtocolRegistry {
-  const desktopless = BUILTIN_PROTOCOLS.filter((module) => !KINDS.some((kind) => kind.kind === module.kind));
   return createBuiltinRegistry(
-    Object.fromEntries([
-      ...KINDS.map((kind) => [kind.feature.id, enabled.includes(kind.kind)] as const),
-      ...desktopless.map((module) => [module.feature.id, false] as const),
-    ]),
+    Object.fromEntries(KINDS.map((kind) => [kind.feature.id, enabled.includes(kind.kind)] as const)),
   );
 }
 

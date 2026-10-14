@@ -4,7 +4,7 @@
  * Kept apart from `kind-main.ts` so the send path does not import the kinds' IPC modules, which
  * import the send path: `send/exchange.ts` and `send/live.ts` look a kind up here.
  */
-import type { KindId } from '../../shared/kinds/kind-module.js';
+import type { MainKindId } from './enabled-kinds.js';
 import { grpcSend } from './grpc/send.js';
 import type { KindSend, SendKind } from './kind-main.js';
 import { restSend } from './rest/send.js';
@@ -12,7 +12,7 @@ import { soapSend } from './soap/send.js';
 import { wsSend } from './ws/send.js';
 
 /** Every kind's send steps, by kind. */
-export const KIND_SENDS: { readonly [K in KindId]: KindSend<K> } = {
+export const KIND_SENDS: { readonly [K in MainKindId]: KindSend<K> } = {
   soap: soapSend,
   rest: restSend,
   grpc: grpcSend,
@@ -26,7 +26,7 @@ export const KIND_SENDS: { readonly [K in KindId]: KindSend<K> } = {
  * @throws Error for a kind the engine sends and the app does not have yet
  */
 export function kindSend(kind: SendKind): KindSend<SendKind> {
-  const send = (KIND_SENDS as Partial<Record<SendKind, KindSend<KindId>>>)[kind];
+  const send = (KIND_SENDS as Partial<Record<SendKind, KindSend<MainKindId>>>)[kind];
   if (send === undefined) throw new Error(`The app cannot send ${kind} requests yet`);
   return send as unknown as KindSend<SendKind>;
 }

@@ -8,6 +8,9 @@ import type { ProjectChange } from '../src/shared/wire-types.js';
 
 const ALL_CHANGE_KINDS = projectChangeSchema.options.map((option) => option.shape.kind.value);
 
+/** The changes of a kind whose main half is not built yet (MCP, #79): on the wire, owned by no one until it is. */
+const NO_MAIN_HALF_YET = /-mcp-/;
+
 const deps: MutationDeps = {
   generate: () => Promise.reject(new Error('not used')),
 };
@@ -22,7 +25,9 @@ describe('change kind ownership (spec §5.2)', () => {
     for (const kind of MAIN_KINDS) {
       for (const changeKind of Object.keys(kind.mutations)) own(changeKind, kind.kind);
     }
-    const missing = ALL_CHANGE_KINDS.filter((changeKind) => !owners.has(changeKind));
+    const missing = ALL_CHANGE_KINDS.filter(
+      (changeKind) => !owners.has(changeKind) && !NO_MAIN_HALF_YET.test(changeKind),
+    );
     const shared = [...owners].filter(([, by]) => by.length > 1);
     const unknown = [...owners.keys()].filter((changeKind) => !ALL_CHANGE_KINDS.includes(changeKind as never));
     expect({ missing, shared, unknown }).toEqual({ missing: [], shared: [], unknown: [] });

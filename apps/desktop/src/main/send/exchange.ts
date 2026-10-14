@@ -1118,8 +1118,7 @@ function reportSend(
   workspaceId: string | undefined,
   of: () => AuditedSend | undefined,
 ): void {
-  // The audit log names no MCP protocol yet (#79); the app cannot send one before it does.
-  if (deps.audit === undefined || options.run === true || projectId === undefined || item.kind === 'mcp') return;
+  if (deps.audit === undefined || options.run === true || projectId === undefined) return;
   try {
     const sent = of();
     if (sent === undefined || sent.url.length === 0) return;
