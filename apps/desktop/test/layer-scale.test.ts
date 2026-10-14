@@ -26,9 +26,13 @@ describe('the layer scale (#536)', () => {
     }
   });
 
-  it('puts every Dialog and AlertDialog portalled to <body> on the dialog layer', () => {
-    expect(css('tailwind.css')).toMatch(
-      /body > \[data-state\]:not\(\[data-radix-popper-content-wrapper\]\) \{\n\s+z-index: var\(--wb-layer-dialog\);/,
+  it('puts every Dialog and AlertDialog portalled to <body> on the dialog layer, its overlay just under it', () => {
+    const tailwind = css('tailwind.css');
+    expect(tailwind).toMatch(
+      /body > \[data-state\]:not\(\[data-radix-popper-content-wrapper\]\) \{\n\s+z-index: calc\(var\(--wb-layer-dialog\) - 1\);/,
+    );
+    expect(tailwind).toMatch(
+      /body > \[data-state\]:is\(\[role='dialog'\], \[role='alertdialog'\]\) \{\n\s+z-index: var\(--wb-layer-dialog\);/,
     );
   });
 
