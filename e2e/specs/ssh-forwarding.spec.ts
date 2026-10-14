@@ -9,7 +9,7 @@ import {
 } from '@wirebench/ssh/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
-import { addPasswordHost, trustHostKey } from '../helpers/ssh-host.js';
+import { addPasswordHost, openAdvanced, trustHostKey } from '../helpers/ssh-host.js';
 
 let launched: LaunchedApp | undefined;
 let fixture: SshFixture | undefined;
@@ -72,6 +72,7 @@ test('a local rule started from the view carries bytes; an autoStart rule follow
   await addPasswordHost(page, fixture, {
     name: 'db',
     beforeSave: async (dialog) => {
+      await openAdvanced(dialog);
       await addLocalRule(dialog, { id: 'pg', port: pgPort, target });
       await addLocalRule(dialog, { id: 'web', port: webPort, target, autoStart: true });
     },

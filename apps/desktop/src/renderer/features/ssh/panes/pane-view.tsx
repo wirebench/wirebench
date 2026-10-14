@@ -37,12 +37,14 @@ export function PaneView({
   return (
     // Its own stacking context, and so is each pane: what a pane draws over its terminal (the connection
     // screen, find, the snippet picker) stays inside it, the dividers (z-[1]) draw over every pane, and
-    // nothing in here reaches the menus, dialogs and toasts above the editor.
-    <div ref={container} className="relative isolate h-full w-full overflow-hidden">
+    // nothing in here reaches the menus, dialogs and toasts above the editor. `overflow-clip`, not
+    // `hidden`: a hidden box can still be scrolled (a focused field in a pane brought into view), which slid
+    // the whole layout sideways.
+    <div ref={container} className="relative isolate h-full w-full min-w-0 overflow-clip">
       {leaves(node).map((leaf) => {
         const rect = panes.get(leaf.paneId);
         return rect === undefined ? null : (
-          <div key={leaf.paneId} className="absolute isolate min-h-0 min-w-0" style={placed(rect)}>
+          <div key={leaf.paneId} className="absolute isolate min-h-0 min-w-0 overflow-clip" style={placed(rect)}>
             {renderPane(leaf)}
           </div>
         );

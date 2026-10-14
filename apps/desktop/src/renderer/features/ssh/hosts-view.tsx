@@ -30,6 +30,17 @@ const ENTRIES: readonly { readonly id: SshHomeView; readonly label: string; read
   { id: 'known-hosts', label: 'Known hosts', icon: ShieldCheck },
 ];
 
+/*
+ * The menu reads its own width (it is a container). From 7.5rem an entry is icon, label and count, the label
+ * cut short with an ellipsis; narrower than that the menu is an icon rail, the label kept for screen
+ * readers and in the tooltip.
+ */
+const ENTRY_CLASS =
+  'flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-sm @min-[7.5rem]:justify-start';
+const LABEL_CLASS =
+  'sr-only @min-[7.5rem]:not-sr-only @min-[7.5rem]:min-w-0 @min-[7.5rem]:flex-1 @min-[7.5rem]:truncate @min-[7.5rem]:text-left';
+const COUNT_CLASS = 'hidden flex-none text-xs text-fg-subtle @min-[7.5rem]:inline';
+
 /**
  * The SSH sidebar: a menu of what the area keeps. Picking an entry shows it in the area's fixed
  * first tab (`ssh-home.tsx`), in front of any open terminal.
@@ -90,7 +101,7 @@ export function HostsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-2">
+    <div className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-2">
       <nav aria-label="SSH">
         <ul className="flex flex-col gap-0.5">
           {ENTRIES.map(({ id, label, icon: Icon }) => {
@@ -102,16 +113,17 @@ export function HostsView() {
                   type="button"
                   data-testid={`ssh-nav-${id}`}
                   aria-current={current ? 'page' : undefined}
+                  title={count === undefined ? label : `${label} (${String(count)})`}
                   onClick={() => {
                     open(id);
                   }}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  className={`${ENTRY_CLASS} ${
                     current ? 'bg-accent-muted text-fg-default' : 'text-fg-muted hover:bg-surface-raised'
                   }`}
                 >
                   <Icon size={15} aria-hidden="true" className="shrink-0" />
-                  <span className="flex-1 text-left">{label}</span>
-                  {count !== undefined && <span className="text-xs text-fg-subtle">{count}</span>}
+                  <span className={LABEL_CLASS}>{label}</span>
+                  {count !== undefined && <span className={COUNT_CLASS}>{count}</span>}
                 </button>
               </li>
             );
@@ -123,13 +135,14 @@ export function HostsView() {
           <button
             type="button"
             data-testid="ssh-new-local-terminal"
+            title="New local terminal"
             onClick={() => {
               openLocalTerminal();
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-fg-muted hover:bg-surface-raised"
+            className={`${ENTRY_CLASS} text-fg-muted hover:bg-surface-raised`}
           >
             <Terminal size={15} aria-hidden="true" className="shrink-0" />
-            <span className="flex-1 text-left">New local terminal</span>
+            <span className={LABEL_CLASS}>New local terminal</span>
           </button>
         </div>
       )}
