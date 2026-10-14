@@ -280,6 +280,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Pasting control characters into a terminal asks first.** A paste holding an escape or another
+  control character (apart from tabs and line breaks), such as an embedded end of bracketed paste,
+  now waits for a yes even on one line and with the multi-line question turned off. The dialog shows
+  the characters escaped (`\x1b`) and offers no "Don't ask again" (#361).
+
 - **New host asks for the essentials first.** The host form shows Name, Address, Group, User, Port and
   how to sign in; OS, tags, Protected, jump host, keep-alive, timeout, agent forwarding, environment,
   terminal and forwarding rules wait under a closed **Advanced** section. With no group supplying a
