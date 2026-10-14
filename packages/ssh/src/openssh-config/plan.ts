@@ -1,5 +1,6 @@
 import { SshModelError } from '../errors.js';
 import { ENV_NAME } from '../host-env.js';
+import type { ForwardEntry } from '../forward-rules.js';
 import type { HostsFile } from '../model.js';
 import { listResolvedHosts, resolveSettings } from '../resolve.js';
 import { walk } from '../tree.js';
@@ -34,6 +35,20 @@ export interface PlannedHost {
   readonly ssh: PlannedSettings;
   /** From `SetEnv`, without the variables the group already sets to the same value. */
   readonly env?: Readonly<Record<string, string>>;
+  /** The id of the planned folder (a subgroup of the import's group) it goes in; absent: the group itself. */
+  readonly folder?: string;
+  readonly tags?: readonly string[];
+  readonly forwards?: readonly ForwardEntry[];
+}
+
+/** A folder of the source, written as a subgroup inside the import's one new group. */
+export interface PlannedFolder {
+  readonly id: string;
+  readonly name: string;
+  /** The parent folder's id; absent: directly in the import's group. */
+  readonly parent?: string;
+  /** `Production / Web`, for the dialog. */
+  readonly path: string;
 }
 
 export interface PlannedKey {
@@ -67,6 +82,8 @@ export interface SshConfigImportPlan {
     readonly ssh: PlannedSettings;
     readonly env?: Readonly<Record<string, string>>;
   };
+  /** Parents before children. */
+  readonly folders?: readonly PlannedFolder[];
   readonly hosts: readonly PlannedHost[];
   readonly keys: readonly PlannedKey[];
   readonly report: SshConfigReport;
@@ -114,15 +131,16 @@ export const IGNORED_KEYWORDS = new Set([
 
 /** `Web.Prod_1` → `web-prod-1`; nothing usable → `host`. */
 export function slugId(alias: string): string {
-  return (
-    alias
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'host'
-  );
+  const dashed = alias.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  // Trimmed by index: an anchored `-+$` is slow on a long run of dashes.
+  let start = 0;
+  let end = dashed.length;
+  while (start < end && dashed[start] === '-') start += 1;
+  while (end > start && dashed[end - 1] === '-') end -= 1;
+  return dashed.slice(start, end) || 'host';
 }
 
-function unique(base: string, taken: Set<string>, joiner: string): string {
+export function unique(base: string, taken: Set<string>, joiner: string): string {
   let candidate = base;
   for (let n = 2; taken.has(candidate); n += 1) candidate = `${base}${joiner}${n}`;
   taken.add(candidate);
@@ -148,7 +166,7 @@ const PROXY_W = (args: readonly string[]): string | undefined => {
 };
 
 /** `[user@]host[:port]` or `[user@][v6]:port`; `undefined` for anything else (an `ssh://` URI). */
-function parseHop(hop: string): { user?: string; host: string; port?: number } | undefined {
+export function parseHop(hop: string): { user?: string; host: string; port?: number } | undefined {
   if (hop.includes('://')) return undefined;
   const at = hop.lastIndexOf('@');
   const user = at === -1 ? undefined : hop.slice(0, at);

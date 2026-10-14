@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Import hosts from PuTTY, SecureCRT, MobaXterm and CSV.** **Hosts: Import Hosts…** (was **Import
+  from SSH Config…**) now also reads a PuTTY registry export (`.reg`), a SecureCRT XML settings export, a
+  MobaXterm `.mobaconf` or `.mxtsessions` file, and a CSV with the columns `name, address, port, user,
+  group, tags, key, jump`. Each goes through the same preview, key choices and duplicate check as an SSH
+  config, into one new group; the source's folders become subgroups inside it. Host, port, user, key
+  file and jump host come across, PuTTY and SecureCRT port forwards become forwarding rules, and CSV
+  tags become tags. Passwords are never imported, and the notes say how many were left behind. The
+  registry itself is never read (#423).
+
 - **SAML sign-in and SCIM provisioning on Wirebench Server (Enterprise).** With
   `WIREBENCH_SERVER_SAML_IDP_METADATA` set, the Sign in dialog offers **Continue with SSO** (the label is
   `WIREBENCH_SERVER_SAML_DISPLAY_NAME`), which signs in through the identity provider in the browser. The

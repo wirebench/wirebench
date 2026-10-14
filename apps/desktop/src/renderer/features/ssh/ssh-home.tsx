@@ -297,7 +297,7 @@ function HostsPanel() {
                       setImportOpen(true);
                     }}
                   >
-                    <Download size={13} aria-hidden="true" /> Import from SSH config…
+                    <Download size={13} aria-hidden="true" /> Import hosts…
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>

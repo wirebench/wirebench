@@ -35,3 +35,18 @@ export const SSH_OS_IDS = [
 export const SSH_MAX_PANES = 12;
 /** At most this many `forward.state` events a second per forward for connection-count changes. */
 export const FORWARD_EVENTS_PER_SECOND = 4;
+
+/** The files hosts can be imported from; `ssh-config` is an OpenSSH client config, the rest are session lists. */
+export const SSH_IMPORT_FORMATS = ['ssh-config', 'putty', 'securecrt', 'mobaxterm', 'csv'] as const;
+export type SshImportFormat = (typeof SSH_IMPORT_FORMATS)[number];
+
+/** Per format: what the dialog calls it and the file extensions its picker offers. */
+export const SSH_IMPORT_FORMAT_INFO: Readonly<
+  Record<SshImportFormat, { readonly label: string; readonly extensions: readonly string[] }>
+> = {
+  'ssh-config': { label: 'OpenSSH config', extensions: [] },
+  putty: { label: 'PuTTY sessions (.reg)', extensions: ['reg'] },
+  securecrt: { label: 'SecureCRT sessions (.xml)', extensions: ['xml'] },
+  mobaxterm: { label: 'MobaXterm sessions (.mobaconf, .mxtsessions)', extensions: ['mobaconf', 'mxtsessions', 'ini'] },
+  csv: { label: 'CSV', extensions: ['csv'] },
+};

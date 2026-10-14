@@ -310,7 +310,7 @@ export function HostCards({
               useHostsStore.getState().setImportOpen(true);
             }}
           >
-            Import from SSH config
+            Import hosts
           </Button>
         </div>
       </div>

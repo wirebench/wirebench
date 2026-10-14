@@ -11,6 +11,7 @@ export * from './forward.js';
 export * from './session.js';
 export * from './sftp.js';
 export * from './openssh-config/index.js';
+export * from './host-import/index.js';
 export * from './os-release.js';
 export * from './keygen.js';
 export * from './certificate.js';

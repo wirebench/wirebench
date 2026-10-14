@@ -47,6 +47,7 @@ function fakeFs(files: Record<string, string | { size: number }>): SshImportFs {
         return { isFile: () => true, size: typeof entry === 'string' ? entry.length : entry.size };
       }),
     readFile: (path) => Promise.resolve().then(() => get(path) as string),
+    readBytes: (path) => Promise.resolve().then(() => Buffer.from(get(path) as string)),
     glob: () => Promise.resolve([]),
   };
 }

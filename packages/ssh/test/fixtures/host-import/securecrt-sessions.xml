@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VanDyke version="3.0">
+	<key name="Sessions">
+		<key name="Default">
+			<string name="Hostname"></string>
+			<string name="Protocol Name">SSH2</string>
+		</key>
+		<key name="Production">
+			<key name="Web">
+				<key name="web1">
+					<string name="Hostname">web1.example.com</string>
+					<string name="Protocol Name">SSH2</string>
+					<dword name="[SSH2] Port">22</dword>
+					<string name="Username">deploy</string>
+					<string name="Identity Filename V2">C:\Users\alex\.ssh\id_rsa::rawkey</string>
+					<string name="Firewall Name">Session:Production/bastion</string>
+					<string name="Password V2">02:not-a-real-password</string>
+					<array name="Port Forward Table V2">
+						<string>web-admin|127.0.0.1,8080|1|localhost|80|</string>
+						<string>broken</string>
+					</array>
+					<array name="Reverse Forward Table V2">
+						<string>metrics|9100|0|127.0.0.1|9100|</string>
+					</array>
+				</key>
+			</key>
+			<key name="bastion">
+				<string name="Hostname">bastion.example.com</string>
+				<string name="Protocol Name">SSH2</string>
+				<dword name="[SSH2] Port">2222</dword>
+				<string name="Username">ops</string>
+				<string name="Firewall Name">None</string>
+			</key>
+		</key>
+		<key name="Lab &amp; Test">
+			<key name="db">
+				<string name="Hostname">db.lab.example.com</string>
+				<string name="Protocol Name">SSH2</string>
+				<string name="Firewall Name">corp-socks</string>
+			</key>
+		</key>
+		<key name="switch">
+			<string name="Hostname">192.0.2.2</string>
+			<string name="Protocol Name">Telnet</string>
+		</key>
+	</key>
+</VanDyke>
