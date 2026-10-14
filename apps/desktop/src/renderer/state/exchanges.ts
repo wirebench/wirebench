@@ -229,6 +229,11 @@ export interface RestExchangeState {
   readonly startedAt?: string;
   /** Present while an event-stream response is still arriving; dropped when the exchange arrives. */
   readonly live?: RestLiveState;
+  /**
+   * While sending: the last response this request got, kept so the pane can show it dimmed under
+   * the Sending bar instead of going blank. Dropped when the new answer (or error) arrives.
+   */
+  readonly previous?: RestExchangeSummary;
 }
 
 /**
@@ -1100,6 +1105,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         .catch(() => undefined);
 
       const sendId = crypto.randomUUID();
+      // A send that replaces one still in flight keeps the response that one was showing.
+      const before = get().restByRequest[requestId];
+      const previous = before?.exchange ?? before?.previous;
       update((draft) => {
         // No live half yet: only an `open` event says the response is an event stream, and a plain
         // response must read as an ordinary send until it arrives.
@@ -1107,6 +1115,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           status: 'sending',
           sendId,
           startedAt: new Date().toISOString(),
+          ...(previous !== undefined ? { previous } : {}),
         };
       });
 

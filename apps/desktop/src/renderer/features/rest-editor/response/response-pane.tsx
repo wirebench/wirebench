@@ -74,8 +74,11 @@ export function RestResponsePane({
   onRevealReference,
 }: RestResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('body');
-  const exchange = state?.exchange;
   const sending = state?.status === 'sending';
+  // While a plain send is out, the last response stays on screen, dimmed under the Sending bar,
+  // rather than the pane going blank until the new one lands.
+  const stale = sending && state?.exchange === undefined && state?.live === undefined ? state?.previous : undefined;
+  const exchange = state?.exchange ?? stale;
   // While an event stream is open there is no exchange yet, only the live half; once the send
   // resolves the exchange's `stream` replaces it with the same rows.
   const live = exchange === undefined ? state?.live : undefined;
@@ -155,6 +158,7 @@ export function RestResponsePane({
             {...(state?.error !== undefined ? { error: state.error } : {})}
             sending={sending}
             live={live}
+            startedAt={state?.startedAt}
           />
         </div>
         <ExamplesMenu
@@ -163,7 +167,7 @@ export function RestResponsePane({
             setShown({ exampleId, sendId: state?.sendId });
           }}
         />
-        {exchange !== undefined && shownExample === undefined && (
+        {exchange !== undefined && stale === undefined && shownExample === undefined && (
           <Button
             variant="secondary"
             data-testid="rest-response-save"
@@ -224,9 +228,16 @@ export function RestResponsePane({
           onRevealReference={onRevealReference}
         />
       ) : exchange === undefined ? (
-        <p className="p-3 text-sm text-fg-subtle">{sending ? 'Sending…' : 'Send the request to see its response.'}</p>
+        // The bar above already says "Sending…"; the pane says it only once.
+        sending ? null : (
+          <p className="p-3 text-sm text-fg-subtle">Send the request to see its response.</p>
+        )
       ) : (
-        <>
+        <div
+          data-testid="rest-response-view"
+          className={`flex min-h-0 flex-1 flex-col transition-opacity ${stale !== undefined ? 'opacity-50' : ''}`}
+          {...(stale !== undefined ? { 'aria-busy': true, 'data-stale': '' } : {})}
+        >
           <Tabs label="Response tabs" items={items} active={activeTab} onSelect={setTab} />
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {activeTab === 'events' && stream !== undefined && (
@@ -288,7 +299,7 @@ export function RestResponsePane({
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </section>
   );
