@@ -27,6 +27,7 @@ import {
   type TestRestServer,
   type TestWsServer,
 } from '../helpers/test-server.js';
+import { selectTab, selectedTab } from '../helpers/tabs.js';
 
 test.describe('request assertions', () => {
   let launched: LaunchedApp | undefined;
@@ -59,16 +60,12 @@ test.describe('request assertions', () => {
     await createRestRequest(page, 'Petstore', 'Echo');
     await setMethodAndUrl(page, 'GET', '/echo');
 
-    await page
-      .getByRole('tablist', { name: 'Request tabs' })
-      .getByRole('tab', { name: /^Assertions/ })
-      .click();
+    await selectTab(page, 'Request tabs', /^Assertions/);
     await page.getByTestId('request-add-assertion').click(); // defaults to status 200
     await expect(page.getByTestId('request-assertion-row')).toHaveCount(1);
 
     await sendRest(page);
-    const response = page.getByTestId('rest-response');
-    await response.getByRole('tab', { name: /Assertions.*1\/1/ }).click();
+    await selectTab(page, 'Response tabs', /Assertions.*1\/1/);
     await expect(page.getByTestId('assertion-result')).toHaveCount(1);
     await expect(page.getByTestId('assertion-result').first().getByLabel('Passed')).toBeVisible();
   });
@@ -139,12 +136,9 @@ test.describe('request assertions', () => {
     await expect(requestRow).toBeVisible({ timeout: 20_000 });
     await requestRow.click();
     await expect(page.getByTestId('ws-editor')).toBeVisible({ timeout: 20_000 });
-    await expect(
-      page
-        .getByTestId('ws-editor')
-        .getByRole('tab', { name: /^Assertions/ })
-        .first(),
-    ).toContainText('1');
+    await selectTab(page, 'Request tabs', /^Assertions/);
+    await expect(selectedTab(page, 'Request tabs', /^Assertions/)).toContainText('1');
+    await selectTab(page, 'Request tabs', 'Messages');
 
     await page.getByTestId('ws-connect').click();
     await expect(page.getByTestId('ws-state')).toContainText('open', { timeout: 20_000 });
@@ -154,10 +148,7 @@ test.describe('request assertions', () => {
     await page.getByTestId('ws-connect').click(); // Disconnect: the session is checked when it closes
     await expect(page.getByTestId('ws-state')).toContainText('closed', { timeout: 20_000 });
 
-    await page
-      .getByTestId('ws-response')
-      .getByRole('tab', { name: /Assertions.*1\/1/ })
-      .click();
+    await selectTab(page, 'Session tabs', /Assertions.*1\/1/);
     await expect(page.getByTestId('assertion-result').first().getByLabel('Passed')).toBeVisible({ timeout: 20_000 });
   });
 });

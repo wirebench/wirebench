@@ -13,6 +13,7 @@ import {
   SYNC_TIMEOUT,
 } from '../helpers/sync.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /** Every file under `dir`, keyed by its path relative to `dir`, with its bytes as base64. */
 function snapshotFiles(dir: string, root = dir, out = new Map<string, string>()): Map<string, string> {
@@ -64,7 +65,7 @@ test.describe('shared workspaces: secrets', () => {
     await expandExplorer(pageA, 'Request 1');
     await openFirstRequest(pageA);
     await pageA.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
-    await pageA.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(pageA, 'Request tabs', 'Auth');
     const panelA = pageA.getByTestId('inspector-panel-request');
     await panelA.getByLabel('Authentication type').selectOption('basic');
     await panelA.getByLabel('Username').fill('user');
@@ -84,7 +85,7 @@ test.describe('shared workspaces: secrets', () => {
     await expandExplorer(pageB, 'Request 1');
     await openFirstRequest(pageB);
     await expect(pageB.getByTestId('request-endpoint')).toHaveValue(/\/auth\/basic$/, { timeout: 20_000 });
-    await pageB.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(pageB, 'Request tabs', 'Auth');
     const panelB = pageB.getByTestId('inspector-panel-request');
     await expect(panelB.getByTestId('secret-missing')).toHaveText('Not on this machine', { timeout: 20_000 });
 

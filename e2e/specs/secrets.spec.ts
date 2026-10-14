@@ -32,6 +32,7 @@ import {
   type TestSoapServer,
 } from '../helpers/test-server.js';
 import { selectLogRow } from '../helpers/http-log.js';
+import { selectTab } from '../helpers/tabs.js';
 
 const PASSWORD = 's3cret!';
 
@@ -172,7 +173,7 @@ test.describe('secrets', () => {
     await expect(page.locator('[data-testid="response-status"]')).toContainText(/\d{3}/, { timeout: 15_000 });
 
     await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
-    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
+    await selectTab(page, 'Log detail', 'Request');
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('Authorization: <redacted>');
     await expect(rawRequest).not.toContainText('Basic ');
@@ -276,7 +277,7 @@ test.describe('secrets', () => {
     await sendRest(page);
     await expect(responseStatus(page)).toContainText(/\d{3}/, { timeout: 20_000 });
     await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
-    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
+    await selectTab(page, 'Log detail', 'Request');
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('X-Api-Key: <redacted>');
     await expect(rawRequest).not.toContainText(KEY);

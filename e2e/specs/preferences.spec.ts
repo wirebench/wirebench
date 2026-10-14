@@ -6,6 +6,7 @@ import { runCommand } from '../helpers/palette.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 test.describe('request properties and preferences', () => {
   let launched: LaunchedApp | undefined;
@@ -42,7 +43,7 @@ test.describe('request properties and preferences', () => {
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
 
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Properties' }).click();
+    await selectTab(page, 'Request tabs', 'Properties');
     const timeout = page.getByTestId('request-timeout');
     await expect(timeout).toBeVisible({ timeout: 20_000 });
     await timeout.fill('100');

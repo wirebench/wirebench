@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 const PASSWORD = 'pass';
 
@@ -56,7 +57,7 @@ test.describe('auth', () => {
     // The /auth/basic route demands `user:pass` and challenges anything else with a 401.
     await page.getByTestId('request-endpoint').fill(`${server.url}/auth/basic`);
 
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     // The WSS section of the Details panel has a "Password" label of its own, so every auth
     // field is looked up inside the request inspector panel rather than page-wide.
     const panel = page.getByTestId('inspector-panel-request');
@@ -160,7 +161,7 @@ test.describe('auth', () => {
     // `/auth/ntlm` runs the real NTLMv2 handshake against user/pass in WORKGROUP.
     await page.getByTestId('request-endpoint').fill(`${server.url}/auth/ntlm`);
 
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     const panel = page.getByTestId('inspector-panel-request');
 
     await panel.getByLabel('Authentication type').selectOption('ntlm');

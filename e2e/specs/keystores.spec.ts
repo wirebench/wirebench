@@ -20,6 +20,7 @@ import {
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 const PASSWORD = 'keystore-password';
 
@@ -107,14 +108,14 @@ test.describe('keystores', () => {
 
     // --- select it for Request 1 and send over mutual TLS ------------------------------------
     await page.getByTestId('request-endpoint').fill(`${secure.url}/soap`);
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Properties' }).click();
+    await selectTab(page, 'Request tabs', 'Properties');
     await page.getByTestId('request-ssl-keystore').selectOption({ label: 'corp' });
 
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
 
     // The SSL inspector proves the identity was actually presented, not merely configured.
-    await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: 'SSL Info' }).click();
+    await selectTab(page, 'Response tabs', 'SSL Info');
     await expect(page.getByTestId('ssl-client-certificate')).toContainText('CN=wirebench-client', {
       timeout: 15_000,
     });
