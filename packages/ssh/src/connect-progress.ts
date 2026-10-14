@@ -29,6 +29,8 @@ export type ConnectProgress =
       readonly host: string;
       readonly at: number;
       readonly line: string;
+      /** The line says what failed: the screen draws it in red. */
+      readonly error?: true;
     };
 
 /**
@@ -84,6 +86,11 @@ export class HopProgress {
 
   log(line: string): void {
     this.send({ kind: 'log', ...this.where(), line });
+  }
+
+  /** A log line that says what failed. */
+  fail(line: string): void {
+    this.send({ kind: 'log', ...this.where(), line, error: true });
   }
 
   private where(): { hop: number; hops: number; host: string; at: number } {

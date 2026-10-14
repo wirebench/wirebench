@@ -70,17 +70,21 @@ const STATE_WORDS: Readonly<Record<ConnectStep['state'], string>> = {
   waiting: 'waiting for you',
 };
 
-function Log({ lines }: { readonly lines: readonly ConnectLogLine[] }) {
+function Log({ lines, failed }: { readonly lines: readonly ConnectLogLine[]; readonly failed: boolean }) {
   return (
     <pre
       data-testid="connect-log"
-      className="mt-2 max-h-56 overflow-auto rounded-md border border-hairline bg-surface-base p-2 font-mono text-xs whitespace-pre-wrap text-fg-muted select-text"
+      className={`max-h-72 overflow-auto rounded-md border ${failed ? 'border-status-danger/60' : 'border-hairline'} bg-surface-base p-2 font-mono text-xs whitespace-pre-wrap text-fg-muted select-text`}
     >
       {lines.length === 0
         ? 'Nothing logged yet.'
         : lines.map((line, index) => (
-            <span key={index} className="block">
-              <span className="text-fg-faint">{timeOf(line.at)}</span> {line.text}
+            <span
+              key={index}
+              className={line.error ? 'block text-status-danger' : 'block'}
+              data-error={line.error ? 'true' : undefined}
+            >
+              <span className={line.error ? undefined : 'text-fg-faint'}>{timeOf(line.at)}</span> {line.text}
             </span>
           ))}
     </pre>
@@ -268,10 +272,15 @@ export function ConnectScreen({
               {logOpen ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
               {logOpen ? 'Hide log' : 'Show log'}
             </button>
-            {logOpen && <Log lines={view.log} />}
           </div>
         )}
       </div>
+      {/* Wider than the steps: log lines are long, and wrapping each one makes the log hard to read. */}
+      {view !== undefined && logOpen && (
+        <div className="mt-2 w-full max-w-3xl">
+          <Log lines={view.log} failed={failed} />
+        </div>
+      )}
     </div>
   );
 }

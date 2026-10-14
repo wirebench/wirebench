@@ -132,9 +132,8 @@ function trackAuth(config: ConnectConfig, hop: HopCredentials, progress: HopProg
     const previous = record.pending;
     record.pending = undefined;
     if (previous !== undefined && previous !== 'none') {
-      progress.log(
-        `${methodLabel(previous, hop)} ${partial === true ? 'accepted, the server asks for more' : 'refused'}`,
-      );
+      if (partial === true) progress.log(`${methodLabel(previous, hop)} accepted, the server asks for more`);
+      else progress.fail(`${methodLabel(previous, hop)} refused`);
     }
     if (left !== null) {
       record.allowed = [...left];
@@ -196,7 +195,7 @@ function openSocket(hop: HopCredentials, index: number, progress: HopProgress): 
       socket.destroy();
       const reason: ConnectFailure = connectFailureOf(error);
       const phase = resolved ? 'tcp' : 'resolve';
-      progress.log(
+      progress.fail(
         reason === 'timeout'
           ? `No answer from ${host} after ${String(hop.connectTimeout)} s`
           : `${phase === 'resolve' ? `Could not resolve ${hop.address}` : `Could not connect to ${host}`} (${failureWords(reason)})`,
@@ -353,7 +352,7 @@ function handshake(
           },
           () => {
             verifierFailed = true;
-            if (reporting) progress.log('The host key could not be checked');
+            if (reporting) progress.fail('The host key could not be checked');
             verify(false);
           },
         );
@@ -375,8 +374,8 @@ function handshake(
         const tried = [...new Set(auth.tried)];
         const label = hop.auth.kind === 'key' ? hop.auth.label : undefined;
         const last = auth.pending;
-        if (last !== undefined && last !== 'none') progress.log(`${methodLabel(last, hop)} refused`);
-        progress.log(`Signing in as ${hop.user} failed: no method left`);
+        if (last !== undefined && last !== 'none') progress.fail(`${methodLabel(last, hop)} refused`);
+        progress.fail(`Signing in as ${hop.user} failed: no method left`);
         reject(
           new SshConnectError('ssh-auth-failed', `${host} refused ${method} authentication for ${hop.user}`, {
             host,
@@ -390,7 +389,7 @@ function handshake(
         );
       } else {
         const reason = connectFailureOf(error);
-        progress.log(
+        progress.fail(
           reason === 'timeout'
             ? `No answer from ${host} after ${String(hop.connectTimeout)} s`
             : `${host}: ${failureWords(reason)}`,
@@ -466,7 +465,7 @@ function forwardOut(
   return new Promise((resolve, reject) =>
     client.forwardOut('127.0.0.1', 0, next.address, next.port, (error, stream) => {
       if (error) {
-        progress.log(`${hostOf(via)} would not open a channel to ${hostOf(next)}`);
+        progress.fail(`${hostOf(via)} would not open a channel to ${hostOf(next)}`);
         reject(
           new SshConnectError('ssh-connect-failed', `jump to ${hostOf(next)} failed: ${error.message}`, {
             host: hostOf(next),

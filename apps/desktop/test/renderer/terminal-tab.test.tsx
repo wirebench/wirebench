@@ -355,8 +355,9 @@ describe('the terminal tab', () => {
       "a:22 refused the password. Check the host's sign-in settings.",
     );
     expect(screen.getByTestId('connect-step-auth').dataset['state']).toBe('failed');
-    // The log opens on its own when a connect fails.
-    expect(screen.getByTestId('connect-log')).toBeDefined();
+    // The log opens on its own when a connect fails, and its last line, in red, says what failed.
+    const errorLines = screen.getByTestId('connect-log').querySelectorAll('[data-error="true"]');
+    expect(errorLines[errorLines.length - 1]?.textContent).toContain('a:22 refused the password');
     expect(screen.queryByText('nope')).toBeNull();
 
     connect.mockResolvedValueOnce(OPEN('s1'));
