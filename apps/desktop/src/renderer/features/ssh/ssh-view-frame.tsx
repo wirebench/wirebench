@@ -6,6 +6,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Search, type LucideIcon } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { formatKeybinding } from '@shared/keybinding-format.js';
 import { detectPlatform } from '../../lib/platform.js';
 
 const INPUT_CLASS =
@@ -37,7 +38,8 @@ export interface SshViewHeaderProps {
 /** The view's header. With a search, ⌘F (Ctrl+F elsewhere) goes to it and Escape clears it. */
 export function SshViewHeader({ title, count, search, actions, description }: SshViewHeaderProps) {
   const searchRef = useRef<HTMLInputElement>(null);
-  const mac = detectPlatform() === 'mac';
+  const platform = detectPlatform();
+  const mac = platform === 'mac';
   const searching = search !== undefined;
 
   useEffect(() => {
@@ -87,7 +89,7 @@ export function SshViewHeader({ title, count, search, actions, description }: Ss
               }}
             />
             <kbd className="pointer-events-none absolute right-2 rounded border border-hairline px-1 font-sans text-xs text-fg-subtle">
-              {mac ? '⌘F' : 'Ctrl+F'}
+              {formatKeybinding('Mod+F', platform)}
             </kbd>
           </label>
         )}

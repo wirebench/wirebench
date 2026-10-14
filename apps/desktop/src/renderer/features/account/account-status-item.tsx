@@ -92,7 +92,7 @@ export function AccountStatusItem() {
             align="start"
             sideOffset={4}
             data-testid="status-bar-account-menu"
-            className="z-50 min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+            className="z-dropdown min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           >
             {signedIn.map((server) => (
               <DropdownMenu.Item

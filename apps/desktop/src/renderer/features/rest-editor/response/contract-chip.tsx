@@ -65,7 +65,7 @@ export function ContractChip({ result }: { readonly result: RestContractResultWi
             side="bottom"
             sideOffset={6}
             data-testid="rest-contract-tooltip"
-            className="z-50 max-w-md rounded-md border border-hairline bg-surface-overlay px-2 py-1 text-sm text-fg-default shadow-lg"
+            className="z-dialog max-w-md rounded-md border border-hairline bg-surface-overlay px-2 py-1 text-sm text-fg-default shadow-lg"
           >
             {heading !== undefined && heading !== '' && <p className="font-mono text-xs">{heading}</p>}
             {notes.length > 0 && (

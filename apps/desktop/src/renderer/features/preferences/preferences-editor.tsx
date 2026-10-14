@@ -374,7 +374,7 @@ export function PreferencesEditor({ initialSection }: PreferencesEditorProps) {
                           <DropdownMenu.Content
                             align="end"
                             sideOffset={4}
-                            className="z-50 min-w-56 rounded-lg border border-hairline-strong bg-surface-overlay p-1 shadow-lg"
+                            className="z-dropdown min-w-56 rounded-lg border border-hairline-strong bg-surface-overlay p-1 shadow-lg"
                           >
                             <DropdownMenu.Item
                               data-testid="settings-reset-section"

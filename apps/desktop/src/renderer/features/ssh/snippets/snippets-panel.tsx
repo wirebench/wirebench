@@ -36,7 +36,7 @@ import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from '../ssh-view
 import { SSH_VIEWS } from '../ssh-views.js';
 
 const CHIP_CLASS = 'rounded-full border px-2 py-0.5 text-xs';
-const MENU_CONTENT_CLASS = 'z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
+const MENU_CONTENT_CLASS = 'z-dropdown min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg';
 const MENU_ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-accent-muted';
 const ICON_BUTTON_CLASS =

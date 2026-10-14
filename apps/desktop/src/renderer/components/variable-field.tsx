@@ -286,7 +286,7 @@ export function useVariableField({ value, onValueChange, onReplace }: VariableFi
                 role="listbox"
                 aria-label="Variables"
                 data-testid="variable-completion"
-                className="fixed z-50 max-h-64 min-w-56 overflow-auto rounded-md border border-hairline bg-surface-raised p-1 text-sm shadow-lg"
+                className="fixed z-dialog max-h-64 min-w-56 overflow-auto rounded-md border border-hairline bg-surface-raised p-1 text-sm shadow-lg"
                 style={{ left: fieldRect?.left ?? 0, top: (fieldRect?.bottom ?? 0) + 2 }}
               >
                 {completion.items.map((item, index) => (
@@ -313,7 +313,7 @@ export function useVariableField({ value, onValueChange, onReplace }: VariableFi
               <div
                 role="tooltip"
                 data-testid="variable-hover"
-                className="fixed z-50 flex max-w-96 flex-col gap-1 rounded-md border border-hairline bg-surface-overlay px-3 py-2 text-sm shadow-lg"
+                className="fixed z-dialog flex max-w-96 flex-col gap-1 rounded-md border border-hairline bg-surface-overlay px-3 py-2 text-sm shadow-lg"
                 style={{ left: hovered.left, top: hovered.top }}
                 onMouseEnter={() => {
                   clearTimeout(hideTimer.current);
@@ -346,7 +346,7 @@ export function useVariableField({ value, onValueChange, onReplace }: VariableFi
               <div
                 role="menu"
                 aria-label="Selection"
-                className="fixed z-50 min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+                className="fixed z-dialog min-w-44 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
                 style={{ left: menu.left, top: menu.top }}
               >
                 <button

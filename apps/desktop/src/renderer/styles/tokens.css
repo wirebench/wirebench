@@ -82,6 +82,12 @@
   --wb-radius-md: 5px;
   --wb-radius-lg: 8px;
 
+  /* Layers, lowest to highest (see tailwind.css): menus, then dialogs, then toasts. Anything inside an
+     editor stays below all three: it uses z-[1] inside an area that is its own stacking context. */
+  --wb-layer-dropdown: 40;
+  --wb-layer-dialog: 50;
+  --wb-layer-toast: 60;
+
   --wb-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', sans-serif;
   --wb-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
   /* One step below xs, for the explorer's method column: small enough that the column costs a

@@ -44,7 +44,7 @@ export function OverflowMenu({ onLoaded, currentText }: OverflowMenuProps) {
           side="bottom"
           align="end"
           sideOffset={4}
-          className="min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          className="z-dropdown min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
         >
           <DropdownMenu.Item
             className={ITEM_CLASS}

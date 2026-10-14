@@ -68,7 +68,7 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
         <div className="flex h-full min-h-0 flex-col">{children}</div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className="min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
+        <ContextMenu.Content className="z-dropdown min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
           <ContextMenu.Item
             className={ITEM_CLASS}
             disabled={responseEnvelopeXml(draft.id) === undefined}

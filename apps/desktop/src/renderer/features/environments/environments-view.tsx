@@ -256,7 +256,7 @@ function EnvironmentRow({
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
-          className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          className="z-dropdown min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           // Selecting "Rename" swaps this row's label for an autofocused input; Radix's default
           // close behaviour returns focus to the trigger `<li>` right after, which would steal
           // it back and blur (committing) the input before anyone typed a thing.

@@ -55,12 +55,11 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Hosts: Edit Host… | — | — |
 | Hosts: Import Hosts… | — | — |
 | Hosts: Import Known Hosts… | — | — |
-| Connect to Host | — | — |
-| Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
-| Open Files on Host… | — | — |
-| Open Host in New Tab… | — | — |
-| Open Layout… | — | — |
-| Terminal: Save Layout… | — | — |
+| Hosts: Connect to Host… | <kbd>⌘⇧H</kbd> | <kbd>Ctrl+Shift+H</kbd> |
+| Hosts: Open Files on Host… | — | — |
+| Hosts: Open Host in New Tab… | — | — |
+| Layouts: Open Layout… | — | — |
+| Layouts: Save Layout… | — | — |
 | Terminal: Toggle Broadcast Input | — | — |
 | Terminal: Split Right | <kbd>⌘D</kbd> | <kbd>Ctrl+D</kbd> |
 | Terminal: Split Down | <kbd>⌘⇧D</kbd> | <kbd>Ctrl+Shift+D</kbd> |
@@ -69,16 +68,12 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Terminal: Focus Pane Above | <kbd>⌘⌥↑</kbd> | <kbd>Ctrl+Alt+Up</kbd> |
 | Terminal: Focus Pane Below | <kbd>⌘⌥↓</kbd> | <kbd>Ctrl+Alt+Down</kbd> |
 | Terminal: Close Pane | — | — |
-| Start Port Forward… | — | — |
-| Stop Port Forward… | — | — |
-| Stop All Port Forwards | — | — |
 | Snippets: New Snippet… | — | — |
 | Snippets: Edit Snippet… | — | — |
-| Snippets: Run Snippet | — | — |
-| Run Snippet… | — | — |
+| Snippets: Run Snippet… | — | — |
 | Terminal: Snippets… | <kbd>⌘;</kbd> | <kbd>Ctrl+;</kbd> |
 | Terminal: New Local Terminal | <kbd>⌘⌥T</kbd> | <kbd>Ctrl+Alt+T</kbd> |
-| Session Logs… | — | — |
+| Terminal: Session Logs… | — | — |
 | Files: Refresh | — | — |
 | Files: New Folder | — | — |
 | Files: Rename | — | — |
@@ -87,6 +82,14 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Files: Copy to Other Pane | — | — |
 | Files: Show or Hide Hidden Files | — | — |
 | Files: Go to Folder… | <kbd>⌘L</kbd> | <kbd>Ctrl+L</kbd> |
+
+## Forwarding
+
+| Command | macOS | Windows and Linux |
+| --- | --- | --- |
+| Forwarding: Start Port Forward… | — | — |
+| Forwarding: Stop Port Forward… | — | — |
+| Forwarding: Stop All Port Forwards | — | — |
 
 ## Definition
 

@@ -320,10 +320,10 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed top-[18%] left-1/2 z-50 w-[min(560px,90vw)] -translate-x-1/2 overflow-hidden rounded-lg border border-hairline-strong bg-surface-overlay shadow-2xl"
+          className="fixed top-[18%] left-1/2 w-[min(560px,90vw)] -translate-x-1/2 overflow-hidden rounded-lg border border-hairline-strong bg-surface-overlay shadow-2xl"
         >
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
           {/* Keyed on the mode so a switch (⌘K to the host picker) starts with an empty search. */}

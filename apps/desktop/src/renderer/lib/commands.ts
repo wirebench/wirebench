@@ -110,6 +110,8 @@ export function listAllCommands(): readonly CommandDefinition<CommandContext>[] 
 export function listPaletteCommands(context: CommandContext): readonly PaletteCommand[] {
   return [...registry.values()]
     .flatMap((command): PaletteCommand[] => {
+      // A menu's argument-taking twin of a palette command (see `CommandCatalogEntry.paletteHidden`).
+      if (command.paletteHidden === true) return [];
       if (isAvailable(command, context)) return [{ command: stripHandler(command) }];
       const disabledReason = command.unavailable?.(context);
       return disabledReason === undefined ? [] : [{ command: stripHandler(command), disabledReason }];

@@ -216,6 +216,7 @@ export type CommandCategory =
   | 'Editor'
   | 'History'
   | 'Hosts'
+  | 'Forwarding'
   | 'Sync'
   | 'Account';
 
@@ -294,6 +295,8 @@ export interface CommandDefinition<Ctx = unknown> {
    * rebound — these are fixed aliases.
    */
   readonly extraShortcuts?: readonly string[];
+  /** Kept out of the palette; menus and keybindings still run it (see `CommandCatalogEntry`). */
+  readonly paletteHidden?: boolean;
   readonly when?: (context: Ctx) => boolean;
   /**
    * The declared identity of `when`, so two gated commands can be compared without calling
