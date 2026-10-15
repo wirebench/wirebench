@@ -611,6 +611,19 @@ jobs:
           cd docs-site/public/schemas
           zip -qr "$GITHUB_WORKSPACE/artifacts/wirebench-project-schemas-${GITHUB_REF_NAME#v}.zip" .
 
+      # The Homebrew cask and the winget manifest set for this version, hashed from the installers
+      # about to be attached (after signing, so the hashes are those of the files users download).
+      # Attached to the draft as one zip; nothing is pushed to a tap or to winget-pkgs from here.
+      # See packaging/homebrew/README.md and packaging/winget/README.md for the hand-off.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Render the package-manager manifests
+        run: |
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          node scripts/packaging-manifests.ts --version "$version" --artifacts artifacts --out "$RUNNER_TEMP/packaging"
+          (cd "$RUNNER_TEMP/packaging" && zip -qr "$GITHUB_WORKSPACE/artifacts/wirebench-package-manifests-$version.zip" .)
+
       # Provenance for every file in the release, and the SBOM bound to each installer, so anyone
       # can check a download with `gh attestation verify <file> --repo wirebench/wirebench`.
       - uses: actions/attest-build-provenance@v4
