@@ -92,6 +92,11 @@ import { FolderAuthDialog } from '../features/rest-api/folder-auth-dialog.js';
 import { FolderScriptsDialog } from '../features/scripts/folder-scripts-dialog.js';
 import { ImportCurlFromTarget } from '../features/request-editor/import-curl-from-target.js';
 import { PanelHandle } from './panel-handle.js';
+import {
+  EnvironmentDetailsPanel,
+  useEnvironmentDetailsShown,
+  useEnvironmentDetailsStore,
+} from '../features/environments/environment-details.js';
 import { rightPanelFor } from './right-panel.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
@@ -174,6 +179,15 @@ export function AppShell() {
   }, []);
   const closeHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(false);
+  }, []);
+  // In the Environments area it holds the open environment's colour and Applies to.
+  const environmentDetailsShown = useEnvironmentDetailsShown();
+  const closeEnvironmentDetails = useCallback(() => {
+    useEnvironmentDetailsStore.getState().setOpen(false);
+  }, []);
+  const toggleEnvironmentDetails = useCallback(() => {
+    const details = useEnvironmentDetailsStore.getState();
+    details.setOpen(!details.open);
   }, []);
   // On the Snippets view it holds the snippet being edited.
   const snippetEditorShown = useSnippetEditorShown();
@@ -548,6 +562,16 @@ export function AppShell() {
                   onClose={closeHostDetails}
                 >
                   <HostDetails />
+                </SlideOver>
+                <SlideOver
+                  label="Environment details"
+                  open={environmentDetailsShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={toggleEnvironmentDetails}
+                  onClose={closeEnvironmentDetails}
+                >
+                  <EnvironmentDetailsPanel />
                 </SlideOver>
                 <SlideOver
                   label="Snippet"

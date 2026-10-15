@@ -1,4 +1,9 @@
 import { Code2, PanelRight } from 'lucide-react';
+import {
+  useEnvironmentDetailsShown,
+  useEnvironmentDetailsStore,
+  useOpenEnvironmentId,
+} from '../features/environments/environment-details.js';
 import { useHostDetailsShown } from '../features/ssh/host-details.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { useEditorsStore } from '../state/editors.js';
@@ -15,10 +20,13 @@ import { rightPanelFor } from './right-panel.js';
 export function RightRail({ platform }: { readonly platform: Platform }) {
   const open = useUiStore((state) => state.slideOver.open);
   const toggleCode = useUiStore((state) => state.toggleCode);
-  // Only the areas with requests show Code; SSH's icon opens the picked host's details instead.
+  // Only the areas with requests show Code; SSH's icon opens the picked host's details instead,
+  // and Environments' the open environment's details.
   const panel = useEditorsStore((state) => rightPanelFor(state.displayedSet));
   const hostDetailsShown = useHostDetailsShown();
   const hasHost = useHostsStore((state) => state.selectedHostId !== undefined);
+  const environmentDetailsShown = useEnvironmentDetailsShown();
+  const hasEnvironment = useOpenEnvironmentId() !== undefined;
 
   return (
     <nav
@@ -41,6 +49,22 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
             // The details belong to the Hosts tab: bring it to the front if a terminal is.
             if (!hostDetailsShown) useEditorsStore.getState().showStart();
             if (!hostDetailsShown) hosts.setHomeView('hosts');
+          }}
+        >
+          <PanelRight size={17} aria-hidden="true" />
+        </IconButton>
+      )}
+      {panel === 'environment-details' && (
+        <IconButton
+          label="Environment details"
+          active={environmentDetailsShown}
+          disabled={!hasEnvironment}
+          data-testid="rail-environment-details"
+          aria-pressed={undefined}
+          aria-expanded={environmentDetailsShown}
+          aria-controls="slide-over"
+          onClick={() => {
+            useEnvironmentDetailsStore.getState().setOpen(!environmentDetailsShown);
           }}
         >
           <PanelRight size={17} aria-hidden="true" />

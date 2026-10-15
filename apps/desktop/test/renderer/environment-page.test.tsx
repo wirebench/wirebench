@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { EnvironmentDetails } from '../../src/renderer/features/environments/environment-details.js';
 import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
 import { queueEnvironmentPatch } from '../../src/renderer/features/environments/environment-queue.js';
 import { useCurrentValuesStore } from '../../src/renderer/state/current-values.js';
@@ -12,10 +13,12 @@ import type { ProjectWire } from '../../src/shared/wire-types.js';
 import type { EnvironmentWire, WorkspaceEnvironmentWire } from '../../src/shared/wire-base.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
+/** The page, and for a real environment the details panel the shell shows beside it (colour, Applies to). */
 function renderPage(target: Parameters<typeof EnvironmentPage>[0]['target']) {
   return render(
     <TooltipPrimitive.Provider>
       <EnvironmentPage target={target} />
+      {target.kind === 'environment' && <EnvironmentDetails environmentId={target.id} />}
     </TooltipPrimitive.Provider>,
   );
 }
