@@ -13,9 +13,8 @@
  * `${#Sequence#name}` is the exception: its values come from responses, so
  * they are never expanded again, never reached by the shorthand, and never
  * allowed to form another reference's name (ADR-0015). `${#Data#column}`, a
- * data-driven run's row, is substituted literally too (#336); the shorthand
- * `${column}` reaches it last, after Global, so a column never shadows a
- * property (#560).
+ * data-driven run's row, is substituted literally and never reached by the
+ * shorthand too (#336, decision D1).
  *
  * Pure module: no I/O beyond reading the `scopes.system` map the caller
  * passes in (default `process.env`).
@@ -64,9 +63,8 @@ export interface PropertyScopes {
    */
   readonly sequence?: PropertyMap;
   /**
-   * The row a data-driven run's iteration reads, for `${#Data#column}` (#336), or `${column}` when no
-   * other scope defines the name (#560). Substituted literally, as a Sequence value is, so a cell never
-   * reaches a secret.
+   * The row a data-driven run's iteration reads, for `${#Data#column}` (#336). Substituted literally
+   * and reachable only by the explicit form, as a Sequence value is, so a cell never reaches a secret.
    */
   readonly data?: PropertyMap;
   /**
@@ -190,9 +188,8 @@ function lookupInScope(scope: string, name: string, scopes: PropertyScopes): str
 }
 
 /**
- * Resolves the shorthand `${name}` through Env -> Project -> Workspace -> Global, then a data-driven
- * run's row (#560). Data comes last, so a column never shadows a value a request already reads: it
- * fills only a name nothing else defines, and `${#Data#column}` still reaches it explicitly.
+ * Resolves the shorthand `${name}` through Env -> Project -> Workspace -> Global. A data-driven run's
+ * row is never reached here: a column is read only as `${#Data#column}` (D1, #569).
  */
 function lookupShorthand(name: string, scopes: PropertyScopes): { scope: string; value: string } | undefined {
   if (scopes.env !== undefined && Object.hasOwn(scopes.env, name)) {
@@ -206,9 +203,6 @@ function lookupShorthand(name: string, scopes: PropertyScopes): { scope: string;
   }
   if (Object.hasOwn(scopes.global, name)) {
     return { scope: 'Global', value: scopes.global[name]! };
-  }
-  if (scopes.data !== undefined && Object.hasOwn(scopes.data, name)) {
-    return { scope: 'Data', value: scopes.data[name]! };
   }
   return undefined;
 }
@@ -479,11 +473,6 @@ function expandAt(
       continue;
     }
     ctx.used.push({ scope: found.scope, name });
-    if (found.scope === 'Data') {
-      // Literal however it is reached, as `${#Data#column}` is: a row never reaches a secret (#336).
-      out += substituted(ctx, outer, found.value, found.scope);
-      continue;
-    }
     out += substituted(
       ctx,
       outer,
@@ -560,8 +549,7 @@ export function secretNamesIn(text: string, scopes?: PropertyScopes): string[] {
         key = `${scope}#${name}`;
       } else {
         const shorthand = lookupShorthand(name, scopes);
-        // A column reached by the shorthand is as literal as one reached explicitly.
-        if (shorthand === undefined || shorthand.scope === 'Data') {
+        if (shorthand === undefined) {
           continue;
         }
         value = shorthand.value;

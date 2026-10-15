@@ -7,7 +7,7 @@ import { Steps } from '@astrojs/starlight/components';
 
 The Runner sends every request of a folder, an API, a whole project or a sequence, in order, as many
 times as you ask. Give it a data file and each iteration reads one row of it: a column named `user` is
-`${user}` in the request, the same `${…}` form every other variable uses. A login tried with ten accounts is one request and a ten-row CSV.
+`${#Data#user}` in the request. A login tried with ten accounts is one request and a ten-row CSV.
 
 ## Run something
 
@@ -39,11 +39,10 @@ entry of the run is tagged with it, so **Show in History** lists them.
 - **JSON**: an array of objects. A number or boolean becomes its text, `null` an empty value, and a
   nested object or array its JSON.
 
-A cell is used as it is: `${column}` is replaced by the cell's text, and a `${…}` inside the cell
-is never expanded, so a data file can never reach a secret. A column comes last in the lookup, after the
-environment, project, workspace and globals, so it never hides a value a request already reads; when a
-column has the same name as one of those, `${#Data#column}` reads the column. While a Runner tab with a data
-file is open, its columns are offered when you type `${` in a request it runs. A column the file does not have stays
+A cell is used as it is: `${#Data#column}` is replaced by the cell's text, and a `${…}` inside the cell
+is never expanded, so a data file can never reach a secret. The `${column}` shorthand never reads a
+column, so a request always shows which values come from the file. While a Runner tab with a data file
+is open, its columns are offered as `${#Data#column}` when you type `${` in a request it runs. A column the file does not have stays
 unresolved, as any missing property does. Scripts read the row with `iteration.data.get('column')`, and
 `iteration.index` and `iteration.count` say where the run is.
 
