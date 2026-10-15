@@ -23,9 +23,18 @@ export interface SlideOverProps {
   readonly children: ReactNode;
 }
 
+/** Whether `target` is a field Escape cancels an edit in: a text input, a text area or editable content. */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true;
+  return target instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(target.type);
+}
+
+const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file']);
+
 /**
  * The right-hand panel, opened from the right rail's icon: the Code panel for a request, Host details
- * in the SSH area. Like the sidebar it sits in the row and takes its width from the content beside it,
+ * in the SSH area, Environment details in the Environments area. Like the sidebar it sits in the row and takes its width from the content beside it,
  * so nothing (a toolbar button, a card) is ever hidden behind it. Escape and the close icon both
  * dismiss it, and its left edge is a drag handle that remembers the chosen width.
  *
@@ -39,7 +48,9 @@ export function SlideOver({ label, open, width, onWidthChange, onToggle, onClose
       return;
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      // Escape in a text field cancels that edit (a variable's value, a custom colour); it does
+      // not also put the panel away.
+      if (event.key === 'Escape' && !isTextEntry(event.target)) {
         onClose();
       }
     };

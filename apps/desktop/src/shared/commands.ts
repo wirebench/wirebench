@@ -261,6 +261,7 @@ export const COMMAND_WHEN_SCOPES = {
   'history.pair': 'the history has two or more entries',
   'workspace.shared': 'the open workspace is shared',
   'account.signedIn': 'a server account is signed in',
+  'area.code': 'the area in front has requests (not SSH or Environments)',
 } as const;
 
 /** The key half of {@link COMMAND_WHEN_SCOPES}. */
