@@ -1,7 +1,7 @@
 /**
  * The REST response half: the status line, then one of the response tabs.
  *
- * The tabs are the ones §3.3 fixes — Body, Headers, Cookies, Redirects, Timing, TLS, Raw and Query —
+ * The tabs are the ones §3.3 fixes — Body, Headers, Cookies, Redirects, Timing, TLS, Exchange and Query —
  * and each says what it is about even when there is nothing to show, because "no cookies" and "no
  * response yet" are different answers and the user is entitled to tell them apart.
  *
@@ -42,7 +42,8 @@ const TABS = [
   { id: 'redirects', label: 'Redirects' },
   { id: 'timing', label: 'Timing' },
   { id: 'tls', label: 'TLS' },
-  { id: 'raw', label: 'Raw' },
+  // The wire bytes of both directions: "Exchange", not "Raw", which is the body's own line-by-line view.
+  { id: 'exchange', label: 'Exchange' },
   { id: 'query', label: 'Query' },
   { id: 'assertions', label: 'Assertions' },
   { id: 'script', label: 'Script' },
@@ -262,7 +263,7 @@ export function RestResponsePane({
                 <SslInspector http={exchange.http} />
               </div>
             )}
-            {activeTab === 'raw' && <RawExchange exchange={exchange} />}
+            {activeTab === 'exchange' && <RawExchange exchange={exchange} />}
             {activeTab === 'assertions' && <AssertionResults assertions={exchange.assertions} />}
             {activeTab === 'script' && <ScriptResults script={exchange.script} scriptsOff={exchange.scriptsOff} />}
             {activeTab === 'snapshot' && (
@@ -319,7 +320,7 @@ function RawExchange({ exchange }: { readonly exchange: NonNullable<RestExchange
   };
 
   return (
-    <div data-testid="rest-response-raw-exchange" className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2">
+    <div data-testid="rest-response-exchange" className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2">
       <section>
         <h3 className="mb-1 text-xs tracking-wider text-fg-subtle uppercase">Request</h3>
         <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg-default">
@@ -332,7 +333,7 @@ function RawExchange({ exchange }: { readonly exchange: NonNullable<RestExchange
           {decode(exchange.http.rawResponseBase64)}
         </pre>
         {exchange.stream !== undefined && (
-          <p data-testid="rest-response-raw-stream" className="mt-1 text-xs text-fg-subtle">
+          <p data-testid="rest-response-exchange-stream" className="mt-1 text-xs text-fg-subtle">
             {`The body is an event stream of ${String(streamRowTotal(exchange.stream))} rows, shown under Events; its raw bytes are not kept.`}
           </p>
         )}

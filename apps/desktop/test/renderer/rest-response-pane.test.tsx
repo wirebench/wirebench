@@ -366,11 +366,11 @@ describe('RestResponsePane', () => {
     expect(screen.getByTestId('rest-response-tls')).toBeTruthy();
   });
 
-  it('shows the reconstructed wire bytes on the Raw tab', () => {
+  it('shows the reconstructed wire bytes on the Exchange tab', () => {
     mount(makeRestExchange());
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Raw' }));
-    expect(screen.getByTestId('rest-response-raw-exchange').textContent).toContain('GET /pet/1 HTTP/1.1');
+    fireEvent.click(screen.getByRole('tab', { name: 'Exchange' }));
+    expect(screen.getByTestId('rest-response-exchange').textContent).toContain('GET /pet/1 HTTP/1.1');
   });
 
   it('names the Query tab as not built yet, rather than hiding it', () => {
@@ -563,8 +563,8 @@ describe('RestResponsePane with an event stream', () => {
 
   it('shows the headers in Raw and says the body is an event stream', () => {
     mount(streamExchange({ droppedRows: 3, omittedRows: 2 }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Raw' }));
-    const raw = screen.getByTestId('rest-response-raw-exchange').textContent ?? '';
+    fireEvent.click(screen.getByRole('tab', { name: 'Exchange' }));
+    const raw = screen.getByTestId('rest-response-exchange').textContent ?? '';
     expect(raw).toContain('content-type: text/event-stream');
     expect(raw).toContain('event stream of 7 rows');
   });
