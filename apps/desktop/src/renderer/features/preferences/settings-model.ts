@@ -59,6 +59,8 @@ export interface SettingsSection {
   readonly keys: SectionKeys;
   /** Whether the search renders this section's rows; the others are found by name only. */
   readonly searchable: boolean;
+  /** More words every row of the section matches on, beside its name: what people search for it by. */
+  readonly keywords?: readonly string[];
 }
 
 export interface SettingsNavGroup {
@@ -175,6 +177,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         subtitle: 'SSH terminal fonts, colours and behaviour.',
         keys: stored('terminal'),
         searchable: true,
+        keywords: ['ssh', 'shell', 'console'],
       },
       {
         id: 'secrets',

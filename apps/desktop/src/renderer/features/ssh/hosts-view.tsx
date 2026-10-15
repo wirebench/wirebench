@@ -106,14 +106,16 @@ export function HostsView() {
         <ul className="flex flex-col gap-0.5">
           {ENTRIES.map(({ id, label, icon: Icon }) => {
             const current = homeShown && homeView === id;
-            const count = countOf(id);
+            // A zero says nothing on a first run, so it is left out; forwards count only the running ones.
+            const count = countOf(id) || undefined;
+            const running = id === 'forwarding';
             return (
               <li key={id}>
                 <button
                   type="button"
                   data-testid={`ssh-nav-${id}`}
                   aria-current={current ? 'page' : undefined}
-                  title={count === undefined ? label : `${label} (${String(count)})`}
+                  title={count === undefined ? label : `${label} (${String(count)}${running ? ' running' : ''})`}
                   onClick={() => {
                     open(id);
                   }}
@@ -123,7 +125,15 @@ export function HostsView() {
                 >
                   <Icon size={15} aria-hidden="true" className="shrink-0" />
                   <span className={LABEL_CLASS}>{label}</span>
-                  {count !== undefined && <span className={COUNT_CLASS}>{count}</span>}
+                  {count !== undefined &&
+                    (running ? (
+                      <span data-testid="ssh-nav-forwarding-running" className={`${COUNT_CLASS} items-center gap-1`}>
+                        <span aria-hidden="true" className="inline-block size-1.5 rounded-full bg-status-success" />{' '}
+                        {count}
+                      </span>
+                    ) : (
+                      <span className={COUNT_CLASS}>{count}</span>
+                    ))}
                 </button>
               </li>
             );

@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import type { ConflictDecisionWire, SftpConflictEvent } from '../../../../shared/sftp-wire.js';
+import { Button } from '../../../components/button.js';
 import { formatModified, formatSize } from './format.js';
-
-const BUTTON = 'rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base';
 
 export interface ConflictDialogProps {
   /** The clash to ask about; `null` closes the dialog. */
@@ -77,28 +76,23 @@ export function ConflictDialog({ conflict, onAnswer }: ConflictDialogProps) {
           )}
           <div className="mt-4 flex justify-end gap-2">
             <AlertDialog.Cancel asChild>
-              <button type="button" className={BUTTON}>
-                Skip
-              </button>
+              <Button>Skip</Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className={BUTTON}
+            <Button
               onClick={() => {
                 answer('keep-both');
               }}
             >
               Keep both
-            </button>
-            <button
-              type="button"
-              className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
+            </Button>
+            <Button
+              variant="danger"
               onClick={() => {
                 answer('replace');
               }}
             >
               Replace
-            </button>
+            </Button>
           </div>
         </AlertDialog.Content>
       </AlertDialog.Portal>

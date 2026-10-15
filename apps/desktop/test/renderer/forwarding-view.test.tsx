@@ -133,14 +133,14 @@ describe('the Port forwarding view', () => {
       'bastion/socks',
     ]);
     const pg = rowOf('db-1/pg');
-    expect(pg.textContent).toContain('L');
+    expect(pg.textContent).toContain('Local');
     expect(pg.textContent).toContain('127.0.0.1:5432 → localhost:5432');
-    expect(pg.textContent).toContain('from db-1');
+    expect(pg.textContent).toContain('from this host');
     expect(within(pg).getByText('auto')).toBeDefined();
     expect(within(pg).queryByText('network')).toBeNull();
     expect(within(rowOf('db-1/admin')).getByText('network')).toBeDefined();
     const socks = rowOf('bastion/socks');
-    expect(socks.textContent).toContain('D');
+    expect(socks.textContent).toContain('Dynamic');
     expect(socks.textContent).toContain('127.0.0.1:1080 → SOCKS');
     expect(within(socks).getByRole('button', { name: 'Start' })).toBeDefined();
   });
@@ -150,7 +150,7 @@ describe('the Port forwarding view', () => {
     const grafana = rowOf('db-1/grafana');
     expect(grafana.dataset['state']).toBe('off');
     expect(grafana.className).toContain('opacity-50');
-    expect(grafana.textContent).toContain('off on db-1');
+    expect(grafana.textContent).toContain('off on this host');
     expect(within(grafana).queryAllByRole('button')).toHaveLength(0);
   });
 
@@ -159,7 +159,7 @@ describe('the Port forwarding view', () => {
       resolved: [host('db-2', 'db-2', [rule('grafana', { port: 3000 }, { from: { group: 'prod' } })])],
     });
     render(<ForwardingPanel />);
-    expect(rowOf('db-2/grafana').textContent).toContain('from Production');
+    expect(rowOf('db-2/grafana').textContent).toContain('from group Production');
   });
 
   it('the Running and Failed chips filter the rows; the box filters by port', () => {
@@ -212,7 +212,7 @@ describe('the Port forwarding view', () => {
     fireEvent.click(screen.getByRole('button', { name: /New rule/ }));
     const dialog = screen.getByTestId('new-rule-dialog');
     fireEvent.change(within(dialog).getByLabelText('Host'), { target: { value: 'bastion' } });
-    expect(within(dialog).getByLabelText<HTMLInputElement>('Id').value).toBe('forward');
+    expect(within(dialog).getByLabelText<HTMLInputElement>('Name').value).toBe('forward');
     fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
     fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
       target: { value: 'localhost:6000' },
@@ -235,7 +235,7 @@ describe('the Port forwarding view', () => {
     render(<ForwardingPanel />);
     fireEvent.click(screen.getByRole('button', { name: /New rule/ }));
     const dialog = screen.getByTestId('new-rule-dialog');
-    fireEvent.change(within(dialog).getByLabelText('Id'), { target: { value: 'pg' } });
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'pg' } });
     fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
     fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
       target: { value: 'localhost:6000' },
@@ -358,7 +358,7 @@ describe('the SSH status item', () => {
     expect(screen.queryByTestId('status-bar-forwards')).toBeNull();
   });
 
-  it('shows ⇄ 2 with two running, red with one failed, and opens the view', () => {
+  it('shows ⇄ 2 with two running, ⇄ 2 · 1 failed in red with one failed, and opens the view', () => {
     act(() => {
       useForwardsStore.getState().apply(running('db-1', 'pg', 5432));
       useForwardsStore.getState().apply(running('db-1', 'admin', 8080));
@@ -371,7 +371,7 @@ describe('the SSH status item', () => {
       useForwardsStore.getState().apply(failed('bastion', 'socks', 1080));
     });
     expect(item.className).toContain('text-status-danger');
-    expect(item.textContent).toBe('⇄ 2');
+    expect(item.textContent).toBe('⇄ 2 · 1 failed');
     fireEvent.click(item);
     expect(useHostsStore.getState().homeView).toBe('forwarding');
     expect(useEditorsStore.getState().displayedSet).toBe('ssh');

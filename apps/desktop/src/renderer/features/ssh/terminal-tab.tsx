@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import type { CommandId } from '@shared/commands.js';
 import { effectiveShortcutFor, matchesEvent, parseKeybinding } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
+import { isPaletteChord } from '../../lib/terminal-focus.js';
 import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -19,6 +20,7 @@ import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
+import { isQuickHostId } from './quick-hosts.js';
 import { trackPaneModes } from './terminal-modes.js';
 import { TypeAhead, type TypeAheadState } from './type-ahead.js';
 import { attachSnippetSuggestions } from './snippets/ghost.js';
@@ -224,6 +226,7 @@ export function TerminalTab({
   const missing = (pane: PaneLeaf): boolean =>
     knownHosts !== undefined &&
     paneSessions[pane.paneId] === undefined &&
+    !isQuickHostId(pane.hostId) &&
     !knownHosts.some((host) => host.id === pane.hostId);
   const saving = useLayoutsStore((s) => s.savingTabId === tabId);
   const paneIds = leaves(panes).map((leaf) => leaf.paneId);
@@ -479,8 +482,9 @@ function TerminalPane({
         }
         return false;
       }
-      // A pane command's chord is the app's: the window's listener runs it, the shell never sees it.
-      if (isPaneChord(event, platform)) return false;
+      // A pane command's chord is the app's: the window's listener runs it, the shell never sees it. So is
+      // the palette's Ctrl+Shift+P: Ctrl+K stays the shell's.
+      if (isPaneChord(event, platform) || isPaletteChord(event, platform)) return false;
       if (!isFindChord(event, platform)) return true;
       if (event.type === 'keydown') {
         event.preventDefault();

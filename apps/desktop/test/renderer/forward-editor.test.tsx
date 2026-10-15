@@ -207,7 +207,7 @@ describe('the rule editor in the host and group forms', () => {
     editDb1();
     await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
     const form = screen.getByRole('group', { name: 'Rule forward' });
-    const id = within(form).getByLabelText('Id');
+    const id = within(form).getByLabelText('Name');
     await userEvent.clear(id);
     await userEvent.type(id, 'pg');
     await userEvent.type(within(form).getByLabelText('Port'), '6432');

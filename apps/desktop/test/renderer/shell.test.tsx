@@ -6,6 +6,8 @@ vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 import { App } from '../../src/renderer/app.js';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { ActivityBar } from '../../src/renderer/shell/activity-bar.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { AREAS } from '../../src/shared/area-module.js';
@@ -216,6 +218,30 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: 'Explorer' }));
 
     expect(screen.queryByTestId('sidebar')).toBeNull();
+  });
+
+  it('keeps the SSH menu when the Hosts rail item is clicked again, and focuses its current entry', () => {
+    useUiStore.setState({ enabledAreas: AREAS.map((area) => area.id) });
+    useUiStore.getState().showSidebarView('ssh');
+    // The rail alone, beside a stand-in for the SSH menu: the real view would ask main for its hosts.
+    render(
+      <TooltipPrimitive.Provider>
+        <ActivityBar platform="mac" />
+        <aside data-testid="sidebar">
+          <nav>
+            <button type="button">Hosts</button>
+            <button type="button" aria-current="page">
+              Snippets
+            </button>
+          </nav>
+        </aside>
+      </TooltipPrimitive.Provider>,
+    );
+
+    fireEvent.click(screen.getByTestId('activity-hosts'));
+
+    expect(useUiStore.getState().sidebar).toMatchObject({ visible: true, view: 'ssh' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Snippets' }));
   });
 
   it('shows the trust prompt while another view is in the sidebar', async () => {

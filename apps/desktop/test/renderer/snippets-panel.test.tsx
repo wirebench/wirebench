@@ -210,10 +210,10 @@ describe('Snippets panel', () => {
     await renderPanel();
     const row = (id: string) => screen.getByTestId(`snippet-row-${id}`);
     expect(within(row('tail-log')).getByText('journalctl -u ${service} -f')).toBeDefined();
-    expect(within(row('tail-log')).getByLabelText('Has variables')).toBeDefined();
+    expect(within(row('tail-log')).getByTitle('Has 1 variable: service')).toBeDefined();
     expect(within(row('health')).getByLabelText('Uses a secret')).toBeDefined();
     expect(within(row('restart-api')).getByLabelText('Always confirms')).toBeDefined();
-    expect(within(row('restart-api')).queryByLabelText('Has variables')).toBeNull();
+    expect(within(row('restart-api')).queryByTitle(/^Has \d+ variable/)).toBeNull();
   });
 
   it('tag chips and the filter narrow the list; empty sections hide while filtering', async () => {

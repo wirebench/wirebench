@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { Button } from '../../components/button.js';
 import { hasControlCharacters, pastePreview } from './paste-guard.js';
 
 export interface PasteDialogProps {
@@ -91,23 +92,16 @@ function PasteDialogBody({ text, onConfirm, onCancel, receivers = 1 }: PasteDial
             </label>
           )}
           <div className="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base"
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-            <button
+            <Button onClick={onCancel}>Cancel</Button>
+            <Button
               ref={pasteButton}
-              type="button"
-              className="rounded bg-accent px-3 py-1.5 text-sm text-fg-on-accent"
+              variant="primary"
               onClick={() => {
                 onConfirm(!broadcast && !control && dontAsk);
               }}
             >
               Paste
-            </button>
+            </Button>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

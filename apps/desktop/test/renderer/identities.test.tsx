@@ -189,6 +189,21 @@ describe('host form: Identity', () => {
     await screen.findByLabelText('Name');
     expect(screen.queryByRole('combobox', { name: 'Identity' })).toBeNull();
   });
+  it('Save as host… from a one-off server saves it as typed, signed in with the agent (#537)', async () => {
+    useHostsStore.setState({
+      file: { ...FILE, identities: [], groups: [], hosts: [] },
+      dialog: { mode: 'new-host', prefill: { name: 'db.example', address: 'db.example', port: 2222, user: 'ops' } },
+    });
+    render(<HostDialog />);
+    expect((await screen.findByLabelText<HTMLInputElement>('Name')).value).toBe('db.example');
+    expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('ops');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(sentFile().hosts.at(-1)).toMatchObject({
+      name: 'db.example',
+      address: 'db.example',
+      ssh: { user: 'ops', port: 2222, auth: { kind: 'agent' } },
+    });
+  });
 });
 
 describe('Keychain: identities', () => {

@@ -26,7 +26,7 @@ import {
 } from './run.js';
 import { lastTargets, lastValues } from './snippets-prefs.js';
 import { useSnippetsStore } from './snippets-store.js';
-import { VariablesForm, anyInvalid, initialValues } from './variables-form.js';
+import { VariablesForm, anyInvalid, emptyVariables, initialValues } from './variables-form.js';
 
 export const SECRET_NOTE = 'Typed with a leading space so most shells keep it out of history; hidden on screen';
 
@@ -85,6 +85,8 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
   const [preview, setPreview] = useState<{ text?: string; error?: string }>({});
   const [error, setError] = useState<string>();
   const [running, setRunning] = useState(false);
+  // Run with a variable left empty asks once; changing a value asks again.
+  const [emptyAsked, setEmptyAsked] = useState(false);
   const full = request.mode === 'dialog';
   const insert = request.enter === false;
 
@@ -132,8 +134,13 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
   const canRun = item !== undefined && count > 0 && !anyInvalid(values) && !running;
   const onlyTerminal = hostTargets.length === 0 && chosenTerminals.length === 1 ? chosenTerminals[0] : undefined;
 
+  const empty = emptyVariables(item?.variables ?? [], values);
   const submit = async (): Promise<void> => {
     if (item === undefined || !canRun) return;
+    if (empty.length > 0 && !emptyAsked) {
+      setEmptyAsked(true);
+      return;
+    }
     setError(undefined);
     if (onlyTerminal !== undefined) {
       // One terminal: a refusal stays in the dialog, so the user can fix the values and run again.
@@ -225,6 +232,7 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
               values={values}
               onChange={(name, value) => {
                 setValues((current) => ({ ...current, [name]: value }));
+                setEmptyAsked(false);
               }}
             />
             {full && (
@@ -358,10 +366,19 @@ function RunDialogBody({ request }: { readonly request: RunRequest }) {
                 {error}
               </p>
             )}
+            {emptyAsked && empty.length > 0 && (
+              <p
+                role="alert"
+                data-testid="snippet-run-empty"
+                className="rounded border border-status-warning px-2 py-1 text-sm text-fg-default"
+              >
+                {`${empty.map((v) => v.label ?? v.name).join(', ')} ${empty.length === 1 ? 'is' : 'are'} empty. Run anyway?`}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
               <Button onClick={closeRunDialog}>Cancel</Button>
               <Button variant="primary" type="submit" disabled={!canRun}>
-                {label}
+                {emptyAsked && empty.length > 0 ? `${verb} anyway` : label}
               </Button>
             </div>
           </form>

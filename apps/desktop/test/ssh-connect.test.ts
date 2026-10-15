@@ -25,7 +25,13 @@ const HOP = { address: '10.0.0.1', port: 22 };
 const sender = (id: number) => ({ id, isDestroyed: () => false, on: vi.fn(), once: vi.fn() }) as unknown as WebContents;
 
 function make(
-  opts: { secrets?: Record<string, string>; known?: KnownHostEntry[]; now?: () => number; file?: typeof FILE } = {},
+  opts: {
+    secrets?: Record<string, string>;
+    known?: KnownHostEntry[];
+    now?: () => number;
+    file?: typeof FILE;
+    agent?: string;
+  } = {},
 ) {
   const knownHostsFile = join(mkdtempSync(join(tmpdir(), 'wb-connect-')), 'ssh-known-hosts.json');
   if (opts.known) writeFileSync(knownHostsFile, JSON.stringify(opts.known));
@@ -38,7 +44,7 @@ function make(
     }),
     secretsFor: () => (ref: string) => Promise.resolve(ref.startsWith('secret:') ? secrets[ref.slice(7)] : undefined),
     knownHostsFile,
-    agentSocket: () => undefined,
+    agentSocket: () => opts.agent,
   };
   const refusals = new RefusalStore(opts.now);
   const connector = createSshConnector({ ...deps, refusals });
@@ -90,6 +96,28 @@ describe('createSshConnector', () => {
       code: 'ssh-host-incomplete',
       details: { hostId: 'bare', field: 'auth' },
     });
+  });
+
+  it('a one-off server connects with the agent, as typed, with nothing of hosts.yaml applied (#537)', async () => {
+    const { connector } = make({ agent: '/tmp/agent.sock' });
+    const shell = await connector.prepareShell(sender(1), 'quick-1', undefined, undefined, {
+      address: '10.0.0.1',
+      port: 2222,
+      user: 'ops',
+    });
+    expect(shell.hops.map((h) => [h.address, h.port, h.user, h.auth.kind])).toEqual([
+      ['10.0.0.1', 2222, 'ops', 'agent'],
+    ]);
+    // A saved host's id is still a one-off server's own when quick is given: no jump, no saved user.
+    const named = await connector.prepareShell(sender(1), 'a', undefined, 'typed', { address: 'b.example', port: 22 });
+    expect(named.hops.map((h) => [h.address, h.user])).toEqual([['b.example', 'typed']]);
+  });
+
+  it('a one-off server with no user is incomplete until one is typed (#537)', async () => {
+    const { connector } = make();
+    await expect(
+      connector.prepareShell(sender(1), 'quick-2', undefined, undefined, { address: 'b.example', port: 22 }),
+    ).rejects.toMatchObject({ code: 'ssh-host-incomplete', details: { hostId: 'quick-2', field: 'user' } });
   });
 
   it('says a Mosh target is Mosh, with its block, and leaves an SSH one alone (#419)', async () => {

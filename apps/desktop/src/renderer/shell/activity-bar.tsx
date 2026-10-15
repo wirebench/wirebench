@@ -7,7 +7,20 @@ import { AREA_ICONS } from '../areas/index.js';
 import { useUiStore } from '../state/ui.js';
 
 /**
- * The left rail. Selecting the active view again collapses the sidebar.
+ * Focuses the sidebar view's current menu entry (its first, if none is current): where a rail item whose
+ * view already shows sends the keyboard, for an area that reselects with `focus`.
+ */
+function focusSidebarMenu(): void {
+  const sidebar = document.querySelector('[data-testid="sidebar"]');
+  const target =
+    sidebar?.querySelector<HTMLElement>('nav [aria-current="page"]') ??
+    sidebar?.querySelector<HTMLElement>('nav button');
+  target?.focus();
+}
+
+/**
+ * The left rail. Selecting the active view again collapses the sidebar, unless its area reselects with
+ * `focus` (the SSH menu): then the focus goes into the view's menu.
  *
  * Settings sits apart, at the foot of the rail: it opens a dialog rather than a sidebar view, so
  * grouping it with the views promised a panel that never came.
@@ -34,7 +47,9 @@ export function ActivityBar({ platform }: { readonly platform: Platform }) {
             shortcut={shortcutFor(area.rail.command, platform)}
             active={sidebar.visible && sidebar.view === area.id}
             onClick={() => {
-              showSidebarView(area.id);
+              const shown = sidebar.visible && sidebar.view === area.id;
+              if (shown && 'reselect' in area.rail && area.rail.reselect === 'focus') focusSidebarMenu();
+              else showSidebarView(area.id);
             }}
             {...(testId === undefined ? {} : { 'data-testid': testId })}
           >

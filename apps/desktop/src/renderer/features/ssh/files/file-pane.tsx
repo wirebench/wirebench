@@ -44,6 +44,8 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
   const dialog = useFilesStore((s) => s.dialogs[paneId]);
   const renaming = useFilesStore((s) => s.renaming[paneId]);
   const focusRequest = useFilesStore((s) => s.focusRequests[paneId] ?? 0);
+  // The pane last used in its tab (the host's until another is): the other one's selection shows dimmed.
+  const active = useFilesStore((s) => (s.activePanes[tabOfPane(paneId)] ?? tabOfPane(paneId)) === paneId);
   // Re-reads the host's name when the hosts file changes.
   useHostsStore((s) => s.file);
   const store = useFilesStore.getState;
@@ -59,7 +61,13 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
   const local = place.kind === 'local';
   const ready = place.kind === 'local' || place.sessionId !== undefined;
   const header = (
-    <div className="flex items-center gap-1.5 border-b border-hairline px-3 py-1 text-xs text-fg-subtle">
+    <div
+      data-testid="files-pane-header"
+      data-active={active || undefined}
+      className={`flex items-center gap-1.5 border-b px-3 py-1 text-xs ${
+        active ? 'border-b-accent bg-surface-raised text-fg-default' : 'border-hairline text-fg-subtle'
+      }`}
+    >
       <PlacePicker
         place={place}
         onPick={(choice) => {
@@ -257,6 +265,8 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
         <div className="flex min-h-0 flex-1 flex-col">
           <FileList
             listKey={pane.path}
+            active={active}
+            permissions={!local}
             entries={entries}
             selected={pane.selected}
             sort={pane.sort}
