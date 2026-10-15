@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { EmptyState } from '../../components/empty-state.js';
 import type { SearchMatchWire, SearchScopesWire } from '../../../shared/wire-base.js';
 import { ipc } from '../../state/ipc-client.js';
@@ -60,6 +60,12 @@ export function SearchView() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [searched, setSearched] = useState(false);
   const hasProject = useProjectStore((state) => Object.keys(state.projects).length > 0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Opening the view is asking to search: the caret goes straight to the input.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const toggleScope = useCallback((key: keyof SearchScopesWire) => {
     setScopes((current) => ({ ...current, [key]: !current[key] }));
@@ -102,6 +108,7 @@ export function SearchView() {
     <div data-testid="search-view" className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 space-y-2 px-3 pb-2">
         <input
+          ref={inputRef}
           type="search"
           aria-label="Search the project"
           data-testid="search-input"

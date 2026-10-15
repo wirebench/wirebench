@@ -60,6 +60,10 @@ const xterm = vi.hoisted(() => {
   return { FakeTerminal, FakeSearchAddon };
 });
 vi.mock('@xterm/xterm', () => ({ Terminal: xterm.FakeTerminal }));
+// The output highlights read real buffer cells; they have their own tests and an e2e.
+vi.mock('../../src/renderer/features/ssh/output-highlights.js', () => ({
+  attachOutputHighlights: () => ({ refresh: () => undefined, dispose: () => undefined }),
+}));
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit(): void {}

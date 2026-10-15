@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CookieManager } from '../features/cookies/cookie-manager.js';
+import { StartPage } from '../features/explorer/start-page.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { AgentForwardingMark, agentForwardingOf } from '../features/ssh/agent-forwarding.js';
 import { RecordingMark, recordingOf } from '../features/ssh/recording-mark.js';
@@ -605,6 +606,12 @@ export function EditorArea() {
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading hosts…</p>}>
             <SshHome />
           </Suspense>
+        ) : showingStart && displayedSet === 'explorer' ? (
+          <div data-testid="editor-empty" className="flex h-full items-center justify-center overflow-auto p-6">
+            <div className="w-full max-w-xl">
+              <StartPage />
+            </div>
+          </div>
         ) : showingStart ? (
           <div
             data-testid="editor-empty"

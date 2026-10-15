@@ -38,6 +38,7 @@ import {
   chainOf,
   dropEmpty,
   inheritedFrom,
+  inheritedLogin,
   inheritedProtected,
   initialGroup,
   missingFields,
@@ -46,6 +47,7 @@ import {
   withField,
 } from './host-form-model.js';
 import { useSecretNames } from './secret-fields.js';
+import { findIdentity, identitiesOf } from './identities.js';
 
 type Inheritable = 'user' | 'port' | 'jump' | 'keepAlive' | 'connectTimeout';
 
@@ -125,8 +127,11 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   // A new host starts from what its group does not supply: this machine's login name, and a typed password.
   // Both follow the Group select until the field is touched.
   const [touched, setTouched] = useState<{ user?: true; auth?: true }>({});
-  const groupUser = inheritedFrom(chain, 'user').value;
-  const groupHasAuth = inheritedFrom(chain, 'auth').value !== undefined;
+  // What the groups and identities give this entry when it sets no user or auth of its own (#416).
+  const loginUser = inheritedLogin(file.identities, chain, ssh.identity, 'user');
+  const loginAuth = inheritedLogin(file.identities, chain, ssh.identity, 'auth');
+  const groupUser = loginUser.value;
+  const groupHasAuth = loginAuth.value !== undefined;
   const fresh = dialog.mode === 'new-host';
   useEffect(() => {
     if (!fresh || touched.user === true) return;
@@ -142,6 +147,20 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     setSsh((prev) => withField(prev, key, value));
   };
   const jumpInherited = inheritedFrom(chain, 'jump');
+  const identities = identitiesOf(file);
+  const identityInherited = inheritedFrom(chain, 'identity');
+  const identityName = (id: string): string => findIdentity(file, id)?.name ?? id;
+  // Picking an identity hands it the user and sign-in it holds; Override takes either back for this entry.
+  const pickIdentity = (id: string | undefined): void => {
+    const identity = id === undefined ? undefined : findIdentity(file, id);
+    setSsh((prev) => {
+      let next = withField(prev, 'identity', id);
+      if (identity?.user !== undefined) next = withField(next, 'user', undefined);
+      if (identity?.auth !== undefined) next = withField(next, 'auth', undefined);
+      return next;
+    });
+    if (identity?.auth !== undefined) setPassword('');
+  };
   const selfId = dialog.mode === 'edit-host' ? dialog.id : undefined;
   const jumpOptions = resolved.filter((h) => h.id !== selfId);
   const tagList = tags
@@ -163,7 +182,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
     user: ssh.user,
     inheritedUser: groupUser,
     auth: ssh.auth,
-    inheritedAuth: inheritedFrom(chain, 'auth').value,
+    inheritedAuth: loginAuth.value,
     password,
     sectionProblems,
   });
@@ -326,13 +345,33 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
           </select>
         </label>
       )}
+      {(identities.length > 0 || ssh.identity !== undefined) && (
+        <label className={FIELD_CLASS}>
+          <span className="flex gap-2 text-fg-subtle">
+            Identity
+            {ssh.identity === undefined && identityInherited.value !== undefined && (
+              <span className="text-fg-faint">{sourceText(identityInherited, identityName)}</span>
+            )}
+          </span>
+          <select
+            aria-label="Identity"
+            className={INPUT_CLASS}
+            value={ssh.identity ?? ''}
+            onChange={(e) => {
+              pickIdentity(e.target.value === '' ? undefined : e.target.value);
+            }}
+          >
+            <option value="">{identityInherited.value === undefined ? 'None' : 'Inherit'}</option>
+            {identities.map((identity) => (
+              <option key={identity.id} value={identity.id}>
+                {identity.user === undefined ? identity.name : `${identity.name} (${identity.user})`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="grid grid-cols-[minmax(0,1fr)_9rem] gap-2">
-        <InheritedField
-          label="User"
-          provenance={inheritedFrom(chain, 'user')}
-          override={ssh.user}
-          onChange={set('user')}
-        />
+        <InheritedField label="User" provenance={loginUser} override={ssh.user} onChange={set('user')} />
         <InheritedField
           label="Port"
           type="number"
@@ -343,7 +382,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
       </div>
       <HostAuthSection
         value={ssh.auth}
-        inherited={inheritedFrom(chain, 'auth')}
+        inherited={loginAuth}
         onChange={set('auth')}
         password={password}
         onPasswordChange={setPassword}

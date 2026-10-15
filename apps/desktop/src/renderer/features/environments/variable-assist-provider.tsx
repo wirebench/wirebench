@@ -5,6 +5,7 @@ import { VariableAssistContext, useVariableAssist, type VariableAssist } from '.
 import { attachVariableAssist, type VariableAssistHandle } from '../../editor/variable-assist-monaco.js';
 import { useProjectStore } from '../../state/project.js';
 import { useRequestVariables } from '../../state/request-variables.js';
+import { dataColumnsFor, useRunnerStore } from '../../state/runner.js';
 import { SetVariableDialog } from './set-variable-dialog.js';
 import { openVariableEditTarget } from './variable-edit-target.js';
 
@@ -26,7 +27,14 @@ export function VariableAssistProvider({
   readonly requestId: string | undefined;
   readonly children: ReactNode;
 }) {
-  const variables = useRequestVariables(requestId);
+  const answered = useRequestVariables(requestId);
+  // A Runner tab with a data file that runs this request adds its columns (#560).
+  const runnerTargets = useRunnerStore((state) => state.targets);
+  const variables = useMemo(() => {
+    if (answered === undefined) return undefined;
+    const dataColumns = dataColumnsFor(runnerTargets, requestId);
+    return dataColumns.length === 0 ? answered : { ...answered, dataColumns };
+  }, [answered, runnerTargets, requestId]);
   const projectId = useProjectStore((state) => (requestId === undefined ? undefined : state.projectOf[requestId]));
   const [pending, setPending] = useState<Pending>();
   const assist = useMemo<VariableAssist>(

@@ -1,7 +1,7 @@
 import type { PreferencesWire } from '../../../shared/wire-base.js';
 import type { GroupEntryWire, TerminalEntryWire } from '../../../shared/ssh-wire.js';
 import { PREFERENCE_LIMITS } from '../../state/preference-limits.js';
-import { INPUT_CLASS, InheritedField, type Provenance } from './inherited-field.js';
+import { INPUT_CLASS, InheritedField, sourceName, type Provenance } from './inherited-field.js';
 import { APP_SCHEME_ID, schemeLabel, TERMINAL_SCHEMES } from './terminal-schemes.js';
 
 /** Where a level with no setting of its own gets it from when no group sets it. */
@@ -61,7 +61,7 @@ export function HostTerminalSection({ own, inherited, onChange }: HostTerminalSe
   const problem = terminalProblem(own);
   const from = inherited.scheme.from;
   const inheritedScheme = `Inherit: ${schemeLabel(inherited.scheme.value ?? APP_SCHEME_ID)}, from ${
-    typeof from === 'object' ? from.group : 'Preferences'
+    typeof from === 'object' ? sourceName(from) : 'Preferences'
   }`;
   const ids = [APP_SCHEME_ID, ...TERMINAL_SCHEMES.map((scheme) => scheme.id)];
   // An id this version does not know (hosts.yaml from a newer one) stays selectable, so saving keeps it.

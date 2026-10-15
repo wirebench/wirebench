@@ -102,6 +102,7 @@ describe('terminal preferences', () => {
       autoReconnect: true,
       reconnectAttempts: 10,
       snippetSuggestions: true,
+      highlightOutput: true,
       fontSize: 13,
       lineHeight: 1,
       colorScheme: 'app',
@@ -121,6 +122,7 @@ describe('terminal preferences', () => {
       autoReconnect: false,
       reconnectAttempts: 10,
       snippetSuggestions: false,
+      highlightOutput: true,
       fontSize: 13,
       lineHeight: 1,
       colorScheme: 'app',
@@ -142,6 +144,11 @@ describe('terminal preferences', () => {
     expect(merged.terminal.sessionLogRaw).toBe(true);
     expect(mergePreferences({ terminal: { sessionLogMaxMb: 1 } }).terminal.sessionLogMaxMb).toBe(10);
     expect(mergePreferences({}).terminal.sessionLogRaw).toBe(false);
+  });
+
+  it('reads an older file without terminal.highlightOutput as on, and keeps it off once set', () => {
+    expect(mergePreferences({ terminal: { copyOnSelect: true } }).terminal.highlightOutput).toBe(true);
+    expect(mergePreferences({ terminal: { highlightOutput: false } }).terminal.highlightOutput).toBe(false);
   });
 
   it('reads an older file without terminal.snippetSuggestions as on', () => {

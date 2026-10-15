@@ -255,6 +255,8 @@ interface RowProps {
   /** Why the control's draft is refused, shown under the row; the control points at it by `errorId`. */
   readonly error?: string | undefined;
   readonly errorId?: string;
+  /** Shown right after the control: where an empty field's value comes from, or a way back to it. */
+  readonly aside?: React.ReactNode;
   readonly children: React.ReactNode;
 }
 
@@ -288,6 +290,7 @@ function Row({
   onReset,
   error,
   errorId,
+  aside,
   children,
 }: RowProps) {
   const variant = useContext(VariantContext);
@@ -309,6 +312,7 @@ function Row({
             {label}
           </label>
           <div className="min-w-0 flex-1">{children}</div>
+          {aside}
           {locked && <LockedPill />}
         </div>
         {error !== undefined && (
@@ -362,7 +366,10 @@ function Row({
         {hint !== undefined && <p className="mt-0.5 text-xs text-fg-subtle">{hint}</p>}
         {error !== undefined && <RowError id={errorId} message={error} />}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      <div className="flex shrink-0 items-center gap-2">
+        {children}
+        {aside}
+      </div>
     </div>
   );
 }
@@ -570,6 +577,8 @@ export interface NumberSettingProps {
   readonly locked?: boolean;
   /** The dotted preference key this row edits, for the modified dot and per-row Reset. */
   readonly setting?: string;
+  /** Shown right after the field, such as where an empty field's value comes from. */
+  readonly aside?: React.ReactNode;
 }
 
 /**
@@ -591,6 +600,7 @@ export function NumberSetting({
   readOnly = false,
   locked: lockedProp = false,
   setting,
+  aside,
 }: NumberSettingProps) {
   const id = useId();
   const errorId = useId();
@@ -668,6 +678,7 @@ export function NumberSetting({
       onReset={row.reset}
       error={error}
       errorId={errorId}
+      aside={aside}
       {...(hint !== undefined ? { hint } : {})}
     >
       {unit === undefined ? (
@@ -695,6 +706,8 @@ export interface BooleanSettingProps {
   readonly locked?: boolean;
   /** The dotted preference key this row edits, for the modified dot and per-row Reset. */
   readonly setting?: string;
+  /** Shown right after the control, such as where an unset value comes from. */
+  readonly aside?: React.ReactNode;
 }
 
 /**
@@ -710,6 +723,7 @@ export function BooleanSetting({
   testId,
   locked: lockedProp = false,
   setting,
+  aside,
 }: BooleanSettingProps) {
   const id = useId();
   const variant = useContext(VariantContext);
@@ -722,6 +736,7 @@ export function BooleanSetting({
       locked={row.locked}
       modified={row.modified}
       onReset={row.reset}
+      aside={aside}
       {...(hint !== undefined ? { hint } : {})}
     >
       {variant === 'card' ? (

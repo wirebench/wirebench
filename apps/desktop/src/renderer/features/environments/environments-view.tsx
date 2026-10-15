@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Check, Cookie, Globe, Layers, PanelLeftClose, Plus } from 'lucide-react';
+import { Braces, Check, Cookie, Globe, Layers, PanelLeftClose, Plus } from 'lucide-react';
+import { Button } from '../../components/button.js';
+import { ActionEmptyState } from '../../components/empty-state.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
 import { openCookiesTab } from '../cookies/cookie-actions.js';
@@ -316,6 +318,15 @@ export function EnvironmentsView() {
   const [renamingId, setRenamingId] = useState<string | undefined>(undefined);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
 
+  // Adds the next "Environment N" and opens it, from the header's + or the empty state's button.
+  const addEnvironment = (): void => {
+    void mutate({ kind: 'add-workspace-environment', name: nextEnvironmentName(environments) }).then((result) => {
+      if (result.createdEnvironmentId !== undefined) {
+        openEnvironmentTab({ kind: 'environment', id: result.createdEnvironmentId });
+      }
+    });
+  };
+
   const pendingDelete = environments.find((candidate) => candidate.id === pendingDeleteId);
 
   // Globals, Workspace, then every environment: one tab stop, Up/Down/Home/End between rows.
@@ -328,15 +339,7 @@ export function EnvironmentsView() {
           label="Add environment"
           data-testid="environments-add"
           disabled={!hasWorkspace}
-          onClick={() => {
-            void mutate({ kind: 'add-workspace-environment', name: nextEnvironmentName(environments) }).then(
-              (result) => {
-                if (result.createdEnvironmentId !== undefined) {
-                  openEnvironmentTab({ kind: 'environment', id: result.createdEnvironmentId });
-                }
-              },
-            );
-          }}
+          onClick={addEnvironment}
         >
           <Plus size={14} aria-hidden="true" />
         </IconButton>
@@ -416,11 +419,22 @@ export function EnvironmentsView() {
           />
         ))}
       </ul>
-      {environments.length === 0 && (
-        <p className="px-3 py-1 text-sm text-fg-subtle">
-          {hasWorkspace ? 'No environments yet.' : 'Open a workspace to add environments.'}
-        </p>
-      )}
+      {environments.length === 0 &&
+        (hasWorkspace ? (
+          <div className="px-2">
+            <ActionEmptyState
+              icon={Braces}
+              testId="environments-empty"
+              text="An environment holds the values a request resolves when you send it: one per server, such as dev and production."
+            >
+              <Button variant="primary" onClick={addEnvironment}>
+                New environment
+              </Button>
+            </ActionEmptyState>
+          </div>
+        ) : (
+          <p className="px-3 py-1 text-sm text-fg-subtle">Open a workspace to add environments.</p>
+        ))}
 
       <ConfirmDialog
         open={pendingDeleteId !== undefined}

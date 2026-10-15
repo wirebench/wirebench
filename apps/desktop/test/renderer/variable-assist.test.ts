@@ -215,3 +215,41 @@ describe('hoverContent', () => {
     expect(hoverContent(classify('${#Sequence#id}'), '${#Sequence#id}')).toBeUndefined();
   });
 });
+
+describe('data columns (#560)', () => {
+  const withData: RequestVariables = { ...list, dataColumns: ['user', 'host'] };
+
+  it('offers a column after the chain, explicitly when a chain scope has its name', () => {
+    const items = completionItems({ kind: 'name', prefix: '', start: 2 }, withData, false);
+    expect(items.map((item) => [item.label, item.insertText, item.detail])).toEqual([
+      ['host', 'host}', 'Environment'],
+      ['host', '#Project#host}', 'Project (shadowed)'],
+      ['apiKey', 'apiKey}', 'Project'],
+      ['region', 'region}', 'Globals'],
+      ['user', 'user}', 'Data row'],
+      ['host', '#Data#host}', 'Data row (shadowed)'],
+      ['secret:api_key', 'secret:api_key}', 'Secret'],
+    ]);
+  });
+
+  it('completes ${#Data# to the columns, and offers Data as a scope only when there are some', () => {
+    expect(completionContext('${#Data#us')).toEqual({ kind: 'data', prefix: 'us', start: 8 });
+    expect(
+      completionItems({ kind: 'data', prefix: 'us', start: 8 }, withData, false).map((item) => item.insertText),
+    ).toEqual(['user}']);
+    const scopes = (variables: RequestVariables) =>
+      completionItems({ kind: 'scope', prefix: '', start: 3 }, variables, false).map((item) => item.label);
+    expect(scopes(withData)).toContain('Data');
+    expect(scopes(list)).not.toContain('Data');
+  });
+
+  it('resolves a column by the shorthand only after the chain, and never marks ${#Data#…} unknown to it', () => {
+    expect(classify('${user}', withData)).toEqual({ status: 'data', name: 'user' });
+    expect(classify('${host}', withData)).toMatchObject({ status: 'resolved', entry: { scope: 'Env' } });
+    expect(classify('${#Data#host}', withData)).toEqual({ status: 'data', name: 'host' });
+    expect(classify('${user}')).toMatchObject({ status: 'unresolved' });
+    // Without a known data file, only a run can tell.
+    expect(classify('${#Data#user}')).toEqual({ status: 'unknown' });
+    expect(hoverContent(classify('${user}', withData), '${user}')).toMatchObject({ title: 'user', scope: 'Data row' });
+  });
+});

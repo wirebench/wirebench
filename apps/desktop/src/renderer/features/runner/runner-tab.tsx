@@ -1,6 +1,6 @@
 /**
  * A Runner tab (#336): one folder, API, project or sequence run once per iteration, each iteration
- * reading one row of the target's data file as `${#Data#column}`. Configure, run, watch each request
+ * reading one row of the target's data file as `${column}` (or `${#Data#column}`). Configure, run, watch each request
  * as it ends, grouped by iteration, and reopen the target's past runs. Everything shown arrived from
  * main masked; the data file is known by its name, columns and row count only.
  */
@@ -33,6 +33,28 @@ const OUTCOME_MARK: Record<RunnerRequestResult['outcome'], string> = {
   errored: '!',
   skipped: '–',
 };
+
+/** How one result's mark reads: the glyph, its colour, and what it means in words. */
+export interface ResultMark {
+  readonly mark: string;
+  readonly tone: string;
+  readonly label: string;
+}
+
+/**
+ * The mark a request's result shows. A request that "passed" with nothing checked only got an answer,
+ * so it is not given the green tick a check earns (#560): a neutral mark when the status was fine, and
+ * an amber one when the server answered 4xx or 5xx, which nothing caught.
+ */
+export function resultMark(result: Pick<RunnerRequestResult, 'outcome' | 'status' | 'assertions'>): ResultMark {
+  if (result.outcome === 'passed' && result.assertions.length === 0) {
+    if (result.status !== undefined && result.status >= 400) {
+      return { mark: '!', tone: 'text-status-warning', label: `No checks, and the status was ${result.status}` };
+    }
+    return { mark: '○', tone: 'text-fg-subtle', label: 'No checks: the request was sent, nothing was tested' };
+  }
+  return { mark: OUTCOME_MARK[result.outcome], tone: OUTCOME_TONE[result.outcome], label: result.outcome };
+}
 
 const OVERRUN_OPTIONS = [
   { value: 'stop', label: 'Stop after the last row' },
@@ -144,9 +166,18 @@ function ResultRow({ result }: { readonly result: RunnerRequestResult }) {
   const failedChecks = result.assertions.filter((assertion) => assertion.outcome !== 'passed');
   const passedChecks = result.assertions.filter((assertion) => assertion.outcome === 'passed');
   const details = result.assertions.length > 0 || result.error !== undefined || (result.scriptLog?.length ?? 0) > 0;
+  const mark = resultMark(result);
   const summary = (
     <span className="flex min-w-0 items-center gap-2">
-      <span className={`w-4 shrink-0 text-center ${OUTCOME_TONE[result.outcome]}`}>{OUTCOME_MARK[result.outcome]}</span>
+      <span
+        data-testid="runner-result-mark"
+        role="img"
+        aria-label={mark.label}
+        title={mark.label}
+        className={`w-4 shrink-0 text-center ${mark.tone}`}
+      >
+        {mark.mark}
+      </span>
       <span className="truncate text-fg-default">{result.path}</span>
       {result.status !== undefined && <span className="text-fg-muted">{result.status}</span>}
       {result.durationMs !== undefined && <span className="text-fg-subtle">{Math.round(result.durationMs)} ms</span>}
@@ -360,8 +391,8 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
             </button>
           )}
           <span className="text-xs text-fg-subtle">
-            A request reads a row’s column as <code className="font-mono">{'${#Data#column}'}</code>; a script as{' '}
-            <code className="font-mono">iteration.data.get("column")</code>.
+            A request reads a row’s column as <code className="font-mono">{'${column}'}</code>, like any other variable;
+            a script as <code className="font-mono">iteration.data.get("column")</code>.
           </span>
         </div>
       </SettingsGroup>

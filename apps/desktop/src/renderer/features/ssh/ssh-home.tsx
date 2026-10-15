@@ -34,6 +34,7 @@ import { LayoutsPanel } from './panes/layouts-view.js';
 import { SnippetsPanel } from './snippets/snippets-panel.js';
 import { useHostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, useHostsStore } from './hosts-store.js';
+import { IdentitiesSection } from './identities-section.js';
 import { RecentSection } from './recent-section.js';
 import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from './ssh-view-frame.js';
 import { SSH_VIEWS } from './ssh-views.js';
@@ -381,8 +382,13 @@ function KeychainPanel() {
       <SshViewHeader
         title={SSH_VIEWS.keychain.label}
         {...(names === undefined ? {} : { count: names.length })}
-        search={{ value: filter, onChange: setFilter, label: 'Filter secrets', placeholder: 'Search secrets…' }}
-        description="The passwords and private keys hosts sign in with, by name. A value is stored on this machine for the workspace and is never shown again."
+        search={{
+          value: filter,
+          onChange: setFilter,
+          label: 'Filter secrets',
+          placeholder: 'Search identities and secrets…',
+        }}
+        description="The identities, passwords and private keys hosts sign in with, by name. A value is stored on this machine for the workspace and is never shown again."
         actions={
           <>
             <Button onClick={generate}>
@@ -394,6 +400,8 @@ function KeychainPanel() {
           </>
         }
       />
+      <IdentitiesSection filter={filter} />
+      <h3 className="text-sm font-medium text-fg-default">Secrets</h3>
       {form !== undefined && (
         <form
           aria-label="Store a secret"

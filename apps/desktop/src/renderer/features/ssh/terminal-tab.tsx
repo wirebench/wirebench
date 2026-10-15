@@ -58,6 +58,7 @@ import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
 import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
 import { forgetMark, noteError, noteOutput, noteView, promptWatcher } from './terminal-marks.js';
+import { attachOutputHighlights, type OutputHighlights } from './output-highlights.js';
 import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
 import type { TerminalAppearance, TerminalOverride } from './terminal-appearance.js';
 
@@ -75,6 +76,8 @@ function openLink(uri: string): void {
 interface Live {
   readonly term: Terminal;
   readonly search: SearchAddon;
+  /** The error, warning and address highlights over the output. */
+  readonly highlights: OutputHighlights;
   /** Fits the terminal to its holder (never while the holder is hidden) and, debounced, tells the session. */
   readonly refit: () => void;
   /** Tells the session the terminal's size now, when it differs from what it was last told. */
@@ -492,6 +495,7 @@ function TerminalPane({
       }),
     );
     term.open(element);
+    const highlights = attachOutputHighlights(term);
     if (hasSize(element)) {
       fit.fit();
       notePaneSize(paneId, { cols: term.cols, rows: term.rows });
@@ -515,6 +519,7 @@ function TerminalPane({
     live.current = {
       term,
       search,
+      highlights,
       refit,
       syncSize,
       markPaste: () => {
@@ -585,6 +590,7 @@ function TerminalPane({
     // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
     const themeWatch = new MutationObserver(() => {
       term.options.theme = look().theme;
+      highlights.refresh();
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -615,6 +621,7 @@ function TerminalPane({
       disposed = true;
       untrackModes();
       suggestions.dispose();
+      highlights.dispose();
       offWake();
       loop.cancel();
       reconnector.current = null;
@@ -644,6 +651,7 @@ function TerminalPane({
     if (current === null) return;
     const look = terminalAppearance(prefs, { scheme: hostScheme, fontSize: hostFontSize }, zoom);
     if (applyAppearance(current.term, look)) current.refit();
+    current.highlights.refresh();
   }, [prefs, hostScheme, hostFontSize, zoom]);
 
   // Attach to the pane's session once the store has one: from the connect above, or from the trust prompt.

@@ -62,6 +62,41 @@ test('a local terminal runs a command in this machine’s shell, and ends with i
   await page.keyboard.press('Escape');
 });
 
+test('the terminal highlights warning words and addresses in plain output, never what a program coloured', async () => {
+  test.setTimeout(120_000);
+  launched = await launchApp();
+  const page = launched.window;
+  await createWorkspace(page, 'Highlights');
+
+  await page.getByTestId('activity-hosts').click();
+  await page.getByTestId('ssh-new-local-terminal').click();
+  const terminal = page.getByTestId('local-terminal');
+  await expect(terminal.locator('.xterm')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('editor-area').getByLabel('connected', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await terminal.click();
+  // The typed line splits the words, so only the shell's output holds them whole.
+  const windows = process.platform === 'win32';
+  await page.keyboard.type(
+    windows ? 'Write-Output ("WAR"+"NING from 10.0.0."+"1")' : "printf 'WAR%s from 10.0.0.%s\\n' NING 1",
+  );
+  await page.keyboard.press('Enter');
+  await expect(terminal).toContainText('WARNING from 10.0.0.1', { timeout: 60_000 });
+  await expect(terminal.locator('.wb-output-highlight[data-highlight="warning"]')).toHaveCount(1, { timeout: 10_000 });
+  await expect(terminal.locator('.wb-output-highlight[data-highlight="address"]')).toHaveCount(1);
+  // The output itself is untouched: the row still reads as the shell wrote it.
+  await expect(terminal.locator('.xterm-rows')).toContainText('WARNING from 10.0.0.1');
+
+  if (!windows) {
+    // Green FAILED keeps its green: no error highlight goes over it.
+    await page.keyboard.type("printf '\\033[32mFAI%s\\033[0m\\n' LED");
+    await page.keyboard.press('Enter');
+    await expect(terminal.locator('.xterm-rows')).toContainText('FAILED', { timeout: 30_000 });
+    await expect(terminal.locator('.wb-output-highlight[data-highlight="error"]')).toHaveCount(0);
+  }
+});
+
 test('WIREBENCH_AREAS=local-terminal=off removes the local terminal and keeps SSH', async () => {
   launched = await launchApp({ extraEnv: { WIREBENCH_AREAS: 'local-terminal=off' } });
   const page = launched.window;

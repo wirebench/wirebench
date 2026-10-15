@@ -71,6 +71,11 @@ describe('SearchView', () => {
     });
   }
 
+  it('puts the caret in the search input when the view opens', () => {
+    render(<SearchView />);
+    expect(document.activeElement).toBe(screen.getByTestId('search-input'));
+  });
+
   it('asks main for matches, debounced, with the toggles and scopes', async () => {
     const query = stubQuery([]);
     installWirebenchApi({ search: { query } });

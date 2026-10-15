@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
+import { parseOpenApiDocument } from '../../../../src/rest/openapi/parse.js';
 import { apiFromDocument, mapScheme } from '../../../../src/rest/openapi/map.js';
 import type { MapApiOptions, MappedApi } from '../../../../src/rest/openapi/map.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
@@ -350,5 +351,68 @@ describe('mapScheme — OAuth 2 flows', () => {
         },
       }).auth,
     ).toMatchObject({ grant: 'authorization-code' });
+  });
+});
+
+describe('path parameter values (#560)', () => {
+  /** The path parameters of the one operation in `document`, as an import fills them in. */
+  function pathParamsOf(document: Record<string, unknown>) {
+    let next = 0;
+    const { api } = apiFromDocument(parseOpenApiDocument(document), {
+      newId: () => {
+        next += 1;
+        return `id-${String(next)}`;
+      },
+    });
+    const request = api.requests[0] ?? api.folders[0]?.requests[0];
+    return request?.pathParams;
+  }
+
+  it("seeds a 3.x path parameter from its schema's default or examples", () => {
+    expect(
+      pathParamsOf({
+        openapi: '3.1.0',
+        info: { title: 'T', version: '1' },
+        paths: {
+          '/users/{id}/{kind}/{slug}': {
+            get: {
+              parameters: [
+                { name: 'id', in: 'path', required: true, schema: { type: 'string', default: 'u-1' } },
+                { name: 'kind', in: 'path', required: true, schema: { type: 'string', examples: ['admin'] } },
+                { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
+              ],
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      { name: 'id', value: 'u-1', enabled: true },
+      { name: 'kind', value: 'admin', enabled: true },
+      // Nothing in the document says what one looks like: left for the user, never invented.
+      { name: 'slug', value: '', enabled: true },
+    ]);
+  });
+
+  it('seeds a Swagger 2.0 path parameter from its x-example, else its default', () => {
+    expect(
+      pathParamsOf({
+        swagger: '2.0',
+        info: { title: 'T', version: '1' },
+        paths: {
+          '/pets/{petId}/{tag}': {
+            get: {
+              parameters: [
+                { name: 'petId', in: 'path', required: true, type: 'string', 'x-example': 'p-7', default: 'p-0' },
+                { name: 'tag', in: 'path', required: true, type: 'string', default: 'cats' },
+              ],
+              responses: { '200': { description: 'ok' } },
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      { name: 'petId', value: 'p-7', enabled: true },
+      { name: 'tag', value: 'cats', enabled: true },
+    ]);
   });
 });

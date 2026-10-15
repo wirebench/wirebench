@@ -13,6 +13,7 @@ import { guardPaste } from './paste-guard.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
 import { forgetMark, noteError, noteOutput, noteView, promptWatcher } from './terminal-marks.js';
+import { attachOutputHighlights, type OutputHighlights } from './output-highlights.js';
 import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
 import type { TerminalAppearance } from './terminal-appearance.js';
 
@@ -43,6 +44,7 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
   const term = useRef<Terminal | null>(null);
   const search = useRef<SearchAddon | null>(null);
   const refitRef = useRef<() => void>(() => undefined);
+  const highlightsRef = useRef<OutputHighlights | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
   /** Bumped by Restart: the shell and its terminal start again. */
@@ -109,6 +111,8 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
       }),
     );
     xterm.open(element);
+    const highlights = attachOutputHighlights(xterm);
+    highlightsRef.current = highlights;
     if (hasSize(element)) fit.fit();
     term.current = xterm;
     search.current = searchAddon;
@@ -164,6 +168,7 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
     // The app theme switching restyles a terminal that follows it; a palette scheme stays as it is.
     const themeWatch = new MutationObserver(() => {
       xterm.options.theme = look().theme;
+      highlights.refresh();
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -220,6 +225,8 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
       }
       useLocalTerminalsStore.getState().setSession(tabId, undefined);
       refitRef.current = () => undefined;
+      highlights.dispose();
+      highlightsRef.current = null;
       term.current = null;
       search.current = null;
       xterm.dispose();
@@ -231,6 +238,7 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
     const current = term.current;
     if (current === null) return;
     if (applyAppearance(current, terminalAppearance(prefs, undefined, zoom))) refitRef.current();
+    highlightsRef.current?.refresh();
   }, [prefs, zoom]);
 
   // The tab's mark (#422) clears when it comes to the front, and goes with the tab.
