@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import { formatHtml } from '../../../src/rest/format-html.js';
+
+describe('formatHtml', () => {
+  it('puts a one-line error page on one tag per line, indented by depth', () => {
+    expect(
+      formatHtml('<!DOCTYPE html><html><head><title>500</title></head><body><h1>Oops</h1><br></body></html>'),
+    ).toBe(
+      [
+        '<!DOCTYPE html>',
+        '<html>',
+        '  <head>',
+        '    <title>',
+        '      500',
+        '    </title>',
+        '  </head>',
+        '  <body>',
+        '    <h1>',
+        '      Oops',
+        '    </h1>',
+        '    <br>',
+        '  </body>',
+        '</html>',
+      ].join('\n'),
+    );
+  });
+
+  it('keeps script, style and pre content as it came, a < included', () => {
+    const out = formatHtml('<body><script>if (a<b) { go(); }</script><pre>  x\n   y</pre></body>');
+    expect(out).toBe(
+      ['<body>', '  <script>', 'if (a<b) { go(); }', '  </script>', '  <pre>', '  x\n   y', '  </pre>', '</body>'].join(
+        '\n',
+      ),
+    );
+  });
+
+  it('treats a comment holding a > as one token, and self-closing tags as leaves', () => {
+    expect(formatHtml('<div><!-- a > b --><img src="x"/><span>t</span></div>', 4)).toBe(
+      ['<div>', '    <!-- a > b -->', '    <img src="x"/>', '    <span>', '        t', '    </span>', '</div>'].join(
+        '\n',
+      ),
+    );
+  });
+
+  it('never goes below depth zero on a stray end tag, and keeps an unclosed script', () => {
+    expect(formatHtml('</p><p>a</p><script>x')).toBe(['</p>', '<p>', '  a', '</p>', '<script>', 'x'].join('\n'));
+  });
+});

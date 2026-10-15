@@ -4,6 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { BodyView, type BodyViewExchange } from '../../src/renderer/features/rest-editor/response/body-view.js';
 import { previewDocument } from '../../src/renderer/features/rest-editor/response/html-preview.js';
 import { HTML_PREVIEW_CSP } from '../../src/shared/html-preview-csp.js';
+import { useResponseWrapStore } from '../../src/renderer/features/rest-editor/response/wrap.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -31,6 +32,7 @@ function mount(value: BodyViewExchange): void {
 beforeEach(() => {
   installWirebenchApi();
   usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE, loaded: true });
+  useResponseWrapStore.setState({ wrap: undefined });
 });
 afterEach(() => {
   cleanup();
@@ -86,5 +88,43 @@ describe('BodyView preview of HTML (#48)', () => {
     mount(exchange());
     fireEvent.click(screen.getByTestId('rest-response-view-hex'));
     expect(screen.getByTestId('rest-response-hex').textContent).toContain('00000000');
+  });
+});
+
+describe('BodyView Pretty for HTML (R21)', () => {
+  it('formats a one-line HTML page, one tag per line', () => {
+    usePreferencesStore.setState({
+      preferences: { ...DEFAULT_PREFERENCES_WIRE, editor: { ...DEFAULT_PREFERENCES_WIRE.editor, tabSize: 2 } },
+      loaded: true,
+    });
+    mount(exchange({ text: '<html><body><h1>Oops</h1></body></html>' }));
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Response body').value).toBe(
+      '<html>\n  <body>\n    <h1>\n      Oops\n    </h1>\n  </body>\n</html>',
+    );
+  });
+
+  it('wraps lines from the toggle, starting from the editor preference', () => {
+    mount(exchange());
+    const toggle = screen.getByTestId('rest-response-wrap');
+    expect(toggle.getAttribute('aria-pressed')).toBe(String(DEFAULT_PREFERENCES_WIRE.editor.wordWrap));
+    fireEvent.click(toggle);
+    const wrapped = !DEFAULT_PREFERENCES_WIRE.editor.wordWrap;
+    expect(toggle.getAttribute('aria-pressed')).toBe(String(wrapped));
+    expect(screen.getByLabelText('Response body').getAttribute('data-word-wrap')).toBe(wrapped ? 'on' : 'off');
+  });
+
+  it('remembers the wrap choice for the next response in the session', () => {
+    mount(exchange());
+    fireEvent.click(screen.getByTestId('rest-response-wrap'));
+    const chosen = screen.getByTestId('rest-response-wrap').getAttribute('aria-pressed');
+    cleanup();
+    mount(exchange({ text: '<p>next</p>' }));
+    expect(screen.getByTestId('rest-response-wrap').getAttribute('aria-pressed')).toBe(chosen);
+  });
+
+  it('shows the wrap toggle only on Pretty', () => {
+    mount(exchange());
+    fireEvent.click(screen.getByTestId('rest-response-view-raw'));
+    expect(screen.queryByTestId('rest-response-wrap')).toBeNull();
   });
 });

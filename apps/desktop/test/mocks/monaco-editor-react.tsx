@@ -114,7 +114,7 @@ export const mountedModelUris: string[] = [];
 export interface MockEditorProps {
   readonly value?: string;
   readonly onChange?: (value: string | undefined) => void;
-  readonly options?: { readonly readOnly?: boolean; readonly ariaLabel?: string };
+  readonly options?: { readonly readOnly?: boolean; readonly ariaLabel?: string; readonly wordWrap?: string };
   readonly onMount?: (editor: { addCommand: (binding: number, handler: Handler) => void }, monaco: unknown) => void;
 }
 
@@ -165,6 +165,7 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
     <textarea
       aria-label={options?.ariaLabel ?? 'editor'}
       readOnly={options?.readOnly ?? false}
+      data-word-wrap={options?.wordWrap}
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
       onKeyDown={(event) => {
