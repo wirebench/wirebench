@@ -81,6 +81,8 @@ import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CodePanel } from './code-panel.js';
 import { slideOverWidthOf } from '../state/ui-state.js';
 import { HostDetails, useHostDetailsShown } from '../features/ssh/host-details.js';
+import { ForwardDetails, useForwardDetailsShown } from '../features/ssh/forwarding/forward-details.js';
+import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { CommandPalette } from './command-palette.js';
 import type { PaletteMode } from './command-palette.js';
@@ -170,6 +172,11 @@ export function AppShell() {
   }, []);
   const closeHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(false);
+  }, []);
+  // On the Port forwarding view it holds the picked forward.
+  const forwardDetailsShown = useForwardDetailsShown();
+  const closeForwardDetails = useCallback(() => {
+    useForwardsStore.getState().setDetailsOpen(false);
   }, []);
   // On the Snippets view it holds the snippet being edited.
   const snippetEditorShown = useSnippetEditorShown();
@@ -527,7 +534,9 @@ export function AppShell() {
                   unmounts completely; the rail's icon or `view.toggleCode` reopens it. */}
                 <SlideOver
                   label="Code"
-                  open={slideOver.open && !hostDetailsShown && !snippetEditorShown && !settingsOpen}
+                  open={
+                    slideOver.open && !hostDetailsShown && !forwardDetailsShown && !snippetEditorShown && !settingsOpen
+                  }
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}
                   onToggle={toggleCode}
@@ -544,6 +553,16 @@ export function AppShell() {
                   onClose={closeHostDetails}
                 >
                   <HostDetails />
+                </SlideOver>
+                <SlideOver
+                  label="Forward details"
+                  open={forwardDetailsShown && !settingsOpen}
+                  width={slideOverWidth}
+                  onWidthChange={setSlideOverWidth}
+                  onToggle={closeForwardDetails}
+                  onClose={closeForwardDetails}
+                >
+                  <ForwardDetails />
                 </SlideOver>
                 <SlideOver
                   label="Snippet"

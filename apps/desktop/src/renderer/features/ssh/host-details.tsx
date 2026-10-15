@@ -36,7 +36,7 @@ export function useHostDetailsShown(): boolean {
 
 type Provenance = ResolvedHostWire['ssh']['port']['from'];
 
-function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+export function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return (
     // The label above the value in a panel narrower than 360px, beside it from there.
     <div className="grid grid-cols-1 items-baseline gap-x-2 gap-y-0.5 py-1 @min-[360px]:grid-cols-[6.5rem_1fr]">
@@ -46,7 +46,7 @@ function Row({ label, children }: { readonly label: string; readonly children: R
   );
 }
 
-function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+export function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col border-t border-hairline px-1 py-3">
       <h3 className="mb-1 text-xs font-medium tracking-wider text-fg-subtle uppercase">{title}</h3>
@@ -55,7 +55,7 @@ function Section({ title, children }: { readonly title: string; readonly childre
   );
 }
 
-function CopyButton({ text, label }: { readonly text: string; readonly label: string }) {
+export function CopyButton({ text, label }: { readonly text: string; readonly label: string }) {
   return (
     <button
       type="button"

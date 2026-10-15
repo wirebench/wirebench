@@ -13,6 +13,7 @@ import {
   startGroup,
   stopGroup,
 } from '../../src/renderer/features/ssh/forwarding/forward-groups.js';
+import { ForwardDetails, useForwardDetailsShown } from '../../src/renderer/features/ssh/forwarding/forward-details.js';
 import { ForwardingPanel } from '../../src/renderer/features/ssh/forwarding/forwarding-view.js';
 import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/forwards-store.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
@@ -21,6 +22,7 @@ import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import type { PaletteMode } from '../../src/renderer/shell/command-palette.js';
 import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { COMMAND_CATALOG } from '../../src/shared/command-catalog.js';
@@ -435,5 +437,82 @@ describe('dragging rules between groups', () => {
     expect(section('dev').dataset['dropOver']).toBeUndefined();
     fireEvent.drop(section('dev'), { dataTransfer: text });
     expect(saveHosts).not.toHaveBeenCalled();
+  });
+});
+
+describe('the forward details panel', () => {
+  function Shown() {
+    return <span data-testid="shown">{String(useForwardDetailsShown())}</span>;
+  }
+
+  it('a click on a row picks it and opens its details; its own buttons do not pick', async () => {
+    render(<ForwardingPanel />);
+    await userEvent.click(within(rowOf('cache/admin')).getByRole('button', { name: 'Start' }));
+    expect(useForwardsStore.getState().selectedKey).toBeUndefined();
+    fireEvent.click(rowOf('cache/admin'));
+    expect(useForwardsStore.getState()).toMatchObject({ selectedKey: 'cache/admin', detailsOpen: true });
+    expect(rowOf('cache/admin').dataset['selected']).toBe('true');
+    fireEvent.keyDown(rowOf('db-1/pg'), { key: 'Enter' });
+    expect(useForwardsStore.getState().selectedKey).toBe('db-1/pg');
+  });
+
+  it('shows only on the Port forwarding view in front, with a picked row not put away', () => {
+    useEditorsStore.setState({ displayedSet: 'ssh', activeId: undefined } as never);
+    useHostsStore.setState({ homeView: 'forwarding' } as never);
+    render(<Shown />);
+    expect(screen.getByTestId('shown').textContent).toBe('false');
+    act(() => {
+      useForwardsStore.getState().select('db-1/pg');
+    });
+    expect(screen.getByTestId('shown').textContent).toBe('true');
+    act(() => {
+      useForwardsStore.getState().setDetailsOpen(false);
+    });
+    expect(screen.getByTestId('shown').textContent).toBe('false');
+    act(() => {
+      useForwardsStore.getState().setDetailsOpen(true);
+      useHostsStore.setState({ homeView: 'hosts' } as never);
+    });
+    expect(screen.getByTestId('shown').textContent).toBe('false');
+    act(() => {
+      useHostsStore.setState({ homeView: 'forwarding' } as never);
+      useForwardsStore.getState().select('nowhere/x');
+    });
+    expect(screen.getByTestId('shown').textContent).toBe('false');
+  });
+
+  it('shows the rule, what runs of it and its group, with Stop while it runs', async () => {
+    useForwardsStore.getState().apply({ ...running('db-1', 'pg', 15432), origin: 'auto' });
+    useForwardsStore.getState().select('db-1/pg');
+    render(<ForwardDetails />);
+    const panel = screen.getByTestId('forward-details');
+    expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe('pg');
+    expect(screen.getByTestId('forward-details-state').textContent).toBe('running · 0 connections');
+    const rule = within(panel).getByRole('region', { name: 'Rule' });
+    expect(rule.textContent).toContain('127.0.0.1:15432');
+    expect(rule.textContent).toContain('15432 this run; the rule says 5432');
+    expect(rule.textContent).toContain('localhost:5432');
+    expect(within(panel).getByRole('region', { name: 'Now' }).textContent).toContain("with the host's terminals");
+    expect(within(panel).getByRole('combobox', { name: 'Forwarding group' })).toHaveProperty('value', 'dev');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Stop' }));
+    expect(forward.stop).toHaveBeenCalledWith({ hostId: 'db-1', ruleId: 'pg' });
+  });
+
+  it('a failed forward shows its error and Retry; the group select moves the rule', async () => {
+    useForwardsStore.getState().apply({
+      hostId: 'cache',
+      ruleId: 'admin',
+      origin: 'manual',
+      port: 8080,
+      status: { state: 'failed', error: { code: 'ssh-forward-bind', message: 'port 8080 is in use' } },
+    });
+    useForwardsStore.getState().select('cache/admin');
+    render(<ForwardDetails />);
+    expect(screen.getByRole('alert').textContent).toBe('port 8080 is in use');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Forwarding group' }), { target: { value: 'dev' } });
+    await waitFor(() => {
+      expect(saved().forwardGroups?.[0]?.rules).toContainEqual({ host: 'cache', rule: 'admin' });
+    });
   });
 });

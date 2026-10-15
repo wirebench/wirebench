@@ -34,6 +34,10 @@ export interface ForwardsState {
   startErrors: Readonly<Record<string, ForwardStartError>>;
   bindPrompt: BindPrompt | null;
   portPrompt: PortPrompt | null;
+  /** The row picked in the Port forwarding view (`hostId/ruleId`): highlighted, its details on the right. */
+  selectedKey: string | undefined;
+  /** Whether the forward details slide-over is wanted; picking a row asks for it, its close icon puts it away. */
+  detailsOpen: boolean;
   /** Main's `forward.state`: a stopped forward leaves the store. */
   apply: (state: ForwardStateWire) => void;
   /** Reads every forward of this window again (`forward.list`). */
@@ -41,6 +45,9 @@ export interface ForwardsState {
   setStartError: (key: string, error: ForwardStartError | undefined) => void;
   setBindPrompt: (prompt: BindPrompt | null) => void;
   setPortPrompt: (prompt: PortPrompt | null) => void;
+  /** Picks a row (or none) and opens its details. */
+  select: (key: string | undefined) => void;
+  setDetailsOpen: (open: boolean) => void;
   /** Forgets the open workspace's forwards (a workspace switch: main stops them). */
   reset: () => void;
 }
@@ -50,6 +57,8 @@ const WORKSPACE_STATE = {
   startErrors: {},
   bindPrompt: null,
   portPrompt: null,
+  selectedKey: undefined,
+  detailsOpen: false,
 } satisfies Partial<ForwardsState>;
 
 /** The SSH area's port forwards in this window, fed by `forward.list` at start-up and `forward.state` after. */
@@ -80,6 +89,12 @@ export const useForwardsStore = create<ForwardsState>()((set, get) => ({
   },
   setPortPrompt(portPrompt) {
     set({ portPrompt });
+  },
+  select(selectedKey) {
+    set({ selectedKey, detailsOpen: selectedKey !== undefined });
+  },
+  setDetailsOpen(detailsOpen) {
+    set({ detailsOpen });
   },
   reset() {
     set(WORKSPACE_STATE);

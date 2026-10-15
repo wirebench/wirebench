@@ -133,4 +133,13 @@ test('a forwarding group of two rules on two hosts starts and stops together (#5
   await expect(status).toHaveText('0 of 2 running', { timeout: 30_000 });
   await expect(pg.getByRole('button', { name: 'Start' })).toBeVisible();
   await expect(redis.getByRole('button', { name: 'Start' })).toBeVisible();
+
+  // Picking a row opens its details on the right; the rail offers them in place of the host details.
+  await pg.locator('[data-testid="forward-meta"]').click();
+  const details = page.getByTestId('forward-details');
+  await expect(details.getByRole('heading', { name: 'pg' })).toBeVisible();
+  await expect(details.getByRole('combobox', { name: 'Forwarding group' })).toHaveValue('dev');
+  await expect(page.getByTestId('rail-forward-details')).toHaveAttribute('aria-expanded', 'true');
+  await page.getByTestId('rail-forward-details').click();
+  await expect(details).toBeHidden();
 });

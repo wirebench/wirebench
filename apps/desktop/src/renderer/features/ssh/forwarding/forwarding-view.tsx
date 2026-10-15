@@ -113,6 +113,7 @@ function RowList({
   groupId,
   onNewGroup,
   onDragChange,
+  pickable = false,
 }: {
   rows: readonly ForwardRowData[];
   label: string;
@@ -122,8 +123,12 @@ function RowList({
   onNewGroup?: (hostId: string, ruleId: string) => void;
   /** Rows can be dragged to another group; told the dragged row's key. */
   onDragChange?: (key: string | undefined) => void;
+  /** Rows can be picked, showing their details on the right (the Port forwarding view only). */
+  pickable?: boolean;
 }) {
   const startErrors = useForwardsStore((s) => s.startErrors);
+  const selectedKey = useForwardsStore((s) => s.selectedKey);
+  const select = useForwardsStore((s) => s.select);
   const groupName = useGroupName();
   return (
     <ul aria-label={label} className="flex flex-col divide-y divide-hairline rounded-md border border-hairline">
@@ -140,6 +145,7 @@ function RowList({
           {...(groupId === undefined ? {} : { forwardGroupId: groupId })}
           {...(onNewGroup === undefined ? {} : { onNewGroup })}
           {...(onDragChange === undefined ? {} : { onDragChange })}
+          {...(pickable ? { onSelect: select, selected: selectedKey === row.key } : {})}
         />
       ))}
     </ul>
@@ -290,6 +296,7 @@ function GroupSection({
           groupId={group.id}
           onNewGroup={onNewGroup}
           onDragChange={onDragChange}
+          pickable
         />
       ) : (
         <p className="rounded-md border border-dashed border-hairline px-3 py-2 text-xs text-fg-subtle">
@@ -329,7 +336,14 @@ function UngroupedSection({
     >
       <h3 className="mb-1.5 text-sm font-medium text-fg-muted">Ungrouped</h3>
       {rows.length > 0 ? (
-        <RowList rows={rows} label="Ungrouped forwards" showHost onNewGroup={onNewGroup} onDragChange={onDragChange} />
+        <RowList
+          rows={rows}
+          label="Ungrouped forwards"
+          showHost
+          onNewGroup={onNewGroup}
+          onDragChange={onDragChange}
+          pickable
+        />
       ) : (
         <p className="rounded-md border border-dashed border-hairline px-3 py-2 text-xs text-fg-subtle">
           Drop a rule here to take it out of its group.
@@ -450,7 +464,7 @@ export function ForwardingPanel() {
           }}
         />
       ) : groups.length === 0 ? (
-        <RowList rows={shown} label="Forwards" showHost onNewGroup={newGroupFor} />
+        <RowList rows={shown} label="Forwards" showHost onNewGroup={newGroupFor} pickable />
       ) : (
         <div className="flex flex-col gap-4">
           {sections.groups.map(({ group, rows: groupRows }) => {
