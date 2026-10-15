@@ -25,9 +25,10 @@ function TrustDialogBody() {
     <AlertDialog.Root
       open={prompt !== null}
       onOpenChange={(open) => {
-        // Trust clears the prompt before this runs, so a prompt still here was dismissed.
+        // Trust clears the prompt before this runs (the next queued one may show), so only this prompt
+        // still on screen was dismissed.
         if (!open) {
-          cancelTrust();
+          if (prompt !== null) cancelTrust(prompt);
           setUnderstood(false);
         }
       }}

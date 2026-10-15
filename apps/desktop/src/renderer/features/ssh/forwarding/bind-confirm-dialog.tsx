@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../../components/button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
-import { startForward } from './forward-actions.js';
+import { cancelPromptedStart, startForward } from './forward-actions.js';
 import { useForwardsStore, type PortPrompt } from './forwards-store.js';
 
 const FIELD_CLASS =
@@ -10,27 +10,36 @@ const FIELD_CLASS =
 const CONTENT_CLASS =
   'fixed top-1/2 left-1/2 w-96 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg';
 
-/** A network bind's first start on this machine: Start retries with `confirmBind`, Cancel starts nothing. */
+/**
+ * A network bind's first start on this machine: Start retries with `confirmBind`, Cancel leaves the rule
+ * stopped. Prompts raised together (a group's start) are asked one after another.
+ */
 export function BindConfirmDialog() {
   const prompt = useForwardsStore((s) => s.bindPrompt);
-  const setBindPrompt = useForwardsStore((s) => s.setBindPrompt);
+  const closeBindPrompt = useForwardsStore((s) => s.closeBindPrompt);
+  const queued = useForwardsStore((s) => s.bindQueue.length);
   return (
     <ConfirmDialog
       open={prompt !== null}
       onOpenChange={(open) => {
-        if (!open) setBindPrompt(null);
+        // Start takes its prompt off before this runs (the next may show): only this one still here was dismissed.
+        if (open || prompt === null || useForwardsStore.getState().bindPrompt !== prompt) return;
+        closeBindPrompt(prompt);
+        cancelPromptedStart(prompt.hostId, prompt.ruleId);
       }}
       testId="forward-bind-dialog"
       title="Start on the network?"
       description={
         prompt === null
           ? ''
-          : `${prompt.label} will be reachable from other machines at ${prompt.address}. You are asked once on this machine.`
+          : `${prompt.label} will be reachable from other machines at ${prompt.address}. You are asked once on this machine.${
+              queued > 0 ? ` ${String(queued)} more to confirm after this one.` : ''
+            }`
       }
       confirmLabel="Start"
       onConfirm={() => {
         if (prompt === null) return;
-        setBindPrompt(null);
+        closeBindPrompt(prompt);
         void startForward(prompt.hostId, prompt.ruleId, {
           confirmBind: true,
           ...(prompt.port === undefined ? {} : { port: prompt.port }),

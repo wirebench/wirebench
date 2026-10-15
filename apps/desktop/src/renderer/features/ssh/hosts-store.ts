@@ -121,7 +121,9 @@ interface HostsState {
   panes: Readonly<Record<string, PaneSession>>;
   /** A host's status, derived from its panes. */
   hostStatus: (hostId: string) => HostStatus;
+  /** The trust prompt on screen; the ones raised while it shows wait in `trustQueue`, asked in turn. */
   trustPrompt: TrustPrompt | null;
+  trustQueue: readonly TrustPrompt[];
   /**
    * Panes whose last connect ended without a session: refused, failed, or the trust prompt cancelled.
    * Cleared when the pane's next connect starts; the pane shows it with a Reconnect.
@@ -146,19 +148,48 @@ interface HostsState {
   applyImported: (result: SshListHostsResponse) => void;
   /** `undefined` removes the pane's entry (idle). */
   setPane: (paneId: string, session: PaneSession | undefined) => void;
+  /**
+   * Shows a trust prompt, or queues it behind the one on screen: a prompt of the same pane replaces that
+   * pane's, and one for the same key as another `retry` prompt joins it (one click retries both). `null`
+   * closes the prompt on screen and shows the next.
+   */
   setTrustPrompt: (prompt: TrustPrompt | null) => void;
   /** Main's `ssh.state`: a session that closed marks its pane `closed` (the id stays, for the pane to see). */
   noteSessionState: (sessionId: string, state: 'open' | 'closed') => void;
   bumpReconnect: (paneId: string) => void;
   noteConnectFailed: (paneId: string) => void;
   /** The user dismissed the trust prompt: no session, so the host's connect failed. */
-  cancelTrust: () => void;
+  /** Dismisses the prompt on screen; given `prompt`, only while that one is still on screen. */
+  cancelTrust: (prompt?: TrustPrompt) => void;
   visibleHosts: () => readonly ResolvedHostWire[];
   /**
    * Forgets the open workspace's hosts: the file, its problems, every session, failure and prompt, and an
    * open form (which would otherwise save into the next workspace). The filter and tags stay.
    */
   reset: () => void;
+}
+
+/** Two prompts that resume by callback for the same key: trusting it once answers both. */
+const sameKeyRetry = (a: TrustPrompt, b: TrustPrompt): boolean =>
+  a.retry !== undefined &&
+  b.retry !== undefined &&
+  a.host === b.host &&
+  a.keyType === b.keyType &&
+  a.fingerprint === b.fingerprint;
+
+/** One prompt for two callers of the same key: its Trust retries both, its Cancel cancels both. */
+function joined(a: TrustPrompt, b: TrustPrompt): TrustPrompt {
+  return {
+    ...a,
+    retry: () => {
+      a.retry?.();
+      b.retry?.();
+    },
+    cancel: () => {
+      a.cancel?.();
+      b.cancel?.();
+    },
+  };
 }
 
 const EMPTY: HostsFileWire = { version: 1, groups: [], hosts: [] };
@@ -174,6 +205,7 @@ const WORKSPACE_STATE = {
   knownHostsImportOpen: false,
   panes: {},
   trustPrompt: null,
+  trustQueue: [],
   reconnectNonce: {},
   terminalTabUse: {},
   connectFailed: {},
@@ -262,8 +294,20 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     delete connectFailed[paneId];
     set({ panes, connectFailed });
   },
-  setTrustPrompt: (trustPrompt) => {
-    set({ trustPrompt });
+  setTrustPrompt: (prompt) => {
+    const { trustPrompt, trustQueue } = get();
+    if (prompt === null) {
+      const [next = null, ...rest] = trustQueue;
+      set({ trustPrompt: next, trustQueue: rest });
+      return;
+    }
+    const all = trustPrompt === null ? [...trustQueue] : [trustPrompt, ...trustQueue];
+    const at = all.findIndex((p) => p.paneId === prompt.paneId || sameKeyRetry(p, prompt));
+    const old = all[at];
+    if (old === undefined) all.push(prompt);
+    else all[at] = old.paneId === prompt.paneId ? prompt : joined(old, prompt);
+    const [head = null, ...rest] = all;
+    set({ trustPrompt: head, trustQueue: rest });
   },
   noteSessionState: (sessionId, state) => {
     if (state !== 'closed') return;
@@ -277,21 +321,21 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   noteConnectFailed: (paneId) => {
     set({ connectFailed: { ...get().connectFailed, [paneId]: true } });
   },
-  cancelTrust: () => {
+  cancelTrust: (shown) => {
     const prompt = get().trustPrompt;
-    if (prompt === null) return;
+    if (prompt === null || (shown !== undefined && shown !== prompt)) return;
     // The connect that waited on the prompt stops here: its screen says the key was not trusted.
     failWaitingAttempt(prompt.paneId, {
       code: prompt.previous === undefined ? 'ssh-host-key-new' : 'ssh-host-key-changed',
       message: '',
       details: { host: prompt.host },
     });
+    get().setTrustPrompt(null);
     if (prompt.cancel !== undefined) {
-      set({ trustPrompt: null });
       prompt.cancel();
       return;
     }
-    set({ trustPrompt: null, connectFailed: { ...get().connectFailed, [prompt.paneId]: true } });
+    set({ connectFailed: { ...get().connectFailed, [prompt.paneId]: true } });
   },
   bumpReconnect: (paneId) => {
     const { reconnectNonce } = get();

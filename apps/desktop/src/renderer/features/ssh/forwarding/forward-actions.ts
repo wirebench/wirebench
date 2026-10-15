@@ -35,15 +35,26 @@ async function answer<T>(call: () => Promise<IpcResult<T>>): Promise<IpcResult<T
 }
 
 /**
+ * A prompt for a rule's start was dismissed: the rule is left stopped, not failed (main cleared too).
+ */
+export function cancelPromptedStart(hostId: string, ruleId: string): void {
+  useForwardsStore.getState().setWaiting(forwardKey(hostId, ruleId), false);
+  void stopForward(hostId, ruleId);
+}
+
+/**
  * Starts a rule. Every start in the UI goes through here, so the prompts are handled once: a network bind
  * not yet confirmed asks first and starts again with `confirmBind`; a host key not yet trusted opens the
- * trust dialog and starts again after trust. Any other refusal is kept for the rule's row.
+ * trust dialog and starts again after trust. Prompts raised together (a group's start) queue and are asked
+ * in turn; while its prompt waits the rule counts as waiting, not failed. Any other refusal is kept for the
+ * rule's row.
  */
 export async function startForward(hostId: string, ruleId: string, options: StartOptions = {}): Promise<void> {
   const store = useForwardsStore.getState();
   const key = forwardKey(hostId, ruleId);
   store.setStartError(key, undefined);
   const result = await answer(() => ipc().forward.start({ hostId, ruleId, ...options }));
+  store.setWaiting(key, false);
   if (result.ok) return;
   const { code, message, details } = result.error;
   if (code === 'ssh-forward-bind-unconfirmed') {
@@ -51,6 +62,7 @@ export async function startForward(hostId: string, ruleId: string, options: Star
     const bind = typeof details?.['address'] === 'string' ? details['address'] : undefined;
     const port = options.port ?? ruleOf(hostId, ruleId).forward?.rule.port;
     const address = bind === undefined || port === undefined ? (bind ?? '') : listenAddress(bind, port);
+    store.setWaiting(key, true);
     store.setBindPrompt({
       hostId,
       ruleId,
@@ -61,6 +73,7 @@ export async function startForward(hostId: string, ruleId: string, options: Star
     return;
   }
   if ((code === 'ssh-host-key-new' || code === 'ssh-host-key-changed') && details) {
+    store.setWaiting(key, true);
     openTrustPrompt(
       { paneId: `forward:${key}`, hostId },
       {
@@ -68,7 +81,7 @@ export async function startForward(hostId: string, ruleId: string, options: Star
           void startForward(hostId, ruleId, options);
         },
         cancel: () => {
-          useForwardsStore.getState().setStartError(key, { code, message: 'The host key was not trusted.' });
+          cancelPromptedStart(hostId, ruleId);
         },
       },
       details,

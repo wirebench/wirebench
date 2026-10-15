@@ -32,7 +32,14 @@ export interface ForwardsState {
   /** This window's forwards that are not stopped, keyed `${hostId}/${ruleId}`. */
   byKey: Readonly<Record<string, ForwardStateWire>>;
   startErrors: Readonly<Record<string, ForwardStartError>>;
+  /**
+   * The rules whose start waits on a prompt (trust or network bind), keyed like `byKey`. Main reports such a
+   * start as failed; until the prompt is answered the rule is shown as neither failed nor running.
+   */
+  waiting: Readonly<Record<string, true>>;
+  /** The bind prompt on screen; the ones raised while it shows wait in `bindQueue`, asked in turn. */
   bindPrompt: BindPrompt | null;
+  bindQueue: readonly BindPrompt[];
   portPrompt: PortPrompt | null;
   /** The row picked in the Port forwarding view (`hostId/ruleId`): highlighted, its details on the right. */
   selectedKey: string | undefined;
@@ -43,7 +50,11 @@ export interface ForwardsState {
   /** Reads every forward of this window again (`forward.list`). */
   load: () => Promise<void>;
   setStartError: (key: string, error: ForwardStartError | undefined) => void;
-  setBindPrompt: (prompt: BindPrompt | null) => void;
+  setWaiting: (key: string, waiting: boolean) => void;
+  /** Shows a bind prompt, or queues it behind the one on screen (a rule's newer prompt replaces its older). */
+  setBindPrompt: (prompt: BindPrompt) => void;
+  /** Takes `prompt` off the screen or out of the queue; the next queued one shows. */
+  closeBindPrompt: (prompt: BindPrompt) => void;
   setPortPrompt: (prompt: PortPrompt | null) => void;
   /** Picks a row (or none) and opens its details. */
   select: (key: string | undefined) => void;
@@ -55,7 +66,9 @@ export interface ForwardsState {
 const WORKSPACE_STATE = {
   byKey: {},
   startErrors: {},
+  waiting: {},
   bindPrompt: null,
+  bindQueue: [],
   portPrompt: null,
   selectedKey: undefined,
   detailsOpen: false,
@@ -84,8 +97,28 @@ export const useForwardsStore = create<ForwardsState>()((set, get) => ({
     else startErrors[key] = error;
     set({ startErrors });
   },
-  setBindPrompt(bindPrompt) {
-    set({ bindPrompt });
+  setWaiting(key, waiting) {
+    if (waiting === (get().waiting[key] === true)) return;
+    const next = { ...get().waiting };
+    if (waiting) next[key] = true;
+    else delete next[key];
+    set({ waiting: next });
+  },
+  setBindPrompt(prompt) {
+    const { bindPrompt, bindQueue } = get();
+    const all = bindPrompt === null ? [...bindQueue] : [bindPrompt, ...bindQueue];
+    const at = all.findIndex((p) => p.hostId === prompt.hostId && p.ruleId === prompt.ruleId);
+    if (at === -1) all.push(prompt);
+    else all[at] = prompt;
+    const [head = null, ...rest] = all;
+    set({ bindPrompt: head, bindQueue: rest });
+  },
+  closeBindPrompt(prompt) {
+    const { bindPrompt, bindQueue } = get();
+    const [head = null, ...rest] = [bindPrompt, ...bindQueue].filter(
+      (p): p is BindPrompt => p !== null && p !== prompt,
+    );
+    set({ bindPrompt: head, bindQueue: rest });
   },
   setPortPrompt(portPrompt) {
     set({ portPrompt });
@@ -107,9 +140,24 @@ export function isLive(state: ForwardStateWire | undefined): boolean {
   return s === 'starting' || s === 'running' || s === 'reconnecting';
 }
 
-/** How many forwards are live and how many failed. */
-export function forwardCounts(byKey: Readonly<Record<string, ForwardStateWire>>): { running: number; failed: number } {
-  const states = Object.values(byKey);
+/** The forwards as the views show them: a failed start that waits on its prompt is left out. */
+export function shownForwards(
+  byKey: Readonly<Record<string, ForwardStateWire>>,
+  waiting: Readonly<Record<string, true>>,
+): Readonly<Record<string, ForwardStateWire>> {
+  const keys = Object.keys(waiting).filter((key) => byKey[key]?.status.state === 'failed');
+  if (keys.length === 0) return byKey;
+  const shown = { ...byKey };
+  for (const key of keys) delete shown[key];
+  return shown;
+}
+
+/** How many forwards are live and how many failed (one waiting on its prompt is not). */
+export function forwardCounts(
+  byKey: Readonly<Record<string, ForwardStateWire>>,
+  waiting: Readonly<Record<string, true>> = {},
+): { running: number; failed: number } {
+  const states = Object.values(shownForwards(byKey, waiting));
   return {
     running: states.filter((state) => isLive(state)).length,
     failed: states.filter((state) => state.status.state === 'failed').length,

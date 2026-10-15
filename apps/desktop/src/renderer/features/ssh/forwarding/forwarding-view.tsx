@@ -21,7 +21,7 @@ import {
   stopGroup,
 } from './forward-groups.js';
 import { GroupNameDialog } from './group-name-dialog.js';
-import { isLive, useForwardsStore } from './forwards-store.js';
+import { isLive, shownForwards, useForwardsStore } from './forwards-store.js';
 import { NewRuleDialog } from './new-rule-dialog.js';
 import { SshEmptyState, SshNoMatches, SshView, SshViewHeader } from '../ssh-view-frame.js';
 import { SSH_VIEWS } from '../ssh-views.js';
@@ -188,14 +188,24 @@ function useDropZone(groupId: string | undefined, onDropped: () => void) {
 const zoneClass = (over: boolean): string =>
   `rounded-md outline-offset-4 ${over ? 'outline-2 outline-dashed outline-accent' : ''}`;
 
+/** This window's forwards as the views show them: a start waiting on its prompt is not failed. */
+function useShownForwards() {
+  const byKey = useForwardsStore((s) => s.byKey);
+  const waiting = useForwardsStore((s) => s.waiting);
+  return useMemo(() => shownForwards(byKey, waiting), [byKey, waiting]);
+}
+
 /**
- * One forwarding group: its name, how many of its rules run ("2 of 3 running · 1 failed"), Start group or
- * Stop group, and Rename / Delete; then its rules.
+ * One forwarding group: its name, how many of its rules run ("2 of 3 running · 1 failed", the failed count
+ * showing the Failed rows), then what can be done: Start group when none runs, Stop group with a secondary
+ * Start N more when some run, Stop group alone when all do, no Start for a group with no rule to run. Then
+ * Rename / Delete, and its rules.
  */
 function GroupSection({
   group,
   rows,
   filtered,
+  onShowFailed,
   onRename,
   onNewGroup,
   onDragChange,
@@ -204,6 +214,7 @@ function GroupSection({
   rows: readonly ForwardRowData[];
   /** A search or chip hides some rows: an empty list then says nothing matched rather than how to fill it. */
   filtered: boolean;
+  onShowFailed: () => void;
   onRename: () => void;
   onNewGroup: (hostId: string, ruleId: string) => void;
   onDragChange: (key: string | undefined) => void;
@@ -212,11 +223,22 @@ function GroupSection({
     onDragChange(undefined);
   });
   const resolved = useHostsStore((s) => s.resolved);
-  const byKey = useForwardsStore((s) => s.byKey);
+  const byKey = useShownForwards();
   const startErrors = useForwardsStore((s) => s.startErrors);
   const status = groupStatus(group, resolved, byKey, startErrors);
   const anyHeld = group.rules.some((m) => byKey[forwardKey(m.host, m.rule)] !== undefined);
-  const allRunning = status.total > 0 && status.running >= status.total;
+  const toStart = Math.max(0, status.total - status.running);
+  const start = (label: string, variant?: 'primary') => (
+    <Button
+      {...(variant === undefined ? {} : { variant })}
+      className="h-6 px-2 text-xs"
+      onClick={() => {
+        void startGroup(group.id);
+      }}
+    >
+      {label}
+    </Button>
+  );
   return (
     <section
       aria-label={`Forwarding group ${group.name}`}
@@ -228,25 +250,25 @@ function GroupSection({
     >
       <div className="mb-1.5 flex min-w-0 items-center gap-2">
         <h3 className="truncate text-sm font-medium text-fg-default">{group.name}</h3>
-        <span
-          data-testid="forward-group-status"
-          className={`shrink-0 text-xs ${status.failed > 0 ? 'text-status-danger' : 'text-fg-subtle'}`}
-        >
-          {groupStatusText(status)}
+        <span data-testid="forward-group-status" className="shrink-0 text-xs text-fg-subtle">
+          {groupStatusText({ ...status, failed: 0 })}
+          {status.failed > 0 && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                data-testid="forward-group-failed"
+                className="text-status-danger underline-offset-2 hover:underline"
+                onClick={onShowFailed}
+              >
+                {`${String(status.failed)} failed`}
+              </button>
+            </>
+          )}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          {!allRunning && (
-            <Button
-              variant="primary"
-              className="h-6 px-2 text-xs"
-              disabled={status.total === 0}
-              onClick={() => {
-                void startGroup(group.id);
-              }}
-            >
-              Start group
-            </Button>
-          )}
+          {toStart > 0 && status.running === 0 && start('Start group', 'primary')}
+          {toStart > 0 && status.running > 0 && start(`Start ${String(toStart)} more`)}
           {anyHeld && (
             <Button
               className="h-6 px-2 text-xs"
@@ -366,7 +388,7 @@ export function ForwardingPanel() {
   const resolved = useHostsStore((s) => s.resolved);
   const loaded = useHostsStore((s) => s.loaded);
   const forwardGroups = useHostsStore((s) => s.file.forwardGroups);
-  const byKey = useForwardsStore((s) => s.byKey);
+  const byKey = useShownForwards();
   const [filter, setFilter] = useState('');
   const [chip, setChip] = useState<Chip>('all');
   const [adding, setAdding] = useState(false);
@@ -477,6 +499,9 @@ export function ForwardingPanel() {
                 group={group}
                 rows={own}
                 filtered={filtered}
+                onShowFailed={() => {
+                  setChip('failed');
+                }}
                 onRename={() => {
                   setNaming({ mode: 'rename', id: group.id, name: group.name });
                 }}
@@ -515,7 +540,7 @@ export function ForwardingPanel() {
 /** The host details panel's Port forwarding section: the same rows, for one host. */
 export function HostForwards({ hostId }: { readonly hostId: string }) {
   const resolved = useHostsStore((s) => s.resolved);
-  const byKey = useForwardsStore((s) => s.byKey);
+  const byKey = useShownForwards();
   const rows = useMemo(
     () => forwardRows(resolved, byKey).filter((row) => row.host.id === hostId),
     [resolved, byKey, hostId],

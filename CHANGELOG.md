@@ -39,6 +39,15 @@ All notable changes to this project are documented here. The format follows
   onto more lines in a narrow panel. Host details, Edit host, Snippet and Forward details all fit a panel
   from 280 to 400px wide (#591).
 
+### Fixed
+
+- **Start group asks every prompt.** When a group's rules need hosts trusted or network binds confirmed,
+  each question is asked in turn instead of the second replacing the first, and every rule then starts.
+  Rules on the same new host share one trust prompt. A rule isn't shown as failed while its prompt waits,
+  and cancelling a prompt leaves that rule stopped. The group header follows the group: an empty group
+  says "No rules" with no Start, a partly running one offers **Start N more** beside **Stop group**, and
+  the failed count shows the Failed rows (#589).
+
 ## [6.1.0] - 2026-10-15
 
 ### Added
