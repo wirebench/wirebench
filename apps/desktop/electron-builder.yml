@@ -37,9 +37,11 @@ files:
   # …and so would everything only `kerberos` depends on: the `prebuild-install` tree that fetches a binding at install time. Nothing loads them at
   # runtime. Top-level folders only, and only packages nothing else in the app depends on;
   # `scripts/check-desktop-asar.ts` fails the release if this list ever drops a package some other
-  # dependency needs, or if the tree grows a package this list misses.
-  # (`node-addon-api`, its build headers, ships: node-hid declares it too.)
-  - '!node_modules/{prebuild-install,base64-js,bl,buffer,chownr,decompress-response,deep-extend,detect-libc,end-of-stream,expand-template,fs-constants,github-from-package,ieee754,inherits,ini,mimic-response,minimist,mkdirp-classic,napi-build-utils,node-abi,once,pump,rc,readable-stream,safe-buffer,simple-concat,simple-get,string_decoder,strip-json-comments,tar-fs,tar-stream,tunnel-agent,util-deprecate,wrappy}/**'
+  # dependency needs, or if the tree grows a package this list misses; its unit test checks the first
+  # half on every pull request.
+  # (`node-addon-api`, its build headers, ships: node-hid declares it too. So do `once`, `wrappy`
+  # and `inherits`: express and http-errors, which the MCP SDK brings in, need them.)
+  - '!node_modules/{prebuild-install,base64-js,bl,buffer,chownr,decompress-response,deep-extend,detect-libc,end-of-stream,expand-template,fs-constants,github-from-package,ieee754,ini,mimic-response,minimist,mkdirp-classic,napi-build-utils,node-abi,pump,rc,readable-stream,safe-buffer,simple-concat,simple-get,string_decoder,strip-json-comments,tar-fs,tar-stream,tunnel-agent,util-deprecate}/**'
   # ssh2's optional native cipher binding is never built; ssh2 falls back to its pure-JS ciphers.
   - '!**/node_modules/ssh2/lib/protocol/crypto/build/**'
   - '!**/node_modules/cpu-features/**'

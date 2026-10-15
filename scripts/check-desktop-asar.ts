@@ -12,8 +12,8 @@
  *   node scripts/check-desktop-asar.ts <resources dir>...
  */
 
-import { closeSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Not followed: the app loads the vendored binding instead (`apps/desktop/src/main/kerberos.ts`). */
@@ -115,6 +115,57 @@ export function checkAsarDependencies(asarPath: string): string[] {
     if (!reached.has(`node_modules/${name}`)) problems.push(`${name} ships, but nothing the app loads depends on it`);
   }
   return problems;
+}
+
+/** The top-level folders the `'!node_modules/{…}/**'` pattern in `electron-builder.yml` leaves out. */
+export function excludedTopLevelPackages(builderYaml: string): string[] {
+  const match = /'!node_modules\/\{([^}]+)\}\/\*\*'/.exec(builderYaml);
+  return match?.[1]?.split(',') ?? [];
+}
+
+/**
+ * The same walk as the asar check, over the installed tree instead of a packed one, so a pull request
+ * learns what a release would: which `excluded` packages something the app loads depends on. Each
+ * package resolves the way Node does from its real path, which in pnpm's store sits beside its own
+ * dependencies. Peer dependencies are not followed: one the app needs is some other package's own
+ * dependency, and the dev install would otherwise satisfy a peer like `electron` and walk its tree.
+ */
+export function excludedButNeeded(appDir: string, excluded: readonly string[]): string[] {
+  const resolve = (name: string, from: string): string | undefined => {
+    for (let dir = from; ; dir = dirname(dir)) {
+      const candidate = join(dir, 'node_modules', name);
+      if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate);
+      if (dirname(dir) === dir) return undefined;
+    }
+  };
+  const neededBy = new Map<string, string>();
+  const reached = new Set<string>();
+  const queue = [realpathSync(appDir)];
+  while (queue.length > 0) {
+    const dir = queue.shift();
+    if (dir === undefined) continue;
+    const found = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Manifest & { name?: string };
+    const by = found.name ?? dir;
+    const follow = (names: Record<string, string> | undefined, onlyIfPresent: boolean): void => {
+      for (const name of Object.keys(names ?? {})) {
+        if (NOT_LOADED.has(name)) continue;
+        const target = resolve(name, dir);
+        if (target === undefined) {
+          if (!onlyIfPresent) throw new Error(`${name} is not installed, and ${by} depends on it`);
+          continue;
+        }
+        if (!neededBy.has(name)) neededBy.set(name, by);
+        if (reached.has(target)) continue;
+        reached.add(target);
+        queue.push(target);
+      }
+    };
+    follow(found.dependencies, false);
+    follow(found.optionalDependencies, true);
+  }
+  return excluded
+    .filter((name) => neededBy.has(name))
+    .map((name) => `${name} is excluded, and ${neededBy.get(name)} depends on it`);
 }
 
 export function checkDesktopAsar(resourcesDirs: readonly string[]): string[] {
