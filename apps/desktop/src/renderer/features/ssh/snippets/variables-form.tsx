@@ -23,6 +23,14 @@ export function anyInvalid(values: Readonly<Record<string, string>>): boolean {
   return Object.values(values).some(invalidValue);
 }
 
+/** The variables whose value is empty: the script would run with nothing in their place. */
+export function emptyVariables(
+  variables: readonly SnippetVariableWire[],
+  values: Readonly<Record<string, string>>,
+): SnippetVariableWire[] {
+  return variables.filter((v) => (values[v.name] ?? '') === '');
+}
+
 export function VariablesForm(props: {
   readonly variables: readonly SnippetVariableWire[];
   readonly values: Readonly<Record<string, string>>;
@@ -38,8 +46,9 @@ export function VariablesForm(props: {
         const value = props.values[v.name] ?? '';
         const invalid = invalidValue(value);
         return (
-          <label key={v.name} htmlFor={id} className="flex flex-col gap-1 text-xs text-fg-subtle">
-            {v.label ?? v.name}
+          // The hints sit outside the <label>, so the field's name stays the variable's.
+          <div key={v.name} className="flex flex-col gap-1 text-xs text-fg-subtle">
+            <label htmlFor={id}>{v.label ?? v.name}</label>
             <input
               id={id}
               className={INPUT_CLASS}
@@ -55,7 +64,12 @@ export function VariablesForm(props: {
                 {INVALID_VALUE_MESSAGE}
               </span>
             )}
-          </label>
+            {value === '' && (
+              <span data-testid="snippet-variable-empty" className="text-status-warning">
+                Empty: the script gets nothing here
+              </span>
+            )}
+          </div>
         );
       })}
     </fieldset>

@@ -121,6 +121,25 @@ describe('the run dialog for one terminal', () => {
     expect(input(screen.getByLabelText('Lines to show')).value).toBe('50');
   });
 
+  it('marks an empty variable, and asks once before running with it empty', async () => {
+    open(TAIL);
+    expect(screen.getAllByTestId('snippet-variable-empty')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    expect(screen.getByTestId('snippet-run-empty').textContent).toBe('Lines to show is empty. Run anyway?');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runSnippet).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Run anyway' }));
+    await waitFor(() => expect(runSnippet).toHaveBeenCalled());
+  });
+
+  it('a filled value takes the question away', () => {
+    open(TAIL);
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    fireEvent.change(screen.getByLabelText('Lines to show'), { target: { value: '20' } });
+    expect(screen.queryByTestId('snippet-run-empty')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDefined();
+  });
+
   it('refuses a value with a control character before main is asked', async () => {
     open(TAIL);
     // A text field drops line breaks itself (as the browser does); a tab or an escape still gets in.
