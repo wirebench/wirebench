@@ -74,10 +74,17 @@ describe('BodyView preview of HTML (#48)', () => {
     expect(screen.getByText('Too large to preview. Raw shows the markup.')).toBeTruthy();
   });
 
-  it('keeps the hex dump for other bodies', () => {
+  it('offers Hex, not Preview, for a body with nothing to render (R16)', () => {
     mount(exchange({ text: 'plain', language: 'text', http: { bodyBase64: btoa('plain'), headers: {} } }));
-    fireEvent.click(screen.getByTestId('rest-response-view-preview'));
-    expect(screen.getByTestId('rest-response-hex')).toBeTruthy();
+    expect(screen.queryByTestId('rest-response-view-preview')).toBeNull();
+    fireEvent.click(screen.getByTestId('rest-response-view-hex'));
+    expect(screen.getByTestId('rest-response-hex').textContent).toContain('plain');
     expect(screen.queryByTestId('rest-response-html-preview')).toBeNull();
+  });
+
+  it('offers Hex next to Preview for HTML', () => {
+    mount(exchange());
+    fireEvent.click(screen.getByTestId('rest-response-view-hex'));
+    expect(screen.getByTestId('rest-response-hex').textContent).toContain('00000000');
   });
 });

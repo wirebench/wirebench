@@ -245,7 +245,7 @@ describe('RestResponsePane', () => {
     expect(revoked).toEqual(['blob:0']);
   });
 
-  it('shows a hex dump for a body that is neither text nor an image', () => {
+  it('opens a body that is neither text nor an image on its hex dump, with no Preview', () => {
     mount(
       makeRestExchange({
         language: 'binary',
@@ -254,8 +254,17 @@ describe('RestResponsePane', () => {
       }),
     );
 
-    fireEvent.click(screen.getByTestId('rest-response-view-preview'));
+    expect(screen.getByTestId('rest-response-view-hex').getAttribute('aria-selected')).toBe('true');
     expect(screen.getByTestId('rest-response-hex').textContent).toContain('00000000');
+    expect(screen.queryByTestId('rest-response-view-preview')).toBeNull();
+  });
+
+  it('offers no Preview for a JSON body, and shows its bytes under Hex (R16)', () => {
+    mount(makeRestExchange({ text: '{"a":1}', http: { ...makeRestExchange().http, bodyBase64: b64('{"a":1}') } }));
+
+    expect(screen.queryByTestId('rest-response-view-preview')).toBeNull();
+    fireEvent.click(screen.getByTestId('rest-response-view-hex'));
+    expect(screen.getByTestId('rest-response-hex').textContent).toContain('{"a":1}');
   });
 
   it('keeps a repeated response header, in order', () => {

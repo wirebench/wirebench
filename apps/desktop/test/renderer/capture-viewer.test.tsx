@@ -98,7 +98,8 @@ describe('CaptureViewer (webhook-capture §4.2)', () => {
         language: 'binary',
       }),
     );
-    fireEvent.click(screen.getByTestId('rest-response-view-preview'));
+    // A binary body opens on Hex: it has no text for Pretty and nothing for Preview to render.
+    expect(screen.getByTestId('rest-response-view-hex').getAttribute('aria-selected')).toBe('true');
     expect(screen.getByTestId('rest-response-hex').textContent).toContain('00 9f 92 96');
   });
 
