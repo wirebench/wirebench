@@ -16,3 +16,15 @@ export async function selectLogRow(row: Locator): Promise<void> {
   await row.scrollIntoViewIfNeeded();
   await row.click({ position: { x: 8, y: 8 } });
 }
+
+/** Opens the HTTP Log's Filters menu, toggles one choice in a group of it, and closes the menu. */
+export async function toggleLogFilter(
+  page: Page,
+  group: 'Method' | 'Status' | 'Protocol',
+  name: string,
+): Promise<void> {
+  await page.getByTestId('http-log-filters').click();
+  await page.getByRole('menu').getByRole('group', { name: group }).getByRole('menuitemcheckbox', { name }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('menu').waitFor({ state: 'hidden' });
+}

@@ -111,6 +111,25 @@ test.describe('REST editor at small window sizes', () => {
         await expect(page.getByTestId('rest-generated-headers')).toBeVisible();
         expect(await sidewaysOverflow(page), `${where}, request Headers tab`).toEqual([]);
         await openRequestTab(page, 'Params');
+
+        // The HTTP Log's toolbar fits on its line: search, Filters, Reset and Preserve log all in view.
+        // Only with the code panel closed: open, it takes its width out of the console's column.
+        if (codePanel) {
+          continue;
+        }
+        const bar = page.getByTestId('http-log-filter');
+        expect(
+          await bar.evaluate((element) => element.scrollWidth > element.clientWidth + 1),
+          `${where}, HTTP Log filter bar scrolls sideways`,
+        ).toBe(false);
+        for (const control of [
+          bar.getByRole('searchbox'),
+          page.getByTestId('http-log-filters'),
+          bar.getByRole('button', { name: 'Reset' }),
+          bar.getByRole('button', { name: 'Preserve log' }),
+        ]) {
+          await expect(control, where).toBeInViewport({ ratio: 1 });
+        }
       }
     }
 

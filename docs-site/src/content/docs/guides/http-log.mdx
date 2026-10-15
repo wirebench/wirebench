@@ -80,17 +80,18 @@ reveal them, and the **Headers** tab explains this with a note.
 1. Type into **Search URL, headers, bodies, name** to match rows by URL, request and response
    header lines, the first 256 KiB of each body, and the request name. The **.\*** toggle switches
    it to a regular expression; **Aa** makes it case-sensitive.
-2. Click chips in the **Method**, **Status** and **Protocol** groups to narrow further. Within a
-   group, selecting more than one chip is an OR (either matches); across groups it's an AND. The
+2. Open **Filters** and tick choices in its **Method**, **Status** and **Protocol** groups to narrow
+   further; the menu stays open while you pick, and the button shows how many are on. Within a
+   group, ticking more than one is an OR (either matches); across groups it's an AND. The
    **Status** group includes `2xx`, `3xx`, `4xx`, `5xx` and `failed`. The **Protocol** group is
-   SOAP, REST and gRPC.
+   SOAP, REST, gRPC and WS.
 3. The count on the right reads "*n* of *m*" — rows shown of rows in the log.
 4. Choose **Reset** to clear the filter without touching the log itself.
 
 </Steps>
 
 <Aside type="tip">
-Reset clears the filter and search; **Clear**, next to the secrets toggle, empties the log itself.
+Reset clears the filter and search; **Clear** (the bin icon at the end of the toolbar) empties the log itself.
 They're separate controls on purpose.
 </Aside>
 
@@ -123,7 +124,7 @@ A failed send has no response, so its response-copying actions are off.
 
 ## Export HAR
 
-**Export HAR** saves the rows the filter currently shows, in the order displayed, as a HAR 1.2
+**Export HAR** (the download icon in the toolbar) saves the rows the filter currently shows, in the order displayed, as a HAR 1.2
 file. Headers, URL parameters, WS-Security passwords and JSON/form secrets are always masked in
 the file, regardless of what the show-secrets toggle shows on screen. A failed send's entry carries
 an `_error` field with its code, message and stage; a truncated body carries `_truncated`.

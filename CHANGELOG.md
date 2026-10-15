@@ -353,7 +353,10 @@ All notable changes to this project are documented here. The format follows
   counting failed SSH connects as request problems (#537).
 - **A quieter console on a first run.** A fresh workspace starts with the console collapsed, and the
   first send opens it on the HTTP Log; after that it stays open, closed or at the height you leave it.
-  The WS-I Report tab shows only when the workspace has a SOAP interface (#575).
+  The WS-I Report tab shows only when the workspace has a SOAP interface. The HTTP Log's method,
+  status and protocol choices move into a **Filters ▾** menu that shows how many are on, and Export
+  HAR and Clear become icon buttons, so search, Reset and Preserve log stay in view in a narrow
+  console (#575).
 - **Tab strips that fit, and a REST editor that fits a 1024×700 window.** A tab strip never grows
   wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
   shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer
