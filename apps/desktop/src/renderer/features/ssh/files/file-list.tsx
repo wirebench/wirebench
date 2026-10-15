@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ChevronUp, File, FileSymlink, Folder } from 'lucide-react';
+import { selectionClass } from '../../../components/selection.js';
 import type { SftpEntryWire } from '../../../../shared/sftp-wire.js';
 import type { PaneSort, SortColumn } from './files-store.js';
 import { formatModified, formatSize, isFolderLike, modeString } from './format.js';
@@ -14,6 +15,9 @@ const ROW_HEIGHT = 26;
  */
 const GRID =
   'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[440px]:grid-cols-[minmax(10rem,1fr)_6rem_7rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_11rem_7rem] items-center gap-3 px-3';
+/** The same without Permissions: this machine's pane, whose permissions are not shown or changed here. */
+const GRID_NO_MODE =
+  'grid grid-cols-[minmax(10rem,1fr)_6rem] @min-[560px]:grid-cols-[minmax(10rem,1fr)_6rem_11rem] items-center gap-3 px-3';
 
 /** Per column: the classes that show its header button and its cells only from the column's width. */
 const SHOWN: Partial<Record<SortColumn, { readonly header: string; readonly cell: string }>> = {
@@ -51,6 +55,10 @@ export interface FileListProps {
   readonly focusRequest?: number;
   /** A row dragged: rows are draggable when this is given. A row not in the selection is selected first. */
   readonly onRowDragStart?: (entry: SftpEntryWire, event: DragEvent<HTMLDivElement>) => void;
+  /** Whether this is the pane in use: the other pane's selection shows dimmed. Defaults to true. */
+  readonly active?: boolean;
+  /** Whether the Permissions column shows; this machine's pane leaves it out. Defaults to true. */
+  readonly permissions?: boolean;
 }
 
 function EntryIcon({ entry }: { readonly entry: SftpEntryWire }) {
@@ -87,7 +95,11 @@ export function FileList({
   renderName,
   focusRequest = 0,
   onRowDragStart,
+  active = true,
+  permissions = true,
 }: FileListProps) {
+  const grid = permissions ? GRID : GRID_NO_MODE;
+  const columns = permissions ? COLUMNS : COLUMNS.filter((c) => c.column !== 'mode');
   const scroller = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState(0);
   /** Where a ⇧ range starts. */
@@ -163,8 +175,8 @@ export function FileList({
 
   return (
     <div className="@container flex min-h-0 min-w-0 flex-1 flex-col">
-      <div role="row" className={`${GRID} h-7 shrink-0 border-b border-hairline text-xs text-fg-subtle`}>
-        {COLUMNS.map(({ column, label, end }) => {
+      <div role="row" className={`${grid} h-7 shrink-0 border-b border-hairline text-xs text-fg-subtle`}>
+        {columns.map(({ column, label, end }) => {
           const active = sort.column === column;
           const Arrow = sort.descending ? ChevronDown : ChevronUp;
           return (
@@ -226,8 +238,8 @@ export function FileList({
                   onRowContextMenu?.(entry);
                 }}
                 style={{ height: `${String(ROW_HEIGHT)}px`, transform: `translateY(${String(item.start)}px)` }}
-                className={`${GRID} absolute top-0 left-0 w-full cursor-default text-sm select-none ${
-                  isSelected ? 'bg-surface-selected text-fg-default' : 'text-fg-muted hover:bg-surface-hover'
+                className={`${grid} absolute top-0 left-0 w-full cursor-default text-sm select-none ${
+                  isSelected ? selectionClass(active) : 'text-fg-muted hover:bg-surface-hover'
                 } ${item.index === at ? 'outline-1 -outline-offset-1 outline-hairline-strong' : ''}`}
               >
                 <span className="flex min-w-0 items-center gap-2">
@@ -238,9 +250,11 @@ export function FileList({
                 <span className={`${SHOWN.mtime?.cell ?? ''} truncate tabular-nums`}>
                   {formatModified(entry.mtime)}
                 </span>
-                <span className={`${SHOWN.mode?.cell ?? ''} font-mono text-xs`}>
-                  {entry.mode === undefined ? '' : modeString(entry.mode)}
-                </span>
+                {permissions && (
+                  <span className={`${SHOWN.mode?.cell ?? ''} font-mono text-xs`}>
+                    {entry.mode === undefined ? '' : modeString(entry.mode)}
+                  </span>
+                )}
               </div>
             );
           })}

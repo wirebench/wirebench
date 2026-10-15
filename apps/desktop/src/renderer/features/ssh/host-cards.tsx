@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { SELECTED_CLASS } from '../../components/selection.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { openTerminalFor } from './connect.js';
 import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
@@ -149,8 +150,10 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
         data-host-card={host.id}
         data-selected={selected || undefined}
         title={`${host.name} — double-click to connect`}
-        className={`group flex min-w-0 cursor-default border bg-surface-raised hover:border-hairline-strong hover:bg-surface-hover focus-visible:outline-none ${
-          selected ? 'border-accent ring-1 ring-accent' : 'border-hairline'
+        className={`group flex min-w-0 cursor-default border hover:border-hairline-strong focus-visible:outline-none ${
+          selected
+            ? `border-hairline-strong ${SELECTED_CLASS}`
+            : 'border-hairline bg-surface-raised hover:bg-surface-hover'
         } ${grid ? 'items-center gap-2.5 rounded-md p-2' : 'items-center gap-3 rounded-md px-3 py-1'}`}
         onMouseDown={(e) => {
           pressedWhileShown.current = selected && useHostsStore.getState().detailsOpen;
