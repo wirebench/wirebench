@@ -20,6 +20,39 @@ import type {
 } from '@wirebench/ssh';
 import { asWirebenchError } from './hosts-service.js';
 import type { HostsService } from './hosts-service.js';
+import type { SshQuickTarget } from '../shared/ssh-wire.js';
+
+/**
+ * A one-off server (#537) as a chain of one: a host of its own, alone in a file of its own, so no saved
+ * host, group or default of hosts.yaml applies to it, beside the workspace's identities. It signs in with
+ * the agent, which needs nothing stored.
+ */
+export function quickChain(
+  file: HostsFile | undefined,
+  hostId: string,
+  quick: SshQuickTarget,
+): readonly ResolvedHost[] {
+  const name = quick.user === undefined ? quick.address : `${quick.user}@${quick.address}`;
+  const alone: HostsFile = {
+    version: 1,
+    ...(file?.identities === undefined ? {} : { identities: file.identities }),
+    groups: [],
+    hosts: [
+      {
+        id: hostId,
+        name,
+        address: quick.address,
+        tags: [],
+        ssh: { ...(quick.user === undefined ? {} : { user: quick.user }), port: quick.port, auth: { kind: 'agent' } },
+      },
+    ],
+  };
+  try {
+    return jumpChain(alone, hostId);
+  } catch (error) {
+    throw asWirebenchError(error);
+  }
+}
 
 /** What the connect path reads: shared by the terminal (`SshService`) and Files (`SftpService`). */
 export interface SshConnectDeps {
@@ -27,7 +60,9 @@ export interface SshConnectDeps {
    * The `hosts.yaml` of the connecting window's workspace (multi-window: each window holds its own).
    * @throws WirebenchError when that window is gone
    */
-  readonly hosts: (sender: WebContents) => Pick<HostsService, 'current' | 'list'>;
+  readonly hosts: (
+    sender: WebContents,
+  ) => Pick<HostsService, 'current' | 'list'> & Partial<Pick<HostsService, 'sshDefaults'>>;
   /**
    * The secret getter for the connecting window's workspace, taken when a connect begins and bound to the
    * workspace open then, so a switch mid-connect never hands one workspace's secrets to another's host.
@@ -124,13 +159,15 @@ export interface SshConnector {
    * `forwardAgent` is set when the target forwards the agent (never a jump host's setting): with the
    * socket to forward, or without one when no agent runs, in which case the shell opens without it.
    * `user` (both): signs in to the target as this user for this connect only, as typed on the connection
-   * screen (#532); hosts.yaml is not changed.
+   * screen (#532); hosts.yaml is not changed. `quick` (shell only): a server that is not saved (#537), signed in
+   * to with the agent; `hostId` is then the renderer's id for it.
    */
   prepareShell(
     sender: WebContents,
     hostId: string,
     abandoned?: () => boolean,
     user?: string,
+    quick?: SshQuickTarget,
   ): Promise<{
     hops: HopCredentials[];
     env: Record<string, string>;
@@ -188,8 +225,14 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
   const changedKeys = new Map<number, Map<string, string>>();
 
   /** The hops to the host, outermost first, each complete; nothing here touches the network. */
-  const chainFor = async (sender: WebContents, hostId: string, user?: string): Promise<readonly ResolvedHost[]> => {
+  const chainFor = async (
+    sender: WebContents,
+    hostId: string,
+    user?: string,
+    quick?: SshQuickTarget,
+  ): Promise<readonly ResolvedHost[]> => {
     const hosts = deps.hosts(sender);
+    if (quick !== undefined) return completeChain(quickChain(hosts.current(), hostId, quick), user);
     const listing = await hosts.list(); // cached; reads hosts.yaml once per workspace
     const problem = listing.problems[0];
     if (problem) {
@@ -202,10 +245,16 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     if (!file) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
     let chain: readonly ResolvedHost[];
     try {
-      chain = jumpChain(file, hostId);
+      chain = jumpChain(file, hostId, hosts.sshDefaults?.());
     } catch (error) {
       throw asWirebenchError(error);
     }
+    return completeChain(chain, user);
+  };
+
+  /** The chain with the target signed in as `user` when given; refused while a hop lacks a user or a way in. */
+  const completeChain = (resolved: readonly ResolvedHost[], user?: string): readonly ResolvedHost[] => {
+    let chain = resolved;
     if (user !== undefined) chain = [...chain.slice(0, -1), signInAs(chain[chain.length - 1] as ResolvedHost, user)];
     for (const hop of chain) {
       if (hop.incomplete) {
@@ -298,10 +347,16 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     return { env, secrets };
   };
 
-  const prepare = async (sender: WebContents, hostId: string, abandoned: () => boolean, user?: string) => {
+  const prepare = async (
+    sender: WebContents,
+    hostId: string,
+    abandoned: () => boolean,
+    user?: string,
+    quick?: SshQuickTarget,
+  ) => {
     // Taken now, so the secrets are those of the workspace the connect began in, never a later one's.
     const getSecret = deps.secretsFor(sender);
-    const chain = await chainFor(sender, hostId, user);
+    const chain = await chainFor(sender, hostId, user, quick);
     if (abandoned()) throw new WirebenchError('ssh-session-closed', 'The session closed before it opened');
     return { chain, getSecret, hops: await credentialsFor(chain, getSecret) };
   };
@@ -311,8 +366,8 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
       return (await prepare(sender, hostId, abandoned, user)).hops;
     },
 
-    async prepareShell(sender, hostId, abandoned = () => false, user) {
-      const { chain, getSecret, hops } = await prepare(sender, hostId, abandoned, user);
+    async prepareShell(sender, hostId, abandoned = () => false, user, quick) {
+      const { chain, getSecret, hops } = await prepare(sender, hostId, abandoned, user, quick);
       const target = chain[chain.length - 1] as ResolvedHost;
       const socket = target.ssh.forwardAgent.value ? deps.agentSocket() : undefined;
       return {

@@ -26,6 +26,27 @@ it('matches on name, address, path and tags', () => {
   expect(entry!.value).toBe('api-1 10.0.1.5 prod eu prod');
 });
 
+it('shows and matches the groups by name, keeping an id with no name', () => {
+  const [entry] = quickOpenHostEntries(
+    [
+      {
+        id: 'a',
+        name: 'api-1',
+        address: '10.0.1.5',
+        tags: [],
+        path: ['production', 'gone'],
+        protected: { value: false, from: 'default' as const },
+        ssh: {} as never,
+        forwards: [],
+        env: [],
+      },
+    ],
+    new Map([['production', 'Production']]),
+  );
+  expect(entry!.detail).toBe('10.0.1.5 · Production/gone');
+  expect(entry!.value).toBe('api-1 10.0.1.5 Production gone');
+});
+
 it('lists exactly the resolved hosts it is given, none invented', () => {
   expect(quickOpenHostEntries([])).toEqual([]);
 });

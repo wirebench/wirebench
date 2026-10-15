@@ -21,6 +21,8 @@ import type { RequestImportCurlTarget } from '../../../shared/kinds/rest/wire.js
 export interface ImportCurlDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  /** Called with the new request's id when an import succeeds, before the dialog closes. */
+  readonly onImported?: (requestId: string) => void;
   /** Where the imported request is created. Decided by whatever opened the dialog. */
   readonly target: RequestImportCurlTarget;
   /** How the target reads in the dialog, e.g. `the Add operation` or `the API “Petstore”`. */
@@ -91,7 +93,7 @@ function Preview({ preview, target }: { readonly preview: CurlPreview; readonly 
 }
 
 /** The paste-a-command dialog; `Import` creates the request and opens it. */
-export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: ImportCurlDialogProps) {
+export function ImportCurlDialog({ open, onOpenChange, onImported, target, targetLabel }: ImportCurlDialogProps) {
   const [command, setCommand] = useState('');
   const [busy, setBusy] = useState(false);
   const preview = useMemo(() => previewCurl(command, target.kind), [command, target.kind]);
@@ -164,11 +166,17 @@ export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: Im
               data-testid="import-curl-submit"
               onClick={() => {
                 setBusy(true);
-                void importCurl(command, target).finally(() => {
-                  setBusy(false);
-                  setCommand('');
-                  onOpenChange(false);
-                });
+                void importCurl(command, target)
+                  .then((requestId) => {
+                    if (requestId !== undefined) {
+                      onImported?.(requestId);
+                    }
+                  })
+                  .finally(() => {
+                    setBusy(false);
+                    setCommand('');
+                    onOpenChange(false);
+                  });
               }}
             >
               Import

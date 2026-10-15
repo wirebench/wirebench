@@ -18,7 +18,11 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
  */
 describe('sidebar/console collapse, expand and restore', () => {
   beforeEach(() => {
-    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+    useUiStore.setState({
+      ...structuredClone(DEFAULT_UI_STATE),
+      // These cases start from a console the user has already opened.
+      console: { ...DEFAULT_UI_STATE.console, visible: true, openOnFirstSend: false },
+    });
     useWorkspaceStore.setState({ workspace: null });
   });
 

@@ -1187,6 +1187,7 @@ export type {
   PreferencesPatch,
   PreferencesSection,
   ProxyPreferences,
+  SshPreferences,
   SslPreferences,
   UiPreferences,
   UpdatePreferences,

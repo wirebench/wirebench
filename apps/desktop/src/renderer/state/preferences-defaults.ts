@@ -71,5 +71,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     sessionLogRaw: false,
     localShell: '',
   },
+  ssh: { keepAlive: 15, connectTimeout: 20 },
   shortcuts: {},
 };

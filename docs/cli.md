@@ -1053,6 +1053,10 @@ pg  127.0.0.1:5432 → localhost:5432 via db-1
 - **Workspace.** The nearest `workspace.yaml` above the current folder, or `--workspace <dir>`. Its
   `hosts.yaml` is read as the app reads it: a group's rules apply to its hosts, a nearer rule of the same id
   replaces a farther one, and `enabled: false` switches one off.
+- **Defaults.** The app's Settings → SSH (default user, keep-alive, connect timeout) are per machine and
+  not read: a host takes its values from itself, its groups and their identities, else the built-in
+  keep-alive of 15 s, connect timeout of 20 s and no user. A pipeline gets the same result on every runner;
+  set the user in `hosts.yaml` for a host that relies on the app's default user.
 - **Rules.** Those named, or every rule switched on for the host when none is named. `autoStart` means
   nothing here. `--port <rule>=<n>` listens on another port for that run; a port already in use is
   refused, never moved.

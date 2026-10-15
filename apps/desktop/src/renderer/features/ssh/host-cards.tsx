@@ -8,9 +8,11 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { SELECTED_CLASS } from '../../components/selection.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { openTerminalFor } from './connect.js';
-import { GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
+import { noteFirstPress, swallowsClick, takeSecondPress } from './double-press.js';
+import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
@@ -90,19 +92,6 @@ interface CardProps {
   readonly onSelect: () => void;
 }
 
-/**
- * The card the last single press landed on, and where. The press picks the host (its focus does), the
- * details open, and the right panel narrowing the content can move the card out from under the pointer
- * before the release, let alone the second press of a double-click: so the press is what is remembered,
- * and the second press connects that host wherever it lands.
- */
-let lastPress: { readonly id: string; readonly x: number; readonly y: number; readonly at: number } | undefined;
-/** How far apart, in time and in pixels, the two presses of a double-click may be. */
-const DOUBLE_CLICK_MS = 600;
-const DOUBLE_CLICK_PX = 6;
-/** Until when the click that follows a connecting press is swallowed, so it presses nothing it lands on. */
-let swallowClickUntil = 0;
-
 function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }: CardProps) {
   const status = sessionStatus(useHostsStore((s) => hostStatusOf(s.panes, host.id)));
   const osEntry = useHostsStore((s) => (resolved === undefined ? undefined : s.osByHost[osKeyOf(resolved)]));
@@ -149,17 +138,19 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
         data-host-card={host.id}
         data-selected={selected || undefined}
         title={`${host.name} — double-click to connect`}
-        className={`group flex min-w-0 cursor-default border bg-surface-raised hover:border-hairline-strong hover:bg-surface-hover focus-visible:outline-none ${
-          selected ? 'border-accent ring-1 ring-accent' : 'border-hairline'
+        className={`group flex min-w-0 cursor-default border hover:border-hairline-strong focus-visible:outline-none ${
+          selected
+            ? `border-hairline-strong ${SELECTED_CLASS}`
+            : 'border-hairline bg-surface-raised hover:bg-surface-hover'
         } ${grid ? 'items-center gap-2.5 rounded-md p-2' : 'items-center gap-3 rounded-md px-3 py-1'}`}
         onMouseDown={(e) => {
           pressedWhileShown.current = selected && useHostsStore.getState().detailsOpen;
           if (e.button === 0 && e.detail === 1) {
-            lastPress = { id: host.id, x: e.clientX, y: e.clientY, at: performance.now() };
+            noteFirstPress(host.id, e);
           }
         }}
         onClick={(e) => {
-          // The second click of a double-click belongs to connecting (see `lastPress`).
+          // The second click of a double-click belongs to connecting (see `double-press.ts`).
           if (e.detail > 1) return;
           if (pressedWhileShown.current) useHostsStore.getState().setDetailsOpen(false);
           else onSelect();
@@ -191,19 +182,25 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
           </span>
           <span className={`flex min-w-0 flex-1 ${grid ? 'flex-col' : 'items-baseline gap-3'}`}>
             <span className="flex min-w-0 items-center gap-1">
-              <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+              <span title={host.name} className="truncate text-sm leading-5 font-medium text-fg-default">
+                {host.name}
+              </span>
               {resolved?.protected.value === true && <ProtectedMark />}
+              {warning !== undefined && (
+                <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-warning" />
+              )}
             </span>
             <span className="truncate text-xs leading-4 text-fg-subtle">
+              {/* The warning takes the second line's start, so the name keeps the first line's width. */}
+              {warning !== undefined && (
+                <>
+                  <span className="text-status-warning">{warning}</span> ·{' '}
+                </>
+              )}
               {osText !== undefined && <span>{osText} · </span>}
               <span className="font-mono">{targetOf(host, resolved)}</span>
             </span>
           </span>
-          {warning !== undefined && (
-            <span className="shrink-0 self-start rounded-full border border-status-warning px-1.5 text-xs leading-4 text-status-warning">
-              {warning}
-            </span>
-          )}
           {!grid && tags}
           {actions}
         </span>
@@ -263,21 +260,10 @@ export function HostCards({
   // or the details panel the first one opened, and connecting is all it should do.
   useEffect(() => {
     const onMouseDown = (e: MouseEvent): void => {
-      const first = lastPress;
-      if (e.button !== 0 || e.detail !== 2 || first === undefined) return;
-      lastPress = undefined;
-      const near = Math.abs(e.clientX - first.x) <= DOUBLE_CLICK_PX && Math.abs(e.clientY - first.y) <= DOUBLE_CLICK_PX;
-      if (!near || performance.now() - first.at > DOUBLE_CLICK_MS) return;
-      e.preventDefault();
-      e.stopPropagation();
-      swallowClickUntil = performance.now() + DOUBLE_CLICK_MS;
-      openTerminalFor(first.id);
+      if (e.detail === 2) takeSecondPress(e);
     };
     const onClick = (e: MouseEvent): void => {
-      if (e.detail < 2 || performance.now() > swallowClickUntil) return;
-      swallowClickUntil = 0;
-      e.preventDefault();
-      e.stopPropagation();
+      swallowsClick(e);
     };
     window.addEventListener('mousedown', onMouseDown, true);
     window.addEventListener('click', onClick, true);
@@ -391,6 +377,12 @@ export function HostCards({
                 <span className="font-normal">{section.hosts.length}</span>
               </button>
             </h3>
+            {section.group !== undefined && (
+              <GroupActionsButton
+                group={section.group}
+                className="opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              />
+            )}
             <button
               type="button"
               aria-label={`Add a host to ${section.title}`}
@@ -415,7 +407,7 @@ export function HostCards({
                 aria-label={`Hosts in ${section.title}`}
                 className={
                   prefs.layout === 'grid'
-                    ? 'grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2'
+                    ? 'grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-2'
                     : 'flex flex-col gap-1'
                 }
               >

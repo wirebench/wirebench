@@ -2068,6 +2068,12 @@ export const preferencesWireSchema = z.object({
     sessionLogRaw: z.boolean(),
     localShell: z.string(),
   }),
+  /** SSH connection defaults (#571): the last level a host resolves to. */
+  ssh: z.object({
+    user: z.string().optional(),
+    keepAlive: z.number(),
+    connectTimeout: z.number(),
+  }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
@@ -2088,6 +2094,7 @@ export const preferencesSectionSchema = z.enum([
   'secrets',
   'mocks',
   'terminal',
+  'ssh',
   'tokens',
   'shortcuts',
 ]);
@@ -2119,6 +2126,7 @@ export const preferencesPatchWireSchema = z.object({
   secrets: z.record(z.string(), z.unknown()).optional(),
   mocks: z.record(z.string(), z.unknown()).optional(),
   terminal: z.record(z.string(), z.unknown()).optional(),
+  ssh: z.record(z.string(), z.unknown()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;

@@ -6,7 +6,7 @@ import type { ResolvedForwardWire, ResolvedHostWire } from '../../../../shared/s
 import { useUiStore } from '../../../state/ui.js';
 import { editHost } from '../connect.js';
 import { useHostsStore } from '../hosts-store.js';
-import { isNetworkBind, levelName, listenAddress, routeOf, typeLetter } from './forward-format.js';
+import { isNetworkBind, levelName, listenAddress, routeOf, typeWord } from './forward-format.js';
 import { askForPort, restartForward, startForward, stopForward } from './forward-actions.js';
 import { isLive, type ForwardStartError } from './forwards-store.js';
 
@@ -65,6 +65,15 @@ export interface ForwardRowProps {
  * badges and what can be done with it. An off rule is greyed with the level that switched it off and offers
  * nothing; a forward whose rule was removed or switched off while it ran offers Stop only.
  */
+/** "this host" or "group Production": a rule named like its host no longer reads "db from db". */
+function whereFrom(
+  level: ResolvedForwardWire['from'],
+  host: Pick<ResolvedHostWire, 'name'>,
+  groupName: (id: string) => string,
+): string {
+  return level === 'host' ? 'this host' : `group ${levelName(level, host, groupName)}`;
+}
+
 export function ForwardRow({ host, forward, ruleId, state, startError, groupName, showHost = true }: ForwardRowProps) {
   const rule = forward?.rule;
   const live = isLive(state);
@@ -107,11 +116,8 @@ export function ForwardRow({ host, forward, ruleId, state, startError, groupName
         />
         <span className="shrink-0 font-medium text-fg-default">{ruleId}</span>
         {rule !== undefined && (
-          <span
-            title={rule.type}
-            className="shrink-0 rounded border border-hairline px-1 font-mono text-[10px] text-fg-subtle"
-          >
-            {typeLetter(rule.type)}
+          <span title={rule.type} className="shrink-0 rounded border border-hairline px-1 text-[10px] text-fg-subtle">
+            {typeWord(rule.type)}
           </span>
         )}
         {rule !== undefined && (
@@ -122,8 +128,8 @@ export function ForwardRow({ host, forward, ruleId, state, startError, groupName
           {forward === undefined
             ? 'removed from hosts.yaml'
             : !forward.enabled
-              ? `off on ${levelName(forward.offBy ?? forward.from, host, groupName)}`
-              : `from ${levelName(forward.from, host, groupName)}`}
+              ? `off on ${whereFrom(forward.offBy ?? forward.from, host, groupName)}`
+              : `from ${whereFrom(forward.from, host, groupName)}`}
         </span>
         {rule?.autoStart === true && !off && (
           <span title="Starts with the host's terminals" className={`${BADGE_CLASS} border-hairline text-fg-subtle`}>

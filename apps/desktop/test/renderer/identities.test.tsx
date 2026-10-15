@@ -14,7 +14,12 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
 }));
 import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
 import { HostDialog } from '../../src/renderer/features/ssh/host-dialog.js';
-import { inheritedLogin } from '../../src/renderer/features/ssh/host-form-model.js';
+import {
+  inheritedFrom,
+  inheritedLogin,
+  sshPreferenceDefaults,
+} from '../../src/renderer/features/ssh/host-form-model.js';
+import { sourceText } from '../../src/renderer/features/ssh/inherited-field.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import {
   freeIdentityId,
@@ -155,6 +160,28 @@ describe('identity helpers', () => {
     });
     expect(inheritedLogin(FILE.identities, [], undefined, 'user')).toEqual({ value: undefined, from: 'default' });
   });
+  it('past every group and identity the form inherits Preferences → SSH, as main does (#571)', () => {
+    const prefs = sshPreferenceDefaults({ user: 'alice', keepAlive: 60, connectTimeout: 45 });
+    expect(inheritedLogin(FILE.identities, [], undefined, 'user', prefs)).toEqual({
+      value: 'alice',
+      from: 'preferences',
+    });
+    // An identity's user still wins over the default.
+    expect(inheritedLogin(FILE.identities, FILE.groups, undefined, 'user', prefs).from).toEqual({
+      identity: 'Deploy',
+    });
+    expect(inheritedLogin(FILE.identities, [], undefined, 'auth', prefs)).toEqual({
+      value: undefined,
+      from: 'default',
+    });
+    expect(inheritedFrom([], 'keepAlive', prefs)).toEqual({ value: 60, from: 'preferences' });
+    expect(inheritedFrom([], 'connectTimeout', prefs)).toEqual({ value: 45, from: 'preferences' });
+    expect(inheritedFrom([], 'port', prefs)).toEqual({ value: 22, from: 'default' });
+    const group = FILE.groups.map((g) => ({ ...g, ssh: { keepAlive: 5 } }));
+    expect(inheritedFrom(group, 'keepAlive', prefs)).toEqual({ value: 5, from: { group: 'Production' } });
+    expect(sshPreferenceDefaults({ user: '  ', keepAlive: 15, connectTimeout: 20 }).user).toBeUndefined();
+    expect(sourceText({ value: 'alice', from: 'preferences' })).toBe('alice · from Preferences');
+  });
 });
 
 describe('host form: Identity', () => {
@@ -188,6 +215,21 @@ describe('host form: Identity', () => {
     render(<HostDialog />);
     await screen.findByLabelText('Name');
     expect(screen.queryByRole('combobox', { name: 'Identity' })).toBeNull();
+  });
+  it('Save as host… from a one-off server saves it as typed, signed in with the agent (#537)', async () => {
+    useHostsStore.setState({
+      file: { ...FILE, identities: [], groups: [], hosts: [] },
+      dialog: { mode: 'new-host', prefill: { name: 'db.example', address: 'db.example', port: 2222, user: 'ops' } },
+    });
+    render(<HostDialog />);
+    expect((await screen.findByLabelText<HTMLInputElement>('Name')).value).toBe('db.example');
+    expect(screen.getByLabelText<HTMLInputElement>('User').value).toBe('ops');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(sentFile().hosts.at(-1)).toMatchObject({
+      name: 'db.example',
+      address: 'db.example',
+      ssh: { user: 'ops', port: 2222, auth: { kind: 'agent' } },
+    });
   });
 });
 

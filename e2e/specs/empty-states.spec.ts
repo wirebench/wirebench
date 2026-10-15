@@ -29,6 +29,15 @@ test.describe('empty states', () => {
       await expect(emptyProject.getByRole('button', { name, exact: true })).toBeVisible();
     }
 
+    // Import cURL… makes an API to hold the request; cancelling leaves no empty API behind (#575).
+    await emptyProject.getByRole('button', { name: 'Import cURL…', exact: true }).click();
+    const curlDialog = page.getByRole('dialog', { name: 'Import cURL' });
+    await expect(curlDialog).toBeVisible({ timeout: 20_000 });
+    await curlDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(curlDialog).toBeHidden();
+    await expect(page.getByTestId('api-row')).toHaveCount(0, { timeout: 20_000 });
+    await expect(emptyProject).toBeVisible({ timeout: 20_000 });
+
     await emptyProject.getByRole('button', { name: 'New REST API', exact: true }).click();
     await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('api-row')).toHaveCount(1, { timeout: 20_000 });

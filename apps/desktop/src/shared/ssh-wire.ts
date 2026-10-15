@@ -150,8 +150,12 @@ export const hostsFileWireSchema = z.strictObject({
   hosts: z.array(hostEntryWireSchema),
 });
 
+/** `preferences` is Preferences → SSH (#571); `default` the built-in value, or none. */
 const prov = <T extends z.ZodType>(value: T) =>
-  z.object({ value, from: z.union([z.literal('host'), z.literal('default'), z.object({ group: z.string() })]) });
+  z.object({
+    value,
+    from: z.union([z.literal('host'), z.literal('preferences'), z.literal('default'), z.object({ group: z.string() })]),
+  });
 
 /** `user` and `auth` may also come from an identity (its id). */
 const loginProv = <T extends z.ZodType>(value: T) =>
@@ -159,6 +163,7 @@ const loginProv = <T extends z.ZodType>(value: T) =>
     value,
     from: z.union([
       z.literal('host'),
+      z.literal('preferences'),
       z.literal('default'),
       z.object({ group: z.string() }),
       z.object({ identity: z.string() }),
@@ -259,6 +264,21 @@ export const sshSignInUserSchema = z
   .max(256)
   .regex(/^[^\s\p{Cc}]+$/u);
 
+/**
+ * A one-off connect to a server that is not saved (#537): typed as `[user@]host[:port]` in Connect to host,
+ * signed in with the SSH agent, never written to hosts.yaml. The request's `hostId` is then the renderer's
+ * own id for it (`quick-…`).
+ */
+export const sshQuickTargetSchema = z.strictObject({
+  address: z
+    .string()
+    .min(1)
+    .max(253)
+    .regex(/^[^\s@/\p{Cc}]+$/u),
+  port: z.number().int().min(1).max(65535),
+  user: sshSignInUserSchema.optional(),
+});
+
 export const sshConnectRequestSchema = z.strictObject({
   hostId: z.string(),
   cols: z.number().int().positive(),
@@ -271,6 +291,8 @@ export const sshConnectRequestSchema = z.strictObject({
    * asked for it (`ssh-sk-pin`). Used for this connect only and never stored.
    */
   skPin: z.string().min(1).max(63).optional(),
+  /** Connects to this server instead of a saved host; `hostId` names the one-off pane's host. */
+  quick: sshQuickTargetSchema.optional(),
 });
 /**
  * `agentForwarding` is left out when the host does not forward the agent. `on`: granted; `refused`: the
@@ -349,6 +371,7 @@ export const sshConnectProgressEventSchema = z.object({
 });
 
 export type SshConnectRequest = z.infer<typeof sshConnectRequestSchema>;
+export type SshQuickTarget = z.infer<typeof sshQuickTargetSchema>;
 export type SshConnectPhase = (typeof SSH_CONNECT_PHASES)[number];
 export type SshConnectProgressWire = z.infer<typeof sshConnectProgressWireSchema>;
 export type SshConnectProgressEvent = z.infer<typeof sshConnectProgressEventSchema>;

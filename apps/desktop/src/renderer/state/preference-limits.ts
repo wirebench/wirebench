@@ -33,4 +33,6 @@ export const PREFERENCE_LIMITS = {
   'terminal.fontSize': { min: 6, max: 72, integer: true },
   'terminal.lineHeight': { min: 1, max: 2, integer: false },
   'terminal.sessionLogMaxMb': { min: 10, max: 100_000, integer: true },
+  'ssh.keepAlive': { min: 0, max: 3600, integer: true },
+  'ssh.connectTimeout': { min: 1, max: 600, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceLimit>>;

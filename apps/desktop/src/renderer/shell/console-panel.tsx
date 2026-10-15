@@ -5,6 +5,7 @@ import { HttpLog } from '../features/console/http-log.js';
 import { WsiReport } from '../features/console/wsi-report.js';
 import { ProblemsView } from '../features/problems/problems-view.js';
 import { useProblemsStore } from '../state/problems.js';
+import { useProjectStore } from '../state/project.js';
 import type { ConsoleTab } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -22,13 +23,19 @@ const EMPTY_COPY: Readonly<Record<ConsoleTab, string>> = {
   errors: 'Errors from imports, sends, and validation are collected here.',
 };
 
-/** The bottom console: four tabs. Only Errors is still an empty state. */
+/**
+ * The bottom console: four tabs, or three when the workspace has no SOAP interface, since the
+ * WS-I Report only ever reports on one. Only Errors is still an empty state.
+ */
 export function ConsolePanel() {
-  const activeTab = useUiStore((state) => state.console.activeTab);
+  const hasSoapInterface = useProjectStore((state) => Object.keys(state.interfaces).length > 0);
+  const chosenTab = useUiStore((state) => state.console.activeTab);
+  // A WS-I tab left active by a workspace that had SOAP falls back to the log rather than vanish.
+  const activeTab = chosenTab === 'ws-i-report' && !hasSoapInterface ? 'http-log' : chosenTab;
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const collapseConsole = useUiStore((state) => state.collapseConsole);
   const problemCount = useProblemsStore((state) => state.items.length);
-  const tabs = TABS.map((tab) =>
+  const tabs = TABS.filter((tab) => tab.id !== 'ws-i-report' || hasSoapInterface).map((tab) =>
     tab.id === 'problems' && problemCount > 0 ? { ...tab, badge: String(problemCount) } : tab,
   );
 

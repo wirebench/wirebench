@@ -78,7 +78,8 @@ describe('ui persistence', () => {
       // `lastSize` was never written by a v3 blob; it seeds from the stored `size` (31 / 42),
       // not the global default (20 / 25) — see the dedicated migration test below.
       sidebar: { visible: false, view: 'history', size: 31, lastSize: 31 },
-      console: { visible: false, activeTab: 'problems', size: 42, lastSize: 42 },
+      // A console saved before `openOnFirstSend` existed was the user's choice already.
+      console: { visible: false, activeTab: 'problems', size: 42, lastSize: 42, openOnFirstSend: false },
       // Carried forward from the removed `details` slice; see ui-state-v4.test.tsx.
       slideOver: { ...DEFAULT_UI_STATE.slideOver, codeShell: 'powershell' },
       theme: 'light',
@@ -197,7 +198,7 @@ describe('useUiStore', () => {
   it('toggles the console and the Code slide-over independently', () => {
     useUiStore.getState().toggleConsole();
 
-    expect(useUiStore.getState().console.visible).toBe(false);
+    expect(useUiStore.getState().console.visible).toBe(true);
     expect(useUiStore.getState().slideOver.open).toBe(DEFAULT_UI_STATE.slideOver.open);
 
     useUiStore.getState().toggleCode();
@@ -428,7 +429,13 @@ describe('hydrateUi in a short window', () => {
 
   it('starts with the console collapsed, keeping its size for the expand', () => {
     const storage = fakeStorage();
-    writeUi({ ...DEFAULT_UI_STATE, console: { ...DEFAULT_UI_STATE.console, size: 30, lastSize: 30 } }, storage);
+    writeUi(
+      {
+        ...DEFAULT_UI_STATE,
+        console: { ...DEFAULT_UI_STATE.console, visible: true, size: 30, lastSize: 30, openOnFirstSend: false },
+      },
+      storage,
+    );
     hydrateUi(storage, CONSOLE_COLLAPSED_BELOW_PX - 60);
     expect(useUiStore.getState().console).toMatchObject({ visible: false, lastSize: 30 });
     // Only the collapse happened, so the saved layout still has the console open.
@@ -437,7 +444,55 @@ describe('hydrateUi in a short window', () => {
 
   it('leaves the console as it was in a tall enough window', () => {
     const storage = fakeStorage();
+    writeUi(
+      { ...DEFAULT_UI_STATE, console: { ...DEFAULT_UI_STATE.console, visible: true, openOnFirstSend: false } },
+      storage,
+    );
     hydrateUi(storage, CONSOLE_COLLAPSED_BELOW_PX);
     expect(useUiStore.getState().console.visible).toBe(true);
+  });
+});
+
+describe('the console on a first run', () => {
+  beforeEach(() => {
+    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+  });
+
+  it('starts collapsed in a fresh workspace', () => {
+    hydrateUi(fakeStorage(), CONSOLE_COLLAPSED_BELOW_PX);
+    expect(useUiStore.getState().console).toMatchObject({ visible: false, openOnFirstSend: true });
+  });
+
+  it('opens on the first send, then leaves the choice to the user', () => {
+    useUiStore.getState().openConsoleForFirstSend();
+    expect(useUiStore.getState().console).toMatchObject({ visible: true, size: 25, openOnFirstSend: false });
+
+    useUiStore.getState().collapseConsole();
+    useUiStore.getState().openConsoleForFirstSend();
+    expect(useUiStore.getState().console.visible).toBe(false);
+  });
+
+  it('does not reopen a console the user closed before sending', () => {
+    useUiStore.getState().toggleConsole();
+    useUiStore.getState().toggleConsole();
+    useUiStore.getState().openConsoleForFirstSend();
+    expect(useUiStore.getState().console.visible).toBe(false);
+  });
+
+  it('remembers the choice across a reload', () => {
+    const storage = fakeStorage();
+    hydrateUi(storage, CONSOLE_COLLAPSED_BELOW_PX);
+    useUiStore.getState().openConsoleForFirstSend();
+    useUiStore.getState().setConsoleSize(40);
+    expect(readUi(storage).console).toMatchObject({ visible: true, size: 40, openOnFirstSend: false });
+  });
+
+  it('reads a console saved before the flag existed as already chosen', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({ version: 4, state: { console: { visible: false, activeTab: 'http-log', size: 25 } } }),
+    );
+    expect(readUi(storage).console.openOnFirstSend).toBe(false);
   });
 });

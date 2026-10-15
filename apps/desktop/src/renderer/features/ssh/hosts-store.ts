@@ -13,9 +13,17 @@ import { ipc } from '../../state/ipc-client.js';
 import { failWaitingAttempt } from './connect-store.js';
 import { useProblemsStore } from '../../state/problems.js';
 
+/** What Save as host… hands the New host form from a one-off server (#537). */
+export interface HostPrefill {
+  readonly name: string;
+  readonly address: string;
+  readonly port: number;
+  readonly user?: string;
+}
+
 /** Which host / group form is open, if any. `parent` is the group a new entry is created in. */
 export type HostsDialog =
-  | { mode: 'new-host'; parent?: string }
+  | { mode: 'new-host'; parent?: string; prefill?: HostPrefill }
   | { mode: 'edit-host'; id: string }
   | { mode: 'new-group'; parent?: string }
   | { mode: 'edit-group'; id: string }

@@ -1,6 +1,7 @@
 import { Moon, Search, Sun } from 'lucide-react';
 import type { Platform } from '../lib/platform.js';
-import { shortcutFor } from '../lib/keybindings.js';
+import { formatKeybinding, shortcutFor } from '../lib/keybindings.js';
+import { TERMINAL_PALETTE_CHORD, useTerminalFocused } from '../lib/terminal-focus.js';
 import { IconButton } from '../components/icon-button.js';
 import { useUiStore } from '../state/ui.js';
 import { EnvSwitcher } from '../features/environments/env-switcher.js';
@@ -23,7 +24,11 @@ export interface TitleBarProps {
 export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette, onToggleTheme }: TitleBarProps) {
   const theme = useUiStore((state) => state.theme);
   const settingsOpen = useUiStore((state) => state.preferences.open);
-  const paletteShortcut = shortcutFor('palette.open', platform) ?? '';
+  // Off a Mac a terminal keeps Ctrl+K for the shell, so while one has the focus the hint is the chord that works there.
+  const inTerminal = useTerminalFocused() && platform !== 'mac';
+  const paletteShortcut = inTerminal
+    ? formatKeybinding(TERMINAL_PALETTE_CHORD, platform)
+    : (shortcutFor('palette.open', platform) ?? '');
 
   return (
     <header
@@ -56,7 +61,9 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
         >
           <Search size={13} aria-hidden="true" />
           <span>Search or run a command</span>
-          <span className="ml-auto font-mono text-xs text-fg-faint">{paletteShortcut}</span>
+          <span data-testid="title-bar-palette-shortcut" className="ml-auto font-mono text-xs text-fg-faint">
+            {paletteShortcut}
+          </span>
         </button>
       </div>
 

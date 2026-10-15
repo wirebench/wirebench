@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorkspaceError } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
-import { HostsService, windowHosts } from '../src/main/hosts-service.js';
+import { HostsService, sshDefaultsOf, windowHosts } from '../src/main/hosts-service.js';
 import { sshListHostsResponseSchema } from '../src/shared/ssh-wire.js';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'wb-hosts-'));
@@ -28,6 +28,24 @@ describe('windowHosts (multi-window)', () => {
     // A's cache is still A's file, not the one B just wrote.
     expect(a.current()?.hosts.map((h) => h.id)).toEqual(['a']);
     expect(readFileSync(join(dirA, 'hosts.yaml'), 'utf8')).toBe(HOST);
+  });
+
+  it('resolves against Preferences → SSH, read on every listing (#571)', async () => {
+    const d = dir();
+    writeFileSync(join(d, 'hosts.yaml'), HOST);
+    let prefs = { user: ' alice ', keepAlive: 60, connectTimeout: 45 };
+    const hosts = windowHosts(
+      () => d,
+      vi.fn(),
+      () => sshDefaultsOf(prefs),
+    );
+    const first = (await hosts.list()).resolved[0]?.ssh;
+    expect(first?.user).toEqual({ value: 'alice', from: 'preferences' });
+    expect(first?.keepAlive).toEqual({ value: 60, from: 'preferences' });
+    expect(first?.connectTimeout).toEqual({ value: 45, from: 'preferences' });
+    prefs = { user: '', keepAlive: 15, connectTimeout: 20 };
+    expect((await hosts.list()).resolved[0]?.ssh.user).toEqual({ value: undefined, from: 'default' });
+    expect(sshListHostsResponseSchema.safeParse(await hosts.list()).success).toBe(true);
   });
 
   it('a window with no workspace open is refused as workspace-not-open', async () => {

@@ -15,7 +15,9 @@ import type { SshConnector } from './ssh-connect.js';
 
 export interface ForwardServiceDeps {
   /** The `hosts.yaml` of that window's workspace (multi-window: each window holds its own). */
-  readonly hosts: (sender: WebContents) => Pick<HostsService, 'current' | 'list'>;
+  readonly hosts: (
+    sender: WebContents,
+  ) => Pick<HostsService, 'current' | 'list'> & Partial<Pick<HostsService, 'sshDefaults'>>;
   readonly connector: SshConnector;
   readonly binds: ForwardBinds;
   readonly workspaceIdOf: (sender: WebContents) => string | undefined;
@@ -376,7 +378,7 @@ export class ForwardService {
     const file = hosts.current();
     if (!file) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
     try {
-      return resolveHost(file, hostId);
+      return resolveHost(file, hostId, hosts.sshDefaults?.());
     } catch (error) {
       throw asWirebenchError(error);
     }

@@ -3,7 +3,7 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
 import { addHeader, createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
-import { selectLogRow } from '../helpers/http-log.js';
+import { selectLogRow, toggleLogFilter } from '../helpers/http-log.js';
 
 test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
   let launched: LaunchedApp | undefined;
@@ -65,10 +65,11 @@ test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
     await expect(page.getByTestId('log-detail-request-headers')).toContainText('<redacted>');
     await expect(page.getByTestId('log-detail-request-headers')).not.toContainText('e2e-placeholder');
 
-    // The filter bar: `failed` narrows to the one row, the count says so, Reset brings both back.
+    // The filter bar: `failed`, picked from the Filters menu, narrows to the one row, the count says so, Reset brings both back.
     const bar = page.getByTestId('http-log-filter');
     await expect(page.getByTestId('http-log-count')).toHaveText('2 of 2');
-    await bar.getByRole('group', { name: 'Status' }).getByRole('button', { name: 'failed' }).click();
+    await toggleLogFilter(page, 'Status', 'failed');
+    await expect(page.getByTestId('http-log-filters-count')).toHaveText('1');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toHaveAttribute('data-kind', 'failure');
     await expect(page.getByTestId('http-log-count')).toHaveText('1 of 2');

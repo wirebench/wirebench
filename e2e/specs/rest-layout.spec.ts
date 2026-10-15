@@ -111,6 +111,25 @@ test.describe('REST editor at small window sizes', () => {
         await expect(page.getByTestId('rest-generated-headers')).toBeVisible();
         expect(await sidewaysOverflow(page), `${where}, request Headers tab`).toEqual([]);
         await openRequestTab(page, 'Params');
+
+        // The HTTP Log's toolbar fits on its line: search, Filters, Reset and Preserve log all in view.
+        // Only with the code panel closed: open, it takes its width out of the console's column.
+        if (codePanel) {
+          continue;
+        }
+        const bar = page.getByTestId('http-log-filter');
+        expect(
+          await bar.evaluate((element) => element.scrollWidth > element.clientWidth + 1),
+          `${where}, HTTP Log filter bar scrolls sideways`,
+        ).toBe(false);
+        for (const control of [
+          bar.getByRole('searchbox'),
+          page.getByTestId('http-log-filters'),
+          bar.getByRole('button', { name: 'Reset' }),
+          bar.getByRole('button', { name: 'Preserve log' }),
+        ]) {
+          await expect(control, where).toBeInViewport({ ratio: 1 });
+        }
       }
     }
 
@@ -126,10 +145,11 @@ test.describe('REST editor at small window sizes', () => {
     launched = await launchApp({ adaptiveLayout: true });
     const page = launched.window;
     await createWorkspace(page, 'Short');
-    // A runner whose screen already clamps the window below the threshold starts collapsed too.
-    if ((await page.evaluate(() => window.innerHeight)) >= 720) {
-      await expect(page.getByTestId('console')).toBeVisible();
-    }
+    // A fresh workspace starts collapsed anyway, so open the console first: the short window is what
+    // has to close it. A runner whose screen already clamps the window below the threshold starts
+    // collapsed too, with or without this.
+    await page.getByTestId('status-bar-console').click();
+    await expect(page.getByTestId('console')).toBeVisible();
 
     test.skip(!(await setWindowSize(launched, SIZES[1])), 'The screen is smaller than 1024×700');
     await page.reload();

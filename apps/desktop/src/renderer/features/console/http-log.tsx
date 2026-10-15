@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Lock, LockOpen } from 'lucide-react';
+import { Download, Lock, LockOpen, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
@@ -338,6 +338,7 @@ export function HttpLog() {
             <Button
               variant="ghost"
               disabled={visible.length === 0}
+              aria-label="Export HAR"
               title="Export the rows shown as a HAR file (secrets are always masked)"
               onClick={() => {
                 void (async () => {
@@ -348,10 +349,11 @@ export function HttpLog() {
                 })();
               }}
             >
-              Export HAR
+              {/* Icons, so search, Reset and Preserve log keep their room in a narrow console. */}
+              <Download aria-hidden="true" className="size-3.5" />
             </Button>
-            <Button variant="ghost" onClick={clearLog}>
-              Clear
+            <Button variant="ghost" aria-label="Clear" title="Clear the log" onClick={clearLog}>
+              <Trash2 aria-hidden="true" className="size-3.5" />
             </Button>
           </>
         }

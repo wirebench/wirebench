@@ -58,7 +58,7 @@ import {
 import { SshImportService } from './ssh-import.js';
 import { KnownHostsImportService } from './known-hosts-import.js';
 import { sshAreaEndsOnSwitch, sshScopeOf, sshSecretsFor } from './ssh-window.js';
-import { windowHosts, type HostsService } from './hosts-service.js';
+import { sshDefaultsOf, windowHosts, type HostsService } from './hosts-service.js';
 import { windowSnippets, type SnippetsService } from './snippets-service.js';
 import { LAYOUTS_FILE, LayoutStore } from './layout-store.js';
 import { MCP_APPROVALS_FILE, McpApprovals, McpApprovalStore } from './mcp-approvals.js';
@@ -685,6 +685,7 @@ function createWindowScope(window: BrowserWindow, sweepJoining: boolean): Window
     () => {
       send(events.ssh.hostsChanged, {});
     },
+    () => sshDefaultsOf(preferencesService.get().ssh),
   );
   // `snippets.yaml` beside it, dropped on the same workspace switch.
   const snippets = windowSnippets(
@@ -1284,8 +1285,15 @@ void app.whenReady().then(() => {
   registerGlobalsChannels(globalProperties, onGlobalsChanged);
   registerCurrentValuesChannels(currentValues);
   registerCookiesChannels(cookieStore);
+  let sshDefaultsSent = JSON.stringify(preferencesService.get().ssh);
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
+    // Preferences → SSH is the hosts' last level (#571): every window's resolved hosts change with it.
+    const sshDefaults = JSON.stringify(preferences.ssh);
+    if (sshDefaults !== sshDefaultsSent) {
+      sshDefaultsSent = sshDefaults;
+      broadcast(events.ssh.hostsChanged, {});
+    }
     // Turning autosave on mid-session must pick up whatever is already outstanding, rather than
     // waiting for one more edit to arm the timer.
     if (preferences.editor.autosave) {

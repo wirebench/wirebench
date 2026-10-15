@@ -4,8 +4,11 @@
  * trap; `test/renderer-eager-imports.test.ts` guards it).
  */
 
-/** What a setting resolves to when no host or group sets it; the resolver in `@wirebench/ssh` must agree (tested). */
-export const SSH_DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20 } as const;
+/**
+ * What the port resolves to when no host or group sets it; the resolver in `@wirebench/ssh` must agree (tested).
+ * The user, keep-alive and connect timeout fall back to Preferences → SSH instead (#571).
+ */
+export const SSH_DEFAULTS = { port: 22 } as const;
 
 export const SSH_SECRET_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 

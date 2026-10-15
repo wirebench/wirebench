@@ -123,6 +123,38 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('sets the default user, keep-alive and connect timeout from the SSH section (#571)', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'SSH' }));
+
+    const user = screen.getByLabelText('Default user');
+    fireEvent.change(user, { target: { value: 'alice' } });
+    fireEvent.keyDown(user, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { ssh: { user: 'alice' } } });
+    });
+
+    const keepAlive = screen.getByLabelText<HTMLInputElement>('Keep-alive');
+    expect(keepAlive.value).toBe('15');
+    fireEvent.change(keepAlive, { target: { value: '30' } });
+    fireEvent.keyDown(keepAlive, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { ssh: { keepAlive: 30 } } });
+    });
+
+    const timeout = screen.getByLabelText<HTMLInputElement>('Connect timeout');
+    fireEvent.change(timeout, { target: { value: '0' } });
+    fireEvent.keyDown(timeout, { key: 'Enter' });
+    expect(screen.getByText('Enter a whole number from 1 to 600')).toBeTruthy();
+    fireEvent.change(timeout, { target: { value: '45' } });
+    fireEvent.keyDown(timeout, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { ssh: { connectTimeout: 45 } } });
+    });
+  });
+
   it('sets the terminal paste and copy preferences from the Terminal section', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
@@ -727,6 +759,25 @@ describe('PreferencesEditor — search', () => {
     expect(screen.getByTestId('settings-search-summary').textContent).toMatch(/^\d+ settings? match “timeout”$/);
   });
 
+  it('finds the SSH connection defaults by "ssh", "user", "keep-alive" and "timeout" (#571)', () => {
+    render(<PreferencesEditor />);
+    for (const [query, label] of [
+      ['ssh', 'Default user'],
+      ['user', 'Default user'],
+      ['keep-alive', 'Keep-alive'],
+      ['timeout', 'Connect timeout'],
+    ] as const) {
+      search(query);
+      const results = screen.getByTestId('settings-search-results');
+      expect(within(results).getByLabelText(label)).toBeTruthy();
+      expect(
+        within(results)
+          .getAllByTestId('setting-crumb')
+          .map((crumb) => crumb.textContent),
+      ).toContain('Workspace › SSH');
+    }
+  });
+
   it('matches hints, group titles and section names too', () => {
     render(<PreferencesEditor />);
     search('keychain');
@@ -757,6 +808,16 @@ describe('PreferencesEditor — search', () => {
     fireEvent.click(screen.getByTestId('settings-search-open-shortcuts'));
     expect(screen.getByTestId('shortcuts-table')).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Search settings').value).toBe('');
+  });
+
+  it('finds the Terminal and SSH settings by "ssh" (#537, #571)', () => {
+    render(<PreferencesEditor />);
+    search('ssh');
+    const crumbs = within(screen.getByTestId('settings-search-results'))
+      .getAllByTestId('setting-crumb')
+      .map((crumb) => crumb.textContent);
+    expect(crumbs.length).toBeGreaterThan(0);
+    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal', 'Workspace › SSH']));
   });
 
   it('says so when nothing matches', () => {

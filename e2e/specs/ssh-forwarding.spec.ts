@@ -52,7 +52,7 @@ async function addLocalRule(
 ): Promise<void> {
   await dialog.getByRole('button', { name: 'Add rule' }).click();
   const form = dialog.getByTestId('forward-form').last();
-  await form.getByLabel('Id', { exact: true }).fill(rule.id);
+  await form.getByLabel('Name', { exact: true }).fill(rule.id);
   await form.getByLabel('Port', { exact: true }).fill(String(rule.port));
   await form.getByLabel('Target (as the host sees it)').fill(rule.target);
   if (rule.autoStart === true) await form.getByRole('checkbox', { name: "Start with the host's terminals" }).check();

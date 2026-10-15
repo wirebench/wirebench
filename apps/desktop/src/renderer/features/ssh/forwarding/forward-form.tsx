@@ -25,7 +25,7 @@ export function defaultBind(type: ForwardFullEntry['type']): string {
  * twice on one level) and its refusal shows as for any host edit.
  */
 export function forwardProblem(entry: ForwardFullEntry): string | undefined {
-  if (!RULE_ID.test(entry.id)) return 'An id is lower-case letters, digits and dashes';
+  if (!RULE_ID.test(entry.id)) return 'A name is lower-case letters, digits and dashes';
   if (!Number.isInteger(entry.port) || entry.port < 1 || entry.port > 65535) return 'A port is 1–65535';
   if (entry.type !== 'dynamic' && !TARGET.test(entry.target ?? '')) return 'A target is host:port';
   return undefined;
@@ -99,7 +99,7 @@ export function ForwardForm({ entry, onChange, onRemove, note }: ForwardFormProp
       </div>
       <div className="grid grid-cols-2 gap-2">
         {field(
-          'Id',
+          'Name',
           <input
             className={INPUT_CLASS}
             value={entry.id}

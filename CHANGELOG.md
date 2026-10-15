@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **SSH connection defaults in Settings.** Settings → Workspace → **SSH** sets a default user, keep-alive
+  and connect timeout (`ssh.user`, `ssh.keepAlive`, `ssh.connectTimeout`) for every host that does not
+  set its own, directly, through a group or through an identity. The host and group forms show such a
+  value as "from Preferences" with the same override switch as a group's, and the host details say so
+  too. A default user completes a host that has a way to sign in. `wirebench ssh forward` does not read
+  these per-machine settings and keeps the built-in values (#571).
+- **Connect to a server that isn't saved.** Typing `user@host:port` in **Connect to Host…** offers
+  **Connect to …**, a terminal signed in with the SSH agent that writes nothing to `hosts.yaml`, and
+  **Save as host…**, which opens New host filled in from it (#537).
 - **Terminal tab marks.** A terminal tab behind another one shows when it printed something new, when
   it waits for input (a password, passphrase or verification code prompt, or a yes/no question), and
   when its session failed or dropped. Each mark has its own shape as well as its own colour, split
@@ -345,6 +354,22 @@ All notable changes to this project are documented here. The format follows
   as well as JSON and XML, one tag per line with script, style and pre content kept as it came, and
   its **Wrap lines** toggle holds for the rest of the session. The Query tab opens a JSON body on
   JSONPath and an XML one on XPath, and its Run button shows Ctrl+Enter on Linux and Windows (#574).
+- **SSH area polish.** The Hosts cards keep the name on the first line and put "needs user" under it;
+  group chips give way to a ⋯ menu on each group heading with **Show only this group**; the SSH menu
+  hides zero counts and shows running forwards as a green dot; Recent shows only with more than six
+  hosts; a key's Copy public key, Attach certificate… and Set value… sit in its ⋯ menu; forwarding rows
+  say Local, Remote or Dynamic and "from this host" or "from group X", and the rule form's Id is Name;
+  the split picker puts the current pane's host first and marks hosts that need a user; the Files tab has
+  a toolbar and one selection style; a snippet run with an empty variable asks first; Settings search
+  finds Terminal under "ssh"; <kbd>Ctrl+Shift+P</kbd> opens the palette from a terminal, and the title
+  bar says so; and the status bar shows the focused session instead of the request items, without
+  counting failed SSH connects as request problems (#537).
+- **A quieter console on a first run.** A fresh workspace starts with the console collapsed, and the
+  first send opens it on the HTTP Log; after that it stays open, closed or at the height you leave it.
+  The WS-I Report tab shows only when the workspace has a SOAP interface. The HTTP Log's method,
+  status and protocol choices move into a **Filters ▾** menu that shows how many are on, and Export
+  HAR and Clear become icon buttons, so search, Reset and Preserve log stay in view in a narrow
+  console (#575).
 - **Tab strips that fit, and a REST editor that fits a 1024×700 window.** A tab strip never grows
   wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
   shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer
@@ -410,6 +435,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Cancelling Import cURL in an empty project leaves no empty API.** The API made to hold the
+  request is removed again when the dialog closes without importing (#575).
 - **SSH quick wins.** Deleting a host asks first, naming how many open sessions will close, and those
   terminal panes and its Files tab close with it; Delete is drawn as a danger item. Dialogs share one
   layer scale (menus, then dialogs, then toasts), so a split divider no longer draws through the Save

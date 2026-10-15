@@ -39,7 +39,7 @@ const context: CommandContext = {
   platform: 'mac',
   ui: {
     sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
-    console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+    console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25, openOnFirstSend: false },
     slideOver: { open: false, width: 420, codeShell: 'posix', codeLanguage: 'curl', codeSettings: {} },
     theme: 'dark',
     editorLineNumbers: true,

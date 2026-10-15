@@ -19,9 +19,9 @@ export function forwardKey(hostId: string, ruleId: string): string {
   return `${hostId}/${ruleId}`;
 }
 
-/** `local` → L, `remote` → R, `dynamic` → D. */
-export function typeLetter(type: ResolvedForwardWire['rule']['type']): string {
-  return type === 'local' ? 'L' : type === 'remote' ? 'R' : 'D';
+/** `local` → Local, `remote` → Remote, `dynamic` → Dynamic. */
+export function typeWord(type: ResolvedForwardWire['rule']['type']): string {
+  return type === 'local' ? 'Local' : type === 'remote' ? 'Remote' : 'Dynamic';
 }
 
 /** `[::1]` for an IPv6 literal, so `address:port` reads unambiguously. */

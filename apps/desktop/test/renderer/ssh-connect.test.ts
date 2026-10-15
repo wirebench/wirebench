@@ -11,6 +11,7 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { WorkspaceWire } from '../../src/shared/wire-base.js';
 import type { ResolvedHostWire } from '../../src/shared/ssh-wire.js';
 import { setSignInUser, useConnectStore } from '../../src/renderer/features/ssh/connect-store.js';
+import { useQuickHostsStore } from '../../src/renderer/features/ssh/quick-hosts.js';
 
 const SIZE = { cols: 80, rows: 24 };
 const A = { paneId: 'pa', hostId: 'a' };
@@ -195,4 +196,14 @@ it('a host with no user connects nothing and fails as a settings problem; a type
   expect(connect).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'a', user: 'typed' }));
   setSignInUser('pa', undefined);
   useHostsStore.setState({ resolved: [] });
+});
+
+it('a one-off server connects with its target and stays out of the recent connections (#537)', async () => {
+  const hostId = useQuickHostsStore.getState().add({ address: 'h.example', port: 2222, user: 'me' });
+  connect.mockResolvedValueOnce({ ok: true, value: { sessionId: 's1' } });
+  expect(await connectToHost({ paneId: 'pq', hostId }, SIZE)).toEqual({ sessionId: 's1' });
+  expect(connect).toHaveBeenCalledWith(
+    expect.objectContaining({ hostId, quick: { address: 'h.example', port: 2222, user: 'me' } }),
+  );
+  expect(readRecent('w1')).toEqual([]);
 });

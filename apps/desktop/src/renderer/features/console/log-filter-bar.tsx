@@ -1,9 +1,12 @@
 /**
- * The HTTP Log's filter bar: a search field (URL, headers, bodies, name; regex and match-case toggles), chip groups for method, status class and protocol
- * (multi-select; none selected means all), the "n of m" count, and Reset — which clears the filter
+ * The HTTP Log's filter bar: a search field (URL, headers, bodies, name; regex and match-case toggles),
+ * a **Filters ▾** menu of method, status class and protocol choices (multi-select; none selected means
+ * all) whose button shows how many are on, the "n of m" count, and Reset — which clears the filter
  * and is distinct from Clear, which empties the log. State lives in the exchanges store.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Check, ChevronDown } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { StatusClass } from '../../state/exchanges.js';
 import { useExchangesStore } from '../../state/exchanges.js';
@@ -25,28 +28,35 @@ function toggled<T>(values: readonly T[], value: T): T[] {
   return values.includes(value) ? values.filter((candidate) => candidate !== value) : [...values, value];
 }
 
-function Chip({
+const ITEM_CLASS =
+  'flex cursor-pointer items-center gap-2 rounded px-2 py-1 font-mono text-xs text-fg-default outline-none data-[highlighted]:bg-accent-muted';
+
+/** One choice in the Filters menu; picking it leaves the menu open for the next one. */
+function FilterItem({
   label,
-  pressed,
+  checked,
   onToggle,
 }: {
   readonly label: string;
-  readonly pressed: boolean;
+  readonly checked: boolean;
   readonly onToggle: () => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={onToggle}
-      className={`rounded-full border px-2 py-0.5 font-mono text-xs transition-colors ${
-        pressed
-          ? 'border-accent bg-surface-selected text-fg-default'
-          : 'border-hairline text-fg-muted hover:bg-surface-hover hover:text-fg-default'
-      }`}
+    <DropdownMenu.CheckboxItem
+      checked={checked}
+      onCheckedChange={onToggle}
+      onSelect={(event) => {
+        event.preventDefault();
+      }}
+      className={ITEM_CLASS}
     >
+      <span className="flex size-3.5 items-center justify-center">
+        <DropdownMenu.ItemIndicator>
+          <Check aria-hidden="true" className="size-3.5" />
+        </DropdownMenu.ItemIndicator>
+      </span>
       {label}
-    </button>
+    </DropdownMenu.CheckboxItem>
   );
 }
 
@@ -78,11 +88,12 @@ function SearchToggle({
   );
 }
 
-function ChipGroup({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
+function FilterGroup({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
   return (
-    <div role="group" aria-label={label} className="flex shrink-0 items-center gap-1">
+    <DropdownMenu.Group aria-label={label} className="py-0.5">
+      <DropdownMenu.Label className="px-2 py-0.5 text-xs text-fg-subtle">{label}</DropdownMenu.Label>
       {children}
-    </div>
+    </DropdownMenu.Group>
   );
 }
 
@@ -124,15 +135,17 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
     () => text !== '' && compileMatcher({ text, regex: filter.regex, matchCase: filter.matchCase }).invalid === true,
     [text, filter.regex, filter.matchCase],
   );
+  const active = filter.methods.length + filter.statuses.length + filter.protocols.length;
 
   return (
     <div
       data-testid="http-log-filter"
-      /* One line, scrolled sideways when it does not fit: a wrapped bar eats the height of a short
-         console, and the rows are what the panel is for. */
+      /* One line: a wrapped bar eats the height of a short console, and the rows are what the panel is
+         for. The choices sit in the Filters menu and the search field gives way first, so search, Reset
+         and Preserve log stay in view; the bar scrolls sideways only when even that is not enough. */
       className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-hairline px-2 py-1"
     >
-      <div className="relative flex shrink-0 items-center">
+      <div className="relative flex w-64 min-w-32 shrink items-center">
         <input
           type="search"
           aria-label="Search the log"
@@ -143,7 +156,7 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
           onChange={(event) => {
             setText(event.currentTarget.value);
           }}
-          className={`h-row w-64 rounded-md border bg-surface-raised pl-2 pr-12 font-mono text-xs text-fg-default placeholder:text-fg-faint ${
+          className={`h-row w-full rounded-md border bg-surface-raised pl-2 pr-12 font-mono text-xs text-fg-default placeholder:text-fg-faint ${
             invalid ? 'border-status-danger' : 'border-hairline'
           }`}
         />
@@ -166,49 +179,82 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
           />
         </div>
       </div>
-      <ChipGroup label="Method">
-        {methods.map((method) => (
-          <Chip
-            key={method}
-            label={method}
-            pressed={filter.methods.includes(method)}
-            onToggle={() => {
-              setFilter({ methods: toggled(filter.methods, method) });
-            }}
-          />
-        ))}
-      </ChipGroup>
-      <ChipGroup label="Status">
-        {STATUS_CLASSES.map((status) => (
-          <Chip
-            key={status}
-            label={status}
-            pressed={filter.statuses.includes(status)}
-            onToggle={() => {
-              setFilter({ statuses: toggled(filter.statuses, status) });
-            }}
-          />
-        ))}
-      </ChipGroup>
-      <ChipGroup label="Protocol">
-        {PROTOCOLS.map((protocol) => (
-          <Chip
-            key={protocol.id}
-            label={protocol.label}
-            pressed={filter.protocols.includes(protocol.id)}
-            onToggle={() => {
-              setFilter({ protocols: toggled(filter.protocols, protocol.id) });
-            }}
-          />
-        ))}
-      </ChipGroup>
+      <DropdownMenu.Root modal={false}>
+        <DropdownMenu.Trigger asChild>
+          <Button
+            variant="ghost"
+            data-testid="http-log-filters"
+            aria-label={active === 0 ? 'Filters' : `Filters, ${String(active)} on`}
+            className="shrink-0"
+          >
+            Filters
+            {active > 0 && (
+              <span
+                data-testid="http-log-filters-count"
+                className="rounded-full bg-accent px-1.5 font-mono text-xs leading-4 text-fg-on-accent"
+              >
+                {active}
+              </span>
+            )}
+            <ChevronDown aria-hidden="true" className="size-3.5" />
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="start"
+            sideOffset={4}
+            className="z-dropdown max-h-[60vh] min-w-40 overflow-y-auto rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          >
+            {methods.length > 0 && (
+              <FilterGroup label="Method">
+                {methods.map((method) => (
+                  <FilterItem
+                    key={method}
+                    label={method}
+                    checked={filter.methods.includes(method)}
+                    onToggle={() => {
+                      setFilter({ methods: toggled(filter.methods, method) });
+                    }}
+                  />
+                ))}
+              </FilterGroup>
+            )}
+            <FilterGroup label="Status">
+              {STATUS_CLASSES.map((status) => (
+                <FilterItem
+                  key={status}
+                  label={status}
+                  checked={filter.statuses.includes(status)}
+                  onToggle={() => {
+                    setFilter({ statuses: toggled(filter.statuses, status) });
+                  }}
+                />
+              ))}
+            </FilterGroup>
+            <FilterGroup label="Protocol">
+              {PROTOCOLS.map((protocol) => (
+                <FilterItem
+                  key={protocol.id}
+                  label={protocol.label}
+                  checked={filter.protocols.includes(protocol.id)}
+                  onToggle={() => {
+                    setFilter({ protocols: toggled(filter.protocols, protocol.id) });
+                  }}
+                />
+              ))}
+            </FilterGroup>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
       <span data-testid="http-log-count" className="ml-auto shrink-0 font-mono text-xs text-fg-subtle">
         {shown} of {total}
       </span>
-      <Button variant="ghost" onClick={resetFilter}>
+      <Button variant="ghost" className="shrink-0" onClick={resetFilter}>
         Reset
       </Button>
-      {actions !== undefined && <div className="flex items-center gap-1 border-l border-hairline pl-2">{actions}</div>}
+      {actions !== undefined && (
+        <div className="flex shrink-0 items-center gap-1 border-l border-hairline pl-2">{actions}</div>
+      )}
     </div>
   );
 }

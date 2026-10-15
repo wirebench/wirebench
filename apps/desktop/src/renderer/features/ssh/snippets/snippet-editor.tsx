@@ -105,7 +105,6 @@ function SnippetForm(props: {
   const { file, snippet } = props;
   const save = useSnippetsStore((s) => s.save);
   const openEditor = useSnippetsStore((s) => s.openEditor);
-  const closeEditor = useSnippetsStore((s) => s.closeEditor);
   const [name, setName] = useState(snippet?.name ?? '');
   const [packageChoice, setPackageChoice] = useState(props.packageId ?? NO_PACKAGE);
   const [newPackage, setNewPackage] = useState('');
@@ -532,7 +531,6 @@ function SnippetForm(props: {
             </Button>
           </>
         )}
-        <Button onClick={closeEditor}>Close</Button>
         <Button variant="primary" type="submit" disabled={!canSave || saving}>
           Save
         </Button>

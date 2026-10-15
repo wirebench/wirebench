@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { SquareTerminal } from 'lucide-react';
+import { ArrowLeftRight, FolderPlus, Lock, PencilLine, SquareTerminal, Trash2 } from 'lucide-react';
 import { Button } from '../../../components/button.js';
+import { IconButton } from '../../../components/icon-button.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import { setCloseGuard, useEditorsStore } from '../../../state/editors.js';
 import { ConflictDialog } from './conflict-dialog.js';
 import { EditBanner } from './edit-banner.js';
+import { fileActions } from './file-actions.js';
 import { useEditsStore } from './edits-store.js';
 import { FilePane } from './file-pane.js';
 import { formatSize } from './format.js';
@@ -16,6 +18,73 @@ import { listenToTransfers, useTransfersStore } from './transfers-store.js';
 import type { SftpEditEvent } from '../../../../shared/sftp-wire.js';
 
 const SEPARATOR = 'w-px bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
+
+/**
+ * The tab's toolbar: what the right-click menu offers for the pane in use (the host's until the other is
+ * used), as icon buttons, each disabled when that pane's selection does not allow it.
+ */
+function FilesToolbar({ tabId }: { readonly tabId: string }) {
+  const paneId = useFilesStore((s) => {
+    const id = s.activePanes[tabId] ?? tabId;
+    return s.panes[id] === undefined ? tabId : id;
+  });
+  const pane = useFilesStore((s) => s.panes[paneId]);
+  const ready = pane !== undefined && pane.status !== 'connecting' && pane.status !== 'error' && pane.path !== '';
+  const count = pane?.selected.length ?? 0;
+  const local = pane?.place.kind === 'local';
+  return (
+    <div role="toolbar" aria-label="Files" data-testid="files-toolbar" className="flex items-center gap-0.5">
+      <IconButton
+        label="New folder"
+        disabled={!ready}
+        onClick={() => {
+          fileActions.newFolder(paneId);
+        }}
+      >
+        <FolderPlus size={14} aria-hidden="true" />
+      </IconButton>
+      <IconButton
+        label="Rename"
+        disabled={!ready || count !== 1}
+        onClick={() => {
+          fileActions.rename(paneId);
+        }}
+      >
+        <PencilLine size={14} aria-hidden="true" />
+      </IconButton>
+      <IconButton
+        label="Delete…"
+        disabled={!ready || count === 0}
+        onClick={() => {
+          fileActions.remove(paneId);
+        }}
+      >
+        <Trash2 size={14} aria-hidden="true" />
+      </IconButton>
+      {/* Permissions are changed on a host only, so this machine's pane has no button for them. */}
+      {!local && (
+        <IconButton
+          label="Permissions…"
+          disabled={!ready || count !== 1}
+          onClick={() => {
+            fileActions.permissions(paneId);
+          }}
+        >
+          <Lock size={14} aria-hidden="true" />
+        </IconButton>
+      )}
+      <IconButton
+        label="Copy to other pane"
+        disabled={!ready || count === 0}
+        onClick={() => {
+          fileActions.copyToOtherPane(paneId);
+        }}
+      >
+        <ArrowLeftRight size={14} aria-hidden="true" />
+      </IconButton>
+    </div>
+  );
+}
 
 /**
  * A host's Files tab: this machine on the left, the host on the right through the tab's own SFTP session
@@ -60,6 +129,7 @@ export function FilesTab({ tabId, hostId }: { readonly tabId: string; readonly h
   return (
     <div className="flex h-full flex-col" data-testid="ssh-files">
       <div className="flex items-center gap-2 border-b border-hairline px-2 py-1">
+        <FilesToolbar tabId={tabId} />
         <span className="min-w-0 flex-1" />
         <Button
           variant="ghost"

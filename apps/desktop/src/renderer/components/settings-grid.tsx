@@ -79,6 +79,8 @@ export interface SettingsSearch {
   readonly crumb: string;
   /** The section's own name, which every row in it matches on. */
   readonly section: string;
+  /** The section's other words ("ssh" for Terminal), matched like its name. */
+  readonly keywords?: readonly string[];
 }
 
 const SearchContext = createContext<SettingsSearch | undefined>(undefined);
@@ -98,9 +100,15 @@ export function SettingsSearchProvider({
 /** Whether `query` hits any of a row's label, hint, group title or section name. */
 export function settingMatches(
   query: string,
-  fields: { readonly label: string; readonly hint?: string; readonly group?: string; readonly section?: string },
+  fields: {
+    readonly label: string;
+    readonly hint?: string;
+    readonly group?: string;
+    readonly section?: string;
+    readonly keywords?: readonly string[];
+  },
 ): boolean {
-  return [fields.label, fields.hint ?? '', fields.group ?? '', fields.section ?? '']
+  return [fields.label, fields.hint ?? '', fields.group ?? '', fields.section ?? '', ...(fields.keywords ?? [])]
     .join('\n')
     .toLowerCase()
     .includes(query);
@@ -118,6 +126,7 @@ function useSearchHides(label: string, hint: string | undefined): SettingsSearch
     ...(hint === undefined ? {} : { hint }),
     ...(group === undefined ? {} : { group }),
     section: search.section,
+    ...(search.keywords === undefined ? {} : { keywords: search.keywords }),
   });
   return visible ? search : false;
 }

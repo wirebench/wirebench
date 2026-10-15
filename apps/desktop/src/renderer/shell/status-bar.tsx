@@ -78,8 +78,14 @@ export function StatusBar() {
       .sort()
       .at(-1),
   );
-  const problemCount = useProblemsStore((state) => state.items.length);
-  const errorCount = useProblemsStore((state) => state.items.filter((item) => item.severity === 'error').length);
+  // A failed SSH connect is a problem of the Problems panel, but not of the requests these counts are about:
+  // its connection screen already says what failed.
+  const problemCount = useProblemsStore((state) => state.items.filter(countsAsRequestProblem).length);
+  const errorCount = useProblemsStore(
+    (state) => state.items.filter((item) => countsAsRequestProblem(item) && item.severity === 'error').length,
+  );
+  // With the SSH area's tabs in front, the request items (TLS, the last send) say nothing about what is shown.
+  const sshShown = useEditorsStore((state) => state.displayedSet === 'ssh');
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const enabledAreas = useUiStore((state) => state.enabledAreas);
   const sidebarVisible = useUiStore((state) => state.sidebar.visible);
@@ -182,12 +188,16 @@ export function StatusBar() {
             </button>
           </>
         )}
-        {(workbenchShown || saveLabel !== undefined) && (
-          <span aria-hidden="true" className="text-fg-faint">
-            ·
-          </span>
+        {!sshShown && (
+          <>
+            {(workbenchShown || saveLabel !== undefined) && (
+              <span aria-hidden="true" className="text-fg-faint">
+                ·
+              </span>
+            )}
+            <span data-testid="status-bar-tls">{tlsLabel}</span>
+          </>
         )}
-        <span data-testid="status-bar-tls">{tlsLabel}</span>
         {trustInvalid && (
           <>
             <span aria-hidden="true" className="text-fg-faint">
@@ -245,7 +255,7 @@ export function StatusBar() {
           </>
         )}
       </div>
-      {latest === undefined ? (
+      {sshShown ? null : latest === undefined ? (
         <span data-testid="status-bar-last" className="font-mono">
           no requests sent
         </span>
@@ -262,6 +272,11 @@ export function StatusBar() {
       )}
     </footer>
   );
+}
+
+/** A problem the status bar counts: anything but a failed SSH connect (grouped `ssh:<hostId>`). */
+function countsAsRequestProblem(item: { readonly groupId: string }): boolean {
+  return !item.groupId.startsWith('ssh:');
 }
 
 /** `last: Connection refused in 3.0 ms` — a send that produced no response, named as the response pane names it. */
