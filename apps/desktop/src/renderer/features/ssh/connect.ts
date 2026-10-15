@@ -293,6 +293,8 @@ export function editHost(hostId: string): void {
   const hosts = useHostsStore.getState();
   hosts.setHomeView('hosts');
   hosts.selectHost(hostId);
+  // The form lives in the details panel, so Edit opens it even when it was put away.
+  hosts.setDetailsOpen(true);
   hosts.openDialog({ mode: 'edit-host', id: hostId });
 }
 

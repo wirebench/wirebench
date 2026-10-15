@@ -173,7 +173,7 @@ describe('proxy helpers', () => {
 
 describe('host details', () => {
   it('lists the proxy with its source and password secret, and the command carries the ProxyCommand', () => {
-    useHostsStore.setState({ selectedHostId: 'build', detailsOpen: true });
+    useHostsStore.setState({ selectedHostId: 'build' });
     render(<HostDetails />);
     const row = screen.getByText('Proxy').parentElement!;
     expect(row.textContent).toContain('SOCKS5 proxy.corp:1080 as me');

@@ -1,14 +1,16 @@
 /**
  * The selected host, in the right slide-over (where the Code panel shows for a request): how it
  * connects and where each setting comes from, how it signs in and whether that secret has a value
- * here, the host key trusted for it, and the `ssh` command that matches. Selecting a card on the
- * Hosts tab opens it; the right rail's icon, its close icon and Escape put it away.
+ * here, the host key trusted for it, and the `ssh` command that matches. The right rail's icon (and Edit)
+ * opens it; the rail's icon, its close icon and Escape put it away. Selecting a card neither opens nor
+ * closes it, it only changes the host shown. Whether it shows is remembered on this machine.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Copy, FolderOpen, Pencil, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
+import { useUiStore } from '../../state/ui.js';
 import { ipc } from '../../state/ipc-client.js';
 import { editHost, openTerminalFor } from './connect.js';
 import { openFiles } from './files/open-files.js';
@@ -23,15 +25,15 @@ import { HostSessionLogs } from './session-logs.js';
 import { sessionStatus } from './session-status.js';
 import { schemeLabel } from './terminal-schemes.js';
 
-/** Whether the details slide-over is in front: the Hosts tab is showing, a host is picked, and it was not put away. */
+/**
+ * Whether the details slide-over is in front: the Hosts tab is showing and the panel was not put away.
+ * With no host picked (after a restart, say) it still shows, and asks for one.
+ */
 export function useHostDetailsShown(): boolean {
   const homeInFront = useEditorsStore((s) => s.displayedSet === 'ssh' && s.activeId === undefined);
   const onHosts = useHostsStore((s) => s.homeView === 'hosts');
-  const open = useHostsStore((s) => s.detailsOpen);
-  const exists = useHostsStore(
-    (s) => s.selectedHostId !== undefined && findHost(s.file, s.selectedHostId) !== undefined,
-  );
-  return homeInFront && onHosts && open && exists;
+  const open = useUiStore((s) => s.slideOver.hostDetailsOpen === true);
+  return homeInFront && onHosts && open;
 }
 
 type Provenance = ResolvedHostWire['ssh']['port']['from'];
@@ -113,7 +115,13 @@ export function HostDetails() {
   }, [selectedHostId, hostStatus]);
 
   const entry = selectedHostId === undefined ? undefined : findHost(file, selectedHostId);
-  if (entry === undefined) return null;
+  if (entry === undefined) {
+    return (
+      <p data-testid="host-details-empty" className="px-1 py-3 text-sm text-fg-subtle">
+        Select a host to see its details.
+      </p>
+    );
+  }
   if (dialog?.mode === 'edit-host' && dialog.id === entry.id) {
     return (
       <div data-testid="host-edit" className="px-1 py-3">

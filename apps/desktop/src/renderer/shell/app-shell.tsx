@@ -174,8 +174,7 @@ export function AppShell() {
   const codeArea = useEditorsStore((state) => rightPanelFor(state.displayedSet) === 'code');
   const settingsOpen = useUiStore((state) => state.preferences.open);
   const toggleHostDetails = useCallback(() => {
-    const hosts = useHostsStore.getState();
-    hosts.setDetailsOpen(!hosts.detailsOpen);
+    useHostsStore.getState().setDetailsOpen(useUiStore.getState().slideOver.hostDetailsOpen !== true);
   }, []);
   const closeHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(false);

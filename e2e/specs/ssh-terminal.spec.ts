@@ -57,8 +57,9 @@ test('connect to a host, trust its key, type, see the echo, end the session', as
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
 
-  // Picking the card shows its details on the right; Escape puts them away.
+  // Picking the card and the rail's Host details icon shows its details on the right; Escape puts them away.
   await page.getByTestId('host-row-box').click();
+  await page.getByTestId('rail-host-details').click();
   await expect(page.getByTestId('host-details')).toContainText(`ssh -p ${String(fixture.port)} tester@127.0.0.1`);
   // Edit opens the host's form in the same panel; Cancel returns to the details.
   await page.getByTestId('host-details').getByRole('button', { name: 'Edit' }).click();

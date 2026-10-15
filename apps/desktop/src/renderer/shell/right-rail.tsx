@@ -24,7 +24,6 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
   // and Environments' the open environment's details.
   const panel = useEditorsStore((state) => rightPanelFor(state.displayedSet));
   const hostDetailsShown = useHostDetailsShown();
-  const hasHost = useHostsStore((state) => state.selectedHostId !== undefined);
   const environmentDetailsShown = useEnvironmentDetailsShown();
   const hasEnvironment = useOpenEnvironmentId() !== undefined;
 
@@ -38,7 +37,6 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
         <IconButton
           label="Host details"
           active={hostDetailsShown}
-          disabled={!hasHost}
           data-testid="rail-host-details"
           aria-pressed={undefined}
           aria-expanded={hostDetailsShown}
