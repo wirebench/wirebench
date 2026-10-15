@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { TitleBar } from '../../src/renderer/shell/title-bar.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -39,5 +39,27 @@ describe('TitleBar', () => {
     useUiStore.getState().setPreferencesOpen(true);
     renderTitleBar();
     expect(screen.queryByTestId('env-switcher-stub')).toBeNull();
+  });
+
+  it('shows Ctrl+Shift+P while a terminal has the focus, where Ctrl+K goes to the shell (#537)', () => {
+    const holder = document.createElement('div');
+    holder.className = 'xterm';
+    const input = document.createElement('textarea');
+    holder.append(input);
+    document.body.append(holder);
+    renderTitleBar();
+    const hint = screen.getByTestId('title-bar-palette-shortcut');
+    // The palette's own shortcut (none is registered in this test), not the terminal's.
+    const usual = hint.textContent;
+    expect(usual).not.toBe('Ctrl+Shift+P');
+    act(() => {
+      input.focus();
+    });
+    expect(hint.textContent).toBe('Ctrl+Shift+P');
+    act(() => {
+      input.blur();
+    });
+    expect(hint.textContent).toBe(usual);
+    holder.remove();
   });
 });

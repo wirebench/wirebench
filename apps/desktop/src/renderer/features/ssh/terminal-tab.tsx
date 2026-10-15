@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import type { CommandId } from '@shared/commands.js';
 import { effectiveShortcutFor, matchesEvent, parseKeybinding } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
+import { isPaletteChord } from '../../lib/terminal-focus.js';
 import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -478,8 +479,9 @@ function TerminalPane({
         }
         return false;
       }
-      // A pane command's chord is the app's: the window's listener runs it, the shell never sees it.
-      if (isPaneChord(event, platform)) return false;
+      // A pane command's chord is the app's: the window's listener runs it, the shell never sees it. So is
+      // the palette's Ctrl+Shift+P: Ctrl+K stays the shell's.
+      if (isPaneChord(event, platform) || isPaletteChord(event, platform)) return false;
       if (!isFindChord(event, platform)) return true;
       if (event.type === 'keydown') {
         event.preventDefault();
