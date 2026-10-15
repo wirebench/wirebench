@@ -10,7 +10,7 @@ import { ChevronRight, Plus, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { GroupEntryWire, HostEntryWire, HostsFileWire, ResolvedHostWire } from '../../../shared/ssh-wire.js';
 import { openTerminalFor } from './connect.js';
-import { GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
+import { GroupActionsButton, GroupMenu, HostActionsButton, HostMenu } from './host-menus.js';
 import { TOP_LEVEL, type HostsLayout, type HostsPrefs, type HostsSort } from './hosts-prefs.js';
 import { flattenGroups, hostStatusOf, osKeyOf, useHostsStore, type PaneSession } from './hosts-store.js';
 import { OsIcon, osOf, osTextOf } from './os-icon.js';
@@ -191,19 +191,25 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
           </span>
           <span className={`flex min-w-0 flex-1 ${grid ? 'flex-col' : 'items-baseline gap-3'}`}>
             <span className="flex min-w-0 items-center gap-1">
-              <span className="truncate text-sm leading-5 font-medium text-fg-default">{host.name}</span>
+              <span title={host.name} className="truncate text-sm leading-5 font-medium text-fg-default">
+                {host.name}
+              </span>
               {resolved?.protected.value === true && <ProtectedMark />}
+              {warning !== undefined && (
+                <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-warning" />
+              )}
             </span>
             <span className="truncate text-xs leading-4 text-fg-subtle">
+              {/* The warning takes the second line's start, so the name keeps the first line's width. */}
+              {warning !== undefined && (
+                <>
+                  <span className="text-status-warning">{warning}</span> ·{' '}
+                </>
+              )}
               {osText !== undefined && <span>{osText} · </span>}
               <span className="font-mono">{targetOf(host, resolved)}</span>
             </span>
           </span>
-          {warning !== undefined && (
-            <span className="shrink-0 self-start rounded-full border border-status-warning px-1.5 text-xs leading-4 text-status-warning">
-              {warning}
-            </span>
-          )}
           {!grid && tags}
           {actions}
         </span>
@@ -391,6 +397,12 @@ export function HostCards({
                 <span className="font-normal">{section.hosts.length}</span>
               </button>
             </h3>
+            {section.group !== undefined && (
+              <GroupActionsButton
+                group={section.group}
+                className="opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              />
+            )}
             <button
               type="button"
               aria-label={`Add a host to ${section.title}`}
@@ -415,7 +427,7 @@ export function HostCards({
                 aria-label={`Hosts in ${section.title}`}
                 className={
                   prefs.layout === 'grid'
-                    ? 'grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2'
+                    ? 'grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-2'
                     : 'flex flex-col gap-1'
                 }
               >

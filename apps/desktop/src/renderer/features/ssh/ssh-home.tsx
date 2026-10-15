@@ -20,13 +20,7 @@ import {
 } from 'lucide-react';
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
-import type {
-  GroupEntryWire,
-  HostsFileWire,
-  ResolvedHostWire,
-  SshKnownHostWire,
-  SshSecretNameWire,
-} from '../../../shared/ssh-wire.js';
+import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
 import { ForwardingPanel } from './forwarding/forwarding-view.js';
@@ -85,63 +79,34 @@ const MENU_CONTENT_CLASS = 'z-dropdown min-w-44 rounded-md border border-hairlin
 const MENU_ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
-/** Every group from the top, named by its path, with how many hosts it holds counting the groups inside it. */
-function groupChipsOf(file: HostsFileWire): { id: string; title: string; count: number }[] {
-  const out: { id: string; title: string; count: number }[] = [];
-  const walk = (groups: readonly GroupEntryWire[], prefix: string): number => {
-    let total = 0;
-    for (const group of groups) {
-      const title = prefix === '' ? group.name : `${prefix} / ${group.name}`;
-      const at = out.push({ id: group.id, title, count: 0 }) - 1;
-      const count = group.hosts.length + walk(group.groups, title);
-      const chip = out[at];
-      if (chip !== undefined) chip.count = count;
-      total += count;
-    }
-    return total;
-  };
-  walk(file.groups, '');
-  return out;
-}
-
 const CHIP_CLASS = 'rounded-full border px-2 py-0.5 text-xs';
 const chipState = (on: boolean): string =>
   on ? 'border-accent bg-accent-muted text-fg-default' : 'border-hairline text-fg-subtle hover:bg-surface-raised';
 
-/** The groups as filters: picking one shows only its hosts; picking it again, or All, shows every host. */
-function GroupChips() {
+/**
+ * While the list is narrowed to one group (its heading's "Show only this group"), says which, with a way back.
+ * The sections themselves are how groups show; a group gone from the file narrows nothing.
+ */
+function GroupFilterBar() {
   const file = useHostsStore((s) => s.file);
   const groupFilter = useHostsStore((s) => s.groupFilter);
   const setGroupFilter = useHostsStore((s) => s.setGroupFilter);
-  const chips = groupChipsOf(file);
-  if (chips.length === 0) return null;
-  const active = chips.some((c) => c.id === groupFilter) ? groupFilter : undefined;
-  const total = file.hosts.length + flattenGroups(file).reduce((sum, { group }) => sum + group.hosts.length, 0);
+  const group = flattenGroups(file).find((g) => g.group.id === groupFilter)?.group;
+  if (group === undefined) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by group">
+    <div className="flex items-center gap-2 text-xs text-fg-subtle" data-testid="hosts-group-filter">
+      <span>
+        Showing only <span className="font-medium text-fg-default">{group.name}</span>
+      </span>
       <button
         type="button"
-        aria-pressed={active === undefined}
         onClick={() => {
           setGroupFilter(undefined);
         }}
-        className={`${CHIP_CLASS} ${chipState(active === undefined)}`}
+        className="rounded px-1 text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
       >
-        All <span className="opacity-70">{total}</span>
+        Show all groups
       </button>
-      {chips.map((chip) => (
-        <button
-          key={chip.id}
-          type="button"
-          aria-pressed={active === chip.id}
-          onClick={() => {
-            setGroupFilter(active === chip.id ? undefined : chip.id);
-          }}
-          className={`${CHIP_CLASS} ${chipState(active === chip.id)}`}
-        >
-          {chip.title} <span className="opacity-70">{chip.count}</span>
-        </button>
-      ))}
     </div>
   );
 }
@@ -270,7 +235,7 @@ function HostsPanel() {
           </>
         }
       />
-      <GroupChips />
+      <GroupFilterBar />
       {tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter by tag">
           {tags.map((tag) => (

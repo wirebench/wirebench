@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,6 +31,7 @@ import { openTerminalFor } from '../../src/renderer/features/ssh/connect.js';
 import { HostDetails, sshCommandOf, useHostDetailsShown } from '../../src/renderer/features/ssh/host-details.js';
 import { SshHome } from '../../src/renderer/features/ssh/ssh-home.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/forwards-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { DEFAULT_HOSTS_PREFS, readHostsPrefs, writeHostsPrefs } from '../../src/renderer/features/ssh/hosts-prefs.js';
@@ -160,6 +161,27 @@ describe('SSH menu', () => {
     });
     // The sidebar no longer draws the hosts themselves.
     expect(screen.queryByText('alpha')).toBeNull();
+  });
+  it('leaves a zero count out, and shows running forwards as a dot with their count', async () => {
+    render(<HostsView />);
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('ssh-nav-keychain').textContent).toBe('Keychain2');
+    });
+    // No snippets, layouts or running forwards: the entries show their label only.
+    expect(screen.getByTestId('ssh-nav-snippets').textContent).toBe('Snippets');
+    expect(screen.getByTestId('ssh-nav-forwarding').textContent).toBe('Port forwarding');
+    act(() => {
+      useForwardsStore.setState({
+        byKey: {
+          'b/db': { hostId: 'b', ruleId: 'db', port: 5432, connections: 0, status: { state: 'running' } },
+        } as never,
+      });
+    });
+    expect(screen.getByTestId('ssh-nav-forwarding-running').textContent).toBe(' 1');
+    expect(screen.getByTestId('ssh-nav-forwarding').title).toBe('Port forwarding (1 running)');
+    act(() => {
+      useForwardsStore.setState({ byKey: {} });
+    });
   });
   it('picking an entry brings the fixed tab of the SSH set to the front', async () => {
     useEditorsStore.getState().reset();
@@ -357,7 +379,7 @@ describe('Hosts tab', () => {
     expect(screen.queryByRole('list', { name: 'Needed to save' })).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false);
   });
-  it('the Group select starts on the active group chip; the group then supplies the user', async () => {
+  it('the Group select starts on the group the list is narrowed to; the group then supplies the user', async () => {
     useHostsStore.setState({ groupFilter: 'g' });
     render(<SshArea />);
     await userEvent.click(screen.getByRole('button', { name: /New host/ }));
@@ -558,8 +580,16 @@ describe('Hosts tab view', () => {
     render(<SshHome />);
     expect(screen.queryByRole('region', { name: 'Recent connections' })).toBeNull();
   });
+  it('shows no recent section with 6 hosts or fewer: the cards already show them all', () => {
+    writeRecent('w1', [{ hostId: 'b', at: Date.now() - 5 * 60_000, outcome: 'connected' }]);
+    render(<SshHome />);
+    expect(screen.queryByRole('region', { name: 'Recent connections' })).toBeNull();
+  });
   it('the recent section lists hosts by their current name, reconnects one and clears', async () => {
     useEditorsStore.getState().reset();
+    // More hosts than the strip holds, so it shows.
+    const more = ['c', 'd', 'e', 'f', 'g'].map((id) => ({ ...STATE.resolved[1]!, id, name: id }));
+    useHostsStore.setState({ resolved: [...STATE.resolved, ...more] });
     writeRecent('w1', [
       { hostId: 'b', at: Date.now() - 5 * 60_000, outcome: 'failed' },
       { hostId: 'deleted', at: Date.now() - 6 * 60_000, outcome: 'connected' },
@@ -766,55 +796,24 @@ describe('Clicking the picked card', () => {
   });
 });
 
-describe('Group chips', () => {
-  it('show every group with its count; picking one filters, picking it again clears', async () => {
-    render(<SshHome />);
-    const chips = screen.getByRole('group', { name: 'Filter by group' });
-    const all = within(chips).getByRole('button', { name: /^All/ });
-    const production = within(chips).getByRole('button', { name: /^Production/ });
-    expect(all.textContent).toBe('All 2');
-    expect(production.textContent).toBe('Production 1');
-    expect(all.getAttribute('aria-pressed')).toBe('true');
-
-    await userEvent.click(production);
-    expect(production.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('alpha')).toBeDefined();
-    expect(screen.queryByText('beta')).toBeNull();
-
-    await userEvent.click(production);
-    expect(all.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('beta')).toBeDefined();
-  });
-  it('a nested group is named by its path and counts the hosts inside it', () => {
-    const file = {
-      ...STATE.file,
-      groups: [
-        {
-          ...STATE.file.groups[0]!,
-          groups: [
-            {
-              id: 'eu',
-              name: 'EU',
-              tags: [],
-              ssh: {},
-              groups: [],
-              hosts: [{ id: 'c', name: 'gamma', address: '10.0.0.3', tags: [], ssh: {} }],
-            },
-          ],
-        },
-      ],
-    };
-    useHostsStore.setState({ file });
-    render(<SshHome />);
-    const chips = screen.getByRole('group', { name: 'Filter by group' });
-    expect(within(chips).getByRole('button', { name: /^Production \/ EU/ }).textContent).toBe('Production / EU 1');
-    expect(within(chips).getByRole('button', { name: /^Production 2/ })).toBeDefined();
-    expect(within(chips).getByRole('button', { name: /^All/ }).textContent).toBe('All 3');
-  });
-  it('no groups, no chips', () => {
-    useHostsStore.setState({ file: { ...STATE.file, groups: [] } });
+describe('Group headings', () => {
+  it("no chips repeat the sections; the heading's ⋯ shows only that group, and the bar shows all again", async () => {
     render(<SshHome />);
     expect(screen.queryByRole('group', { name: 'Filter by group' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'More actions for Production' }));
+    expect(await screen.findByRole('menuitem', { name: 'New host here…' })).toBeDefined();
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Show only this group' }));
+    expect(screen.getByText('alpha')).toBeDefined();
+    expect(screen.queryByText('beta')).toBeNull();
+    expect(screen.getByTestId('hosts-group-filter').textContent).toContain('Showing only Production');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show all groups' }));
+    expect(screen.queryByTestId('hosts-group-filter')).toBeNull();
+    expect(screen.getByText('beta')).toBeDefined();
+  });
+  it('the ungrouped section has no ⋯', () => {
+    render(<SshHome />);
+    expect(screen.queryByRole('button', { name: 'More actions for Ungrouped' })).toBeNull();
   });
 });
 
