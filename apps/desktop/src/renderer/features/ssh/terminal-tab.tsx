@@ -20,6 +20,7 @@ import { openFiles } from './files/open-files.js';
 import { useHostsStore } from './hosts-store.js';
 import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
+import { isQuickHostId } from './quick-hosts.js';
 import { trackPaneModes } from './terminal-modes.js';
 import { TypeAhead, type TypeAheadState } from './type-ahead.js';
 import { attachSnippetSuggestions } from './snippets/ghost.js';
@@ -224,6 +225,7 @@ export function TerminalTab({
   const missing = (pane: PaneLeaf): boolean =>
     knownHosts !== undefined &&
     paneSessions[pane.paneId] === undefined &&
+    !isQuickHostId(pane.hostId) &&
     !knownHosts.some((host) => host.id === pane.hostId);
   const saving = useLayoutsStore((s) => s.savingTabId === tabId);
   const paneIds = leaves(panes).map((leaf) => leaf.paneId);

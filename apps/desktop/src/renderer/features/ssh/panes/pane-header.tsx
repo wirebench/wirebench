@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { openFiles } from '../files/open-files.js';
 import { AgentForwardingMark, agentForwardingOf } from '../agent-forwarding.js';
 import { findHost, useHostsStore } from '../hosts-store.js';
+import { quickHostName } from '../quick-hosts.js';
 import { RecordingMark, recordingOf } from '../recording-mark.js';
 import { sessionStatus } from '../session-status.js';
 import { setTicked, useTabBroadcast } from './broadcast.js';
@@ -15,7 +16,11 @@ const ITEM_CLASS =
 /** A host's name to show, falling back to its id. */
 export function useHostName(hostId: string): string {
   return useHostsStore(
-    (s) => s.resolved.find((h) => h.id === hostId)?.name ?? findHost(s.file, hostId)?.name ?? hostId,
+    (s) =>
+      s.resolved.find((h) => h.id === hostId)?.name ??
+      findHost(s.file, hostId)?.name ??
+      quickHostName(hostId) ??
+      hostId,
   );
 }
 

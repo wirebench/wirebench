@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEditorsStore } from '../../../state/editors.js';
 import { useHostsStore } from '../hosts-store.js';
 import { focusedPaneOf, usePanesStore } from '../panes/pane-actions.js';
+import { useHostName } from '../panes/pane-header.js';
 import { sessionStatus } from '../session-status.js';
 import { showForwarding } from './forward-actions.js';
 import { forwardCounts, useForwardsStore } from './forwards-store.js';
@@ -29,7 +30,7 @@ function SessionItem() {
   usePanesStore((s) => (tab === undefined ? undefined : s.focused[tab.id]));
   const paneId = tab?.kind === 'ssh-terminal' && tab.panes !== undefined ? focusedPaneOf(tab.id, tab.panes) : undefined;
   const session = useHostsStore((s) => (paneId === undefined ? undefined : s.panes[paneId]));
-  const hostName = useHostsStore((s) => s.resolved.find((h) => h.id === session?.hostId)?.name);
+  const hostName = useHostName(session?.hostId ?? '');
   if (tab?.kind === 'local-terminal') return <Item>Local terminal</Item>;
   if (session === undefined) return null;
   const status = sessionStatus(session.state);
@@ -41,7 +42,7 @@ function SessionItem() {
         title={status.label}
         className={`inline-block size-1.5 rounded-full bg-current ${status.color}`}
       />
-      <span className="max-w-48 truncate">{hostName ?? session.hostId}</span>
+      <span className="max-w-48 truncate">{hostName}</span>
       {session.recording === true && (
         <span data-testid="status-bar-recording" title="This session is being logged" className="text-status-danger">
           ● logging

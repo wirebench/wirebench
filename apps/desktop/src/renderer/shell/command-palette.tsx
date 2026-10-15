@@ -4,7 +4,8 @@ import { Command } from 'cmdk';
 import type { CommandCategory } from '@shared/commands.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { RENDERER_KINDS, rendererKind } from '../kinds/index.js';
-import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
+import { connectQuick, openInNewTab, openTerminalFor, saveQuickAsHost } from '../features/ssh/connect.js';
+import { parseQuickTarget, quickTargetName } from '../features/ssh/quick-hosts.js';
 import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
 import { flattenGroups, useHostsStore } from '../features/ssh/hosts-store.js';
 import { refreshLayouts, useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
@@ -303,6 +304,8 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const snippetsPicker = mode === 'snippets';
   const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
   const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker || snippetsPicker;
+  // A search that names a server (`user@host:port`) can connect to it without saving it first (#537).
+  const quickTarget = sshEnabled && (mode === 'hosts' || newTabPicker) ? parseQuickTarget(search) : undefined;
   const title = snippetsPicker
     ? 'Run snippet'
     : forwardPicker
@@ -394,6 +397,34 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
                   </Command.Item>
                 ))}
+              {quickTarget !== undefined && (
+                <Command.Group heading="Server" className={GROUP_CLASS}>
+                  {/* Valued with the search itself, so cmdk keeps both rows whatever was typed. */}
+                  <Command.Item
+                    value={`${search} connect`}
+                    data-testid="quick-connect"
+                    onSelect={() => {
+                      onOpenChange(false);
+                      connectQuick(quickTarget, newTabPicker);
+                    }}
+                    className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                  >
+                    <span className="truncate">{`Connect to ${quickTargetName(quickTarget)}`}</span>
+                    <span className="truncate text-xs text-fg-subtle">not saved · SSH agent</span>
+                  </Command.Item>
+                  <Command.Item
+                    value={`${search} save as host`}
+                    data-testid="quick-connect-save"
+                    onSelect={() => {
+                      onOpenChange(false);
+                      saveQuickAsHost(quickTarget);
+                    }}
+                    className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                  >
+                    <span className="truncate">Save as host…</span>
+                  </Command.Item>
+                </Command.Group>
+              )}
               {picker && recentHosts.length > 0 && (
                 <Command.Group heading="Recent" className={GROUP_CLASS}>
                   {recentHosts.map((entry) => (
