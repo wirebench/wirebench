@@ -810,14 +810,14 @@ describe('PreferencesEditor — search', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Search settings').value).toBe('');
   });
 
-  it('finds the Terminal settings by "ssh" (#537)', () => {
+  it('finds the Terminal and SSH settings by "ssh" (#537, #571)', () => {
     render(<PreferencesEditor />);
     search('ssh');
     const crumbs = within(screen.getByTestId('settings-search-results'))
       .getAllByTestId('setting-crumb')
       .map((crumb) => crumb.textContent);
     expect(crumbs.length).toBeGreaterThan(0);
-    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal']));
+    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal', 'Workspace › SSH']));
   });
 
   it('says so when nothing matches', () => {
