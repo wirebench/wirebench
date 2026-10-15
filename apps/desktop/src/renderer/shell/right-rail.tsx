@@ -4,6 +4,8 @@ import {
   useEnvironmentDetailsStore,
   useOpenEnvironmentId,
 } from '../features/environments/environment-details.js';
+import { useForwardDetailsShown } from '../features/ssh/forwarding/forward-details.js';
+import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useHostDetailsShown } from '../features/ssh/host-details.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { useEditorsStore } from '../state/editors.js';
@@ -26,6 +28,10 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
   const hostDetailsShown = useHostDetailsShown();
   const environmentDetailsShown = useEnvironmentDetailsShown();
   const hasEnvironment = useOpenEnvironmentId() !== undefined;
+  // On the Port forwarding view the icon is the picked forward's details instead; host details stay hidden.
+  const onForwarding = useHostsStore((state) => state.homeView === 'forwarding');
+  const forwardDetailsShown = useForwardDetailsShown();
+  const hasForward = useForwardsStore((state) => state.selectedKey !== undefined);
 
   return (
     <nav
@@ -33,7 +39,25 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
       aria-label="Panels"
       className="flex w-right-rail shrink-0 flex-col items-center gap-1 border-l border-hairline bg-surface-sunken py-2"
     >
-      {panel === 'host-details' && (
+      {panel === 'host-details' && onForwarding && (
+        <IconButton
+          label="Forward details"
+          active={forwardDetailsShown}
+          disabled={!hasForward}
+          data-testid="rail-forward-details"
+          aria-pressed={undefined}
+          aria-expanded={forwardDetailsShown}
+          aria-controls="slide-over"
+          onClick={() => {
+            useForwardsStore.getState().setDetailsOpen(!forwardDetailsShown);
+            // The details belong to the view in the area's first tab: bring it to the front if a terminal is.
+            if (!forwardDetailsShown) useEditorsStore.getState().showStart();
+          }}
+        >
+          <PanelRight size={17} aria-hidden="true" />
+        </IconButton>
+      )}
+      {panel === 'host-details' && !onForwarding && (
         <IconButton
           label="Host details"
           active={hostDetailsShown}

@@ -115,9 +115,10 @@ wirebench mock check <path> [mock…] [--json]
 
 ${MOCK_RECORD_HELP}
 
-wirebench ssh forward <host> [rule…] [--port <rule>=<n>]… [--host-key SHA256:<b64>]… [--json] [-q]
-                       Opens a host's port forwarding rules from hosts.yaml until stopped (see
-                       wirebench ssh --help).
+wirebench ssh forward <host> [rule…] | --group <id> [--port <rule>=<n>]… [--host-key SHA256:<b64>]…
+                       [--json] [-q]
+                       Opens a host's port forwarding rules, or a forwarding group's, from hosts.yaml
+                       until stopped (see wirebench ssh --help).
 
 wirebench --version | --help
 wirebench <verb> --help`;

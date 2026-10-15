@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Forwarding groups.** Name a set of port forwarding rules, from any hosts, and start or stop them
+  together. The Port forwarding view shows each group as a section with its rules and a count such as
+  "2 of 3 running · 1 failed", then the rules in no group under **Ungrouped**. **Start group** connects to
+  each host as needed, and a rule that fails doesn't stop the others. Each rule still starts and stops on
+  its own. Groups are kept in `hosts.yaml` (`forwardGroups`, file version 2 while there is one), so a
+  team shares them; version 1 files load unchanged. The palette has **Start Forwarding Group…** and
+  **Stop Forwarding Group…**, and `wirebench ssh forward --group <id>` opens a group from the command
+  line (#583).
+
 ### Changed
 
 - **Host details opens and closes only when asked.** Clicking a host selects it without opening or

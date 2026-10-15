@@ -90,4 +90,74 @@ hosts:
     expect(await exited).toBe(0);
     expect(stderr).toBe('');
   });
+
+  it('--group forwards the rules of two hosts at once until SIGTERM (#583)', async () => {
+    const fixture = await startSshFixture({
+      password: { user: 'tester', password: 'fixture-password' },
+      allowForwardOut: true,
+    });
+    cleanups.push(() => fixture.close());
+    const echo = await startEchoServer();
+    cleanups.push(() => echo.close());
+    const dir = await mkdtemp(join(tmpdir(), 'wb-ssh-fwd-group-'));
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    await saveWorkspace(createWorkspace('W'), dir);
+    const first = await freePort();
+    const second = await freePort();
+    // Two host entries for the one fixture: the group dials one connection per host.
+    const hostYaml = (id: string, port: number): string => `  - id: ${id}
+    name: ${id}
+    address: 127.0.0.1
+    ssh:
+      user: tester
+      port: ${fixture.port}
+      auth:
+        password: \${secret:fixture_pw}
+    forwards:
+      - id: echo
+        type: local
+        port: ${port}
+        target: 127.0.0.1:${echo.port}
+`;
+    await writeFile(
+      join(dir, 'hosts.yaml'),
+      `version: 2
+hosts:
+${hostYaml('one', first)}${hostYaml('two', second)}forwardGroups:
+  - id: dev
+    name: Dev
+    rules:
+      - { host: one, rule: echo }
+      - { host: two, rule: echo }
+`,
+    );
+    const knownHosts = join(dir, 'known-hosts.json');
+    await writeFile(knownHosts, JSON.stringify([fixture.hostKey]));
+
+    const child = spawnCli(['ssh', 'forward', '--group', 'dev', '--workspace', dir, '--known-hosts', knownHosts], {
+      WIREBENCH_SECRET_FIXTURE_PW: 'fixture-password',
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    const exited = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)));
+    await new Promise<void>((resolve, reject) => {
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+        if (stdout.split('\n').length > 2) resolve();
+      });
+      void exited.then(() => reject(new Error(`exited before listening: ${stderr}`)));
+    });
+
+    expect(stdout).toBe(
+      `one/echo  127.0.0.1:${first} → 127.0.0.1:${echo.port} via one\n` +
+        `two/echo  127.0.0.1:${second} → 127.0.0.1:${echo.port} via two\n`,
+    );
+    expect(await roundTrip(first, 'through the first')).toBe('through the first');
+    expect(await roundTrip(second, 'through the second')).toBe('through the second');
+
+    child.kill('SIGTERM');
+    expect(await exited).toBe(0);
+    expect(stderr).toBe('');
+  });
 });

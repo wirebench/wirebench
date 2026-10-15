@@ -90,6 +90,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Forwarding: Start Port Forward… | — | — |
 | Forwarding: Stop Port Forward… | — | — |
 | Forwarding: Stop All Port Forwards | — | — |
+| Forwarding: Start Forwarding Group… | — | — |
+| Forwarding: Stop Forwarding Group… | — | — |
 
 ## Definition
 

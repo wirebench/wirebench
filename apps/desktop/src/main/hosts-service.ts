@@ -5,6 +5,7 @@ import {
   EMPTY_HOSTS_FILE,
   SshModelError,
   envSecretName,
+  hostsFileVersion,
   listResolvedHosts,
   parseHostsFile,
   secretNameOf,
@@ -12,6 +13,7 @@ import {
 } from '@wirebench/ssh';
 import type {
   ForwardEntry,
+  ForwardGroupEntry,
   GroupEntry,
   HostEntry,
   HostsFile,
@@ -26,6 +28,7 @@ import type {
 import type {
   EnvVarWire,
   ForwardEntryWire,
+  ForwardGroupWire,
   GroupEntryWire,
   HostEntryWire,
   HostsFileWire,
@@ -321,20 +324,27 @@ const identityFromWire = ({ auth, ...rest }: IdentityWire): IdentityEntry => {
   const model = authFromWire(auth);
   return { ...rest, ...(model ? { auth: model } : {}) };
 };
+const forwardGroupsToWire = (groups: readonly ForwardGroupEntry[]): ForwardGroupWire[] =>
+  groups.map((g) => ({ id: g.id, name: g.name, rules: g.rules.map((m) => ({ host: m.host, rule: m.rule })) }));
 const fileToWire = (f: HostsFile): HostsFileWire => ({
-  version: 1,
+  version: f.version,
   ...(f.identities === undefined ? {} : { identities: f.identities.map(identityToWire) }),
   groups: f.groups.map(groupToWire),
   hosts: f.hosts.map(hostToWire),
+  ...(f.forwardGroups === undefined ? {} : { forwardGroups: forwardGroupsToWire(f.forwardGroups) }),
 });
-const fileFromWire = (f: HostsFileWire): HostsFile => ({
-  version: 1,
-  ...(f.identities === undefined || f.identities.length === 0
-    ? {}
-    : { identities: f.identities.map(identityFromWire) }),
-  groups: f.groups.map(groupFromWire),
-  hosts: f.hosts.map(hostFromWire),
-});
+const fileFromWire = (f: HostsFileWire): HostsFile => {
+  const forwardGroups = f.forwardGroups === undefined || f.forwardGroups.length === 0 ? undefined : f.forwardGroups;
+  return {
+    version: hostsFileVersion({ forwardGroups }),
+    ...(f.identities === undefined || f.identities.length === 0
+      ? {}
+      : { identities: f.identities.map(identityFromWire) }),
+    groups: f.groups.map(groupFromWire),
+    hosts: f.hosts.map(hostFromWire),
+    ...(forwardGroups === undefined ? {} : { forwardGroups: forwardGroupsToWire(forwardGroups) }),
+  };
+};
 const resolvedToWire = (h: ResolvedHost): ResolvedHostWire => ({
   ...h,
   tags: [...h.tags],

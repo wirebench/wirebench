@@ -8,6 +8,7 @@ import {
   stopAllForwards,
   stopForward,
 } from '../features/ssh/forwarding/forward-actions.js';
+import { startGroup, stopGroup } from '../features/ssh/forwarding/forward-groups.js';
 import { useHostsStore } from '../features/ssh/hosts-store.js';
 import { openLocalTerminal } from '../features/ssh/local-terminal.js';
 import { showSessionLogs } from '../features/ssh/session-logs.js';
@@ -178,6 +179,21 @@ export function registerSshCommands(openPalette: (mode?: PaletteMode) => void): 
     ...catalogEntry('ssh.stopAllForwards'),
     run: () => {
       void stopAllForwards();
+    },
+  });
+  // From a menu the argument is the forwarding group's id; from the palette it asks which one.
+  registerCommand({
+    ...catalogEntry('ssh.startForwardGroup'),
+    run: (_context, arg) => {
+      if (typeof arg === 'string' && arg !== '') void startGroup(arg);
+      else openPalette('start-forward-group');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ssh.stopForwardGroup'),
+    run: (_context, arg) => {
+      if (typeof arg === 'string' && arg !== '') void stopGroup(arg);
+      else openPalette('stop-forward-group');
     },
   });
   registerCommand({

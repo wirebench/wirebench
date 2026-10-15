@@ -544,3 +544,168 @@ describe('wirebench ssh forward', () => {
     });
   });
 });
+
+/** `dev` holds two rules of db-1 (behind bastion) and one of the agent host `a`. */
+const GROUP_YAML = `${HOSTS_YAML.replace('version: 1', 'version: 2')}forwardGroups:
+  - id: dev
+    name: Dev
+    rules:
+      - { host: db-1, rule: pg }
+      - { host: a, rule: pg }
+      - { host: db-1, rule: socks }
+  - id: off
+    name: Off
+    rules:
+      - { host: db-1, rule: grafana }
+  - id: gone
+    name: Gone
+    rules:
+      - { host: db-1, rule: nope }
+  - id: open
+    name: Open
+    rules:
+      - { host: web-1, rule: public }
+  - { id: empty, name: Empty }
+`;
+
+const GROUP_ENV = { ...ENV, SSH_AUTH_SOCK: '/tmp/agent.sock' };
+
+/** Keys each runner presents, by the address of its first hop. */
+const KEYS_BY_FIRST_HOP: Readonly<Record<string, readonly KnownHostEntry[]>> = {
+  'bastion.example': [BASTION_KEY, DB_KEY],
+  'a.example': [AGENT_KEY],
+  '10.0.0.6': [WEB_KEY],
+};
+
+/** As {@link run}, keeping every runner (one per host of the group). */
+async function runGroup(
+  ws: Workspace,
+  forwardArgs: SshForwardArgs,
+  options: { configure?: (runner: FakeRunner) => void; whileRunning?: (runners: FakeRunner[]) => void } = {},
+): Promise<Omit<Outcome, 'runner'> & { runners: FakeRunner[] }> {
+  const stdout = capture();
+  const stderr = capture();
+  const controller = new AbortController();
+  const runners: FakeRunner[] = [];
+  let started!: () => void;
+  const allStarted = new Promise<void>((resolve) => (started = resolve));
+  const pending = sshForwardCommand(
+    forwardArgs,
+    { stdout: stdout.stream, stderr: stderr.stream, env: GROUP_ENV },
+    controller.signal,
+    {
+      cwd: ws.dir,
+      userDataDir: ws.userData,
+      platform: 'linux',
+      open: (dialOptions) => {
+        const runner = new FakeRunner(dialOptions, KEYS_BY_FIRST_HOP[dialOptions.hops[0]?.address ?? ''] ?? []);
+        options.configure?.(runner);
+        runners.push(runner);
+        return runner;
+      },
+      onRunning: () => started(),
+    },
+  );
+  await Promise.race([allStarted, pending]);
+  options.whileRunning?.(runners);
+  controller.abort();
+  const code = await pending;
+  return { code, stdout: stdout.text(), stderr: stderr.text(), runners };
+}
+
+/** `--group dev`, with no host. */
+const groupArgs = (overrides: Partial<SshForwardArgs> = {}): SshForwardArgs => ({
+  command: 'ssh-forward',
+  group: 'dev',
+  rules: [],
+  ports: {},
+  hostKeys: [],
+  allowNetworkBind: false,
+  secretSources: DEFAULT_CLI_SECRET_SOURCES,
+  json: false,
+  quiet: false,
+  ...overrides,
+});
+
+describe('wirebench ssh forward --group (#583)', () => {
+  it('starts every rule of the group, one connection per host, naming each rule with its host', async () => {
+    const ws = await workspace({ hosts: GROUP_YAML });
+    const { code, stdout, stderr, runners } = await runGroup(ws, groupArgs());
+    expect(code).toBe(ExitCode.Ok);
+    expect(stderr).toBe('');
+    expect(runners).toHaveLength(2);
+    expect(runners.map((r) => r.options.hops.map((hop) => hop.address))).toEqual([
+      ['bastion.example', '10.0.0.5'],
+      ['a.example'],
+    ]);
+    expect(runners.map((r) => r.started.map((s) => s.rule.id))).toEqual([['pg', 'socks'], ['pg']]);
+    expect(runners.every((r) => r.closed)).toBe(true);
+    expect(stdout).toBe(
+      [
+        'db-1/pg     127.0.0.1:5432 → localhost:5432 via db-1',
+        'db-1/socks  127.0.0.1:1080 SOCKS5 via db-1',
+        'a/pg        127.0.0.1:5432 → localhost:5432 via a',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('takes --port as <host>/<rule>, and refuses a bare rule id', async () => {
+    const ws = await workspace({ hosts: GROUP_YAML });
+    const { code, runners } = await runGroup(ws, groupArgs({ ports: { 'a/pg': 6543 } }));
+    expect(code).toBe(ExitCode.Ok);
+    expect(runners.map((r) => r.started.map((s) => s.port))).toEqual([[undefined, undefined], [6543]]);
+    const bare = await runGroup(ws, groupArgs({ ports: { pg: 6543 } }));
+    expect(bare.code).toBe(ExitCode.Usage);
+    expect(bare.stderr).toContain('--port pg: name a rule of the group as <host>/<rule>');
+    expect(bare.runners).toHaveLength(0);
+  });
+
+  it('names the host in every --json line', async () => {
+    const ws = await workspace({ hosts: GROUP_YAML });
+    const { stdout } = await runGroup(ws, groupArgs({ json: true }));
+    const lines = stdout
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { host?: string; rule: string; state: string });
+    expect(lines.filter((l) => l.state === 'running').map((l) => `${l.host ?? ''}/${l.rule}`)).toEqual([
+      'db-1/pg',
+      'db-1/socks',
+      'a/pg',
+    ]);
+  });
+
+  it.each([
+    ['nope', 'ssh-forward-group-unknown: no forwarding group "nope" (known: dev, off, gone, open, empty)'],
+    ['empty', 'ssh-forward-unknown: forwarding group "empty" has no rules'],
+    ['off', 'ssh-forward-invalid: grafana is switched off for db-1'],
+    ['gone', 'ssh-forward-unknown: "nope" is not a forwarding rule of db-1'],
+    ['open', 'ssh-forward-invalid: public listens on 0.0.0.0:8080'],
+  ])('refuses group %s with exit 2 before connecting', async (group, message) => {
+    const ws = await workspace({ hosts: GROUP_YAML });
+    const { code, stderr, runners } = await runGroup(ws, groupArgs({ group }));
+    expect(code).toBe(ExitCode.Usage);
+    expect(stderr).toContain(message);
+    expect(runners).toHaveLength(0);
+  });
+
+  it('says there are no groups in a file without any', async () => {
+    const ws = await workspace();
+    const { code, stderr } = await runGroup(ws, groupArgs());
+    expect(code).toBe(ExitCode.Usage);
+    expect(stderr).toContain('no forwarding group "dev" (hosts.yaml has none)');
+  });
+
+  it('ends the whole run when one rule fails, closing every connection (exit 3)', async () => {
+    const ws = await workspace({ hosts: GROUP_YAML });
+    const refused = Object.assign(new Error('the host refused the forward'), { code: 'ssh-forward-refused' });
+    const { code, stderr, runners } = await runGroup(ws, groupArgs(), {
+      configure: (r) => {
+        if (r.options.hops[0]?.address === 'a.example') r.failOn = { id: 'pg', error: refused };
+      },
+    });
+    expect(code).toBe(ExitCode.RunError);
+    expect(stderr).toContain('ssh-forward-refused: a/pg: the host refused the forward');
+    expect(runners.every((r) => r.closed)).toBe(true);
+  });
+});
