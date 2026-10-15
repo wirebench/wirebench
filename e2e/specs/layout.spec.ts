@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
 import {
   consoleHeight,
@@ -37,7 +37,7 @@ test.describe('layout: collapsible, resizable panels', () => {
       launched = undefined;
     }
     if (userDataDir.length > 0) {
-      rmSync(userDataDir, { recursive: true, force: true });
+      removeDirSync(userDataDir);
     }
     userDataDir = '';
   });
