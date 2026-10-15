@@ -1109,7 +1109,13 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
           ...(asBoolean(p['deprecated']) === true ? { deprecated: true } : {}),
           ...(asString(p['description']) !== undefined ? { description: asString(p['description']) as string } : {}),
           schema: synthesizeSwagger2ParamSchema(p),
-          ...(p['default'] !== undefined ? { example: asJson(p['default']) as JsonValue } : {}),
+          // 2.0 has no parameter `example`; `x-example` is the extension documents use for one, so a
+          // path parameter arrives filled in rather than leaving the URL incomplete (#560).
+          ...(p['x-example'] !== undefined
+            ? { example: asJson(p['x-example']) as JsonValue }
+            : p['default'] !== undefined
+              ? { example: asJson(p['default']) as JsonValue }
+              : {}),
           ...(formatStyle.style !== undefined ? { style: formatStyle.style } : {}),
           ...(formatStyle.explode !== undefined ? { explode: formatStyle.explode } : {}),
         });

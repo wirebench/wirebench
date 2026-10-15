@@ -170,3 +170,54 @@ describe('failingLine', () => {
     expect(failingLine([line('a')], 'The sentence')).toBeUndefined();
   });
 });
+
+describe('the connection screen and identities (#416)', () => {
+  const IDENTITY_FILE: HostsFileWire = {
+    version: 1,
+    identities: [{ id: 'ops', name: 'Ops', auth: { kind: 'password', secret: 'ops_pw' } }],
+    groups: [],
+    hosts: [{ id: 'box', name: 'box', address: '127.0.0.1', tags: [], ssh: { port: 2222, identity: 'ops' } }],
+  };
+  /** `box` signing in through identity `ops`, which gives it its password and, unless `user`, no user. */
+  function throughIdentity(user: string | undefined): ResolvedHostWire {
+    const host = resolved(user);
+    return {
+      ...host,
+      ssh: {
+        ...host.ssh,
+        identity: { value: 'ops', from: 'host' },
+        auth: { value: { kind: 'password', secret: 'ops_pw' }, from: { identity: 'ops' } },
+      },
+    };
+  }
+
+  it('a refused password from an identity is saved for the identity, and says so', async () => {
+    useHostsStore.setState({ resolved: [throughIdentity('tester')], file: IDENTITY_FILE });
+    const onRetry = show({ code: 'ssh-auth-failed', message: 'x', details: { user: 'tester', tried: ['password'] } });
+    expect(screen.getByText('Saved for the identity Ops: every host that uses it signs in with it.')).toBeTruthy();
+    setSecret.mockResolvedValue({ ok: true, value: {} });
+    fireEvent.change(screen.getByLabelText('Password for tester'), { target: { value: 'new-pw' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save and retry' }));
+    await waitFor(() => {
+      expect(onRetry).toHaveBeenCalledOnce();
+    });
+    expect(setSecret).toHaveBeenCalledWith({ name: 'ops_pw', value: 'new-pw' });
+  });
+
+  it('a host whose identity has no user offers saving the user to the identity', async () => {
+    useHostsStore.setState({ resolved: [throughIdentity(undefined)], file: IDENTITY_FILE });
+    const save = vi.fn().mockResolvedValue(true);
+    useHostsStore.setState({ save });
+    const onRetry = show({ code: 'ssh-host-incomplete', message: 'x', details: { hostId: 'box', field: 'user' } });
+    fireEvent.change(screen.getByLabelText('Sign in as'), { target: { value: 'tester' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Save to identity Ops' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => {
+      expect(onRetry).toHaveBeenCalledOnce();
+    });
+    expect(save).toHaveBeenCalledWith({
+      ...IDENTITY_FILE,
+      identities: [{ id: 'ops', name: 'Ops', auth: { kind: 'password', secret: 'ops_pw' }, user: 'tester' }],
+    });
+  });
+});

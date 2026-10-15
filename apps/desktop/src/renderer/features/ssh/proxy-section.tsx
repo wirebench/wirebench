@@ -1,5 +1,5 @@
 import type { SshProxyWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
-import { INPUT_CLASS, type Provenance } from './inherited-field.js';
+import { INPUT_CLASS, sourceName, type Provenance } from './inherited-field.js';
 import { SecretSelect } from './secret-fields.js';
 
 /** This level's own `ssh.proxy`: a proxy, `false` to connect directly, `undefined` to inherit. */
@@ -68,7 +68,7 @@ export function ProxySection({ own, inherited, onChange, names, password, onPass
       onChange({ ...own, type: next, port });
     }
   };
-  const source = typeof inherited.from === 'object' ? ` · from ${inherited.from.group}` : '';
+  const source = typeof inherited.from === 'object' ? ` · from ${sourceName(inherited.from)}` : '';
   return (
     <fieldset aria-label="Proxy" className="flex flex-col gap-2 text-xs">
       <label className="flex flex-col gap-1">

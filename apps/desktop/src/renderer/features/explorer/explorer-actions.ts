@@ -306,6 +306,31 @@ export const explorerActions = {
     });
   },
 
+  /**
+   * Import cURL… for a project with no API yet: a cURL line becomes a REST request, which lives in an API, so
+   * one is made first (named as New API names it) and the dialog opens pointed at it.
+   */
+  importCurlIntoNewApi(projectId: string | undefined): void {
+    if (projectId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addApi(
+        projectId,
+        nextName(
+          'API',
+          Object.values(useProjectStore.getState().apis).map((api) => api.name),
+        ),
+      )
+      .then((apiId) => {
+        explorerActions.importCurlInto(apiId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New API failed');
+      });
+  },
+
   /** Opens a folder's credentials dialog, which is where a folder's one editable field lives. */
   editFolderAuth(folderId: string | undefined): void {
     if (folderId !== undefined) {

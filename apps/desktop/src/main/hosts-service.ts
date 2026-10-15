@@ -15,6 +15,7 @@ import type {
   GroupEntry,
   HostEntry,
   HostsFile,
+  IdentityEntry,
   ResolvedEnvVar,
   ResolvedHost,
   SshAuth,
@@ -27,6 +28,7 @@ import type {
   GroupEntryWire,
   HostEntryWire,
   HostsFileWire,
+  IdentityWire,
   ResolvedEnvVarWire,
   ResolvedHostWire,
   SshAuthWire,
@@ -279,13 +281,25 @@ const groupFromWire = (g: GroupEntryWire): GroupEntry => ({
   groups: g.groups.map(groupFromWire),
   hosts: g.hosts.map(hostFromWire),
 });
+const identityToWire = ({ auth, ...rest }: IdentityEntry): IdentityWire => {
+  const wire = authToWire(auth);
+  return { ...rest, ...(wire ? { auth: wire } : {}) };
+};
+const identityFromWire = ({ auth, ...rest }: IdentityWire): IdentityEntry => {
+  const model = authFromWire(auth);
+  return { ...rest, ...(model ? { auth: model } : {}) };
+};
 const fileToWire = (f: HostsFile): HostsFileWire => ({
   version: 1,
+  ...(f.identities === undefined ? {} : { identities: f.identities.map(identityToWire) }),
   groups: f.groups.map(groupToWire),
   hosts: f.hosts.map(hostToWire),
 });
 const fileFromWire = (f: HostsFileWire): HostsFile => ({
   version: 1,
+  ...(f.identities === undefined || f.identities.length === 0
+    ? {}
+    : { identities: f.identities.map(identityFromWire) }),
   groups: f.groups.map(groupFromWire),
   hosts: f.hosts.map(hostFromWire),
 });

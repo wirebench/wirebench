@@ -33,6 +33,8 @@ import type { RequestPreflightResponse } from '../../../shared/wire-types.js';
 import type { RestRequestPatchWire, RestRequestWire } from '../../../shared/kinds/rest/wire.js';
 import type { AuthConfigWire } from '../../../shared/wire-base.js';
 import { explorerActions } from '../explorer/explorer-actions.js';
+import { openProjectTab } from '../explorer/project-actions.js';
+import { useUiStore } from '../../state/ui.js';
 import { WebhookUrlNote } from '../webhook-items/webhook-url-note.js';
 import { RestAuthTab } from './auth-tab.js';
 import { BodyTab } from './body-tab.js';
@@ -105,6 +107,10 @@ export function RestEditor({ requestId }: RestEditorProps) {
     return isWebhookItem && projectId !== undefined ? state.webhooks[projectId] : undefined;
   });
   const projectId = useProjectStore((state) => state.projectOf[requestId]);
+  // A send falls back to the project's Default timeout before any preference (`toRestSendInput`).
+  const projectTimeoutMs = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.settings.defaultTimeoutMs,
+  );
   // The map, then the chain in a memo: the chain is a fresh array, and building one inside a
   // selector would hand React a new reference on every render.
   const folderMap = useProjectStore((state) => state.folders);
@@ -330,7 +336,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
           <SettingsTab
             settings={request.settings}
             inherited={{
-              timeoutMs: preferences.http.socketTimeoutMs,
+              timeoutMs: projectTimeoutMs ?? preferences.http.socketTimeoutMs,
               followRedirects: preferences.rest.followRedirects,
               maxRedirects: preferences.rest.maxRedirects,
               encodeUrl: true,
@@ -338,6 +344,13 @@ export function RestEditor({ requestId }: RestEditorProps) {
               sendCookies: false,
             }}
             onChange={stage}
+            onOpenSource={(source) => {
+              if (source === 'project') {
+                if (projectId !== undefined) openProjectTab(projectId);
+                return;
+              }
+              useUiStore.getState().openPreferences('rest');
+            }}
           />
         )}
       </div>

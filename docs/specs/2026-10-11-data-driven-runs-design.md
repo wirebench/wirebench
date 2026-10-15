@@ -11,7 +11,8 @@ the app and from `wirebench run`, with the same iterations, the same values and 
 ## Decisions (owner, 2026-10-11)
 
 - **D1 — Data values are explicit and literal.** A column is read only as `${#Data#column}`; the `${column}` shorthand
-  never reaches it. The value is substituted as it is: a `${…}` inside a cell is not expanded, and a `${secret:…}`
+  never reaches it. *Amended by #560: the shorthand now reaches a column last, after Global, so the app teaches one
+  `${…}` form; a column still never shadows a property, and the value stays literal.* The value is substituted as it is: a `${…}` inside a cell is not expanded, and a `${secret:…}`
   inside one is never resolved (the Sequence rule of ADR-0015, without the origin guard: the file is the user's own,
   so a row may choose a host).
 - **D2 — Over-run defaults to stop.** With more iterations asked for than there are rows, the run stops after the

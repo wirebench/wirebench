@@ -31,10 +31,16 @@ describe('propertyReferences', () => {
     ]);
   });
 
-  it('keeps System and Sequence as scoped references', () => {
-    expect(propertyReferences('${#System#HOME}${#Sequence#id}').map((ref) => ref.scope)).toEqual([
+  it('keeps System, Sequence and Data as scoped references', () => {
+    expect(propertyReferences('${#System#HOME}${#Sequence#id}${#Data#user}').map((ref) => ref.form)).toEqual([
+      'scoped',
+      'scoped',
+      'scoped',
+    ]);
+    expect(propertyReferences('${#System#HOME}${#Sequence#id}${#Data#user}').map((ref) => ref.scope)).toEqual([
       'System',
       'Sequence',
+      'Data',
     ]);
   });
 
