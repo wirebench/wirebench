@@ -6,6 +6,7 @@ import { expect, test } from '@playwright/test';
 import { startSshFixture, type SshFixture } from '@wirebench/ssh/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createWorkspace } from '../helpers/project.js';
+import { showSshNav } from '../helpers/ssh-host.js';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -84,4 +85,46 @@ test('trust a host key from a hashed known_hosts line', async () => {
   const row = page.getByTestId(`known-host-127.0.0.1:${String(fixture.port)}`);
   await expect(row).toBeVisible();
   await expect(row).toContainText(fixture.hostKey.fingerprint);
+});
+
+test('add a host that is not saved from a plain known_hosts line, and trust its key', async () => {
+  test.setTimeout(180_000);
+  fixture = await startSshFixture({ password: { user: 'tester', password: 'not-used' } });
+  const dir = mkdtempSync(join(tmpdir(), 'wb-known-hosts-'));
+  const knownHostsPath = join(dir, 'known_hosts');
+  const server = `127.0.0.1:${String(fixture.port)}`;
+  writeFileSync(
+    knownHostsPath,
+    [
+      `[127.0.0.1]:${String(fixture.port)} ${fixture.hostPublicKey}`,
+      `${hashed('hidden.example.com')} ${fixture.hostPublicKey}`,
+      '',
+    ].join('\n'),
+  );
+
+  launched = await launchApp({ extraEnv: { WIREBENCH_E2E_FILE_DIALOG_PATH: knownHostsPath } });
+  const page = launched.window;
+  await createWorkspace(page, 'Known hosts add');
+
+  await runCommand(page, 'Import Known Hosts');
+  const dialog = page.getByTestId('known-hosts-import-dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Choose a file…' }).click();
+  const unsaved = dialog.getByRole('region', { name: 'Not in hosts.yaml' });
+  await expect(unsaved).toContainText('127.0.0.1', { timeout: 20_000 });
+  await expect(unsaved).toContainText(fixture.hostKey.fingerprint);
+  // The hashed line names no host to add: it stays not imported.
+  await expect(dialog.getByRole('region', { name: 'Not imported' })).toContainText('(line 2)');
+  await dialog.getByRole('checkbox', { name: `Add ${server}` }).check();
+  await dialog.getByRole('button', { name: 'Add 1 host and trust its keys' }).click();
+  await expect(dialog).toBeHidden();
+
+  const key = page.getByTestId(`known-host-${server}`);
+  await expect(key).toBeVisible();
+  await expect(key).toContainText(fixture.hostKey.fingerprint);
+
+  await showSshNav(page, 'hosts');
+  const host = page.getByTestId('host-row-127-0-0-1');
+  await expect(host).toBeVisible();
+  await expect(host).toContainText('needs user');
 });

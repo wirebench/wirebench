@@ -159,6 +159,11 @@ All notable changes to this project are documented here. The format follows
   same changed-key confirmation as a connect) and what is not imported: `@cert-authority` and
   `@revoked` lines, lines that name no host, a second key of a type a host already has, and lines that
   cannot be read (#418).
+- **Add hosts from known_hosts.** A server a plain known_hosts line names that `hosts.yaml` does not
+  have is listed under **Not in hosts.yaml** with its address, port and keys. Ticking it adds it as a
+  host named after its address, with no user (so it shows "needs user"), at the top level or in the
+  group picked in the dialog, and trusts its keys. Nothing is added unless ticked, and hashed lines
+  still name no host to add (#572).
 
 - **Session logs for SSH terminals.** A host's details gain **Session logs**: a **Log sessions** switch
   (also on a group's menu, inherited by the hosts inside) and the logs this machine kept, newest first,

@@ -539,6 +539,16 @@ export const sshKnownHostsImportPreviewSchema = z.strictObject({
   /** Keys that differ from a stored one: replaced only when chosen and confirmed. */
   conflicts: z.array(sshKnownHostsImportRowSchema.extend({ previous: z.string() })),
   trusted: z.array(sshKnownHostsImportRowSchema),
+  /** Servers plain lines name that no host in hosts.yaml dials (#572): added only when chosen. */
+  unsaved: z.array(
+    z.strictObject({
+      /** `address:port`, as the trusted-keys store keeps it. */
+      host: z.string(),
+      address: z.string(),
+      port: z.number(),
+      keys: z.array(z.strictObject({ keyType: z.string(), fingerprint: z.string(), line: z.number() })),
+    }),
+  ),
   skipped: z.array(
     z.strictObject({
       line: z.number(),
@@ -554,12 +564,18 @@ export const sshKnownHostsImportApplyRequestSchema = z.strictObject({
   previewId: z.string(),
   /** The conflicts the user chose to replace, by host and key type. */
   replace: z.array(z.strictObject({ host: z.string(), keyType: z.string() })),
+  /** Unsaved servers to add to hosts.yaml and trust, by `address:port`; none unless chosen. */
+  addHosts: z.array(z.string()).optional(),
+  /** The group the added hosts go into; the top level when unset. */
+  group: z.string().optional(),
 });
 export const sshKnownHostsImportApplyResponseSchema = z.strictObject({
   added: z.number(),
   replaced: z.number(),
   /** Stored keys left alone because they were not chosen for replacing. */
   kept: z.number(),
+  /** Hosts written to hosts.yaml. */
+  hostsAdded: z.number(),
 });
 
 export type SshKnownHostsImportPreviewRequest = z.infer<typeof sshKnownHostsImportPreviewRequestSchema>;
