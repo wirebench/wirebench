@@ -15,6 +15,7 @@ import { FileList } from './file-list.js';
 import { FileMenu } from './file-menu.js';
 import { otherPaneId, tabOfPane, useFilesStore } from './files-store.js';
 import { isFolderLike, joinPath, parentOf, visibleEntries } from './format.js';
+import { hostName } from './open-files.js';
 import { PathBar } from './path-bar.js';
 import { PermissionsDialog } from './permissions-dialog.js';
 import { PlacePicker } from './place-picker.js';
@@ -23,6 +24,11 @@ import { useTransfersStore } from './transfers-store.js';
 
 /** The drag type of entries dragged out of a pane; its value is the pane's id. */
 const DRAG_TYPE = 'application/x-wirebench-files';
+
+/** "21:31": when a pane's connection ended. */
+function lostTime(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
 /** What is being dragged out of a pane of this window right now. */
 let dragging: { readonly paneId: string; readonly names: readonly string[] } | undefined;
@@ -76,6 +82,57 @@ export function FilePane({ paneId }: { readonly paneId: string }) {
       />
     </div>
   );
+
+  // A host's pane whose connection ended (#590): what happened and Reconnect, over the last listing, dimmed.
+  if (place.kind === 'remote' && pane.status === 'error' && !ready && pane.error?.code === 'sftp-closed') {
+    const hostId = place.hostId;
+    const at = pane.error.at;
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="files-pane" data-place={place.kind}>
+        {header}
+        <div
+          role="alert"
+          data-testid="files-lost"
+          className="flex flex-wrap items-center gap-2 border-b border-hairline bg-status-warning/10 px-3 py-2 text-sm text-fg-default"
+        >
+          <span className="min-w-0 flex-1">
+            {`Connection to ${hostName(hostId)} lost`}
+            {at !== undefined && ` · ${lostTime(at)}`}
+          </span>
+          <Button
+            variant="primary"
+            onClick={() => {
+              void store().connect(paneId, hostId);
+            }}
+          >
+            Reconnect
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              useEditorsStore.getState().close(tabOfPane(paneId));
+            }}
+          >
+            Close
+          </Button>
+        </div>
+        {/* Seen, not used: nothing in it can be reached until the pane connects again. */}
+        <div className="flex min-h-0 flex-1 flex-col opacity-50" data-testid="files-lost-listing" inert>
+          <FileList
+            listKey={pane.path}
+            active={false}
+            entries={entries}
+            selected={pane.selected}
+            sort={pane.sort}
+            onSort={() => undefined}
+            onSelect={() => undefined}
+            onOpen={() => undefined}
+            onUp={() => undefined}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // A host's pane connecting, or failing to, shows the same connection screen as a terminal (#528).
   if (place.kind === 'remote' && (pane.status === 'connecting' || (pane.status === 'error' && !ready))) {

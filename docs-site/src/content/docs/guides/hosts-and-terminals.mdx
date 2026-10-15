@@ -456,7 +456,7 @@ refused sign-in or a host setting fails the same way each time, so the screen of
 **Show log** unfolds the handshake log: timestamped lines for the lookup, the TCP connection, the
 server's software, the host key and its `known_hosts` result, each sign-in attempt and its result, and
 the methods the server allows. It is folded while connecting and opens on its own when a connect fails,
-with the lines that say what failed, and the failure's sentence as the last line, in red. It opens
+with the failure's sentence pinned above the lines in red. The lines run in time order; it opens
 scrolled to its end, with the line that failed highlighted.
 It never holds a password, passphrase or private key. With **Reduce motion** on in the system settings,
 the screen shows no spinner or moving line, only the ticks.
@@ -467,11 +467,12 @@ the screen shows no spinner or moving line, only the ticks.
 - When the remote shell exits, the tab stays and shows **Session ended (code N)** with **Reconnect**.
   If the connection could not be made, the connection screen shows why (see above).
 - When the network drops the connection (Wi-Fi changes, a VPN drops, the laptop sleeps), the tab
-  keeps its scrollback and reconnects on its own. The connection screen shows **Reconnecting… attempt
-  N of 10** with a countdown, **Reconnect now** and **Stop**, then the steps of each attempt. It tries
-  at once when the machine wakes or the network comes back. A shell that exited, a sign-in failure or
-  a changed host key never reconnects. After the last attempt the screen shows the last attempt's
-  reason with **Retry**. **Preferences → Terminal** turns this off and sets the number of attempts.
+  keeps its scrollback and reconnects on its own. The terminal stays in view, dimmed, under one bar:
+  **Reconnecting… attempt N of 10** with a countdown, **Reconnect now**, **Stop** and **Show log**, which
+  unfolds the last attempt's log. It tries at once when the machine wakes or the network comes back. A
+  shell that exited, a sign-in failure or a changed host key never reconnects. Only after the last
+  attempt does the connection screen come back, with the last attempt's reason, **Retry** and its log
+  folded. **Preferences → Terminal** turns this off and sets the number of attempts.
 - Pasting text with more than one line asks first, with a preview, because a pasted script runs line
   by line. Both clipboard behaviours are in **Preferences → Terminal**: **Confirm multi-line paste**
   is on by default, and **Copy on select** is off by default.
@@ -528,7 +529,9 @@ works through jump hosts exactly as the terminal does.
 The tab is named after the host with **· Files**. It has its own SSH connection, separate from any
 terminal to the same host, so it signs in and checks the host key the same way (see
 [Host keys](#host-keys)). While it connects, or after it fails, the host's pane shows the same
-[connection screen](#the-connection-screen) as a terminal, ending in **Starting SFTP**. Like a terminal, it keeps its folders and copies while you switch to
+[connection screen](#the-connection-screen) as a terminal, ending in **Starting SFTP**. If the
+connection ends later, the pane says so, for example *Connection to box lost · 21:31*, with **Reconnect**
+and **Close**; its last listing stays in view, dimmed, until it connects again. Like a terminal, it keeps its folders and copies while you switch to
 another tab, ends when you close it or switch workspace, and is not restored on restart.
 
 ### The two panes

@@ -71,6 +71,36 @@ it('a failed open shows the connection screen with its reason, and Retry connect
   expect(screen.queryByTestId('connect-screen')).toBeNull();
 });
 
+it('a dropped connection says so, keeps the listing dimmed and makes Reconnect the main button (#590)', async () => {
+  render(<Tab />);
+  await waitFor(() => {
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  const at = new Date(2026, 9, 15, 21, 31).getTime();
+  vi.spyOn(Date, 'now').mockReturnValue(at);
+  act(() => {
+    useFilesStore.getState().noteClosed('s1');
+  });
+  vi.mocked(Date.now).mockRestore();
+  const time = new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  expect(screen.getByTestId('files-lost').textContent).toContain(`Connection to alpha lost · ${time}`);
+  expect(screen.queryByTestId('connect-screen')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Edit host' })).toBeNull();
+  const reconnect = screen.getByRole('button', { name: 'Reconnect' });
+  expect(reconnect.className).toMatch(/bg-accent/);
+  // The last listing stays in view, dimmed and out of reach.
+  const listing = screen.getByTestId('files-lost-listing');
+  expect(listing.hasAttribute('inert')).toBe(true);
+  expect(listing.textContent).toContain('notes.txt');
+
+  fireEvent.click(reconnect);
+  await waitFor(() => {
+    expect(screen.queryByTestId('files-lost')).toBeNull();
+    expect(screen.getByText('notes.txt')).toBeDefined();
+  });
+  expect(open).toHaveBeenCalledTimes(2);
+});
+
 it('Open terminal opens or focuses the host’s terminal tab', async () => {
   render(<Tab />);
   fireEvent.click(screen.getByRole('button', { name: /Open terminal/ }));
