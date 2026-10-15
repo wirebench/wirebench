@@ -27,11 +27,11 @@ export function SecretSelect(props: {
 }) {
   const { label, value, names, optional = false, onChange } = props;
   return (
-    <label className="flex flex-1 flex-col gap-1 text-xs">
+    <label className="flex min-w-32 flex-1 flex-col gap-1 text-xs">
       <span className="text-fg-subtle">{label}</span>
       <select
         aria-label={label}
-        className={INPUT_CLASS}
+        className={`${INPUT_CLASS} w-full min-w-0`}
         value={value}
         onChange={(e) => {
           onChange(e.target.value);

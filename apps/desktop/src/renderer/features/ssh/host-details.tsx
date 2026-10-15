@@ -163,7 +163,8 @@ export function HostDetails() {
           {path !== undefined && path !== '' && <span className="truncate">· {path}</span>}
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      {/* Wraps in a narrow panel rather than pushing the last buttons past its edge. */}
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="primary"
           onClick={() => {

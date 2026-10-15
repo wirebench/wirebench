@@ -435,7 +435,9 @@ describe('Hosts tab', () => {
     await userEvent.click(await screen.findByText('Edit…'));
     const field = await screen.findByLabelText<HTMLInputElement>('Password', { selector: 'input[type="password"]' });
     expect(field.value).toBe('');
-    expect(field.placeholder).toBe('Saved as beta_pw · type to replace');
+    // A short placeholder that fits a narrow panel; the secret's name is on the hint's own line (#591).
+    expect(field.placeholder).toBe('•••• stored · type to replace');
+    expect(screen.getByText('Stored as the secret beta_pw.').textContent).toBe('Stored as the secret beta_pw.');
     await userEvent.type(field, 'new');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(setSecret).toHaveBeenCalledWith({ name: 'beta_pw', value: 'new' });

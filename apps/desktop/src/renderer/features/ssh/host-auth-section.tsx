@@ -72,7 +72,7 @@ export function HostAuthSection(props: {
           : '';
 
   return (
-    <fieldset className="flex flex-col gap-2 text-xs">
+    <fieldset className="flex min-w-0 flex-col gap-2 text-xs">
       <legend className="text-fg-subtle">Authentication</legend>
       <div role="radiogroup" aria-label="Authentication" className="flex flex-wrap gap-3">
         {kinds.map((k) => (
@@ -101,21 +101,22 @@ export function HostAuthSection(props: {
               autoComplete="new-password"
               className={INPUT_CLASS}
               value={password}
-              placeholder={value.secret === '' ? undefined : `Saved as ${value.secret} · type to replace`}
+              placeholder={value.secret === '' ? undefined : '•••• stored · type to replace'}
               onChange={(e) => {
                 onPasswordChange?.(e.target.value);
               }}
             />
           </label>
-          <div className="flex items-center gap-2 text-fg-subtle">
-            <span className="flex-1">
+          {/* The hint takes its own line; the stored-secret choice sits under it, never in a narrow column beside it. */}
+          <div className="flex flex-col items-start gap-1 text-fg-subtle">
+            <span>
               {value.secret === ''
                 ? 'Kept on this machine as a secret, never in the hosts file.'
                 : `Stored as the secret ${value.secret}.`}
             </span>
             <button
               type="button"
-              className="rounded px-1 hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+              className="-mx-1 rounded px-1 hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
               onClick={() => {
                 onPasswordChange?.('');
                 setSavedSecret(true);
@@ -127,7 +128,7 @@ export function HostAuthSection(props: {
         </div>
       )}
       {value?.kind === 'password' && savedSecret && (
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <SecretSelect
             label="Password secret"
             value={value.secret}
@@ -146,7 +147,7 @@ export function HostAuthSection(props: {
         </div>
       )}
       {value?.kind === 'key' && (
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <SecretSelect
             label="Private key secret"
             value={value.secret}
@@ -193,8 +194,8 @@ export function HostAuthSection(props: {
         </div>
       )}
       {setting !== undefined && (
-        <div className="flex items-end gap-2">
-          <label className="flex flex-1 flex-col gap-1 text-xs">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex min-w-32 flex-1 flex-col gap-1 text-xs">
             <span className="text-fg-subtle">Secret name</span>
             <input
               className={INPUT_CLASS}
@@ -204,7 +205,7 @@ export function HostAuthSection(props: {
               }}
             />
           </label>
-          <label className="flex flex-1 flex-col gap-1 text-xs">
+          <label className="flex min-w-32 flex-1 flex-col gap-1 text-xs">
             <span className="text-fg-subtle">Secret value</span>
             <input
               type="password"

@@ -454,13 +454,18 @@ function SnippetForm(props: {
           ))}
         </ul>
       )}
-      <fieldset className="flex flex-col gap-2 text-xs">
+      <fieldset className="flex min-w-0 flex-col gap-2 text-xs">
         <legend className="mb-1 text-fg-subtle">Variables</legend>
+        {/* Below 360px of panel width a row stacks: name and remove on one line, Label and Default under them. */}
         {variables.map((v) => (
-          <div key={v.key} className="flex items-center gap-1">
+          <div
+            key={v.key}
+            data-testid="snippet-variable-row"
+            className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1 @min-[360px]:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)_auto]"
+          >
             <input
               aria-label="Variable name"
-              className={`${INPUT_CLASS} w-24 font-mono`}
+              className={`${INPUT_CLASS} order-1 col-span-2 min-w-0 font-mono @min-[360px]:order-none @min-[360px]:col-span-1`}
               value={v.name}
               onChange={(e) => {
                 setVariable(v.key, { name: e.target.value });
@@ -469,7 +474,7 @@ function SnippetForm(props: {
             <input
               aria-label={`Label of ${v.name}`}
               placeholder="Label"
-              className={`${INPUT_CLASS} min-w-0 flex-1`}
+              className={`${INPUT_CLASS} order-3 min-w-0 @min-[360px]:order-none`}
               value={v.label}
               onChange={(e) => {
                 setVariable(v.key, { label: e.target.value });
@@ -478,7 +483,7 @@ function SnippetForm(props: {
             <input
               aria-label={`Default of ${v.name}`}
               placeholder="Default"
-              className={`${INPUT_CLASS} min-w-0 flex-1`}
+              className={`${INPUT_CLASS} order-4 min-w-0 @min-[360px]:order-none`}
               value={v.default}
               onChange={(e) => {
                 setVariable(v.key, { default: e.target.value });
@@ -487,7 +492,7 @@ function SnippetForm(props: {
             <button
               type="button"
               aria-label={`Remove ${v.name}`}
-              className="inline-flex size-6 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover"
+              className="order-2 inline-flex size-6 items-center @min-[360px]:order-none justify-center rounded text-fg-subtle hover:bg-surface-hover"
               onClick={() => {
                 setVariables((rows) => rows.filter((r) => r.key !== v.key));
               }}
