@@ -4,6 +4,7 @@ export * from './host-env.js';
 export * from './host-terminal.js';
 export * from './host-mosh.js';
 export * from './forward-rules.js';
+export * from './forward-groups.js';
 export * from './socks5.js';
 export * from './resolve.js';
 export * from './known-hosts.js';

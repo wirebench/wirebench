@@ -218,6 +218,50 @@ groups:
         }),
       ).rejects.toMatchObject({ name: 'WirebenchError', code: 'ssh-forward-invalid', details: { field: 'target' } });
     });
+
+    it('forwarding groups cross the wire both ways; the file is written as version 2 only while it has one (#583)', async () => {
+      const d = dir();
+      writeFileSync(join(d, 'hosts.yaml'), RULES);
+      const service = new HostsService({ treeDir: () => d });
+      const { file } = sshListHostsResponseSchema.parse(await service.list());
+      expect(file.forwardGroups).toBeUndefined();
+      const dev = {
+        id: 'dev',
+        name: 'Dev',
+        rules: [
+          { host: 'db-1', rule: 'grafana' },
+          { host: 'db-1', rule: 'hook' },
+        ],
+      };
+      // The renderer's version is ignored: main writes what the content needs.
+      const saved = sshListHostsResponseSchema.parse(await service.save({ ...file, forwardGroups: [dev] }));
+      expect(saved.file.forwardGroups).toEqual([dev]);
+      expect(saved.file.version).toBe(2);
+      const text = readFileSync(join(d, 'hosts.yaml'), 'utf8');
+      expect(text).toMatch(/^version: 2\n/);
+      expect(text).toContain(
+        'forwardGroups:\n  - id: dev\n    name: Dev\n    rules:\n      - host: db-1\n        rule: grafana\n',
+      );
+      await service.save({ ...saved.file, forwardGroups: [] });
+      expect(readFileSync(join(d, 'hosts.yaml'), 'utf8')).toBe(RULES);
+    });
+
+    it('save refuses a rule in two forwarding groups', async () => {
+      const d = dir();
+      writeFileSync(join(d, 'hosts.yaml'), RULES);
+      const service = new HostsService({ treeDir: () => d });
+      const { file } = sshListHostsResponseSchema.parse(await service.list());
+      const rules = [{ host: 'db-1', rule: 'hook' }];
+      await expect(
+        service.save({
+          ...file,
+          forwardGroups: [
+            { id: 'a', name: 'A', rules },
+            { id: 'b', name: 'B', rules },
+          ],
+        }),
+      ).rejects.toMatchObject({ name: 'WirebenchError', code: 'ssh-forward-group-member-twice' });
+    });
   });
 
   it('save refuses a secret name that is not a NAME', async () => {

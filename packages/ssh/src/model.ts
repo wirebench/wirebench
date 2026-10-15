@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { SshModelError } from './errors.js';
 import { forwardsSchema, isOffForm, serializeForward } from './forward-rules.js';
 import type { ForwardEntry } from './forward-rules.js';
+import {
+  checkForwardGroups,
+  FORWARD_GROUPS_VERSION,
+  forwardGroupSchema,
+  serializeForwardGroup,
+} from './forward-groups.js';
 import { envSchema } from './host-env.js';
 import { moshSchema, protocolSchema } from './host-mosh.js';
 import { terminalSchema } from './host-terminal.js';
@@ -137,13 +143,26 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
   }),
 );
 
-const fileSchema = z.strictObject({
-  version: z.literal(1),
-  /** Left out when there are none, so files written before #416 read and write unchanged. */
-  identities: z.array(identitySchema).optional(),
-  groups: z.array(groupSchema).default([]),
-  hosts: z.array(hostSchema).default([]),
-});
+const fileSchema = z
+  .strictObject({
+    /** 2 once the file holds forwarding groups (#583); a file without them is still written as 1. */
+    version: z.union([z.literal(1), z.literal(2)]),
+    /** Left out when there are none, so files written before #416 read and write unchanged. */
+    identities: z.array(identitySchema).optional(),
+    groups: z.array(groupSchema).default([]),
+    hosts: z.array(hostSchema).default([]),
+    /** Named sets of rules started together (#583); version 2 only, left out when there are none. */
+    forwardGroups: z.array(forwardGroupSchema).optional(),
+  })
+  .superRefine((file, ctx) => {
+    if (file.forwardGroups !== undefined && file.version < FORWARD_GROUPS_VERSION) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['forwardGroups'],
+        message: `needs version: ${String(FORWARD_GROUPS_VERSION)}`,
+      });
+    }
+  });
 
 export type HostsFile = z.infer<typeof fileSchema>;
 export const EMPTY_HOSTS_FILE: HostsFile = { version: 1, groups: [], hosts: [] };
@@ -239,6 +258,7 @@ export function parseHostsFile(text: string): HostsFile {
   checkIdentities(parsed.data);
   checkJumps(parsed.data);
   checkForwards(parsed.data);
+  checkForwardGroups(parsed.data.forwardGroups ?? []);
   return parsed.data;
 }
 
@@ -397,8 +417,13 @@ function group(g: GroupEntry): Record<string, unknown> {
   return out;
 }
 
+/** The lowest version that can hold the file, so a file without forwarding groups stays readable by older builds. */
+export function hostsFileVersion(file: Pick<HostsFile, 'forwardGroups'>): 1 | 2 {
+  return file.forwardGroups !== undefined && file.forwardGroups.length > 0 ? FORWARD_GROUPS_VERSION : 1;
+}
+
 export function serializeHostsFile(file: HostsFile): string {
-  const out: Record<string, unknown> = { version: file.version };
+  const out: Record<string, unknown> = { version: hostsFileVersion(file) };
   if (file.identities !== undefined && file.identities.length > 0) {
     out['identities'] = file.identities.map((i) => ({
       id: i.id,
@@ -409,5 +434,8 @@ export function serializeHostsFile(file: HostsFile): string {
   }
   if (file.groups.length > 0) out['groups'] = file.groups.map(group);
   if (file.hosts.length > 0) out['hosts'] = file.hosts.map(host);
+  if (file.forwardGroups !== undefined && file.forwardGroups.length > 0) {
+    out['forwardGroups'] = file.forwardGroups.map(serializeForwardGroup);
+  }
   return stringifyYaml(out, { lineWidth: 0 });
 }

@@ -79,7 +79,7 @@ describe('parseHostsFile', () => {
       () => parseHostsFile(`version: 1\nhosts:\n  - { id: 'Bad Id', name: a, address: a }\n`),
       'ssh-hosts-invalid',
     );
-    expectCode(() => parseHostsFile(`version: 2\n`), 'ssh-hosts-invalid');
+    expectCode(() => parseHostsFile(`version: 3\n`), 'ssh-hosts-invalid');
     expectCode(
       () =>
         parseHostsFile(

@@ -20,6 +20,8 @@ export type SshErrorCode =
   | 'ssh-forward-duplicate-id'
   | 'ssh-forward-invalid'
   | 'ssh-forward-unknown'
+  | 'ssh-forward-group-duplicate-id'
+  | 'ssh-forward-group-member-twice'
   | 'ssh-forward-port-in-use'
   | 'ssh-forward-bind-failed'
   | 'ssh-forward-refused'

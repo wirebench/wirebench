@@ -143,11 +143,20 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
   }),
 );
 
+/** A forwarding group (#583): rules of any hosts, each named by host id and rule id, started together. */
+export const forwardGroupWireSchema = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  rules: z.array(z.strictObject({ host: z.string(), rule: z.string() })),
+});
+
 export const hostsFileWireSchema = z.strictObject({
-  version: z.literal(1),
+  /** Main writes the version the content needs (2 with forwarding groups); the renderer's value is ignored. */
+  version: z.union([z.literal(1), z.literal(2)]),
   identities: z.array(identityWireSchema).optional(),
   groups: z.array(groupEntryWireSchema),
   hosts: z.array(hostEntryWireSchema),
+  forwardGroups: z.array(forwardGroupWireSchema).optional(),
 });
 
 /** `preferences` is Preferences → SSH (#571); `default` the built-in value, or none. */
@@ -238,6 +247,7 @@ export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
 export type SshProxyWire = z.infer<typeof sshProxyWireSchema>;
 export type IdentityWire = z.infer<typeof identityWireSchema>;
 export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
+export type ForwardGroupWire = z.infer<typeof forwardGroupWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;
 export type EnvVarWire = z.infer<typeof envVarWireSchema>;
