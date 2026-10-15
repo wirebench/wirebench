@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import type { ForwardEntryWire, GroupEntryWire } from '../../../../shared/ssh-wire.js';
 import { defaultBind, ForwardForm, type ForwardFullEntry } from './forward-form.js';
-import { listenAddress, typeLetter } from './forward-format.js';
+import { listenAddress, typeWord } from './forward-format.js';
 
 /** A rule the enclosing groups give this level: the nearest full definition, and the group that switched it off. */
 export interface InheritedForward {
@@ -75,7 +75,7 @@ function Switch({
 
 function summary(rule: ForwardFullEntry): string {
   const bind = listenAddress(rule.bind ?? defaultBind(rule.type), rule.port);
-  return `${typeLetter(rule.type)} ${bind} → ${rule.type === 'dynamic' ? 'SOCKS' : (rule.target ?? '')}`;
+  return `${typeWord(rule.type)} ${bind} → ${rule.type === 'dynamic' ? 'SOCKS' : (rule.target ?? '')}`;
 }
 
 export interface ForwardsSectionProps {

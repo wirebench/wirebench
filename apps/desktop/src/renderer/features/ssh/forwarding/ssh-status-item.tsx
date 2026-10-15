@@ -2,7 +2,7 @@ import { showForwarding } from './forward-actions.js';
 import { forwardCounts, useForwardsStore } from './forwards-store.js';
 
 /**
- * The SSH area's status bar item: `⇄ N` while N forwards run, red while any has failed; it opens the Port
+ * The SSH area's status bar item: `⇄ N` while N forwards run, `⇄ N · M failed` (red) while any has failed; it opens the Port
  * forwarding view. Nothing shows while none runs and none failed.
  */
 export function SshStatusItem() {
@@ -31,6 +31,7 @@ export function SshStatusItem() {
         }}
       >
         ⇄ {running}
+        {failed > 0 && ` · ${String(failed)} failed`}
       </button>
     </>
   );
