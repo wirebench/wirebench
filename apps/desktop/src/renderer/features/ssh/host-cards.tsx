@@ -97,9 +97,6 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
   const osEntry = useHostsStore((s) => (resolved === undefined ? undefined : s.osByHost[osKeyOf(resolved)]));
   const os = osOf(osEntry);
   const osText = osTextOf(osEntry);
-  // Whether this card's details were already showing when the press began: a click on it then
-  // hides them, rather than the focus the press brings picking it again.
-  const pressedWhileShown = useRef(false);
   const connect = (): void => {
     openTerminalFor(host.id);
   };
@@ -144,16 +141,15 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
             : 'border-hairline bg-surface-raised hover:bg-surface-hover'
         } ${grid ? 'items-center gap-2.5 rounded-md p-2' : 'items-center gap-3 rounded-md px-3 py-1'}`}
         onMouseDown={(e) => {
-          pressedWhileShown.current = selected && useHostsStore.getState().detailsOpen;
           if (e.button === 0 && e.detail === 1) {
             noteFirstPress(host.id, e);
           }
         }}
         onClick={(e) => {
           // The second click of a double-click belongs to connecting (see `double-press.ts`).
+          // Picking the card again keeps its details showing: only their close icon or Escape hides them.
           if (e.detail > 1) return;
-          if (pressedWhileShown.current) useHostsStore.getState().setDetailsOpen(false);
-          else onSelect();
+          onSelect();
         }}
         onFocus={(e) => {
           if (e.target === e.currentTarget) onSelect();

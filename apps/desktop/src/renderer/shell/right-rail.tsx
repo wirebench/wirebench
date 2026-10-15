@@ -17,7 +17,6 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
   // The SSH area has no request to show code for; its icon opens the picked host's details instead.
   const sshInFront = useEditorsStore((state) => state.displayedSet === 'ssh');
   const hostDetailsShown = useHostDetailsShown();
-  const hasHost = useHostsStore((state) => state.selectedHostId !== undefined);
 
   return (
     <nav
@@ -29,7 +28,6 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
         <IconButton
           label="Host details"
           active={hostDetailsShown}
-          disabled={!hasHost}
           data-testid="rail-host-details"
           aria-pressed={undefined}
           aria-expanded={hostDetailsShown}

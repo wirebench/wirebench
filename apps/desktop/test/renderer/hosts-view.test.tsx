@@ -33,6 +33,8 @@ import { SshHome } from '../../src/renderer/features/ssh/ssh-home.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { useForwardsStore } from '../../src/renderer/features/ssh/forwarding/forwards-store.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
+import { DEFAULT_UI_STATE, readUi, writeUi } from '../../src/renderer/state/ui-state.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { DEFAULT_HOSTS_PREFS, readHostsPrefs, writeHostsPrefs } from '../../src/renderer/features/ssh/hosts-prefs.js';
 import type { WorkspaceWire } from '../../src/shared/wire-base.js';
@@ -132,10 +134,13 @@ beforeEach(() => {
     panes: {},
     homeView: 'hosts',
     selectedHostId: undefined,
-    detailsOpen: false,
     importOpen: false,
   });
+  useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
 });
+
+/** Whether Host details is wanted, as the per-machine layout keeps it. */
+const detailsOpen = (): boolean => useUiStore.getState().slideOver.hostDetailsOpen === true;
 afterEach(cleanup);
 
 /** The sidebar menu and the fixed tab it drives, as the shell lays them out. */
@@ -666,19 +671,19 @@ describe('Host details', () => {
   beforeEach(() => {
     useEditorsStore.getState().reset();
     useEditorsStore.getState().showSet('ssh');
-    useHostsStore.setState({ selectedHostId: undefined, detailsOpen: false });
+    useHostsStore.setState({ selectedHostId: undefined });
   });
 
   it('clicking a card picks it and asks for its details', async () => {
     render(<SshHome />);
     await userEvent.click(screen.getByTestId('host-row-a'));
-    expect(useHostsStore.getState()).toMatchObject({ selectedHostId: 'a', detailsOpen: true });
+    expect(useHostsStore.getState().selectedHostId).toBe('a');
+    expect(detailsOpen()).toBe(true);
     expect(screen.getByTestId('host-row-a').dataset['selected']).toBe('true');
   });
   it('shows where each setting comes from, the trusted key and the matching command', async () => {
     useHostsStore.setState({
       selectedHostId: 'a',
-      detailsOpen: true,
       resolved: [
         {
           ...STATE.resolved[0]!,
@@ -700,11 +705,11 @@ describe('Host details', () => {
     expect(screen.getByText('ssh deploy@10.0.0.1')).toBeDefined();
   });
   it('an incomplete host says what it needs', () => {
-    useHostsStore.setState({ selectedHostId: 'a', detailsOpen: true });
+    useHostsStore.setState({ selectedHostId: 'a' });
     render(<HostDetails />);
     expect(screen.getByRole('alert').textContent).toContain('Needs a user to connect.');
   });
-  it('shows only while the Hosts tab is in front and a host is picked', () => {
+  it('shows only while the Hosts tab is in front and it was not put away', () => {
     const shown = (): boolean => {
       let value = false;
       function Probe() {
@@ -724,6 +729,30 @@ describe('Host details', () => {
     expect(shown()).toBe(true);
     useHostsStore.getState().setDetailsOpen(false);
     expect(shown()).toBe(false);
+    // Picking nothing does not put it away; with no host picked it asks for one.
+    useHostsStore.getState().setDetailsOpen(true);
+    useHostsStore.getState().selectHost(undefined);
+    expect(shown()).toBe(true);
+    render(<HostDetails />);
+    expect(screen.getByTestId('host-details-empty').textContent).toBe('Select a host to see its details.');
+  });
+  it('is remembered in the per-machine layout, so it is back after a restart', () => {
+    const storage = new Map<string, string>();
+    const fake = {
+      getItem: (k: string) => storage.get(k) ?? null,
+      setItem: (k: string, v: string) => void storage.set(k, v),
+      removeItem: (k: string) => void storage.delete(k),
+      clear: () => storage.clear(),
+      key: () => null,
+      length: 0,
+    } satisfies Storage;
+    writeUi({ ...DEFAULT_UI_STATE, slideOver: { ...DEFAULT_UI_STATE.slideOver, hostDetailsOpen: true } }, fake);
+    expect(readUi(fake).slideOver.hostDetailsOpen).toBe(true);
+    writeUi({ ...DEFAULT_UI_STATE, slideOver: { ...DEFAULT_UI_STATE.slideOver, hostDetailsOpen: false } }, fake);
+    expect(readUi(fake).slideOver.hostDetailsOpen).toBe(false);
+    // A layout saved before the flag existed, or a malformed one, reads as hidden.
+    writeUi(DEFAULT_UI_STATE, fake);
+    expect(readUi(fake).slideOver.hostDetailsOpen).toBeUndefined();
   });
   it('builds the ssh command with the port and jump host only when they differ', () => {
     const host = {
@@ -737,7 +766,7 @@ describe('Host details', () => {
 describe('Editing in the details panel', () => {
   beforeEach(() => {
     useEditorsStore.getState().reset();
-    useHostsStore.setState({ selectedHostId: undefined, detailsOpen: false, dialog: null });
+    useHostsStore.setState({ selectedHostId: undefined, dialog: null });
   });
 
   it('Edit opens the form in the panel, not a dialog, and Save returns to the details', async () => {
@@ -787,15 +816,19 @@ describe('Clicking the picked card', () => {
     useEditorsStore.getState().showSet('ssh');
   });
 
-  it('hides its details, and a further click shows them again', async () => {
+  it('keeps its details showing; another card shows that host instead', async () => {
     render(<SshHome />);
     const card = screen.getByTestId('host-row-b');
     await userEvent.click(card);
-    expect(useHostsStore.getState()).toMatchObject({ selectedHostId: 'b', detailsOpen: true });
+    expect(useHostsStore.getState().selectedHostId).toBe('b');
+    expect(detailsOpen()).toBe(true);
     await userEvent.click(card);
-    expect(useHostsStore.getState()).toMatchObject({ selectedHostId: 'b', detailsOpen: false });
     await userEvent.click(card);
-    expect(useHostsStore.getState().detailsOpen).toBe(true);
+    expect(useHostsStore.getState().selectedHostId).toBe('b');
+    expect(detailsOpen()).toBe(true);
+    await userEvent.click(screen.getByTestId('host-row-a'));
+    expect(useHostsStore.getState().selectedHostId).toBe('a');
+    expect(detailsOpen()).toBe(true);
   });
   it('has no Connect button: a double-click connects', async () => {
     render(<SshHome />);

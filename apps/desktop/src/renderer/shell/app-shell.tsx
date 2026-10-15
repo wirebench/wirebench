@@ -165,8 +165,7 @@ export function AppShell() {
   const hostDetailsShown = useHostDetailsShown();
   const settingsOpen = useUiStore((state) => state.preferences.open);
   const toggleHostDetails = useCallback(() => {
-    const hosts = useHostsStore.getState();
-    hosts.setDetailsOpen(!hosts.detailsOpen);
+    useHostsStore.getState().setDetailsOpen(useUiStore.getState().slideOver.hostDetailsOpen !== true);
   }, []);
   const closeHostDetails = useCallback(() => {
     useHostsStore.getState().setDetailsOpen(false);

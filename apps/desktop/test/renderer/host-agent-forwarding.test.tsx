@@ -135,7 +135,7 @@ describe('the agent forwarding section of the host form', () => {
 
 describe('host details', () => {
   it('lists agent forwarding with its source, and the command carries -A', () => {
-    useHostsStore.setState({ selectedHostId: 'git-box', detailsOpen: true });
+    useHostsStore.setState({ selectedHostId: 'git-box' });
     render(<HostDetails />);
     const row = screen.getByText('Agent forwarding').parentElement!;
     expect(row.textContent).toContain('On');

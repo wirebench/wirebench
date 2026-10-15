@@ -159,7 +159,7 @@ describe('Mosh helpers', () => {
 
 describe('host details', () => {
   it('shows the protocol with where it comes from', () => {
-    useHostsStore.setState({ selectedHostId: 'train', detailsOpen: true });
+    useHostsStore.setState({ selectedHostId: 'train' });
     render(<HostDetails />);
     const row = screen.getByText('Protocol').parentElement!;
     expect(row.textContent).toContain('Mosh');

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Host details stays open.** Clicking the selected host, or another one, no longer closes the Host
+  details panel; only its close icon, Escape and the right rail's icon do. Whether it is open is
+  remembered on this machine and restored after a restart, where it asks for a host until one is
+  picked (#582).
+
 ## [6.1.0] - 2026-10-15
 
 ### Added

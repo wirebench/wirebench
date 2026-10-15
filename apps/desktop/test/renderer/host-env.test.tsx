@@ -191,7 +191,7 @@ describe('the environment in host details', () => {
   };
 
   it('lists each resolved variable with its source; a secret by name and whether it has a value', async () => {
-    useHostsStore.setState({ resolved: [host], selectedHostId: 'db-1', detailsOpen: true, dialog: null });
+    useHostsStore.setState({ resolved: [host], selectedHostId: 'db-1', dialog: null });
     render(<HostDetails />);
     const env = screen.getByRole('region', { name: 'Environment' });
     await vi.waitFor(() => expect(env.textContent).toContain('no value on this machine'));
@@ -205,7 +205,6 @@ describe('the environment in host details', () => {
     useHostsStore.setState({
       resolved: [{ ...host, env: [] }],
       selectedHostId: 'db-1',
-      detailsOpen: true,
       dialog: null,
     });
     render(<HostDetails />);
