@@ -24,6 +24,15 @@ All notable changes to this project are documented here. The format follows
   Edit) opens it; its close icon, Escape and the rail's icon close it. Whether it is open is remembered
   on this machine and restored after a restart, where it asks for a host until one is picked (#582).
 
+### Fixed
+
+- **Nothing in an SSH side panel is cut off at the right.** In the Snippet panel, a variable's row puts
+  its name and remove button on one line and Label and Default below them when the panel is under 360px,
+  so every field can be reached at 1024×700. Edit host's password field says "•••• stored · type to
+  replace", with the secret's name on its own line under it, and key sign-in's three secret pickers wrap
+  onto more lines in a narrow panel. Host details, Edit host, Snippet and Forward details all fit a panel
+  from 280 to 400px wide (#591).
+
 ## [6.1.0] - 2026-10-15
 
 ### Added
