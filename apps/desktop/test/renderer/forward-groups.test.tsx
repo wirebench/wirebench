@@ -155,9 +155,11 @@ describe('forwarding group edits', () => {
     const byKey = { 'db-1/pg': running('db-1', 'pg', 5432) };
     const status = groupStatus(dev, [DB1, CACHE], byKey, { 'cache/redis': { code: 'x', message: 'refused' } });
     // grafana is switched off on db-1: it does not count.
-    expect(status).toEqual({ total: 2, running: 1, failed: 1 });
+    expect(status).toEqual({ members: 3, total: 2, running: 1, failed: 1 });
     expect(groupStatusText(status)).toBe('1 of 2 running · 1 failed');
-    expect(groupStatusText({ total: 2, running: 2, failed: 0 })).toBe('2 of 2 running');
+    expect(groupStatusText({ members: 2, total: 2, running: 2, failed: 0 })).toBe('2 of 2 running');
+    expect(groupStatusText({ members: 0, total: 0, running: 0, failed: 0 })).toBe('No rules');
+    expect(groupStatusText({ members: 1, total: 0, running: 0, failed: 0 })).toBe('No rules on');
   });
 });
 

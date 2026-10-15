@@ -110,8 +110,13 @@ function resolvedRule(resolved: readonly ResolvedHostWire[], hostId: string, rul
   return resolved.find((h) => h.id === hostId)?.forwards.find((f) => f.rule.id === ruleId);
 }
 
-/** What a group's rules are doing in this window. `total` counts the rules that can run (present and on). */
+/**
+ * What a group's rules are doing in this window. `members` counts its rules, `total` those that can run
+ * (present and on). Pass the forwards as shown (`shownForwards`): a start waiting on its prompt is
+ * not failed.
+ */
 export interface GroupStatus {
+  readonly members: number;
   readonly total: number;
   readonly running: number;
   readonly failed: number;
@@ -133,27 +138,30 @@ export function groupStatus(
     if (isLive(state)) running++;
     else if (state?.status.state === 'failed' || startErrors[key] !== undefined) failed++;
   }
-  return { total, running, failed };
+  return { members: group.rules.length, total, running, failed };
 }
 
-/** "2 of 3 running · 1 failed". */
-export function groupStatusText({ total, running, failed }: GroupStatus): string {
+/** "2 of 3 running · 1 failed"; "No rules" for an empty group, "No rules on" when every rule is off. */
+export function groupStatusText({ members, total, running, failed }: GroupStatus): string {
+  if (total === 0 && running === 0) return members === 0 ? 'No rules' : 'No rules on';
   const base = `${String(running)} of ${String(total)} running`;
   return failed > 0 ? `${base} · ${String(failed)} failed` : base;
 }
 
 /**
- * Starts every rule of a group that is present, on and not already live, all at once: each connects to its
- * host as needed, and one that fails (its error shown on its row) does not hold up or stop the others.
+ * Starts every rule of a group that is present, on, not already live and not waiting on a prompt, all at
+ * once: each connects to its host as needed, and one that fails (its error shown on its row) does not hold
+ * up or stop the others. The trust and network-bind prompts they raise queue, so every one is asked.
  */
 export async function startGroup(id: string): Promise<void> {
   const { file, resolved } = useHostsStore.getState();
   const group = groupsOf(file).find((g) => g.id === id);
   if (group === undefined) return;
-  const { byKey } = useForwardsStore.getState();
-  const startable = group.rules.filter(
-    (m) => resolvedRule(resolved, m.host, m.rule)?.enabled === true && !isLive(byKey[forwardKey(m.host, m.rule)]),
-  );
+  const { byKey, waiting } = useForwardsStore.getState();
+  const startable = group.rules.filter((m) => {
+    const key = forwardKey(m.host, m.rule);
+    return resolvedRule(resolved, m.host, m.rule)?.enabled === true && !isLive(byKey[key]) && !waiting[key];
+  });
   await Promise.allSettled(startable.map((m) => startForward(m.host, m.rule)));
 }
 

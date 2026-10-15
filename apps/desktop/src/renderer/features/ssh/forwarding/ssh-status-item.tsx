@@ -70,8 +70,8 @@ function Item({ children }: { readonly children: ReactNode }) {
  * Nothing shows while none runs and none failed.
  */
 function ForwardsItem() {
-  const running = useForwardsStore((s) => forwardCounts(s.byKey).running);
-  const failed = useForwardsStore((s) => forwardCounts(s.byKey).failed);
+  const running = useForwardsStore((s) => forwardCounts(s.byKey, s.waiting).running);
+  const failed = useForwardsStore((s) => forwardCounts(s.byKey, s.waiting).failed);
   if (running === 0 && failed === 0) return null;
   const label = `${String(running)} ${running === 1 ? 'forward' : 'forwards'} running${
     failed > 0 ? `, ${String(failed)} failed` : ''
