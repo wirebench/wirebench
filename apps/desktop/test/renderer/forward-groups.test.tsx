@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -358,5 +358,82 @@ describe('the forwarding group palette commands', () => {
     await waitFor(() => {
       expect(forward.start).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+/** A DataTransfer as jsdom lacks one: what a drag sets, the drop reads. */
+function dataTransfer(): DataTransfer {
+  const data = new Map<string, string>();
+  return {
+    setData: (type: string, value: string) => data.set(type, value),
+    getData: (type: string) => data.get(type) ?? '',
+    get types() {
+      return [...data.keys()];
+    },
+    effectAllowed: 'all',
+    dropEffect: 'none',
+  } as unknown as DataTransfer;
+}
+
+describe('dragging rules between groups', () => {
+  it('drops a rule on a group to move it there, and on Ungrouped to take it out', async () => {
+    render(<ForwardingPanel />);
+    const carry = dataTransfer();
+    fireEvent.dragStart(rowOf('cache/admin'), { dataTransfer: carry });
+    fireEvent.dragOver(section('dev'), { dataTransfer: carry });
+    expect(section('dev').dataset['dropOver']).toBe('true');
+    fireEvent.drop(section('dev'), { dataTransfer: carry });
+    await waitFor(() => {
+      expect(saved().forwardGroups?.[0]?.rules).toContainEqual({ host: 'cache', rule: 'admin' });
+    });
+    expect(section('dev').dataset['dropOver']).toBeUndefined();
+
+    const out = dataTransfer();
+    fireEvent.dragStart(rowOf('db-1/pg'), { dataTransfer: out });
+    fireEvent.dragOver(section(''), { dataTransfer: out });
+    fireEvent.drop(section(''), { dataTransfer: out });
+    await waitFor(() => {
+      expect(saved().forwardGroups?.[0]?.rules).not.toContainEqual({ host: 'db-1', rule: 'pg' });
+    });
+  });
+
+  it('shows Ungrouped as a drop target while a rule is dragged, even when every rule is grouped', () => {
+    const all = {
+      ...FILE,
+      forwardGroups: [
+        {
+          id: 'dev',
+          name: 'Dev',
+          rules: [
+            { host: 'db-1', rule: 'pg' },
+            { host: 'db-1', rule: 'grafana' },
+            { host: 'cache', rule: 'redis' },
+            { host: 'cache', rule: 'admin' },
+          ],
+        },
+      ],
+    };
+    useHostsStore.setState({ file: all });
+    render(<ForwardingPanel />);
+    expect(screen.getAllByTestId('forward-group').map((s) => s.dataset['group'])).toEqual(['dev']);
+    const carry = dataTransfer();
+    fireEvent.dragStart(rowOf('cache/admin'), { dataTransfer: carry });
+    expect(within(section('')).getByText('Drop a rule here to take it out of its group.')).toBeTruthy();
+    fireEvent.dragEnd(rowOf('cache/admin'));
+    expect(screen.getAllByTestId('forward-group').map((s) => s.dataset['group'])).toEqual(['dev']);
+  });
+
+  it('dropping a rule on its own group saves nothing; a removed rule and other drags are ignored', () => {
+    render(<ForwardingPanel />);
+    const carry = dataTransfer();
+    fireEvent.dragStart(rowOf('db-1/pg'), { dataTransfer: carry });
+    fireEvent.drop(section('dev'), { dataTransfer: carry });
+    expect(rowOf('gone/x').getAttribute('draggable')).toBeNull();
+    const text = dataTransfer();
+    text.setData('text/plain', 'hello');
+    fireEvent.dragOver(section('dev'), { dataTransfer: text });
+    expect(section('dev').dataset['dropOver']).toBeUndefined();
+    fireEvent.drop(section('dev'), { dataTransfer: text });
+    expect(saveHosts).not.toHaveBeenCalled();
   });
 });

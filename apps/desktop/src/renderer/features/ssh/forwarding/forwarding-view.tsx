@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type DragEvent } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ArrowLeftRight, FolderPlus, MoreHorizontal, Plus } from 'lucide-react';
 import { Button } from '../../../components/button.js';
@@ -9,8 +9,10 @@ import { flattenGroups, useHostsStore } from '../hosts-store.js';
 import { forwardKey, routeOf } from './forward-format.js';
 import { CONTENT_CLASS, ForwardRow, ITEM_CLASS } from './forward-row.js';
 import {
+  FORWARD_DRAG_TYPE,
   createGroup,
   deleteGroup,
+  dropRule,
   groupStatus,
   groupStatusText,
   renameGroup,
@@ -110,6 +112,7 @@ function RowList({
   showHost,
   groupId,
   onNewGroup,
+  onDragChange,
 }: {
   rows: readonly ForwardRowData[];
   label: string;
@@ -117,6 +120,8 @@ function RowList({
   /** The forwarding group these rows are listed under, if any. */
   groupId?: string;
   onNewGroup?: (hostId: string, ruleId: string) => void;
+  /** Rows can be dragged to another group; told the dragged row's key. */
+  onDragChange?: (key: string | undefined) => void;
 }) {
   const startErrors = useForwardsStore((s) => s.startErrors);
   const groupName = useGroupName();
@@ -134,11 +139,48 @@ function RowList({
           showHost={showHost}
           {...(groupId === undefined ? {} : { forwardGroupId: groupId })}
           {...(onNewGroup === undefined ? {} : { onNewGroup })}
+          {...(onDragChange === undefined ? {} : { onDragChange })}
         />
       ))}
     </ul>
   );
 }
+
+/**
+ * Makes a section a place to drop a dragged rule: on a group to move it there, on Ungrouped (`undefined`) to
+ * take it out of its group. `over` is true while a rule is held over it.
+ */
+function useDropZone(groupId: string | undefined, onDropped: () => void) {
+  const [over, setOver] = useState(false);
+  const accepts = (event: DragEvent): boolean => event.dataTransfer.types.includes(FORWARD_DRAG_TYPE);
+  return {
+    over,
+    props: {
+      onDragOver: (event: DragEvent) => {
+        if (!accepts(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        if (!over) setOver(true);
+      },
+      onDragLeave: (event: DragEvent) => {
+        // Moving onto a child of the section is not leaving it.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOver(false);
+      },
+      onDrop: (event: DragEvent) => {
+        if (!accepts(event)) return;
+        event.preventDefault();
+        setOver(false);
+        onDropped();
+        void dropRule(event.dataTransfer.getData(FORWARD_DRAG_TYPE), groupId).then((problem) => {
+          if (problem !== undefined) showToast(problem);
+        });
+      },
+    },
+  };
+}
+
+const zoneClass = (over: boolean): string =>
+  `rounded-md outline-offset-4 ${over ? 'outline-2 outline-dashed outline-accent' : ''}`;
 
 /**
  * One forwarding group: its name, how many of its rules run ("2 of 3 running · 1 failed"), Start group or
@@ -150,6 +192,7 @@ function GroupSection({
   filtered,
   onRename,
   onNewGroup,
+  onDragChange,
 }: {
   group: ForwardGroupWire;
   rows: readonly ForwardRowData[];
@@ -157,7 +200,11 @@ function GroupSection({
   filtered: boolean;
   onRename: () => void;
   onNewGroup: (hostId: string, ruleId: string) => void;
+  onDragChange: (key: string | undefined) => void;
 }) {
+  const drop = useDropZone(group.id, () => {
+    onDragChange(undefined);
+  });
   const resolved = useHostsStore((s) => s.resolved);
   const byKey = useForwardsStore((s) => s.byKey);
   const startErrors = useForwardsStore((s) => s.startErrors);
@@ -165,7 +212,14 @@ function GroupSection({
   const anyHeld = group.rules.some((m) => byKey[forwardKey(m.host, m.rule)] !== undefined);
   const allRunning = status.total > 0 && status.running >= status.total;
   return (
-    <section aria-label={`Forwarding group ${group.name}`} data-testid="forward-group" data-group={group.id}>
+    <section
+      aria-label={`Forwarding group ${group.name}`}
+      data-testid="forward-group"
+      data-group={group.id}
+      data-drop-over={drop.over || undefined}
+      className={zoneClass(drop.over)}
+      {...drop.props}
+    >
       <div className="mb-1.5 flex min-w-0 items-center gap-2">
         <h3 className="truncate text-sm font-medium text-fg-default">{group.name}</h3>
         <span
@@ -229,10 +283,56 @@ function GroupSection({
         </span>
       </div>
       {rows.length > 0 ? (
-        <RowList rows={rows} label={`Forwards in ${group.name}`} showHost groupId={group.id} onNewGroup={onNewGroup} />
+        <RowList
+          rows={rows}
+          label={`Forwards in ${group.name}`}
+          showHost
+          groupId={group.id}
+          onNewGroup={onNewGroup}
+          onDragChange={onDragChange}
+        />
       ) : (
         <p className="rounded-md border border-dashed border-hairline px-3 py-2 text-xs text-fg-subtle">
-          {filtered ? 'No rule of this group matches.' : 'No rules yet: use Move to group in a rule’s ⋯ menu.'}
+          {filtered
+            ? 'No rule of this group matches.'
+            : 'No rules yet: drag a rule here, or use Move to group in its ⋯ menu.'}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The rules in no group; while a rule is dragged it shows even when empty, to drop a rule out of its group. */
+function UngroupedSection({
+  rows,
+  dragging,
+  onNewGroup,
+  onDragChange,
+}: {
+  rows: readonly ForwardRowData[];
+  dragging: boolean;
+  onNewGroup: (hostId: string, ruleId: string) => void;
+  onDragChange: (key: string | undefined) => void;
+}) {
+  const drop = useDropZone(undefined, () => {
+    onDragChange(undefined);
+  });
+  if (rows.length === 0 && !dragging) return null;
+  return (
+    <section
+      aria-label="Ungrouped forwards"
+      data-testid="forward-group"
+      data-group=""
+      data-drop-over={drop.over || undefined}
+      className={zoneClass(drop.over)}
+      {...drop.props}
+    >
+      <h3 className="mb-1.5 text-sm font-medium text-fg-muted">Ungrouped</h3>
+      {rows.length > 0 ? (
+        <RowList rows={rows} label="Ungrouped forwards" showHost onNewGroup={onNewGroup} onDragChange={onDragChange} />
+      ) : (
+        <p className="rounded-md border border-dashed border-hairline px-3 py-2 text-xs text-fg-subtle">
+          Drop a rule here to take it out of its group.
         </p>
       )}
     </section>
@@ -257,6 +357,8 @@ export function ForwardingPanel() {
   const [chip, setChip] = useState<Chip>('all');
   const [adding, setAdding] = useState(false);
   const [naming, setNaming] = useState<Naming>();
+  // The row being dragged onto another group, if any.
+  const [dragging, setDragging] = useState<string>();
   const rows = useMemo(() => forwardRows(resolved, byKey), [resolved, byKey]);
   const groups = useMemo(() => forwardGroups ?? [], [forwardGroups]);
   const sections = useMemo(() => groupSections(groups, rows, resolved, byKey), [groups, rows, resolved, byKey]);
@@ -365,15 +467,16 @@ export function ForwardingPanel() {
                   setNaming({ mode: 'rename', id: group.id, name: group.name });
                 }}
                 onNewGroup={newGroupFor}
+                onDragChange={setDragging}
               />
             );
           })}
-          {ungrouped.length > 0 && (
-            <section aria-label="Ungrouped forwards" data-testid="forward-group" data-group="">
-              <h3 className="mb-1.5 text-sm font-medium text-fg-muted">Ungrouped</h3>
-              <RowList rows={ungrouped} label="Ungrouped forwards" showHost onNewGroup={newGroupFor} />
-            </section>
-          )}
+          <UngroupedSection
+            rows={ungrouped}
+            dragging={dragging !== undefined}
+            onNewGroup={newGroupFor}
+            onDragChange={setDragging}
+          />
         </div>
       )}
       <NewRuleDialog open={adding} onOpenChange={setAdding} />

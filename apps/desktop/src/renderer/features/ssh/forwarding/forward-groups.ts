@@ -83,6 +83,21 @@ export function moveRule(
   return withGroups(file, groups);
 }
 
+/** The drag data type of a rule dragged in the Port forwarding view: its `hostId/ruleId`. */
+export const FORWARD_DRAG_TYPE = 'application/x-wirebench-forward';
+
+/**
+ * Drops a dragged rule (`hostId/ruleId`) on a group, or on Ungrouped with `undefined`. Dropping it where it
+ * already is changes nothing. Answers the problem to show, or `undefined`.
+ */
+export async function dropRule(dragged: string, toGroupId: string | undefined): Promise<string | undefined> {
+  const [hostId, ruleId, ...rest] = dragged.split('/');
+  if (!hostId || !ruleId || rest.length > 0) return undefined;
+  const file = useHostsStore.getState().file;
+  if (groupOfRule(file, hostId, ruleId)?.id === toGroupId) return undefined;
+  return saveGroups(moveRule(file, hostId, ruleId, toGroupId));
+}
+
 /** Saves an edit of the groups; answers the problem to show, or `undefined` once saved. */
 export async function saveGroups(next: HostsFileWire): Promise<string | undefined> {
   const { save } = useHostsStore.getState();

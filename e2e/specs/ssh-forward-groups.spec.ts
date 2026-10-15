@@ -114,7 +114,8 @@ test('a forwarding group of two rules on two hosts starts and stops together (#5
 
   await moveToGroup(page, pg, 'pg', 'Dev');
   await expect(dev.getByTestId('forward-row')).toHaveCount(1);
-  await moveToGroup(page, redis, 'redis', 'Dev');
+  // The second rule is dragged onto the group instead.
+  await redis.dragTo(dev);
   await expect(dev.getByTestId('forward-row')).toHaveCount(2);
   const status = dev.getByTestId('forward-group-status');
   await expect(status).toHaveText('0 of 2 running');

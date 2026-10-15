@@ -1,3 +1,4 @@
+import type { DragEvent } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
 import { Button } from '../../../components/button.js';
@@ -9,7 +10,7 @@ import { editHost } from '../connect.js';
 import { useHostsStore } from '../hosts-store.js';
 import { isNetworkBind, levelName, listenAddress, routeOf, typeWord } from './forward-format.js';
 import { askForPort, restartForward, startForward, stopForward } from './forward-actions.js';
-import { groupOfRule, moveRule, saveGroups } from './forward-groups.js';
+import { FORWARD_DRAG_TYPE, groupOfRule, moveRule, saveGroups } from './forward-groups.js';
 import { isLive, type ForwardStartError } from './forwards-store.js';
 
 export const ITEM_CLASS =
@@ -64,6 +65,8 @@ export interface ForwardRowProps {
   readonly forwardGroupId?: string;
   /** "New group…" under Move to group, which asks for a name; absent where it cannot be asked. */
   readonly onNewGroup?: (hostId: string, ruleId: string) => void;
+  /** Makes the row draggable onto the view's group sections; told the key while it is dragged. */
+  readonly onDragChange?: (key: string | undefined) => void;
 }
 
 /** Saves a rule's move into a forwarding group, or out of every group, toasting a refusal. */
@@ -97,6 +100,7 @@ export function ForwardRow({
   showHost = true,
   forwardGroupId,
   onNewGroup,
+  onDragChange,
 }: ForwardRowProps) {
   const file = useHostsStore((s) => s.file);
   const inGroup = groupOfRule(file, host.id, ruleId);
@@ -131,7 +135,22 @@ export function ForwardRow({
       data-forward={`${host.id}/${ruleId}`}
       data-state={off ? 'off' : (state?.status.state ?? 'idle')}
       aria-disabled={off || undefined}
-      className={`flex flex-col gap-0.5 px-3 py-2 ${off ? 'opacity-50' : ''}`}
+      {...(onDragChange === undefined || forward === undefined
+        ? {}
+        : {
+            draggable: true,
+            onDragStart: (event: DragEvent) => {
+              event.dataTransfer.setData(FORWARD_DRAG_TYPE, `${host.id}/${ruleId}`);
+              event.dataTransfer.effectAllowed = 'move';
+              onDragChange(`${host.id}/${ruleId}`);
+            },
+            onDragEnd: () => {
+              onDragChange(undefined);
+            },
+          })}
+      className={`flex flex-col gap-0.5 px-3 py-2 ${off ? 'opacity-50' : ''} ${
+        onDragChange !== undefined && forward !== undefined ? 'cursor-grab active:cursor-grabbing' : ''
+      }`}
     >
       <div className="flex min-w-0 items-center gap-2 text-sm">
         <span
