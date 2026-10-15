@@ -51,6 +51,7 @@ import {
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /** The legacy single-XML SOAP project the import spec reads. */
 const LEGACY_FIXTURE = fileURLToPath(new URL('../../fixtures/legacy-soap-project/full.xml', import.meta.url));
@@ -469,7 +470,7 @@ test.describe('docs site screenshots', () => {
     const failed = rows.last();
     await expect(failed).toHaveAttribute('data-kind', 'failure');
     await selectLogRow(failed);
-    await window.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Response' }).click();
+    await selectTab(window, 'Log detail', 'Response');
     await expect(window.getByTestId('log-detail-error')).toContainText('Connection refused');
     // With a row selected the log narrows to its compact columns, which carry no time or duration,
     // so the rows stay visible; only the response status line and the status bar carry timings.

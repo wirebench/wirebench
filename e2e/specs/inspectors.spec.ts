@@ -6,6 +6,7 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 import { selectLogRow } from '../helpers/http-log.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /**
  * Inspector strip end-to-end. TLS is deliberately absent here: the SSL Info inspector needs a
@@ -49,7 +50,7 @@ test.describe('Inspectors (Headers, timings)', () => {
     await page.getByTestId('request-endpoint').fill(`${server.url}/headers`);
 
     // Request pane → Headers inspector → add X-Trace: abc.
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Headers' }).click();
+    await selectTab(page, 'Request tabs', 'Headers');
     // Typing into the table's add row appends the header; its value is then committed on Enter.
     await page.getByTestId('soap-header-new-name').fill('X-Trace');
     await expect(page.getByTestId('soap-header-name')).toHaveValue('X-Trace');
@@ -64,18 +65,18 @@ test.describe('Inspectors (Headers, timings)', () => {
     await expect(page.getByTestId('response-editor')).toContainText('"x-trace":"abc"', { timeout: 10_000 });
 
     // Response pane → Headers inspector lists what came back.
-    await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: 'Headers' }).click();
+    await selectTab(page, 'Response tabs', 'Headers');
     const responseHeaders = page.getByRole('table', { name: 'Response headers' });
     await expect(responseHeaders).toBeVisible({ timeout: 10_000 });
     await expect(responseHeaders).toContainText('content-type');
 
     // SSL Info says, honestly, that this exchange was plain HTTP.
-    await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: 'SSL Info' }).click();
+    await selectTab(page, 'Response tabs', 'SSL Info');
     await expect(page.getByText(/No TLS — plain HTTP/)).toBeVisible({ timeout: 10_000 });
 
     // The HTTP log's detail breaks the exchange down into a timings bar with a total.
     await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
-    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Timing' }).click();
+    await selectTab(page, 'Log detail', 'Timing');
     await expect(page.getByTestId('timings-total')).toContainText(/total \d+ ms/, { timeout: 10_000 });
     await expect(page.getByTestId('timings-legend')).toContainText('ttfb');
     expect(await page.locator('[data-testid="timings-segment"]').count()).toBeGreaterThan(0);

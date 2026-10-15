@@ -58,18 +58,16 @@ export function PaneTabs({ requestId, pane, label, items, trailing, render }: Pa
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 border-b border-hairline">
-        {/* Ten tabs do not fit a split pane; the strip scrolls rather than wrapping. */}
-        <div className="min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="w-max">
-            <Tabs
-              label={label}
-              items={items}
-              active={selected}
-              onSelect={(id) => {
-                setInspector(requestId, pane, id);
-              }}
-            />
-          </div>
+        {/* Ten tabs do not fit a split pane; the ones that don't go into the strip's More menu. */}
+        <div className="min-w-0">
+          <Tabs
+            label={label}
+            items={items}
+            active={selected}
+            onSelect={(id) => {
+              setInspector(requestId, pane, id);
+            }}
+          />
         </div>
         {trailing !== undefined && <div className="min-w-0 flex-1">{trailing}</div>}
       </div>

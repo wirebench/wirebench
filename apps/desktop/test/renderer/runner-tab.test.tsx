@@ -275,9 +275,9 @@ describe('resultMark (#560)', () => {
     expect(dataColumnsFor(targets, undefined)).toEqual([]);
   });
 
-  it('teaches the ${column} form in the hint', async () => {
+  it('teaches the ${#Data#column} form in the hint (D1, #569)', async () => {
     await mount();
-    expect(screen.getByTestId('runner-tab').textContent).toContain('${column}');
-    expect(screen.getByTestId('runner-tab').textContent).not.toContain('#Data#');
+    expect(screen.getByTestId('runner-tab').textContent).toContain('${#Data#column}');
+    expect(screen.getByTestId('runner-tab').textContent).not.toContain('${column}');
   });
 });

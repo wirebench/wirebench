@@ -10,6 +10,7 @@ import {
   SYNC_TIMEOUT,
 } from '../helpers/sync.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 const BEN = { name: 'Ben', email: 'ben@example.com' };
 /** A value distinctive enough that finding it anywhere in the remote's history is proof of a leak. */
@@ -27,7 +28,7 @@ function vaultBlobs(dir: string): string {
 async function authPanel(page: Page) {
   await expandExplorer(page, 'Request 1');
   await openFirstRequest(page);
-  await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+  await selectTab(page, 'Request tabs', 'Auth');
   return page.getByTestId('inspector-panel-request');
 }
 

@@ -1,6 +1,6 @@
 /**
  * A Runner tab (#336): one folder, API, project or sequence run once per iteration, each iteration
- * reading one row of the target's data file as `${column}` (or `${#Data#column}`). Configure, run, watch each request
+ * reading one row of the target's data file as `${#Data#column}`. Configure, run, watch each request
  * as it ends, grouped by iteration, and reopen the target's past runs. Everything shown arrived from
  * main masked; the data file is known by its name, columns and row count only.
  */
@@ -391,8 +391,8 @@ export function RunnerTab({ targetId }: RunnerTabProps) {
             </button>
           )}
           <span className="text-xs text-fg-subtle">
-            A request reads a row’s column as <code className="font-mono">{'${column}'}</code>, like any other variable;
-            a script as <code className="font-mono">iteration.data.get("column")</code>.
+            A request reads a row’s column as <code className="font-mono">{'${#Data#column}'}</code>; a script as{' '}
+            <code className="font-mono">iteration.data.get("column")</code>.
           </span>
         </div>
       </SettingsGroup>

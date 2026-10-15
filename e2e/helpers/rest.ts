@@ -4,6 +4,7 @@
  * response.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
+import { selectTab } from './tabs.js';
 
 /** The platform's own modifier, for the shortcuts a spec presses. */
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -93,7 +94,7 @@ export async function setMethodAndUrl(page: Page, method: string, url: string): 
 export async function openRequestTab(page: Page, tab: string): Promise<void> {
   // Scoped to the request tablist: the response pane has tabs of its own, and two of the labels
   // (Headers, Body) appear in both.
-  await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: tab }).click();
+  await selectTab(page, 'Request tabs', tab);
 }
 
 /** Adds one header to the open REST request through the Headers tab's add row. */
@@ -124,10 +125,7 @@ export function responseStatus(page: Page): Locator {
 
 /** Opens one response tab by its label, e.g. `Headers`, `Cookies`, `Redirects`, `Timing`. */
 export async function openResponseTab(page: Page, tab: string): Promise<void> {
-  await page
-    .getByRole('tablist', { name: 'Response tabs' })
-    .getByRole('tab', { name: new RegExp(`^${tab}`) })
-    .click();
+  await selectTab(page, 'Response tabs', new RegExp(`^${tab}`));
 }
 
 /** Saves the open request with `Mod+S`. */

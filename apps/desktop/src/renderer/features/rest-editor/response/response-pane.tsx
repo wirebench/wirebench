@@ -10,13 +10,14 @@
  */
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useContractRevealStore } from './contract.js';
-import { Button } from '../../../components/button.js';
+import { Download } from 'lucide-react';
 import { showToast } from '../../../components/toast.js';
 import { SendErrorPanel } from '../../../components/send-error-panel.js';
 import { Tabs } from '../../../components/tabs.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
 import type { RestExchangeState } from '../../../state/exchanges.js';
+import { InspectorIconButton } from '../../request-editor/inspectors/inspector-strip.js';
 import { SslInspector } from '../../request-editor/inspectors/ssl-inspector.js';
 import { QueryView } from '../../request-editor/views/lazy-views.js';
 import { TimingsBar } from '../../console/timings-bar.js';
@@ -168,8 +169,8 @@ export function RestResponsePane({
           }}
         />
         {exchange !== undefined && stale === undefined && shownExample === undefined && (
-          <Button
-            variant="secondary"
+          <InspectorIconButton
+            label="Save response…"
             data-testid="rest-response-save"
             onClick={() => {
               void ipc()
@@ -185,8 +186,8 @@ export function RestResponsePane({
                 });
             }}
           >
-            Save response…
-          </Button>
+            <Download size={13} aria-hidden="true" />
+          </InspectorIconButton>
         )}
       </div>
 

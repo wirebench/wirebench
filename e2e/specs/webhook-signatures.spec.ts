@@ -4,6 +4,7 @@ import { createProject, createWorkspace } from '../helpers/project.js';
 import { chooseContextMenuItem, responseStatus, sendRest } from '../helpers/rest.js';
 import { shareToTeam, signIn } from '../helpers/server.js';
 import { SyncProfiles, SYNC_TIMEOUT } from '../helpers/sync.js';
+import { selectTab } from '../helpers/tabs.js';
 
 const ALICE: FakeUser = { email: 'alice@example.com', password: 'correct horse battery', displayName: 'Alice' };
 const TEAM = 'Payments QA';
@@ -107,7 +108,7 @@ test.describe('webhook signatures', () => {
     await settings.getByTestId('webhook-settings-save').click();
     await expect(settings).toBeHidden();
 
-    await editor.getByRole('tab', { name: 'Signing' }).click();
+    await selectTab(page, 'Request tabs', 'Signing');
     const signing = editor.getByTestId('rest-signing');
     await signing.getByTestId('signing-mode').selectOption('hmac');
     await enterSecret(signing, 'Set…', SECRET);
@@ -125,7 +126,7 @@ test.describe('webhook signatures', () => {
       .getByRole('tab', { name: /^Webhook/ })
       .click();
     await expect(editor).toBeVisible({ timeout: 20_000 });
-    await editor.getByRole('tab', { name: 'Signing' }).click();
+    await selectTab(page, 'Request tabs', 'Signing');
     await enterSecret(editor.getByTestId('rest-signing'), 'Replace…', OTHER_SECRET);
     await sendRest(page);
     await expect(responseStatus(page)).toContainText(/2\d\d/);

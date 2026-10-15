@@ -645,13 +645,36 @@ export const useUiStore = create<UiStore>((set, get) => {
 });
 
 /**
+ * A window shorter than this starts with the console collapsed: at 700px its quarter of the
+ * column leaves the editor too little room. The default 820px window stays above it, even inside
+ * the native frame and menu bar Windows draws (less than 760px of content there).
+ */
+export const CONSOLE_COLLAPSED_BELOW_PX = 720;
+
+/**
+ * Whether the layout ignores the window's size (see `env.fixedLayout` in the preload): only an e2e
+ * run on a CI runner whose screen is smaller than the window its specs expect.
+ */
+export function fixedLayout(): boolean {
+  const api = (globalThis as { wirebench?: { env?: { fixedLayout?: boolean } } }).wirebench;
+  return api?.env?.fixedLayout === true;
+}
+
+/**
  * Hydrates the store from `localStorage` once, then keeps writing every later change back.
  * Called from the shell on mount; safe to call when storage is unavailable.
  */
-export function hydrateUi(storage: Storage | undefined = globalThis.localStorage): void {
+export function hydrateUi(
+  storage: Storage | undefined = globalThis.localStorage,
+  windowHeight: number | undefined = globalThis.innerHeight,
+): void {
   if (storage === undefined) {
     return;
   }
   useUiStore.setState(readUi(storage));
+  // Before persisting starts, so the collapse alone is not written back as the saved layout.
+  if (!fixedLayout() && windowHeight !== undefined && windowHeight > 0 && windowHeight < CONSOLE_COLLAPSED_BELOW_PX) {
+    useUiStore.getState().collapseConsole();
+  }
   useUiStore.getState().persistTo(storage);
 }

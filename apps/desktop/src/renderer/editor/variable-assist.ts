@@ -8,8 +8,8 @@
  * - what one reference resolves to, against the request's `request.variables` list;
  * - which references to mark as unresolved;
  * - the text a variable is referenced by: `${name}` when the chain reaches its scope, else explicit;
- * - the columns of a Runner data file that runs the request (#560): offered after the chain, as the
- *   shorthand reaches them last, and never marked unresolved as `${#Data#…}` while none is known.
+ * - the columns of a Runner data file that runs the request (#560): offered as `${#Data#column}`, the
+ *   only form that reads one (D1, #569), and never marked unresolved as `${#Data#…}` while none is known.
  *
  * A masked value is shown only as `••••••`: the list never carries it in the first place.
  */
@@ -43,7 +43,7 @@ const SCOPES: readonly VariableScope[] = ['Env', 'Project', 'Workspace', 'Global
 /** The scope of the generated values (#333): `${#Dynamic#name}`, or `${$name}` for short. */
 const DYNAMIC = 'Dynamic';
 
-/** The scope of a data-driven run's row (#336): `${#Data#column}`, or `${column}` last in the chain. */
+/** The scope of a data-driven run's row (#336): `${#Data#column}`, never the `${column}` shorthand. */
 const DATA = 'Data';
 
 /** How a data column reads in a list or a hover. */
@@ -192,18 +192,15 @@ export function completionItems(
           detail: 'Secret',
           documentation: MASK,
         }));
-      // A column comes after the chain: one a chain scope also defines is reached only explicitly.
+      // A column comes after the chain, and is always written explicitly: the shorthand never reads it.
       const columns = (variables.dataColumns ?? [])
         .filter((column) => matches(column))
-        .map((column) => {
-          const shadowed = chainEntry(column, variables) !== undefined;
-          return {
-            label: column,
-            insertText: `${shadowed ? `#${DATA}#` : ''}${column}${brace}`,
-            detail: shadowed ? `${DATA_LABEL} (shadowed)` : DATA_LABEL,
-            documentation: DATA_TEXT,
-          };
-        });
+        .map((column) => ({
+          label: column,
+          insertText: `#${DATA}#${column}${brace}`,
+          detail: DATA_LABEL,
+          documentation: DATA_TEXT,
+        }));
       return [...names, ...columns, ...secrets];
     }
   }
@@ -245,10 +242,7 @@ export function classifyReference(
   switch (reference.form) {
     case 'shorthand': {
       const entry = chainEntry(reference.name, variables);
-      if (entry !== undefined) return { status: 'resolved', entry };
-      return variables.dataColumns?.includes(reference.name) === true
-        ? { status: 'data', name: reference.name }
-        : unresolved;
+      return entry === undefined ? unresolved : { status: 'resolved', entry };
     }
     case 'scoped': {
       if (reference.scope === 'Sequence') return { status: 'unknown' };

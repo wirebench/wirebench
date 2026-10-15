@@ -184,6 +184,16 @@ jobs:
       - name: Run e2e (Linux, headless via xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm test:e2e
+      # The hosted Windows runner's screen is 1024x768, which clamps the 1280x820 test window: the
+      # REST editor then stacks and the console starts collapsed, as they should on a screen that
+      # small, and the specs written for the default window lose their layout.
+      - name: Give the Windows runner a 1920x1080 screen
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
       - name: Run e2e
         if: runner.os != 'Linux'
         run: pnpm test:e2e

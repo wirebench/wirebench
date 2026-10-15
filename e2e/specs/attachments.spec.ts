@@ -12,6 +12,7 @@ import {
 } from '../helpers/project.js';
 import { setMonacoText } from '../helpers/editor.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /** A 64-byte PNG-ish blob: a real signature so the type sniffing table recognises it, then filler. */
 const FIXTURE_BYTES = Buffer.concat([
@@ -88,7 +89,7 @@ test.describe('attachments', () => {
     );
 
     // --- add the file through the (pinned) picker, copying it into the project -------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Attachments' }).click();
+    await selectTab(page, 'Request tabs', 'Attachments');
     await expect(page.getByTestId('attachments-copy')).toBeChecked();
     await page.getByTestId('attachments-add').click();
 
@@ -116,8 +117,7 @@ test.describe('attachments', () => {
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
 
-    const responseInspectors = page.getByRole('tablist', { name: 'Response tabs' });
-    await responseInspectors.getByRole('tab', { name: /^Attachments/ }).click();
+    await selectTab(page, 'Response tabs', /^Attachments/);
     const responseRows = page.locator('[data-testid="response-attachment-row"]');
     await expect(responseRows).toHaveCount(1, { timeout: 10_000 });
     await expect(responseRows.first()).toContainText('64 B');
@@ -138,7 +138,7 @@ test.describe('attachments', () => {
     await expectReopenedWorkspace(reopened);
 
     await openFirstRequest(reopened);
-    await reopened.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Attachments' }).click();
+    await selectTab(reopened, 'Request tabs', 'Attachments');
     const reloadedRows = reopened.locator('[data-testid="attachment-row"]');
     await expect(reloadedRows).toHaveCount(1, { timeout: 10_000 });
     await expect(reloadedRows.first()).toContainText('pixel.png');

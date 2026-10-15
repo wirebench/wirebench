@@ -54,12 +54,10 @@ All notable changes to this project are documented here. The format follows
   can't run stays listed, greyed, with the reason. **History: Re-send Last Request** re-sends the
   newest entry of any protocol. A REST request's menu gains **Send**, **Copy as cURL**,
   **Copy URL**, **Run…** (the Runner on that one request) and **Move to…** (#543).
-- **One variable syntax for data runs, honest runner marks and visible inherited settings.** A data
-  file's column is now read as `${column}`, like every other variable, in the Runner,
-  `wirebench run --data` and scheduled server runs; it comes last in the lookup, after Global, so it
-  never hides a property, and `${#Data#column}` keeps working. While a Runner tab with a data file is
-  open, its columns are offered when you type `${` in a request it runs, and `${#Data#…}` is no longer marked unresolved. In
-  the Runner's results a request with no checks shows a grey ring instead of a green tick, and an amber
+- **Data columns in autocomplete, honest runner marks and visible inherited settings.** While a
+  Runner tab with a data file is open, its columns are offered as `${#Data#column}` when you type `${`
+  in a request it runs, and `${#Data#…}` is no longer marked unresolved. A column is still read only
+  as `${#Data#column}`, never as `${column}` (#569). In the Runner's results a request with no checks shows a grey ring instead of a green tick, and an amber
   mark when it got a 4xx or 5xx. A REST request's Settings tab shows each inherited value in its empty
   field, with a **from …** link to where it is set and **Inherit** on a changed checkbox; the timeout
   now names the project's Default timeout, which is what a send uses. Swagger 2.0 path parameters are
@@ -353,6 +351,15 @@ All notable changes to this project are documented here. The format follows
   finds Terminal under "ssh"; <kbd>Ctrl+Shift+P</kbd> opens the palette from a terminal, and the title
   bar says so; and the status bar shows the focused session instead of the request items, without
   counting failed SSH connects as request problems (#537).
+- **Tab strips that fit, and a REST editor that fits a 1024×700 window.** A tab strip never grows
+  wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
+  shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer
+  slides the response pane sideways. Below 800px wide the REST editor puts the response under the
+  request, and a window under 720px tall starts with the console collapsed. **Save response** and
+  **Copy path** are icon buttons with tooltips, so the status line keeps its room. Generated header
+  values and the HTTP Log's columns cut to one line with the full text in a tooltip, instead of
+  wrapping a character per line or overlapping their headers; a narrow HTTP Log shows its four main
+  columns (#542).
 - **Pasting control characters into a terminal asks first.** A paste holding an escape or another
   control character (apart from tabs and line breaks), such as an embedded end of bracketed paste,
   now waits for a yes even on one line and with the multi-line question turned off. The dialog shows

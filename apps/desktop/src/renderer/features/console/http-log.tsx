@@ -35,15 +35,20 @@ const ROW_HEIGHT = 22;
 
 /**
  * time · proto · method · name · URL · status · ms · size · waterfall. The status column fits an
- * error code like `connection-refused`.
+ * error code like `connection-refused`. Every column has a floor and gives way down to it before the
+ * table runs out of room, so a narrow console truncates cells (full text in the tooltip) instead of
+ * pushing one header over the next.
  */
-const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(6rem,12rem)_minmax(0,2fr)_8rem_4rem_5rem_minmax(8rem,1fr)]';
+const COLUMNS =
+  'grid-cols-[minmax(3.5rem,5rem)_minmax(2.5rem,3rem)_minmax(3rem,4rem)_minmax(4rem,12rem)_minmax(4rem,2fr)_minmax(4rem,8rem)_minmax(2.5rem,4rem)_minmax(3rem,5rem)_minmax(3rem,1fr)]';
 /**
  * What is left when the detail pane takes half the width: proto, method, URL and status. The full
  * seven columns have a min-content width the narrowed table cannot go below, so they would overflow
  * it and slide under the detail rather than truncate.
  */
-const COLUMNS_COMPACT = 'grid-cols-[3rem_4rem_minmax(0,1fr)_8rem]';
+/** The width the nine full columns need: their floors, the gaps between them and the row's padding. */
+const FULL_COLUMNS_MIN_PX = 600;
+const COLUMNS_COMPACT = 'grid-cols-[minmax(2.5rem,3rem)_minmax(3rem,4rem)_minmax(4rem,1fr)_minmax(4rem,8rem)]';
 
 interface RowProps {
   readonly entry: LogEntry;
@@ -83,9 +88,11 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowP
       }`}
       style={{ height: ROW_HEIGHT }}
     >
-      {!compact && <span>{formatClockTime(startedAtOf(entry))}</span>}
-      <span>{protocolOf(entry)}</span>
-      <span>{methodOf(entry)}</span>
+      {!compact && <span className="truncate">{formatClockTime(startedAtOf(entry))}</span>}
+      <span className="truncate">{protocolOf(entry)}</span>
+      <span className="truncate" title={methodOf(entry)}>
+        {methodOf(entry)}
+      </span>
       {!compact && (
         <span className="truncate" title={nameOf(entry, names, true)}>
           {nameOf(entry, names)}
@@ -94,12 +101,18 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowP
       <span className="truncate" title={urlOf(entry)}>
         {urlOf(entry)}
       </span>
-      <span data-testid="http-log-status" className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}>
+      <span
+        data-testid="http-log-status"
+        title={statusLabelOf(entry)}
+        className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}
+      >
         {statusLabelOf(entry)}
       </span>
-      {!compact && <span>{formatDuration(durationOf(entry))}</span>}
-      {!compact && <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>}
-      {!compact && <span>{bar !== undefined && <LogWaterfallBar bar={bar} />}</span>}
+      {!compact && <span className="truncate">{formatDuration(durationOf(entry))}</span>}
+      {!compact && (
+        <span className="truncate">{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>
+      )}
+      {!compact && <span className="min-w-0">{bar !== undefined && <LogWaterfallBar bar={bar} />}</span>}
     </button>
   );
 }
@@ -128,7 +141,7 @@ function SortHeader({
         onClick={() => {
           onSort(column);
         }}
-        className={`truncate text-left hover:text-fg-default ${direction === undefined ? '' : 'text-fg-default'}`}
+        className={`block max-w-full truncate text-left hover:text-fg-default ${direction === undefined ? '' : 'text-fg-default'}`}
       >
         {label}
         {direction === 'asc' ? ' ▲' : direction === 'desc' ? ' ▼' : ''}
@@ -182,6 +195,22 @@ export function HttpLog() {
     [log, filter, matcher, nameOfEntry, sort],
   );
 
+  const [logRoot, setLogRoot] = useState<HTMLDivElement | null>(null);
+  const [logWidth, setLogWidth] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (logRoot === null || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setLogWidth(logRoot.clientWidth);
+    });
+    observer.observe(logRoot);
+    setLogWidth(logRoot.clientWidth);
+    return () => {
+      observer.disconnect();
+    };
+  }, [logRoot]);
+
   const virtualised = visible.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
     count: virtualised ? visible.length : 0,
@@ -196,8 +225,9 @@ export function HttpLog() {
   const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
   const pairLeft = selection.length === 2 ? visible.find((entry) => sendIdOf(entry) === selection[0]) : undefined;
   const pair = pairLeft !== undefined && selected !== undefined ? ([pairLeft, selected] as const) : undefined;
-  // The detail shares the width with the table, so the row sheds the columns that do not fit.
-  const compact = selected !== undefined;
+  // The detail shares the width with the table, so the row sheds the columns that do not fit; so
+  // does a console too narrow for all nine columns' floors.
+  const compact = selected !== undefined || (logWidth !== undefined && logWidth > 0 && logWidth < FULL_COLUMNS_MIN_PX);
   // One span for the rows shown, so every bar is placed on the same time axis.
   const span = useMemo(() => spanOf(visible), [visible]);
   const barFor = (entry: LogEntry): WaterfallBar | undefined =>
@@ -274,7 +304,7 @@ export function HttpLog() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={setLogRoot} className="flex h-full min-h-0 flex-col">
       <LogFilterBar
         shown={visible.length}
         total={log.length}
@@ -335,14 +365,14 @@ export function HttpLog() {
               className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
             >
               {!compact && <SortHeader label="time" column="time" sort={sort} onSort={cycleSort} />}
-              <span>proto</span>
-              <span>method</span>
+              <span className="truncate">proto</span>
+              <span className="truncate">method</span>
               {!compact && <SortHeader label="name" column="name" sort={sort} onSort={cycleSort} />}
-              <span>URL</span>
+              <span className="truncate">URL</span>
               <SortHeader label="status" column="status" sort={sort} onSort={cycleSort} />
               {!compact && <SortHeader label="ms" column="duration" sort={sort} onSort={cycleSort} />}
               {!compact && <SortHeader label="size" column="size" sort={sort} onSort={cycleSort} />}
-              {!compact && <span>waterfall</span>}
+              {!compact && <span className="truncate">waterfall</span>}
             </div>
           </div>
 

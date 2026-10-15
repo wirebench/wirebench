@@ -15,6 +15,7 @@ import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithFixture, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /** The `urn:uuid:` MessageID of the envelope the echo route handed back. */
 function messageIdOf(text: string): string | undefined {
@@ -50,7 +51,7 @@ test.describe('wsa', () => {
     await openFirstRequest(page);
 
     // --- the inspector shows addressing on, with the operation's action ----------------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'WS-A' }).click();
+    await selectTab(page, 'Request tabs', 'WS-A');
     await expect(page.getByTestId('wsa-inherit')).toBeChecked();
     await expect(page.getByTestId('wsa-enabled')).toBeChecked();
     await expect(page.getByTestId('wsa-effective')).toContainText('urn:wb:wsa:Echo', { timeout: 15_000 });

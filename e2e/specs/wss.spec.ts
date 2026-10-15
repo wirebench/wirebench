@@ -22,6 +22,7 @@ import {
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab, selectedTab } from '../helpers/tabs.js';
 
 const PASSWORD = 'wss-secret';
 
@@ -90,10 +91,10 @@ test.describe('wss', () => {
     await expect(password.getByText('••••••••')).toBeVisible();
 
     // --- select it on Request 1 and send ----------------------------------------------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     // The envelope and its views live on the request pane's Body tab.
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Request tabs', 'Body');
 
     await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
     await page.getByTestId('request-send').click();
@@ -179,14 +180,13 @@ test.describe('wss', () => {
     await expect(page.getByTestId('wss-part-row')).toHaveCount(2);
 
     // --- select it on Request 1 and send ----------------------------------------------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     // The envelope and its views live on the request pane's Body tab.
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Request tabs', 'Body');
 
     // --- preview the secured request before Send (#57) ---------------------------------------
-    const inspectors = page.getByRole('tablist', { name: 'Response tabs' });
-    await inspectors.getByRole('tab', { name: /^WSS/ }).click();
+    await selectTab(page, 'Response tabs', /^WSS/);
     const wssPanel = page.getByTestId('inspector-panel-response');
     await wssPanel.getByTestId('wss-preview-button').click();
     await expect(wssPanel.getByTestId('wss-preview-timeline')).toBeVisible({ timeout: 15_000 });
@@ -204,7 +204,7 @@ test.describe('wss', () => {
     // The echo route hands the envelope back verbatim, so this *is* what went out. The preview
     // left the response pane on its WSS tab; the envelope is on Body. Read the model rather than
     // the DOM: Monaco only renders the lines in view.
-    await inspectors.getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Response tabs', 'Body');
     await expect.poll(() => monacoModelText(page), { timeout: 15_000 }).toContain('ds:Signature');
     await expect.poll(() => monacoModelText(page)).toContain('wsse:BinarySecurityToken');
     // Two references — one for the Body's generated wsu:Id, one for the Timestamp's.
@@ -257,10 +257,10 @@ test.describe('wss', () => {
     await editor.getByLabel('Embed key').check();
 
     // --- select it on Request 1 and send ----------------------------------------------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
     // The envelope and its views live on the request pane's Body tab.
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Request tabs', 'Body');
 
     // The generated Calculator envelope carries `intA`/`intB` in the Body; encrypting the Body's
     // content must leave no trace of either on the wire.
@@ -338,22 +338,21 @@ test.describe('wss', () => {
     await editor.getByLabel('Signature truststore').selectOption({ label: 'client' });
 
     // --- select it on Request 1 and send to the signed+encrypted route -----------------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-incoming').selectOption({ label: 'Incoming WSS' });
     // The envelope and its views live on the request pane's Body tab.
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Request tabs', 'Body');
 
     await page.getByTestId('request-endpoint').fill(`${server.url}/wss/sign-encrypt`);
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
 
-    const responseInspectors = page.getByRole('tablist', { name: 'Response tabs' });
-    await responseInspectors.getByRole('tab', { name: /^WSS/ }).click();
+    await selectTab(page, 'Response tabs', /^WSS/);
     const panel = page.getByTestId('inspector-panel-response');
     await expect(panel.getByTestId('wss-action-row')).toHaveCount(3, { timeout: 15_000 });
     await expect(panel.getByText('failed', { exact: true })).toHaveCount(0);
     await expect(panel.getByText('trusted', { exact: true })).toBeVisible();
-    await expect(responseInspectors.getByRole('tab', { name: 'WSS ✓' })).toBeVisible();
+    await expect(selectedTab(page, 'Response tabs', 'WSS ✓')).toBeVisible();
 
     // The envelope the views work against is the decrypted one — Query resolves AddResult to 5
     // (2 + 3) — while the bytes that actually arrived are still ciphertext.
@@ -361,7 +360,7 @@ test.describe('wss', () => {
     // BinarySecurityToken — how far below depends on the window height, so scrolling to the
     // end and reading the DOM is a viewport test, not a content one. Read the model instead,
     // the way every other deep-content assertion in this spec does.
-    await responseInspectors.getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Response tabs', 'Body');
     await expect.poll(() => monacoModelText(page), { timeout: 15_000 }).toContain('AddResult');
 
     await page.getByRole('tab', { name: 'Raw' }).nth(1).click();
@@ -373,8 +372,7 @@ test.describe('wss', () => {
     // --- and a tampered response is flagged --------------------------------------------------
     await page.getByTestId('request-endpoint').fill(`${server.url}/wss/tampered`);
     await page.getByTestId('request-send').click();
-    await expect(responseInspectors.getByRole('tab', { name: 'WSS ✗' })).toBeVisible({ timeout: 30_000 });
-    await responseInspectors.getByRole('tab', { name: 'WSS ✗' }).click();
+    await selectTab(page, 'Response tabs', 'WSS ✗');
     await expect(panel.getByText('failed', { exact: true })).toHaveCount(1);
     await expect(panel).toContainText('(Body) does not match');
   });

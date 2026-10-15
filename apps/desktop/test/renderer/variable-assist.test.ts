@@ -219,15 +219,15 @@ describe('hoverContent', () => {
 describe('data columns (#560)', () => {
   const withData: RequestVariables = { ...list, dataColumns: ['user', 'host'] };
 
-  it('offers a column after the chain, explicitly when a chain scope has its name', () => {
+  it('offers each column after the chain, always as ${#Data#column} (D1, #569)', () => {
     const items = completionItems({ kind: 'name', prefix: '', start: 2 }, withData, false);
     expect(items.map((item) => [item.label, item.insertText, item.detail])).toEqual([
       ['host', 'host}', 'Environment'],
       ['host', '#Project#host}', 'Project (shadowed)'],
       ['apiKey', 'apiKey}', 'Project'],
       ['region', 'region}', 'Globals'],
-      ['user', 'user}', 'Data row'],
-      ['host', '#Data#host}', 'Data row (shadowed)'],
+      ['user', '#Data#user}', 'Data row'],
+      ['host', '#Data#host}', 'Data row'],
       ['secret:api_key', 'secret:api_key}', 'Secret'],
     ]);
   });
@@ -243,13 +243,16 @@ describe('data columns (#560)', () => {
     expect(scopes(list)).not.toContain('Data');
   });
 
-  it('resolves a column by the shorthand only after the chain, and never marks ${#Data#…} unknown to it', () => {
-    expect(classify('${user}', withData)).toEqual({ status: 'data', name: 'user' });
+  it('never resolves a column by the shorthand, and never marks ${#Data#…} unknown to it', () => {
+    expect(classify('${user}', withData)).toMatchObject({ status: 'unresolved', name: 'user' });
     expect(classify('${host}', withData)).toMatchObject({ status: 'resolved', entry: { scope: 'Env' } });
     expect(classify('${#Data#host}', withData)).toEqual({ status: 'data', name: 'host' });
     expect(classify('${user}')).toMatchObject({ status: 'unresolved' });
     // Without a known data file, only a run can tell.
     expect(classify('${#Data#user}')).toEqual({ status: 'unknown' });
-    expect(hoverContent(classify('${user}', withData), '${user}')).toMatchObject({ title: 'user', scope: 'Data row' });
+    expect(hoverContent(classify('${#Data#user}', withData), '${#Data#user}')).toMatchObject({
+      title: 'user',
+      scope: 'Data row',
+    });
   });
 });
