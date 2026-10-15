@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import { Button } from '../../components/button.js';
 import { confirmTrust } from './connect.js';
 import { useHostsStore } from './hosts-store.js';
 
@@ -79,15 +80,12 @@ function TrustDialogBody() {
           )}
           <div className="mt-4 flex justify-end gap-2">
             <AlertDialog.Cancel asChild>
-              <button type="button" className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">
-                Cancel
-              </button>
+              <Button>Cancel</Button>
             </AlertDialog.Cancel>
             <AlertDialog.Action asChild>
-              <button
-                type="button"
+              <Button
+                variant={changed ? 'danger' : 'primary'}
                 disabled={changed && !understood}
-                className="rounded bg-accent px-3 py-1.5 text-sm text-fg-on-accent disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => {
                   setUnderstood(false);
                   trusted.current = true;
@@ -95,7 +93,7 @@ function TrustDialogBody() {
                 }}
               >
                 {changed ? 'Replace key and connect' : 'Trust and connect'}
-              </button>
+              </Button>
             </AlertDialog.Action>
           </div>
         </AlertDialog.Content>

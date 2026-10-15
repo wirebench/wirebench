@@ -1,7 +1,7 @@
 /**
  * The Hosts tab's "Recent" strip: the hosts connected to lately on this machine, newest first, each with
  * when and how its last connect went and a Connect; Clear forgets the list. Deleted hosts are left out and
- * renamed ones show by their current name.
+ * renamed ones show by their current name. With only a few hosts it would repeat the cards, so it hides.
  */
 import { useMemo } from 'react';
 import { History, Plug } from 'lucide-react';
@@ -12,7 +12,7 @@ import { osKeyOf, useHostsStore } from './hosts-store.js';
 import { OsIcon, osOf } from './os-icon.js';
 import { useRecentConnections, useRecentStore } from './recent-connections.js';
 
-/** How many entries the strip shows. */
+/** How many entries the strip shows; with this many hosts or fewer the cards show them all, and it hides. */
 const SHOWN = 6;
 
 export function RecentSection() {
@@ -29,7 +29,7 @@ export function RecentSection() {
       })
       .slice(0, SHOWN);
   }, [entries, resolved]);
-  if (rows.length === 0) return null;
+  if (rows.length === 0 || resolved.length <= SHOWN) return null;
   const now = new Date();
 
   return (

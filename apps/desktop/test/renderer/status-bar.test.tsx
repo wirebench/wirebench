@@ -6,6 +6,8 @@ import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { logExchange, makeExchange, makeFailure, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 describe('StatusBar', () => {
@@ -208,5 +210,48 @@ describe('StatusBar', () => {
     render(<StatusBar />);
     expect(screen.getByTestId('status-bar-console')).toBeTruthy();
     expect(screen.getByTestId('status-bar-problems')).toBeTruthy();
+  });
+
+  it('leaves a failed SSH connect out of the counts: its connection screen says what failed (#537)', () => {
+    useProblemsStore.getState().add([
+      {
+        groupId: 'ssh:web',
+        source: 'hosts',
+        severity: 'error',
+        problem: { code: 'ssh-connect-failed', message: 'x' },
+      },
+    ]);
+    render(<StatusBar />);
+    expect(screen.getByTestId('status-bar-problems').textContent).toBe('0 problems');
+    expect(screen.getByTestId('status-bar-console').className).not.toContain('text-status-danger');
+  });
+
+  it('in SSH shows the session in front instead of the request items (#537)', () => {
+    useUiStore.setState({ enabledAreas: ['ssh'] as never });
+    useEditorsStore.setState({
+      displayedSet: 'ssh',
+      tabs: [
+        {
+          id: 'ssh-terminal:t1',
+          kind: 'ssh-terminal',
+          title: 'web',
+          panes: { kind: 'pane', paneId: 'p1', hostId: 'web' },
+        },
+      ] as never,
+      activeId: 'ssh-terminal:t1',
+    });
+    useHostsStore.setState({
+      panes: { p1: { hostId: 'web', sessionId: 's1', state: 'open', recording: true } },
+      resolved: [{ id: 'web', name: 'Web 1' }] as never,
+    });
+    render(<StatusBar />);
+    expect(screen.queryByTestId('status-bar-tls')).toBeNull();
+    expect(screen.queryByTestId('status-bar-last')).toBeNull();
+    const session = screen.getByTestId('status-bar-session');
+    expect(session.textContent).toContain('Web 1');
+    expect(session.textContent).toContain('logging');
+    expect(screen.getByRole('img', { name: 'connected' })).toBeDefined();
+    useEditorsStore.setState({ displayedSet: 'explorer', tabs: [], activeId: undefined });
+    useHostsStore.setState({ panes: {}, resolved: [] });
   });
 });

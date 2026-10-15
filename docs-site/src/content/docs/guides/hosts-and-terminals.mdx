@@ -186,7 +186,8 @@ its validity window fails with `ssh-cert-expired` and says when it was valid (fo
 ask your CA for a new one. A host certificate, or a certificate issued for another key, is refused too.
 Ed25519, ECDSA and RSA keys are supported; certificates for security keys (`sk-…`) are not.
 
-**In the keychain.** A key's row has **Attach certificate…**: paste the certificate and Wirebench
+**In the keychain.** A key's **⋯** menu (beside **Install on host…**) has **Copy public key**,
+**Attach certificate…** and **Set value…**. **Attach certificate…**: paste the certificate and Wirebench
 checks that it is a user certificate for that key, then stores it as the secret `<key>_cert`, next to
 `<key>_passphrase`. The row then shows the certificate's key ID, its principals (the user names it is
 valid for) and its validity window, with a badge when it has expired, is not valid yet or belongs to
@@ -360,13 +361,16 @@ UDP ports.
 ## Opening a terminal
 
 Open the **Hosts** view from the activity bar (or **Show Hosts** in the palette). Groups and hosts
-appear as written; the filter box matches name, address and tags, and tag chips narrow the list.
+appear as written; the filter box matches name, address and tags. Each group heading has a **⋯** menu with
+the group's actions and **Show only this group**; the bar above the list then names the group, with
+**Show all groups**.
 Double-click a host, or press <kbd>Enter</kbd>, to connect. The right-click menu has Connect, Edit,
 Duplicate, Move to…, Delete… and Copy address. **Delete…** asks first and says how many open sessions
 will close (each terminal pane on the host, and its Files tab); they close with it. A group can be deleted
 once it is empty.
 
-The hosts you connected to lately show in a **Recent** strip above the list, newest first, with when
+With more than six hosts, the ones you connected to lately show in a **Recent** strip above the list
+(with fewer, the list already shows every host), newest first, with when
 the last connect ended and whether it failed; its connect button opens the terminal again, and
 **Clear** forgets the list. The sort menu's **Recently connected** orders each section the same way.
 The list is kept on this machine per workspace and holds only the host, the time and the outcome,
@@ -377,12 +381,22 @@ From the keyboard:
 - <kbd>⌘⇧H</kbd> / <kbd>Ctrl+Shift+H</kbd> runs **Hosts: Connect to Host…**: a searchable list over name,
   address, group path and tags. The hosts you connected to lately come first, under **Recent**.
   <kbd>Enter</kbd> connects, or focuses the terminal if one for that host is already open.
+- A server that isn't saved can be typed there as `user@host:port` (the user and port are optional; a
+  bare name needs a dot, a user or a port). **Connect to …** opens a terminal to it signed in with the SSH
+  agent, and nothing is written to `hosts.yaml`; a server with no user asks for one on the connection
+  screen. **Save as host…**, in the list or on a failed connection screen, opens **New host** filled in
+  from it.
 - Quick-open (<kbd>⌘P</kbd>) lists hosts alongside operations and requests, recent ones first.
 - The palette also has **Hosts: New Host…**, **Hosts: New Group…**, **Hosts: Edit Host…** and
   **Hosts: Import Hosts…**.
 
 The terminal opens in an editor tab named after the host. It is a full terminal (colour, editors,
 pagers, resize), and a host that is reached through a jump host is dialled hop by hop.
+
+Keys typed in a terminal go to the shell, so off a Mac <kbd>Ctrl+K</kbd> is the shell's there; the palette
+answers to <kbd>Ctrl+Shift+P</kbd> instead (<kbd>⌘K</kbd> and <kbd>⌘⇧P</kbd> on a Mac), and the title bar
+shows that shortcut while a terminal has the focus. With a terminal tab in front, the status bar shows the
+focused pane's host and session state, and **● logging** while the session is logged.
 
 ### The connection screen
 
@@ -514,7 +528,9 @@ header to sort, again to reverse. Click, <kbd>⇧</kbd>-click and <kbd>⌘</kbd>
 <kbd>Delete</kbd> deletes after asking, <kbd>⌘A</kbd> selects everything, and <kbd>Tab</kbd> moves to
 the other pane. The right-click menu has Open or Edit, Copy to other pane, Rename, Delete…,
 Permissions…, New folder, Copy path and Refresh, and most are also **Files:** commands in the
-palette.
+palette. The toolbar above the panes has New folder, Rename, Delete…, Permissions… and Copy to other pane
+for the selection of the pane you used last (its header shows it is the active one); a local pane has no
+Permissions column or button.
 
 A rename never replaces: a name that is already taken is refused, as is a new folder that exists.
 Deleting a folder removes it with everything in it, and the confirmation says so.
@@ -741,14 +757,15 @@ Forwards use their own connection to the host, shared by that host's rules and s
 terminals, so a terminal closing or reconnecting never drops a forward. Switching workspace or closing the
 window stops that window's forwards, and they are not restored on restart.
 
-The **Port forwarding** view lists every rule of every host with its state, type (L, R or D),
-`bind:port → target`, its host and where it came from, a search box and **All**, **Running** and **Failed**
+The **Port forwarding** view lists every rule of every host with its state, type (Local, Remote or
+Dynamic), `bind:port → target`, its host and where it came from (this host, or a group), a search box and
+**All**, **Running** and **Failed**
 chips. Rules that are off show greyed with where they were switched off. A rule's menu has **Start on
 another port…**, **Copy address**, **Edit rule** and **Stop**. If you edit a running rule, it keeps running
 as it started and offers **Restart**.
 
-While forwards run, the status bar shows **⇄ N**; it turns red when one has failed, and clicking it opens
-the view.
+While forwards run, the status bar shows **⇄ N**, and **⇄ N · M failed** in red when some have failed;
+clicking it opens the view.
 
 ### Ports and binds
 
@@ -898,7 +915,7 @@ Masking has limits:
 - **Run…** (the row menu, or **Run** while no terminal is in front) opens the run dialog: the variables, the
   open terminals to tick (the one you used last is ticked), **Add host, group or tag**, the script as it will
   be typed, and every protected host it reaches. The button says **Run on 3 hosts** when it reaches more
-  than one.
+  than one. A variable left empty is marked, and the run then asks whether to run anyway.
 - **Hosts, groups and tags.** A chip for a group or a tag shows the hosts it expands to when the run starts.
   A host with a connected terminal reuses the one you used last; the others get a new terminal tab, which
   connects with the usual host key prompt and sign-in and is typed into once the shell is quiet for a moment

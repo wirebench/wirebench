@@ -1,5 +1,5 @@
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // jsdom has no canvas or layout, so the terminal is a recording stand-in.
@@ -1184,6 +1184,22 @@ describe('split panes', () => {
     expect(leaves(tree()).map((leaf) => leaf.hostId)).toEqual(['a', 'a']);
     expect(screen.getAllByTestId('ssh-pane-header')).toHaveLength(2);
     expect(screen.queryByTestId('ssh-pane-host-input')).toBeNull();
+  });
+
+  it('the picker lists the same host first with its status, then the others, and says what it is for', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: /Split right/ }));
+    const input = await screen.findByTestId('ssh-pane-host-input');
+    expect(input.getAttribute('placeholder')).toBe('Pick a host for the new pane…');
+    const rows = screen.getAllByTestId('ssh-pane-host');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('alpha');
+    expect(rows[1]?.textContent).toContain('beta');
+    expect(within(rows[0]!).getByRole('img').getAttribute('aria-label')).toBe('connected');
+    expect(within(rows[1]!).getByRole('img').getAttribute('aria-label')).toBe('not connected');
+    expect(screen.getByText('Same host')).toBeDefined();
+    expect(screen.getByText('Other hosts')).toBeDefined();
+    fireEvent.keyDown(input, { key: 'Escape' });
   });
 
   it('Escape cancels the split', async () => {

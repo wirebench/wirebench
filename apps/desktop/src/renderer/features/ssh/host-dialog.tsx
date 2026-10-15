@@ -101,10 +101,23 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const chain: GroupEntryWire[] =
     dialog.mode === 'edit-group' ? ancestorsOf(file, 'group', dialog.id) : chainOf(file, groupId);
 
-  const [name, setName] = useState(existing?.name ?? '');
-  const [address, setAddress] = useState(existing !== undefined && 'address' in existing ? existing.address : '');
+  const prefill = dialog.mode === 'new-host' ? dialog.prefill : undefined;
+  const [name, setName] = useState(existing?.name ?? prefill?.name ?? '');
+  const [address, setAddress] = useState(
+    existing !== undefined && 'address' in existing ? existing.address : (prefill?.address ?? ''),
+  );
   const [tags, setTags] = useState((existing?.tags ?? []).join(', '));
-  const [ssh, setSsh] = useState<SshSettingsWire>(existing?.ssh ?? {});
+  // A one-off server signed in with the agent; its port is kept only when it is not the default.
+  const [ssh, setSsh] = useState<SshSettingsWire>(
+    existing?.ssh ??
+      (prefill === undefined
+        ? {}
+        : {
+            ...(prefill.user === undefined ? {} : { user: prefill.user }),
+            ...(prefill.port === SSH_DEFAULTS.port ? {} : { port: prefill.port }),
+            auth: { kind: 'agent' },
+          }),
+  );
   const [password, setPassword] = useState('');
   const [proxyPassword, setProxyPassword] = useState('');
   const [protectedHere, setProtectedHere] = useState<boolean | undefined>(existing?.protected);
@@ -126,7 +139,9 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
 
   // A new host starts from what its group does not supply: this machine's login name, and a typed password.
   // Both follow the Group select until the field is touched.
-  const [touched, setTouched] = useState<{ user?: true; auth?: true }>({});
+  const [touched, setTouched] = useState<{ user?: true; auth?: true }>(() =>
+    prefill === undefined ? {} : { ...(prefill.user === undefined ? {} : { user: true }), auth: true },
+  );
   // What the groups and identities give this entry when it sets no user or auth of its own (#416).
   const loginUser = inheritedLogin(file.identities, chain, ssh.identity, 'user');
   const loginAuth = inheritedLogin(file.identities, chain, ssh.identity, 'auth');

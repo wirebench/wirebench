@@ -281,19 +281,28 @@ function Report(props: {
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <Dialog.Close asChild>
-          <Button>Cancel</Button>
-        </Dialog.Close>
-        <Button
-          variant="primary"
-          disabled={busy || count === 0}
-          onClick={() => {
-            if (chosen.length > 0) setConfirming(true);
-            else void submit();
-          }}
-        >
-          {`Trust ${plural(count, 'key')}`}
-        </Button>
+        {/* Nothing to add and no conflict to replace: there is nothing to trust, only the report to close. */}
+        {preview.add.length === 0 && preview.conflicts.length === 0 ? (
+          <Dialog.Close asChild>
+            <Button variant="primary">Close</Button>
+          </Dialog.Close>
+        ) : (
+          <>
+            <Dialog.Close asChild>
+              <Button>Cancel</Button>
+            </Dialog.Close>
+            <Button
+              variant="primary"
+              disabled={busy || count === 0}
+              onClick={() => {
+                if (chosen.length > 0) setConfirming(true);
+                else void submit();
+              }}
+            >
+              {`Trust ${plural(count, 'key')}`}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

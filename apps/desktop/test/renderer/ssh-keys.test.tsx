@@ -118,12 +118,19 @@ describe('Keychain keys', () => {
     await vi.waitFor(() => {
       expect(row.textContent).toContain('ed25519 · SHA256:fff');
     });
-    await userEvent.click(within(row).getByRole('button', { name: 'Copy public key' }));
+    // One action shows; the rest are behind ⋯.
+    expect(
+      within(row)
+        .getAllByRole('button')
+        .map((b) => b.textContent || b.getAttribute('aria-label')),
+    ).toEqual(['Install on host…', 'More actions for deploy']);
+    await userEvent.click(within(row).getByRole('button', { name: 'More actions for deploy' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Copy public key' }));
     expect(writeText).toHaveBeenCalledWith(KEY.publicKey);
-    expect(await within(row).findByRole('button', { name: 'Copied' })).toBeDefined();
     const locked = screen.getByTestId('secret-row-old');
     expect(locked.textContent).toContain('locked key');
-    expect(within(locked).queryByRole('button', { name: 'Copy public key' })).toBeNull();
+    expect(within(locked).queryByRole('button', { name: 'More actions for old' })).toBeNull();
+    expect(within(locked).getByRole('button', { name: 'Set value…' })).toBeDefined();
     expect(
       within(screen.getByTestId('secret-row-web_pw')).queryByRole('button', { name: 'Install on host…' }),
     ).toBeNull();
@@ -220,7 +227,8 @@ describe('Install public key on host', () => {
       'Certificate alice@example · alice, deploy · from 2000-01-01 00:00:00 UTC to 2001-01-01 00:00:00 UTC' + 'expired',
     );
     const row = screen.getByTestId('secret-row-deploy');
-    expect(within(row).getByRole('button', { name: 'Replace certificate…' })).toBeDefined();
+    await userEvent.click(within(row).getByRole('button', { name: 'More actions for deploy' }));
+    expect(await screen.findByRole('menuitem', { name: 'Replace certificate…' })).toBeDefined();
   });
 
   it('Attach certificate… sends the pasted text to main, shows a refusal, and lists the key again on success', async () => {
@@ -232,7 +240,8 @@ describe('Install public key on host', () => {
       .mockResolvedValueOnce({ ok: true, value: KEY });
     render(<SshHome />);
     const row = await screen.findByTestId('secret-row-deploy');
-    await userEvent.click(await within(row).findByRole('button', { name: 'Attach certificate…' }));
+    await userEvent.click(await within(row).findByRole('button', { name: 'More actions for deploy' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Attach certificate…' }));
     const dialog = await screen.findByTestId('attach-certificate-dialog');
     await userEvent.type(
       within(dialog).getByRole('textbox', { name: 'Certificate' }),

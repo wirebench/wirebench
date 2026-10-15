@@ -33,6 +33,11 @@ export interface AreaModule<Id extends string = string> {
     readonly command: CommandId;
     readonly order: number;
     readonly testId?: string;
+    /**
+     * What selecting the rail item does while its view already shows: `collapse` (the default) hides the
+     * sidebar; `focus` moves the focus into the view's menu, and only the sidebar's own button collapses it.
+     */
+    readonly reselect?: 'collapse' | 'focus';
   };
   readonly copy: AreaCopy;
 }
