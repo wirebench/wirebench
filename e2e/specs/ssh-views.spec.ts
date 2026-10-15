@@ -99,7 +99,7 @@ test('Host details stays open when a host is clicked again, and is still open af
     await showSshNav(page, 'hosts');
     await page.getByRole('button', { name: 'New host' }).click();
     const dialog = page.getByTestId('host-dialog');
-    await fillNewHost(dialog, { name, port: 2222, user: 'tester' });
+    await fillNewHost(dialog, { name, port: 2222, user: 'tester', password: 'pw' });
     await dialog.getByRole('button', { name: 'Save' }).click();
     await expect(dialog).toBeHidden();
   }
