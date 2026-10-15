@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Connect to a server that isn't saved.** Typing `user@host:port` in **Connect to Host…** offers
+  **Connect to …**, a terminal signed in with the SSH agent that writes nothing to `hosts.yaml`, and
+  **Save as host…**, which opens New host filled in from it (#537).
 - **Highlighted errors, warnings and addresses in terminals.** SSH and local terminals colour error and
   warning words, `info`, `notice` and `debug`, and IPv4 and IPv6 addresses in the scheme's red, yellow,
   blue and cyan, drawn over the output without changing it. Only whole words in the default colours
@@ -335,6 +338,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **SSH area polish.** The Hosts cards keep the name on the first line and put "needs user" under it;
+  group chips give way to a ⋯ menu on each group heading with **Show only this group**; the SSH menu
+  hides zero counts and shows running forwards as a green dot; Recent shows only with more than six
+  hosts; a key's Copy public key, Attach certificate… and Set value… sit in its ⋯ menu; forwarding rows
+  say Local, Remote or Dynamic and "from this host" or "from group X", and the rule form's Id is Name;
+  the split picker puts the current pane's host first and marks hosts that need a user; the Files tab has
+  a toolbar and one selection style; a snippet run with an empty variable asks first; Settings search
+  finds Terminal under "ssh"; <kbd>Ctrl+Shift+P</kbd> opens the palette from a terminal, and the title
+  bar says so; and the status bar shows the focused session instead of the request items, without
+  counting failed SSH connects as request problems (#537).
 - **Pasting control characters into a terminal asks first.** A paste holding an escape or another
   control character (apart from tabs and line breaks), such as an embedded end of bracketed paste,
   now waits for a yes even on one line and with the multi-line question turned off. The dialog shows
