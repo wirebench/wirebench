@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-10-15
+
 ### Added
 
 - **SSH connection defaults in Settings.** Settings → Workspace → **SSH** sets a default user, keep-alive
@@ -143,6 +145,15 @@ All notable changes to this project are documented here. The format follows
   and the group links; the server gains `admin scim-token` and `admin scim-group` commands. Neither
   creates an account at sign-in: accounts come from SCIM or an invitation (#344).
 
+- **Scheduled runs on Wirebench Server (Enterprise).** A workspace's admins can schedule a project's
+  requests or suites to run on the server, on a cron expression, `@daily` or `every 15m`, in a time zone
+  and against an environment, with the run's secrets kept sealed on the server. Every role in the
+  workspace reads the runs and their results. A run uses the workspace as last pushed and the same
+  engine as `wirebench run`; it never overlaps the schedule's previous run, a server that was down runs
+  each schedule once when it is back, and servers sharing a database never fire twice. A schedule that
+  starts failing alerts by email, Slack, Teams or a signed webhook, mutes after a set number of
+  failures and alerts again when it passes. Changes to schedules are audited, and
+  `wirebench-server admin schedules` lists, enables and disables them on any edition (#343).
 - **SSH certificates.** A key sign-in in `hosts.yaml` can carry its OpenSSH user certificate:
   `auth: { key, certificate, passphrase? }`, the certificate being a `${secret:NAME}`, inherited with
   the rest of `auth`. On connect the certificate is offered first, then the key alone; an expired or
@@ -265,6 +276,38 @@ All notable changes to this project are documented here. The format follows
   shell seeing the key: Enter runs the snippet there, ⌥Enter inserts it without pressing Enter, Escape returns
   to the shell. New commands: **Show Snippets**, **Snippets: New Snippet…**, **Snippets: Edit Snippet…**,
   **Snippets: Run Snippet** and **Terminal: Snippets…** (#453).
+- **A Files tab for SFTP.** **Open files** on a host card, **Files** in a host's details or on a terminal
+  tab, or ⌘K **Open Files on Host…** opens a Files tab with two panes: this machine on the left and the
+  host on the right. Each pane's header switches it to this machine or to any host, so a copy can also
+  go from one host to another. Drag a selection onto the other pane, or drop files from the desktop on a
+  host's pane, to copy them. A name that already exists asks whether to replace, skip or keep both, and
+  every copy is written to a part file first, so a cancelled or failed one leaves the target as it was. A
+  strip lists the transfers with their progress and speed, Cancel and Retry. A pane renames (F2),
+  deletes, makes folders, changes permissions and shows hidden files on request. Opening a host's file
+  edits it in the system's editor and uploads each save, asking first when the file changed on the host
+  in the meantime (#357, #439–#445).
+- **Port forwarding.** Hosts and groups in `hosts.yaml` take `forwards`: local, remote and dynamic
+  (SOCKS5) rules, inherited down the groups, which a nearer level replaces by id or switches off. The
+  host and group forms edit them. The SSH menu's **Port forwarding** view, and a section of the host's
+  details, list every rule with its state and start, stop or retry it, and the status bar shows `⇄ N`
+  while N forwards run, red when one has failed. A rule set to start with the host's terminals starts
+  with its first terminal and stops with its last. A rule bound to an address other machines can reach
+  asks once before it opens. A port already in use is refused, naming the forward that holds it, and
+  **Start on another port…** offers a free one. A dropped connection reconnects with the port kept
+  (#358, #456–#459).
+- **`wirebench ssh forward`.** `wirebench ssh forward <host> [rule…]` opens a host's forwarding rules from
+  the workspace's `hosts.yaml` and keeps them open until it is stopped. It reads secrets as
+  `wirebench run` does and host keys from the app's known hosts, and `--host-key` accepts a new key for
+  one run. `--json` prints each status change as a line of JSON (#460).
+- **Split terminals.** **Split right** (⌘D) and **Split down** (⌘⇧D) on a terminal tab open another pane
+  on any host, up to 12 in a tab. ⌘⌥ and an arrow move to the next pane, a divider drags and evens out on
+  a double-click, and ⌘W closes the focused pane only. **Open in new tab** in a host's menu always opens
+  another tab. On Windows and Linux Ctrl+D now splits rather than reaching the shell; Shortcuts can
+  rebind it (#462).
+- **Broadcast input to several panes.** **Broadcast** on a split terminal tab sends what is typed in a
+  ticked pane to every ticked pane that is connected. A red banner says how many panes receive it and
+  whether one missed input, ticked panes get a red border, and a paste into them always asks first
+  (#464).
 - **Saved terminal layouts.** **Save layout…** on a terminal tab's toolbar (or ⌘K **Terminal: Save Layout…**)
   keeps the tab's panes, hosts and split ratios as a named layout; a tab opened from a layout offers **Update**
   or **Save as new…**. The SSH menu gains **Layouts**, listing each layout's hosts and pane count with **Open**,
@@ -437,6 +480,12 @@ All notable changes to this project are documented here. The format follows
   stored secret** picks an existing one instead. A **Group** select starts on the group the dialog was
   opened from or the active group chip, and moves an edited host. A disabled Save lists what is
   missing. The host edit panel has the same form (#531).
+- **HTTP/2 is offered by default.** Every HTTPS send offers `h2` and `http/1.1` in the TLS handshake,
+  through a proxy too, and the server picks, so a stack that speaks only HTTP/1.1 stays on it. The
+  **Offer HTTP/2** preference is now on by default and is stored as `http.offerH2`. The old
+  `http.allowH2` key is dropped, since every saved file carried it as `false` although it never
+  turned HTTP/2 off. Turn the preference off for a server that asks for a client certificate
+  mid-connection (#80, ADR-0024).
 
 ### Fixed
 
@@ -481,6 +530,9 @@ All notable changes to this project are documented here. The format follows
   scroll only downwards, putting each label above its value in a panel narrower than 360 pixels. The SSH
   menu cuts long labels short and turns into a column of icons, each named in its tooltip, when the sidebar
   is too narrow for them (#533).
+- **NTLM and Kerberos could negotiate HTTP/2** on a direct HTTPS connection, and fail against a
+  server that answers `HTTP_1_1_REQUIRED`. Both now always use HTTP/1.1. **Offer HTTP/2** switched
+  off now does keep a direct send on HTTP/1.1 (#80).
 
 ## [6.0.0] - 2026-10-12
 
@@ -622,12 +674,6 @@ All notable changes to this project are documented here. The format follows
 - **Panel widths are kept per area.** Each sidebar area and the right slide-over (Code, Host
   details) remember their own width. The SSH sidebar opens narrow, and the slide-over opens at
   294px instead of 420px (#391, #392).
-- **HTTP/2 is offered by default.** Every HTTPS send offers `h2` and `http/1.1` in the TLS handshake,
-  through a proxy too, and the server picks, so a stack that speaks only HTTP/1.1 stays on it. The
-  **Offer HTTP/2** preference is now on by default and is stored as `http.offerH2`. The old
-  `http.allowH2` key is dropped, since every saved file carried it as `false` although it never
-  turned HTTP/2 off. Turn the preference off for a server that asks for a client certificate
-  mid-connection (#80, ADR-0024).
 
 ### Fixed
 
@@ -635,9 +681,6 @@ All notable changes to this project are documented here. The format follows
   `Cookies` file on case-insensitive volumes, so persistent cookies were lost on every restart.
   Jars now live in `<userData>/cookie-jars/`, and a jar in the old `cookies/` folder moves there
   the first time its workspace opens (#385).
-- **NTLM and Kerberos could negotiate HTTP/2** on a direct HTTPS connection, and fail against a
-  server that answers `HTTP_1_1_REQUIRED`. Both now always use HTTP/1.1. **Offer HTTP/2** switched
-  off now does keep a direct send on HTTP/1.1 (#80).
 
 ### Breaking
 
@@ -1859,7 +1902,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.1...HEAD
+[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.1
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
