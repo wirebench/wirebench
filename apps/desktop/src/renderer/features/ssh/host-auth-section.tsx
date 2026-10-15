@@ -67,7 +67,9 @@ export function HostAuthSection(props: {
       ? `from ${sourceName(inherited.from)}`
       : inherited.from === 'default'
         ? 'default'
-        : '';
+        : inherited.from === 'preferences'
+          ? 'from Preferences'
+          : '';
 
   return (
     <fieldset className="flex flex-col gap-2 text-xs">

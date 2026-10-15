@@ -5,7 +5,14 @@ import type { ForwardEntry, ForwardType } from './forward-rules.js';
 import type { MoshSettings, SessionProtocol } from './host-mosh.js';
 import type { GroupEntry, HostEntry, HostsFile, IdentityEntry, SshAuth, SshProxy, SshSettings } from './model.js';
 
-export type Provenance<T> = { readonly value: T; readonly from: 'host' | 'default' | { readonly group: string } };
+/**
+ * `preferences` is the caller's {@link SshDefaults} (Preferences → SSH in the app); `default` is the built-in
+ * value, or no value at all.
+ */
+export type Provenance<T> = {
+  readonly value: T;
+  readonly from: 'host' | 'preferences' | 'default' | { readonly group: string };
+};
 /** `user` and `auth` may also come from the identity a level names (#416). */
 export type LoginProvenance<T> = {
   readonly value: T;
@@ -82,16 +89,28 @@ export interface ResolvedHost {
 
 const DEFAULTS = { port: 22, keepAlive: 15, connectTimeout: 20, forwardAgent: false, protocol: 'ssh' } as const;
 
+/**
+ * The last level a setting resolves to, after the host, its groups and their identities (#571): the app passes
+ * its Preferences → SSH. A field left unset falls through to the built-in value (no user at all).
+ */
+export interface SshDefaults {
+  readonly user?: string;
+  readonly keepAlive?: number;
+  readonly connectTimeout?: number;
+}
+
 interface Located {
   readonly host: HostEntry;
   readonly chain: readonly GroupEntry[];
   readonly identities: ReadonlyMap<string, IdentityEntry>;
+  readonly defaults: SshDefaults;
 }
 
 /** `code` tells the asked-for host (`ssh-host-unknown`) from a hop on its jump chain (`ssh-jump-unknown`). */
 function locate(
   file: HostsFile,
   id: string,
+  defaults: SshDefaults = {},
   code: 'ssh-host-unknown' | 'ssh-jump-unknown' = 'ssh-host-unknown',
 ): Located {
   const groups = new Map<string, GroupEntry>();
@@ -103,12 +122,14 @@ function locate(
     host: found.entry as HostEntry,
     chain: found.path.map((gid) => groups.get(gid) as GroupEntry),
     identities: new Map((file.identities ?? []).map((i) => [i.id, i])),
+    defaults,
   };
 }
 
 /**
  * Nearest level first; at each level its own value wins, then the identity it names. An identity that
- * leaves the field unset passes on to the levels further out, and none at all means no value (`default`).
+ * leaves the field unset passes on to the levels further out; past them the default user (`preferences`),
+ * and none at all means no value (`default`).
  */
 function pickLogin<K extends 'user' | 'auth'>(located: Located, key: K): LoginProvenance<SshSettings[K]> {
   const levels: Array<{ ssh: SshSettings; from: Provenance<unknown>['from'] }> = [
@@ -119,6 +140,9 @@ function pickLogin<K extends 'user' | 'auth'>(located: Located, key: K): LoginPr
     if (ssh[key] !== undefined) return { value: ssh[key], from };
     const identity = ssh.identity === undefined ? undefined : located.identities.get(ssh.identity);
     if (identity?.[key] !== undefined) return { value: identity[key], from: { identity: identity.id } };
+  }
+  if (key === 'user' && located.defaults.user !== undefined) {
+    return { value: located.defaults.user as SshSettings[K], from: 'preferences' };
   }
   return { value: undefined, from: 'default' };
 }
@@ -133,6 +157,10 @@ function pick<K extends keyof SshSettings>(
     const group = located.chain[i] as GroupEntry;
     if (group.ssh[key] !== undefined) return { value: group.ssh[key], from: { group: group.id } };
   }
+  const { defaults } = located;
+  const preferred =
+    key === 'keepAlive' ? defaults.keepAlive : key === 'connectTimeout' ? defaults.connectTimeout : undefined;
+  if (preferred !== undefined) return { value: preferred as SshSettings[K], from: 'preferences' };
   return { value: fallback, from: 'default' };
 }
 
@@ -234,8 +262,8 @@ export function resolveSettings(file: HostsFile, id: string): SshSettings {
 }
 
 /** @throws SshModelError `ssh-host-unknown` when `id` is not a host. */
-export function resolveHost(file: HostsFile, id: string): ResolvedHost {
-  return resolveLocated(locate(file, id));
+export function resolveHost(file: HostsFile, id: string, defaults?: SshDefaults): ResolvedHost {
+  return resolveLocated(locate(file, id, defaults));
 }
 
 function resolveLocated(located: Located): ResolvedHost {
@@ -274,21 +302,23 @@ function resolveLocated(located: Located): ResolvedHost {
 }
 
 /** Every host, in document order. */
-export function listResolvedHosts(file: HostsFile): readonly ResolvedHost[] {
+export function listResolvedHosts(file: HostsFile, defaults?: SshDefaults): readonly ResolvedHost[] {
   return walk(file)
     .filter((i) => i.kind === 'host')
-    .map((i) => resolveHost(file, i.entry.id));
+    .map((i) => resolveHost(file, i.entry.id, defaults));
 }
 
 /**
  * `[outermost hop, …, target]`.
  * @throws SshModelError `ssh-host-unknown` when `id` is not a host; `ssh-jump-unknown` when a hop is not.
  */
-export function jumpChain(file: HostsFile, id: string): readonly ResolvedHost[] {
+export function jumpChain(file: HostsFile, id: string, defaults?: SshDefaults): readonly ResolvedHost[] {
   const chain: ResolvedHost[] = [];
   let current: string | undefined = id;
   while (current !== undefined && !chain.some((h) => h.id === current)) {
-    const host = resolveLocated(locate(file, current, current === id ? 'ssh-host-unknown' : 'ssh-jump-unknown'));
+    const host = resolveLocated(
+      locate(file, current, defaults, current === id ? 'ssh-host-unknown' : 'ssh-jump-unknown'),
+    );
     chain.unshift(host);
     current = host.ssh.jump.value;
   }

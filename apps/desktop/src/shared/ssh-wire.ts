@@ -150,8 +150,12 @@ export const hostsFileWireSchema = z.strictObject({
   hosts: z.array(hostEntryWireSchema),
 });
 
+/** `preferences` is Preferences → SSH (#571); `default` the built-in value, or none. */
 const prov = <T extends z.ZodType>(value: T) =>
-  z.object({ value, from: z.union([z.literal('host'), z.literal('default'), z.object({ group: z.string() })]) });
+  z.object({
+    value,
+    from: z.union([z.literal('host'), z.literal('preferences'), z.literal('default'), z.object({ group: z.string() })]),
+  });
 
 /** `user` and `auth` may also come from an identity (its id). */
 const loginProv = <T extends z.ZodType>(value: T) =>
@@ -159,6 +163,7 @@ const loginProv = <T extends z.ZodType>(value: T) =>
     value,
     from: z.union([
       z.literal('host'),
+      z.literal('preferences'),
       z.literal('default'),
       z.object({ group: z.string() }),
       z.object({ identity: z.string() }),

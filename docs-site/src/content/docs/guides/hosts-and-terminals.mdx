@@ -66,8 +66,9 @@ The rules:
   `connectTimeout` (both in seconds), and `forwardAgent` (see [Agent forwarding](#agent-forwarding)).
   Every field is optional at every level. A host must end up
   with a `user` and an `auth`, from itself or a group above it; otherwise connecting says which
-  field is missing and where it can be set. The port defaults to 22, the keep-alive to 15 seconds
-  and the connect timeout to 20 seconds.
+  field is missing and where it can be set. The port defaults to 22; the user, keep-alive and
+  connect timeout come from Settings → SSH when no level sets them (see
+  [Defaults in Settings](#defaults-in-settings)).
 - `tags` are plain strings. They feed the Hosts filter, the palette and quick-open, and carry no
   behaviour.
 - `jump` names the id of another host. Chains are followed through that host's own `jump`; an
@@ -90,9 +91,26 @@ unless **EU** or the host sets its own.
 the group's key completely instead of adding a password to it.
 
 In the host form, a field you haven't set shows the value it inherits, greyed, with where it came
-from, for example `from prod` (or `default` for the built-in values). Turn on the override switch next to the field to edit the
+from, for example `from prod`, `from Preferences` (see below) or `default` for a built-in value. Turn on the override switch next to the field to edit the
 field on that host; turn it off again to go back to inheriting. Changing a group's key changes every
 host under it that doesn't override it.
+
+### Defaults in Settings
+
+**Settings → Workspace → SSH** holds the last level, used when neither the host, its groups nor
+their identities set a value:
+
+- **Default user**: empty by default, so a host still needs a user from somewhere in the file. Set
+  it when you sign in with the same name everywhere; a new host then needs only an address and a way
+  to sign in.
+- **Keep-alive**: 15 seconds; 0 sends none.
+- **Connect timeout**: 20 seconds.
+
+The host and group forms show these as `from Preferences`, with the same override switch as a
+group's value, and the host details say `from Preferences` too. They are kept per machine, like the
+rest of Settings, so they never reach `hosts.yaml` or the people you share it with. The command line
+(`wirebench ssh forward`) does not read them: there a host falls back to the built-in values and no
+user, so a pipeline behaves the same on every runner.
 
 ## Identities
 

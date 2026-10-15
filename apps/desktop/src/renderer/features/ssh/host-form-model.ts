@@ -9,29 +9,59 @@ import { SSH_DEFAULTS } from '../../../shared/ssh-defaults.js';
 import { ancestorsOf, findGroup } from './hosts-store.js';
 import type { Provenance } from './inherited-field.js';
 
-/** Where `field` comes from for an entry inside `chain` (outermost group first): nearest group that sets it. */
+/** Preferences → SSH (#571), the level past every group; the same fields main's resolver takes. */
+export interface SshPreferenceDefaults {
+  readonly user?: string;
+  readonly keepAlive?: number;
+  readonly connectTimeout?: number;
+}
+
+/**
+ * Where `field` comes from for an entry inside `chain` (outermost group first): nearest group that sets it,
+ * then Preferences → SSH for keep-alive and connect timeout, then the built-in port.
+ */
 export function inheritedFrom<K extends keyof SshSettingsWire>(
   chain: readonly GroupEntryWire[],
   field: K,
+  prefs: SshPreferenceDefaults = {},
 ): Provenance<NonNullable<SshSettingsWire[K]>> {
   for (const g of [...chain].reverse()) {
     const value = g.ssh[field];
     if (value !== undefined) return { value, from: { group: g.name } };
   }
+  const preferred =
+    field === 'keepAlive' ? prefs.keepAlive : field === 'connectTimeout' ? prefs.connectTimeout : undefined;
+  if (preferred !== undefined) return { value: preferred as NonNullable<SshSettingsWire[K]>, from: 'preferences' };
   const fallback = (SSH_DEFAULTS as Record<string, number>)[field];
   return { value: fallback as NonNullable<SshSettingsWire[K]> | undefined, from: 'default' };
+}
+
+/** The defaults the form inherits from, out of the stored preferences: an empty user is none. */
+export function sshPreferenceDefaults(ssh: {
+  readonly user?: string | undefined;
+  readonly keepAlive: number;
+  readonly connectTimeout: number;
+}): SshPreferenceDefaults {
+  const user = ssh.user?.trim();
+  return {
+    ...(user === undefined || user === '' ? {} : { user }),
+    keepAlive: ssh.keepAlive,
+    connectTimeout: ssh.connectTimeout,
+  };
 }
 
 /**
  * Where `user` or `auth` comes from for an entry naming identity `own` inside `chain` (#416), as main resolves
  * it: the entry's own identity first, then each group nearest first, its own value before the identity it
- * names. An identity leaving the field unset passes on outwards; nothing anywhere is `default` with no value.
+ * names. An identity leaving the field unset passes on outwards; past them all the default user from
+ * Preferences → SSH (#571); nothing anywhere is `default` with no value.
  */
 export function inheritedLogin<K extends 'user' | 'auth'>(
   identities: readonly IdentityWire[] | undefined,
   chain: readonly GroupEntryWire[],
   own: string | undefined,
   field: K,
+  prefs: SshPreferenceDefaults = {},
 ): Provenance<NonNullable<SshSettingsWire[K]>> {
   const viaIdentity = (id: string | undefined): Provenance<NonNullable<SshSettingsWire[K]>> | undefined => {
     const identity = id === undefined ? undefined : identities?.find((i) => i.id === id);
@@ -45,6 +75,9 @@ export function inheritedLogin<K extends 'user' | 'auth'>(
     if (value !== undefined) return { value, from: { group: g.name } };
     const fromGroupIdentity = viaIdentity(g.ssh.identity);
     if (fromGroupIdentity !== undefined) return fromGroupIdentity;
+  }
+  if (field === 'user' && prefs.user !== undefined) {
+    return { value: prefs.user as NonNullable<SshSettingsWire[K]>, from: 'preferences' };
   }
   return { value: undefined, from: 'default' };
 }

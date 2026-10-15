@@ -94,6 +94,33 @@ describe('secrets preferences', () => {
   });
 });
 
+describe('ssh preferences (#571)', () => {
+  it('defaults to no user, a 15 s keep-alive and a 20 s connect timeout', () => {
+    expect(DEFAULT_PREFERENCES.ssh).toEqual({ keepAlive: 15, connectTimeout: 20 });
+  });
+
+  it('reads the user and both numbers, and clamps a number from disk into range', () => {
+    expect(mergePreferences({ ssh: { user: 'alice', keepAlive: 0, connectTimeout: 5 } }).ssh).toEqual({
+      user: 'alice',
+      keepAlive: 0,
+      connectTimeout: 5,
+    });
+    expect(mergePreferences({ ssh: { keepAlive: 99_999, connectTimeout: 0 } }).ssh).toEqual({
+      keepAlive: 3600,
+      connectTimeout: 1,
+    });
+  });
+
+  it('refuses an out-of-range patch', () => {
+    expect(preferencesPatchProblems({ ssh: { connectTimeout: 0 } })).toEqual([
+      'ssh.connectTimeout must be a whole number from 1 to 600',
+    ]);
+    expect(preferencesPatchProblems({ ssh: { keepAlive: 1.5 } })).toEqual([
+      'ssh.keepAlive must be a whole number from 0 to 3600',
+    ]);
+  });
+});
+
 describe('terminal preferences', () => {
   it('defaults to asking before a multi-line paste, not copying on select, reconnecting 10 times and suggesting', () => {
     expect(DEFAULT_PREFERENCES.terminal).toEqual({

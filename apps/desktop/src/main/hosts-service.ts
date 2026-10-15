@@ -19,6 +19,7 @@ import type {
   ResolvedEnvVar,
   ResolvedHost,
   SshAuth,
+  SshDefaults,
   SshProxy,
   SshSettings,
 } from '@wirebench/ssh';
@@ -39,6 +40,20 @@ import type {
 } from '../shared/ssh-wire.js';
 
 export const HOSTS_FILE = 'hosts.yaml';
+
+/** Preferences → SSH as the resolver's last level (#571); an empty default user is none. */
+export function sshDefaultsOf(ssh: {
+  readonly user?: string | undefined;
+  readonly keepAlive: number;
+  readonly connectTimeout: number;
+}): SshDefaults {
+  const user = ssh.user?.trim();
+  return {
+    ...(user === undefined || user === '' ? {} : { user }),
+    keepAlive: ssh.keepAlive,
+    connectTimeout: ssh.connectTimeout,
+  };
+}
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
@@ -49,7 +64,19 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export class HostsService {
   private cache: { dir: string; file: HostsFile; problems: SshProblemWire[] } | undefined;
 
-  constructor(private readonly deps: { treeDir: () => string | undefined; onChanged?: () => void }) {}
+  constructor(
+    private readonly deps: {
+      treeDir: () => string | undefined;
+      onChanged?: () => void;
+      /** Preferences → SSH, read on every resolve so a change applies at once; built-in values without it. */
+      defaults?: () => SshDefaults;
+    },
+  ) {}
+
+  /** The last level hosts resolve to (#571). */
+  sshDefaults(): SshDefaults {
+    return this.deps.defaults?.() ?? {};
+  }
 
   /** Forget what was read; the next call reads the disk again (the workspace changed). */
   invalidate(): void {
@@ -64,7 +91,11 @@ export class HostsService {
   async list(): Promise<SshListHostsResponse> {
     const { file, problems } = await this.load();
     try {
-      return { file: fileToWire(file), resolved: listResolvedHosts(file).map(resolvedToWire), problems };
+      return {
+        file: fileToWire(file),
+        resolved: listResolvedHosts(file, this.sshDefaults()).map(resolvedToWire),
+        problems,
+      };
     } catch (error) {
       throw asWirebenchError(error);
     }
@@ -136,8 +167,9 @@ export class HostsService {
  * One window's hosts file (multi-window: each window holds its own workspace, so each has its own cache).
  * `treeDir` is that window's workspace's tree root; its `workspace-not-found` means none is open.
  */
-export function windowHosts(treeDir: () => string, onChanged: () => void): HostsService {
+export function windowHosts(treeDir: () => string, onChanged: () => void, defaults?: () => SshDefaults): HostsService {
   return new HostsService({
+    ...(defaults === undefined ? {} : { defaults }),
     treeDir: () => {
       try {
         return treeDir();

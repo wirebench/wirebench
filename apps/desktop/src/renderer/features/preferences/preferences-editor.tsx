@@ -15,6 +15,7 @@ import {
   Radio,
   RefreshCw,
   Search,
+  Server,
   ShieldCheck,
   SlidersHorizontal,
   Smartphone,
@@ -47,6 +48,7 @@ import { UpdatesSection } from './sections/updates-section.js';
 import { AccountsSection } from './sections/accounts-section.js';
 import { SecretsSection } from './sections/secrets-section.js';
 import { MocksSection } from './sections/mocks-section.js';
+import { SshSection } from './sections/ssh-section.js';
 import { TerminalSection } from './sections/terminal-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
 import { TokensSection } from './sections/tokens-section.js';
@@ -79,6 +81,7 @@ const ICONS: Readonly<Record<SettingsSectionId, LucideIcon>> = {
   git: GitBranch,
   mocks: Radio,
   terminal: SquareTerminal,
+  ssh: Server,
   secrets: KeyRound,
   accounts: CircleUser,
   tokens: Smartphone,
@@ -121,6 +124,8 @@ function SectionBody({
       return <MocksSection {...props} />;
     case 'terminal':
       return <TerminalSection {...props} />;
+    case 'ssh':
+      return <SshSection {...props} />;
     case 'secrets':
       return <SecretsSection {...props} />;
     case 'accounts':

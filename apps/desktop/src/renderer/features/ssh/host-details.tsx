@@ -129,11 +129,13 @@ export function HostDetails() {
   const provenance = (from: Provenance | { identity: string }): string =>
     from === 'host'
       ? 'set on host'
-      : from === 'default'
-        ? 'default'
-        : 'identity' in from
-          ? `from identity ${identityName(from.identity)}`
-          : `from ${groupName(from.group)}`;
+      : from === 'preferences'
+        ? 'from Preferences'
+        : from === 'default'
+          ? 'default'
+          : 'identity' in from
+            ? `from identity ${identityName(from.identity)}`
+            : `from ${groupName(from.group)}`;
   const path = host?.path.map(groupName).join(' / ');
 
   const edit = (): void => {

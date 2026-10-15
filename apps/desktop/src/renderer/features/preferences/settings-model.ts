@@ -31,6 +31,7 @@ export type SettingsSectionId =
   | 'git'
   | 'mocks'
   | 'terminal'
+  | 'ssh'
   | 'secrets'
   | 'accounts'
   | 'tokens';
@@ -178,6 +179,13 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         keys: stored('terminal'),
         searchable: true,
         keywords: ['ssh', 'shell', 'console'],
+      },
+      {
+        id: 'ssh',
+        label: 'SSH',
+        subtitle: 'Connection defaults for hosts that do not set their own.',
+        keys: stored('ssh'),
+        searchable: true,
       },
       {
         id: 'secrets',

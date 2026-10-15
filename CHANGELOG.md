@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **SSH connection defaults in Settings.** Settings → Workspace → **SSH** sets a default user, keep-alive
+  and connect timeout (`ssh.user`, `ssh.keepAlive`, `ssh.connectTimeout`) for every host that does not
+  set its own, directly, through a group or through an identity. The host and group forms show such a
+  value as "from Preferences" with the same override switch as a group's, and the host details say so
+  too. A default user completes a host that has a way to sign in. `wirebench ssh forward` does not read
+  these per-machine settings and keeps the built-in values (#571).
 - **Connect to a server that isn't saved.** Typing `user@host:port` in **Connect to Host…** offers
   **Connect to …**, a terminal signed in with the SSH agent that writes nothing to `hosts.yaml`, and
   **Save as host…**, which opens New host filled in from it (#537).

@@ -60,7 +60,9 @@ export interface SshConnectDeps {
    * The `hosts.yaml` of the connecting window's workspace (multi-window: each window holds its own).
    * @throws WirebenchError when that window is gone
    */
-  readonly hosts: (sender: WebContents) => Pick<HostsService, 'current' | 'list'>;
+  readonly hosts: (
+    sender: WebContents,
+  ) => Pick<HostsService, 'current' | 'list'> & Partial<Pick<HostsService, 'sshDefaults'>>;
   /**
    * The secret getter for the connecting window's workspace, taken when a connect begins and bound to the
    * workspace open then, so a switch mid-connect never hands one workspace's secrets to another's host.
@@ -243,7 +245,7 @@ export function createSshConnector(deps: SshConnectDeps & { readonly refusals: R
     if (!file) throw new WirebenchError('workspace-not-open', 'Open a workspace first');
     let chain: readonly ResolvedHost[];
     try {
-      chain = jumpChain(file, hostId);
+      chain = jumpChain(file, hostId, hosts.sshDefaults?.());
     } catch (error) {
       throw asWirebenchError(error);
     }

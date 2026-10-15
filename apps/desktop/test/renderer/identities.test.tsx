@@ -14,7 +14,12 @@ vi.mock('../../src/renderer/state/ipc-client.js', () => ({
 }));
 import type { HostsFileWire, ResolvedHostWire } from '../../src/shared/ssh-wire.js';
 import { HostDialog } from '../../src/renderer/features/ssh/host-dialog.js';
-import { inheritedLogin } from '../../src/renderer/features/ssh/host-form-model.js';
+import {
+  inheritedFrom,
+  inheritedLogin,
+  sshPreferenceDefaults,
+} from '../../src/renderer/features/ssh/host-form-model.js';
+import { sourceText } from '../../src/renderer/features/ssh/inherited-field.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import {
   freeIdentityId,
@@ -154,6 +159,28 @@ describe('identity helpers', () => {
       from: { group: 'Production' },
     });
     expect(inheritedLogin(FILE.identities, [], undefined, 'user')).toEqual({ value: undefined, from: 'default' });
+  });
+  it('past every group and identity the form inherits Preferences → SSH, as main does (#571)', () => {
+    const prefs = sshPreferenceDefaults({ user: 'alice', keepAlive: 60, connectTimeout: 45 });
+    expect(inheritedLogin(FILE.identities, [], undefined, 'user', prefs)).toEqual({
+      value: 'alice',
+      from: 'preferences',
+    });
+    // An identity's user still wins over the default.
+    expect(inheritedLogin(FILE.identities, FILE.groups, undefined, 'user', prefs).from).toEqual({
+      identity: 'Deploy',
+    });
+    expect(inheritedLogin(FILE.identities, [], undefined, 'auth', prefs)).toEqual({
+      value: undefined,
+      from: 'default',
+    });
+    expect(inheritedFrom([], 'keepAlive', prefs)).toEqual({ value: 60, from: 'preferences' });
+    expect(inheritedFrom([], 'connectTimeout', prefs)).toEqual({ value: 45, from: 'preferences' });
+    expect(inheritedFrom([], 'port', prefs)).toEqual({ value: 22, from: 'default' });
+    const group = FILE.groups.map((g) => ({ ...g, ssh: { keepAlive: 5 } }));
+    expect(inheritedFrom(group, 'keepAlive', prefs)).toEqual({ value: 5, from: { group: 'Production' } });
+    expect(sshPreferenceDefaults({ user: '  ', keepAlive: 15, connectTimeout: 20 }).user).toBeUndefined();
+    expect(sourceText({ value: 'alice', from: 'preferences' })).toBe('alice · from Preferences');
   });
 });
 
