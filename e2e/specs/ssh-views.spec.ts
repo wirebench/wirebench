@@ -91,7 +91,7 @@ test('New rule… in the Port forwarding view adds a rule to the host picked, an
   await expect(row.getByRole('button', { name: 'Start' })).toBeVisible({ timeout: 30_000 });
 });
 
-test('Host details stays open when a host is clicked again, and is still open after a reload', async () => {
+test('Host details opens from the rail, stays open when a host is clicked, and is still open after a reload', async () => {
   launched = await launchApp();
   const page = launched.window;
   await createWorkspace(page, 'Details');
@@ -105,9 +105,12 @@ test('Host details stays open when a host is clicked again, and is still open af
   }
   const details = page.getByTestId('host-details');
 
-  // Clicking the shown host again never hides its details; another host takes its place.
+  // Picking a host does not open the panel; the rail icon does.
   await page.getByTestId('host-row-one').click();
+  await expect(page.getByTestId('slide-over')).toBeHidden();
+  await page.getByTestId('rail-host-details').click();
   await expect(details.getByRole('heading', { name: 'one' })).toBeVisible();
+  // Clicking the shown host again never hides its details; another host takes its place.
   await page.getByTestId('host-row-one').click();
   await page.getByTestId('host-row-one').click();
   await expect(details.getByRole('heading', { name: 'one' })).toBeVisible();

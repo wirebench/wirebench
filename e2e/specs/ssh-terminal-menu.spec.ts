@@ -34,6 +34,7 @@ test('right-click → Find docks the find bar above the pane; a logged session s
 
   // Logging on for the host, from its details.
   await page.getByTestId('host-row-box').click();
+  await page.getByTestId('rail-host-details').click();
   const details = page.getByTestId('host-details');
   const logSwitch = details.getByRole('switch', { name: 'Log sessions' });
   await logSwitch.click();

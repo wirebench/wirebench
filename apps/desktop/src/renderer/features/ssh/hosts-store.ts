@@ -96,12 +96,12 @@ interface HostsState {
   /** The group the Hosts tab is narrowed to (its subgroups included), if any. */
   groupFilter: string | undefined;
   setGroupFilter: (groupId: string | undefined) => void;
-  /** Picks a host (or none); picking one opens its details. Nothing here ever closes them. */
+  /** Picks a host (or none). It neither opens nor closes the details: the panel stays as the user left it. */
   selectHost: (id: string | undefined) => void;
   /**
    * Shows or hides the details slide-over. Whether it shows is kept in the UI layout (per machine,
-   * `slideOver.hostDetailsOpen`), not here: picking a host asks for it, only Escape, its close icon and
-   * the right rail's icon put it away.
+   * `slideOver.hostDetailsOpen`), not here: the right rail's icon and Edit open it; Escape, its close icon
+   * and the rail's icon put it away. Picking a host does neither.
    */
   setDetailsOpen: (open: boolean) => void;
   file: HostsFileWire;
@@ -207,7 +207,6 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     const { dialog } = get();
     const leaving = dialog?.mode === 'edit-host' && dialog.id !== selectedHostId;
     set({ selectedHostId, ...(leaving ? { dialog: null } : {}) });
-    if (selectedHostId !== undefined) useUiStore.getState().setHostDetailsOpen(true);
   },
   setDetailsOpen: (open) => {
     // Putting the panel away cancels an edit in it.

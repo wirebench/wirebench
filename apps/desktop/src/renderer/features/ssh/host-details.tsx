@@ -1,9 +1,9 @@
 /**
  * The selected host, in the right slide-over (where the Code panel shows for a request): how it
  * connects and where each setting comes from, how it signs in and whether that secret has a value
- * here, the host key trusted for it, and the `ssh` command that matches. Selecting a card on the
- * Hosts tab opens it; the right rail's icon, its close icon and Escape put it away — selecting a card,
- * even the one shown, never does. Whether it shows is remembered on this machine.
+ * here, the host key trusted for it, and the `ssh` command that matches. The right rail's icon (and Edit)
+ * opens it; the rail's icon, its close icon and Escape put it away. Selecting a card neither opens nor
+ * closes it, it only changes the host shown. Whether it shows is remembered on this machine.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Copy, FolderOpen, Pencil, TriangleAlert } from 'lucide-react';

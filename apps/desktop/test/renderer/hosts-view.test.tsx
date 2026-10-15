@@ -674,11 +674,11 @@ describe('Host details', () => {
     useHostsStore.setState({ selectedHostId: undefined });
   });
 
-  it('clicking a card picks it and asks for its details', async () => {
+  it('clicking a card picks it without opening the details', async () => {
     render(<SshHome />);
     await userEvent.click(screen.getByTestId('host-row-a'));
     expect(useHostsStore.getState().selectedHostId).toBe('a');
-    expect(detailsOpen()).toBe(true);
+    expect(detailsOpen()).toBe(false);
     expect(screen.getByTestId('host-row-a').dataset['selected']).toBe('true');
   });
   it('shows where each setting comes from, the trusted key and the matching command', async () => {
@@ -722,6 +722,8 @@ describe('Host details', () => {
     };
     expect(shown()).toBe(false);
     useHostsStore.getState().selectHost('b');
+    expect(shown()).toBe(false);
+    useHostsStore.getState().setDetailsOpen(true);
     expect(shown()).toBe(true);
     openTerminalFor('b');
     expect(shown()).toBe(false);
@@ -817,6 +819,7 @@ describe('Clicking the picked card', () => {
   });
 
   it('keeps its details showing; another card shows that host instead', async () => {
+    useHostsStore.getState().setDetailsOpen(true);
     render(<SshHome />);
     const card = screen.getByTestId('host-row-b');
     await userEvent.click(card);

@@ -57,6 +57,7 @@ test('a Mosh host starts mosh-server over SSH and runs its shell over UDP; a mis
     beforeSave: (dialog) => chooseMosh(dialog),
   });
   await page.getByTestId('host-row-roam').click();
+  await page.getByTestId('rail-host-details').click();
   await expect(page.getByTestId('host-details').getByText('Protocol').locator('..')).toContainText('Mosh');
   await page.keyboard.press('Escape');
 

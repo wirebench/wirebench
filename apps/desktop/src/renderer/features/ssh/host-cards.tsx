@@ -147,7 +147,7 @@ function HostCard({ host, resolved, hue, layout, selected, tabbable, onSelect }:
         }}
         onClick={(e) => {
           // The second click of a double-click belongs to connecting (see `double-press.ts`).
-          // Picking the card again keeps its details showing: only their close icon or Escape hides them.
+          // Picking a card only changes the host the details show; it never opens or closes the panel.
           if (e.detail > 1) return;
           onSelect();
         }}
