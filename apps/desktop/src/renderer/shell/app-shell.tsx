@@ -20,6 +20,7 @@ import { useKeybindings } from '../lib/keybindings.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
+import { useEditorsStore } from '../state/editors.js';
 import { rememberFocusedProject, rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToCertificateExpiry } from '../state/certificate-expiry.js';
@@ -91,6 +92,7 @@ import { FolderAuthDialog } from '../features/rest-api/folder-auth-dialog.js';
 import { FolderScriptsDialog } from '../features/scripts/folder-scripts-dialog.js';
 import { ImportCurlFromTarget } from '../features/request-editor/import-curl-from-target.js';
 import { PanelHandle } from './panel-handle.js';
+import { rightPanelFor } from './right-panel.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
 import { SlideOver } from './slide-over.js';
@@ -163,6 +165,8 @@ export function AppShell() {
   const closeCode = useUiStore((state) => state.closeCode);
   // On the Hosts tab the slide-over holds the picked host instead of a request's code.
   const hostDetailsShown = useHostDetailsShown();
+  // Code is only for the areas with requests (`right-panel.ts`).
+  const codeArea = useEditorsStore((state) => rightPanelFor(state.displayedSet) === 'code');
   const settingsOpen = useUiStore((state) => state.preferences.open);
   const toggleHostDetails = useCallback(() => {
     const hosts = useHostsStore.getState();
@@ -527,7 +531,7 @@ export function AppShell() {
                   unmounts completely; the rail's icon or `view.toggleCode` reopens it. */}
                 <SlideOver
                   label="Code"
-                  open={slideOver.open && !hostDetailsShown && !snippetEditorShown && !settingsOpen}
+                  open={slideOver.open && codeArea && !settingsOpen}
                   width={slideOverWidth}
                   onWidthChange={setSlideOverWidth}
                   onToggle={toggleCode}

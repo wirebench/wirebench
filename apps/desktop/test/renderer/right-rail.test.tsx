@@ -5,6 +5,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RightRail } from '../../src/renderer/shell/right-rail.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 
 function renderRail() {
   render(
@@ -17,6 +18,7 @@ function renderRail() {
 describe('RightRail', () => {
   beforeEach(() => {
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+    useEditorsStore.setState({ displayedSet: 'explorer' });
   });
 
   afterEach(() => {
@@ -52,5 +54,12 @@ describe('RightRail', () => {
     const rail = screen.getByTestId('rail-code');
     expect(rail.getAttribute('aria-controls')).toBe('slide-over');
     expect(rail.hasAttribute('aria-pressed')).toBe(false);
+  });
+
+  it('has no Code icon in the Environments area', () => {
+    useEditorsStore.setState({ displayedSet: 'environments' });
+    renderRail();
+
+    expect(screen.queryByTestId('rail-code')).toBeNull();
   });
 });
