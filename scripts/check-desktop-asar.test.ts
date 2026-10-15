@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkDesktopAsar } from './check-desktop-asar.ts';
+import { checkDesktopAsar, excludedButNeeded, excludedTopLevelPackages } from './check-desktop-asar.ts';
 
 interface Node {
   files?: Record<string, Node>;
@@ -99,5 +100,15 @@ describe('checkDesktopAsar', () => {
     expect(checkDesktopAsar([dir])).toEqual([
       `${join(dir, 'app.asar')}: b ships, but nothing the app loads depends on it`,
     ]);
+  });
+});
+
+describe('the electron-builder exclusion list', () => {
+  // The release checks the packed asar; this catches the same mistake on a pull request, against the
+  // installed tree: a package only `kerberos` needed becoming a dependency of something that ships.
+  it('leaves out no package the app loads', () => {
+    const excluded = excludedTopLevelPackages(readFileSync('apps/desktop/electron-builder.yml', 'utf8'));
+    expect(excluded).toContain('prebuild-install');
+    expect(excludedButNeeded('apps/desktop', excluded)).toEqual([]);
   });
 });
