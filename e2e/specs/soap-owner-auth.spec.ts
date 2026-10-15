@@ -3,6 +3,7 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { selectLogRow } from '../helpers/http-log.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 const TOKEN = 'soap-interface-bearer-e2e';
 
@@ -48,7 +49,7 @@ test.describe('SOAP owner token auth', () => {
     expect(sent?.headers['authorization']).toBe(`Bearer ${TOKEN}`);
 
     await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
-    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
+    await selectTab(page, 'Log detail', 'Request');
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('Authorization: <redacted>');
     await expect(rawRequest).not.toContainText(TOKEN);

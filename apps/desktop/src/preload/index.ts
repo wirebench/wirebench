@@ -23,6 +23,7 @@ const api = buildApi(
     // is a main-process API, and a sandboxed renderer's `prefers-color-scheme` does not see a
     // per-app appearance override. Absent (a preload loaded outside our window) means dark.
     osTheme: process.argv.includes(`${OS_THEME_ARGUMENT}light`) ? 'light' : 'dark',
+    ...(process.env['WIREBENCH_E2E_FIXED_LAYOUT'] === '1' ? { fixedLayout: true } : {}),
   },
   (file) => webUtils.getPathForFile(file),
 );

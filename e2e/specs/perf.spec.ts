@@ -29,6 +29,7 @@ import {
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /** Per-platform budgets in milliseconds. */
 interface PlatformBudgets {
@@ -288,14 +289,14 @@ test.describe('performance budgets', () => {
 
     // The derived views over the same 1 MB document: each must appear within the budget.
     const outlineStarted = Date.now();
-    await page.getByRole('tablist', { name: 'Response views' }).getByRole('tab', { name: 'Outline' }).click();
+    await selectTab(page, 'Response views', 'Outline');
     await expect(page.getByRole('tree', { name: 'Response outline' })).toBeVisible({ timeout: 30_000 });
     const outlineMs = Date.now() - outlineStarted;
     console.info(`[perf] outline over 1 MB: ${outlineMs} ms (budget ${BUDGETS.viewMs} ms)`);
     expect(outlineMs).toBeLessThan(BUDGETS.viewMs);
 
     const queryStarted = Date.now();
-    await page.getByRole('tablist', { name: 'Response views' }).getByRole('tab', { name: 'Query' }).click();
+    await selectTab(page, 'Response views', 'Query');
     await expect(page.getByTestId('query-run')).toBeVisible({ timeout: 30_000 });
     const queryMs = Date.now() - queryStarted;
     console.info(`[perf] query view over 1 MB: ${queryMs} ms (budget ${BUDGETS.viewMs} ms)`);

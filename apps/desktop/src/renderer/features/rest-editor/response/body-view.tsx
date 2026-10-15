@@ -12,8 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Copy } from 'lucide-react';
-import { Button } from '../../../components/button.js';
+import { Braces, Copy } from 'lucide-react';
 import { CodeEditor, type EditorLanguage } from '../../../editor/code-editor.js';
 import { InspectorIconButton } from '../../request-editor/inspectors/inspector-strip.js';
 import { formatBytes } from '../../../lib/format-size.js';
@@ -206,8 +205,8 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
         </div>
         <span className="flex-1" />
         {exchange.language === 'json' && (
-          <Button
-            variant="secondary"
+          <InspectorIconButton
+            label="Copy path"
             data-testid="rest-response-copy-path"
             onClick={() => {
               // The root path: a deeper one needs a selection in the editor, which the Query tab
@@ -216,8 +215,8 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
               onCopyPath?.('$');
             }}
           >
-            Copy path
-          </Button>
+            <Braces size={13} aria-hidden="true" />
+          </InspectorIconButton>
         )}
         <InspectorIconButton
           label="Copy response body"

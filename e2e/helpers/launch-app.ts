@@ -131,6 +131,12 @@ export interface LaunchOptions {
    * e.g. `about:srcdoc` for a sandboxed preview frame. Sturdier than matching message text.
    */
   readonly ignoreConsoleErrorsFromUrls?: readonly string[];
+  /**
+   * Let the layout follow the window's size (the REST editor stacking below 800px, the console
+   * starting collapsed in a short window). Off by default: the hosted macOS and Windows runners
+   * have small screens that clamp the window, and the specs were written for the default layout.
+   */
+  readonly adaptiveLayout?: boolean;
 }
 
 /** The env vars {@link LaunchOptions} translate into, shared by both launchers. */
@@ -141,6 +147,7 @@ function e2eEnv(options: LaunchOptions): Record<string, string> {
       ? { WIREBENCH_E2E_DIALOG_FOLDERS: options.folderDialogPaths.join(delimiter) }
       : {}),
     ...(options.trashDir !== undefined ? { WIREBENCH_E2E_TRASH_DIR: options.trashDir } : {}),
+    ...(options.adaptiveLayout === true ? {} : { WIREBENCH_E2E_FIXED_LAYOUT: '1' }),
     ...options.extraEnv,
   };
 }

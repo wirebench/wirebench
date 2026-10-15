@@ -338,6 +338,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Tab strips that fit, and a REST editor that fits a 1024×700 window.** A tab strip never grows
+  wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
+  shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer
+  slides the response pane sideways. Below 800px wide the REST editor puts the response under the
+  request, and a window under 720px tall starts with the console collapsed. **Save response** and
+  **Copy path** are icon buttons with tooltips, so the status line keeps its room. Generated header
+  values and the HTTP Log's columns cut to one line with the full text in a tooltip, instead of
+  wrapping a character per line or overlapping their headers; a narrow HTTP Log shows its four main
+  columns (#542).
 - **Pasting control characters into a terminal asks first.** A paste holding an escape or another
   control character (apart from tabs and line breaks), such as an embedded end of bracketed paste,
   now waits for a yes even on one line and with the multi-line question turned off. The dialog shows

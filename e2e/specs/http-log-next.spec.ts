@@ -7,6 +7,7 @@ import { createProject, createWorkspace } from '../helpers/project.js';
 import { addHeader, createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
 import { logRows, selectLogRow } from '../helpers/http-log.js';
+import { selectTab } from '../helpers/tabs.js';
 
 test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
   let launched: LaunchedApp | undefined;
@@ -39,7 +40,7 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     await expect(row).toHaveAttribute('data-kind', 'failure');
     await expect(row.getByTestId('http-log-status')).toHaveText('Failed · before send');
     await selectLogRow(row);
-    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Response' }).click();
+    await selectTab(page, 'Log detail', 'Response');
     await expect(page.getByTestId('log-detail-error')).toContainText('never went on the wire');
   });
 

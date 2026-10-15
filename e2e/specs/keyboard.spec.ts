@@ -17,6 +17,7 @@ import {
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 /** The platform's `Mod`: ⌘ on macOS, Ctrl elsewhere — the same split `lib/keybindings.ts` makes. */
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -134,7 +135,7 @@ test.describe('keyboard', () => {
     await expect(page.getByTestId('rest-response-status')).toContainText(/200/, { timeout: 20_000 });
 
     // And with the caret in the raw body editor, where Monaco would otherwise swallow the chord.
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Body' }).click();
+    await selectTab(page, 'Request tabs', 'Body');
     await page.getByTestId('rest-body-kind').selectOption('raw');
     const editorRoot = page
       .locator('[aria-label="Request body"]')

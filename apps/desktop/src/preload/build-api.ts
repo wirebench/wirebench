@@ -54,10 +54,15 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
    * created (`main/windows.ts` passes it through `additionalArguments`). It seeds the `system`
    * theme preference before the first paint; `theme.get`/`theme.changed` keep it current
    * afterwards. The renderer never computes it itself.
+   *
+   * `fixedLayout` mirrors `WIREBENCH_E2E_FIXED_LAYOUT`: an e2e run whose specs were written for the
+   * default window keeps that layout on a CI runner whose small screen clamps the window, instead
+   * of stacking the REST editor and collapsing the console the way a small window does.
    */
   env: {
     readonly e2e: boolean;
     readonly osTheme: 'dark' | 'light';
+    readonly fixedLayout?: boolean;
   };
   /**
    * The path on this machine of a file dropped from the OS (`webUtils.getPathForFile`), or `''` for one

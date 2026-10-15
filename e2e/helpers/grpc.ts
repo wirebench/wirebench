@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { setMonacoText } from './editor.js';
+import { selectTab } from './tabs.js';
 import { chooseContextMenuItem } from './rest.js';
 
 /** The crafted greeter fixture the engine's own gRPC tests use, shared with the test server. */
@@ -85,7 +86,7 @@ export async function openGrpcRequest(page: Page, name: string): Promise<void> {
 
 /** Replaces the open request's message text. */
 export async function setMessage(page: Page, text: string): Promise<void> {
-  await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Message' }).click();
+  await selectTab(page, 'Request tabs', 'Message');
   await setMonacoText(page, 'Request message', text);
 }
 
@@ -103,5 +104,5 @@ export function grpcStatus(page: Page): Locator {
 
 /** Opens one response tab by its label — Messages, Metadata, Timing, TLS, Raw. */
 export async function openGrpcResponseTab(page: Page, tab: string): Promise<void> {
-  await page.getByRole('tablist', { name: 'Response tabs' }).getByRole('tab', { name: tab }).click();
+  await selectTab(page, 'Response tabs', tab);
 }

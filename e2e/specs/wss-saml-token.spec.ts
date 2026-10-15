@@ -12,6 +12,7 @@ import { selectLogRow } from '../helpers/http-log.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectTab } from '../helpers/tabs.js';
 
 test.describe('wss saml token', () => {
   let launched: LaunchedApp | undefined;
@@ -57,7 +58,7 @@ test.describe('wss saml token', () => {
     await editor.getByLabel('Subject', { exact: true }).fill('alice');
 
     // --- select it on Request 1 and send ----------------------------------------------------
-    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Auth' }).click();
+    await selectTab(page, 'Request tabs', 'Auth');
     await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
 
     await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
@@ -66,7 +67,7 @@ test.describe('wss saml token', () => {
 
     // --- the HTTP Log's raw request carries the assertion -----------------------------------
     await selectLogRow(page.locator('[data-testid="http-log-row"]').last());
-    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
+    await selectTab(page, 'Log detail', 'Request');
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('<saml2:Assertion', { timeout: 10_000 });
     await expect(rawRequest).toContainText('urn:e2e');
