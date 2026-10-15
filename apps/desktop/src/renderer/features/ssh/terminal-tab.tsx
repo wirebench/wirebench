@@ -13,7 +13,7 @@ import type { Platform } from '../../lib/platform.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { connectToHost, connectWithPin, editHost, paneIsOpen, reconnectToHost } from './connect.js';
-import { ConnectScreen } from './connect-screen.js';
+import { ConnectScreen, ReconnectBar } from './connect-screen.js';
 import type { ReconnectBanner } from './connect-screen.js';
 import { dropAttempt, useConnectStore } from './connect-store.js';
 import { openFiles } from './files/open-files.js';
@@ -613,6 +613,8 @@ function TerminalPane({
       },
       onChange: setReconnect,
       onReconnected: () => {
+        // The terminal was showing all along: no "Connected in" screen fades over it.
+        dropAttempt(paneId);
         term.write(reconnectedLine(new Date()));
       },
     });
@@ -755,7 +757,8 @@ function TerminalPane({
   const stopReconnect = (): void => {
     reconnector.current?.cancel();
   };
-  // A dropped session's reconnect (#407) shows on the connection screen: its countdown, then each attempt.
+  // A dropped session's reconnect (#407): while it runs, the terminal stays in view, dimmed, under one bar
+  // with its countdown or attempt (#590). The connection screen comes back only once it gives up.
   let banner: ReconnectBanner | undefined;
   if (reconnect.kind === 'waiting') {
     const wait = secondsUntil(reconnect.at, now);
@@ -771,13 +774,16 @@ function TerminalPane({
       text: `Reconnecting… attempt ${String(reconnect.attempt)} of ${String(reconnect.limit)}`,
       onStop: stopReconnect,
     };
-  } else if (reconnect.kind === 'gave-up') {
-    const attempts = `${String(reconnect.attempts)} ${reconnect.attempts === 1 ? 'attempt' : 'attempts'}`;
-    banner = { text: `Connection lost · gave up after ${attempts}` };
   }
-  const screen = banner !== undefined || attempt !== undefined || failed;
+  const reconnecting = banner !== undefined;
+  let gaveUpBanner: ReconnectBanner | undefined;
+  if (reconnect.kind === 'gave-up') {
+    const attempts = `${String(reconnect.attempts)} ${reconnect.attempts === 1 ? 'attempt' : 'attempts'}`;
+    gaveUpBanner = { text: `Connection lost · gave up after ${attempts}` };
+  }
+  const screen = !reconnecting && (gaveUp || attempt !== undefined || failed);
   const notice =
-    !screen && ended
+    !screen && !reconnecting && ended
       ? `Session ended${exitCode === undefined || exitCode === null ? '' : ` (code ${String(exitCode)})`}`
       : undefined;
 
@@ -882,7 +888,12 @@ function TerminalPane({
           })}
           actions={menuActions}
         >
-          <div ref={holder} className="h-full bg-surface-sunken p-2" data-testid="ssh-terminal" />
+          <div
+            ref={holder}
+            className={`h-full bg-surface-sunken p-2 transition-opacity duration-300 ${reconnecting ? 'opacity-40' : ''}`}
+            data-testid="ssh-terminal"
+            data-reconnecting={reconnecting ? 'true' : undefined}
+          />
         </TerminalContextMenu>
         {pickerOpen && (
           <TerminalPicker
@@ -892,13 +903,15 @@ function TerminalPane({
             }}
           />
         )}
+        {banner !== undefined && <ReconnectBar banner={banner} view={attempt} typedAhead={typedAhead} />}
         {screen && (
           <ConnectScreen
             overlay
+            foldLog={gaveUp}
             hostId={hostId}
             purpose="terminal"
             view={attempt}
-            reconnect={banner}
+            reconnect={gaveUpBanner}
             typedAhead={typedAhead}
             onRetry={() => {
               useHostsStore.getState().bumpReconnect(paneId);

@@ -800,6 +800,32 @@ describe('the terminal tab', () => {
       expect(lastTerminal()?.written.at(-1)).toEqual(new Uint8Array([33]));
     });
 
+    it('keeps the terminal in view, dimmed, with the bar as the only control while it reconnects (#590)', async () => {
+      await dropped('lost');
+      connect.mockResolvedValue(UNREACHABLE);
+      await advance(1000);
+      // Attempt 1 failed and attempt 2 waits: no connection screen, no second Retry or Edit host.
+      expect(notice()).toContain('attempt 2 of 10 in 2s');
+      expect(screen.queryByTestId('connect-screen')).toBeNull();
+      expect(screen.getByTestId('ssh-terminal').dataset['reconnecting']).toBe('true');
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Edit host' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reconnect now' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeDefined();
+      // Show log opens the last attempt's log, its summary pinned on top.
+      expect(screen.queryByTestId('connect-log')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Show log' }));
+      expect(screen.getByTestId('connect-log-summary').textContent).toMatch(/^No answer from a\.example:22/);
+      // The attempt that opens a session goes straight back to the terminal, with no screen fading over it.
+      connect.mockResolvedValueOnce(OPEN('s2'));
+      fireEvent.click(screen.getByRole('button', { name: 'Reconnect now' }));
+      await advance(0);
+      expect(sessionOn('a')).toEqual({ sessionId: 's2', state: 'open' });
+      expect(screen.queryByTestId('connect-screen')).toBeNull();
+      expect(screen.getByTestId('ssh-terminal').dataset['reconnecting']).toBeUndefined();
+      expect(notice()).toBeNull();
+    });
+
     it('a shell that exited never reconnects', async () => {
       await dropped('exit', 0);
       expect(notice()).toContain('Session ended (code 0)');
@@ -823,6 +849,11 @@ describe('the terminal tab', () => {
       expect(notice()).not.toContain('ETIMEDOUT');
       expect(screen.getByTestId('connect-error').textContent).toMatch(/^No answer from a\.example:22 after 10 s\./);
       expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
+      // Once it gives up the connection screen shows, its log folded (#590).
+      expect(screen.getByTestId('connect-screen')).toBeDefined();
+      expect(screen.queryByTestId('connect-log')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Show log' })).toBeDefined();
+      expect(screen.getByTestId('ssh-terminal').dataset['reconnecting']).toBeUndefined();
       await advance(120_000);
       expect(connect).toHaveBeenCalledTimes(3);
     });

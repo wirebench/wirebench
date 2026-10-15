@@ -46,6 +46,8 @@ export interface ConnectScreenProps {
   readonly onFaded?: (() => void) | undefined;
   /** Over the terminal (a pane), or in place of a Files pane's list. */
   readonly overlay?: boolean;
+  /** A failed attempt's log stays folded: a reconnect that gave up says enough without it (#590). */
+  readonly foldLog?: boolean;
 }
 
 /** What the screen says about keys typed while connecting. */
@@ -153,6 +155,62 @@ export function ConnectLog({
               </span>
             ))}
       </pre>
+    </div>
+  );
+}
+
+/**
+ * A dropped terminal reconnecting (#590), over its dimmed scrollback: the countdown or the attempt under
+ * way, with Reconnect now, Stop and Show log as the only controls. The log is the latest attempt's.
+ */
+export function ReconnectBar({
+  banner,
+  view,
+  typedAhead,
+}: {
+  readonly banner: ReconnectBanner;
+  /** The attempt last made; none before the first try. */
+  readonly view: ConnectView | undefined;
+  readonly typedAhead?: TypeAheadState | undefined;
+}) {
+  const [logOpen, setLogOpen] = useState(false);
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-3">
+      <div className="pointer-events-auto flex w-full max-w-3xl flex-col gap-2">
+        <div
+          role="status"
+          data-testid="ssh-terminal-notice"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-status-warning/40 bg-surface-raised px-3 py-2 text-sm text-fg-default shadow-md"
+        >
+          <span className="min-w-0 flex-1">{banner.text}</span>
+          {banner.onNow !== undefined && <Button onClick={banner.onNow}>Reconnect now</Button>}
+          {banner.onStop !== undefined && <Button onClick={banner.onStop}>Stop</Button>}
+          <Button
+            variant="ghost"
+            aria-expanded={logOpen}
+            onClick={() => {
+              setLogOpen((open) => !open);
+            }}
+          >
+            {logOpen ? 'Hide log' : 'Show log'}
+          </Button>
+        </div>
+        {typedAhead !== undefined && (typedAhead.bytes > 0 || typedAhead.full) && (
+          <p
+            className="self-start rounded-md bg-surface-raised px-2 py-1 text-sm text-fg-subtle"
+            role="status"
+            data-testid="connect-typed-ahead"
+          >
+            {typedAheadText(typedAhead)}
+          </p>
+        )}
+        {logOpen && (
+          <ConnectLog
+            lines={view?.log ?? []}
+            summary={view?.outcome.kind === 'failed' ? view.outcome.sentence : undefined}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -405,6 +463,7 @@ export function ConnectScreen({
   onClose,
   onFaded,
   overlay = false,
+  foldLog = false,
 }: ConnectScreenProps) {
   const host = useHostsStore((s) => s.resolved.find((h) => h.id === hostId));
   const quick = useQuickHostsStore((s) => s.targets[hostId]);
@@ -422,7 +481,7 @@ export function ConnectScreen({
   const outcome = view?.outcome.kind;
   const failed = outcome === 'failed';
   const connected = outcome === 'connected';
-  const [logOpen, setLogOpen] = useState(failed);
+  const [logOpen, setLogOpen] = useState(failed && !foldLog);
   const [fading, setFading] = useState(false);
   // Read when the fade ends: the caller's new function on each render must not restart the hold.
   const fadedRef = useRef(onFaded);
@@ -430,8 +489,8 @@ export function ConnectScreen({
   const attemptId = view?.attemptId;
   // Folded while connecting, open as soon as an attempt fails; a new attempt folds it again.
   useEffect(() => {
-    setLogOpen(failed);
-  }, [failed, attemptId]);
+    setLogOpen(failed && !foldLog);
+  }, [failed, attemptId, foldLog]);
   useEffect(() => {
     setFading(false);
     if (!connected) return;
