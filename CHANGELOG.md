@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Highlighted errors, warnings and addresses in terminals.** SSH and local terminals colour error and
+  warning words, `info`, `notice` and `debug`, and IPv4 and IPv6 addresses in the scheme's red, yellow,
+  blue and cyan, drawn over the output without changing it. Only whole words in the default colours
+  count, so a program's own colours win, and full-screen programs are left alone. **Highlight output**
+  (`terminal.highlightOutput`, on by default) in Preferences → Terminal turns it off and lists the rules
+  (#424).
 - **Identities: one user and sign-in for hosts in any group.** `hosts.yaml` can name identities
   (`identities: [{ id, name, user, auth }]`, credentials as `${secret:}` only) and a host or group
   picks one with `identity:`. A user or sign-in set on a nearer level still wins, one field at a

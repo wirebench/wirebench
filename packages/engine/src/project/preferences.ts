@@ -228,6 +228,8 @@ export interface TerminalPreferences {
   readonly reconnectAttempts: number;
   /** Offer the rest of a snippet, dimmed after the cursor, when the typed line is its start; Tab accepts. */
   readonly snippetSuggestions: boolean;
+  /** Colour error and warning words and IP addresses in the output, as decorations over the plain text. */
+  readonly highlightOutput: boolean;
   /** An installed font family, tried before the app's monospace stack; unset or empty uses the stack alone. */
   readonly fontFamily?: string;
   readonly fontSize: number;
@@ -326,6 +328,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     autoReconnect: true,
     reconnectAttempts: 10,
     snippetSuggestions: true,
+    highlightOutput: true,
     fontSize: 13,
     lineHeight: 1,
     colorScheme: 'app',
@@ -533,6 +536,7 @@ export const preferencesSchema = z.object({
       autoReconnect: z.boolean().optional(),
       reconnectAttempts: limited('terminal.reconnectAttempts').optional(),
       snippetSuggestions: z.boolean().optional(),
+      highlightOutput: z.boolean().optional(),
       fontFamily: z.string().optional(),
       fontSize: limited('terminal.fontSize').optional(),
       lineHeight: limited('terminal.lineHeight').optional(),

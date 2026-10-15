@@ -63,6 +63,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     autoReconnect: true,
     reconnectAttempts: 10,
     snippetSuggestions: true,
+    highlightOutput: true,
     fontSize: 13,
     lineHeight: 1,
     colorScheme: 'app',

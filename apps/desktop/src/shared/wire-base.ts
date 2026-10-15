@@ -2059,6 +2059,7 @@ export const preferencesWireSchema = z.object({
     autoReconnect: z.boolean(),
     reconnectAttempts: z.number(),
     snippetSuggestions: z.boolean(),
+    highlightOutput: z.boolean(),
     fontFamily: z.string().optional(),
     fontSize: z.number(),
     lineHeight: z.number(),

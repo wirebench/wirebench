@@ -170,6 +170,23 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('lists the highlighting rules and turns highlighting off from the Terminal section', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor />);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+
+    const rules = screen.getByTestId('terminal-highlight-rules');
+    expect(rules.textContent).toContain('Errors');
+    expect(rules.textContent).toContain('IP addresses');
+    const highlight = screen.getByRole('switch', { name: 'Highlight output' });
+    expect(highlight.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(highlight);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { terminal: { highlightOutput: false } } });
+    });
+  });
+
   it('turns snippet suggestions off from the Terminal section', async () => {
     const update = stubUpdate();
     installWirebenchApi({ preferences: { update } });
