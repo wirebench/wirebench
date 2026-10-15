@@ -785,6 +785,46 @@ as it started and offers **Restart**.
 While forwards run, the status bar shows **⇄ N**, and **⇄ N · M failed** in red when some have failed;
 clicking it opens the view.
 
+### Forwarding groups
+
+A forwarding group is a named set of rules that you start and stop together: a **Dev** group, say, with the
+database tunnel through the bastion and the cache tunnel through another host. A group can hold rules of
+any hosts, and a rule is in one group at most. Groups are kept in `hosts.yaml`, so everyone who shares the
+workspace gets the same groups:
+
+```yaml
+version: 2
+hosts:
+  # …
+forwardGroups:
+  - id: dev
+    name: Dev
+    rules:
+      - { host: bastion, rule: pg }
+      - { host: cache-1, rule: redis }
+```
+
+Each entry names a host and one of the rules it has, its own or one from its groups, so one group rule can
+sit in different forwarding groups on different hosts. A file holds `forwardGroups` only at `version: 2`.
+Wirebench writes version 2 while the file has a group, and version 1 again once the last group is gone. A
+version 1 file loads unchanged, and an older Wirebench refuses a version 2 file rather than dropping its
+groups. Renaming or removing a rule leaves its entry in the group, shown as **removed from hosts.yaml**
+with **Remove from group**, so the file still loads.
+
+In the **Port forwarding** view:
+
+- **New group…** in the header adds an empty group. A rule's menu has **Move to group**, with each group
+  and **New group…**, and **Remove from** its group.
+- Each group is a section with its rules and how many of them run, such as **2 of 3 running · 1 failed**.
+  Rules in no group are listed under **Ungrouped**. A rule that is off doesn't count.
+- **Start group** starts every rule of the group that is not already running, all at once, connecting to
+  each host as needed. A rule that fails shows its error on its row, and the others carry on. **Stop
+  group** stops the ones running. Each rule still has its own **Start** and **Stop**.
+- The group's menu has **Rename…** and **Delete group**. Deleting a group keeps its rules, which move to
+  **Ungrouped**, and doesn't stop them.
+
+The palette has **Forwarding: Start Forwarding Group…** and **Forwarding: Stop Forwarding Group…**.
+
 ### Ports and binds
 
 - **Loopback by default.** Every listener binds `127.0.0.1` (a remote rule, the host's loopback) unless the
@@ -813,8 +853,9 @@ the default loopback bind that is any program on this machine. Only version 5 `C
 ### From the command line
 
 `wirebench ssh forward <host> [rule…]` opens the same rules from a terminal or a pipeline, in the foreground,
-until you stop it. It reads the trusted host keys of the desktop app on this machine and never adds to them,
-and a network bind needs `--allow-network-bind`. See the
+until you stop it, and `wirebench ssh forward --group <id>` opens a forwarding group's. It reads the trusted
+host keys of the desktop app on this machine and never adds to them, and a network bind needs
+`--allow-network-bind`. Unlike the app, a rule that fails ends the whole run. See the
 [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-ssh-forward).
 
 ## Snippets

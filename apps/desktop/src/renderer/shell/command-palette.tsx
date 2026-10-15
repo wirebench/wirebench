@@ -12,6 +12,7 @@ import { refreshLayouts, useLayoutsStore } from '../features/ssh/panes/layouts-s
 import { openLayout } from '../features/ssh/panes/open-layout.js';
 import { routeOf } from '../features/ssh/forwarding/forward-format.js';
 import { startForward, stopForward } from '../features/ssh/forwarding/forward-actions.js';
+import { groupStatus, groupStatusText, startGroup, stopGroup } from '../features/ssh/forwarding/forward-groups.js';
 import { useForwardsStore } from '../features/ssh/forwarding/forwards-store.js';
 import { useRecentConnections } from '../features/ssh/recent-connections.js';
 import { startRun } from '../features/ssh/snippets/run.js';
@@ -37,8 +38,10 @@ import {
  * Which list the palette is showing: every command (⌘K), operations/requests/hosts (⌘P), or only hosts, to
  * connect to (`hosts`), to open in another terminal tab (`new-tab-hosts`) or to open the Files tab of
  * (`files-hosts`), or only the saved terminal layouts (`layouts`), or the port forwards to start (every rule that
- * is on, `start-forward`) or to stop (every one this window runs or has failed, `stop-forward`), or only the
- * snippets, to run (`snippets`).
+ * is on, `start-forward`) or to stop (every one this window runs or has failed, `stop-forward`), or the
+ * forwarding groups to start (every group with a rule that can run and is not running, `start-forward-group`)
+ * or to stop (every group with a rule this window holds, `stop-forward-group`), or only the snippets, to run
+ * (`snippets`).
  */
 export type PaletteMode =
   | 'commands'
@@ -49,6 +52,8 @@ export type PaletteMode =
   | 'layouts'
   | 'start-forward'
   | 'stop-forward'
+  | 'start-forward-group'
+  | 'stop-forward-group'
   | 'snippets';
 
 export interface CommandPaletteProps {
@@ -276,6 +281,17 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
     }
     return [];
   }, [sshEnabled, mode, resolvedHosts, forwardStates]);
+  // Start forwarding group… lists the groups with a rule to start; Stop forwarding group… those holding one.
+  const startErrors = useForwardsStore((state) => state.startErrors);
+  const groupEntries = useMemo(() => {
+    if (!sshEnabled || (mode !== 'start-forward-group' && mode !== 'stop-forward-group')) return [];
+    return (hostsFile.forwardGroups ?? []).flatMap((group) => {
+      const status = groupStatus(group, resolvedHosts, forwardStates, startErrors);
+      const held = group.rules.some((m) => forwardStates[`${m.host}/${m.rule}`] !== undefined);
+      const wanted = mode === 'start-forward-group' ? status.total > status.running : held;
+      return wanted ? [{ id: group.id, label: group.name, detail: groupStatusText(status) }] : [];
+    });
+  }, [sshEnabled, mode, hostsFile, resolvedHosts, forwardStates, startErrors]);
   // The saved snippets: ⌘P lists them under their own heading, and Run Snippet… lists only them.
   const snippetsWanted = sshEnabled && (mode === 'quick-open' || mode === 'snippets');
   useEffect(() => {
@@ -301,28 +317,33 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const newTabPicker = mode === 'new-tab-hosts';
   const layoutsPicker = mode === 'layouts';
   const forwardPicker = mode === 'start-forward' || mode === 'stop-forward';
+  const groupPicker = mode === 'start-forward-group' || mode === 'stop-forward-group';
   const snippetsPicker = mode === 'snippets';
   const hostsOnly = mode === 'hosts' || filesPicker || newTabPicker;
-  const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker || snippetsPicker;
+  const picker = quickOpen || hostsOnly || layoutsPicker || forwardPicker || groupPicker || snippetsPicker;
   // A search that names a server (`user@host:port`) can connect to it without saving it first (#537).
   const quickTarget = sshEnabled && (mode === 'hosts' || newTabPicker) ? parseQuickTarget(search) : undefined;
   const title = snippetsPicker
     ? 'Run snippet'
-    : forwardPicker
-      ? mode === 'start-forward'
-        ? 'Start port forward'
-        : 'Stop port forward'
-      : layoutsPicker
-        ? 'Open layout'
-        : filesPicker
-          ? 'Open files on host'
-          : newTabPicker
-            ? 'Open host in new tab'
-            : hostsOnly
-              ? 'Connect to host'
-              : quickOpen
-                ? 'Go to operation or request'
-                : 'Command palette';
+    : groupPicker
+      ? mode === 'start-forward-group'
+        ? 'Start forwarding group'
+        : 'Stop forwarding group'
+      : forwardPicker
+        ? mode === 'start-forward'
+          ? 'Start port forward'
+          : 'Stop port forward'
+        : layoutsPicker
+          ? 'Open layout'
+          : filesPicker
+            ? 'Open files on host'
+            : newTabPicker
+              ? 'Open host in new tab'
+              : hostsOnly
+                ? 'Connect to host'
+                : quickOpen
+                  ? 'Go to operation or request'
+                  : 'Command palette';
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -364,15 +385,17 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
               <Command.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">
                 {snippetsPicker
                   ? 'No matching snippet.'
-                  : forwardPicker
-                    ? 'No matching forward.'
-                    : layoutsPicker
-                      ? 'No matching layout.'
-                      : hostsOnly
-                        ? 'No matching host.'
-                        : quickOpen
-                          ? 'No matching operation or request.'
-                          : 'No matching command.'}
+                  : groupPicker
+                    ? 'No matching forwarding group.'
+                    : forwardPicker
+                      ? 'No matching forward.'
+                      : layoutsPicker
+                        ? 'No matching layout.'
+                        : hostsOnly
+                          ? 'No matching host.'
+                          : quickOpen
+                            ? 'No matching operation or request.'
+                            : 'No matching command.'}
               </Command.Empty>
               {quickOpen &&
                 entries.map((entry) => (
@@ -487,6 +510,26 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     >
                       <span className="truncate">{entry.label}</span>
                       <span className="truncate font-mono text-xs text-fg-subtle">{entry.detail}</span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
+              {groupEntries.length > 0 && (
+                <Command.Group heading="Forwarding groups" className={GROUP_CLASS}>
+                  {groupEntries.map((entry) => (
+                    <Command.Item
+                      key={entry.id}
+                      value={`${entry.label} ${entry.id}`}
+                      data-testid="palette-forward-group"
+                      onSelect={() => {
+                        onOpenChange(false);
+                        if (mode === 'start-forward-group') void startGroup(entry.id);
+                        else void stopGroup(entry.id);
+                      }}
+                      className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                    >
+                      <span className="truncate">{entry.label}</span>
+                      <span className="truncate text-xs text-fg-subtle">{entry.detail}</span>
                     </Command.Item>
                   ))}
                 </Command.Group>

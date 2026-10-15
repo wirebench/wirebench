@@ -228,6 +228,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Forwarding: Stop All Port Forwards',
     category: 'Forwarding',
   },
+  'ssh.startForwardGroup': {
+    id: 'ssh.startForwardGroup',
+    label: 'Forwarding: Start Forwarding Group…',
+    category: 'Forwarding',
+  },
+  'ssh.stopForwardGroup': {
+    id: 'ssh.stopForwardGroup',
+    label: 'Forwarding: Stop Forwarding Group…',
+    category: 'Forwarding',
+  },
   'ssh.newSnippet': {
     id: 'ssh.newSnippet',
     label: 'Snippets: New Snippet…',

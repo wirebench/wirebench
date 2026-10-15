@@ -45,6 +45,8 @@ export const COMMAND_IDS = [
   'ssh.startForward',
   'ssh.stopForward',
   'ssh.stopAllForwards',
+  'ssh.startForwardGroup',
+  'ssh.stopForwardGroup',
   'ssh.newSnippet',
   'ssh.editSnippet',
   'ssh.runSnippet',
