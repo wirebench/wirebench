@@ -192,19 +192,27 @@ export function quickOpenKindEntries(
 
 /**
  * The hosts the Hosts area has resolved, as quick-open rows: the host name, with its address and group path
- * under it. The match covers name, address, path and tags. Only hosts in `resolved` are listed.
+ * under it. The path shows the groups' names (an id with no name stays as it is). The match covers name,
+ * address, path and tags. Only hosts in `resolved` are listed.
  *
  * @param resolved - The hosts store's resolved hosts.
+ * @param groupNames - Group id → name.
  */
-export function quickOpenHostEntries(resolved: readonly ResolvedHostWire[]): readonly QuickOpenEntry[] {
-  return resolved.map((host) => ({
-    key: `host:${host.id}`,
-    kind: 'host',
-    label: host.name,
-    detail: host.path.length === 0 ? host.address : `${host.address} · ${host.path.join('/')}`,
-    value: [host.name, host.address, ...host.path, ...host.tags].join(' '),
-    hostId: host.id,
-  }));
+export function quickOpenHostEntries(
+  resolved: readonly ResolvedHostWire[],
+  groupNames: ReadonlyMap<string, string> = new Map(),
+): readonly QuickOpenEntry[] {
+  return resolved.map((host) => {
+    const path = host.path.map((id) => groupNames.get(id) ?? id);
+    return {
+      key: `host:${host.id}`,
+      kind: 'host',
+      label: host.name,
+      detail: path.length === 0 ? host.address : `${host.address} · ${path.join('/')}`,
+      value: [host.name, host.address, ...path, ...host.tags].join(' '),
+      hostId: host.id,
+    };
+  });
 }
 
 /**

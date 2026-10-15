@@ -6,7 +6,7 @@ import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { RENDERER_KINDS, rendererKind } from '../kinds/index.js';
 import { openInNewTab, openTerminalFor } from '../features/ssh/connect.js';
 import { filesTitle, openFiles } from '../features/ssh/files/open-files.js';
-import { useHostsStore } from '../features/ssh/hosts-store.js';
+import { flattenGroups, useHostsStore } from '../features/ssh/hosts-store.js';
 import { refreshLayouts, useLayoutsStore } from '../features/ssh/panes/layouts-store.js';
 import { openLayout } from '../features/ssh/panes/open-layout.js';
 import { routeOf } from '../features/ssh/forwarding/forward-format.js';
@@ -222,12 +222,16 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   // A switched-off ssh area contributes no hosts, in quick-open or in the host picker.
   const sshEnabled = useUiStore((state) => state.enabledAreas.includes('ssh'));
   const resolvedHosts = useHostsStore((state) => state.resolved);
+  const hostsFile = useHostsStore((state) => state.file);
   const hostEntries = useMemo(
     () =>
       sshEnabled && (mode === 'quick-open' || mode === 'hosts' || mode === 'new-tab-hosts' || mode === 'files-hosts')
-        ? quickOpenHostEntries(resolvedHosts)
+        ? quickOpenHostEntries(
+            resolvedHosts,
+            new Map(flattenGroups(hostsFile).map(({ group }) => [group.id, group.name] as const)),
+          )
         : [],
-    [sshEnabled, mode, resolvedHosts],
+    [sshEnabled, mode, resolvedHosts, hostsFile],
   );
   // The saved layouts: ⌘P lists them under their own heading, and Open Layout… lists only them.
   const layoutsWanted = sshEnabled && (mode === 'quick-open' || mode === 'layouts');
