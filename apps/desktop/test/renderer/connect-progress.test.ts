@@ -3,6 +3,7 @@ import type { SshConnectProgressWire } from '../../src/shared/ssh-wire.js';
 import {
   connectedView,
   failedView,
+  inTimeOrder,
   formatDuration,
   reduceProgress,
   startView,
@@ -119,6 +120,16 @@ describe('the connect phase reducer', () => {
     expect(view.steps[4]).toMatchObject({ startedAt: 1100, endedAt: 1120 });
   });
 
+  it('puts the log in time order, keeping the arrival order of lines logged at the same moment (#590)', () => {
+    const lines = [
+      { at: 30, text: 'c' },
+      { at: 10, text: 'a' },
+      { at: 30, text: 'd' },
+      { at: 20, text: 'b' },
+    ];
+    expect(inTimeOrder(lines).map((line) => line.text)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
   it('after the attempt ended, ignores stages but keeps log lines that land late', () => {
     const done = connectedView(startView('a1', 'terminal', 1000), 1100);
     expect(reduceProgress(done, phase('shell', 'start', 1200))).toBe(done);
@@ -147,8 +158,8 @@ describe('the connect phase reducer', () => {
     const sentence = view.outcome.kind === 'failed' ? view.outcome.sentence : '';
     expect(sentence).toContain('refused the connection on port 22');
     expect(sentence).not.toContain('ECONNREFUSED');
-    // The log ends with the same sentence, flagged as the error.
-    expect(view.log.at(-1)).toEqual({ at: 1040, text: sentence, error: true });
+    // The sentence is the log's pinned summary (#590), not a line in it.
+    expect(view.log.some((line) => line.text === sentence)).toBe(false);
   });
 
   it('an auth refusal fails Authenticating whatever ran last', () => {

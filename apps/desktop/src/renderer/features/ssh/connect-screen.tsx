@@ -12,7 +12,7 @@ import { setSignInUser, useConnectStore } from './connect-store.js';
 import { OsIcon, osOf } from './os-icon.js';
 import { saveQuickAsHost } from './connect.js';
 import { isQuickHostId, useQuickHostsStore } from './quick-hosts.js';
-import { formatDuration, stepDuration, stepLabel } from './connect-progress.js';
+import { formatDuration, inTimeOrder, stepDuration, stepLabel } from './connect-progress.js';
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
 import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
 
@@ -91,33 +91,31 @@ const STATE_WORDS: Readonly<Record<ConnectStep['state'], string>> = {
   waiting: 'waiting for you',
 };
 
-/**
- * The line that says what failed: the last flagged line main logged, or else the sentence the screen
- * added at the end.
- */
-export function failingLine(lines: readonly ConnectLogLine[], sentence: string | undefined): number | undefined {
-  let fallback: number | undefined;
+/** The line that says what failed: the last one main flagged. The summary sentence is pinned above the log. */
+export function failingLine(lines: readonly ConnectLogLine[]): number | undefined {
   for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
-    if (line?.error !== true) continue;
-    if (line.text !== sentence) return index;
-    fallback ??= index;
+    if (lines[index]?.error === true) return index;
   }
-  return fallback;
+  return undefined;
 }
 
-function Log({
-  lines,
-  failed,
-  sentence,
+/**
+ * The handshake log: the failure's summary pinned above it as its own line (#590), then main's lines in
+ * time order.
+ */
+export function ConnectLog({
+  lines: logged,
+  summary,
 }: {
   readonly lines: readonly ConnectLogLine[];
-  readonly failed: boolean;
-  readonly sentence: string | undefined;
+  /** The failure's one sentence; set only once an attempt failed. */
+  readonly summary: string | undefined;
 }) {
   const box = useRef<HTMLPreElement>(null);
   const failing = useRef<HTMLSpanElement>(null);
-  const failingIndex = failed ? failingLine(lines, sentence) : undefined;
+  const failed = summary !== undefined;
+  const lines = inTimeOrder(logged);
+  const failingIndex = failed ? failingLine(lines) : undefined;
   // A failed attempt's log opens at its end, the failing line in view (#532); lines that land late keep it there.
   useEffect(() => {
     if (!failed || box.current === null) return;
@@ -125,27 +123,37 @@ function Log({
     failing.current?.scrollIntoView?.({ block: 'nearest' });
   }, [failed, lines.length]);
   return (
-    <pre
-      ref={box}
+    <div
       data-testid="connect-log"
-      className={`max-h-72 overflow-auto rounded-md border ${failed ? 'border-status-danger/60' : 'border-hairline'} bg-surface-base p-2 font-mono text-xs whitespace-pre-wrap text-fg-muted select-text`}
+      className={`overflow-hidden rounded-md border ${failed ? 'border-status-danger/60' : 'border-hairline'} bg-surface-base font-mono text-xs`}
     >
-      {lines.length === 0
-        ? 'Nothing logged yet.'
-        : lines.map((line, index) => (
-            <span
-              key={index}
-              ref={index === failingIndex ? failing : undefined}
-              className={`block ${line.error ? 'text-status-danger' : ''} ${
-                index === failingIndex ? 'rounded-sm bg-status-danger/15 font-medium' : ''
-              }`}
-              data-error={line.error ? 'true' : undefined}
-              data-failing={index === failingIndex ? 'true' : undefined}
-            >
-              <span className={line.error ? undefined : 'text-fg-faint'}>{timeOf(line.at)}</span> {line.text}
-            </span>
-          ))}
-    </pre>
+      {summary !== undefined && (
+        <p
+          data-testid="connect-log-summary"
+          data-error="true"
+          className="border-b border-status-danger/40 bg-status-danger/10 px-2 py-1 font-medium whitespace-pre-wrap text-status-danger select-text"
+        >
+          {summary}
+        </p>
+      )}
+      <pre ref={box} className="max-h-72 overflow-auto p-2 whitespace-pre-wrap text-fg-muted select-text">
+        {lines.length === 0
+          ? 'Nothing logged yet.'
+          : lines.map((line, index) => (
+              <span
+                key={index}
+                ref={index === failingIndex ? failing : undefined}
+                className={`block ${line.error ? 'text-status-danger' : ''} ${
+                  index === failingIndex ? 'rounded-sm bg-status-danger/15 font-medium' : ''
+                }`}
+                data-error={line.error ? 'true' : undefined}
+                data-failing={index === failingIndex ? 'true' : undefined}
+              >
+                <span className={line.error ? undefined : 'text-fg-faint'}>{timeOf(line.at)}</span> {line.text}
+              </span>
+            ))}
+      </pre>
+    </div>
   );
 }
 
@@ -622,11 +630,7 @@ export function ConnectScreen({
       {/* Wider than the steps: log lines are long, and wrapping each one makes the log hard to read. */}
       {view !== undefined && logOpen && (
         <div className="mt-2 w-full max-w-3xl">
-          <Log
-            lines={view.log}
-            failed={failed}
-            sentence={view.outcome.kind === 'failed' ? view.outcome.sentence : undefined}
-          />
+          <ConnectLog lines={view.log} summary={view.outcome.kind === 'failed' ? view.outcome.sentence : undefined} />
         </div>
       )}
     </div>

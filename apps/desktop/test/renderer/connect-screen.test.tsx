@@ -151,23 +151,24 @@ describe('the connection screen fixes a failure in place (#532)', () => {
     expect(isPrimary('Retry')).toBe(false);
   });
 
-  it('the failed log marks the failing line', () => {
+  it('the failed log pins its summary above the lines (#590)', () => {
     show({ code: 'ssh-auth-failed', message: 'x' });
-    const marked = screen.getByTestId('connect-log').querySelectorAll('[data-failing="true"]');
-    expect(marked).toHaveLength(1);
-    expect(marked[0]?.textContent).toContain('refused the password');
+    const log = screen.getByTestId('connect-log');
+    expect(log.firstElementChild?.getAttribute('data-testid')).toBe('connect-log-summary');
+    expect(screen.getByTestId('connect-log-summary').textContent).toContain('refused the password');
+    // Main flagged no line here, so none is marked: the summary says what failed.
+    expect(log.querySelectorAll('[data-failing="true"]')).toHaveLength(0);
   });
 });
 
 describe('failingLine', () => {
   const line = (text: string, error?: true) => ({ at: 1, text, ...(error ? { error } : {}) });
-  it('is the last line main flagged, ahead of the sentence the screen added', () => {
-    const lines = [line('a'), line('Auth failed', true), line('b'), line('The sentence', true)];
-    expect(failingLine(lines, 'The sentence')).toBe(1);
+  it('is the last line main flagged', () => {
+    expect(failingLine([line('a'), line('Auth failed', true), line('b'), line('Late', true)])).toBe(3);
+    expect(failingLine([line('a'), line('Auth failed', true), line('b')])).toBe(1);
   });
-  it('falls back to the sentence when main flagged nothing', () => {
-    expect(failingLine([line('a'), line('The sentence', true)], 'The sentence')).toBe(1);
-    expect(failingLine([line('a')], 'The sentence')).toBeUndefined();
+  it('is none when main flagged nothing', () => {
+    expect(failingLine([line('a')])).toBeUndefined();
   });
 });
 

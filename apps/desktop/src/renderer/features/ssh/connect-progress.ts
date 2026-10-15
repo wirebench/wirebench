@@ -176,9 +176,8 @@ function failedStep(view: ConnectView, error: ConnectError): ConnectStepId {
  * settings stop it before anything goes on the network, so no step ran: every step is left pending (#532).
  */
 export function failedView(view: ConnectView, error: ConnectError, at: number): ConnectView {
+  // The sentence is the log's summary, pinned above it by the screen (#590), not a line among the log's.
   const sentence = connectFailureSentence(error, view.purpose);
-  // The log ends with the same sentence in red, so it says what failed even where no stage logged it.
-  const log: ConnectLogLine[] = [...view.log, { at, text: sentence, error: true }];
   const kept: ConnectError = {
     code: error.code,
     message: error.message,
@@ -186,7 +185,7 @@ export function failedView(view: ConnectView, error: ConnectError, at: number): 
   };
   if (connectErrorKind(error.code) === 'settings') {
     const steps = view.steps.map((step): ConnectStep => ({ id: step.id, state: 'pending' }));
-    return { ...view, steps, log, outcome: { kind: 'failed', step: undefined, sentence, error: kept } };
+    return { ...view, steps, outcome: { kind: 'failed', step: undefined, sentence, error: kept } };
   }
   const id = failedStep(view, error);
   const target = indexOf(id);
@@ -195,7 +194,7 @@ export function failedView(view: ConnectView, error: ConnectError, at: number): 
     if (index === target) return { ...step, state: 'failed', startedAt: step.startedAt ?? at, endedAt: at };
     return { id: step.id, state: 'pending' };
   });
-  return { ...view, steps, log, outcome: { kind: 'failed', step: id, sentence, error: kept } };
+  return { ...view, steps, outcome: { kind: 'failed', step: id, sentence, error: kept } };
 }
 
 /** The host key is new or changed: the step waits on the trust prompt. */
@@ -204,6 +203,14 @@ export function trustView(view: ConnectView, changed: boolean, at: number): Conn
     step.id === 'host-key' ? { ...step, state: 'waiting' } : step,
   );
   return { ...view, steps, outcome: { kind: 'trust', changed } };
+}
+
+/**
+ * The log in the order things happened (#590): main's lines can land out of order across hops and
+ * attempts. Lines logged at the same moment keep the order they came in.
+ */
+export function inTimeOrder(lines: readonly ConnectLogLine[]): readonly ConnectLogLine[] {
+  return [...lines].sort((a, b) => a.at - b.at);
 }
 
 /** How long a finished step took, in whole milliseconds; undefined until it ends. */
