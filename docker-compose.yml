@@ -1,0 +1,55 @@
+# Wirebench Server for a team, from the published image: the server and PostgreSQL, each with a named
+# volume. The guide "Run your team's API workbench behind your firewall" on the docs site walks through
+# it. (packages/server/compose.yaml is the contributors' file: it builds the image from a checkout.)
+#
+# Put the two required settings in a `.env` file beside this one, then `docker compose up -d`:
+#
+#   WIREBENCH_PUBLIC_URL=https://wirebench.example.internal
+#   POSTGRES_PASSWORD=<openssl rand -hex 24>
+#
+# Any other server setting (sign-in with OIDC, SMTP, retention, …) goes in an optional `server.env`
+# beside this file, one WIREBENCH_SERVER_* variable per line.
+name: wirebench
+
+services:
+  server:
+    image: ghcr.io/wirebench/wirebench-server:${WIREBENCH_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: server.env
+        required: false
+    environment:
+      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/wirebench
+      WIREBENCH_SERVER_PUBLIC_URL: ${WIREBENCH_PUBLIC_URL:?set WIREBENCH_PUBLIC_URL in .env}
+      # Honour X-Forwarded-* from the TLS proxy in front.
+      WIREBENCH_SERVER_TRUST_PROXY: ${WIREBENCH_TRUST_PROXY:-true}
+      # Only for a trial on one machine with an http:// public URL; never for a team.
+      WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: ${WIREBENCH_ALLOW_HTTP:-false}
+    ports:
+      # Loopback only: the TLS proxy on this host forwards to it. Set WIREBENCH_BIND=0.0.0.0 when the
+      # proxy runs on another machine.
+      - '${WIREBENCH_BIND:-127.0.0.1}:${WIREBENCH_HTTP_PORT:-8080}:8080'
+    volumes:
+      - wirebench-data:/data
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wirebench
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: wirebench
+    volumes:
+      - wirebench-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wirebench']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  wirebench-db:
+  wirebench-data:

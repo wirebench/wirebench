@@ -28,6 +28,7 @@ export default defineConfig({
             { label: 'Introduction', slug: 'getting-started' },
             { label: 'Install and first run', slug: 'getting-started/installation' },
             { label: 'Ten-minute walkthrough', slug: 'getting-started/walkthrough' },
+            { label: 'Team server in an afternoon', slug: 'getting-started/team-server' },
           ],
         },
         {

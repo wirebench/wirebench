@@ -1,0 +1,194 @@
+---
+title: Run your team's API workbench behind your firewall
+description: Run Wirebench Server on one machine inside your network with Docker Compose, sign in as its first admin, and give up to five people shared workspaces at no cost.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench Server gives your team sign-in, teams, shared workspaces, live updates and team secrets. It
+runs on a machine you own, inside your network, and talks to nobody outside it. This page takes you
+from an empty Linux host to a team signed in, in an afternoon.
+
+Five accounts cost nothing. A server with no license is the Community edition, which allows five
+enabled accounts. See [Five free seats](#five-free-seats).
+
+## What you need
+
+- **A Linux host with Docker.** Docker Engine with the Compose plugin, version 2.24 or later.
+- **A name your team can reach.** For example `wirebench.example.internal`, resolved by your internal DNS.
+- **TLS in front.** The app talks to the server over `https://` only. Use the reverse proxy or load
+  balancer you already run, or the Caddy example below, with a certificate your team's machines trust.
+
+Each release publishes the server image as `ghcr.io/wirebench/wirebench-server`, for `linux/amd64` and
+`linux/arm64`. The same release workflow builds it, from the same tag, as the desktop installers. The
+compose file runs that image beside PostgreSQL 16.
+
+## Start the server
+
+<Steps>
+
+1. Make a folder for the server and download the compose file into it:
+
+   ```sh
+   mkdir wirebench && cd wirebench
+   curl -fsSLO https://raw.githubusercontent.com/wirebench/wirebench/main/docker-compose.yml
+   ```
+
+2. Write the two required settings to a `.env` file beside it. The password only travels between the
+   two containers:
+
+   ```sh
+   cat > .env <<EOF
+   WIREBENCH_PUBLIC_URL=https://wirebench.example.internal
+   POSTGRES_PASSWORD=$(openssl rand -hex 24)
+   EOF
+   ```
+
+3. Start both containers:
+
+   ```sh
+   docker compose up -d
+   ```
+
+   The server applies its database migrations as it starts. `docker compose ps` shows it `healthy` once
+   its health check passes, and `curl http://127.0.0.1:8080/healthz` reports the database, the data
+   directory and git.
+
+4. Point your TLS proxy at `127.0.0.1:8080`. See [TLS in front](#tls-in-front).
+
+</Steps>
+
+## The settings
+
+The compose file reads these from `.env`. Only the first two are required.
+
+| Variable | Default | What it sets |
+| --- | --- | --- |
+| `WIREBENCH_PUBLIC_URL` | — | The `https://` address people reach the server at, with no path. |
+| `POSTGRES_PASSWORD` | — | The database password, used by both containers. Letters and digits only. |
+| `WIREBENCH_VERSION` | `latest` | The image tag: `latest`, a release such as `6.1.0`, or `6.1` for its patches. |
+| `WIREBENCH_HTTP_PORT` | `8080` | The host port the server listens on. |
+| `WIREBENCH_BIND` | `127.0.0.1` | The host address that port is bound to. Use `0.0.0.0` when the proxy runs on another machine. |
+| `WIREBENCH_TRUST_PROXY` | `true` | Honour the proxy's `X-Forwarded-*` headers. |
+| `WIREBENCH_ALLOW_HTTP` | `false` | Accept an `http://` public URL. Only for a trial on one machine. |
+
+Every other server setting is a `WIREBENCH_SERVER_*` variable. Put the ones you need in a `server.env`
+file beside the compose file, one per line, and run `docker compose up -d` again. To check them, run
+`docker compose exec server node /app/dist/bin.js config check`. It lists each variable as set, defaulted
+or missing, and never prints a value. The full list is in
+[Configuration](/wirebench/docs/guides/wirebench-server/#configuration). The ones a team usually adds:
+
+- `WIREBENCH_SERVER_OIDC_ISSUER`, `WIREBENCH_SERVER_OIDC_CLIENT_ID` and
+  `WIREBENCH_SERVER_OIDC_CLIENT_SECRET`, to sign in with your identity provider as well as, or instead
+  of, passwords.
+- `WIREBENCH_SERVER_LOCAL_AUTH=false`, to turn passwords off once that works.
+- `WIREBENCH_SERVER_HOOKS_SECRET_KEY`, from `openssl rand -base64 32`, to let catch URLs check
+  webhook signatures.
+
+## TLS in front
+
+The proxy ends TLS and forwards everything to the server, including the WebSocket upgrade for live
+updates. With Caddy and a certificate from your internal certificate authority, the whole Caddyfile is:
+
+```txt
+wirebench.example.internal {
+	tls /etc/caddy/wirebench.crt /etc/caddy/wirebench.key
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+For nginx, and for what each path needs, see
+[Behind a reverse proxy](/wirebench/docs/guides/wirebench-server/#behind-a-reverse-proxy).
+
+The app trusts the operating system's certificate store. If your internal certificate authority is not
+in it, add it in the app under **Settings → Network → CA bundle**, or set it for every machine with
+[managed preferences](/wirebench/docs/guides/managed-preferences/).
+
+## Sign in as the first admin
+
+A new server has no accounts, and accounts are invite-only. Create the first server admin from the
+host's console:
+
+<Steps>
+
+1. Make an invitation for yourself:
+
+   ```sh
+   docker compose exec server node /app/dist/bin.js admin invite you@example.com
+   ```
+
+   It prints a one-time link, `<public URL>/invite/<code>`, valid for seven days.
+
+2. In the Wirebench app, run **Account: Sign in to a server…** from the command palette. Enter the
+   public URL, choose **Have an invitation code?**, paste the code and choose a password.
+3. You are signed in as the server's first admin. Create a team with **Account: Manage teams…**, then
+   invite the rest of your team from there. The server sends no email: copy each link and send it the
+   way your team already talks.
+
+</Steps>
+
+From then on, people share a workspace with the server the way the
+[Shared workspaces](/wirebench/docs/guides/shared-workspaces/) guide describes.
+
+## Five free seats
+
+A seat is an enabled account, server admins included. Without a license the server allows five.
+
+- The server checks for a free seat when someone creates an invitation, and again when it is accepted.
+  An open invitation does not hold a seat.
+- Disabling an account frees its seat at once. Enabling it again takes a seat again.
+- When all five are taken, the next invitation is refused with a message saying how many seats are in
+  use. Nobody already signed in is affected.
+
+For more than five people, or for Enterprise features such as SAML sign-in and scheduled runs, the
+server needs a Team or Enterprise license. [Editions and licenses](/wirebench/docs/guides/server-licensing/)
+explains the editions and how seats are counted.
+
+## Where the license file goes
+
+A license is one line of text in a file, starting with `wbl1.`. The server does not read it from disk at
+start-up. You install it once, and the server keeps it in its database, so it survives restarts,
+upgrades and a new container. There are two ways to install it:
+
+- **In the app.** As a server admin, open **Account: Manage teams…**, then the **License** tab. Paste
+  the line or choose the file, then select **Install license**.
+- **From the host.** Mount the file into a one-off container and install it:
+
+  ```sh
+  docker compose run --rm -v "$PWD/team.lic:/license/team.lic:ro" server admin license install /license/team.lic
+  ```
+
+`docker compose exec server node /app/dist/bin.js admin license show` prints the server id, the edition
+and the seats in use. Give that id when you order a license bound to this server. A new license applies
+from the next request, with no restart.
+
+## Upgrades and backups
+
+- **Upgrade.** Set `WIREBENCH_VERSION` to the new release, or keep `latest`, then run
+  `docker compose pull && docker compose up -d`. The server migrates its database as it starts.
+- **Back up** both volumes: the database with
+  `docker compose exec db pg_dump -U wirebench wirebench > wirebench.sql`, and the `wirebench-data`
+  volume, which holds the shared workspaces' repositories.
+- **Run one server.** Live updates and the push lock live inside the process, so a second replica would
+  miss the first one's events.
+
+## Try it on one machine first
+
+To look around before the proxy exists, use an `http://` address on your own machine:
+
+```sh
+cat > .env <<EOF
+WIREBENCH_PUBLIC_URL=http://localhost:8080
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+WIREBENCH_ALLOW_HTTP=true
+EOF
+docker compose up -d
+```
+
+<Aside type="caution">
+An `http://` server sends passwords and device tokens in the clear. Keep it on your own machine, and
+switch to an `https://` public URL before anyone else signs in.
+</Aside>
+
+`docker compose down` stops the server and keeps its data. `docker compose down -v` also deletes both
+volumes, and with them every account and shared workspace.
