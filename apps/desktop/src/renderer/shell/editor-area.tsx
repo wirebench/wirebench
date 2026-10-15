@@ -6,6 +6,8 @@ import { StartPage } from '../features/explorer/start-page.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { AgentForwardingMark, agentForwardingOf } from '../features/ssh/agent-forwarding.js';
 import { RecordingMark, recordingOf } from '../features/ssh/recording-mark.js';
+import { TerminalMarkIcon, TerminalMarksAnnouncer } from '../features/ssh/terminal-mark.js';
+import { useTerminalMarksStore, worstMark, type TerminalMark } from '../features/ssh/terminal-marks.js';
 import { statusOf, useHostsStore } from '../features/ssh/hosts-store.js';
 import { useFilesStore } from '../features/ssh/files/files-store.js';
 import { filesTitle } from '../features/ssh/files/open-files.js';
@@ -175,6 +177,18 @@ export function EditorArea() {
   // Local terminals too (#410): each holds its own shell.
   const localTabs = allTabs.filter((tab) => tab.kind === 'local-terminal');
   const localSessions = useLocalTerminalsStore((state) => state.sessions);
+  const terminalMarks = useTerminalMarksStore((state) => state.marks);
+  /** A terminal tab's mark (#422): the worst of its panes', drawn while the tab is behind another. */
+  const markOf = (tab: (typeof allTabs)[number]): TerminalMark | undefined => {
+    if (tab.id === activeId) return undefined;
+    if (tab.kind === 'ssh-terminal' && tab.panes !== undefined) {
+      return worstMark(
+        terminalMarks,
+        leaves(tab.panes).map((leaf) => leaf.paneId),
+      );
+    }
+    return tab.kind === 'local-terminal' ? terminalMarks[tab.id] : undefined;
+  };
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -309,6 +323,9 @@ export function EditorArea() {
   return (
     <section data-testid="editor-area" aria-label="Editors" className="flex h-full min-h-0 flex-col bg-surface-base">
       <ChangedOnDiskBanner />
+      <TerminalMarksAnnouncer
+        tabs={[...terminalTabs, ...localTabs].map((tab) => ({ id: tab.id, label: labelFor(tab), mark: markOf(tab) }))}
+      />
       <SyncBanner />
       <div
         data-testid="editor-tab-strip"
@@ -393,6 +410,7 @@ export function EditorArea() {
                 paneSessions,
                 leaves(tab.panes).map((leaf) => leaf.paneId),
               );
+            const mark = markOf(tab);
             return (
               // One focusable control per tab. A nested close *button* would be interactive
               // content inside a `tab` widget, which screen readers do not announce reliably, so
@@ -472,6 +490,7 @@ export function EditorArea() {
                   />
                 )}
                 <span className="min-w-0 truncate">{label}</span>
+                {mark !== undefined && <TerminalMarkIcon mark={mark} />}
                 {recording && <RecordingMark />}
                 {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
                 {broadcasting[tab.id]?.on === true && (
