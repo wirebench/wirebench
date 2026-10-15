@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
 - **Connect to a server that isn't saved.** Typing `user@host:port` in **Connect to Host…** offers
   **Connect to …**, a terminal signed in with the SSH agent that writes nothing to `hosts.yaml`, and
   **Save as host…**, which opens New host filled in from it (#537).
+- **Terminal tab marks.** A terminal tab behind another one shows when it printed something new, when
+  it waits for input (a password, passphrase or verification code prompt, or a yes/no question), and
+  when its session failed or dropped. Each mark has its own shape as well as its own colour, split
+  panes show theirs on the pane header, and screen readers hear each new mark. Going to the tab or
+  pane clears it (#422).
 - **Highlighted errors, warnings and addresses in terminals.** SSH and local terminals colour error and
   warning words, `info`, `notice` and `debug`, and IPv4 and IPv6 addresses in the scheme's red, yellow,
   blue and cyan, drawn over the output without changing it. Only whole words in the default colours

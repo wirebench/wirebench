@@ -464,6 +464,13 @@ the screen shows no spinner or moving line, only the ticks.
   pane's session ends or drops.
 - A red dot on the tab, and on the pane's header in a split tab, means the session is being written
   to a [session log](#session-logs).
+- A terminal tab behind another one is marked when something happens in it, each mark with its own
+  shape: a ringed dot for **new output**, a keyboard when it is **waiting for input** (a password,
+  passphrase, PIN or verification code prompt, or a yes/no question), and a warning triangle for an
+  **error or disconnect** (a non-zero exit, a dropped connection, a connect that failed). The worst
+  of a tab's panes shows on the tab, and each pane's own on its header. Going to the tab clears new
+  output; going to the pane clears the rest. Screen readers hear each new mark, such as
+  "web-1: Waiting for input". Local terminals are marked the same way.
 
 ## Local terminal
 

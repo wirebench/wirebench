@@ -6,6 +6,8 @@ import { findHost, useHostsStore } from '../hosts-store.js';
 import { quickHostName } from '../quick-hosts.js';
 import { RecordingMark, recordingOf } from '../recording-mark.js';
 import { sessionStatus } from '../session-status.js';
+import { TerminalMarkIcon } from '../terminal-mark.js';
+import { useTerminalMarksStore } from '../terminal-marks.js';
 import { setTicked, useTabBroadcast } from './broadcast.js';
 import { closePane, requestSplit } from './pane-actions.js';
 import type { PaneLeaf } from './pane-tree.js';
@@ -42,6 +44,7 @@ export function PaneHeader({
   const status = sessionStatus(useHostsStore((s) => s.panes[paneId]?.state));
   const forwarding = useHostsStore((s) => agentForwardingOf(s.panes, [paneId]));
   const recording = useHostsStore((s) => recordingOf(s.panes, [paneId]));
+  const mark = useTerminalMarksStore((s) => s.marks[paneId]);
   const broadcast = useTabBroadcast(tabId);
   return (
     <div
@@ -54,6 +57,7 @@ export function PaneHeader({
         ●
       </span>
       <span className="min-w-0 flex-1 truncate">{name}</span>
+      {mark !== undefined && <TerminalMarkIcon mark={mark} />}
       {recording && <RecordingMark />}
       {forwarding !== undefined && <AgentForwardingMark state={forwarding} />}
       {broadcast.on && (

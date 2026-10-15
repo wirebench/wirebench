@@ -13,6 +13,7 @@ import { PasteDialog } from './paste-dialog.js';
 import { guardPaste } from './paste-guard.js';
 import { finderFor, FIND_HIGHLIGHT_LIMIT, isFindChord, TerminalFindBar, type FindResults } from './terminal-find.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
+import { forgetMark, noteError, noteOutput, noteView, promptWatcher } from './terminal-marks.js';
 import { attachOutputHighlights, type OutputHighlights } from './output-highlights.js';
 import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
 import type { TerminalAppearance } from './terminal-appearance.js';
@@ -179,7 +180,9 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
       .localTerminal.open({ cols: xterm.cols, rows: xterm.rows })
       .then((result) => {
         if (!result.ok) {
-          if (!disposed) store.setSession(tabId, { state: 'closed', error: result.error.message });
+          if (disposed) return;
+          store.setSession(tabId, { state: 'closed', error: result.error.message });
+          noteError(tabId);
           return;
         }
         const { sessionId, shell } = result.value;
@@ -190,12 +193,16 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
         }
         target = sessionId;
         store.setSession(tabId, { state: 'open', sessionId, shell });
+        const prompted = promptWatcher();
         attachTerminal(sessionId, {
           write: (data) => {
             xterm.write(data);
+            // New output, or a password prompt, marks the tab while it is behind another (#422).
+            noteOutput(tabId, prompted(data));
           },
           exit: (code) => {
             target = undefined;
+            if (code !== null && code !== 0) noteError(tabId);
             store.setSession(tabId, { state: 'closed', sessionId, shell, code });
           },
         });
@@ -236,6 +243,17 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
     if (applyAppearance(current, terminalAppearance(prefs, undefined, zoom))) refitRef.current();
     highlightsRef.current?.refresh();
   }, [prefs, zoom]);
+
+  // The tab's mark (#422) clears when it comes to the front, and goes with the tab.
+  useEffect(() => {
+    noteView(tabId, { inFront: active, focused: active });
+  }, [tabId, active]);
+  useEffect(
+    () => () => {
+      forgetMark(tabId);
+    },
+    [tabId],
+  );
 
   // Coming back to the front: the holder had no size while hidden, so fit it now.
   useEffect(() => {

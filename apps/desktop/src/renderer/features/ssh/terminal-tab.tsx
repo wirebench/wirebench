@@ -59,6 +59,7 @@ import { PaneView } from './panes/pane-view.js';
 import { isDrop, onReconnectNow, Reconnector } from './reconnect.js';
 import type { ReconnectState } from './reconnect.js';
 import { attachTerminal, bytesToBase64, detachTerminal } from './terminal-session.js';
+import { forgetMark, noteError, noteOutput, noteView, promptWatcher } from './terminal-marks.js';
 import { attachOutputHighlights, type OutputHighlights } from './output-highlights.js';
 import { applyAppearance, nextZoom, terminalAppearance, zoomChord } from './terminal-appearance.js';
 import type { TerminalAppearance, TerminalOverride } from './terminal-appearance.js';
@@ -664,12 +665,16 @@ function TerminalPane({
     // A render from before a Reconnect still names the session the teardown just closed.
     if (useHostsStore.getState().panes[paneId]?.sessionId !== sessionId) return;
     target.current = sessionId;
+    const prompted = promptWatcher();
     attachTerminal(sessionId, {
       write: (data) => {
         current.term.write(data);
+        // New output, or a password prompt, marks the tab while the user looks elsewhere (#422).
+        noteOutput(paneId, prompted(data));
       },
       exit: (code, reason) => {
         if (target.current === sessionId) target.current = undefined;
+        if (isDrop(reason) || (code !== null && code !== 0)) noteError(paneId);
         // The screen of the connect that opened this session has nothing left to show.
         if (useConnectStore.getState().views[paneId]?.outcome.kind === 'connected') dropAttempt(paneId);
         setExit({ sessionId, code });
@@ -696,6 +701,21 @@ function TerminalPane({
     live.current?.refit();
     if (focused) live.current?.term.focus();
   }, [active, focused]);
+
+  // The tab's mark (#422) clears once the user looks at this pane, and goes with the pane.
+  useEffect(() => {
+    noteView(paneId, { inFront: active, focused });
+  }, [paneId, active, focused]);
+  useEffect(
+    () => () => {
+      forgetMark(paneId);
+    },
+    [paneId],
+  );
+  const gaveUp = reconnect.kind === 'gave-up';
+  useEffect(() => {
+    if (failed || gaveUp) noteError(paneId);
+  }, [paneId, failed, gaveUp]);
 
   const waiting = reconnect.kind === 'waiting';
   useEffect(() => {
