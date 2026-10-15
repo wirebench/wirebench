@@ -8,7 +8,7 @@ import { secretSourcesOptionsFrom } from './source-secrets.js';
 import type { CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
-const USAGE = 'wirebench ssh forward <host> [rule…]';
+const USAGE = 'wirebench ssh forward <host> [rule…] | --group <id>';
 
 export const SSH_HELP = `${USAGE} [--workspace <dir>] [--port <rule>=<n>]… [--host-key SHA256:<b64>]…
                       [--known-hosts <file>] [--allow-network-bind] [--no-secret-sources]
@@ -21,8 +21,11 @@ reconnecting gives up.
 
 <host>                 A host's id in hosts.yaml. Jump hosts are dialled as the app dials them.
 [rule…]                Rule ids to start. None = every rule switched on for the host.
+--group <id>           Start every rule of a forwarding group instead, across its hosts. Any rule
+                       that fails ends the run, as with one host.
 --workspace <dir>      The workspace folder. Default: the nearest workspace.yaml above this folder.
---port <rule>=<n>      Listen on <n> instead of the rule's port (1-65535). Repeatable.
+--port <rule>=<n>      Listen on <n> instead of the rule's port (1-65535). Repeatable. With --group,
+                       name the rule as <host>/<rule>.
 --host-key SHA256:<b64>
                        Accept this host key fingerprint, on any hop, for this run only. Repeatable.
 --known-hosts <file>   Trusted host keys to check against instead of the app's ssh-known-hosts.json
@@ -41,8 +44,11 @@ workspace's secret sources. An agent host uses SSH_AUTH_SOCK (Pageant on Windows
 
 export interface SshForwardArgs {
   readonly command: 'ssh-forward';
-  readonly host: string;
+  /** Absent with `group`. */
+  readonly host?: string;
   readonly rules: readonly string[];
+  /** A forwarding group's id (#583): its rules on every host it names. */
+  readonly group?: string;
   readonly workspace?: string;
   readonly ports: Readonly<Record<string, number>>;
   /** 'SHA256:<b64>' each. */
@@ -78,6 +84,7 @@ export function parseSsh(
       strict: true,
       options: {
         workspace: { type: 'string' },
+        group: { type: 'string' },
         port: { type: 'string', multiple: true },
         'host-key': { type: 'string', multiple: true },
         'known-hosts': { type: 'string' },
@@ -100,8 +107,12 @@ export function parseSsh(
   if (sub !== 'forward') {
     throw new UsageError(`${USAGE}: unknown subcommand "${sub ?? ''}"`);
   }
-  if (host === undefined) {
-    throw new UsageError(`${USAGE}: <host> is required`);
+  const group = values.group;
+  if (group !== undefined && host !== undefined) {
+    throw new UsageError(`${USAGE}: --group starts the group's own rules; name no host or rule`);
+  }
+  if (group === undefined && host === undefined) {
+    throw new UsageError(`${USAGE}: <host> or --group is required`);
   }
   const hostKeys = values['host-key'] ?? [];
   for (const key of hostKeys) {
@@ -111,8 +122,9 @@ export function parseSsh(
   }
   return {
     command: 'ssh-forward',
-    host,
+    ...(host === undefined ? {} : { host }),
     rules,
+    ...(group === undefined ? {} : { group }),
     ...(values.workspace !== undefined ? { workspace: values.workspace } : {}),
     ports: Object.fromEntries((values.port ?? []).map(parsePort)),
     hostKeys,

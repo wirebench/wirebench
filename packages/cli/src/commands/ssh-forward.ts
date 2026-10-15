@@ -1,7 +1,8 @@
 /**
  * `wirebench ssh forward` (#460, `docs/specs/2026-10-12-ssh-forwarding-layouts-design.md` D7, R11): opens a
  * host's forwarding rules from the workspace's `hosts.yaml` over the same runner the app uses, and keeps
- * them open until SIGINT or SIGTERM.
+ * them open until SIGINT or SIGTERM. `--group` (#583) opens a forwarding group's rules instead, one
+ * connection per host.
  */
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -168,8 +169,43 @@ function hostPort(address: string, port: number): string {
   return address.includes(':') ? `[${address}]:${port}` : `${address}:${port}`;
 }
 
+/** One host of the run: its hops, the rules to start on it and any one-run ports, keyed by rule id. */
+interface Target {
+  readonly hostId: string;
+  readonly chain: readonly ResolvedHost[];
+  readonly rules: readonly ForwardRule[];
+  readonly ports: Readonly<Record<string, number>>;
+}
+
+/** A rule of the host by id, refused when it is not there or switched off. */
+function ruleOf(host: ResolvedHost, id: string): ForwardRule {
+  const forward = host.forwards.find((each) => each.rule.id === id);
+  if (forward === undefined) {
+    throw usage('ssh-forward-unknown', `"${id}" is not a forwarding rule of ${host.id}`);
+  }
+  if (!forward.enabled) {
+    throw usage('ssh-forward-invalid', `${id} is switched off for ${host.id}`);
+  }
+  return forward.rule;
+}
+
+/** Refuses a rule listening beyond loopback unless the flag allows it. */
+function checkBinds(host: ResolvedHost, rules: readonly ForwardRule[], target: Target['ports'], allow: boolean): void {
+  if (allow) return;
+  const open = rules.find((rule) => isNetworkBind(rule.bind));
+  if (open !== undefined) {
+    const where = open.type === 'remote' ? ` on ${host.id}` : '';
+    throw usage(
+      'ssh-forward-invalid',
+      `${open.id} listens on ${hostPort(open.bind, target[open.id] ?? open.port)}${where}, which other machines can reach; pass --allow-network-bind to start it`,
+    );
+  }
+}
+
 /** The rules named, or every rule switched on; each checked against the flags that must allow it. */
-function rulesOf(host: ResolvedHost, args: SshForwardArgs): readonly ForwardRule[] {
+function hostTarget(file: HostsFile, hostId: string, args: SshForwardArgs): Target {
+  const chain = chainOf(file, hostId);
+  const host = chain[chain.length - 1] as ResolvedHost;
   let rules: ForwardRule[];
   if (args.rules.length === 0) {
     rules = host.forwards.filter((forward) => forward.enabled).map((forward) => forward.rule);
@@ -177,33 +213,48 @@ function rulesOf(host: ResolvedHost, args: SshForwardArgs): readonly ForwardRule
       throw usage('ssh-forward-unknown', `${host.id} has no forwarding rule switched on`);
     }
   } else {
-    rules = args.rules.map((id) => {
-      const forward = host.forwards.find((each) => each.rule.id === id);
-      if (forward === undefined) {
-        throw usage('ssh-forward-unknown', `"${id}" is not a forwarding rule of ${host.id}`);
-      }
-      if (!forward.enabled) {
-        throw usage('ssh-forward-invalid', `${id} is switched off for ${host.id}`);
-      }
-      return forward.rule;
-    });
+    rules = args.rules.map((id) => ruleOf(host, id));
   }
   for (const id of Object.keys(args.ports)) {
     if (!rules.some((rule) => rule.id === id)) {
       throw usage('ssh-forward-unknown', `--port ${id}: ${id} is not started by this run`);
     }
   }
-  if (!args.allowNetworkBind) {
-    const open = rules.find((rule) => isNetworkBind(rule.bind));
-    if (open !== undefined) {
-      const where = open.type === 'remote' ? ` on ${host.id}` : '';
-      throw usage(
-        'ssh-forward-invalid',
-        `${open.id} listens on ${hostPort(open.bind, args.ports[open.id] ?? open.port)}${where}, which other machines can reach; pass --allow-network-bind to start it`,
-      );
+  checkBinds(host, rules, args.ports, args.allowNetworkBind);
+  return { hostId, chain, rules, ports: args.ports };
+}
+
+/** A forwarding group's rules, one target per host in the order the group first names it. */
+function groupTargets(file: HostsFile, groupId: string, args: SshForwardArgs): Target[] {
+  const group = file.forwardGroups?.find((each) => each.id === groupId);
+  if (group === undefined) {
+    const known = (file.forwardGroups ?? []).map((each) => each.id);
+    const hint = known.length === 0 ? 'hosts.yaml has none' : `known: ${known.join(', ')}`;
+    throw usage('ssh-forward-group-unknown', `no forwarding group "${groupId}" (${hint})`);
+  }
+  if (group.rules.length === 0) {
+    throw usage('ssh-forward-unknown', `forwarding group "${groupId}" has no rules`);
+  }
+  for (const key of Object.keys(args.ports)) {
+    if (!group.rules.some((member) => `${member.host}/${member.rule}` === key)) {
+      throw usage('ssh-forward-unknown', `--port ${key}: name a rule of the group as <host>/<rule>`);
     }
   }
-  return rules;
+  const byHost = new Map<string, string[]>();
+  for (const member of group.rules) byHost.set(member.host, [...(byHost.get(member.host) ?? []), member.rule]);
+  return [...byHost].map(([hostId, ids]) => {
+    const chain = chainOf(file, hostId);
+    const host = chain[chain.length - 1] as ResolvedHost;
+    const rules = ids.map((id) => ruleOf(host, id));
+    const ports = Object.fromEntries(
+      ids.flatMap((id) => {
+        const port = args.ports[`${hostId}/${id}`];
+        return port === undefined ? [] : [[id, port] as const];
+      }),
+    );
+    checkBinds(host, rules, ports, args.allowNetworkBind);
+    return { hostId, chain, rules, ports };
+  });
 }
 
 /** Every hop's credentials, read in order so the first missing secret is the one named. */
@@ -334,11 +385,18 @@ function hostKeyLines(
   return `${first}\n  check it, then pass --host-key ${fingerprint} to accept it for this run (or trust it in the app)\n`;
 }
 
+/** One host's connection while the run lasts. */
+interface Running {
+  readonly target: Target;
+  readonly connection: ForwardConnection;
+  readonly unsubscribe: () => void;
+}
+
 /**
  * Starts the rules and waits for a signal.
  *
- * @returns 0 once stopped by a signal; 2 for a workspace, host or rule problem; 3 when a secret is missing, a
- * key is not trusted, a rule fails to start or reconnecting gives up
+ * @returns 0 once stopped by a signal; 2 for a workspace, host, group or rule problem; 3 when a secret is
+ * missing, a key is not trusted, a rule fails to start or reconnecting gives up
  */
 export async function sshForwardCommand(
   args: SshForwardArgs,
@@ -348,15 +406,17 @@ export async function sshForwardCommand(
 ): Promise<ExitCode> {
   const cwd = deps.cwd ?? process.cwd();
   const platform = deps.platform ?? process.platform;
-  let chain: readonly ResolvedHost[];
-  let rules: readonly ForwardRule[];
-  let hops: HopCredentials[];
+  let targets: readonly Target[];
+  const hops = new Map<string, HopCredentials[]>();
   let known: readonly KnownHostEntry[];
   try {
     const workspaceDir = await findWorkspace(cwd, args.workspace);
-    chain = chainOf(await readHosts(workspaceDir), args.host);
-    rules = rulesOf(chain[chain.length - 1] as ResolvedHost, args);
-    hops = await credentialsOf(chain, args, io, await workspaceOf(workspaceDir, args, io), platform);
+    const file = await readHosts(workspaceDir);
+    targets =
+      args.group !== undefined ? groupTargets(file, args.group, args) : [hostTarget(file, args.host ?? '', args)];
+    const workspace = await workspaceOf(workspaceDir, args, io);
+    for (const target of targets)
+      hops.set(target.hostId, await credentialsOf(target.chain, args, io, workspace, platform));
     const knownHostsFile =
       args.knownHosts !== undefined
         ? resolve(cwd, args.knownHosts)
@@ -374,76 +434,88 @@ export async function sshForwardCommand(
     throw error;
   }
 
+  // A group names each rule with its host, since two hosts may share a rule id.
+  const grouped = args.group !== undefined;
+  const labelOf = (hostId: string, ruleId: string): string => (grouped ? `${hostId}/${ruleId}` : ruleId);
+  const width = Math.max(...targets.flatMap((t) => t.rules.map((rule) => labelOf(t.hostId, rule.id).length)));
   const refusals = new Map<string, HostKeyRefusal>();
-  const connection = (deps.open ?? openForwardConnection)({
-    hops,
-    verifyHostKey: cliHostKeyVerifier(known, args.hostKeys, refusals),
-  });
-  const hostId = args.host;
-  const width = Math.max(...rules.map((rule) => rule.id.length));
-  const byId = new Map(rules.map((rule) => [rule.id, rule]));
   const announced = new Set<string>();
   const waiting = new Set<string>();
-  let reportedAttempt: number | undefined;
-  let failure: { readonly rule: string; readonly failure: Failure } | undefined;
+  const reportedAttempt = new Map<string, number>();
+  let failure: { readonly target: Target; readonly rule: string; readonly failure: Failure } | undefined;
   let onFailure!: () => void;
   const failed = new Promise<void>((done) => (onFailure = done));
 
-  const unsubscribe = connection.onStatus((ruleId: string, status: ForwardStatus) => {
-    if (status.state === 'failed') {
-      failure ??= { rule: ruleId, failure: status.error };
-      onFailure();
-    }
-    if (args.quiet) return;
-    if (args.json) {
-      io.stdout.write(`${JSON.stringify({ rule: ruleId, ...status })}\n`);
-      return;
-    }
-    const rule = byId.get(ruleId);
-    if (status.state === 'running' && rule !== undefined) {
-      if (!announced.has(ruleId)) {
-        announced.add(ruleId);
-        io.stdout.write(`${ruleId.padEnd(width)}  ${describeRule(rule, status.listening, hostId)}\n`);
-      } else if (waiting.delete(ruleId)) {
-        io.stderr.write(`${ruleId}  running again\n`);
+  const running: Running[] = targets.map((target) => {
+    const { hostId } = target;
+    const connection = (deps.open ?? openForwardConnection)({
+      hops: hops.get(hostId) ?? [],
+      verifyHostKey: cliHostKeyVerifier(known, args.hostKeys, refusals),
+    });
+    const byId = new Map(target.rules.map((rule) => [rule.id, rule]));
+    const unsubscribe = connection.onStatus((ruleId: string, status: ForwardStatus) => {
+      const label = labelOf(hostId, ruleId);
+      if (status.state === 'failed') {
+        failure ??= { target, rule: label, failure: status.error };
+        onFailure();
       }
-      reportedAttempt = undefined;
-    } else if (status.state === 'reconnecting') {
-      waiting.add(ruleId);
-      if (status.attempt !== reportedAttempt) {
-        reportedAttempt = status.attempt;
-        io.stderr.write(
-          `reconnecting to ${hostId}: attempt ${status.attempt} in ${Math.round(status.nextInMs / 1000)}s\n`,
-        );
+      if (args.quiet) return;
+      if (args.json) {
+        io.stdout.write(`${JSON.stringify({ ...(grouped ? { host: hostId } : {}), rule: ruleId, ...status })}\n`);
+        return;
       }
-    }
+      const rule = byId.get(ruleId);
+      if (status.state === 'running' && rule !== undefined) {
+        if (!announced.has(label)) {
+          announced.add(label);
+          io.stdout.write(`${label.padEnd(width)}  ${describeRule(rule, status.listening, hostId)}\n`);
+        } else if (waiting.delete(label)) {
+          io.stderr.write(`${label}  running again\n`);
+        }
+        reportedAttempt.delete(hostId);
+      } else if (status.state === 'reconnecting') {
+        waiting.add(label);
+        if (status.attempt !== reportedAttempt.get(hostId)) {
+          reportedAttempt.set(hostId, status.attempt);
+          io.stderr.write(
+            `reconnecting to ${hostId}: attempt ${status.attempt} in ${Math.round(status.nextInMs / 1000)}s\n`,
+          );
+        }
+      }
+    });
+    return { target, connection, unsubscribe };
   });
   const stop = stopped(signal);
   let stopping = false;
   void stop.then(() => (stopping = true));
 
   // A signal during a start lets that start settle, so `close` can end the chain it dialled.
-  for (const rule of rules) {
+  const starts = running.flatMap(({ target, connection }) =>
+    target.rules.map((rule) => ({ target, connection, rule })),
+  );
+  for (const { target, connection, rule } of starts) {
     if (stopping || failure !== undefined) break;
-    const port = args.ports[rule.id];
+    const port = target.ports[rule.id];
     try {
       await connection.start(rule, port === undefined ? undefined : { port });
     } catch (error) {
-      failure ??= { rule: rule.id, failure: failureOf(error) };
+      failure ??= { target, rule: labelOf(target.hostId, rule.id), failure: failureOf(error) };
     }
   }
   if (failure === undefined && !stopping) {
     deps.onRunning?.();
     await Promise.race([stop, failed]);
   }
-  await connection.close();
-  unsubscribe();
+  for (const { connection, unsubscribe } of running) {
+    await connection.close();
+    unsubscribe();
+  }
 
   if (failure === undefined) return ExitCode.Ok;
   const { code, message } = failure.failure;
   io.stderr.write(
     code === 'ssh-host-key-new'
-      ? hostKeyLines(failure.failure, chain, refusals)
+      ? hostKeyLines(failure.failure, failure.target.chain, refusals)
       : `${code}: ${failure.rule}: ${message}\n`,
   );
   return ExitCode.RunError;

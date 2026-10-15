@@ -74,7 +74,8 @@ describe('wirebench ssh forward arguments', () => {
     [['ssh', 'forward', 'db-1', '--host-key', 'MD5:aa:bb'], /--host-key takes a SHA256:<base64> fingerprint/],
     [['ssh', 'forward', 'db-1', '--host-key', 'SHA256:not base64!'], /--host-key takes a SHA256:<base64>/],
     [['ssh', 'forward', 'db-1', '--host-key', 'SHA256:'], /--host-key takes a SHA256:<base64>/],
-    [['ssh', 'forward'], /<host> is required/],
+    [['ssh', 'forward'], /<host> or --group is required/],
+    [['ssh', 'forward', 'db-1', '--group', 'dev'], /--group starts the group's own rules/],
     [['ssh', 'connect', 'db-1'], /unknown subcommand "connect"/],
     [['ssh'], /unknown subcommand ""/],
     [['ssh', 'forward', 'db-1', '--env', 'prod'], /Unknown option '--env'/],
@@ -85,6 +86,16 @@ describe('wirebench ssh forward arguments', () => {
   ])('refuses %j', (argv, message) => {
     expect(() => parseCliArgs(argv)).toThrow(UsageError);
     expect(() => parseCliArgs(argv)).toThrow(message);
+  });
+
+  it('parses --group with no host (#583)', () => {
+    expect(parseCliArgs(['ssh', 'forward', '--group', 'dev', '--port', 'db-1/pg=6543'])).toMatchObject({
+      command: 'ssh-forward',
+      group: 'dev',
+      rules: [],
+      ports: { 'db-1/pg': 6543 },
+    });
+    expect(parseCliArgs(['ssh', 'forward', '--group', 'dev'])).not.toHaveProperty('host');
   });
 
   it('has its own help topic', () => {

@@ -116,8 +116,9 @@ wirebench mock check <path> [mock…] [--json]
 wirebench mock record <path> <mock> --target <url>
                        Records a mock's stubs from live traffic: see "wirebench mock record" below.
 
-wirebench ssh forward <host> [rule…]
-                       Opens a host's port forwarding rules until stopped: see "wirebench ssh forward" below.
+wirebench ssh forward <host> [rule…] | --group <id>
+                       Opens a host's port forwarding rules, or a forwarding group's, until stopped: see
+                       "wirebench ssh forward" below.
 
 wirebench --version | --help
 ```
@@ -1036,7 +1037,8 @@ Ctrl-C stops the recording, adds what was kept to the mock and saves the project
 ## `wirebench ssh forward`
 
 ```text
-wirebench ssh forward <host> [rule…] [--workspace <dir>] [--port <rule>=<n>]… [--host-key SHA256:<b64>]…
+wirebench ssh forward <host> [rule…] | --group <id> [--workspace <dir>] [--port <rule>=<n>]…
+                      [--host-key SHA256:<b64>]…
                       [--known-hosts <file>] [--allow-network-bind] [--no-secret-sources]
                       [--trust-secret-sources | --trust-secret-sources-hash <h>] [--json] [-q]
 ```
@@ -1060,6 +1062,18 @@ pg  127.0.0.1:5432 → localhost:5432 via db-1
 - **Rules.** Those named, or every rule switched on for the host when none is named. `autoStart` means
   nothing here. `--port <rule>=<n>` listens on another port for that run; a port already in use is
   refused, never moved.
+- **Groups.** `--group <id>` opens every rule of a forwarding group in `hosts.yaml` (#583) instead of one
+  host's, with one connection per host, and names each rule as `<host>/<rule>`. In a group, `--port` names
+  the rule the same way (`--port db-1/pg=6543`) and `--json` adds a `host` field. Every rule of the group
+  must be present and switched on. As with one host, a rule that fails ends the whole run with exit 3: a
+  pipeline gets one clear outcome. The app instead keeps the others running.
+
+```console
+$ wirebench ssh forward --group dev
+db-1/pg      127.0.0.1:5432 → localhost:5432 via db-1
+cache/redis  127.0.0.1:6379 → localhost:6379 via cache
+```
+
 - **Secrets.** As `wirebench run` resolves them: `WIREBENCH_SECRET_<NAME>` for `${secret:NAME}`, then the
   workspace's secret sources under the same trust flags. The app's own secrets are not read. An agent host
   uses `SSH_AUTH_SOCK` (Pageant on Windows).
@@ -1076,7 +1090,7 @@ pg  127.0.0.1:5432 → localhost:5432 via db-1
   ten attempts); each attempt is reported on stderr. `--json` prints one JSON object per status change
   instead, `{"rule": "pg", "state": "running", "listening": {…}, "connections": 0}`. `-q` prints only errors.
 - **Exit codes.** 0 when stopped by a signal. 2 for a usage problem: no workspace, a `hosts.yaml` that does
-  not parse, an unknown host, an unknown or switched-off rule, a host with no user or authentication, a
+  not parse, an unknown host or group, an empty group, an unknown or switched-off rule, a host with no user or authentication, a
   network bind without the flag. 3 for a missing secret (`secret-missing`), no agent, an untrusted host
   key (`ssh-host-key-new`, `ssh-host-key-changed`), a port in use or a bind that fails, a rule the host
   refuses (`ssh-forward-refused`), or reconnecting that gives up (`ssh-forward-gave-up`). When one rule fails
