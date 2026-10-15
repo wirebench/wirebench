@@ -245,6 +245,19 @@ export interface TerminalPreferences {
   readonly localShell: string;
 }
 
+/**
+ * SSH connection defaults (#571): the last level a host's settings resolve to, after the host, its groups and
+ * their identities. Per machine, like the rest of this document; the CLI does not read it.
+ */
+export interface SshPreferences {
+  /** The user a host connects as when nothing nearer names one; unset or empty means none. */
+  readonly user?: string;
+  /** Seconds between keep-alive messages; 0 sends none. */
+  readonly keepAlive: number;
+  /** Seconds to wait for a server to answer before giving up. */
+  readonly connectTimeout: number;
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -261,6 +274,7 @@ export interface Preferences {
   readonly secrets: SecretsPreferences;
   readonly mocks: MockPreferences;
   readonly terminal: TerminalPreferences;
+  readonly ssh: SshPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -336,6 +350,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     sessionLogRaw: false,
     localShell: '',
   }),
+  ssh: Object.freeze({ keepAlive: 15, connectTimeout: 20 }),
   shortcuts: Object.freeze({}),
 });
 
@@ -376,6 +391,10 @@ export const PREFERENCE_NUMBER_LIMITS = {
   'terminal.lineHeight': { min: 1, max: 2, integer: false },
   /** Megabytes. */
   'terminal.sessionLogMaxMb': { min: 10, max: 100_000, integer: true },
+  /** Seconds. */
+  'ssh.keepAlive': { min: 0, max: 3600, integer: true },
+  /** Seconds. */
+  'ssh.connectTimeout': { min: 1, max: 600, integer: true },
 } as const satisfies Readonly<Record<string, PreferenceNumberLimit>>;
 
 /** A dotted key with an entry in {@link PREFERENCE_NUMBER_LIMITS}. */
@@ -549,6 +568,13 @@ export const preferencesSchema = z.object({
       localShell: z.string().optional(),
     })
     .optional(),
+  ssh: z
+    .object({
+      user: z.string().optional(),
+      keepAlive: limited('ssh.keepAlive').optional(),
+      connectTimeout: limited('ssh.connectTimeout').optional(),
+    })
+    .optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -651,6 +677,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     secrets: parseSection('secrets', shape.secrets, root['secrets']),
     mocks: parseSection('mocks', shape.mocks, root['mocks']),
     terminal: parseSection('terminal', shape.terminal, root['terminal']),
+    ssh: parseSection('ssh', shape.ssh, root['ssh']),
     shortcuts: parseSection('shortcuts', shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -671,6 +698,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     secrets: mergeSection(base.secrets, value.secrets),
     mocks: mergeSection(base.mocks, value.mocks),
     terminal: mergeSection(base.terminal, value.terminal),
+    ssh: mergeSection(base.ssh, value.ssh),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

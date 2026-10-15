@@ -31,6 +31,7 @@ export type SettingsSectionId =
   | 'git'
   | 'mocks'
   | 'terminal'
+  | 'ssh'
   | 'secrets'
   | 'accounts'
   | 'tokens';
@@ -174,6 +175,13 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         label: 'Terminal',
         subtitle: 'SSH terminal fonts, colours and behaviour.',
         keys: stored('terminal'),
+        searchable: true,
+      },
+      {
+        id: 'ssh',
+        label: 'SSH',
+        subtitle: 'Connection defaults for hosts that do not set their own.',
+        keys: stored('ssh'),
         searchable: true,
       },
       {

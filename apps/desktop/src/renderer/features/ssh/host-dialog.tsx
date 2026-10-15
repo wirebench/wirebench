@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import type {
@@ -39,6 +39,7 @@ import {
   dropEmpty,
   inheritedFrom,
   inheritedLogin,
+  sshPreferenceDefaults,
   inheritedProtected,
   initialGroup,
   missingFields,
@@ -112,6 +113,8 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   const [env, setEnv] = useState<EnvVarWire[]>(existing?.env ?? []);
   const [terminal, setTerminal] = useState<TerminalEntryWire>(existing?.terminal ?? {});
   const terminalPrefs = usePreferencesStore((s) => s.preferences.terminal);
+  const storedSshPrefs = usePreferencesStore((s) => s.preferences.ssh);
+  const sshPrefs = useMemo(() => sshPreferenceDefaults(storedSshPrefs), [storedSshPrefs]);
   const [failed, setFailed] = useState(false);
   const [secretError, setSecretError] = useState<string | undefined>(undefined);
   const { names: secretNames } = useSecretNames();
@@ -128,7 +131,7 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
   // Both follow the Group select until the field is touched.
   const [touched, setTouched] = useState<{ user?: true; auth?: true }>({});
   // What the groups and identities give this entry when it sets no user or auth of its own (#416).
-  const loginUser = inheritedLogin(file.identities, chain, ssh.identity, 'user');
+  const loginUser = inheritedLogin(file.identities, chain, ssh.identity, 'user', sshPrefs);
   const loginAuth = inheritedLogin(file.identities, chain, ssh.identity, 'auth');
   const groupUser = loginUser.value;
   const groupHasAuth = loginAuth.value !== undefined;
@@ -460,14 +463,14 @@ export function HostForm({ file, dialog, embedded = false }: FormProps) {
             <InheritedField
               label="Keep-alive (s)"
               type="number"
-              provenance={inheritedFrom(chain, 'keepAlive')}
+              provenance={inheritedFrom(chain, 'keepAlive', sshPrefs)}
               override={ssh.keepAlive}
               onChange={set('keepAlive')}
             />
             <InheritedField
               label="Connect timeout (s)"
               type="number"
-              provenance={inheritedFrom(chain, 'connectTimeout')}
+              provenance={inheritedFrom(chain, 'connectTimeout', sshPrefs)}
               override={ssh.connectTimeout}
               onChange={set('connectTimeout')}
             />

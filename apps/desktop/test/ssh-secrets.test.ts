@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { resolveHost } from '@wirebench/ssh';
-import { parseSecretPseudoRef, secretPseudoRef } from '@wirebench/engine';
+import { DEFAULT_PREFERENCES, parseSecretPseudoRef, secretPseudoRef } from '@wirebench/engine';
 import { workspaceSecretGetter, workspaceSecretLabel } from '../src/main/secret-resolver.js';
 import { SshSecretsService } from '../src/main/ssh-secrets.js';
 import { SSH_DEFAULTS } from '../src/shared/ssh-defaults.js';
@@ -92,10 +92,16 @@ describe('SSH_DEFAULTS', () => {
       { version: 1, groups: [], hosts: [{ id: 'a', name: 'a', address: 'x', tags: [], ssh: {} }] },
       'a',
     );
+    expect({ port: resolved.ssh.port.value }).toEqual(SSH_DEFAULTS);
+  });
+  it("Preferences → SSH starts at the resolver's built-in keep-alive and timeout (#571)", () => {
+    const resolved = resolveHost(
+      { version: 1, groups: [], hosts: [{ id: 'a', name: 'a', address: 'x', tags: [], ssh: {} }] },
+      'a',
+    );
     expect({
-      port: resolved.ssh.port.value,
       keepAlive: resolved.ssh.keepAlive.value,
       connectTimeout: resolved.ssh.connectTimeout.value,
-    }).toEqual(SSH_DEFAULTS);
+    }).toEqual(DEFAULT_PREFERENCES.ssh);
   });
 });
