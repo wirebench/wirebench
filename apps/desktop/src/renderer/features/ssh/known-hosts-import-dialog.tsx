@@ -4,20 +4,21 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import type { SshKnownHostsImportPreview } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
-import { useHostsStore } from './hosts-store.js';
+import { flattenGroups, useHostsStore } from './hosts-store.js';
 
 type Step =
   { kind: 'choose'; message?: string } | { kind: 'busy' } | { kind: 'report'; preview: SshKnownHostsImportPreview };
 type Conflict = SshKnownHostsImportPreview['conflicts'][number];
+type Unsaved = SshKnownHostsImportPreview['unsaved'][number];
 type SkipReason = SshKnownHostsImportPreview['skipped'][number]['reason'];
 
 /** Codes after which the preview no longer matches the disk: the dialog starts over. */
-const START_OVER = new Set(['ssh-import-expired']);
+const START_OVER = new Set(['ssh-import-expired', 'ssh-import-stale']);
 
 const SKIP_LABELS: Record<SkipReason, string> = {
   'cert-authority': '@cert-authority: trusts a signing key, not a host key',
   revoked: '@revoked: a key to refuse, which Wirebench does not keep',
-  'no-host': 'Names no host in hosts.yaml',
+  'no-host': 'Hashed or wildcard names that match no host in hosts.yaml',
   duplicate: 'An earlier line already gives that host a key of this type',
   unreadable: 'Not a key line Wirebench can read',
 };
@@ -82,7 +83,8 @@ function ImportBody() {
     <div className="flex flex-col gap-3 text-sm text-fg-default">
       <Dialog.Description className="text-fg-subtle">
         Host keys from an OpenSSH known_hosts file are trusted for the hosts in hosts.yaml they name, hashed names
-        included. You see what will be trusted before anything is written.
+        included. Servers it names that hosts.yaml does not have can be added too, only if you choose them. You see what
+        will be written before anything is.
       </Dialog.Description>
       {step.kind === 'choose' && step.message !== undefined && (
         <p role="alert" className="rounded border border-status-danger px-2 py-1">
@@ -119,7 +121,12 @@ function Report(props: {
   const { preview, onStartOver } = props;
   const setOpen = useHostsStore((s) => s.setKnownHostsImportOpen);
   const knownHostsChanged = useHostsStore((s) => s.knownHostsChanged);
+  const refreshHosts = useHostsStore((s) => s.refresh);
+  const groups = flattenGroups(useHostsStore((s) => s.file));
   const [replace, setReplace] = useState<ReadonlySet<string>>(new Set());
+  // Unsaved servers are added only when ticked (#572): none is, to start with.
+  const [adding, setAdding] = useState<ReadonlySet<string>>(new Set());
+  const [group, setGroup] = useState<string | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [understood, setUnderstood] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -127,6 +134,8 @@ function Report(props: {
 
   const chosen = preview.conflicts.filter((c) => replace.has(slot(c)));
   const count = preview.add.length + chosen.length;
+  const addHosts = preview.unsaved.filter((s) => adding.has(s.host)).map((s) => s.host);
+  const nothingToDo = preview.add.length === 0 && preview.conflicts.length === 0 && preview.unsaved.length === 0;
 
   const submit = async (): Promise<void> => {
     setBusy(true);
@@ -134,6 +143,7 @@ function Report(props: {
     const result = await ipc().ssh.knownHostsImportApply({
       previewId: preview.previewId,
       replace: chosen.map(({ host, keyType }) => ({ host, keyType })),
+      ...(addHosts.length > 0 ? { addHosts, ...(group === undefined ? {} : { group }) } : {}),
     });
     setBusy(false);
     if (!result.ok) {
@@ -141,11 +151,13 @@ function Report(props: {
       else setError(result.error.message);
       return;
     }
-    const { added, replaced, kept } = result.value;
+    const { added, replaced, kept, hostsAdded } = result.value;
     setOpen(false);
     knownHostsChanged();
+    if (hostsAdded > 0) void refreshHosts();
     showToast(
-      `Trusted ${plural(added, 'host key')}` +
+      (hostsAdded > 0 ? `Added ${plural(hostsAdded, 'host')}; trusted` : 'Trusted') +
+        ` ${plural(added, 'host key')}` +
         (replaced > 0 ? `; replaced ${String(replaced)}` : '') +
         (kept > 0 ? `; kept ${plural(kept, 'stored key')}` : ''),
     );
@@ -255,6 +267,17 @@ function Report(props: {
         </section>
       )}
 
+      {preview.unsaved.length > 0 && (
+        <UnsavedHosts
+          unsaved={preview.unsaved}
+          adding={adding}
+          onAdding={setAdding}
+          groups={groups}
+          group={group}
+          onGroup={setGroup}
+        />
+      )}
+
       {preview.trusted.length > 0 && (
         <p className="text-xs text-fg-subtle">{`${plural(preview.trusted.length, 'key')} already trusted.`}</p>
       )}
@@ -281,21 +304,124 @@ function Report(props: {
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <Dialog.Close asChild>
-          <Button>Cancel</Button>
-        </Dialog.Close>
-        <Button
-          variant="primary"
-          disabled={busy || count === 0}
-          onClick={() => {
-            if (chosen.length > 0) setConfirming(true);
-            else void submit();
-          }}
-        >
-          {`Trust ${plural(count, 'key')}`}
-        </Button>
+        {/* Nothing to trust, replace or add: only the report to close. */}
+        {nothingToDo ? (
+          <Dialog.Close asChild>
+            <Button variant="primary">Close</Button>
+          </Dialog.Close>
+        ) : (
+          <>
+            <Dialog.Close asChild>
+              <Button>Cancel</Button>
+            </Dialog.Close>
+            <Button
+              variant="primary"
+              disabled={busy || (count === 0 && addHosts.length === 0)}
+              onClick={() => {
+                if (chosen.length > 0) setConfirming(true);
+                else void submit();
+              }}
+            >
+              {applyLabel(count, addHosts.length)}
+            </Button>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+/** "Trust 2 keys", "Add 1 host and trust its keys", or both when saved hosts gain keys as well. */
+function applyLabel(keys: number, hosts: number): string {
+  if (hosts === 0) return `Trust ${plural(keys, 'key')}`;
+  const add = `Add ${plural(hosts, 'host')}`;
+  return keys === 0
+    ? `${add} and trust ${hosts === 1 ? 'its' : 'their'} keys`
+    : `Trust ${plural(keys, 'key')} and ${add.toLowerCase()}`;
+}
+
+/**
+ * Servers the file names that hosts.yaml does not have (#572). Each is added only when ticked, named after
+ * its address and with no user, at the top level or in the group picked here; its keys are trusted with it.
+ */
+function UnsavedHosts(props: {
+  readonly unsaved: readonly Unsaved[];
+  readonly adding: ReadonlySet<string>;
+  readonly onAdding: (next: ReadonlySet<string>) => void;
+  readonly groups: readonly {
+    readonly group: { readonly id: string; readonly name: string };
+    readonly depth: number;
+  }[];
+  readonly group: string | undefined;
+  readonly onGroup: (group: string | undefined) => void;
+}) {
+  const { unsaved, adding, groups } = props;
+  return (
+    <section aria-label="Not in hosts.yaml" className="flex flex-col gap-1 text-xs">
+      <h3 className="font-medium">Not in hosts.yaml</h3>
+      <p className="text-fg-subtle">
+        Tick a server to add it as a host and trust its keys. It is named after its address and has no user yet.
+      </p>
+      <table className="w-full text-left">
+        <thead className="text-fg-subtle">
+          <tr>
+            <th className="py-1">Add</th>
+            <th>Address</th>
+            <th>Port</th>
+            <th>Keys</th>
+          </tr>
+        </thead>
+        <tbody>
+          {unsaved.map((server) => (
+            <tr key={server.host} className="border-t border-hairline">
+              <td className="py-1">
+                <input
+                  type="checkbox"
+                  aria-label={`Add ${server.host}`}
+                  checked={adding.has(server.host)}
+                  onChange={(e) => {
+                    const next = new Set(adding);
+                    if (e.target.checked) next.add(server.host);
+                    else next.delete(server.host);
+                    props.onAdding(next);
+                  }}
+                />
+              </td>
+              <td className="font-mono">{server.address}</td>
+              <td>{String(server.port)}</td>
+              <td>
+                {server.keys.map((key) => (
+                  <div key={key.keyType}>
+                    <div>{`${key.keyType} (line ${String(key.line)})`}</div>
+                    <code className="font-mono break-all text-fg-subtle">{key.fingerprint}</code>
+                  </div>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {groups.length > 0 && (
+        <label className="flex items-center gap-2">
+          <span className="text-fg-subtle">Add to</span>
+          <select
+            aria-label="Add to group"
+            className="rounded border border-hairline bg-surface-raised px-1 py-0.5"
+            value={props.group ?? ''}
+            onChange={(e) => {
+              props.onGroup(e.target.value === '' ? undefined : e.target.value);
+            }}
+          >
+            <option value="">Top level</option>
+            {groups.map(({ group, depth }) => (
+              <option key={group.id} value={group.id}>
+                {`${' '.repeat(depth)}${group.name}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </section>
   );
 }
 

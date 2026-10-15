@@ -85,7 +85,7 @@ function setup(
     fs: fakeFs(files),
     now: options.now ?? (() => 0),
   });
-  return { service, store, pick };
+  return { service, store, pick, dir };
 }
 const A = { id: 1 };
 const B = { id: 2 };
@@ -144,6 +144,7 @@ describe('KnownHostsImportService.apply', () => {
       added: 3,
       replaced: 0,
       kept: 1,
+      hostsAdded: 0,
     });
     expect(store.entries).toContainEqual(conflicting[0]);
     expect(store.entries).toContainEqual({ host: 'hashed.example.com:22', keyType: ED, fingerprint: FP_B });
@@ -161,7 +162,7 @@ describe('KnownHostsImportService.apply', () => {
         { host: 'hashed.example.com:22', keyType: ED },
       ],
     });
-    expect(result).toEqual({ added: 2, replaced: 1, kept: 1 });
+    expect(result).toEqual({ added: 2, replaced: 1, kept: 1, hostsAdded: 0 });
     expect(store.entries).toContainEqual({ host: 'port.example.com:2222', keyType: ED, fingerprint: FP_D });
     expect(store.entries).toContainEqual({ host: 'hashed.example.com:22', keyType: ED, fingerprint: FP_A });
   });
@@ -182,5 +183,76 @@ describe('KnownHostsImportService.apply', () => {
     await expect(service.apply(A, { previewId: late.previewId, replace: [] })).rejects.toMatchObject({
       code: 'ssh-import-expired',
     });
+  });
+});
+
+describe('KnownHostsImportService unsaved hosts (#572)', () => {
+  const UNRELATED = 'unrelated.example.org:22';
+  const GROUPED = `version: 1
+groups:
+  - id: lab
+    name: Lab
+hosts:
+  - id: plain
+    name: Plain
+    address: plain.example.com
+`;
+
+  it('lists the servers plain lines name that no host dials, and adds none unasked', async () => {
+    const { service, store, dir } = setup({ [KNOWN_HOSTS]: FIXTURE });
+    const preview = asPreview(await service.preview(A, { source: 'user-known-hosts' }));
+    expect(preview.unsaved).toEqual([
+      {
+        host: UNRELATED,
+        address: 'unrelated.example.org',
+        port: 22,
+        keys: [{ keyType: ED, fingerprint: FP_A, line: 11 }],
+      },
+    ]);
+    expect(preview.skipped).not.toContainEqual({ line: 11, reason: 'no-host' });
+    const before = readFileSync(join(dir, 'hosts.yaml'), 'utf8');
+    expect((await service.apply(A, { previewId: preview.previewId, replace: [] })).hostsAdded).toBe(0);
+    expect(readFileSync(join(dir, 'hosts.yaml'), 'utf8')).toBe(before);
+    expect(store.entries.map((e) => e.host)).not.toContain(UNRELATED);
+  });
+
+  it('adds a chosen server at the top level with no user, and trusts its key', async () => {
+    const { service, store, dir } = setup({ [KNOWN_HOSTS]: FIXTURE });
+    const preview = asPreview(await service.preview(A, { source: 'user-known-hosts' }));
+    const result = await service.apply(A, { previewId: preview.previewId, replace: [], addHosts: [UNRELATED] });
+    expect(result).toEqual({ added: 5, replaced: 0, kept: 0, hostsAdded: 1 });
+    const listed = await new HostsService({ treeDir: () => dir }).list();
+    expect(listed.file.hosts.map((h) => [h.id, h.name, h.address, h.ssh.user])).toContainEqual([
+      'unrelated-example-org',
+      'unrelated.example.org',
+      'unrelated.example.org',
+      undefined,
+    ]);
+    expect(store.entries).toContainEqual({ host: UNRELATED, keyType: ED, fingerprint: FP_A });
+  });
+
+  it('adds into the group chosen, and only servers the preview offered', async () => {
+    const { service, store, dir } = setup({ [KNOWN_HOSTS]: FIXTURE }, { hostsYaml: GROUPED });
+    const preview = asPreview(await service.preview(A, { source: 'user-known-hosts' }));
+    expect(preview.unsaved.map((s) => s.host)).toEqual(['port.example.com:2222', UNRELATED]);
+    const result = await service.apply(A, {
+      previewId: preview.previewId,
+      replace: [],
+      addHosts: [UNRELATED, 'never.offered:22'],
+      group: 'lab',
+    });
+    expect(result.hostsAdded).toBe(1);
+    const listed = await new HostsService({ treeDir: () => dir }).list();
+    expect(listed.file.groups[0]?.hosts.map((h) => h.address)).toEqual(['unrelated.example.org']);
+    expect(store.entries.map((e) => e.host)).not.toContain('never.offered:22');
+  });
+
+  it('refuses a group gone since the preview with ssh-import-stale, trusting nothing', async () => {
+    const { service, store } = setup({ [KNOWN_HOSTS]: FIXTURE }, { hostsYaml: GROUPED });
+    const preview = asPreview(await service.preview(A, { source: 'user-known-hosts' }));
+    await expect(
+      service.apply(A, { previewId: preview.previewId, replace: [], addHosts: [UNRELATED], group: 'gone' }),
+    ).rejects.toMatchObject({ code: 'ssh-import-stale' });
+    expect(store.entries).toEqual([]);
   });
 });

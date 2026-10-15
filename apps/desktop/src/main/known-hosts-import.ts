@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import {
   EMPTY_HOSTS_FILE,
+  addKnownHostsFileHosts,
   applyKnownHostsFileImport,
   displayPath,
+  knownHostsFileRowsOf,
   listResolvedHosts,
   pathsFor,
   planKnownHostsFileImport,
@@ -25,7 +27,7 @@ export interface KnownHostsImportDeps<S extends { readonly id: number }> {
   /** The native open-file picker; records the pick. `undefined` when cancelled. */
   readonly pick: (sender: S) => Promise<string | undefined>;
   /** The calling window's hosts file: the hosts that may gain a key. */
-  readonly hosts: Pick<HostsService, 'invalidate' | 'list' | 'current'>;
+  readonly hosts: Pick<HostsService, 'invalidate' | 'list' | 'current' | 'replace'>;
   /** The machine's trusted host keys. */
   readonly store: Pick<SshService, 'knownHosts' | 'changeKnownHosts'>;
   readonly fs?: SshImportFs;
@@ -103,6 +105,12 @@ export class KnownHostsImportService<S extends { readonly id: number } = { reado
       add: plan.add.map(row),
       conflicts: plan.conflicts.map((c) => ({ ...row(c), previous: c.previous })),
       trusted: plan.trusted.map(row),
+      unsaved: plan.unsaved.map(({ host, address, port, keys }) => ({
+        host,
+        address,
+        port,
+        keys: keys.map(({ keyType, fingerprint, line }) => ({ keyType, fingerprint, line })),
+      })),
       skipped: plan.skipped.map(({ line, reason }) => ({ line, reason })),
     };
   }
@@ -119,10 +127,24 @@ export class KnownHostsImportService<S extends { readonly id: number } = { reado
     const replace = request.replace.filter((r) =>
       plan.conflicts.some((c) => c.host === r.host && c.keyType === r.keyType),
     );
+    // Only a server the preview offered can be added (#572); none is added unless chosen.
+    const chosen = plan.unsaved.filter((s) => request.addHosts?.includes(s.host) === true);
+    let hostsAdded = 0;
+    if (chosen.length > 0) {
+      // Hosts first: a key is trusted only for a host that was written.
+      try {
+        const { file, added } = addKnownHostsFileHosts(await this.currentHosts(), chosen, request.group);
+        if (added.length > 0) await this.deps.hosts.replace(file);
+        hostsAdded = added.length;
+      } catch (error) {
+        throw asWirebenchError(error);
+      }
+    }
+    const trust = { ...plan, add: [...plan.add, ...knownHostsFileRowsOf(chosen)] };
     const { added, replaced, kept } = await this.deps.store.changeKnownHosts((current) =>
-      applyKnownHostsFileImport(plan, replace, current),
+      applyKnownHostsFileImport(trust, replace, current),
     );
-    return { added, replaced, kept };
+    return { added, replaced, kept, hostsAdded };
   }
 
   /** `hosts.yaml` as it is on disk now; a file with problems names no hosts to match. */
