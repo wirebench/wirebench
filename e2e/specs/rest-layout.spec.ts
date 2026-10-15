@@ -126,10 +126,11 @@ test.describe('REST editor at small window sizes', () => {
     launched = await launchApp({ adaptiveLayout: true });
     const page = launched.window;
     await createWorkspace(page, 'Short');
-    // A runner whose screen already clamps the window below the threshold starts collapsed too.
-    if ((await page.evaluate(() => window.innerHeight)) >= 720) {
-      await expect(page.getByTestId('console')).toBeVisible();
-    }
+    // A fresh workspace starts collapsed anyway, so open the console first: the short window is what
+    // has to close it. A runner whose screen already clamps the window below the threshold starts
+    // collapsed too, with or without this.
+    await page.getByTestId('status-bar-console').click();
+    await expect(page.getByTestId('console')).toBeVisible();
 
     test.skip(!(await setWindowSize(launched, SIZES[1])), 'The screen is smaller than 1024×700');
     await page.reload();

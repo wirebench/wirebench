@@ -57,7 +57,8 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
    *
    * `fixedLayout` mirrors `WIREBENCH_E2E_FIXED_LAYOUT`: an e2e run whose specs were written for the
    * default window keeps that layout on a CI runner whose small screen clamps the window, instead
-   * of stacking the REST editor and collapsing the console the way a small window does.
+   * of stacking the REST editor and collapsing the console the way a small window does. It also opens
+   * the console in a fresh workspace, which a user's first run keeps collapsed until the first send.
    */
   env: {
     readonly e2e: boolean;
