@@ -1,18 +1,20 @@
 /**
- * The response body: Pretty, Raw or Preview.
+ * The response body: Pretty, Raw, Preview or Hex.
  *
- * **Pretty** is the body reformatted in the language it turned out to be, in a read-only Monaco with
- * folding and find. It is disabled above `preferences.rest.prettyPrintMaxBytes`, because formatting a
+ * **Pretty** is the body reformatted in the language it turned out to be (JSON, XML or HTML), in a
+ * read-only Monaco with folding and find, and a wrap toggle that holds for the session. It is disabled above `preferences.rest.prettyPrintMaxBytes`, because formatting a
  * very large body means parsing it twice and re-laying it out — the kind of pause that reads as a
  * hang. **Raw** shows the bytes as they arrived, line by line and virtualised, so a huge body costs
- * only the lines on screen. **Preview** renders an image, HTML in a sandboxed frame, and a hex dump
- * for anything else: a response that is not text still has to be inspectable.
+ * only the lines on screen. **Preview** renders an image, or HTML in a sandboxed frame, and is offered
+ * only for those two: anything else has nothing to render. **Hex** dumps the bytes of any body, so a
+ * response that is not text is still inspectable.
  *
  * A JSON node's *Copy path* gives a JSONPath-style path, which is what the Query tab will take.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Braces, Copy } from 'lucide-react';
+import { Braces, Copy, WrapText } from 'lucide-react';
+import { formatHtml } from '@wirebench/engine/rest';
 import { CodeEditor, type EditorLanguage } from '../../../editor/code-editor.js';
 import { InspectorIconButton } from '../../request-editor/inspectors/inspector-strip.js';
 import { formatBytes } from '../../../lib/format-size.js';
@@ -20,13 +22,14 @@ import { usePreferencesStore } from '../../../state/preferences.js';
 import { formatRawBody } from '../body-tab.js';
 import { contractRange, setContractMarkers, setGraphqlResponseMarkers } from '../../../editor/markers.js';
 import { useContractRevealStore } from './contract.js';
+import { useResponseWrapStore } from './wrap.js';
 import { HtmlPreview } from './html-preview.js';
 import type * as Monaco from 'monaco-editor';
 import type { RestExchangeSummary } from '../../../../shared/kinds/rest/wire.js';
 import { useEditorVariableAssist } from '../../environments/variable-assist-provider.js';
 
-/** Which of the three views is showing. */
-export type BodyViewMode = 'pretty' | 'raw' | 'preview';
+/** Which of the views is showing. */
+export type BodyViewMode = 'pretty' | 'raw' | 'preview' | 'hex';
 
 /**
  * What the body views read. A REST response summary satisfies it; so does a captured request
@@ -54,14 +57,53 @@ function editorLanguage(language: RestExchangeSummary['language']): EditorLangua
   }
 }
 
-/** The languages `formatRawBody` can pretty-print; the rest are shown as they arrived. */
-function formattable(language: RestExchangeSummary['language']): 'json' | 'xml' | undefined {
-  return language === 'json' || language === 'xml' ? language : undefined;
+/** The languages Pretty reformats; the rest are shown as they arrived. */
+function formattable(language: RestExchangeSummary['language']): 'json' | 'xml' | 'html' | undefined {
+  return language === 'json' || language === 'xml' || language === 'html' ? language : undefined;
+}
+
+/**
+ * The text Pretty shows: the body reformatted when its language allows, or as it arrived.
+ *
+ * A body the server sent malformed is shown as it arrived: the point of the pane is to show what came
+ * back, not to make it look valid.
+ */
+export function prettyText(text: string, language: RestExchangeSummary['language'], indent: number): string {
+  const formattableAs = formattable(language);
+  if (formattableAs === undefined) {
+    return text;
+  }
+  if (formattableAs === 'html') {
+    return formatHtml(text, indent);
+  }
+  const result = formatRawBody(text, formattableAs, indent);
+  return 'text' in result ? result.text : text;
 }
 
 /** Whether this response is an image the Preview tab can render. */
 export function isImage(exchange: BodyViewExchange): boolean {
   return exchange.language === 'image';
+}
+
+/** Whether the Preview view has something to render: an image, or HTML. */
+export function canPreview(exchange: BodyViewExchange): boolean {
+  return isImage(exchange) || exchange.language === 'html';
+}
+
+/** The views offered for this body, in strip order. */
+export function bodyViewModes(exchange: BodyViewExchange): readonly BodyViewMode[] {
+  return canPreview(exchange) ? ['pretty', 'raw', 'preview', 'hex'] : ['pretty', 'raw', 'hex'];
+}
+
+/** The view a body opens in: its picture, its bytes, or its text. */
+export function initialBodyViewMode(exchange: BodyViewExchange, tooLargeToPretty: boolean): BodyViewMode {
+  if (isImage(exchange)) {
+    return 'preview';
+  }
+  if (exchange.language === 'binary') {
+    return 'hex';
+  }
+  return tooLargeToPretty ? 'raw' : 'pretty';
 }
 
 /** The bytes of a base64 body, decoded once. */
@@ -102,26 +144,25 @@ export interface BodyViewProps {
   readonly requestId?: string;
 }
 
-/** The body tab, with its own Pretty/Raw/Preview strip. */
+/** The body tab, with its own Pretty/Raw/Preview/Hex strip. */
 export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
   // Variable help in the editor (#340): completion, hover, unresolved marks, Set as Variable.
   const attachVariables = useEditorVariableAssist({ readOnly: true });
   const maxPretty = usePreferencesStore((state) => state.preferences.rest.prettyPrintMaxBytes);
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
   const tooLargeToPretty = exchange.text.length > maxPretty;
-  const image = isImage(exchange);
-  const [mode, setMode] = useState<BodyViewMode>(image ? 'preview' : tooLargeToPretty ? 'raw' : 'pretty');
+  const modes = bodyViewModes(exchange);
+  const [chosen, setMode] = useState<BodyViewMode>(() => initialBodyViewMode(exchange, tooLargeToPretty));
+  // A view kept from an earlier response that this one does not offer (Preview, after an HTML
+  // response is replaced by JSON) falls back to where this body would open.
+  const mode = modes.includes(chosen) ? chosen : initialBodyViewMode(exchange, tooLargeToPretty);
 
-  const pretty = useMemo(() => {
-    const language = formattable(exchange.language);
-    if (language === undefined || tooLargeToPretty) {
-      return exchange.text;
-    }
-    const result = formatRawBody(exchange.text, language, indent);
-    // A body the server sent malformed is shown as it arrived: the point of the pane is to show
-    // what came back, not to make it look valid.
-    return 'text' in result ? result.text : exchange.text;
-  }, [exchange.text, exchange.language, indent, tooLargeToPretty]);
+  const pretty = useMemo(
+    () => (tooLargeToPretty ? exchange.text : prettyText(exchange.text, exchange.language, indent)),
+    [exchange.text, exchange.language, indent, tooLargeToPretty],
+  );
+  const wrapPreference = usePreferencesStore((state) => state.preferences.editor.wordWrap);
+  const wrap = useResponseWrapStore((state) => state.wrap) ?? wrapPreference;
 
   const [editor, setEditor] = useState<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
   const problems = exchange.contract?.problems;
@@ -151,7 +192,7 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
     if (pending === undefined) {
       return;
     }
-    if (mode === 'preview' || (mode === 'raw' && !tooLargeToPretty)) {
+    if (mode === 'preview' || mode === 'hex' || (mode === 'raw' && !tooLargeToPretty)) {
       // The marker lives in the Pretty view; Raw keeps only a body too large to reformat.
       setMode(tooLargeToPretty ? 'raw' : 'pretty');
       return;
@@ -174,10 +215,10 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
   return (
     <div data-testid="rest-response-body" className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-row shrink-0 items-center gap-1 px-2">
-        {/* The three views are a tablist of their own: the copy actions beside them are buttons, and
+        {/* The views are a tablist of their own: the copy actions beside them are buttons, and
             a `tablist` may only own tabs. */}
         <div role="tablist" aria-label="Response body view" className="flex items-center gap-1">
-          {(['pretty', 'raw', 'preview'] as const).map((candidate) => {
+          {modes.map((candidate) => {
             const disabled = candidate === 'pretty' && tooLargeToPretty;
             return (
               <button
@@ -204,6 +245,21 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
           })}
         </div>
         <span className="flex-1" />
+        {mode === 'pretty' && (
+          <InspectorIconButton
+            label="Wrap lines"
+            data-testid="rest-response-wrap"
+            aria-pressed={wrap}
+            onClick={() => {
+              useResponseWrapStore.getState().setWrap(!wrap);
+            }}
+            className={`inline-flex size-6 items-center justify-center rounded-md transition-colors hover:bg-surface-hover ${
+              wrap ? 'bg-surface-active text-fg-default' : 'text-fg-subtle hover:text-fg-default'
+            }`}
+          >
+            <WrapText size={13} aria-hidden="true" />
+          </InspectorIconButton>
+        )}
         {exchange.language === 'json' && (
           <InspectorIconButton
             label="Copy path"
@@ -231,6 +287,8 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
       <div data-testid={`rest-response-view-${mode}-panel`} className="min-h-0 flex-1">
         {mode === 'preview' ? (
           <PreviewView exchange={exchange} tooLarge={tooLargeToPretty} />
+        ) : mode === 'hex' ? (
+          <HexView base64={exchange.http.bodyBase64} />
         ) : mode === 'raw' ? (
           <RawBody text={exchange.text} reveal={rawReveal} />
         ) : (
@@ -238,6 +296,7 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
             value={pretty}
             language={editorLanguage(exchange.language)}
             readOnly
+            wordWrap={wrap}
             ariaLabel="Response body"
             onMount={(mounted, monacoNS) => {
               setEditor(mounted);
@@ -299,7 +358,7 @@ function RawBody({
   );
 }
 
-/** An image, HTML in a sandboxed frame, or a hex dump of whatever else came back. */
+/** An image, or HTML in a sandboxed frame. */
 function PreviewView({ exchange, tooLarge }: { readonly exchange: BodyViewExchange; readonly tooLarge: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | undefined>(undefined);
   const image = isImage(exchange);
@@ -327,17 +386,18 @@ function PreviewView({ exchange, tooLarge }: { readonly exchange: BodyViewExchan
     );
   }
 
-  if (image) {
-    return (
-      <div className="flex h-full items-start justify-center overflow-auto p-2">
-        {objectUrl !== undefined && (
-          <img data-testid="rest-response-image" src={objectUrl} alt="Response body" className="max-w-full" />
-        )}
-      </div>
-    );
-  }
+  return (
+    <div className="flex h-full items-start justify-center overflow-auto p-2">
+      {objectUrl !== undefined && (
+        <img data-testid="rest-response-image" src={objectUrl} alt="Response body" className="max-w-full" />
+      )}
+    </div>
+  );
+}
 
-  const bytes = bytesOf(exchange.http.bodyBase64);
+/** A hex dump of the body's bytes, whatever they are. */
+function HexView({ base64 }: { readonly base64: string }) {
+  const bytes = useMemo(() => bytesOf(base64), [base64]);
   if (bytes.length === 0) {
     return <p className="p-3 text-sm text-fg-subtle">This response had an empty body.</p>;
   }

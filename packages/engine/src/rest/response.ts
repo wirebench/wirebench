@@ -11,6 +11,7 @@
 import { decodeBody } from '../http/charset.js';
 import { mediaTypeOf } from '../http/media-type.js';
 import { formatXml } from '../xml/pretty.js';
+import { formatHtml } from './format-html.js';
 
 /** What a response body is, as far as the viewer needs to know. */
 export type BodyLanguage = 'json' | 'xml' | 'html' | 'javascript' | 'text' | 'image' | 'binary';
@@ -139,37 +140,6 @@ export function prettyBody(text: string, language: BodyLanguage, indent = 2): Pr
     return { text: formatted, changed: formatted !== text };
   }
   return { text, changed: false };
-}
-
-/**
- * Indents HTML by tag depth.
- *
- * Deliberately not a parser: HTML's void elements, optional end tags and inline content make a
- * faithful formatter a project of its own, and this only has to make a response readable. Text
- * runs are kept on the line of the tag that opened them.
- */
-function formatHtml(text: string, indent: number): string {
-  const tokens = text
-    .replace(/\r\n?/g, '\n')
-    .split(/(<[^>]*>)/)
-    .filter((token) => token.trim() !== '');
-  const pad = ' '.repeat(indent);
-  const lines: string[] = [];
-  let depth = 0;
-  for (const token of tokens) {
-    const isTag = token.startsWith('<');
-    const isClose = token.startsWith('</');
-    const selfCloses =
-      /\/>$/.test(token) || /^<(?:area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr|!)/i.test(token);
-    if (isTag && isClose) {
-      depth = Math.max(0, depth - 1);
-    }
-    lines.push(pad.repeat(depth) + (isTag ? token.trim() : token.trim()));
-    if (isTag && !isClose && !selfCloses) {
-      depth += 1;
-    }
-  }
-  return lines.join('\n');
 }
 
 export { parseSetCookie } from '../http/cookies.js';

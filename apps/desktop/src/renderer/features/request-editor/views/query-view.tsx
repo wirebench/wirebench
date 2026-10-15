@@ -4,12 +4,15 @@
  * (`xpath.evaluate`) so the renderer never bundles `fontoxpath` or `jsonpath-plus`.
  *
  * JSONPath is offered only for a JSON response, and the namespace table only for an XML one — each
- * is meaningless for the other document kind.
+ * is meaningless for the other document kind. A JSON response opens on JSONPath and an XML one on
+ * XPath: the language most people reach for over each.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { formatKeybinding } from '@shared/keybinding-format.js';
 import { EmptyState } from '../../../components/empty-state.js';
+import { detectPlatform } from '../../../lib/platform.js';
 import { ipc } from '../../../state/ipc-client.js';
 import type { TextRange } from './xml-model.js';
 
@@ -115,6 +118,11 @@ function toRows(
  * A placeholder is the only documentation most users will read for this view, so each one is a
  * working expression for the shape of document actually in front of them.
  */
+/** The language a document opens on until one is picked: JSONPath for JSON, XPath for XML. */
+export function defaultQueryLanguage(documentKind: 'xml' | 'json'): QueryLanguageWire {
+  return documentKind === 'json' ? 'jsonpath' : 'xpath';
+}
+
 export function placeholderFor(language: QueryLanguageWire, documentKind: 'xml' | 'json'): string {
   if (language === 'jsonpath') {
     return '$.items[?(@.status=="open")].id';
@@ -149,10 +157,13 @@ export function QueryView({ requestId, xml, documentKind = 'xml', onReveal, sour
   const isJson = documentKind === 'json';
 
   const languages: readonly QueryLanguageWire[] = isJson ? ['xpath', 'xquery', 'jsonpath'] : ['xpath', 'xquery'];
-  const [language, setLanguage] = useState<QueryLanguageWire>('xpath');
+  // Unset until the user picks one, so the document's own default applies.
+  const [language, setLanguage] = useState<QueryLanguageWire | undefined>(undefined);
   // A view that started on a JSON response and was handed an XML one (a resend against a different
   // endpoint, say) must not keep a language the new document cannot be queried with.
-  const effectiveLanguage: QueryLanguageWire = !isJson && language === 'jsonpath' ? 'xpath' : language;
+  const effectiveLanguage: QueryLanguageWire =
+    language === undefined || (!isJson && language === 'jsonpath') ? defaultQueryLanguage(documentKind) : language;
+  const runHint = useMemo(() => formatKeybinding('Mod+Enter', detectPlatform()), []);
   const [expression, setExpression] = useState('');
   const [rows, setRows] = useState<NamespaceRow[]>([]);
   const [result, setResult] = useState<QueryResultWire | undefined>(undefined);
@@ -253,7 +264,7 @@ export function QueryView({ requestId, xml, documentKind = 'xml', onReveal, sour
             onClick={() => run(expression)}
             className="ml-auto rounded-sm bg-accent px-3 py-0.5 text-xs text-fg-on-accent disabled:opacity-50"
           >
-            Run ⌘⏎
+            Run {runHint}
           </button>
         </div>
         <textarea

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { placeholderFor, QueryView } from '../../src/renderer/features/request-editor/views/query-view.js';
+import {
+  defaultQueryLanguage,
+  placeholderFor,
+  QueryView,
+} from '../../src/renderer/features/request-editor/views/query-view.js';
 import type { QuerySource } from '../../src/renderer/features/request-editor/views/query-view.js';
 
 const XML = '<a xmlns:tem="http://tempuri.org/"><tem:AddResult>3</tem:AddResult></a>';
@@ -215,6 +219,7 @@ describe('QueryView over a JSON response', () => {
     });
     render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
 
+    await userEvent.click(screen.getByRole('radio', { name: 'XPath 3.1' }));
     await userEvent.click(screen.getByLabelText('Query expression'));
     await userEvent.paste('?items?*?id');
     await userEvent.click(screen.getByTestId('query-run'));
@@ -238,7 +243,17 @@ describe('QueryView over a JSON response', () => {
 
     expect(screen.queryByLabelText('Namespace prefix')).toBeNull();
     expect(screen.queryByText('+ Add namespace')).toBeNull();
-    expect(screen.getByText(/is the context item/)).toBeDefined();
+    expect(screen.getByText(/Each result shows the path/)).toBeDefined();
+  });
+
+  it('opens a JSON response on JSONPath (R29)', () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.getByRole('radio', { name: 'JSONPath' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Query expression').placeholder).toBe(
+      placeholderFor('jsonpath', 'json'),
+    );
   });
 
   it('keeps both languages: XQuery over JSON is a FLWOR over its arrays', async () => {
@@ -288,14 +303,14 @@ describe('QueryView over a JSON response', () => {
     expect(screen.getByText("$['items'][0]['id']")).toBeDefined();
   });
 
-  it('swaps the context-item hint for the JSONPath one', async () => {
+  it('swaps the JSONPath hint for the context-item one on XPath', async () => {
     const { source } = stubSource();
     render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
 
+    expect(screen.getByText(/Each result shows the path/)).toBeDefined();
+    await userEvent.click(screen.getByRole('radio', { name: 'XPath 3.1' }));
+    expect(screen.queryByText(/Each result shows the path/)).toBeNull();
     expect(screen.getByText(/is the context item/)).toBeDefined();
-    await userEvent.click(screen.getByRole('radio', { name: 'JSONPath' }));
-    expect(screen.queryByText(/is the context item/)).toBeNull();
-    expect(screen.getByText(/reads a key/)).toBeDefined();
   });
 
   it('suggests JSON examples in the empty state, not envelope ones', () => {
@@ -313,7 +328,16 @@ describe('QueryView over a JSON response', () => {
     render(<QueryView requestId="r1" xml={XML} source={source} />);
 
     expect(screen.queryByRole('radio', { name: 'JSONPath' })).toBeNull();
-    expect(screen.getByRole('radio', { name: 'XPath 3.1' })).toBeDefined();
+    expect(screen.getByRole('radio', { name: 'XPath 3.1' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('falls back to XPath when a JSON view picked JSONPath and is handed XML', async () => {
+    const { source } = stubSource();
+    const { rerender } = render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'JSONPath' }));
+
+    rerender(<QueryView requestId="r1" xml={XML} source={source} />);
+    expect(screen.getByRole('radio', { name: 'XPath 3.1' }).getAttribute('aria-checked')).toBe('true');
   });
 
   it('still sends no kind for an XML document, so the channel default stands', async () => {
@@ -328,6 +352,31 @@ describe('QueryView over a JSON response', () => {
       expect(evaluate).toHaveBeenCalled();
     });
     expect(evaluate.mock.calls[0]?.[0]).not.toHaveProperty('kind');
+  });
+});
+
+describe('defaultQueryLanguage', () => {
+  it('is JSONPath for JSON and XPath for XML', () => {
+    expect(defaultQueryLanguage('json')).toBe('jsonpath');
+    expect(defaultQueryLanguage('xml')).toBe('xpath');
+  });
+});
+
+describe('the Run hint (R29)', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)', 'Run ⌘⏎'],
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Run Ctrl+Enter'],
+    ['Mozilla/5.0 (X11; Linux x86_64)', 'Run Ctrl+Enter'],
+  ])('uses the platform modifier on %s', (userAgent, label) => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent);
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={XML} source={source} />);
+    expect(screen.getByTestId('query-run').textContent).toBe(label);
   });
 });
 

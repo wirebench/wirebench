@@ -80,35 +80,43 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await expect(body).toContainText('"x": "1"', { timeout: 20_000 });
     await expect(body).toContainText('x-trace');
 
+    // A JSON body has nothing for Preview to render, so it is not offered; Hex shows its bytes (#574).
+    await expect(page.getByTestId('rest-response-view-preview')).toHaveCount(0);
+    await page.getByTestId('rest-response-view-hex').click();
+    await expect(page.getByTestId('rest-response-hex')).toContainText('00000000');
+    await page.getByTestId('rest-response-view-pretty').click();
+
     await openResponseTab(page, 'Headers');
     await expect(page.getByTestId('rest-response-headers')).toContainText('content-type');
 
     await openResponseTab(page, 'Timing');
     await expect(page.getByTestId('rest-response-timing')).toBeVisible();
 
-    await openResponseTab(page, 'Raw');
+    await openResponseTab(page, 'Exchange');
     // The exact request line: `/echo?x=1` typed into the field is mirrored into the Params table,
     // and a prefix match would also accept that query sent twice (`?x=1&x=1`).
-    await expect(page.getByTestId('rest-response-raw-exchange')).toContainText('GET /echo?x=1 HTTP/1.1');
+    await expect(page.getByTestId('rest-response-exchange')).toContainText('GET /echo?x=1 HTTP/1.1');
     expect(server.requests.filter((request) => request.url.startsWith('/echo')).map((request) => request.url)).toEqual([
       '/echo?x=1',
     ]);
 
-    // The Query tab runs XPath 3.1 over the JSON body itself — maps, arrays and `?` lookup (§3.10).
+    // The Query tab opens a JSON body on JSONPath, the syntax a REST user already has in their
+    // notes (#574)…
     await openResponseTab(page, 'Query');
     const query = page.getByTestId('rest-response-query');
     await expect(query).toBeVisible();
+    await expect(query.getByRole('radio', { name: 'JSONPath' })).toHaveAttribute('aria-checked', 'true');
+    await query.getByLabel('Query expression').fill('$.query.x');
+    await query.getByTestId('query-run').click();
+    await expect(query.getByTestId('query-results')).toContainText("$['query']['x']", { timeout: 20_000 });
+
+    // …with XPath 3.1 beside it, over the JSON body itself — maps, arrays and `?` lookup (§3.10).
+    // Both languages reach the same `xpath.evaluate` channel; only the expression differs.
+    await query.getByRole('radio', { name: 'XPath 3.1' }).click();
     await expect(query.getByText(/is the context item/)).toBeVisible();
     await query.getByLabel('Query expression').fill('?query?x');
     await query.getByTestId('query-run').click();
     await expect(query.getByTestId('query-results')).toContainText('1', { timeout: 20_000 });
-
-    // …and JSONPath beside it, which is the syntax a REST user already has in their notes. Both
-    // languages reach the same `xpath.evaluate` channel; only the expression differs.
-    await query.getByRole('radio', { name: 'JSONPath' }).click();
-    await query.getByLabel('Query expression').fill('$.query.x');
-    await query.getByTestId('query-run').click();
-    await expect(query.getByTestId('query-results')).toContainText("$['query']['x']", { timeout: 20_000 });
 
     // The console's HTTP Log is one list across both protocols, and the status bar's "last:"
     // indicator reads its newest row. A REST send used not to reach either, which left them both

@@ -64,6 +64,8 @@ export interface CodeEditorProps {
    * by model (a request script's, #63) needs one it can recognise.
    */
   readonly path?: string;
+  /** Wraps long lines, overriding the editor's word-wrap preference; absent follows the preference. */
+  readonly wordWrap?: boolean;
 }
 
 /** A Monaco editor in `language`. */
@@ -77,6 +79,7 @@ export function CodeEditor({
   lineNumbers = true,
   contextMenu = true,
   path,
+  wordWrap,
 }: CodeEditorProps) {
   const preference = useUiStore((state) => state.theme);
   const theme = monacoThemeName(useResolvedTheme(preference));
@@ -90,14 +93,14 @@ export function CodeEditor({
         : {}),
       fontSize: editorPreferences.fontSize,
       tabSize: editorPreferences.tabSize,
-      wordWrap: editorPreferences.wordWrap ? ('on' as const) : ('off' as const),
+      wordWrap: (wordWrap ?? editorPreferences.wordWrap) ? ('on' as const) : ('off' as const),
       readOnly,
       domReadOnly: readOnly,
       ariaLabel,
       lineNumbers: lineNumbers ? ('on' as const) : ('off' as const),
       contextmenu: contextMenu,
     }),
-    [readOnly, ariaLabel, lineNumbers, contextMenu, editorPreferences],
+    [readOnly, ariaLabel, lineNumbers, contextMenu, editorPreferences, wordWrap],
   );
 
   return (

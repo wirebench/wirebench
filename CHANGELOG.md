@@ -352,6 +352,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A REST response viewer that shows what each view is for.** Preview is offered only where it
+  renders something, an image or an HTML page; a separate **Hex** view dumps the bytes of any body,
+  and a binary body opens on it. The response tab that shows both directions' wire bytes is now
+  **Exchange**, so it no longer shares the name of the body's **Raw** view. **Pretty** formats HTML
+  as well as JSON and XML, one tag per line with script, style and pre content kept as it came, and
+  its **Wrap lines** toggle holds for the rest of the session. The Query tab opens a JSON body on
+  JSONPath and an XML one on XPath, and its Run button shows Ctrl+Enter on Linux and Windows (#574).
 - **SSH area polish.** The Hosts cards keep the name on the first line and put "needs user" under it;
   group chips give way to a ⋯ menu on each group heading with **Show only this group**; the SSH menu
   hides zero counts and shows running forwards as a green dot; Recent shows only with more than six
