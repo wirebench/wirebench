@@ -40,6 +40,13 @@ Runner, branching in sequences, code generation, a preview of the headers a send
 colours with a production guard, and import of collection v3 folders. It is a major release because
 the engine's project model changed shape (each protocol in its own module); it took the project format
 to version 9.
+6.1.0 carries the SSH workspace and the REST polish that followed it: a Files tab for SFTP, port
+forwarding (also as `wirebench ssh forward`), split terminals with broadcast input and saved layouts,
+snippets, a local terminal, identities, certificates and security keys, Mosh, session logs and host
+import from other SSH tools; client-signed JWT, Digest, AWS Signature v4 and more OAuth 2 grants;
+GraphQL requests; MCP servers as a fifth kind of container; `wirebench lint` for OpenAPI; environments
+that apply to chosen projects; HTTP/2 offered by default; and, on the server, scheduled runs and SAML
+sign-in with SCIM. It took the project format to version 10.
 Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
