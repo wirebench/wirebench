@@ -74,6 +74,10 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Problems solved',
+          items: [{ label: 'WS-Security signature failure', slug: 'solutions/ws-security-signature-failure' }],
+        },
+        {
           label: 'Switching',
           items: [
             { label: 'From Postman collections', slug: 'switching/postman' },

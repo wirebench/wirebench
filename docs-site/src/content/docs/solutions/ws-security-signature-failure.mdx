@@ -1,0 +1,322 @@
+---
+title: Debugging a WS-Security signature failure
+description: A signed SOAP response fails verification. Find which part changed, whether the key is wrong, or whether the clock is off, and fix it step by step.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A service signs its responses, and your client says the signature is invalid. That one word,
+"invalid", covers at least six different problems: a payload that changed in transit, a
+canonicalisation difference, the wrong certificate, a token the signature points at but the
+message does not carry, a signature that covers the wrong parts, and a timestamp outside its
+window. Each has a different fix. This guide walks through one failing call in Wirebench and
+shows how to tell them apart.
+
+Everything below comes from Wirebench's own test suite: the envelopes are what its WS-Security
+engine produces, and the messages are the exact text it reports.
+
+## The call
+
+The example is a calculator service. The request adds 2 and 3; the response carries the result,
+signed. A healthy response looks like this (the certificate and signature values are cut short):
+
+```xml
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
+  <soapenv:Header>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+                   xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+      <wsu:Timestamp wsu:Id="TS-889609d6-ebd5-4ec9-9a82-e3e3b1c19907">
+        <wsu:Created>2026-10-15T21:39:18Z</wsu:Created>
+        <wsu:Expires>2026-10-15T21:44:18Z</wsu:Expires>
+      </wsu:Timestamp>
+      <wsse:BinarySecurityToken wsu:Id="X509-eec0cdfe-0a8b-4300-9bd2-b96452f83db8"
+          ValueType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3"
+          EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">MIIDRzCCAi+gAwIBAgIJ…</wsse:BinarySecurityToken>
+      <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:SignedInfo>
+          <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#">
+            <InclusiveNamespaces PrefixList="soapenv" xmlns="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+          </ds:CanonicalizationMethod>
+          <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+          <ds:Reference URI="#Id-1c53f84a-63d0-4556-9fd9-fb02f81b9cf9">
+            <ds:Transforms>
+              <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#">
+                <InclusiveNamespaces PrefixList="soapenv" xmlns="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+              </ds:Transform>
+            </ds:Transforms>
+            <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+            <ds:DigestValue>j2FSG1mGZUFQRns0DSNWUad2Y+YqD4iz9UWU4R7EAzc=</ds:DigestValue>
+          </ds:Reference>
+          <ds:Reference URI="#TS-889609d6-ebd5-4ec9-9a82-e3e3b1c19907">
+            <!-- same transform and digest method -->
+            <ds:DigestValue>m22pPukF4shgbboH/vzeelN0Rg+cZ1C9B/v5ErWKOb4=</ds:DigestValue>
+          </ds:Reference>
+        </ds:SignedInfo>
+        <ds:SignatureValue>uNYgBv4DqpCPOrdkgmHr…</ds:SignatureValue>
+        <ds:KeyInfo>
+          <wsse:SecurityTokenReference>
+            <wsse:Reference URI="#X509-eec0cdfe-0a8b-4300-9bd2-b96452f83db8"
+                ValueType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3"/>
+          </wsse:SecurityTokenReference>
+        </ds:KeyInfo>
+      </ds:Signature>
+    </wsse:Security>
+  </soapenv:Header>
+  <soapenv:Body wsu:Id="Id-1c53f84a-63d0-4556-9fd9-fb02f81b9cf9">
+    <tem:AddResponse><tem:AddResult>5</tem:AddResult></tem:AddResponse>
+  </soapenv:Body>
+</soapenv:Envelope>
+```
+
+Three things in it matter for everything that follows:
+
+- **Two references.** The signature covers the `Body` and the `Timestamp`, each by its `wsu:Id`,
+  each with its own digest.
+- **One canonicalisation.** Both references, and `SignedInfo` itself, use exclusive
+  canonicalisation (`exc-c14n`) with the `soapenv` prefix kept inclusive.
+- **A pointer to the key.** `KeyInfo` does not hold the certificate. It holds a
+  `SecurityTokenReference` to the `BinarySecurityToken` higher up in the header.
+
+## Set up verification
+
+Wirebench only checks a response against a configuration you choose, so the first step is to say
+what a good response looks like.
+
+<Steps>
+
+1. Add the service's signing certificate as a keystore: open the **WS-Security** view in the
+   activity bar, then **Keystores**, and add the PEM or PKCS#12 file. This is the truststore.
+2. In the same view, add an **Incoming configuration**. Set **Signature truststore** to that
+   keystore, and turn on **Require signature** and **Require timestamp**. Leave **Timestamp skew
+   (seconds)** at its default of 300 for now.
+3. On the request's **Auth** inspector tab, select the configuration as **Incoming WSS**.
+4. Send the request.
+
+</Steps>
+
+With a healthy response, the response pane's **WSS** tab label reads `WSS ✓`, and the tab lists
+two steps:
+
+```text
+Signature  ok  Signature valid over Body, Timestamp; signer trusted.
+               CN=wirebench-signer, O=Wirebench Tests, C=ZZ  [trusted]
+               Signed: Body, Timestamp
+Timestamp  ok  Timestamp fresh (created 2026-10-15T21:39:18Z).
+               2026-10-15T21:39:18Z → 2026-10-15T21:44:18Z
+               Clock: created 0 s ago; 300 s skew tolerated
+```
+
+Below them, **Security header · in header order** lists what the header holds:
+
+```text
+1. Timestamp (created 2026-10-15T21:39:18Z, expires 2026-10-15T21:44:18Z)
+2. X.509 certificate (wirebench-signer)
+3. Signed Body, Timestamp (rsa-sha256, exc-c14n)
+```
+
+{/* TODO(screenshot): WSS tab on a passing response, showing both steps and the Security header list. Save as docs-site/public/images/solutions/wss-pass.png and cite it here. */}
+
+<Aside>
+A failed check never fails the send. The HTTP status stays whatever the server returned, often
+200, and the HTTP Log row reads the same. Wirebench reports what arrived and leaves the verdict to
+you, so the place to look is the **WSS** tab, and the tab label `WSS ✗` is the signal.
+</Aside>
+
+## The failure
+
+Now the same call fails. The tab label reads `WSS ✗`, and the signature step says:
+
+```text
+Signature  failed  Reference #Id-1c53f84a-63d0-4556-9fd9-fb02f81b9cf9 (Body) does not match:
+                   the digest computed with exc-c14n and sha256 differs from the one in the message.
+Signature  failed  No valid, trusted signature covers the Body, and one is required.
+```
+
+The first line is the cause; the second is the consequence of **Require signature**. Under the
+first, the tab expands the signature reference by reference:
+
+```text
+SignedInfo: rsa-sha256, exc-c14n
+Body #Id-1c53f84a-63d0-4556-9fd9-fb02f81b9cf9            differs
+  exc-c14n (prefixes soapenv), sha256
+  expected  j2FSG1mGZUFQRns0DSNWUad2Y+YqD4iz9UWU4R7EAzc=
+  computed  SL9nr2iC1OpNq58obK9RqcnN/sjxX+DiSvyyFqdTL5A=
+Timestamp #TS-889609d6-ebd5-4ec9-9a82-e3e3b1c19907       matches
+  exc-c14n (prefixes soapenv), sha256
+```
+
+{/* TODO(screenshot): WSS tab on the tampered response, with the Body reference expanded to show expected and computed digests. Save as docs-site/public/images/solutions/wss-body-differs.png and cite it here. */}
+
+Wirebench recomputes every reference with the same canonicaliser the verifier used, so the
+computed digest is exactly the one that was compared. That tells you three things at once:
+
+- **The Timestamp matches**, so the right signature was found and most of the message is intact.
+- **There is no "SignatureValue invalid" chip**, so the signed information itself verifies with the
+  signer's certificate. The key is right.
+- **Only the Body differs.** Something changed the Body's bytes between the signer and you.
+
+In this example the cause is visible in the HTTP Log. Open the row, then its **Response** tab, which
+shows the bytes exactly as they arrived:
+
+```xml
+<soapenv:Body wsu:Id="Id-1c53f84a-63d0-4556-9fd9-fb02f81b9cf9">
+  <tem:AddResponse><tem:AddResult>6</tem:AddResult></tem:AddResponse>
+</soapenv:Body>
+```
+
+The service signed `5`; something on the way rewrote it to `6`. The signature did its job.
+
+## Fix it step by step
+
+A Body digest mismatch has four usual causes. Work through them in order, cheapest first.
+
+<Steps>
+
+1. **Compare the bytes, not the view.** The response pane's XML view is pretty-printed. The HTTP
+   Log's **Response** tab is not. Read the Body there, and if you have the sender's log, compare
+   the two. A changed value, as above, ends the search: the fix is upstream.
+
+2. **Look for an intermediary that reformats XML.** Canonicalisation does not normalise
+   whitespace inside the Body, and exclusive canonicalisation keeps the namespace prefixes an
+   element visibly uses. In Wirebench's test suite, a single newline added after
+   `</tem:AddResult>` produces the same `does not match` line, and so does renaming the `tem`
+   prefix to `calc` along with its declaration. A gateway, a logging proxy or an XML formatter
+   between the service and you is the usual suspect. Send around it, or have it pass the body
+   through untouched.
+
+3. **Check the transforms the signer used.** The reference line shows them: here
+   `exc-c14n (prefixes soapenv), sha256`. If the sender signed with inclusive canonicalisation
+   (`c14n`) or with comments, the line says so. A sender that declares one canonicalisation and
+   applies another is a sender bug: the digest it wrote cannot be reproduced from the bytes.
+
+4. **Check the encryption order.** If the response is also encrypted, Wirebench decrypts first
+   and verifies the signatures on the restored document. A sender that signed the *ciphertext*
+   (encrypt, then sign) produces a digest that cannot match after decryption, and Wirebench
+   6.1.0 does not verify that order. The **Security header** list shows the header's steps in the
+   order they appear, with what each signature covers and what each encryption hides. Senders that
+   follow the WS-Security standard add each step at the top, so their last step is usually listed
+   first. Ask the service owner which order it applies, and have it sign before it encrypts.
+
+</Steps>
+
+## The other failure modes
+
+The same tab reports every other way a signature can fail. Each line below is the exact text
+Wirebench shows; the angle brackets mark values from your message.
+
+### The key is wrong
+
+```text
+Every reference matches, but the SignatureValue does not verify with the signer's certificate:
+SignedInfo was changed, or the message names the wrong certificate.
+```
+
+Every digest matched, so the payload is intact, and the reference list shows a
+**SignatureValue invalid** chip. Either `SignedInfo` was edited, or `KeyInfo` points at a
+certificate other than the one whose key signed. The second is common after a key rotation where
+the service changed its private key but still sends the old certificate. Compare the subject shown
+under the step with the certificate the service owner says is current.
+
+### The signer is not trusted
+
+```text
+Signature valid over Body, Timestamp, but the signer is not trusted.
+```
+
+The signature holds, but over a certificate the truststore does not hold. Wirebench shows
+validity and trust as two separate chips on purpose: a signature made by an attacker's key is
+perfectly valid against that key. Add the right certificate to the truststore, or, if the service
+signs with a certificate issued by a CA you trust, add the CA and turn on **Verify certificate
+chain**. An expired certificate is never trusted, even when it is in the truststore verbatim.
+
+If the truststore itself could not be opened, the step says so rather than reading as an unknown
+signer, and gives the reason after `The signature truststore could not be resolved:`.
+
+### The token the signature points at is missing
+
+`KeyInfo` is only a pointer, and the pointer can miss:
+
+```text
+The signature carries no ds:KeyInfo, so its signer cannot be found.
+KeyInfo refers to token #<id>, but no element in the message carries that id.
+KeyInfo refers to token #<id>, but more than one element in the message carries that id.
+KeyInfo names the signer by ThumbprintSHA1 <value>, and no truststore certificate has it.
+KeyInfo names the signer by issuer "<dn>" and serial <n>, and no truststore certificate matches.
+KeyInfo uses a form this build cannot resolve: <element name>.
+```
+
+A missing `BinarySecurityToken` usually means the sender is configured not to include its
+certificate. That is fine, as long as the truststore holds it. The thumbprint, subject key
+identifier and issuer-and-serial forms only *name* the certificate, so Wirebench looks it up in
+the truststore, and the message tells you exactly what to look for. An issuer name written in a
+different order or spacing still matches, because Wirebench compares the name's parts, not its
+text.
+
+### The signature covers the wrong parts
+
+```text
+No valid, trusted signature covers the Body, and one is required.
+Reference #<id> could not be checked: No element in the message carries this id.
+```
+
+A signature that covers only the Timestamp verifies, but protects nothing the service said. The
+step's **Signed:** line lists the covered parts, and a **Body not signed** chip appears when the
+Body is not among them. A reference to an id no element carries means the sender changed or
+dropped the `wsu:Id` after signing. A reference to an id that two elements carry fails outright,
+because that is how a signature-wrapping attack hides a second Body:
+
+```text
+duplicate-id: more than one element carries the referenced id "<id>".
+```
+
+### The timestamp is outside its window
+
+```text
+Expired 701 s ago (Expires 2026-10-15T21:46:23Z); 300 s of clock skew is tolerated.
+Created 399 s ahead of this machine's clock; 300 s of clock skew is tolerated.
+Created <n> s ago and carries no Expires; <n> s of clock skew is tolerated.
+```
+
+These come with the measured skew on a **Clock** line. A response created "ahead" of your clock
+means one of the two clocks is wrong: check yours against a time server before raising
+**Timestamp skew (seconds)**. A response that expired in transit usually means a slow service or a
+short time-to-live on the sender's side. Raising the tolerance hides both, so raise it only for a
+test environment you know is skewed.
+
+## When the server rejects *your* signature
+
+The tab described above checks responses. When it is the service that refuses your signed
+request, the response status line shows `SOAP Fault:` and the fault code the service returned.
+Before you change anything, look at what Wirebench actually sent:
+
+- **Preview secured request**, under **Outgoing** in the same **WSS** tab, applies the request's
+  outgoing configuration to the envelope on screen and lists the steps in the order they were
+  applied, without sending. Check that the Signature entry comes after the Timestamp it should
+  cover, and that **Signed parts** names what the service's policy asks for.
+- The HTTP Log's **Request** tab shows the secured envelope exactly as it went on the wire.
+- Wirebench signs with exclusive canonicalisation, RSA-SHA256 or RSA-SHA1, and SHA-256 or SHA-1
+  digests. If the WSDL carries a security policy, the request's **Auth** tab lists its requirements
+  and how many the request does not meet yet.
+
+## Checklist
+
+- [ ] An **Incoming configuration** is selected on the request, with the service's certificate (or
+      its CA, with **Verify certificate chain** on) as the **Signature truststore**.
+- [ ] The tab label reads `WSS ✗`. The HTTP status alone says nothing about the signature.
+- [ ] One reference **differs**: compare the HTTP Log's raw **Response** bytes with what the
+      sender signed, and look for a reformatting intermediary.
+- [ ] Every reference **matches** but the SignatureValue does not: the certificate in `KeyInfo` is
+      not the one whose key signed.
+- [ ] **Signature valid** but **untrusted**: fix the truststore, not the message.
+- [ ] A `KeyInfo …` message: the certificate the message names is missing from the message or the
+      truststore, and the message says which.
+- [ ] **Body not signed**: the sender's signed parts do not include the Body.
+- [ ] Encrypted and signed: the sender must sign before it encrypts.
+- [ ] Timestamp failed: read the **Clock** line, fix the clock that is wrong, and change the skew
+      tolerance last.
+
+## Related
+
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/): configuring WS-Security on a request.
+- [Authentication](/wirebench/docs/guides/auth/#ws-security-soap): every WS-Security entry and keystore option.
+- [HTTP Log](/wirebench/docs/guides/http-log/): reading the raw exchange.
