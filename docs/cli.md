@@ -323,7 +323,7 @@ A step's `branches` can repeat it, go to another step or skip the next one ([des
 ## Data-driven runs
 
 `--data <file>` runs the selection, or the sequences, once per row of a CSV or JSON file (#336, see
-[the design](specs/2026-10-11-data-driven-runs-design.md)). Each row's columns are read as `${column}`, or `${#Data#column}` when a property has the same name:
+[the design](specs/2026-10-11-data-driven-runs-design.md)). Each row's columns are read as `${#Data#column}`:
 
 ```text
 wirebench run ./shop -e staging apis/accounts --data accounts.csv --reporter junit=reports/accounts.xml
@@ -332,10 +332,9 @@ wirebench run ./shop -e staging apis/accounts --data accounts.csv --reporter jun
 - **CSV**: the first line names the columns; RFC 4180 quoting (`"Smith, J"`, `""` for a quote, line breaks inside
   quotes). **JSON**: an array of objects; a number or boolean becomes its text, `null` an empty value, an object or
   array its JSON. Every value is text.
-- A cell is substituted as it is: a `${…}` inside a cell is not expanded, and a `${secret:…}` inside one is never
-  resolved. The `${column}` shorthand reaches a column last, after the environment, project, workspace and globals,
-  so a column never shadows a property; `${#Data#column}` reads the column whatever else is defined. A missing
-  column stays unresolved, as any missing property does.
+- `${#Data#column}` is substituted as it is: a `${…}` inside a cell is not expanded, a `${secret:…}` inside one is
+  never resolved, and the `${column}` shorthand never reaches a column. A missing column stays unresolved, as any
+  missing property does.
 - Scripts read the row with `iteration.data.get('column')`, and `iteration.index` (0-based) and `iteration.count`.
   The compatibility API's `pm.iterationData` reads the same row.
 - `--iterations <n>` runs that many iterations; without `--data` it repeats the selection `n` times. With more

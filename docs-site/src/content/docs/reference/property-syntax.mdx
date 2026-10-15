@@ -30,15 +30,12 @@ ${#Dynamic#guid}
 that defines `name`:
 
 ```
-Env → Project → Workspace → Global → Data
+Env → Project → Workspace → Global
 ```
-
-`Data` is there only during a [Runner](/wirebench/docs/guides/runner/) or `wirebench run --data` iteration,
-and comes last, so a data file's column never hides a property.
 
 `System` (the process environment) is never reached by the shorthand form — only `${#System#name}`
 reads it. This keeps a plain `${name}` from silently picking up an unrelated environment variable
-on your machine.
+on your machine. A data file's row is never reached by it either: only `${#Data#column}` reads a column.
 
 ## Scopes
 
@@ -50,7 +47,7 @@ on your machine.
 | `Global` | Properties set once for the whole app, independent of any project | Always |
 | `System` | The OS process environment (`process.env` by default) | Always, only via the explicit `${#System#name}` form |
 | `Dynamic` | A value generated for each send: a UUID, a timestamp, a random number or fake data | Always, via `${#Dynamic#name}` or `${$name}` |
-| `Data` | The current row of a data-driven run's data file | During a Runner or `wirebench run --data` iteration, via `${column}` (last in the chain) or `${#Data#column}` |
+| `Data` | The current row of a data-driven run's data file | During a Runner or `wirebench run --data` iteration, only via the explicit `${#Data#column}` form |
 | `Sequence` | Values the earlier steps of a running [sequence](/wirebench/docs/guides/sequences/) lifted from their responses, or that a request's [scripts](/wirebench/docs/guides/scripts/) set | Only via the explicit `${#Sequence#name}` form: in a sequence run, in `wirebench run`, and in the app's single sends, which read the project's session values |
 
 A `Sequence` value came from a server, so it follows stricter rules than the others. It is never
@@ -113,8 +110,7 @@ Dynamic scope. Reach such a property through its explicit scope, `${#Project#$x}
 
 ## Precedence
 
-The shorthand `${name}` checks, in order: **Env, then Project, then Workspace, then Global**, and in a
-data-driven run, last of all, **Data**. The
+The shorthand `${name}` checks, in order: **Env, then Project, then Workspace, then Global.** The
 first scope that defines `name` wins, even if its value is an empty string. Use an explicit
 `${#Scope#name}` form to reach a scope that a higher one is shadowing.
 
