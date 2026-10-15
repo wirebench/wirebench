@@ -308,7 +308,8 @@ export const explorerActions = {
 
   /**
    * Import cURL… for a project with no API yet: a cURL line becomes a REST request, which lives in an API, so
-   * one is made first (named as New API names it) and the dialog opens pointed at it.
+   * one is made first (named as New API names it) and the dialog opens pointed at it. The API is
+   * provisional: closing the dialog without importing removes it again.
    */
   importCurlIntoNewApi(projectId: string | undefined): void {
     if (projectId === undefined) {
@@ -324,7 +325,7 @@ export const explorerActions = {
         ),
       )
       .then((apiId) => {
-        explorerActions.importCurlInto(apiId);
+        useUiStore.getState().setImportCurlTarget({ kind: 'rest', apiId }, { provisional: true });
       })
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'New API failed');

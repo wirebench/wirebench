@@ -128,6 +128,11 @@ export interface UiStore extends UiSnapshot {
    * the palette and an explorer row — have nowhere else to put it.
    */
   readonly importCurlTarget: RequestImportCurlTarget | undefined;
+  /**
+   * The API made only to give an Import cURL… a home (an empty project has none): removed again when
+   * the dialog closes without importing, so a cancel leaves the project as it was.
+   */
+  readonly importCurlProvisionalApiId: string | undefined;
   /** Whether the New Project dialog (a name, nothing else) is open. Transient — never persisted. */
   readonly newProjectDialogOpen: boolean;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
@@ -191,7 +196,11 @@ export interface UiStore extends UiSnapshot {
   readonly setImportPostmanDialogOpen: (open: boolean) => void;
   readonly setFolderAuthId: (folderId: string | undefined) => void;
   readonly setFolderScriptsId: (folderId: string | undefined) => void;
-  readonly setImportCurlTarget: (target: RequestImportCurlTarget | undefined) => void;
+  /** `provisional` marks the target's API as made for this import alone; see `importCurlProvisionalApiId`. */
+  readonly setImportCurlTarget: (
+    target: RequestImportCurlTarget | undefined,
+    options?: { readonly provisional?: boolean },
+  ) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
@@ -299,6 +308,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     folderAuthId: undefined,
     folderScriptsId: undefined,
     importCurlTarget: undefined,
+    importCurlProvisionalApiId: undefined,
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
@@ -371,8 +381,11 @@ export const useUiStore = create<UiStore>((set, get) => {
     setFolderScriptsId: (folderId) => {
       set({ folderScriptsId: folderId });
     },
-    setImportCurlTarget: (target) => {
-      set({ importCurlTarget: target });
+    setImportCurlTarget: (target, options) => {
+      set({
+        importCurlTarget: target,
+        importCurlProvisionalApiId: options?.provisional === true && target?.kind === 'rest' ? target.apiId : undefined,
+      });
     },
     setNewProjectDialogOpen: (open) => {
       set({ newProjectDialogOpen: open });

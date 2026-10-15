@@ -422,6 +422,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Cancelling Import cURL in an empty project leaves no empty API.** The API made to hold the
+  request is removed again when the dialog closes without importing (#575).
 - **SSH quick wins.** Deleting a host asks first, naming how many open sessions will close, and those
   terminal panes and its Files tab close with it; Delete is drawn as a danger item. Dialogs share one
   layer scale (menus, then dialogs, then toasts), so a split divider no longer draws through the Save
