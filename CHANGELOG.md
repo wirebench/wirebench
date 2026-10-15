@@ -338,6 +338,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A REST response viewer that shows what each view is for.** Preview is offered only where it
+  renders something, an image or an HTML page; a separate **Hex** view dumps the bytes of any body,
+  and a binary body opens on it. The response tab that shows both directions' wire bytes is now
+  **Exchange**, so it no longer shares the name of the body's **Raw** view. **Pretty** formats HTML
+  as well as JSON and XML, one tag per line with script, style and pre content kept as it came, and
+  its **Wrap lines** toggle holds for the rest of the session. The Query tab opens a JSON body on
+  JSONPath and an XML one on XPath, and its Run button shows Ctrl+Enter on Linux and Windows (#574).
 - **Tab strips that fit, and a REST editor that fits a 1024×700 window.** A tab strip never grows
   wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
   shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer
