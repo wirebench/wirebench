@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { SshAuthWire } from '../../../shared/ssh-wire.js';
-import { INPUT_CLASS, type Provenance } from './inherited-field.js';
+import { INPUT_CLASS, sourceName, type Provenance } from './inherited-field.js';
 import { SecretSelect, useSecretNames } from './secret-fields.js';
 
 type Kind = 'inherit' | 'password' | 'key' | 'agent';
@@ -30,8 +30,10 @@ export function HostAuthSection(props: {
   /** The password typed inline; never shown back once saved. */
   readonly password?: string;
   readonly onPasswordChange?: (password: string) => void;
+  /** Names the no-value choice in place of Inherit, with nothing inherited shown: an identity's own form (#416). */
+  readonly noneLabel?: string;
 }) {
-  const { value, inherited, onChange, password = '', onPasswordChange } = props;
+  const { value, inherited, onChange, password = '', onPasswordChange, noneLabel } = props;
   const radioName = useId();
   const { names, reload: loadNames } = useSecretNames();
   const [setting, setSetting] = useState<{ name: string; value: string; error?: string } | undefined>(undefined);
@@ -52,14 +54,20 @@ export function HostAuthSection(props: {
   };
 
   const kind: Kind = value?.kind ?? 'inherit';
-  const kinds = KINDS.filter((k) => k.id !== 'inherit' || inherited.value !== undefined || value === undefined);
+  const kinds = KINDS.filter(
+    (k) => k.id !== 'inherit' || inherited.value !== undefined || value === undefined || noneLabel !== undefined,
+  ).map((k) => (k.id === 'inherit' && noneLabel !== undefined ? { ...k, label: noneLabel } : k));
   const pick = (next: Kind): void => {
     if (next === 'inherit') onChange(undefined);
     else if (next === 'agent') onChange({ kind: 'agent' });
     else onChange({ kind: next, secret: '' });
   };
   const source =
-    typeof inherited.from === 'object' ? `from ${inherited.from.group}` : inherited.from === 'default' ? 'default' : '';
+    typeof inherited.from === 'object'
+      ? `from ${sourceName(inherited.from)}`
+      : inherited.from === 'default'
+        ? 'default'
+        : '';
 
   return (
     <fieldset className="flex flex-col gap-2 text-xs">
@@ -79,7 +87,7 @@ export function HostAuthSection(props: {
           </label>
         ))}
       </div>
-      {value === undefined && (
+      {value === undefined && noneLabel === undefined && (
         <p className="text-fg-subtle">{`Inherited: ${describe(inherited.value)}${source === '' ? '' : ` (${source})`}`}</p>
       )}
       {value?.kind === 'password' && !savedSecret && (

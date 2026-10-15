@@ -59,6 +59,8 @@ const proxySchema = z.strictObject({
 
 const settingsSchema = z
   .strictObject({
+    /** A named identity (#416) supplying `user` and `auth`; a `user` or `auth` set at this level still wins. */
+    identity: z.string().regex(ID).optional(),
     user: z.string().min(1).optional(),
     port: z.number().int().min(1).max(65535).optional(),
     jump: z.string().regex(ID).optional(),
@@ -76,6 +78,17 @@ const settingsSchema = z
   })
   .default({});
 
+/**
+ * A user and a way to sign in, kept once and named by hosts and groups in different places (#416). Its
+ * credentials are `${secret:NAME}` tokens, like every credential here.
+ */
+const identitySchema = z.strictObject({
+  id: z.string().regex(ID),
+  name: z.string().min(1),
+  user: z.string().min(1).optional(),
+  auth: authSchema.optional(),
+});
+
 const hostSchema = z.strictObject({
   id: z.string().regex(ID),
   name: z.string().min(1),
@@ -91,6 +104,7 @@ const hostSchema = z.strictObject({
 export type SshAuth = z.infer<typeof authSchema>;
 export type SshSettings = z.infer<typeof settingsSchema>;
 export type SshProxy = z.infer<typeof proxySchema>;
+export type IdentityEntry = z.infer<typeof identitySchema>;
 export type HostEntry = z.infer<typeof hostSchema>;
 export interface GroupEntry {
   id: string;
@@ -125,6 +139,8 @@ const groupSchema: z.ZodType<GroupEntry> = z.lazy(() =>
 
 const fileSchema = z.strictObject({
   version: z.literal(1),
+  /** Left out when there are none, so files written before #416 read and write unchanged. */
+  identities: z.array(identitySchema).optional(),
   groups: z.array(groupSchema).default([]),
   hosts: z.array(hostSchema).default([]),
 });
@@ -220,6 +236,7 @@ export function parseHostsFile(text: string): HostsFile {
     );
   }
   checkIds(parsed.data);
+  checkIdentities(parsed.data);
   checkJumps(parsed.data);
   checkForwards(parsed.data);
   return parsed.data;
@@ -236,6 +253,29 @@ function checkIds(file: HostsFile): void {
       });
     }
     seen.set(entry.id, path);
+  }
+}
+
+/** Identity ids are their own namespace: unique among identities, and every `identity:` names one. */
+function checkIdentities(file: HostsFile): void {
+  const known = new Set<string>();
+  for (const identity of file.identities ?? []) {
+    if (known.has(identity.id)) {
+      throw new SshModelError('ssh-duplicate-id', `identity id "${identity.id}" is used twice`, {
+        id: identity.id,
+        paths: [`identities/${identity.id}`],
+      });
+    }
+    known.add(identity.id);
+  }
+  for (const { entry, kind } of walk(file)) {
+    const identity = entry.ssh.identity;
+    if (identity !== undefined && !known.has(identity)) {
+      throw new SshModelError('ssh-identity-unknown', `${kind} "${entry.id}" uses unknown identity "${identity}"`, {
+        id: entry.id,
+        identity,
+      });
+    }
   }
 }
 
@@ -295,24 +335,25 @@ function checkForwards(file: HostsFile): void {
   }
 }
 
+function authOut(auth: SshAuth): Record<string, unknown> {
+  return auth.kind === 'password'
+    ? { password: auth.password }
+    : auth.kind === 'key'
+      ? {
+          key: auth.key,
+          ...(auth.certificate === undefined ? {} : { certificate: auth.certificate }),
+          ...(auth.passphrase === undefined ? {} : { passphrase: auth.passphrase }),
+        }
+      : { agent: true };
+}
+
 function settings(ssh: SshSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  if (ssh.identity !== undefined) out['identity'] = ssh.identity;
   if (ssh.user !== undefined) out['user'] = ssh.user;
   if (ssh.port !== undefined) out['port'] = ssh.port;
   if (ssh.jump !== undefined) out['jump'] = ssh.jump;
-  if (ssh.auth !== undefined) {
-    const auth = ssh.auth;
-    out['auth'] =
-      auth.kind === 'password'
-        ? { password: auth.password }
-        : auth.kind === 'key'
-          ? {
-              key: auth.key,
-              ...(auth.certificate === undefined ? {} : { certificate: auth.certificate }),
-              ...(auth.passphrase === undefined ? {} : { passphrase: auth.passphrase }),
-            }
-          : { agent: true };
-  }
+  if (ssh.auth !== undefined) out['auth'] = authOut(ssh.auth);
   if (ssh.keepAlive !== undefined) out['keepAlive'] = ssh.keepAlive;
   if (ssh.connectTimeout !== undefined) out['connectTimeout'] = ssh.connectTimeout;
   if (ssh.forwardAgent !== undefined) out['forwardAgent'] = ssh.forwardAgent;
@@ -358,6 +399,14 @@ function group(g: GroupEntry): Record<string, unknown> {
 
 export function serializeHostsFile(file: HostsFile): string {
   const out: Record<string, unknown> = { version: file.version };
+  if (file.identities !== undefined && file.identities.length > 0) {
+    out['identities'] = file.identities.map((i) => ({
+      id: i.id,
+      name: i.name,
+      ...(i.user === undefined ? {} : { user: i.user }),
+      ...(i.auth === undefined ? {} : { auth: authOut(i.auth) }),
+    }));
+  }
   if (file.groups.length > 0) out['groups'] = file.groups.map(group);
   if (file.hosts.length > 0) out['hosts'] = file.hosts.map(host);
   return stringifyYaml(out, { lineWidth: 0 });

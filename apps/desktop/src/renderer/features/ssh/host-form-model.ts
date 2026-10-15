@@ -1,4 +1,10 @@
-import type { GroupEntryWire, HostsFileWire, SshAuthWire, SshSettingsWire } from '../../../shared/ssh-wire.js';
+import type {
+  GroupEntryWire,
+  HostsFileWire,
+  IdentityWire,
+  SshAuthWire,
+  SshSettingsWire,
+} from '../../../shared/ssh-wire.js';
 import { SSH_DEFAULTS } from '../../../shared/ssh-defaults.js';
 import { ancestorsOf, findGroup } from './hosts-store.js';
 import type { Provenance } from './inherited-field.js';
@@ -14,6 +20,33 @@ export function inheritedFrom<K extends keyof SshSettingsWire>(
   }
   const fallback = (SSH_DEFAULTS as Record<string, number>)[field];
   return { value: fallback as NonNullable<SshSettingsWire[K]> | undefined, from: 'default' };
+}
+
+/**
+ * Where `user` or `auth` comes from for an entry naming identity `own` inside `chain` (#416), as main resolves
+ * it: the entry's own identity first, then each group nearest first, its own value before the identity it
+ * names. An identity leaving the field unset passes on outwards; nothing anywhere is `default` with no value.
+ */
+export function inheritedLogin<K extends 'user' | 'auth'>(
+  identities: readonly IdentityWire[] | undefined,
+  chain: readonly GroupEntryWire[],
+  own: string | undefined,
+  field: K,
+): Provenance<NonNullable<SshSettingsWire[K]>> {
+  const viaIdentity = (id: string | undefined): Provenance<NonNullable<SshSettingsWire[K]>> | undefined => {
+    const identity = id === undefined ? undefined : identities?.find((i) => i.id === id);
+    const value = identity?.[field] as NonNullable<SshSettingsWire[K]> | undefined;
+    return identity === undefined || value === undefined ? undefined : { value, from: { identity: identity.name } };
+  };
+  const ownIdentity = viaIdentity(own);
+  if (ownIdentity !== undefined) return ownIdentity;
+  for (const g of [...chain].reverse()) {
+    const value = g.ssh[field];
+    if (value !== undefined) return { value, from: { group: g.name } };
+    const fromGroupIdentity = viaIdentity(g.ssh.identity);
+    if (fromGroupIdentity !== undefined) return fromGroupIdentity;
+  }
+  return { value: undefined, from: 'default' };
 }
 
 /** Whether the enclosing groups make an entry protected: the nearest group that says, else off by default. */

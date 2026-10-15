@@ -40,6 +40,8 @@ export const sshProxyWireSchema = z.strictObject({
 });
 
 export const sshSettingsWireSchema = z.strictObject({
+  /** A named identity (#416) supplying `user` and `auth` where this level sets neither. */
+  identity: z.string().optional(),
   user: z.string().optional(),
   port: z.number().optional(),
   jump: z.string().optional(),
@@ -80,6 +82,14 @@ export const envVarWireSchema = z.union([
 export const terminalEntryWireSchema = z.strictObject({
   scheme: z.string().optional(),
   fontSize: z.number().optional(),
+});
+
+/** A user and a way to sign in that hosts and groups anywhere in the file can name (#416). */
+export const identityWireSchema = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  user: z.string().optional(),
+  auth: sshAuthWireSchema.optional(),
 });
 
 export const hostEntryWireSchema = z.strictObject({
@@ -135,12 +145,25 @@ export const groupEntryWireSchema: z.ZodType<GroupEntryWire> = z.lazy(() =>
 
 export const hostsFileWireSchema = z.strictObject({
   version: z.literal(1),
+  identities: z.array(identityWireSchema).optional(),
   groups: z.array(groupEntryWireSchema),
   hosts: z.array(hostEntryWireSchema),
 });
 
 const prov = <T extends z.ZodType>(value: T) =>
   z.object({ value, from: z.union([z.literal('host'), z.literal('default'), z.object({ group: z.string() })]) });
+
+/** `user` and `auth` may also come from an identity (its id). */
+const loginProv = <T extends z.ZodType>(value: T) =>
+  z.object({
+    value,
+    from: z.union([
+      z.literal('host'),
+      z.literal('default'),
+      z.object({ group: z.string() }),
+      z.object({ identity: z.string() }),
+    ]),
+  });
 
 const forwardFromWireSchema = z.union([z.literal('host'), z.object({ group: z.string() })]);
 
@@ -175,9 +198,11 @@ export const resolvedHostWireSchema = z.object({
   path: z.array(z.string()),
   protected: prov(z.boolean()),
   ssh: z.object({
-    user: prov(z.string().optional()),
+    /** The nearest `identity:`; main always sends it. */
+    identity: prov(z.string().optional()).optional(),
+    user: loginProv(z.string().optional()),
     port: prov(z.number()),
-    auth: prov(sshAuthWireSchema.optional()),
+    auth: loginProv(sshAuthWireSchema.optional()),
     jump: prov(z.string().optional()),
     keepAlive: prov(z.number()),
     connectTimeout: prov(z.number()),
@@ -206,6 +231,7 @@ export const sshSaveHostsRequestSchema = z.strictObject({ file: hostsFileWireSch
 export type SshAuthWire = z.infer<typeof sshAuthWireSchema>;
 export type SshSettingsWire = z.infer<typeof sshSettingsWireSchema>;
 export type SshProxyWire = z.infer<typeof sshProxyWireSchema>;
+export type IdentityWire = z.infer<typeof identityWireSchema>;
 export type HostsFileWire = z.infer<typeof hostsFileWireSchema>;
 export type ResolvedHostWire = z.infer<typeof resolvedHostWireSchema>;
 export type ForwardEntryWire = z.infer<typeof forwardEntryWireSchema>;

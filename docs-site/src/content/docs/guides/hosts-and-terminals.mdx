@@ -77,6 +77,8 @@ The rules:
   (see [Certificates](#certificates)).
 - `env` on a group or a host maps variable names to values; see
   [Environment variables](#environment-variables).
+- `identities` at the top of the file and `identity` in a group's or a host's `ssh` share a user
+  and a sign-in across groups; see [Identities](#identities).
 
 ## Inheritance
 
@@ -91,6 +93,54 @@ In the host form, a field you haven't set shows the value it inherits, greyed, w
 from, for example `from prod` (or `default` for the built-in values). Turn on the override switch next to the field to edit the
 field on that host; turn it off again to go back to inheriting. Changing a group's key changes every
 host under it that doesn't override it.
+
+## Identities
+
+Group inheritance covers the hosts under one group. When the same user and credential sign in to
+hosts in different groups (a personal admin account, a deploy user), keep them once as an
+**identity** and name it from each host or group:
+
+```yaml
+version: 1
+identities:
+  - id: deploy
+    name: Deploy user
+    user: deploy
+    auth: { key: '${secret:deploy_key}' }
+groups:
+  - id: prod
+    name: Production
+    ssh: { identity: deploy }
+  - id: staging
+    name: Staging
+    hosts:
+      - id: web
+        name: web
+        address: 10.0.2.5
+        ssh: { identity: deploy, user: root }
+```
+
+An identity holds a `user`, an `auth`, or both, with `auth` written exactly as on a host
+(`${secret:NAME}` only). Its `id` follows the same rules as a host's, and only has to be unique among
+identities. An `identity` naming an id that isn't in the file is refused when the file is read.
+
+An identity gives `user` and `auth` to the level that names it, one field at a time. From the host
+outwards, each level's own `user` or `auth` comes first, then the identity that level names; a field
+the identity leaves unset is looked up further out. In the example, `web` signs in as `root` (its
+own user) with the deploy key (from its identity). A host naming an identity takes its user over one
+set on a group above it. When no level and no identity sets a field, it stays unset, as before.
+
+Identities are listed in **Keychain**, above the secrets, each with the hosts that sign in with it.
+**New identity** and **Edit** take a name, a user and a password, key or agent; a password typed
+there is stored as a secret, like a host's. Changing an identity changes every host that uses it.
+Deleting one that a host or group names asks first, then removes those references; the hosts keep
+their own settings.
+
+In the host form, **Identity** sits above **User** once the file has identities. Picking one fills
+**User** and **Authentication** from it, shown as `from identity Deploy user`; the override switch
+sets either on that host instead. On the connection screen, a password you save for a host that
+signs in through an identity is saved for the identity, and a host whose identity has no user offers
+**Save to identity** next to **Sign in as**.
 
 ## Secrets
 

@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Identities: one user and sign-in for hosts in any group.** `hosts.yaml` can name identities
+  (`identities: [{ id, name, user, auth }]`, credentials as `${secret:}` only) and a host or group
+  picks one with `identity:`. A user or sign-in set on a nearer level still wins, one field at a
+  time, and an unknown identity is refused when the file is read. **Keychain** lists identities with
+  the hosts that use them, adds and edits them, and asks before deleting one in use; the host form
+  has an **Identity** select above **User**, and the connection screen saves a typed password or user
+  to the identity the host signs in through (#416).
 - **FIDO2 security keys for SSH.** A host can sign in with a security key stored in the keychain
   (`sk-ssh-ed25519@openssh.com` or `sk-ecdsa-sha2-nistp256@openssh.com`): the connection screen says
   when to touch the key, and asks for its PIN when the key needs one, without storing it. **Generate
