@@ -5,6 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { detectPlatform } from '../../lib/platform.js';
+import { isPaletteChord } from '../../lib/terminal-focus.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useLocalTerminalsStore } from './local-terminal.js';
@@ -97,6 +98,8 @@ export function LocalTerminalTab({ tabId, active }: { readonly tabId: string; re
         }
         return false;
       }
+      // The palette's Ctrl+Shift+P is the app's; Ctrl+K stays the shell's.
+      if (isPaletteChord(event, platform)) return false;
       if (!isFindChord(event, platform)) return true;
       if (event.type === 'keydown') {
         event.preventDefault();

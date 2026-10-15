@@ -227,3 +227,36 @@ describe('the sftp commands', () => {
     expect(useFilesStore.getState().showHidden).toBe(true);
   });
 });
+
+describe('the toolbar (#537)', () => {
+  const tool = (name: string) =>
+    within(screen.getByTestId('files-toolbar')).getByRole<HTMLButtonElement>('button', { name });
+
+  it('acts on the selection of the pane in use, each button only when the selection allows it', async () => {
+    await mountTab();
+    expect(tool('New folder').disabled).toBe(false);
+    expect(tool('Rename').disabled).toBe(true);
+    expect(tool('Delete…').disabled).toBe(true);
+    fireEvent.click(row('notes.txt'));
+    expect(tool('Rename').disabled).toBe(false);
+    expect(tool('Copy to other pane').disabled).toBe(false);
+    fireEvent.click(tool('Permissions…'));
+    expect(useFilesStore.getState().dialogs[TAB]).toMatchObject({ kind: 'permissions', name: 'notes.txt' });
+    act(() => {
+      useFilesStore.getState().setDialog(TAB, undefined);
+    });
+    fireEvent.click(tool('Delete…'));
+    expect(useFilesStore.getState().dialogs[TAB]).toMatchObject({ kind: 'delete', names: ['notes.txt'] });
+  });
+
+  it("dims the selection of the pane not in use, and this machine's pane has no Permissions", async () => {
+    await mountTab();
+    fireEvent.click(row('notes.txt'));
+    expect(row('notes.txt').className).toContain('var(--color-accent)');
+    act(() => {
+      useFilesStore.getState().setActivePane(`${TAB}#local`);
+    });
+    expect(row('notes.txt').className).toContain('var(--color-hairline-strong)');
+    expect(within(screen.getByTestId('files-toolbar')).queryByRole('button', { name: 'Permissions…' })).toBeNull();
+  });
+});

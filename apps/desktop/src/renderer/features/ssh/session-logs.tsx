@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import * as Dialog from '@radix-ui/react-dialog';
 import { FileText, FolderOpen, Trash2 } from 'lucide-react';
+import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
@@ -442,7 +443,9 @@ function SessionLogsBody() {
         )}
       </div>
       <div className="flex justify-end">
-        <Dialog.Close className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">Close</Dialog.Close>
+        <Dialog.Close asChild>
+          <Button>Close</Button>
+        </Dialog.Close>
       </div>
     </Dialog.Content>
   );
@@ -544,7 +547,9 @@ function LogViewerBody({
         </pre>
       )}
       <div className="flex justify-end">
-        <Dialog.Close className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">Close</Dialog.Close>
+        <Dialog.Close asChild>
+          <Button>Close</Button>
+        </Dialog.Close>
       </div>
     </Dialog.Content>
   );

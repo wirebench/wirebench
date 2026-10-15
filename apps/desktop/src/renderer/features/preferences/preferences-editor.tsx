@@ -474,7 +474,12 @@ function SearchResults({
           {SETTINGS_SECTIONS.map((section) => (
             <SettingsSearchProvider
               key={section.id}
-              search={{ query, crumb: `${section.group} › ${section.label}`, section: section.label }}
+              search={{
+                query,
+                crumb: `${section.group} › ${section.label}`,
+                section: section.label,
+                ...(section.keywords === undefined ? {} : { keywords: section.keywords }),
+              }}
             >
               {section.searchable ? (
                 <SectionBody id={section.id} props={props} context={context} />

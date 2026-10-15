@@ -73,7 +73,7 @@ test('New rule… in the Port forwarding view adds a rule to the host picked, an
   const dialog = page.getByTestId('new-rule-dialog');
   // The only host is picked already.
   await expect(dialog.getByRole('combobox').locator('option')).toHaveText(['db']);
-  await dialog.getByLabel('Id', { exact: true }).fill('pg');
+  await dialog.getByLabel('Name', { exact: true }).fill('pg');
   await dialog.getByLabel('Port', { exact: true }).fill(String(port));
   await dialog.getByLabel('Target (as the host sees it)').fill(`127.0.0.1:${String(echo.port)}`);
   await dialog.getByRole('button', { name: 'Add rule' }).click();

@@ -10,6 +10,7 @@ import { Check, MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
 import { editHost, openInNewTab, openTerminalFor } from './connect.js';
+import { takeSecondPress } from './double-press.js';
 import { openFiles } from './files/open-files.js';
 import { useHostDelete } from './host-delete.js';
 import {
@@ -45,6 +46,13 @@ interface MenuKit {
   readonly SubContent: ComponentType<{ className?: string; children?: ReactNode }>;
   readonly Portal: ComponentType<{ children?: ReactNode }>;
   readonly Separator: ComponentType<{ className?: string }>;
+  readonly CheckboxItem: ComponentType<{
+    className?: string;
+    checked?: boolean;
+    onCheckedChange?: (checked: boolean) => void;
+    children?: ReactNode;
+  }>;
+  readonly ItemIndicator: ComponentType<{ className?: string; children?: ReactNode }>;
 }
 const CONTEXT_KIT: MenuKit = ContextMenu;
 const DROPDOWN_KIT: MenuKit = DropdownMenu;
@@ -181,7 +189,14 @@ export function HostActionsButton({
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+      <DropdownMenu.Trigger
+        asChild
+        // Opens on the pointer press, before the cards see a mouse press: a host card's double-click whose
+        // second press lands here connects instead of opening this menu (#537).
+        onPointerDown={(e) => {
+          takeSecondPress(e);
+        }}
+      >
         <button
           type="button"
           aria-label={`More actions for ${host.name}`}
@@ -206,69 +221,125 @@ export function HostActionsButton({
   );
 }
 
-/** Edit, New host here, New subgroup and Delete (only while empty) for `group`, on right-click of `children`. */
-export function GroupMenu({ group, children }: { readonly group: GroupEntryWire; readonly children: ReactElement }) {
-  const { file, save, openDialog } = useHostsStore();
+/**
+ * Edit, New host here, New subgroup, Log sessions, Show only this group and Delete (only while empty) for
+ * `group`.
+ */
+function GroupItems({ group, kit: M }: { readonly group: GroupEntryWire; readonly kit: MenuKit }) {
+  const { file, save, openDialog, groupFilter, setGroupFilter } = useHostsStore();
   const switches = useLogSwitchesStore((s) => s.switches);
   const empty = group.groups.length === 0 && group.hosts.length === 0;
   const logged = groupLogged(file, switches, group.id);
+  const only = groupFilter === group.id;
   return (
-    <ContextMenu.Root
-      onOpenChange={(open) => {
-        if (open) void useLogSwitchesStore.getState().load();
-      }}
-    >
+    <>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          openDialog({ mode: 'edit-group', id: group.id });
+        }}
+      >
+        Edit group…
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          openDialog({ mode: 'new-host', parent: group.id });
+        }}
+      >
+        New host here…
+      </M.Item>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          openDialog({ mode: 'new-group', parent: group.id });
+        }}
+      >
+        New subgroup…
+      </M.Item>
+      <M.CheckboxItem
+        className={ITEM_CLASS}
+        checked={logged}
+        onCheckedChange={(checked) => {
+          void useLogSwitchesStore.getState().set({ kind: 'group', id: group.id }, checked);
+        }}
+      >
+        Log sessions
+        <M.ItemIndicator className="ml-auto pl-3">
+          <Check size={12} aria-hidden="true" />
+        </M.ItemIndicator>
+      </M.CheckboxItem>
+      <M.Item
+        className={ITEM_CLASS}
+        onSelect={() => {
+          setGroupFilter(only ? undefined : group.id);
+        }}
+      >
+        {only ? 'Show all groups' : 'Show only this group'}
+      </M.Item>
+      <M.Separator className="my-1 h-px bg-hairline" />
+      <M.Item
+        className={ITEM_CLASS}
+        disabled={!empty}
+        onSelect={() => {
+          void save(removeGroup(file, group.id));
+        }}
+      >
+        Delete group
+      </M.Item>
+    </>
+  );
+}
+
+const loadSwitches = (open: boolean): void => {
+  if (open) void useLogSwitchesStore.getState().load();
+};
+
+/** The group's items on right-click of `children`. */
+export function GroupMenu({ group, children }: { readonly group: GroupEntryWire; readonly children: ReactElement }) {
+  return (
+    <ContextMenu.Root onOpenChange={loadSwitches}>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={CONTENT_CLASS}>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              openDialog({ mode: 'edit-group', id: group.id });
-            }}
-          >
-            Edit group…
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              openDialog({ mode: 'new-host', parent: group.id });
-            }}
-          >
-            New host here…
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              openDialog({ mode: 'new-group', parent: group.id });
-            }}
-          >
-            New subgroup…
-          </ContextMenu.Item>
-          <ContextMenu.CheckboxItem
-            className={ITEM_CLASS}
-            checked={logged}
-            onCheckedChange={(checked) => {
-              void useLogSwitchesStore.getState().set({ kind: 'group', id: group.id }, checked);
-            }}
-          >
-            Log sessions
-            <ContextMenu.ItemIndicator className="ml-auto pl-3">
-              <Check size={12} aria-hidden="true" />
-            </ContextMenu.ItemIndicator>
-          </ContextMenu.CheckboxItem>
-          <ContextMenu.Separator className="my-1 h-px bg-hairline" />
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            disabled={!empty}
-            onSelect={() => {
-              void save(removeGroup(file, group.id));
-            }}
-          >
-            Delete group
-          </ContextMenu.Item>
+          <GroupItems group={group} kit={CONTEXT_KIT} />
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
+  );
+}
+
+/** The group's items behind a ⋯ button on its heading, for whoever does not right-click. */
+export function GroupActionsButton({
+  group,
+  className = '',
+}: {
+  readonly group: GroupEntryWire;
+  readonly className?: string;
+}) {
+  return (
+    <DropdownMenu.Root onOpenChange={loadSwitches}>
+      <DropdownMenu.Trigger
+        asChild
+        // Opens on the pointer press, before the cards see a mouse press: a host card's double-click whose
+        // second press lands here connects instead of opening this menu (#537).
+        onPointerDown={(e) => {
+          takeSecondPress(e);
+        }}
+      >
+        <button
+          type="button"
+          aria-label={`More actions for ${group.name}`}
+          className={`inline-flex size-5 shrink-0 items-center justify-center rounded text-fg-subtle hover:bg-surface-hover hover:text-fg-default focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none ${className}`}
+        >
+          <MoreHorizontal size={13} aria-hidden="true" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="start" sideOffset={4} className={CONTENT_CLASS}>
+          <GroupItems group={group} kit={DROPDOWN_KIT} />
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

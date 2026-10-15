@@ -13,6 +13,8 @@ import {
   signInUserOf,
 } from './connect-store.js';
 import type { ConnectError } from './connect-errors.js';
+import { isQuickHostId, quickHostName, quickTargetOf, useQuickHostsStore } from './quick-hosts.js';
+import type { SshQuickTarget } from '../../../shared/ssh-wire.js';
 import { useRecentStore } from './recent-connections.js';
 import { isRetryableConnectError } from './reconnect.js';
 import type { AttemptOutcome } from './reconnect.js';
@@ -28,7 +30,8 @@ export interface Size {
  */
 function recordProblem({ paneId, hostId }: PaneLeaf, code: string, message: string): void {
   useHostsStore.getState().noteConnectFailed(paneId);
-  useRecentStore.getState().record(hostId, 'failed');
+  // A one-off server is no host of the recent list: it is gone with the window.
+  if (!isQuickHostId(hostId)) useRecentStore.getState().record(hostId, 'failed');
   useProblemsStore
     .getState()
     .add([{ groupId: `ssh:${hostId}`, source: 'hosts', severity: 'error', problem: { code, message } }]);
@@ -116,6 +119,7 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
   }
   const skPin = pendingPins.get(paneId);
   pendingPins.delete(paneId);
+  const quick = quickTargetOf(hostId);
   let result;
   try {
     result = await ipc().ssh.connect({
@@ -124,6 +128,7 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
       attemptId,
       ...signInRequest(paneId),
       ...(skPin === undefined ? {} : { skPin }),
+      ...(quick === undefined ? {} : { quick }),
     });
   } catch (error) {
     store.setPane(paneId, undefined);
@@ -143,7 +148,7 @@ async function connectOutcome(pane: PaneLeaf, size: Size): Promise<ConnectOutcom
       ...(agentForwarding === undefined ? {} : { agentForwarding }),
       ...(recording === true ? { recording } : {}),
     });
-    useRecentStore.getState().record(hostId, 'connected');
+    if (quick === undefined) useRecentStore.getState().record(hostId, 'connected');
     noteConnected(paneId, attemptId);
     return { kind: 'open', sessionId: result.value.sessionId };
   }
@@ -267,7 +272,11 @@ export function openTerminalFor(hostId: string): string {
 /** Opens another one-pane terminal tab on the host, whatever tabs it already has; returns its id. */
 export function openInNewTab(hostId: string): string {
   const hosts = useHostsStore.getState();
-  const title = hosts.resolved.find((h) => h.id === hostId)?.name ?? findHost(hosts.file, hostId)?.name ?? hostId;
+  const title =
+    hosts.resolved.find((h) => h.id === hostId)?.name ??
+    findHost(hosts.file, hostId)?.name ??
+    quickHostName(hostId) ??
+    hostId;
   const id = `ssh-terminal:${crypto.randomUUID()}`;
   useEditorsStore.getState().open({ id, kind: 'ssh-terminal', title, panes: onePane(hostId) });
   return id;
@@ -285,4 +294,31 @@ export function editHost(hostId: string): void {
   hosts.setHomeView('hosts');
   hosts.selectHost(hostId);
   hosts.openDialog({ mode: 'edit-host', id: hostId });
+}
+
+/**
+ * Connects to a server that is not saved (#537), with the agent: brings forward its terminal when it has one
+ * in this window, or opens one; `newTab` always opens another. Returns the tab's id.
+ */
+export function connectQuick(target: SshQuickTarget, newTab = false): string {
+  const hostId = useQuickHostsStore.getState().add(target);
+  return newTab ? openInNewTab(hostId) : openTerminalFor(hostId);
+}
+
+/** Opens New host on the Hosts tab, filled in from a one-off server: Save then keeps it in hosts.yaml. */
+export function saveQuickAsHost(target: SshQuickTarget): void {
+  const editors = useEditorsStore.getState();
+  editors.showSet('ssh');
+  editors.showStart();
+  const hosts = useHostsStore.getState();
+  hosts.setHomeView('hosts');
+  hosts.openDialog({
+    mode: 'new-host',
+    prefill: {
+      name: target.address,
+      address: target.address,
+      port: target.port,
+      ...(target.user === undefined ? {} : { user: target.user }),
+    },
+  });
 }

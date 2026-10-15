@@ -10,6 +10,7 @@ import { CommandPalette } from '../../src/renderer/shell/command-palette.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { resetCommands } from '../../src/renderer/lib/commands.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
+import { useQuickHostsStore } from '../../src/renderer/features/ssh/quick-hosts.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { writeRecent } from '../../src/renderer/features/ssh/recent-connections.js';
@@ -160,5 +161,40 @@ describe('hosts in the palette', () => {
     expect(picker.value).toBe('');
     expect(screen.getByText('api-1')).toBeDefined();
     expect(screen.queryByText('No matching host.')).toBeNull();
+  });
+});
+
+describe('connecting to a server that is not saved (#537)', () => {
+  beforeEach(() => {
+    useEditorsStore.getState().reset();
+    useHostsStore.setState({ resolved: [HOST], panes: {}, file: { version: 1, groups: [], hosts: [] } });
+    useUiStore.setState({ enabledAreas: ['explorer', 'ssh'] } as never);
+    useQuickHostsStore.setState({ targets: {} });
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('a search naming a server offers Connect to it, which opens its terminal unsaved', () => {
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="hosts" />);
+    expect(screen.queryByTestId('quick-connect')).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('Connect to host'), { target: { value: 'ops@db.example:2222' } });
+    expect(screen.getByTestId('quick-connect').textContent).toContain('Connect to ops@db.example:2222');
+    fireEvent.click(screen.getByTestId('quick-connect'));
+    const [id] = Object.keys(useQuickHostsStore.getState().targets);
+    expect(useEditorsStore.getState().tabs).toMatchObject([
+      { kind: 'ssh-terminal', title: 'ops@db.example:2222', panes: { kind: 'pane', hostId: id } },
+    ]);
+    expect(useHostsStore.getState().file.hosts).toEqual([]);
+  });
+
+  it('Save as host… opens New host filled in from the server', () => {
+    render(<CommandPalette open onOpenChange={() => undefined} context={context} mode="hosts" />);
+    fireEvent.change(screen.getByPlaceholderText('Connect to host'), { target: { value: 'ops@db.example:2222' } });
+    fireEvent.click(screen.getByTestId('quick-connect-save'));
+    expect(useHostsStore.getState().dialog).toEqual({
+      mode: 'new-host',
+      prefill: { name: 'db.example', address: 'db.example', port: 2222, user: 'ops' },
+    });
   });
 });

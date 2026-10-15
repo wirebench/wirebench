@@ -810,6 +810,16 @@ describe('PreferencesEditor — search', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Search settings').value).toBe('');
   });
 
+  it('finds the Terminal settings by "ssh" (#537)', () => {
+    render(<PreferencesEditor />);
+    search('ssh');
+    const crumbs = within(screen.getByTestId('settings-search-results'))
+      .getAllByTestId('setting-crumb')
+      .map((crumb) => crumb.textContent);
+    expect(crumbs.length).toBeGreaterThan(0);
+    expect(new Set(crumbs)).toEqual(new Set(['Workspace › Terminal']));
+  });
+
   it('says so when nothing matches', () => {
     render(<PreferencesEditor />);
     search('zzz-no-such-setting');

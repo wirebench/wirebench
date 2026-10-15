@@ -98,7 +98,7 @@ export function chainOf(file: HostsFileWire, groupId: string | undefined): Group
 }
 
 /**
- * The group a new entry goes in: the one the dialog was opened from, else the group chip the Hosts tab is
+ * The group a new entry goes in: the one the dialog was opened from, else the group the Hosts tab is
  * narrowed to. A group no longer in the file means the top level.
  */
 export function initialGroup(

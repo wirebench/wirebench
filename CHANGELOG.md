@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
   value as "from Preferences" with the same override switch as a group's, and the host details say so
   too. A default user completes a host that has a way to sign in. `wirebench ssh forward` does not read
   these per-machine settings and keeps the built-in values (#571).
+- **Connect to a server that isn't saved.** Typing `user@host:port` in **Connect to Host…** offers
+  **Connect to …**, a terminal signed in with the SSH agent that writes nothing to `hosts.yaml`, and
+  **Save as host…**, which opens New host filled in from it (#537).
 - **Terminal tab marks.** A terminal tab behind another one shows when it printed something new, when
   it waits for input (a password, passphrase or verification code prompt, or a yes/no question), and
   when its session failed or dropped. Each mark has its own shape as well as its own colour, split
@@ -344,6 +347,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **SSH area polish.** The Hosts cards keep the name on the first line and put "needs user" under it;
+  group chips give way to a ⋯ menu on each group heading with **Show only this group**; the SSH menu
+  hides zero counts and shows running forwards as a green dot; Recent shows only with more than six
+  hosts; a key's Copy public key, Attach certificate… and Set value… sit in its ⋯ menu; forwarding rows
+  say Local, Remote or Dynamic and "from this host" or "from group X", and the rule form's Id is Name;
+  the split picker puts the current pane's host first and marks hosts that need a user; the Files tab has
+  a toolbar and one selection style; a snippet run with an empty variable asks first; Settings search
+  finds Terminal under "ssh"; <kbd>Ctrl+Shift+P</kbd> opens the palette from a terminal, and the title
+  bar says so; and the status bar shows the focused session instead of the request items, without
+  counting failed SSH connects as request problems (#537).
 - **Tab strips that fit, and a REST editor that fits a 1024×700 window.** A tab strip never grows
   wider than its pane any more: the tabs that don't fit move into a **More ▾** menu at its end, which
   shows the selected tab's name when that tab is one of them. Picking Assertions or Snapshot no longer

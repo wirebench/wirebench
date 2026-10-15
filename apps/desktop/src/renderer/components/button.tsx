@@ -1,15 +1,18 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   readonly variant?: Variant;
+  readonly ref?: Ref<HTMLButtonElement>;
 }
 
 const VARIANTS: Readonly<Record<Variant, string>> = {
   primary: 'bg-accent text-fg-on-accent hover:bg-accent-hover border-transparent',
   secondary: 'bg-surface-raised text-fg-default hover:bg-surface-hover border-hairline-strong',
   ghost: 'bg-transparent text-fg-muted hover:bg-surface-hover hover:text-fg-default border-transparent',
+  /** An act that destroys something: replace a file, delete. */
+  danger: 'bg-status-danger text-fg-on-accent hover:opacity-90 border-transparent',
 };
 
 /** The classes a button takes when a ▾ is joined to its right, as one split button. */

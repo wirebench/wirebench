@@ -19,6 +19,7 @@ import {
   Variable,
 } from 'lucide-react';
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../../components/button.js';
+import { SELECTED_CLASS } from '../../../components/selection.js';
 import { ConfirmDialog } from '../../../components/confirm-dialog.js';
 import type { SnippetListItemWire, SnippetsFileWire } from '../../../../shared/snippets-wire.js';
 import { INPUT_CLASS as FIELD_CLASS } from '../inherited-field.js';
@@ -257,7 +258,7 @@ function SnippetRow({ item }: { readonly item: SnippetListItemWire }) {
     <li
       data-snippet-id={item.id}
       data-testid={`snippet-item-${item.id}`}
-      className={`group flex items-center pr-2 ${selected ? 'bg-accent-muted' : 'hover:bg-surface-raised'}`}
+      className={`group flex items-center pr-2 ${selected ? SELECTED_CLASS : 'hover:bg-surface-raised'}`}
     >
       <button
         type="button"
@@ -276,7 +277,7 @@ function SnippetRow({ item }: { readonly item: SnippetListItemWire }) {
           <span className="truncate font-mono text-xs text-fg-subtle">{item.firstLine}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5 text-fg-subtle">
-          {item.variables.length > 0 && <Marker label="Has variables" icon={Variable} />}
+          {item.variables.length > 0 && <Marker label={variablesLabel(item.variables)} icon={Variable} />}
           {item.secrets.length > 0 && <Marker label="Uses a secret" icon={KeyRound} />}
           {item.confirm && <Marker label="Always confirms" icon={ShieldAlert} />}
         </span>
@@ -532,6 +533,12 @@ function NameDialog(props: {
       </Dialog.Portal>
     </Dialog.Root>
   );
+}
+
+/** "Has 1 variable: host", "Has 2 variables: host, port": the marker's tooltip and name. */
+export function variablesLabel(variables: readonly { readonly name: string }[]): string {
+  const count = variables.length;
+  return `Has ${String(count)} ${count === 1 ? 'variable' : 'variables'}: ${variables.map((v) => v.name).join(', ')}`;
 }
 
 function Marker({ label, icon: Icon }: { readonly label: string; readonly icon: typeof Variable }) {

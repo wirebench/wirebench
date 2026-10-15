@@ -10,6 +10,8 @@ import { INPUT_CLASS } from './inherited-field.js';
 import { connectFix } from './connect-errors.js';
 import { setSignInUser, useConnectStore } from './connect-store.js';
 import { OsIcon, osOf } from './os-icon.js';
+import { saveQuickAsHost } from './connect.js';
+import { isQuickHostId, useQuickHostsStore } from './quick-hosts.js';
 import { formatDuration, stepDuration, stepLabel } from './connect-progress.js';
 import type { ConnectLogLine, ConnectPurpose, ConnectStep, ConnectView } from './connect-progress.js';
 import { TYPE_AHEAD_LIMIT, type TypeAheadState } from './type-ahead.js';
@@ -241,16 +243,19 @@ function SignInAsForm({
           Connect
         </Button>
       </div>
-      <label className="flex items-center gap-2 text-xs text-fg-muted">
-        <input
-          type="checkbox"
-          checked={save}
-          onChange={(e) => {
-            setSave(e.target.checked);
-          }}
-        />
-        {identity === undefined ? 'Save to host' : `Save to identity ${identity.name}`}
-      </label>
+      {/* A one-off server has no host to save to (#537): Save as host… keeps it, user and all. */}
+      {!isQuickHostId(hostId) && (
+        <label className="flex items-center gap-2 text-xs text-fg-muted">
+          <input
+            type="checkbox"
+            checked={save}
+            onChange={(e) => {
+              setSave(e.target.checked);
+            }}
+          />
+          {identity === undefined ? 'Save to host' : `Save to identity ${identity.name}`}
+        </label>
+      )}
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">
           {error}
@@ -394,6 +399,7 @@ export function ConnectScreen({
   overlay = false,
 }: ConnectScreenProps) {
   const host = useHostsStore((s) => s.resolved.find((h) => h.id === hostId));
+  const quick = useQuickHostsStore((s) => s.targets[hostId]);
   const hostsFile = useHostsStore((s) => s.file);
   // The identity the host signs in through, and the one its password comes from (#416).
   const identityId = host?.ssh.identity?.value;
@@ -582,8 +588,14 @@ export function ConnectScreen({
             <Button variant={retryPrimary ? 'primary' : 'secondary'} onClick={onRetry}>
               Retry
             </Button>
-            <Button variant={!retryPrimary && fix?.ask === undefined ? 'primary' : 'secondary'} onClick={onEditHost}>
-              Edit host
+            <Button
+              variant={!retryPrimary && fix?.ask === undefined ? 'primary' : 'secondary'}
+              onClick={() => {
+                if (quick === undefined) onEditHost();
+                else saveQuickAsHost(quick);
+              }}
+            >
+              {quick === undefined ? 'Edit host' : 'Save as host…'}
             </Button>
             <Button variant="ghost" onClick={onClose}>
               Close

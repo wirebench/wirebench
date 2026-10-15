@@ -36,7 +36,8 @@ test('attach a certificate to a keychain key and sign in with it', async () => {
   await form.getByRole('button', { name: 'Store' }).click();
   const row = page.getByTestId('secret-row-ci_key');
   await expect(row).toContainText(/ed25519 · SHA256:/, { timeout: 30_000 });
-  await row.getByRole('button', { name: 'Attach certificate…' }).click();
+  await row.getByRole('button', { name: 'More actions for ci_key' }).click();
+  await page.getByRole('menuitem', { name: 'Attach certificate…' }).click();
   const attach = page.getByTestId('attach-certificate-dialog');
   await attach.getByLabel('Certificate', { exact: true }).fill(server.certify('user_ed25519'));
   await attach.getByRole('button', { name: 'Attach' }).click();
