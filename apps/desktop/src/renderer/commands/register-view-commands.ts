@@ -7,6 +7,7 @@ import { cycleTheme } from '../lib/theme-actions.js';
 import type { RequestViewType, ResponseViewType } from '../state/editors.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useUiStore } from '../state/ui.js';
+import { rightPanelFor } from '../shell/right-panel.js';
 import { activeRequestId, hasActiveRequest, ui } from './command-helpers.js';
 
 /** The request pane's four views, as `view.request*` commands. Labels live in the catalog. */
@@ -65,6 +66,9 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
   });
   registerCommand({
     ...catalogEntry('view.toggleCode'),
+    // The areas without requests (SSH, Environments) hold another panel there instead.
+    when: () => rightPanelFor(useEditorsStore.getState().displayedSet) === 'code',
+    whenScope: 'area.code',
     run: () => {
       ui().toggleCode();
     },

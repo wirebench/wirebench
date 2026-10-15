@@ -20,6 +20,7 @@ function renderRail() {
 describe('RightRail', () => {
   beforeEach(() => {
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+    useEditorsStore.setState({ displayedSet: 'explorer' });
   });
 
   afterEach(() => {
@@ -79,5 +80,12 @@ describe('RightRail', () => {
       useHostsStore.setState(hosts, true);
       useForwardsStore.getState().reset();
     }
+  });
+
+  it('has no Code icon in the Environments area', () => {
+    useEditorsStore.setState({ displayedSet: 'environments' });
+    renderRail();
+
+    expect(screen.queryByTestId('rail-code')).toBeNull();
   });
 });

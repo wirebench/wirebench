@@ -57,8 +57,8 @@ sandbox` that a CRM request can never pick by accident.
 
 <Steps>
 
-1. Open the environment's page. Under the name, **Applies to** reads **All projects** or
-   **Selected projects**.
+1. Open the environment's page. The **Environment details** panel opens on the right; its
+   **Applies to** reads **All projects** or **Selected projects**.
 2. Choose **Selected projects**. A list of the workspace's projects appears with every one ticked,
    so nothing drops out until you clear a box.
 3. Clear the projects it should not apply to.
@@ -89,7 +89,10 @@ applying to every project, and if they edit it the scope is lost.
 ## Colour an environment and protect it
 
 Production should look different from local, and should be hard to hit by accident. Both settings
-sit under the name on an environment's page.
+are in the **Environment details** panel, on the right of an environment's page. The panel also
+shows the environment's name, where it lives and how many variables it sets. The right rail's
+icon opens and closes it, and <kbd>Escape</kbd> puts it away. There is no Code panel in the
+Environments area.
 
 - **Colour** — pick one of the eight swatches, type a custom `#rrggbb`, or choose **None**. The
   environment switcher shows the colour as a dot beside each environment's name. The active

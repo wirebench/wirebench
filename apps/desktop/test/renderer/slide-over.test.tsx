@@ -1,10 +1,11 @@
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SlideOver } from '../../src/renderer/shell/slide-over.js';
 
-function renderSlideOver(overrides: { width?: number; open?: boolean } = {}) {
+function renderSlideOver(overrides: { width?: number; open?: boolean; children?: ReactNode } = {}) {
   const onClose = vi.fn();
   const onWidthChange = vi.fn();
   const onToggle = vi.fn();
@@ -20,7 +21,7 @@ function renderSlideOver(overrides: { width?: number; open?: boolean } = {}) {
         onToggle={onToggle}
         onClose={onClose}
       >
-        <p>panel body</p>
+        {overrides.children ?? <p>panel body</p>}
       </SlideOver>
     </TooltipPrimitive.Provider>,
   );
@@ -147,6 +148,20 @@ describe('SlideOver', () => {
     fireEvent.doubleClick(screen.getByTestId('panel-handle-slide-over'));
 
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Escape in a text field to cancel that edit, without closing', () => {
+    const { onClose } = renderSlideOver({ children: <input aria-label="Field" /> });
+    const field = screen.getByLabelText('Field');
+    field.focus();
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    document.body.append(box);
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    box.remove();
   });
 
   it('ignores Escape while closed — there is no listener to leave behind', () => {
