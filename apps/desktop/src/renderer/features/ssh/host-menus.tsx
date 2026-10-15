@@ -10,6 +10,7 @@ import { Check, MoreHorizontal } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import type { GroupEntryWire, HostEntryWire } from '../../../shared/ssh-wire.js';
 import { editHost, openInNewTab, openTerminalFor } from './connect.js';
+import { takeSecondPress } from './double-press.js';
 import { openFiles } from './files/open-files.js';
 import { useHostDelete } from './host-delete.js';
 import {
@@ -188,7 +189,14 @@ export function HostActionsButton({
 }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+      <DropdownMenu.Trigger
+        asChild
+        // Opens on the pointer press, before the cards see a mouse press: a host card's double-click whose
+        // second press lands here connects instead of opening this menu (#537).
+        onPointerDown={(e) => {
+          takeSecondPress(e);
+        }}
+      >
         <button
           type="button"
           aria-label={`More actions for ${host.name}`}
@@ -311,7 +319,14 @@ export function GroupActionsButton({
 }) {
   return (
     <DropdownMenu.Root onOpenChange={loadSwitches}>
-      <DropdownMenu.Trigger asChild>
+      <DropdownMenu.Trigger
+        asChild
+        // Opens on the pointer press, before the cards see a mouse press: a host card's double-click whose
+        // second press lands here connects instead of opening this menu (#537).
+        onPointerDown={(e) => {
+          takeSecondPress(e);
+        }}
+      >
         <button
           type="button"
           aria-label={`More actions for ${group.name}`}

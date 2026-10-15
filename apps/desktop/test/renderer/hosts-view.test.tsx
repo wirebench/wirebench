@@ -820,6 +820,19 @@ describe('Group headings', () => {
     expect(screen.queryByTestId('hosts-group-filter')).toBeNull();
     expect(screen.getByText('beta')).toBeDefined();
   });
+  it("a card double-click whose second press lands on a heading's ⋯ connects, and the menu stays shut", () => {
+    useEditorsStore.getState().reset();
+    render(<SshHome />);
+    // The first press opens the details, the header wraps, and the heading moves under the pointer.
+    fireEvent.mouseDown(screen.getByTestId('host-row-a'), { detail: 1, clientX: 40, clientY: 40 });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for Production' }), {
+      button: 0,
+      clientX: 41,
+      clientY: 40,
+    });
+    expect(activeTerminalHost()).toBe('a');
+    expect(screen.queryByRole('menuitem', { name: 'New host here…' })).toBeNull();
+  });
   it('the ungrouped section has no ⋯', () => {
     render(<SshHome />);
     expect(screen.queryByRole('button', { name: 'More actions for Ungrouped' })).toBeNull();
