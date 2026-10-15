@@ -529,7 +529,9 @@ works through jump hosts exactly as the terminal does.
 The tab is named after the host with **· Files**. It has its own SSH connection, separate from any
 terminal to the same host, so it signs in and checks the host key the same way (see
 [Host keys](#host-keys)). While it connects, or after it fails, the host's pane shows the same
-[connection screen](#the-connection-screen) as a terminal, ending in **Starting SFTP**. Like a terminal, it keeps its folders and copies while you switch to
+[connection screen](#the-connection-screen) as a terminal, ending in **Starting SFTP**. If the
+connection ends later, the pane says so, for example *Connection to box lost · 21:31*, with **Reconnect**
+and **Close**; its last listing stays in view, dimmed, until it connects again. Like a terminal, it keeps its folders and copies while you switch to
 another tab, ends when you close it or switch workspace, and is not restored on restart.
 
 ### The two panes

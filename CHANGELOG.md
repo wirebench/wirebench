@@ -23,6 +23,12 @@ All notable changes to this project are documented here. The format follows
   closing the Host details panel; an open panel shows the selected host. The right rail's icon (and
   Edit) opens it; its close icon, Escape and the rail's icon close it. Whether it is open is remembered
   on this machine and restored after a restart, where it asks for a host until one is picked (#582).
+- **One calm state for a lost connection.** While a dropped terminal reconnects it stays in view, dimmed,
+  under one bar with the countdown, **Reconnect now**, **Stop** and **Show log**; the connection screen
+  comes back only once the attempts give up, with its log folded. A Files pane whose connection ends
+  says so ("Connection to box lost · 21:31") with **Reconnect** as the main button, over its last
+  listing, dimmed. The connection log pins its one-sentence summary above the lines and shows them in
+  time order (#590).
 
 ## [6.1.0] - 2026-10-15
 

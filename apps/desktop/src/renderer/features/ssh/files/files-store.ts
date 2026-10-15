@@ -37,6 +37,8 @@ export function otherPaneId(paneId: string): string {
 export interface PaneError {
   readonly code: string;
   readonly message: string;
+  /** When the connection ended (ms since the epoch), for a pane whose session main closed. */
+  readonly at?: number;
 }
 
 export type SortColumn = 'name' | 'size' | 'mtime' | 'mode';
@@ -531,7 +533,7 @@ export const useFilesStore = create<FilesState>()((set, get) => {
       patch(tabId, {
         place: { kind: 'remote', hostId: pane.place.hostId },
         status: 'error',
-        error: { code: 'sftp-closed', message: 'The connection to the host ended.' },
+        error: { code: 'sftp-closed', message: 'The connection to the host ended.', at: Date.now() },
       });
     },
 
