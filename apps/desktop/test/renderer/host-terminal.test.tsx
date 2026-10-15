@@ -155,7 +155,7 @@ describe('the terminal in host details', () => {
   };
 
   it('shows the scheme and size with their source', () => {
-    useHostsStore.setState({ resolved: [host], selectedHostId: 'db-1', detailsOpen: true, dialog: null });
+    useHostsStore.setState({ resolved: [host], selectedHostId: 'db-1', dialog: null });
     render(<HostDetails />);
     const terminal = screen.getByRole('region', { name: 'Terminal' });
     expect(terminal.textContent).toContain('SchemeRed backgroundfrom Production');
@@ -171,7 +171,6 @@ describe('the terminal in host details', () => {
         },
       ],
       selectedHostId: 'db-1',
-      detailsOpen: true,
       dialog: null,
     });
     render(<HostDetails />);

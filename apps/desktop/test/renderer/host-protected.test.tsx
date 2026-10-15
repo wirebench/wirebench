@@ -91,7 +91,6 @@ beforeEach(() => {
     panes: {},
     homeView: 'hosts',
     selectedHostId: undefined,
-    detailsOpen: false,
   });
 });
 afterEach(cleanup);
@@ -203,7 +202,7 @@ describe('Protected markers', () => {
   });
 
   it("a protected host's details show the shield", () => {
-    useHostsStore.setState({ selectedHostId: 'api', detailsOpen: true });
+    useHostsStore.setState({ selectedHostId: 'api' });
     render(<HostDetails />);
     expect(within(screen.getByTestId('host-details')).getByRole('img', { name: 'Protected' })).toBeDefined();
   });

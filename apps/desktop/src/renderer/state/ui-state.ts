@@ -111,6 +111,11 @@ export interface UiSnapshot {
     readonly width: number;
     /** Each area's own width, set when the user drags the slide-over while in that area. */
     readonly widthByView?: Partial<Record<SidebarView, number>>;
+    /**
+     * Whether Host details shows beside the SSH Hosts tab. Its own flag, not `open`: the two panels
+     * live in different areas and each keeps its own shown/hidden state. Absent reads as hidden.
+     */
+    readonly hostDetailsOpen?: boolean;
     /** The Code panel's POSIX/PowerShell choice; carried here since the panel now lives in the slide-over. */
     readonly codeShell: CodeShell;
     /** The language the Code panel shows, picked last; `curl` uses {@link codeShell}. */
@@ -210,8 +215,10 @@ function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['
   const width = record?.['width'];
   const codeShell = record?.['codeShell'] ?? legacyCodeShell;
   const widthByView = widthsByView(record?.['widthByView']);
+  const hostDetailsOpen = record?.['hostDetailsOpen'];
   return {
     ...(widthByView === undefined ? {} : { widthByView }),
+    ...(typeof hostDetailsOpen === 'boolean' ? { hostDetailsOpen } : {}),
     open: typeof open === 'boolean' ? open : DEFAULT_UI_STATE.slideOver.open,
     width: typeof width === 'number' && width !== PREVIOUS_SLIDE_OVER_WIDTH ? width : DEFAULT_UI_STATE.slideOver.width,
     codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.slideOver.codeShell,

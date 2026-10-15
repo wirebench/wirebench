@@ -255,6 +255,8 @@ export interface UiStore extends UiSnapshot {
   readonly openCode: () => void;
   /** Closes the Code slide-over unconditionally — the close icon and Escape. */
   readonly closeCode: () => void;
+  /** Shows or hides Host details beside the SSH Hosts tab; remembered on this machine like the rest of the layout. */
+  readonly setHostDetailsOpen: (open: boolean) => void;
   readonly showSidebarView: (view: SidebarView) => void;
   /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
   readonly setSidebarView: (view: SidebarView) => void;
@@ -561,6 +563,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     closeCode: () =>
       update((draft) => {
         draft.slideOver.open = false;
+      }),
+    setHostDetailsOpen: (open) =>
+      update((draft) => {
+        draft.slideOver.hostDetailsOpen = open;
       }),
 
     showSidebarView: (view) =>

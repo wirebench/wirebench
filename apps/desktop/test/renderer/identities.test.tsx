@@ -112,7 +112,6 @@ beforeEach(() => {
     panes: {},
     homeView: 'keychain',
     selectedHostId: undefined,
-    detailsOpen: false,
     importOpen: false,
   });
 });

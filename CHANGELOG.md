@@ -17,6 +17,13 @@ All notable changes to this project are documented here. The format follows
   **Stop Forwarding Group…**, and `wirebench ssh forward --group <id>` opens a group from the command
   line (#583).
 
+### Changed
+
+- **Host details opens and closes only when asked.** Clicking a host selects it without opening or
+  closing the Host details panel; an open panel shows the selected host. The right rail's icon (and
+  Edit) opens it; its close icon, Escape and the rail's icon close it. Whether it is open is remembered
+  on this machine and restored after a restart, where it asks for a host until one is picked (#582).
+
 ## [6.1.0] - 2026-10-15
 
 ### Added

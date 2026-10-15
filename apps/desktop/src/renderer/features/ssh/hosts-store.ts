@@ -12,6 +12,7 @@ import type {
 import { ipc } from '../../state/ipc-client.js';
 import { failWaitingAttempt } from './connect-store.js';
 import { useProblemsStore } from '../../state/problems.js';
+import { useUiStore } from '../../state/ui.js';
 
 /** What Save as host… hands the New host form from a one-off server (#537). */
 export interface HostPrefill {
@@ -89,16 +90,19 @@ interface HostsState {
   setHomeView: (view: SshHomeView) => void;
   /** The host picked on the Hosts tab: its card is highlighted and its details can show on the right. */
   selectedHostId: string | undefined;
-  /** Whether the details slide-over is wanted; picking a host asks for it, Escape or its close icon put it away. */
-  detailsOpen: boolean;
   /** What is known of each server's OS on this machine, by `address:port` (see {@link osKeyOf}). */
   osByHost: Readonly<Record<string, SshHostOsWire>>;
   refreshOs: () => Promise<void>;
   /** The group the Hosts tab is narrowed to (its subgroups included), if any. */
   groupFilter: string | undefined;
   setGroupFilter: (groupId: string | undefined) => void;
-  /** Picks a host (or none) and opens its details. */
+  /** Picks a host (or none). It neither opens nor closes the details: the panel stays as the user left it. */
   selectHost: (id: string | undefined) => void;
+  /**
+   * Shows or hides the details slide-over. Whether it shows is kept in the UI layout (per machine,
+   * `slideOver.hostDetailsOpen`), not here: the right rail's icon and Edit open it; Escape, its close icon
+   * and the rail's icon put it away. Picking a host does neither.
+   */
   setDetailsOpen: (open: boolean) => void;
   file: HostsFileWire;
   resolved: readonly ResolvedHostWire[];
@@ -184,7 +188,6 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
   setHomeView: (homeView) => {
     set({ homeView });
   },
-  detailsOpen: false,
   // Per machine, not per workspace: what a server runs does not change with the workspace open.
   osByHost: {},
   async refreshOs() {
@@ -203,11 +206,12 @@ export const useHostsStore = create<HostsState>()((set, get) => ({
     // Picking another host leaves the one being edited: its form lives in the details panel.
     const { dialog } = get();
     const leaving = dialog?.mode === 'edit-host' && dialog.id !== selectedHostId;
-    set({ selectedHostId, detailsOpen: selectedHostId !== undefined, ...(leaving ? { dialog: null } : {}) });
+    set({ selectedHostId, ...(leaving ? { dialog: null } : {}) });
   },
-  setDetailsOpen: (detailsOpen) => {
+  setDetailsOpen: (open) => {
     // Putting the panel away cancels an edit in it.
-    set({ detailsOpen, ...(!detailsOpen && get().dialog?.mode === 'edit-host' ? { dialog: null } : {}) });
+    if (!open && get().dialog?.mode === 'edit-host') set({ dialog: null });
+    useUiStore.getState().setHostDetailsOpen(open);
   },
   filter: '',
   selectedTags: [],
