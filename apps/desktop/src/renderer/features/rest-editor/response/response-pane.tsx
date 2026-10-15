@@ -279,8 +279,8 @@ export function RestResponsePane({
             {activeTab === 'query' && (
               <div data-testid="rest-response-query" className="min-h-0 flex-1">
                 {/* The same view the SOAP response uses, over whichever document this response is:
-                    XPath 3.1 covers JSON through its maps, arrays and `?` lookup, so a JSON body
-                    needs no second query language. A body with no text form has nothing to query. */}
+                    a JSON body opens on JSONPath, with XPath 3.1 (maps, arrays, `?` lookup) beside
+                    it. A body with no text form has nothing to query. */}
                 {queryDocument !== undefined ? (
                   <Suspense fallback={<p className="p-3 text-sm text-fg-subtle">Loading…</p>}>
                     <QueryView requestId={requestId} xml={queryDocument} documentKind="json" />
