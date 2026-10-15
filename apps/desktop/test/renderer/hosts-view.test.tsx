@@ -236,6 +236,15 @@ describe('Keychain', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Store' }));
     expect(setSecret).toHaveBeenCalledWith({ name: 'FRESH', value: 'v' });
   });
+  it('Escape closes the New secret form and stores nothing', async () => {
+    useHostsStore.setState({ homeView: 'keychain' });
+    render(<SshHome />);
+    await userEvent.click(screen.getAllByRole('button', { name: /New secret/ })[0]!);
+    await userEvent.type(screen.getByLabelText('Secret name'), 'FRESH');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('form', { name: 'Store a secret' })).toBeNull();
+    expect(setSecret).not.toHaveBeenCalled();
+  });
   it('the search narrows the names; one that hides them all offers Clear search', async () => {
     useHostsStore.setState({ homeView: 'keychain' });
     render(<SshHome />);

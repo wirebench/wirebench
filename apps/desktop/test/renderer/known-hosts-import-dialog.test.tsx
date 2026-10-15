@@ -92,6 +92,16 @@ describe('KnownHostsImportDialog', () => {
     expect(useHostsStore.getState().knownHostsRevision).toBe(revision + 1);
   });
 
+  it('with nothing to trust, offers only Close', async () => {
+    knownHostsImportPreview.mockResolvedValueOnce({ ok: true, value: { ...PREVIEW, add: [], conflicts: [] } });
+    render(<KnownHostsImportDialog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Read ~/.ssh/known_hosts' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('button', { name: /^Trust/ })).toBeNull();
+    expect(useHostsStore.getState().knownHostsImportOpen).toBe(false);
+    expect(knownHostsImportApply).not.toHaveBeenCalled();
+  });
+
   it('replacing a conflict needs the changed-key confirmation first', async () => {
     await openReport();
     await userEvent.click(screen.getByLabelText(`Replace the ${ED} key of db.internal:2222`));

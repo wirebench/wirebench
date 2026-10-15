@@ -14,12 +14,14 @@ import {
   KeyRound,
   LayoutGrid,
   List,
+  MoreHorizontal,
   Plus,
   Server,
   ShieldCheck,
 } from 'lucide-react';
 import { Button, SPLIT_HEAD_CLASS, SPLIT_TAIL_CLASS } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { showToast } from '../../components/toast.js';
 import type { ResolvedHostWire, SshKnownHostWire, SshSecretNameWire } from '../../../shared/ssh-wire.js';
 import { ipc } from '../../state/ipc-client.js';
 import { HostCards } from './host-cards.js';
@@ -35,7 +37,6 @@ import { SSH_VIEWS } from './ssh-views.js';
 import {
   AttachCertificateDialog,
   CertificateSummary,
-  CopyPublicKeyButton,
   GenerateKeyDialog,
   InstallKeyDialog,
   keyTypeLabel,
@@ -371,6 +372,11 @@ function KeychainPanel() {
         <form
           aria-label="Store a secret"
           className="flex flex-wrap items-end gap-2 rounded-md border border-hairline p-3"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            setForm(undefined);
+          }}
           onSubmit={(e) => {
             e.preventDefault();
             void store(form);
@@ -452,7 +458,7 @@ function KeychainPanel() {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-mono text-sm text-fg-default">{secret.name}</span>
                   {key?.fingerprint !== undefined && (
-                    <span className="truncate font-mono text-xs text-fg-subtle">
+                    <span className="font-mono text-xs break-all text-fg-subtle">
                       {keyTypeLabel(key.keyType)} · {key.fingerprint}
                     </span>
                   )}
@@ -487,9 +493,9 @@ function KeychainPanel() {
                     no value
                   </span>
                 )}
-                {key?.publicKey !== undefined && (
+                {/* One action shows: Install on host… for a key, Set value… otherwise; the rest are behind ⋯. */}
+                {key?.publicKey !== undefined ? (
                   <>
-                    <CopyPublicKeyButton publicKey={key.publicKey} />
                     <Button
                       onClick={() => {
                         openInstall({ secret: secret.name });
@@ -497,22 +503,55 @@ function KeychainPanel() {
                     >
                       Install on host…
                     </Button>
-                    <Button
-                      onClick={() => {
-                        setAttaching(secret.name);
-                      }}
-                    >
-                      {key.certificate === undefined ? 'Attach certificate…' : 'Replace certificate…'}
-                    </Button>
+                    <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                        <Button variant="ghost" className="px-1.5" aria-label={`More actions for ${secret.name}`}>
+                          <MoreHorizontal size={14} aria-hidden="true" />
+                        </Button>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT_CLASS}>
+                          <DropdownMenu.Item
+                            className={MENU_ITEM_CLASS}
+                            onSelect={() => {
+                              const publicKey = key.publicKey;
+                              if (publicKey === undefined) return;
+                              void navigator.clipboard.writeText(publicKey).then(() => {
+                                showToast(`Copied the public key of ${secret.name}`);
+                              });
+                            }}
+                          >
+                            Copy public key
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            className={MENU_ITEM_CLASS}
+                            onSelect={() => {
+                              setAttaching(secret.name);
+                            }}
+                          >
+                            {key.certificate === undefined ? 'Attach certificate…' : 'Replace certificate…'}
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            className={MENU_ITEM_CLASS}
+                            onSelect={() => {
+                              setForm({ name: secret.name, fixed: true, value: '' });
+                            }}
+                          >
+                            Set value…
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
                   </>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setForm({ name: secret.name, fixed: true, value: '' });
+                    }}
+                  >
+                    Set value…
+                  </Button>
                 )}
-                <Button
-                  onClick={() => {
-                    setForm({ name: secret.name, fixed: true, value: '' });
-                  }}
-                >
-                  Set value…
-                </Button>
               </li>
             );
           })}

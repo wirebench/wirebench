@@ -3,7 +3,7 @@
  * host's menu), which then offers to switch the host's sign-in to the key. Main makes, stores and opens the
  * key; what reaches this file is its public half and the names of the secrets holding the rest.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { create } from 'zustand';
 import { Button } from '../../components/button.js';
@@ -86,33 +86,6 @@ export const useKeyInstall = create<KeyInstallState>((set) => ({
     set({ target: null });
   },
 }));
-
-/** Copies the key's public line; the label says so for a moment. */
-export function CopyPublicKeyButton({ publicKey }: { readonly publicKey: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(
-    () => () => {
-      clearTimeout(timer.current);
-    },
-    [],
-  );
-  return (
-    <Button
-      onClick={() => {
-        void navigator.clipboard.writeText(publicKey).then(() => {
-          setCopied(true);
-          clearTimeout(timer.current);
-          timer.current = setTimeout(() => {
-            setCopied(false);
-          }, 1500);
-        });
-      }}
-    >
-      {copied ? 'Copied' : 'Copy public key'}
-    </Button>
-  );
-}
 
 /** A key's certificate in one line: principals, validity window and key ID; a badge when it will not sign in. */
 export function CertificateSummary({ certificate }: { readonly certificate: SshCertificateWire }) {
