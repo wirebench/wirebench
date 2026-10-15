@@ -5,6 +5,7 @@ import { LogFilterBar } from '../../src/renderer/features/console/log-filter-bar
 import { EMPTY_FILTER, useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { logFilterItem, openLogFilters, toggleLogFilter } from '../helpers/log-filters.js';
 
 describe('LogFilterBar', () => {
   beforeEach(() => {
@@ -21,48 +22,37 @@ describe('LogFilterBar', () => {
     cleanup();
   });
 
-  it('offers the methods present in the log, the status classes and the protocols as chips', () => {
+  it('offers the methods present in the log, the status classes and the protocols in the Filters menu', async () => {
     render(<LogFilterBar shown={3} total={3} />);
+    expect(screen.queryByRole('group', { name: 'Method' })).toBeNull();
 
-    const method = screen.getByRole('group', { name: 'Method' });
-    expect(
-      within(method)
-        .getAllByRole('button')
-        .map((chip) => chip.textContent),
-    ).toEqual(['GET', 'POST']);
-    const status = screen.getByRole('group', { name: 'Status' });
-    expect(
-      within(status)
-        .getAllByRole('button')
-        .map((chip) => chip.textContent),
-    ).toEqual(['2xx', '3xx', '4xx', '5xx', 'failed']);
-    const protocol = screen.getByRole('group', { name: 'Protocol' });
-    expect(
-      within(protocol)
-        .getAllByRole('button')
-        .map((chip) => chip.textContent),
-    ).toEqual(['SOAP', 'REST', 'gRPC', 'WS']);
+    await openLogFilters();
+    const labels = (group: string) =>
+      within(screen.getByRole('group', { name: group }))
+        .getAllByRole('menuitemcheckbox')
+        .map((item) => item.textContent);
+    expect(labels('Method')).toEqual(['GET', 'POST']);
+    expect(labels('Status')).toEqual(['2xx', '3xx', '4xx', '5xx', 'failed']);
+    expect(labels('Protocol')).toEqual(['SOAP', 'REST', 'gRPC', 'WS']);
     expect(screen.getByTestId('http-log-count').textContent).toBe('3 of 3');
   });
 
-  it('filters to WebSocket handshakes with the WS chip', async () => {
+  it('filters to WebSocket handshakes with the WS choice', async () => {
     render(<LogFilterBar shown={3} total={3} />);
-    await userEvent.click(within(screen.getByRole('group', { name: 'Protocol' })).getByRole('button', { name: 'WS' }));
+    await toggleLogFilter('Protocol', 'WS');
     expect(useExchangesStore.getState().filter.protocols).toEqual(['websocket']);
   });
 
-  it('toggles a chip into and out of the filter and reflects it as aria-pressed', async () => {
+  it('toggles a choice into and out of the filter, keeps the menu open, and counts what is on', async () => {
     render(<LogFilterBar shown={3} total={3} />);
-    const rest = within(screen.getByRole('group', { name: 'Protocol' })).getByRole('button', { name: 'REST' });
+    expect(screen.queryByTestId('http-log-filters-count')).toBeNull();
 
-    await userEvent.click(rest);
+    await toggleLogFilter('Protocol', 'REST');
     expect(useExchangesStore.getState().filter.protocols).toEqual(['rest']);
-    expect(rest.getAttribute('aria-pressed')).toBe('true');
+    expect(logFilterItem('Protocol', 'REST').getAttribute('aria-checked')).toBe('true');
 
-    await userEvent.click(
-      within(screen.getByRole('group', { name: 'Status' })).getByRole('button', { name: 'failed' }),
-    );
-    await userEvent.click(within(screen.getByRole('group', { name: 'Method' })).getByRole('button', { name: 'GET' }));
+    await toggleLogFilter('Status', 'failed');
+    await toggleLogFilter('Method', 'GET');
     expect(useExchangesStore.getState().filter).toEqual({
       text: '',
       regex: false,
@@ -71,10 +61,12 @@ describe('LogFilterBar', () => {
       statuses: ['failed'],
       protocols: ['rest'],
     });
+    expect(screen.getByTestId('http-log-filters-count').textContent).toBe('3');
+    expect(screen.getByTestId('http-log-filters').getAttribute('aria-label')).toBe('Filters, 3 on');
 
-    await userEvent.click(rest);
+    await toggleLogFilter('Protocol', 'REST');
     expect(useExchangesStore.getState().filter.protocols).toEqual([]);
-    expect(rest.getAttribute('aria-pressed')).toBe('false');
+    expect(logFilterItem('Protocol', 'REST').getAttribute('aria-checked')).toBe('false');
   });
 
   it('debounces the URL text into the filter', async () => {

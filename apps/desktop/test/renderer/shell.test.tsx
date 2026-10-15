@@ -8,7 +8,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 import { App } from '../../src/renderer/app.js';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ActivityBar } from '../../src/renderer/shell/activity-bar.js';
-import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
+import { DEFAULT_UI_STATE, writeUi } from '../../src/renderer/state/ui-state.js';
 import { useHostsStore } from '../../src/renderer/features/ssh/hosts-store.js';
 import { AREAS } from '../../src/shared/area-module.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -65,7 +65,13 @@ describe('AppShell', () => {
     stubMacUserAgent();
     stubMatchMedia();
     localStorage.clear();
-    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+    // These cases start from a console the user has already opened; the shell hydrates from storage.
+    const opened = {
+      ...structuredClone(DEFAULT_UI_STATE),
+      console: { ...DEFAULT_UI_STATE.console, visible: true, openOnFirstSend: false },
+    };
+    writeUi(opened, localStorage);
+    useUiStore.setState(opened);
     useUiStore.getState().persistTo(undefined);
     // Seeded as well as stubbed, so the very first render is already the IDE rather than a
     // picker that flips over once the snapshot lands.

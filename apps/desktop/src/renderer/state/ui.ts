@@ -128,6 +128,11 @@ export interface UiStore extends UiSnapshot {
    * the palette and an explorer row — have nowhere else to put it.
    */
   readonly importCurlTarget: RequestImportCurlTarget | undefined;
+  /**
+   * The API made only to give an Import cURL… a home (an empty project has none): removed again when
+   * the dialog closes without importing, so a cancel leaves the project as it was.
+   */
+  readonly importCurlProvisionalApiId: string | undefined;
   /** Whether the New Project dialog (a name, nothing else) is open. Transient — never persisted. */
   readonly newProjectDialogOpen: boolean;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
@@ -191,7 +196,11 @@ export interface UiStore extends UiSnapshot {
   readonly setImportPostmanDialogOpen: (open: boolean) => void;
   readonly setFolderAuthId: (folderId: string | undefined) => void;
   readonly setFolderScriptsId: (folderId: string | undefined) => void;
-  readonly setImportCurlTarget: (target: RequestImportCurlTarget | undefined) => void;
+  /** `provisional` marks the target's API as made for this import alone; see `importCurlProvisionalApiId`. */
+  readonly setImportCurlTarget: (
+    target: RequestImportCurlTarget | undefined,
+    options?: { readonly provisional?: boolean },
+  ) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
@@ -238,6 +247,8 @@ export interface UiStore extends UiSnapshot {
   /** The console's equivalent of {@link restoreSidebarSize}. */
   readonly restoreConsoleSize: () => void;
   readonly toggleConsole: () => void;
+  /** Opens the console for a send, once: only while `console.openOnFirstSend` is still set. */
+  readonly openConsoleForFirstSend: () => void;
   /** Flips the Code slide-over open or closed — what the right rail's icon does. */
   readonly toggleCode: () => void;
   /** Opens the Code slide-over unconditionally — what the "Show code" command does. */
@@ -297,6 +308,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     folderAuthId: undefined,
     folderScriptsId: undefined,
     importCurlTarget: undefined,
+    importCurlProvisionalApiId: undefined,
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
@@ -369,8 +381,11 @@ export const useUiStore = create<UiStore>((set, get) => {
     setFolderScriptsId: (folderId) => {
       set({ folderScriptsId: folderId });
     },
-    setImportCurlTarget: (target) => {
-      set({ importCurlTarget: target });
+    setImportCurlTarget: (target, options) => {
+      set({
+        importCurlTarget: target,
+        importCurlProvisionalApiId: options?.provisional === true && target?.kind === 'rest' ? target.apiId : undefined,
+      });
     },
     setNewProjectDialogOpen: (open) => {
       set({ newProjectDialogOpen: open });
@@ -497,9 +512,11 @@ export const useUiStore = create<UiStore>((set, get) => {
         }
         draft.console.lastSize = draft.console.size;
         draft.console.visible = false;
+        draft.console.openOnFirstSend = false;
       }),
     expandConsole: () =>
       update((draft) => {
+        draft.console.openOnFirstSend = false;
         if (draft.console.visible) {
           return;
         }
@@ -515,6 +532,7 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
     toggleConsole: () =>
       update((draft) => {
+        draft.console.openOnFirstSend = false;
         if (draft.console.visible) {
           draft.console.lastSize = draft.console.size;
           draft.console.visible = false;
@@ -522,6 +540,15 @@ export const useUiStore = create<UiStore>((set, get) => {
           draft.console.visible = true;
           draft.console.size = draft.console.lastSize;
         }
+      }),
+    openConsoleForFirstSend: () =>
+      update((draft) => {
+        if (!draft.console.openOnFirstSend) {
+          return;
+        }
+        draft.console.openOnFirstSend = false;
+        draft.console.visible = true;
+        draft.console.size = draft.console.lastSize;
       }),
     toggleCode: () =>
       update((draft) => {
@@ -560,6 +587,7 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.console.activeTab = tab;
         draft.console.visible = true;
+        draft.console.openOnFirstSend = false;
       }),
 
     setSidebarSize: (size) =>
@@ -569,6 +597,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     setConsoleSize: (size) =>
       update((draft) => {
         draft.console.size = size;
+        draft.console.openOnFirstSend = false;
       }),
     setSlideOverWidth: (width) =>
       update((draft) => {
@@ -653,7 +682,8 @@ export const CONSOLE_COLLAPSED_BELOW_PX = 720;
 
 /**
  * Whether the layout ignores the window's size (see `env.fixedLayout` in the preload): only an e2e
- * run on a CI runner whose screen is smaller than the window its specs expect.
+ * run on a CI runner whose screen is smaller than the window its specs expect. The same specs expect
+ * the console open from the start, so a fresh workspace there skips the collapsed first run too.
  */
 export function fixedLayout(): boolean {
   const api = (globalThis as { wirebench?: { env?: { fixedLayout?: boolean } } }).wirebench;
@@ -672,6 +702,9 @@ export function hydrateUi(
     return;
   }
   useUiStore.setState(readUi(storage));
+  if (fixedLayout() && useUiStore.getState().console.openOnFirstSend) {
+    useUiStore.getState().expandConsole();
+  }
   // Before persisting starts, so the collapse alone is not written back as the saved layout.
   if (!fixedLayout() && windowHeight !== undefined && windowHeight > 0 && windowHeight < CONSOLE_COLLAPSED_BELOW_PX) {
     useUiStore.getState().collapseConsole();

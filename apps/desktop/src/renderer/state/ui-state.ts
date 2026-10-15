@@ -97,6 +97,12 @@ export interface UiSnapshot {
     readonly size: number;
     /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
     readonly lastSize: number;
+    /**
+     * True until the console is first opened, closed or resized, by the user or by a send: a fresh
+     * workspace starts with it collapsed and the first send opens it. A layout saved before this
+     * field existed reads as `false`, so the console stays as that user left it.
+     */
+    readonly openOnFirstSend: boolean;
   };
   /** The right-hand slide-over hosting the Code panel; opened from the right rail. */
   readonly slideOver: {
@@ -143,10 +149,10 @@ export const UI_STORAGE_VERSION = 4;
 /** The previous storage version, whose stored shape `readUi` still accepts (see above). */
 const PRIOR_UI_STORAGE_VERSION = 3;
 
-/** The layout a first run gets: everything visible, Explorer selected, dark theme. */
+/** The layout a first run gets: the sidebar visible with Explorer selected, the console collapsed until the first send, dark theme. */
 export const DEFAULT_UI_STATE: UiSnapshot = {
   sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
-  console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+  console: { visible: false, activeTab: 'http-log', size: 25, lastSize: 25, openOnFirstSend: true },
   slideOver: { open: false, width: 294, codeShell: 'posix', codeLanguage: 'curl', codeSettings: {} },
   theme: 'dark',
   editorLineNumbers: true,
@@ -288,9 +294,19 @@ export function slideOverWidthOf(state: Pick<UiSnapshot, 'sidebar' | 'slideOver'
 
 /** The console's equivalent of {@link mergeSidebar}. */
 function mergeConsole(stored: unknown): UiSnapshot['console'] {
+  const record = asRecord(stored);
+  if (record === undefined) {
+    return DEFAULT_UI_STATE.console;
+  }
   const merged = mergeSection(DEFAULT_UI_STATE.console, stored);
-  const lastSize = asRecord(stored)?.['lastSize'];
-  return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+  const lastSize = record['lastSize'];
+  const openOnFirstSend = record['openOnFirstSend'];
+  return {
+    ...merged,
+    lastSize: typeof lastSize === 'number' ? lastSize : merged.size,
+    // A console saved before the flag existed was already the user's choice.
+    openOnFirstSend: typeof openOnFirstSend === 'boolean' ? openOnFirstSend : false,
+  };
 }
 
 const SIDEBAR_VIEWS: readonly SidebarView[] = AREAS.map((area) => area.id);

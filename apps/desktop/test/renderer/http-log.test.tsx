@@ -10,6 +10,7 @@ import { b64, logExchange, makeExchange, makeFailure, makeRestExchange } from '.
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { formatClockTime } from '../../src/renderer/lib/format-size.js';
 import { ToastViewport } from '../../src/renderer/components/toast.js';
+import { toggleLogFilter } from '../helpers/log-filters.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -187,13 +188,12 @@ describe('HttpLog', () => {
     render(<HttpLog />);
     expect(screen.getByTestId('http-log-count').textContent).toBe('3 of 3');
 
-    await userEvent.click(
-      within(screen.getByRole('group', { name: 'Protocol' })).getByRole('button', { name: 'REST' }),
-    );
+    await toggleLogFilter('Protocol', 'REST');
     expect(rows()).toHaveLength(2);
     expect(screen.getByTestId('http-log-count').textContent).toBe('2 of 3');
 
-    await userEvent.click(within(screen.getByRole('group', { name: 'Status' })).getByRole('button', { name: '4xx' }));
+    await toggleLogFilter('Status', '4xx');
+    await userEvent.keyboard('{Escape}');
     expect(rows()).toHaveLength(1);
     expect(rows()[0]?.textContent).toContain('404');
 
