@@ -102,10 +102,26 @@ export function formatSize(bytes: number): string {
 }
 
 const MODIFIED = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const THIS_YEAR = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+const OTHER_YEAR = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
-/** A modified time for a column, in the user's locale. */
+/** A modified time in full, in the user's locale: a cell's title. */
 export function formatModified(ms: number): string {
   return MODIFIED.format(new Date(ms));
+}
+
+/**
+ * A modified time short enough for a 7rem column, in the user's locale: "Oct 15, 21:21" this year,
+ * "Oct 15, 2024" before it (#594).
+ */
+export function formatModifiedShort(ms: number, now: number = Date.now()): string {
+  const date = new Date(ms);
+  return (date.getFullYear() === new Date(now).getFullYear() ? THIS_YEAR : OTHER_YEAR).format(date);
 }
 
 /** A folder, or a link to one: opening it lists it. */
