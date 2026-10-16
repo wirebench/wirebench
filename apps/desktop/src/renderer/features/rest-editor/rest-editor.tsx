@@ -49,7 +49,7 @@ import { inheritedSigningOf } from '../webhook-items/signing.js';
 import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
-import { rowsBadge } from './tab-counts.js';
+import { bodyBadge, rowsBadge } from './tab-counts.js';
 import { SendMenu } from '../multi-env/send-menu.js';
 import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
 import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
@@ -312,7 +312,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
                   ? rowsBadge([...request.pathParams, ...request.query])
                   : item.id === 'headers'
                     ? rowsBadge(request.headers)
-                    : undefined,
+                    : item.id === 'body'
+                      ? bodyBadge(request.body)
+                      : undefined,
           ),
         )}
         active={shownTab}
