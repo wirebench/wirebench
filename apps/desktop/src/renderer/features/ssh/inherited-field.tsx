@@ -67,15 +67,11 @@ export function InheritedField<T extends string | number>({
   const source = sourceText(provenance);
   const shown = override !== undefined ? override : overridden ? undefined : provenance.value;
   return (
-    <div className="flex flex-col gap-1 text-xs">
-      <div className="flex gap-2">
-        <label htmlFor={id} className="text-fg-subtle">
-          {label}
-        </label>
-        {source !== undefined && override === undefined && !editing ? (
-          <span className="truncate text-fg-faint">{source}</span>
-        ) : null}
-      </div>
+    // The label keeps one line and the source sits under the input, so fields side by side line up (#594).
+    <div className="flex min-w-0 flex-col gap-1 text-xs">
+      <label htmlFor={id} title={label} className="truncate whitespace-nowrap text-fg-subtle">
+        {label}
+      </label>
       <div className="flex items-center gap-2">
         <input
           id={id}
@@ -109,6 +105,11 @@ export function InheritedField<T extends string | number>({
           </button>
         )}
       </div>
+      {source !== undefined && override === undefined && !editing ? (
+        <span title={source} className="truncate text-fg-faint">
+          {source}
+        </span>
+      ) : null}
     </div>
   );
 }
