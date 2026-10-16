@@ -35,7 +35,7 @@ describe('Import dialog — a picked source detected in main', () => {
     openFile.mockResolvedValue({ ok: true, value: { path: '/work/export.json' } });
     await openOnFileTab();
     fireEvent.click(screen.getByTestId('import-browse'));
-    expect((await screen.findByTestId('detected-format-badge')).textContent).toBe('Insomnia export (v5)');
+    await waitFor(() => expect(screen.getByTestId('detected-format-badge').textContent).toBe('Insomnia export (v5)'));
     expect(detectImportSource).toHaveBeenCalledWith({ path: '/work/export.json', folder: false });
   });
 
@@ -44,7 +44,9 @@ describe('Import dialog — a picked source detected in main', () => {
     openFolder.mockResolvedValue({ ok: true, value: { path: '/work/thunder-tests' } });
     await openOnFileTab();
     fireEvent.click(screen.getByTestId('import-browse-folder'));
-    expect((await screen.findByTestId('detected-format-badge')).textContent).toBe('Thunder Client collection');
+    await waitFor(() =>
+      expect(screen.getByTestId('detected-format-badge').textContent).toBe('Thunder Client collection'),
+    );
     expect(detectImportSource).toHaveBeenCalledWith({ path: '/work/thunder-tests', folder: true });
     expect(await screen.findByTestId('import-thunder-client-help')).toBeTruthy();
   });
@@ -61,7 +63,7 @@ describe('Import dialog — a picked source detected in main', () => {
     fireEvent.click(screen.getByTestId('import-browse'));
     await waitFor(() => expect(detectImportSource).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByTestId('import-browse'));
-    expect((await screen.findByTestId('detected-format-badge')).textContent).toBe('HAR 1.2');
+    await waitFor(() => expect(screen.getByTestId('detected-format-badge').textContent).toBe('HAR 1.2'));
     await act(async () => {
       first(answer('insomnia', 'Insomnia export (v5)'));
       await Promise.resolve();
