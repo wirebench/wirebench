@@ -1,0 +1,34 @@
+type: spec.insomnia.rest/5.0
+schema_version: "5.1"
+name: Pets API
+meta:
+  id: wrk_dddd0000000000000000000000000007
+  created: 1760000000000
+  modified: 1760000000000
+  description: A design document
+collection:
+  - url: https://pets.example.com/pets
+    name: List pets
+    meta:
+      id: req_dddd0000000000000000000000000008
+      created: 1
+      modified: 1
+      isPrivate: false
+      sortKey: -1
+    method: GET
+spec:
+  contents:
+    openapi: 3.0.0
+    info:
+      title: Pets
+      version: 1.0.0
+    paths:
+      /pets:
+        get:
+          responses:
+            "200":
+              description: ok
+  meta:
+    id: spc_dddd0000000000000000000000000009
+    created: 1
+    modified: 1

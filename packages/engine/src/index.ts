@@ -177,6 +177,7 @@ export {
   PostmanError,
   HarError,
   HttpFileError,
+  InsomniaError,
   OpenCollectionError,
   ExportError,
   LegacyProjectError,
@@ -970,6 +971,17 @@ export type {
   OcScript,
   OcVariable,
 } from './import/opencollection/index.js';
+// Insomnia: reading v4 and v5 exports into typed shapes.
+export { MAX_INSOMNIA_BYTES, parseInsomnia } from './import/insomnia/index.js';
+export type {
+  InsDocument,
+  InsEnv,
+  InsNode,
+  InsRow,
+  InsScripts,
+  InsSettings,
+  InsWorkspace,
+} from './import/insomnia/index.js';
 // Folder (v3) collections: a tree of YAML files, read from a map of files or from a folder on disk.
 export {
   MAPPED_V3_KINDS,

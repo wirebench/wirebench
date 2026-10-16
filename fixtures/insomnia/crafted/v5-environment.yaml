@@ -1,0 +1,43 @@
+type: environment.insomnia.rest/5.0
+schema_version: "5.1"
+name: Shared environments
+meta:
+  id: wrk_cccc0000000000000000000000000006
+  created: 1760000000000
+  modified: 1760000000000
+  isPrivate: false
+environments:
+  name: Base Environment
+  meta:
+    id: env_aaaaaaaaaaaaaaaaaaaaaaaaaaaa0001
+    created: 1760000000000
+    modified: 1760000000000
+    isPrivate: false
+  data:
+    baseUrl: https://api.example.com
+    tenant: base
+    db:
+      host: localhost
+      port: 5432
+  dataPropertyOrder:
+    "&":
+      - baseUrl
+      - tenant
+      - db
+    "&~|db":
+      - host
+      - port
+  color: "#00aa88"
+  subEnvironments:
+    - name: Staging
+      meta:
+        id: env_bbbbbbbbbbbbbbbbbbbbbbbbbbbb0002
+        created: 1760000000000
+        modified: 1760000000000
+        isPrivate: true
+        sortKey: 1760000000001
+      data:
+        baseUrl: https://staging.example.com
+        __insomnia_vault:
+          svcPassword: ••••••
+      color: "#ff8800"

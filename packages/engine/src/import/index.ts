@@ -4,3 +4,4 @@ export * from './report.js';
 export * from './scripts.js';
 export * from './variables.js';
 export * from './client-import.js';
+export * from './insomnia/index.js';
