@@ -28,6 +28,7 @@ import { tabsInSet, type TabSet } from '../state/tab-sets.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore, type ProjectStore } from '../state/project.js';
 import { useWebhooksStore } from '../state/webhooks.js';
+import { useSchedulesStore } from '../state/schedules.js';
 import { useActiveEnvironment, useWorkspaceStore } from '../state/workspace.js';
 import { useCurrentProjectId } from '../state/workspace-tabs.js';
 import type { WorkspaceEnvironmentWire } from '../../shared/wire-base.js';
@@ -127,12 +128,14 @@ export function EditorArea() {
   const envColor = environmentColorCss(useActiveEnvironment(useCurrentProjectId())?.color);
   const enabledKinds = useUiStore((state) => state.enabledKinds);
   const catchUrls = useWebhooksStore((state) => state.hooks);
+  const schedules = useSchedulesStore((state) => state.schedules);
   // Each tab's live name and unsaved state, read through its kind's row in `TAB_KINDS`: renames
   // reach the strip before the tab's own stored title catches up.
   const titleContext = (project: ProjectStore): TabTitleContext => ({
     project,
     workspaceEnvironments,
     hookNames: Object.fromEntries(catchUrls.map((hook) => [hook.id, hook.name])),
+    scheduleNames: Object.fromEntries(schedules.map((schedule) => [schedule.id, schedule.name])),
   });
   const liveTitles = useProjectStore(
     useShallow((project) => {

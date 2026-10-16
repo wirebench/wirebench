@@ -479,7 +479,10 @@ function folderNameOf(operation: OpenApiOperation): string | undefined {
   return firstPathSegment(operation.path);
 }
 
-/** A request's name: its summary, else its operation id, else what it does. */
+/**
+ * A request's name: its summary, else its operation id, else its path. The method is left out of the
+ * last: every place that lists a request already shows it in a badge beside the name.
+ */
 function requestName(operation: OpenApiOperation): string {
   const summary = operation.summary?.trim();
   if (summary !== undefined && summary.length > 0) {
@@ -488,10 +491,7 @@ function requestName(operation: OpenApiOperation): string {
   if (operation.operationId !== undefined && operation.operationId.length > 0) {
     return operation.operationId;
   }
-  const method = HTTP_METHODS.includes(operation.method.toLowerCase())
-    ? operation.method.toUpperCase()
-    : operation.method;
-  return `${method} ${operation.path}`;
+  return operation.path;
 }
 
 /** A request's description, with a deprecation marked where the operation says so. */

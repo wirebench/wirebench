@@ -28,7 +28,7 @@ URL, file or paste.
 | `servers`, with variables filled from their defaults | The API's **Base URL** (the first server). The others are offered as suggestions in that field | [Create an API](/wirebench/docs/guides/rest-client/#create-an-api-and-a-request) |
 | Swagger 2 `host`, `basePath` and `schemes` | The same, built into server URLs. With no scheme, `https` | |
 | An operation's first tag | A folder, with the tag's description. An untagged operation goes in a **Deprecated** folder if it is deprecated, else in one named after the first path segment | |
-| An operation | A request named after its `summary`, else its `operationId`, else `METHOD /path`. A deprecated operation's description starts with **Deprecated.** | |
+| An operation | A request named after its `summary`, else its `operationId`, else its path (`/pets/{id}`); the method shows in the badge beside it. A deprecated operation's description starts with **Deprecated.** | |
 | Path parameters | Rows in the **Path parameters** table, turned on | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
 | Query parameters | Rows in the **Params** table. Required ones are on; optional ones are there but off | |
 | Header parameters | Rows in the **Headers** table, all off, so the import never changes what is sent until you turn one on | |

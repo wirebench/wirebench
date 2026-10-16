@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Scheduled runs in the app.** A workspace shared on a server that runs schedules shows a
+  **Schedules** node in the Explorer: each schedule with a green, red or grey dot and, while failing,
+  how many runs failed in a row. Opening one shows its runs, newest first, and each run's results as
+  the Runner shows them, with the exchange of a failed request and how its alerts were delivered; a run
+  that ends appears without a refresh. **Schedule…** on a project, API, folder, request or sequence
+  opens a new schedule that runs it, picked from the open workspace. Workspace admins create, edit,
+  pause, run now, set secrets, test alerts and delete; everyone else reads (#517).
 - **Import Insomnia exports.** **Import…** reads Insomnia's export formats 4 (JSON or YAML) and 5
   (YAML), and detects a picked file by its content. Each workspace becomes a REST, a gRPC and a
   WebSocket API in the chosen project, in Insomnia's order, with folder headers and auth. The base and
@@ -84,6 +91,23 @@ All notable changes to this project are documented here. The format follows
   A `${` that is never closed is reported as such, naming the field it is in with a link to it,
   instead of as a variable missing from the environment. Cancelling a send keeps the response you
   were looking at, under a one-line "Cancelled after … · Retry" bar (#631).
+- **Imported requests no longer show their method twice.** An OpenAPI operation with no summary or
+  operation id, and a request from **Import cURL…**, is now named by its path alone (`/pets/{id}`), since
+  the method badge beside it already says GET or POST. A request imported earlier as `GET /pets/{id}`
+  shows without the repeated method in the explorer, the Runner's list and History; its stored name is
+  unchanged (#633).
+- **Method badges in the explorer line up.** Every method badge in the tree has the same width and
+  starts in the same column, so POST no longer sits further left than GET and DEL (#633).
+- **The explorer no longer scrolls sideways.** In a narrow sidebar a long name such as
+  `DELETE /pets/{id}` is cut with an ellipsis instead of running past the edge behind a horizontal
+  scrollbar; hover it to read it in full (#633).
+- **The command palette lists what you can run first.** Within each group, commands that cannot run
+  here (greyed, with the reason) now come after the ones that can, so typing "REST" no longer puts
+  **REST: Lint Definition** and **REST: Update Definition…** above the commands you can use (#633).
+- **History's Compare… shows what it is waiting for.** After **Compare…**, the picked row is tinted
+  and a banner names it ("Comparing with List pets · 22:06:50 — pick another entry") with **Cancel**;
+  a click on another row then opens the comparison. A right-click on a History row now opens the same
+  menu as its **⋯** button (#633).
 - **The "Method changed to POST" toast goes when it stops being true.** Switching a REST body to
   GraphQL and back, or to another kind, now takes the toast and its **Undo** down at once instead of
   leaving it up for its full eight seconds (#632).
