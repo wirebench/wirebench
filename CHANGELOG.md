@@ -29,6 +29,12 @@ All notable changes to this project are documented here. The format follows
   says so ("Connection to box lost · 21:31") with **Reconnect** as the main button, over its last
   listing, dimmed. The connection log pins its one-sentence summary above the lines and shows them in
   time order (#590).
+- **Host groups and forwarding groups are told apart.** A forwarding rule says where it is defined:
+  "defined on this host" or "defined on host group Production". The palette's **Hosts: New Host
+  Group…**, the Hosts menu's **New host group** and the New rule dialog say "host group" too, so "group"
+  alone means a forwarding group. A rule that **Start group** started says "Started with group Dev" in
+  Forward details, which now shows one list: the rule's values, with the live one only where it differs
+  (#592).
 
 ### Fixed
 
@@ -38,6 +44,10 @@ All notable changes to this project are documented here. The format follows
   replace", with the secret's name on its own line under it, and key sign-in's three secret pickers wrap
   onto more lines in a narrow panel. Host details, Edit host, Snippet and Forward details all fit a panel
   from 280 to 400px wide (#591).
+- **Deleting a host cleans up its forwarding groups.** The delete confirm names the rules that leave
+  each group ("Its rule redis leaves forwarding group Backend."), and the delete takes them out of their
+  groups. A group member whose rule or host has gone offers **Remove from group** rather than **Stop**,
+  and is no longer counted as failed in its group's header or the status bar (#592).
 
 ### Fixed
 

@@ -9,9 +9,11 @@ import {
   groupStatus,
   groupStatusText,
   moveRule,
+  groupsWithHost,
   renameGroup,
   startGroup,
   stopGroup,
+  withoutHostRules,
 } from '../../src/renderer/features/ssh/forwarding/forward-groups.js';
 import { ForwardDetails, useForwardDetailsShown } from '../../src/renderer/features/ssh/forwarding/forward-details.js';
 import { ForwardingPanel } from '../../src/renderer/features/ssh/forwarding/forwarding-view.js';
@@ -92,6 +94,8 @@ const running = (hostId: string, ruleId: string, port: number): ForwardStateWire
   status: { state: 'running', listening: { address: '127.0.0.1', port }, connections: 0 },
 });
 
+const failedStatus = { state: 'failed', error: { code: 'ssh-host-unknown', message: 'no host gone' } } as const;
+
 const rowOf = (key: string): HTMLElement => {
   const row = screen.getAllByTestId('forward-row').find((el) => el.dataset['forward'] === key);
   if (row === undefined) throw new Error(`no row ${key}`);
@@ -161,6 +165,19 @@ describe('forwarding group edits', () => {
     expect(groupStatusText({ members: 0, total: 0, running: 0, failed: 0 })).toBe('No rules');
     expect(groupStatusText({ members: 1, total: 0, running: 0, failed: 0 })).toBe('No rules on');
   });
+
+  it('does not count a member whose rule or host has gone as failed', () => {
+    const old = FILE.forwardGroups![1]!;
+    const byKey = { 'gone/x': { ...running('gone', 'x', 9000), status: failedStatus, removed: true } };
+    expect(groupStatus(old, [DB1, CACHE], byKey, {})).toEqual({ members: 1, total: 0, running: 0, failed: 0 });
+  });
+
+  it("takes a deleted host's rules out of every group, and names them per group", () => {
+    expect(groupsWithHost(FILE, 'db-1')).toEqual([{ name: 'Dev', rules: ['pg', 'grafana'] }]);
+    const after = withoutHostRules(FILE, 'db-1');
+    expect(after.forwardGroups?.[0]?.rules).toEqual([{ host: 'cache', rule: 'redis' }]);
+    expect(withoutHostRules(FILE, 'nowhere')).toBe(FILE);
+  });
 });
 
 describe('Start group and Stop group', () => {
@@ -182,7 +199,7 @@ describe('Start group and Stop group', () => {
       await startGroup('dev');
     });
     expect(forward.start).toHaveBeenCalledOnce();
-    expect(forward.start).toHaveBeenCalledWith({ hostId: 'cache', ruleId: 'redis' });
+    expect(forward.start).toHaveBeenCalledWith({ hostId: 'cache', ruleId: 'redis', group: 'dev' });
   });
 
   it('stops the rules of the group this window holds, and only those', async () => {
@@ -253,6 +270,19 @@ describe('the Port forwarding view with groups', () => {
     await waitFor(() => {
       expect(saved().forwardGroups?.find((g) => g.id === 'old')?.rules).toEqual([]);
     });
+  });
+
+  it('a member whose rule has gone and whose run failed offers Remove from group, not Stop, and is not failed', async () => {
+    useForwardsStore.getState().apply({ ...running('gone', 'x', 9000), status: failedStatus, removed: true });
+    render(<ForwardingPanel />);
+    expect(within(section('old')).getByTestId('forward-group-status').textContent).toBe('No rules on');
+    expect(within(rowOf('gone/x')).queryByRole('button', { name: 'Stop' })).toBeNull();
+    await userEvent.click(within(rowOf('gone/x')).getByRole('button', { name: 'Remove from group' }));
+    await waitFor(() => {
+      expect(saved().forwardGroups?.find((g) => g.id === 'old')?.rules).toEqual([]);
+    });
+    // Its failed run is cleared with it.
+    expect(forward.stop).toHaveBeenCalledWith({ hostId: 'gone', ruleId: 'x' });
   });
 
   it('New group… creates an empty group, which says how to fill it', async () => {
@@ -490,14 +520,34 @@ describe('the forward details panel', () => {
     const panel = screen.getByTestId('forward-details');
     expect(within(panel).getByRole('heading', { level: 2 }).textContent).toBe('pg');
     expect(screen.getByTestId('forward-details-state').textContent).toBe('running · 0 connections');
-    const rule = within(panel).getByRole('region', { name: 'Rule' });
-    expect(rule.textContent).toContain('127.0.0.1:15432');
-    expect(rule.textContent).toContain('15432 this run; the rule says 5432');
-    expect(rule.textContent).toContain('localhost:5432');
-    expect(within(panel).getByRole('region', { name: 'Now' }).textContent).toContain("with the host's terminals");
+    // One list: the rule's values, with the live one only where it differs.
+    expect(within(panel).queryByRole('region', { name: 'Now' })).toBeNull();
+    const list = within(panel).getByRole('region', { name: 'Forward' });
+    expect(list.textContent).toContain('127.0.0.1:15432');
+    expect(list.textContent).toContain('this run; the rule says 5432');
+    expect(list.textContent).toContain('localhost:5432');
+    expect(within(list).queryByText('Listening')).toBeNull();
+    expect(within(list).queryByText('Starts')).toBeNull();
+    expect(screen.getByTestId('forward-details-started').textContent).toBe("with the host's terminals");
     expect(within(panel).getByRole('combobox', { name: 'Forwarding group' })).toHaveProperty('value', 'dev');
     await userEvent.click(within(panel).getByRole('button', { name: 'Stop' }));
     expect(forward.stop).toHaveBeenCalledWith({ hostId: 'db-1', ruleId: 'pg' });
+  });
+
+  it('a rule its group started says so', () => {
+    useForwardsStore.getState().apply({ ...running('db-1', 'pg', 5432), group: 'dev' });
+    useForwardsStore.getState().select('db-1/pg');
+    render(<ForwardDetails />);
+    expect(screen.getByTestId('forward-details-started').textContent).toBe('with group Dev');
+    expect(screen.getByTestId('forward-details').textContent).toContain('Startedwith group Dev');
+  });
+
+  it('a stopped rule says how it starts', () => {
+    useForwardsStore.getState().select('db-1/pg');
+    render(<ForwardDetails />);
+    const list = screen.getByRole('region', { name: 'Forward' });
+    expect(list.textContent).toContain('Startsby hand');
+    expect(screen.queryByTestId('forward-details-started')).toBeNull();
   });
 
   it('a failed forward shows its error and Retry; the group select moves the rule', async () => {

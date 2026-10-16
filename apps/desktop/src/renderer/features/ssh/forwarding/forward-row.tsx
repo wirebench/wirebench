@@ -81,19 +81,23 @@ export function move(hostId: string, ruleId: string, toGroupId: string | undefin
 }
 
 /**
- * One forwarding rule: its state, type, `bind:port → target`, where it came from, its `auto` and network
- * badges and what can be done with it. An off rule is greyed with the level that switched it off and offers
- * nothing; a forward whose rule was removed or switched off while it ran offers Stop only.
+ * "this host" or "host group Production": a rule named like its host no longer reads "db from db", and a host
+ * group is never mistaken for a forwarding group.
  */
-/** "this host" or "group Production": a rule named like its host no longer reads "db from db". */
 export function whereFrom(
   level: ResolvedForwardWire['from'],
   host: Pick<ResolvedHostWire, 'name'>,
   groupName: (id: string) => string,
 ): string {
-  return level === 'host' ? 'this host' : `group ${levelName(level, host, groupName)}`;
+  return level === 'host' ? 'this host' : `host group ${levelName(level, host, groupName)}`;
 }
 
+/**
+ * One forwarding rule: its state, type, `bind:port → target`, where it came from, its `auto` and network
+ * badges and what can be done with it. An off rule is greyed with the level that switched it off and offers
+ * nothing; a forward whose rule was removed or switched off while it ran offers Stop only, and a forwarding
+ * group's member whose rule has gone (and that does not run) offers Remove from group.
+ */
 export function ForwardRow({
   host,
   forward,
@@ -117,6 +121,8 @@ export function ForwardRow({
   // A rule switched off while its forward runs still needs its Stop.
   const off = forward !== undefined && !forward.enabled && !live;
   const removed = forward === undefined || !forward.enabled || state?.removed === true;
+  // A group member whose rule (or host) has gone: nothing to start or retry, only to take out of the group.
+  const dangling = forward === undefined && !live && forwardGroupId !== undefined;
   const shown = stateOf(state);
   const port = state?.port ?? rule?.port;
   const error = state?.status.state === 'failed' ? state.status.error.message : startError?.message;
@@ -212,23 +218,22 @@ export function ForwardRow({
                 Restart
               </Button>
             )}
-            {live || (removed && state !== undefined) ? (
+            {dangling ? (
+              <Button
+                className="h-6 px-2 text-xs"
+                onClick={() => {
+                  move(host.id, ruleId, undefined);
+                  // Its failed run, if any, goes with it rather than lingering under Ungrouped.
+                  if (state !== undefined) stop();
+                }}
+              >
+                Remove from group
+              </Button>
+            ) : live || (removed && state !== undefined) ? (
               <Button className="h-6 px-2 text-xs" onClick={stop}>
                 Stop
               </Button>
-            ) : removed ? (
-              forward === undefined &&
-              forwardGroupId !== undefined && (
-                <Button
-                  className="h-6 px-2 text-xs"
-                  onClick={() => {
-                    move(host.id, ruleId, undefined);
-                  }}
-                >
-                  Remove from group
-                </Button>
-              )
-            ) : failed ? (
+            ) : removed ? null : failed ? (
               <Button className="h-6 px-2 text-xs" onClick={start}>
                 Retry
               </Button>
@@ -349,7 +354,7 @@ export function ForwardRow({
               ? 'removed from hosts.yaml'
               : !forward.enabled
                 ? `off on ${whereFrom(forward.offBy ?? forward.from, host, groupName)}`
-                : `from ${whereFrom(forward.from, host, groupName)}`}
+                : `defined on ${whereFrom(forward.from, host, groupName)}`}
           </span>,
         ]
           .filter((part) => part !== null)
