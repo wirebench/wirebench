@@ -38,12 +38,14 @@ test.describe('environment details panel', () => {
     // Where requests are, the rail offers Code.
     await expect(page.getByTestId('rail-code')).toBeVisible();
 
-    // --- the Environments area has no Code toggle ------------------------------------------
+    // --- an environment tab in front has no Code toggle --------------------------------------
+    // Environments share the request strip (#607), so it is the tab in front, not the area, that
+    // swaps Code for the environment's details.
     await openEnvironmentsView(page);
-    await expect(page.getByTestId('rail-code')).toHaveCount(0);
     await page.getByRole('button', { name: 'Add environment' }).click();
     await expect(environmentRow(page, 'Environment 1')).toBeVisible();
     await openEnvironment(page, 'Environment 1');
+    await expect(page.getByTestId('rail-code')).toHaveCount(0);
 
     // --- the panel opens beside the page, with the environment's details --------------------
     const panel = detailsPanel(page);

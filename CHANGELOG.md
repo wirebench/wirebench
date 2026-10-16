@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **History and Environments keep your request tabs.** Opening History or Environments no longer swaps
+  the editor to that area's own tabs: History entries, History's Compare and environments open as tabs
+  beside the requests, so a request stays in view while you browse its history or edit its variables.
+  SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
+  (#607).
+
 ## [6.1.0] - 2026-10-16
 
 ### Added

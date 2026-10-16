@@ -82,8 +82,12 @@ describe('RightRail', () => {
     }
   });
 
-  it('has no Code icon in the Environments area', () => {
-    useEditorsStore.setState({ displayedSet: 'environments' });
+  it('has no Code icon while an environment tab is in front', () => {
+    useEditorsStore.setState({
+      tabs: [{ id: 'env:e1', kind: 'environment', title: 'prod', environmentId: 'e1' }] as never,
+      activeId: 'env:e1',
+      displayedSet: 'explorer',
+    });
     renderRail();
 
     expect(screen.queryByTestId('rail-code')).toBeNull();
