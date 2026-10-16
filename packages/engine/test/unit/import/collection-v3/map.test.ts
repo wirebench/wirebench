@@ -250,3 +250,21 @@ describe('mapCollectionV3: a single collection and refusals', () => {
     expect(code(new Map([['q.request.yaml', '$kind: graphql-request']]))).toBe('postman-v3-nothing-to-import');
   });
 });
+
+describe('mapCollectionV3: credentials of gRPC and WebSocket auth', () => {
+  it('warns even when the collection also has REST requests, and copies no token', () => {
+    const files = new Map([
+      ['get.request.yaml', '$kind: http-request\nname: Get\nmethod: GET\nurl: https://api.example.com/x\n'],
+      [
+        'sock.request.yaml',
+        '$kind: websocket-request\nname: Sock\nurl: wss://ws.example.com\nauth:\n  type: bearer\n  credentials:\n    - key: token\n      value: s3cr3t-ws-token\n',
+      ],
+    ]);
+    const mapped = mapCollectionV3(readCollectionV3(files, 'c'), { newId: counter() });
+    expect(mapped.collections[0]!.rest).toBeDefined();
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration',
+    );
+    expect(JSON.stringify(mapped)).not.toContain('s3cr3t-ws-token');
+  });
+});

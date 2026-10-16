@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { MappedClientImport } from '../../../../src/import/client-import.js';
 import { mapInsomnia } from '../../../../src/import/insomnia/map.js';
+import { MAX_INSOMNIA_BYTES } from '../../../../src/import/insomnia/model.js';
 import { parseInsomnia } from '../../../../src/import/insomnia/parse.js';
 import { importInsomnia } from '../../../../src/import/insomnia/import.js';
 import { folderRequests } from '../../../../src/rest/model.js';
@@ -550,10 +554,107 @@ describe('mapInsomnia: reported, not mapped', () => {
   });
 });
 
+describe('mapInsomnia: credentials outside REST', () => {
+  const socket = (over: Json): Json => ({
+    _id: 'ws-req_1',
+    parentId: 'wrk_1',
+    _type: 'websocket_request',
+    name: 'Echo',
+    url: 'wss://echo.example.com/ws',
+    ...over,
+  });
+
+  it('a WebSocket bearer token is warned about beside REST requests, and not copied', () => {
+    const mapped = mapV4([req({}), socket({ authentication: { type: 'bearer', token: 's3cr3t-ws-token' } })]);
+    expect(mapped.collections[0]!.websocket!.requests[0]!.auth).toEqual({ type: 'bearer' });
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from gRPC and WebSocket requests; re-enter them for 1 auth configuration',
+    );
+    expect(JSON.stringify(mapped)).not.toContain('s3cr3t-ws-token');
+  });
+
+  it('literal credential headers and metadata are dropped with the warning; references are kept', () => {
+    const mapped = mapV4([
+      socket({
+        headers: [
+          { name: 'Cookie', value: 'session=abc123' },
+          { name: 'X-API-Key', value: '{{ _.key }}' },
+          { name: 'X-Trace', value: 't' },
+        ],
+      }),
+      {
+        _id: 'greq_1',
+        parentId: 'wrk_1',
+        _type: 'grpc_request',
+        name: 'Get',
+        url: 'grpc.example.com:443',
+        protoMethodName: '/pkg.Svc/M',
+        metadata: [
+          { name: 'authorization', value: 'Bearer lit3ral-grpc-token' },
+          { name: 'Proxy-Authorization', value: 'Basic xyz' },
+        ],
+      },
+    ]);
+    const entry = mapped.collections[0]!;
+    expect(entry.websocket!.requests[0]!.headers.map((h) => [h.name, h.value])).toEqual([
+      ['X-API-Key', '${key}'],
+      ['X-Trace', 't'],
+    ]);
+    expect(entry.grpc!.requests[0]!.metadata).toEqual([]);
+    expect(mapped.report.warnings).toContain(
+      'Credentials are not copied from the collection; re-enter them for 3 auth configurations',
+    );
+    expect(mapped.report.notes).toContain('Echo: the value of "Cookie" is a credential and was not imported.');
+    const text = JSON.stringify(mapped);
+    expect(text).not.toContain('abc123');
+    expect(text).not.toContain('lit3ral-grpc-token');
+  });
+});
+
+describe('mapInsomnia: several workspaces', () => {
+  it('prefixes request-labelled lines with the workspace name', () => {
+    const mapped = mapInsomnia(
+      parseInsomnia(
+        JSON.stringify({
+          _type: 'export',
+          __export_format: 4,
+          resources: [
+            ws,
+            { _id: 'wrk_2', parentId: null, name: 'Second', scope: 'collection', _type: 'workspace' },
+            req({ authentication: { type: 'hawk' } }),
+            req({
+              _id: 'req_2',
+              parentId: 'wrk_2',
+              name: 'Other',
+              headers: [{ name: 'X', value: '{% base64 "x" %}' }],
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(mapped.report.warnings).toContain('W: R: Insomnia auth type "hawk" is not supported; set to "none".');
+    expect(mapped.report.warnings).toContain(
+      'Kept as written, with no Wirebench equivalent: the template tag "base64" in Second: Other.',
+    );
+  });
+});
+
 describe('importInsomnia', () => {
   it('reads text and maps it', async () => {
     const mapped = await importInsomnia({ kind: 'text', text: v4([req({})]) }, { newId: counter() });
     expect(mapped.counts.requests).toBe(1);
+  });
+
+  it('refuses a file past the size cap with insomnia-too-large', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'insomnia-'));
+    const path = join(dir, 'big.json');
+    writeFileSync(path, '');
+    truncateSync(path, MAX_INSOMNIA_BYTES + 1);
+    try {
+      await expect(importInsomnia({ kind: 'file', path })).rejects.toMatchObject({ code: 'insomnia-too-large' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('refuses a file it cannot read with insomnia-read-failed', async () => {

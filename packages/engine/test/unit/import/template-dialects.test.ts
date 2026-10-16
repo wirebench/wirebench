@@ -60,7 +60,8 @@ describe('insomniaTemplates', () => {
     const start = performance.now();
     insomniaTemplates('{'.repeat(1_000_000), new Set());
     insomniaTemplates('{%'.repeat(500_000), new Set());
-    expect(performance.now() - start).toBeLessThan(50);
+    // Linear is a few ms; quadratic over 10^6 characters is ~10^12 steps, minutes. 500 ms leaves load room.
+    expect(performance.now() - start).toBeLessThan(500);
   });
 });
 

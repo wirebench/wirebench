@@ -323,8 +323,19 @@ interface Inherited {
   readonly label: string;
 }
 
-function trailOf(trail: readonly string[], name: string): string {
-  return [...trail, name].join(' / ');
+/** Where an item sits: its folders, under a prefix (`<workspace>: `) when a file holds several workspaces. */
+export interface Trail {
+  readonly prefix: string;
+  readonly path: readonly string[];
+}
+
+/** The report label of `name` at `trail`: `W: Orders / Create order`. */
+export function labelOf(trail: Trail, name: string): string {
+  return trail.prefix + [...trail.path, name].join(' / ');
+}
+
+export function below(trail: Trail, name: string): Trail {
+  return { prefix: trail.prefix, path: [...trail.path, name] };
 }
 
 function httpItem(
@@ -374,7 +385,7 @@ function httpItem(
 
 function items(
   nodes: readonly InsNode[],
-  trail: readonly string[],
+  trail: Trail,
   inherited: readonly Inherited[],
   report: ReportBuilder,
   kept: KeptTags,
@@ -382,13 +393,13 @@ function items(
   const out: Json[] = [];
   for (const node of nodes) {
     if (node.kind === 'http') {
-      out.push(httpItem(node, trailOf(trail, node.name), inherited, report, kept));
+      out.push(httpItem(node, labelOf(trail, node.name), inherited, report, kept));
       continue;
     }
     if (node.kind !== 'folder') continue;
-    const label = trailOf(trail, node.name);
+    const label = labelOf(trail, node.name);
     const own = node.headers.filter((row) => row.name !== '').map((row) => ({ row, label }));
-    const inner = items(node.children, [...trail, node.name], [...own, ...inherited], report, kept);
+    const inner = items(node.children, below(trail, node.name), [...own, ...inherited], report, kept);
     // A folder with no HTTP request below it is no folder of the REST API.
     if (inner.length === 0) continue;
     if (own.length > 0) {
@@ -407,7 +418,16 @@ function items(
   return out;
 }
 
-/** The v2.1 document for one workspace's HTTP requests and folders. */
-export function v21OfInsomnia(ws: InsWorkspace, name: string, report: ReportBuilder, kept: KeptTags): Json {
-  return { info: { name, schema: V21_SCHEMA }, item: items(ws.items, [], [], report, kept) };
+/**
+ * The v2.1 document for one workspace's HTTP requests and folders. `prefix` starts every report
+ * label (`<workspace>: `) when the file holds several workspaces.
+ */
+export function v21OfInsomnia(
+  ws: InsWorkspace,
+  name: string,
+  report: ReportBuilder,
+  kept: KeptTags,
+  prefix = '',
+): Json {
+  return { info: { name, schema: V21_SCHEMA }, item: items(ws.items, { prefix, path: [] }, [], report, kept) };
 }

@@ -27,11 +27,11 @@ import { importedVariable } from '../opencollection/variables.js';
 import { ReportBuilder, uniqueName } from '../report.js';
 import type { ImportedScriptFile } from '../scripts.js';
 import { rewriteMustache } from '../templates.js';
-import { stripUserinfo } from '../values.js';
+import { referencesOnly, stripUserinfo } from '../values.js';
 import type { ImportedVariable, ImportedVariableSet } from '../variables.js';
 import { VariableSetBuilder, warnCredentialLookingNames } from '../variables.js';
-import type { KeptTags } from './convert.js';
-import { insomniaText, v21AuthOfInsomnia, v21OfInsomnia } from './convert.js';
+import type { KeptTags, Trail } from './convert.js';
+import { below, insomniaText, labelOf, v21AuthOfInsomnia, v21OfInsomnia } from './convert.js';
 import type { InsDocument, InsEnv, InsNode, InsRow, InsWorkspace, Rec } from './model.js';
 
 export interface MapInsomniaOptions {
@@ -49,9 +49,8 @@ function isRec(value: unknown): value is Rec {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function trailOf(trail: readonly string[], name: string): string {
-  return [...trail, name].join(' / ');
-}
+/** Header and metadata names whose literal value is a credential, never copied (lower case). */
+const CREDENTIAL_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'x-api-key']);
 
 /**
  * `data` with its keys in `dataPropertyOrder` order (`"&"` for the root, `"&~|key"` below it); keys
@@ -97,15 +96,29 @@ class Mapper {
     return mapped;
   }
 
-  rows(list: readonly InsRow[], label: string): KeyValueEntry[] {
-    return list
-      .filter((row) => row.name !== '')
-      .map((row) =>
-        entry(this.text(row.name, label), this.text(row.value, label), {
+  /**
+   * Rows as entries. With `dropCredentials` (headers, gRPC metadata), a credential-named row whose
+   * value is not references alone is left out and counted for the credential warning.
+   */
+  rows(list: readonly InsRow[], label: string, dropCredentials = false): KeyValueEntry[] {
+    const out: KeyValueEntry[] = [];
+    for (const row of list) {
+      if (row.name === '') continue;
+      const name = this.text(row.name, label);
+      const value = this.text(row.value, label);
+      if (dropCredentials && CREDENTIAL_HEADERS.has(name.toLowerCase()) && value !== '' && !referencesOnly(value)) {
+        this.credentials += 1;
+        this.report.note(`${label}: the value of "${name}" is a credential and was not imported.`);
+        continue;
+      }
+      out.push(
+        entry(name, value, {
           enabled: !row.disabled,
           ...(row.description !== undefined ? { description: row.description } : {}),
         }),
       );
+    }
+    return out;
   }
 
   url(raw: string, label: string): string {
@@ -158,7 +171,7 @@ interface Walked<F, R> {
 function walk<F, R>(
   nodes: readonly InsNode[],
   kind: 'grpc' | 'websocket',
-  trail: readonly string[],
+  trail: Trail,
   make: {
     readonly folder: (
       node: Extract<InsNode, { kind: 'folder' }>,
@@ -174,7 +187,7 @@ function walk<F, R>(
   for (const node of nodes) {
     if (node.kind === kind) {
       const slug = uniqueSlug(node.name, requestSlugs);
-      const made = make.request(node, trailOf(trail, node.name), slug, out.requests.length);
+      const made = make.request(node, labelOf(trail, node.name), slug, out.requests.length);
       if (made === undefined) continue;
       requestSlugs.add(slug);
       out.requests.push(made);
@@ -182,12 +195,12 @@ function walk<F, R>(
       continue;
     }
     if (node.kind !== 'folder') continue;
-    const inner = walk(node.children, kind, [...trail, node.name], make);
+    const inner = walk(node.children, kind, below(trail, node.name), make);
     if (inner.count === 0) continue;
     const slug = uniqueSlug(node.name, folderSlugs);
     folderSlugs.add(slug);
     out.folders.push(
-      make.folder(node, trailOf(trail, node.name), {
+      make.folder(node, labelOf(trail, node.name), {
         slug,
         order: out.folders.length,
         folders: inner.folders,
@@ -256,7 +269,7 @@ function grpcRequest(
     service: method[1]!,
     method: method[2]!,
     methodKind: 'unary',
-    metadata: mapper.rows(node.metadata, label),
+    metadata: mapper.rows(node.metadata, label, true),
     message: mapper.text(node.message, label),
     auth: { type: 'inherit' },
   });
@@ -288,20 +301,20 @@ function wsRequest(
     order,
     url: split.path,
     query: [...split.query, ...mapper.rows(node.parameters, label)],
-    headers: mapper.rows(node.headers, label),
+    headers: mapper.rows(node.headers, label, true),
     auth: mapper.auth(node.auth, label, true) ?? { type: 'inherit' },
     messages,
   });
 }
 
 /** Saves every request and folder script as text, depth first. */
-function collectScripts(nodes: readonly InsNode[], trail: readonly string[], collector: ScriptCollector): void {
+function collectScripts(nodes: readonly InsNode[], trail: Trail, collector: ScriptCollector): void {
   for (const node of nodes) {
     if (node.kind !== 'http' && node.kind !== 'folder') continue;
-    const label = trailOf(trail, node.name);
+    const label = labelOf(trail, node.name);
     collector.add(node.name, 'pre', node.scripts.pre, label);
     collector.add(node.name, 'post', node.scripts.post, label);
-    if (node.kind === 'folder') collectScripts(node.children, [...trail, node.name], collector);
+    if (node.kind === 'folder') collectScripts(node.children, below(trail, node.name), collector);
   }
 }
 
@@ -366,6 +379,7 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     const name = !several && options.name !== undefined && options.name.trim() !== '' ? options.name.trim() : ws.name;
     const prefix = several ? `${ws.name}: ` : '';
     const where = several ? `workspace "${ws.name}"` : undefined;
+    const root: Trail = { prefix, path: [] };
 
     // Variables: the base environment first, then each folder's, outermost first.
     if (ws.baseEnv !== undefined) mapper.addEnvironment(ws.baseEnv, sharedName, (v) => properties.add(v, where));
@@ -399,13 +413,13 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
 
     reportExtras(ws, report);
     const collector = new ScriptCollector(slugify(name).toLowerCase(), report);
-    collectScripts(ws.items, [], collector);
+    collectScripts(ws.items, root, collector);
     collector.reportDialects();
     scripts.push(...collector.files());
 
     const credentialsBefore = mapper.credentials;
     const grpcState: { target?: { target: string; tls: boolean }; protos: Set<string> } = { protos: new Set() };
-    const grpcWalk = walk<GrpcFolder, GrpcRequestDef>(ws.items, 'grpc', [], {
+    const grpcWalk = walk<GrpcFolder, GrpcRequestDef>(ws.items, 'grpc', root, {
       folder: (node, label, input) =>
         // Insomnia gRPC requests take no auth, a folder's included: their metadata carries it.
         createGrpcFolder(node.name, {
@@ -417,14 +431,14 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
         node.kind === 'grpc' ? grpcRequest(mapper, ws, node, label, slug, at, grpcState) : undefined,
     });
     const wsState: { url?: string } = {};
-    const wsWalk = walk<WsFolder, WsRequestDef>(ws.items, 'websocket', [], {
+    const wsWalk = walk<WsFolder, WsRequestDef>(ws.items, 'websocket', root, {
       folder: (node, label, input) =>
         createWsFolder(node.name, { newId, ...input, ...folderInput(mapper, node, label) }),
       request: (node, label, slug, at) =>
         node.kind === 'websocket' ? wsRequest(mapper, node, label, slug, at, wsState) : undefined,
     });
 
-    const parsed = parsePostmanCollection(v21OfInsomnia(ws, name, report, mapper.kept));
+    const parsed = parsePostmanCollection(v21OfInsomnia(ws, name, report, mapper.kept, prefix));
     const dynamic = [...new Set([...(parsed.dynamicVariables ?? []), ...mapper.dynamic])];
     const http = apiFromPostmanCollection(
       { ...parsed, ...(dynamic.length > 0 ? { dynamicVariables: dynamic } : {}) },
@@ -433,9 +447,11 @@ export function mapInsomnia(doc: InsDocument, options: MapInsomniaOptions = {}):
     mapper.dynamic.clear();
     for (const warning of http.summary.warnings ?? []) report.warn(`${prefix}${warning}`);
     const protocolCredentials = mapper.credentials - credentialsBefore;
-    if (protocolCredentials > 0 && http.summary.requests === 0) {
+    if (protocolCredentials > 0) {
+      // With REST requests, the REST mapper's line counts only theirs: this one counts the rest.
+      const from = http.summary.requests === 0 ? 'the collection' : 'gRPC and WebSocket requests';
       report.warn(
-        `${prefix}Credentials are not copied from the collection; re-enter them for ${String(protocolCredentials)} auth ${protocolCredentials === 1 ? 'configuration' : 'configurations'}`,
+        `${prefix}Credentials are not copied from ${from}; re-enter them for ${String(protocolCredentials)} auth ${protocolCredentials === 1 ? 'configuration' : 'configurations'}`,
       );
     }
 
