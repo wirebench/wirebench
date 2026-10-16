@@ -180,6 +180,7 @@ export {
   OpenCollectionError,
   BrunoError,
   HoppscotchError,
+  ThunderError,
   InsomniaError,
   ExportError,
   LegacyProjectError,
@@ -2387,3 +2388,6 @@ export type { BrunoSource } from './import/bruno/import.js';
 export * from './import/hoppscotch/index.js';
 export { importHoppscotch, importHoppscotchEnvironments } from './import/hoppscotch/import.js';
 export type { HoppscotchSource } from './import/hoppscotch/import.js';
+export * from './import/thunder/index.js';
+export { importThunderClient, readThunderFolder } from './import/thunder/import.js';
+export type { ThunderSource } from './import/thunder/import.js';

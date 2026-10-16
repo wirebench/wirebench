@@ -1,0 +1,218 @@
+---
+title: Sending SOAP requests through a corporate proxy
+description: Your network only reaches the service through an HTTP proxy. Configure it, see what goes through it, and fix each way a proxied send fails.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+On a corporate network, the SOAP service you need is often only reachable through an HTTP proxy.
+Your browser knows about it, because the operating system told it. A desktop client has to be told
+as well, and when it is told only half the story (the host but not the password, or the proxy but
+not the exceptions), the errors rarely say "proxy". They say the connection was refused, the host
+was not found, or the certificate is not trusted.
+
+This guide sets the proxy up in Wirebench, shows what a proxied send looks like on the wire, and goes
+through each failure. The wire details and messages come from running Wirebench's HTTP client
+through the test proxy in its own test suite.
+
+## Step 1: tell Wirebench about the proxy
+
+Open **Settings → Proxy**. Its hint sets the scope: "Applied to every send. Excluded hosts always go
+direct, including under a system proxy." Pick a **Mode**:
+
+- **No proxy**: every send goes direct. The default.
+- **System proxy**: Wirebench asks the operating system which proxy to use for each URL, the same
+  answer your browser gets, including a proxy auto-configuration (PAC) script if your company uses
+  one. Use this when the browser works without any setup of its own.
+- **Manual**: you name the proxy.
+
+For **Manual**:
+
+<Steps>
+
+1. Set **Host** to the proxy's host name or IP address only. A scheme, a path or a port in this
+   field is refused with `Host name or IP only — set the port below`.
+2. Set **Port**, a whole number from 1 to 65535.
+3. If the proxy asks for a sign-in, set **Username**, and the password in the **Proxy password**
+   field. The password is kept in the OS keychain, never in the preferences file.
+4. Set **Excludes** (below) and send.
+
+</Steps>
+
+If your organisation manages Wirebench's preferences, these fields may show a **Managed** pill and
+cannot be changed. The proxy password is never managed: you always enter your own.
+
+## Step 2: decide what goes direct
+
+**Excludes** is a comma-separated list of hosts that never use the proxy, under **System proxy** as
+much as under **Manual**. Each entry can be:
+
+- an exact host, such as `soap.corp.example`;
+- a wildcard, such as `*.corp.example`, which covers every subdomain but not `corp.example` itself;
+- a leading-dot domain, such as `.corp.example`, which covers the domain and every subdomain;
+- an IPv4 range in CIDR form, such as `10.0.0.0/8`;
+- `localhost`, which also covers `127.0.0.1` and `::1`;
+- `*`, which turns the proxy off for everything.
+
+Ports are not allowed. The usual pattern is: the internet through the proxy, internal services
+direct. If an internal SOAP service is reachable only through the proxy, leave it out of the
+excludes.
+
+## What a proxied send looks like
+
+For an `https:` endpoint, Wirebench asks the proxy to open a tunnel with `CONNECT`, then speaks TLS
+with the service itself through that tunnel. For a plain `http:` endpoint, the proxy receives the
+request with the full URL and forwards it. This is what the test proxy recorded for one send of
+each, with **Username** and **Proxy password** set:
+
+```json
+[
+  { "method": "CONNECT", "target": "127.0.0.1:61668", "proxyAuthorization": "Basic YWxpY2U6aHVudGVyMg==" },
+  { "method": "POST", "target": "http://127.0.0.1:61669/", "proxyAuthorization": "Basic YWxpY2U6aHVudGVyMg==" }
+]
+```
+
+Two consequences follow:
+
+- **The proxy never sees an https request's content.** It sees only the host and port in the
+  `CONNECT` line. The SOAP envelope, its headers and any WS-Security inside travel encrypted end to
+  end, and the **SSL Info** inspector shows the service's own certificate, not the proxy's.
+- **Proxy credentials use Basic authentication.** That is the only scheme Wirebench offers a proxy.
+  A proxy that accepts only NTLM or Kerberos sign-ins refuses every send with the error under
+  [The proxy refused the credentials](#the-proxy-refused-the-credentials).
+
+Authentication to the service itself is independent of the proxy. NTLM and Kerberos to the SOAP
+service work through a proxy: Wirebench keeps the whole handshake on one tunnel, over HTTP/1.1.
+
+The same proxy setting is used by the other requests a send can make on its way: a WS-Trust STS
+call, an OAuth 2.0 token request, and **Check Certificate Expiry**. Each is sent through the proxy
+for its own URL, so an STS that is excluded goes direct while the service does not.
+
+Importing a WSDL by URL uses it too, along with the CA bundle, and so does the definition re-fetch
+when a project reopens. A WSDL that is only reachable through the proxy imports the same way the
+service is called.
+
+## What each failure looks like
+
+A proxied send that fails shows a title, the message and the error code in the response pane, and
+the HTTP Log row shows the code in its status column.
+
+### The proxy refused the credentials
+
+```text
+Proxy connection failed.
+```
+
+The code is `proxy`, the title **Proxy connection failed**, and the hint "Check the proxy settings
+for this request." This is what a `407 Proxy Authentication Required` from the proxy turns into:
+the proxy refused to open the tunnel, so the service was never reached. Check, in order:
+
+1. **Username** is set. Without it, Wirebench sends no proxy credentials at all.
+2. The **Proxy password** is current. Corporate passwords change; the keychain entry does not
+   follow.
+3. The username has the form the proxy expects. Some proxies want `DOMAIN\user`, some just `user`.
+4. The proxy accepts Basic authentication. If your browser signs in to the proxy silently, without
+   ever asking for a password, the proxy is probably using NTLM or Kerberos. Ask the network team
+   for a proxy port that accepts Basic, or for the service to be reachable without the proxy.
+
+### The proxy cannot be reached
+
+The same code and message also cover a proxy that is not there: nothing listening at **Host** and
+**Port**, or a host name that does not resolve. The test suite's dead-proxy case answers with:
+
+```text
+proxy · Proxy connection failed.
+```
+
+Compare **Host** and **Port** with your browser's proxy settings or the PAC script. A proxy that
+only exists inside the corporate network also disappears when the VPN drops, and every send then
+fails this way at once.
+
+### The system proxy is SOCKS
+
+```text
+Your system proxy is SOCKS5, which Wirebench cannot use
+```
+
+The code is `proxy-unsupported`. Wirebench sends through HTTP proxies only. Under **System proxy**,
+when the operating system answers with a SOCKS proxy and no HTTP alternative, Wirebench stops
+before sending rather than going direct into a firewall that would drop the connection. The HTTP Log
+row reads `Failed · before send`. Ask for an HTTP proxy address and set it under **Manual**.
+
+### The certificate is not trusted, through the proxy
+
+```text
+The server certificate for 127.0.0.1:61668 is not trusted. Add its CA to the CA bundle, or turn on "Trust invalid certificates" for this endpoint.
+```
+
+This is `tls-untrusted`, and it names the service, not the proxy, because TLS runs through the
+tunnel to the service. Behind a corporate proxy, there is one common cause it does not spell out:
+a **TLS-inspecting proxy**. Such a proxy opens the tunnel itself, decrypts the traffic and
+re-encrypts it with a certificate it issues on the fly, signed by the company's own CA. Your
+browser trusts that CA because IT installed it; Wirebench needs to be told. Ask the network team,
+or check a send that got through: if **SSL Info** shows your company rather than a public CA as the
+issuer of the service's certificate, add that CA under **Settings → SSL / TLS → CA bundle**.
+[Mutual TLS with a corporate CA](/wirebench/docs/solutions/mutual-tls-corporate-ca/) walks through
+the CA bundle step by step.
+
+### The send went direct when it should not have
+
+When a host is excluded, or **Mode** is **No proxy**, a service reachable only through the proxy
+fails like any unreachable host:
+
+```text
+connection-refused · Connection refused.
+dns · DNS lookup failed.
+```
+
+Neither mentions the proxy, because the proxy was not used. Check **Excludes** for an entry that
+covers the host by accident: a CIDR range that includes it, or a `.domain` entry that covers more
+than you meant. Then check **Mode**. Under **System proxy**, the operating system may answer
+"direct" for that host, which is the PAC script's decision rather than Wirebench's.
+
+## Copying a proxied request
+
+**Copy as command** produces a command for the SOAP request, but not for the proxy route. The
+command carries a note instead, such as `sent through proxy http://proxy.corp.example:8080; not
+reproduced here`, so whoever runs it knows to set the proxy their own way. The proxy credentials are
+never in the note.
+
+## In a pipeline
+
+`wirebench run` does not read **Settings**. It takes the proxy from the environment, as most
+command-line tools do:
+
+- `HTTPS_PROXY` for `https:` endpoints and `HTTP_PROXY` for `http:` endpoints (lower-case names work
+  too). Credentials go in the URL, as `http://user:password@proxy.corp.example:8080`, and are sent
+  with Basic authentication.
+- `NO_PROXY`: a comma-separated list of `*`, exact hosts and domain suffixes. CIDR ranges and
+  wildcards are not read here.
+
+A value that is not a URL stops the run before anything is sent, with `HTTPS_PROXY is not a valid URL`
+and exit code 2.
+
+<Aside>
+gRPC calls never use the proxy, in the app or in a run: they always connect directly.
+</Aside>
+
+## Checklist
+
+- [ ] **Mode** is **System proxy** if your browser works without setup, or **Manual** with the host
+      and port from your browser's settings.
+- [ ] **Host** holds the host name only; the port goes in **Port**.
+- [ ] **Username** and **Proxy password** are set if the proxy asks for a sign-in.
+- [ ] `proxy · Proxy connection failed.`: wrong or missing credentials, a proxy that wants NTLM or
+      Kerberos, or a proxy that cannot be reached.
+- [ ] `proxy-unsupported`: the system proxy is SOCKS; set an HTTP proxy under **Manual**.
+- [ ] `tls-untrusted` behind the proxy: suspect a TLS-inspecting proxy and add the company's CA to
+      the CA bundle.
+- [ ] `connection-refused` or `dns` for a service behind the proxy: check **Excludes** and **Mode**.
+- [ ] In CI: `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` are set in the pipeline's environment.
+
+## Related
+
+- [Mutual TLS with a corporate CA](/wirebench/docs/solutions/mutual-tls-corporate-ca/): the CA bundle
+  and client certificates.
+- [Preferences](/wirebench/docs/guides/preferences/): every setting, including the proxy.
+- [Managed preferences](/wirebench/docs/guides/managed-preferences/): locking the proxy for a team.
+- [HTTP Log](/wirebench/docs/guides/http-log/): reading a failed send.

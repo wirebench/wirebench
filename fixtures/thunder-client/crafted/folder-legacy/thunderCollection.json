@@ -1,0 +1,4 @@
+[
+  { "_id": "lc1", "colName": "Legacy items", "created": "2021-01-01T00:00:00.000Z", "sortNum": 10000, "folders": [{ "_id": "lf1", "name": "items", "containerId": "", "sortNum": 10000 }] },
+  { "_id": "lc2", "colName": "Legacy other", "created": "2021-01-01T00:00:00.000Z", "sortNum": 20000, "folders": [] }
+]

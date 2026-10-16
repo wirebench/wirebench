@@ -5,7 +5,6 @@
  * here reads a file: main answers by host and log id.
  */
 import { useEffect, useState } from 'react';
-import { create } from 'zustand';
 import * as Dialog from '@radix-ui/react-dialog';
 import { FileText, FolderOpen, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
@@ -14,6 +13,7 @@ import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import type { SessionLogEntryWire, SessionLogMatchWire } from '../../../shared/session-log-wire.js';
 import { resolveLogSwitch } from '../../../shared/session-log-switch.js';
+import { hideSessionLogs, showSessionLogs, useSessionLogsDialogStore } from './session-logs-store.js';
 import { useLogSwitchesStore } from './session-log-switches.js';
 
 const SWITCH_CLASS =
@@ -345,21 +345,6 @@ function LogList({
       />
     </>
   );
-}
-
-interface SessionLogsDialogState {
-  open: boolean;
-}
-
-const useSessionLogsDialogStore = create<SessionLogsDialogState>()(() => ({ open: false }));
-
-/** Opens the list of every host's session logs (the `ssh.sessionLogs` command). */
-export function showSessionLogs(): void {
-  useSessionLogsDialogStore.setState({ open: true });
-}
-
-export function hideSessionLogs(): void {
-  useSessionLogsDialogStore.setState({ open: false });
 }
 
 /**

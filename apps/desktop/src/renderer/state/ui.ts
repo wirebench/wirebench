@@ -107,6 +107,8 @@ export type ImportDialogFormat =
   | 'bruno'
   | 'hoppscotch'
   | 'hoppscotch-environment'
+  | 'thunder-client'
+  | 'thunder-client-environment'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

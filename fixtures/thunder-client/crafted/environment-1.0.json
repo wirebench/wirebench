@@ -1,0 +1,11 @@
+{
+  "client": "Thunder Client",
+  "environmentName": "Staging",
+  "dateExported": "2024-04-10T04:57:54.728Z",
+  "version": "1.0",
+  "variables": [
+    { "name": "baseUrl", "value": "https://staging.example.com" },
+    { "name": "client_id", "value": "env-secret-123", "secret": true },
+    { "name": "emptySecret", "value": "", "secret": true }
+  ]
+}

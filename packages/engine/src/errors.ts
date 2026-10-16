@@ -159,6 +159,14 @@ export class HoppscotchError extends WirebenchError {
   }
 }
 
+/** Thrown when a Thunder Client export or workspace folder cannot be read. */
+export class ThunderError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'ThunderError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

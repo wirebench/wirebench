@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   ArrowLeftRight,
   KeyRound,
@@ -13,13 +13,24 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useUiStore } from '../../state/ui.js';
 import { forwardCounts, useForwardsStore } from './forwarding/forwards-store.js';
-import { HostDialog } from './host-dialog.js';
 import { useHostsStore, type SshHomeView } from './hosts-store.js';
-import { ImportDialog } from './import-dialog.js';
-import { KnownHostsImportDialog } from './known-hosts-import-dialog.js';
 import { openLocalTerminal } from './local-terminal.js';
 import { refreshLayouts, useLayoutsStore } from './panes/layouts-store.js';
 import { useSnippetsStore } from './snippets/snippets-store.js';
+
+// The dialogs load the first time one opens: the sidebar shows on every start in the SSH area.
+const HostDialog = lazy(async () => {
+  const module = await import('./host-dialog.js');
+  return { default: module.HostDialog };
+});
+const ImportDialog = lazy(async () => {
+  const module = await import('./import-dialog.js');
+  return { default: module.ImportDialog };
+});
+const KnownHostsImportDialog = lazy(async () => {
+  const module = await import('./known-hosts-import-dialog.js');
+  return { default: module.KnownHostsImportDialog };
+});
 
 /*
  * `label` is the menu's; the view's own title (`ssh-views.ts`) may be longer. "Forwarding" with its running
@@ -68,6 +79,10 @@ export function HostsView() {
   const secretsRevision = useHostsStore((s) => s.secretsRevision);
   const [counts, setCounts] = useState<{ keychain?: number; knownHosts?: number }>({});
   const localTerminal = useUiStore((s) => s.localTerminalEnabled);
+  // Editing a host happens in its details panel, not in this dialog.
+  const hostDialogOpen = useHostsStore((s) => s.dialog !== null && s.dialog.mode !== 'edit-host');
+  const importOpen = useHostsStore((s) => s.importOpen);
+  const knownHostsImportOpen = useHostsStore((s) => s.knownHostsImportOpen);
 
   useEffect(() => {
     void refresh();
@@ -166,9 +181,21 @@ export function HostsView() {
           </button>
         </div>
       )}
-      <HostDialog />
-      <ImportDialog />
-      <KnownHostsImportDialog />
+      {hostDialogOpen && (
+        <Suspense fallback={null}>
+          <HostDialog />
+        </Suspense>
+      )}
+      {importOpen && (
+        <Suspense fallback={null}>
+          <ImportDialog />
+        </Suspense>
+      )}
+      {knownHostsImportOpen && (
+        <Suspense fallback={null}>
+          <KnownHostsImportDialog />
+        </Suspense>
+      )}
     </div>
   );
 }
