@@ -67,6 +67,10 @@ All notable changes to this project are documented here. The format follows
   `Wirebench/0.1`, and it follows each update; a User-Agent you set yourself is kept. The CLI, which
   sends without the app's preferences, sends `Wirebench`. The **Accept compressed responses** hint now
   names what is sent: `gzip, deflate, br` on REST requests, `gzip, deflate` on SOAP ones (#632).
+- **A response with no body says so.** A 204, a `HEAD` answer or any other empty response now shows
+  "No body (204 No Content)" in the Body tab, with the response's own status, instead of an empty
+  editor showing line 1. A saved example and a captured webhook request with no body say the same
+  (#632).
 
 ## [6.1.0] - 2026-10-16
 
