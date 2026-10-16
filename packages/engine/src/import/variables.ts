@@ -17,6 +17,8 @@ export interface ImportedVariable {
 
 export interface ImportedVariableSet {
   readonly name: string;
+  /** An environment's colour as `#rrggbb`, when the source gave one. */
+  readonly color?: string;
   readonly variables: readonly ImportedVariable[];
 }
 

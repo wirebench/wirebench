@@ -52,7 +52,7 @@ function valueOf(v: OcVariable, where: string, report: ReportBuilder): string | 
  * when it has one (the desktop warns when it has none); a credential-named literal becomes a
  * secret; literal user info is cut from a URL.
  */
-function importedVariable(
+export function importedVariable(
   v: OcVariable,
   where: string,
   report: ReportBuilder,

@@ -208,7 +208,7 @@ function readV4(root: Rec): InsDocument {
       `This Insomnia file is ${kinds[0] ?? 'not a collection'}, not a collection or an environment.`,
     );
   }
-  return { kind: environmentOnly ? 'environment' : 'collection', workspaces: out, report: report.build() };
+  return { kind: environmentOnly ? 'environment' : 'collection', version: 4, workspaces: out, report: report.build() };
 }
 
 function readV4Workspace(
@@ -295,11 +295,14 @@ function readV4Workspace(
       } else if (type === 'socketio_request') {
         seen.add(id);
         node = skipped(ctx, nonEmpty(r['name']) ?? 'Imported Request', 'Socket.IO request');
+      } else if (type === 'mcp_request') {
+        seen.add(id);
+        node = skipped(ctx, nonEmpty(r['name']) ?? 'Imported Request', 'MCP request');
       } else if (type === 'cookie_jar') {
         addExtra(extras, 'cookie jar');
       } else if (type === 'unit_test_suite') {
+        // The mapper reports each suite, with the requests its tests check.
         addExtra(extras, 'unit tests');
-        ctx.report.warn(`The unit tests in "${name}" are not imported.`);
       } else if (type === 'api_spec' && hasSpec(r['contents'])) {
         addExtra(extras, 'API spec');
         ctx.report.warn(`"${name}" embeds an API spec; import it as OpenAPI to bring it in.`);
@@ -329,6 +332,10 @@ function readV4Workspace(
     }
   }
   protos.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const unitTests = typed(wid, 'unit_test_suite').map((suite) => ({
+    suite: nonEmpty(suite['name']) ?? 'Unit tests',
+    tests: typed(str(suite['_id']) ?? '', 'unit_test').map(testOf),
+  }));
   return {
     name,
     items,
@@ -336,7 +343,13 @@ function readV4Workspace(
     subEnvs: subs.map((s) => envOf(s, 'Imported Environment', s['isPrivate'])),
     protos,
     extras,
+    unitTests,
   };
+}
+
+function testOf(test: Rec): { name: string; requestId?: string } {
+  const requestId = nonEmpty(test['requestId']);
+  return { name: nonEmpty(test['name']) ?? 'Test', ...(requestId !== undefined ? { requestId } : {}) };
 }
 
 function subEnvironmentsOf(children: Map<string, Rec[]>, baseId: string | undefined, legacy: boolean): Rec[] {
@@ -499,9 +512,13 @@ function readV5(root: Rec, type: string): InsDocument {
   const items = kind === 'environment' ? [] : walk(root['collection'], 0);
 
   if (nonEmptyRec(root['cookieJar']) !== undefined) addExtra(extras, 'cookie jar');
+  const unitTests = (Array.isArray(root['testSuites']) ? root['testSuites'] : []).filter(isRec).map((suite) => ({
+    suite: nonEmpty(suite['name']) ?? 'Unit tests',
+    tests: (Array.isArray(suite['tests']) ? suite['tests'] : []).filter(isRec).map(testOf),
+  }));
   if (Array.isArray(root['testSuites']) && root['testSuites'].length > 0) {
+    // The mapper reports each suite, with the requests its tests check.
     addExtra(extras, 'unit tests');
-    report.warn(`The unit tests in "${name}" are not imported.`);
   }
   if (isRec(root['spec']) && hasSpec(root['spec']['contents'])) {
     addExtra(extras, 'API spec');
@@ -535,9 +552,11 @@ function readV5(root: Rec, type: string): InsDocument {
     subEnvs,
     protos: [],
     extras,
+    unitTests,
   };
   return {
     kind: kind === 'environment' ? 'environment' : 'collection',
+    version: 5,
     workspaces: [workspace],
     report: report.build(),
   };

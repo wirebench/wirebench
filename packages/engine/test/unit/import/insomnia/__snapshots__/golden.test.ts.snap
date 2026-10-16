@@ -1,0 +1,393 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`mapInsomnia golden > maps the crafted v5 collection 1`] = `
+{
+  "collections": [
+    {
+      "grpc": {
+        "folders": [
+          {
+            "description": "Everything under /orders",
+            "folders": [],
+            "id": "id-2",
+            "name": "Orders",
+            "order": 0,
+            "requests": [
+              {
+                "auth": {
+                  "type": "inherit",
+                },
+                "id": "id-1",
+                "kind": "grpc",
+                "message": "{"id": "42"}",
+                "metadata": [
+                  {
+                    "enabled": true,
+                    "name": "authorization",
+                    "value": "Bearer \${token}",
+                  },
+                ],
+                "method": "GetOrder",
+                "methodKind": "unary",
+                "name": "GetOrder (gRPC)",
+                "order": 0,
+                "service": "orders.v1.Orders",
+                "settings": {},
+                "slug": "GetOrder (gRPC)",
+              },
+            ],
+            "slug": "Orders",
+          },
+        ],
+        "id": "id-10",
+        "kind": "grpc",
+        "metadata": [],
+        "name": "Orders API (gRPC)",
+        "order": 1,
+        "requests": [],
+        "slug": "Orders API (gRPC)",
+        "target": "grpc.example.com:443",
+        "tls": true,
+      },
+      "name": "Orders API",
+      "rest": {
+        "baseUrl": "\${baseUrl}",
+        "folders": [
+          {
+            "auth": {
+              "type": "bearer",
+            },
+            "description": "Everything under /orders",
+            "folders": [],
+            "id": "id-8",
+            "name": "Orders",
+            "order": 0,
+            "requests": [
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "none",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Order-Id",
+                    "value": "{% response 'body', 'req_2222222222222222222222222222aaaa', 'b64::JC5pZA==::46b', 'when-expired', 60 %}",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Tenant",
+                    "value": "\${tenant}",
+                  },
+                ],
+                "id": "id-4",
+                "kind": "rest",
+                "method": "GET",
+                "name": "Latest order (chained)",
+                "order": 0,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Latest order (chained)",
+                "url": "/orders/latest",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "graphql",
+                  "query": "query($id: ID!) { order(id: $id) { id total } }",
+                  "variables": "{
+  "id": "42"
+}",
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Content-Type",
+                    "value": "application/json",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Tenant",
+                    "value": "\${tenant}",
+                  },
+                ],
+                "id": "id-5",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Order by id (GraphQL)",
+                "order": 1,
+                "pathParams": [],
+                "query": [],
+                "settings": {},
+                "slug": "Order by id (GraphQL)",
+                "url": "/graphql",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "inherit",
+                },
+                "body": {
+                  "kind": "multipart",
+                  "parts": [
+                    {
+                      "contentType": "text/plain",
+                      "enabled": true,
+                      "kind": "text",
+                      "name": "note",
+                      "value": "scanned copy",
+                    },
+                    {
+                      "enabled": true,
+                      "kind": "file",
+                      "name": "file",
+                      "source": {
+                        "kind": "path",
+                        "path": "/Users/dev/invoice.pdf",
+                      },
+                    },
+                  ],
+                },
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "X-Tenant",
+                    "value": "\${tenant}",
+                  },
+                ],
+                "id": "id-6",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Upload attachment",
+                "order": 2,
+                "pathParams": [
+                  {
+                    "enabled": true,
+                    "name": "id",
+                    "value": "42",
+                  },
+                ],
+                "query": [],
+                "settings": {
+                  "followRedirects": false,
+                },
+                "slug": "Upload attachment",
+                "url": "/orders/{id}/attachments",
+              },
+              {
+                "assertions": [],
+                "auth": {
+                  "type": "basic",
+                  "username": "svc",
+                },
+                "body": {
+                  "kind": "raw",
+                  "language": "json",
+                  "text": "{
+  "sku": "ABC-1",
+  "qty": 2
+}",
+                },
+                "description": "Creates an order",
+                "headers": [
+                  {
+                    "enabled": true,
+                    "name": "Content-Type",
+                    "value": "application/json",
+                  },
+                  {
+                    "enabled": false,
+                    "name": "X-Debug",
+                    "value": "1",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "X-Tenant",
+                    "value": "\${tenant}",
+                  },
+                ],
+                "id": "id-7",
+                "kind": "rest",
+                "method": "POST",
+                "name": "Create order",
+                "order": 3,
+                "pathParams": [],
+                "query": [
+                  {
+                    "enabled": false,
+                    "name": "dryRun",
+                    "value": "true",
+                  },
+                  {
+                    "enabled": true,
+                    "name": "expand",
+                    "value": "items",
+                  },
+                ],
+                "settings": {},
+                "slug": "Create order",
+                "url": "/orders",
+              },
+            ],
+            "slug": "Orders",
+          },
+        ],
+        "id": "id-9",
+        "kind": "rest",
+        "name": "Orders API",
+        "order": 0,
+        "requests": [],
+        "servers": [
+          {
+            "description": "Collection Base URL",
+            "url": "\${baseUrl}",
+          },
+        ],
+        "slug": "Orders API",
+      },
+      "websocket": {
+        "folders": [],
+        "headers": [],
+        "id": "id-11",
+        "kind": "websocket",
+        "name": "Orders API (WebSocket)",
+        "order": 2,
+        "requests": [
+          {
+            "assertions": [],
+            "auth": {
+              "type": "inherit",
+            },
+            "headers": [
+              {
+                "enabled": true,
+                "name": "X-Token",
+                "value": "\${token}",
+              },
+            ],
+            "id": "id-3",
+            "kind": "websocket",
+            "messages": [],
+            "name": "Echo (WebSocket)",
+            "order": 0,
+            "query": [],
+            "settings": {},
+            "slug": "Echo (WebSocket)",
+            "subprotocols": [],
+            "url": "wss://echo.example.com/ws",
+          },
+        ],
+        "slug": "Orders API (WebSocket)",
+        "url": "wss://echo.example.com/ws",
+      },
+    },
+  ],
+  "counts": {
+    "assertions": 0,
+    "collections": 1,
+    "examples": 0,
+    "folders": 2,
+    "requests": 6,
+    "scripts": 3,
+  },
+  "protos": [],
+  "report": {
+    "notes": [
+      "Orders API: its cookie jar was not imported; the jar fills on the first send.",
+      "Orders: pre-request script saved as imported-scripts/orders api/orders.pre.js.",
+      "Orders / Create order: pre-request script saved as imported-scripts/orders api/create order.pre.js.",
+      "Orders / Create order: post-response script saved as imported-scripts/orders api/create order.post.js.",
+      "Orders / Upload attachment: the file part "file" points at /Users/dev/invoice.pdf, which is not in the export; check the path before sending.",
+      "Orders / Upload attachment: the "store cookies" setting has no Wirebench equivalent and was not imported.",
+      "Orders: its headers (X-Tenant) were copied onto each request below it that does not set them.",
+      "Orders API (gRPC): Insomnia v5 exports hold no .proto files, so the API has no definition: import its .proto or use server reflection.",
+      "Orders API (WebSocket): Insomnia v5 exports hold no WebSocket messages, so none were imported.",
+    ],
+    "warnings": [
+      "Imported scripts use insomnia. calls from another client; they are kept as text and do not run in Wirebench.",
+      "Credentials are not copied from the collection; re-enter them for 2 auth configurations",
+      "Kept as written, with no Wirebench equivalent: the template tag "response" in Orders / Latest order (chained).",
+    ],
+  },
+  "scripts": [
+    {
+      "path": "imported-scripts/orders api/orders.pre.js",
+      "source": "console.log('folder pre-request');",
+    },
+    {
+      "path": "imported-scripts/orders api/create order.pre.js",
+      "source": "insomnia.variables.set('requestedAt', Date.now());",
+    },
+    {
+      "path": "imported-scripts/orders api/create order.post.js",
+      "source": "insomnia.test('201', () => insomnia.expect(insomnia.response.code).to.eql(201));",
+    },
+  ],
+  "variables": {
+    "environments": [
+      {
+        "color": "#ff8800",
+        "name": "Staging",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "baseUrl",
+            "secret": false,
+            "value": "https://staging.example.com",
+          },
+          {
+            "enabled": true,
+            "name": "svcPassword",
+            "secret": true,
+            "value": "",
+          },
+        ],
+      },
+    ],
+    "projectProperties": {
+      "name": "Project properties",
+      "variables": [
+        {
+          "enabled": true,
+          "name": "baseUrl",
+          "secret": false,
+          "value": "https://api.example.com",
+        },
+        {
+          "enabled": true,
+          "name": "tenant",
+          "secret": false,
+          "value": "base",
+        },
+        {
+          "enabled": true,
+          "name": "db.host",
+          "secret": false,
+          "value": "localhost",
+        },
+        {
+          "enabled": true,
+          "name": "db.port",
+          "secret": false,
+          "value": "5432",
+        },
+      ],
+    },
+    "report": {
+      "notes": [
+        "Project properties: "tenant" is defined more than once (folder "Orders"); the first value was kept.",
+      ],
+      "warnings": [
+        "Vault secrets cannot be read from an export: svcPassword (Staging). Each was imported as a secret with no value; set it in Environments.",
+      ],
+    },
+  },
+}
+`;

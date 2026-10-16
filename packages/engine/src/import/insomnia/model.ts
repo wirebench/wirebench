@@ -98,10 +98,14 @@ export interface InsWorkspace {
   protos: { id: string; name: string; text: string; dirId?: string }[];
   /** What the file held that is not read: `cookie jar`, `unit tests`, `API spec`. */
   extras: string[];
+  /** The unit test suites, which are reported, not imported: each test's name and the request it checks. */
+  unitTests: { suite: string; tests: { name: string; requestId?: string }[] }[];
 }
 
 export interface InsDocument {
   kind: 'collection' | 'environment';
+  /** The export format: 4 (`__export_format: 4`) or 5 (`*.insomnia.rest/5.x`). */
+  version: 4 | 5;
   workspaces: InsWorkspace[];
   report: ImportReport;
 }
