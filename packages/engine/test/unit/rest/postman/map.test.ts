@@ -210,11 +210,11 @@ describe('Postman entity mapping (map.ts)', () => {
       workstation: 'WS01',
     });
 
-    // 2.5: Unsupported digest auth on request maps to 'none' and generates warning
-    const digestReq = folder.requests[1]!;
-    expect(digestReq.auth).toEqual({ type: 'none' });
+    // 2.5: Unsupported hawk auth on request maps to 'none' and generates warning
+    const hawkReq = folder.requests[1]!;
+    expect(hawkReq.auth).toEqual({ type: 'none' });
     expect(summary.warnings).toBeDefined();
-    expect(summary.warnings?.some((w) => w.includes('digest'))).toBe(true);
+    expect(summary.warnings?.some((w) => w.includes('hawk'))).toBe(true);
   });
 
   it('turns collection and folder variables into project properties, base URL excluded', () => {

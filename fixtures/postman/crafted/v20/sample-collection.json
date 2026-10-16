@@ -44,8 +44,8 @@
             "method": "GET",
             "url": "{{baseUrl}}/digest-protected",
             "auth": {
-              "type": "digest",
-              "digest": {
+              "type": "hawk",
+              "hawk": {
                 "username": "digestuser"
               }
             }

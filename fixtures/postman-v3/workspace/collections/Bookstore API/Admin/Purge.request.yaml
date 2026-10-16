@@ -4,7 +4,7 @@ url: '{{baseUrl}}/cache'
 body:
   type: none
 auth:
-  type: digest
+  type: hawk
   credentials:
     - key: username
       value: admin

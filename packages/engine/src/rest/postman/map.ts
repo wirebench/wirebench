@@ -6,6 +6,8 @@
  * request bodies (raw, urlencoded, formdata, binary), and auth configurations.
  */
 
+import type { JwtAlgorithm } from '../../http/auth/jwt-algorithms.js';
+import { JWT_ALGORITHMS } from '../../http/auth/jwt-algorithms.js';
 import { PostmanError } from '../../errors.js';
 import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../../import/examples.js';
 import { ReportBuilder } from '../../import/report.js';
@@ -557,6 +559,9 @@ const SECRET_KEYS: Readonly<Record<string, readonly string[]>> = {
   apikey: ['value'],
   oauth2: ['clientSecret', 'accessToken', 'password', 'refreshToken'],
   ntlm: ['password'],
+  digest: ['password'],
+  awsv4: ['accessKey', 'secretKey', 'sessionToken'],
+  jwt: ['secret', 'privateKey'],
 };
 
 /** Whether `auth` carries a secret the import does not copy. */
@@ -664,6 +669,37 @@ export function mapPostmanAuth(
         ...(username !== undefined ? { username } : {}),
         ...(domain !== undefined ? { domain } : {}),
         ...(workstation !== undefined ? { workstation } : {}),
+      };
+    }
+    case 'digest': {
+      const username = asText(auth.digest?.find((a) => a.key === 'username')?.value);
+      return { type: 'digest', ...(username !== undefined ? { username } : {}) };
+    }
+    case 'awsv4': {
+      // The access key, secret key and session token are credentials: never copied.
+      const attr = (key: string): string => asText(auth.awsv4?.find((a) => a.key === key)?.value) ?? '';
+      return { type: 'aws-sigv4', region: attr('region'), service: attr('service') };
+    }
+    case 'jwt': {
+      const attr = (key: string): string | undefined => asText(auth.jwt?.find((a) => a.key === key)?.value);
+      const algorithm = attr('algorithm') ?? 'HS256';
+      if (!(JWT_ALGORITHMS as readonly string[]).includes(algorithm)) {
+        warnings?.push(`JWT algorithm "${algorithm}" is not supported; set to "none"`);
+        return { type: 'none' };
+      }
+      const inQuery = attr('addTokenTo') === 'queryParam';
+      const name = inQuery ? attr('queryParamKey') : undefined;
+      const prefix = inQuery ? undefined : attr('headerPrefix');
+      // The secret and the private key are credentials: never copied. Postman adds no iat or jti itself.
+      return {
+        type: 'jwt',
+        algorithm: algorithm as JwtAlgorithm,
+        claims: attr('payload') ?? '{}',
+        issuedAt: false,
+        jwtId: false,
+        in: inQuery ? 'query' : 'header',
+        ...(name !== undefined && name !== '' ? { name } : {}),
+        ...(prefix !== undefined ? { prefix } : {}),
       };
     }
     default:
