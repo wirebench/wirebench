@@ -3,8 +3,8 @@
  * places one (R4): a unique slug, the definition cached under the new folder, the endpoints the
  * WSDL's ports name, and a `Request 1` per operation; or the mapped API with its documents cached.
  */
-import { readFile, stat } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   apiDefinitionDir,
@@ -19,7 +19,9 @@ import {
   endpointsFromContract,
   generateId,
   generateSoapRequest,
+  IMPORTED_SCRIPTS_DIR,
   importCollectionV3Folder,
+  importInsomnia,
   importOpenApi,
   importWsdl,
   nextApiOrder,
@@ -38,6 +40,7 @@ import type {
   FetchDocument,
   WsdlImportResult,
   Interface,
+  MappedClientImport,
   OperationDef,
   Project,
   RestApi,
@@ -66,7 +69,7 @@ export interface ImportProblemView {
 }
 
 export interface ImportOutput {
-  readonly format: 'wsdl' | 'openapi' | 'postman-v3';
+  readonly format: 'wsdl' | 'openapi' | 'postman-v3' | 'insomnia' | 'bruno' | 'hoppscotch' | 'thunder-client';
   readonly added: readonly ImportedItem[];
   /** What the importer reported it could not map. */
   readonly problems: readonly ImportProblemView[];
@@ -87,7 +90,7 @@ const input = z.object({
     .string()
     .min(1)
     .describe(
-      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
+      'A WSDL or OpenAPI file (an absolute path is safest), an http(s) URL, an Insomnia export (v4 JSON or v5 YAML), or a folder collection (v3): its folder, its .resources/definition.yaml, or a workspace folder holding collections/',
     ),
   name: z
     .string()
@@ -326,22 +329,58 @@ function requestCount(container: {
   );
 }
 
+/** What the placement needs of any importer's result; scripts and protos only the client formats have. */
+type MappedCollections = Pick<MappedClientImport, 'collections' | 'variables' | 'report'> &
+  Partial<Pick<MappedClientImport, 'scripts' | 'protos'>>;
+
 /**
- * A folder (v3) collection: each collection's REST, gRPC and WebSocket APIs under free slugs, and
- * its plain variables as project properties a name the project already has keeps its value. The
- * command line has no secret store and no workspace, so secret variables, environments and globals
- * are reported, not imported.
+ * Saves an importer's scripts as text under `imported-scripts/`, never overwriting a file and never
+ * leaving that folder. Returns what could not be written, for the report.
  */
-async function addCollectionV3(
+async function writeScripts(
+  projectDir: string,
+  scripts: readonly { readonly path: string; readonly source: string }[],
+): Promise<ImportProblemView[]> {
+  const problems: ImportProblemView[] = [];
+  const root = resolve(projectDir, IMPORTED_SCRIPTS_DIR);
+  for (const script of scripts) {
+    const target = resolve(projectDir, script.path);
+    if (!target.startsWith(root + sep)) {
+      problems.push({
+        code: 'script-not-saved',
+        message: `The script ${script.path} would have been saved outside ${IMPORTED_SCRIPTS_DIR}/ and was not written.`,
+      });
+      continue;
+    }
+    try {
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, script.source, { encoding: 'utf8', flag: 'wx' });
+    } catch (error) {
+      const exists = (error as NodeJS.ErrnoException).code === 'EEXIST';
+      problems.push({
+        code: 'script-not-saved',
+        message: exists
+          ? `A script already exists at ${script.path}; it was not overwritten.`
+          : `The script ${script.path} could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+  return problems;
+}
+
+/**
+ * An importer's collections (a v3 folder, or a client's export): each collection's REST, gRPC and
+ * WebSocket APIs under free slugs, and its plain variables as project properties; a name the project
+ * already has keeps its value. The command line has no secret store and no workspace, so secret
+ * variables, environments and globals are reported, not imported; scripts are saved as text, and
+ * gRPC APIs are placed without their `.proto` definitions.
+ */
+async function addMappedCollections(
   context: OpsContext,
   project: Project,
-  path: string,
-  name: string | undefined,
+  mapped: MappedCollections,
+  format: ImportOutput['format'],
 ): Promise<ImportOutput> {
-  const mapped = await importCollectionV3Folder(path, {
-    firstOrder: nextApiOrder(project),
-    ...(name !== undefined ? { name } : {}),
-  });
   const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const added: ImportedItem[] = [];
   let next = project;
@@ -390,11 +429,46 @@ async function addCollectionV3(
       message: `${String(environments)} environment and globals file(s) were not imported: the command line has no workspace. Import the folder in the desktop to bring them across.`,
     });
   }
+  const warnings = [...mapped.report.warnings, ...mapped.variables.report.warnings];
+  const notes = [...mapped.report.notes, ...mapped.variables.report.notes];
   problems.push(
-    ...mapped.report.warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
-    ...mapped.report.notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
+    ...warnings.map((message) => ({ code: 'import-warning', message: redactUrlsInText(message) })),
+    ...notes.map((message) => ({ code: 'import-note', message: redactUrlsInText(message) })),
   );
-  return { format: 'postman-v3', added, problems };
+  if ((mapped.protos?.length ?? 0) > 0) {
+    problems.push({
+      code: 'proto-not-imported',
+      message: `The command line does not place .proto definitions: ${(mapped.protos ?? []).map((proto) => proto.name).join(', ')}. The gRPC APIs were added without them; import the file in the desktop to bring them across.`,
+    });
+  }
+  problems.push(...(await writeScripts(context.projectDir, mapped.scripts ?? [])));
+  return { format, added, problems };
+}
+
+async function addCollectionV3(
+  context: OpsContext,
+  project: Project,
+  path: string,
+  name: string | undefined,
+): Promise<ImportOutput> {
+  const mapped = await importCollectionV3Folder(path, {
+    firstOrder: nextApiOrder(project),
+    ...(name !== undefined ? { name } : {}),
+  });
+  return addMappedCollections(context, project, mapped, 'postman-v3');
+}
+
+async function addInsomnia(
+  context: OpsContext,
+  project: Project,
+  read: ReadSource,
+  name: string | undefined,
+): Promise<ImportOutput> {
+  const mapped = await importInsomnia(
+    { kind: 'text', text: read.text },
+    { firstOrder: nextApiOrder(project), ...(name !== undefined ? { name } : {}) },
+  );
+  return addMappedCollections(context, project, mapped, 'insomnia');
 }
 
 export const importOp = defineOp({
@@ -403,7 +477,7 @@ export const importOp = defineOp({
   description:
     'Imports a WSDL or OpenAPI definition (a file path or an http(s) URL) into the project as a new SOAP ' +
     'interface or REST API, with its definition cached and one sample request per operation; or a folder ' +
-    'collection (v3) as its REST, gRPC and WebSocket APIs with its plain variables as project properties. ' +
+    'collection (v3) or an Insomnia export (v4 JSON, v5 YAML) as its REST, gRPC and WebSocket APIs with its plain variables as project properties and its scripts saved as text. ' +
     'Writes the project folder. Needs the server started with --allow-write.',
   input,
   async run(value, context): Promise<ImportOutput> {
@@ -426,11 +500,21 @@ export const importOp = defineOp({
     if (detected.kind === 'openapi') {
       return addOpenApi(context, project, read, fetchDocument, value.name);
     }
+    if (detected.kind === 'insomnia') {
+      return addInsomnia(context, project, read, value.name);
+    }
+    if (detected.kind.endsWith('-environment')) {
+      throw new OpsError(
+        'environments-not-imported',
+        `${value.source} reads as ${detected.label}; the command line has no workspace for environments. Import it in the desktop.`,
+        { format: detected.kind },
+      );
+    }
     throw new OpsError(
       'unsupported-format',
       detected.kind === 'postman-v3'
         ? `${value.source} is one file of a folder collection; import its folder or its .resources/definition.yaml`
-        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, or a folder collection`,
+        : `${value.source} reads as ${detected.label}; import takes a WSDL or an OpenAPI document, or an Insomnia export, or a folder collection`,
       { format: detected.kind },
     );
   },
