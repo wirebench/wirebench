@@ -53,6 +53,10 @@ All notable changes to this project are documented here. The format follows
   collection whose multipart body has a file part without a file, from Postman, Insomnia, Thunder
   Client or Hoppscotch, now keeps that row as a switched-off text part, and the import report names
   the request and tells you to pick the file again on the Body tab.
+- **An imported file body with no file no longer stops the project from opening.** A request whose
+  whole body is a file but carries no file, from Postman, Insomnia or Thunder Client, now imports with
+  no body, and the import report names the request and tells you to pick the file on the Body tab.
+  Hoppscotch file bodies now get the same warning.
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
