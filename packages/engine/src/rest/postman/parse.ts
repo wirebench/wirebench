@@ -616,6 +616,9 @@ function parseAuth(raw: Record_, ctx: ParseContext): PostmanAuth {
   const apikey = extractAttributes('apikey');
   const oauth2 = extractAttributes('oauth2');
   const ntlm = extractAttributes('ntlm');
+  const digest = extractAttributes('digest');
+  const awsv4 = extractAttributes('awsv4');
+  const jwt = extractAttributes('jwt');
 
   return {
     ...(type !== undefined ? { type } : {}),
@@ -624,6 +627,9 @@ function parseAuth(raw: Record_, ctx: ParseContext): PostmanAuth {
     ...(apikey !== undefined ? { apikey } : {}),
     ...(oauth2 !== undefined ? { oauth2 } : {}),
     ...(ntlm !== undefined ? { ntlm } : {}),
+    ...(digest !== undefined ? { digest } : {}),
+    ...(awsv4 !== undefined ? { awsv4 } : {}),
+    ...(jwt !== undefined ? { jwt } : {}),
   };
 }
 

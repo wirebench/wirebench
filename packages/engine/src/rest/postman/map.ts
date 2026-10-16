@@ -43,6 +43,8 @@ import type {
 } from './model.js';
 import { MAX_POSTMAN_DEPTH, translatePostmanVariables } from './parse.js';
 import type { RequestScripts } from '../../script/model.js';
+import { JWT_ALGORITHMS } from '../../http/auth/jwt-algorithms.js';
+import type { JwtAlgorithm } from '../../http/auth/jwt-algorithms.js';
 
 /** Matches a leading `${baseUrl}` / `${base_url}` reference in any letter case. */
 const BASE_URL_REFERENCE = /^\$\{(baseurl|base_url)\}/i;
@@ -557,6 +559,9 @@ const SECRET_KEYS: Readonly<Record<string, readonly string[]>> = {
   apikey: ['value'],
   oauth2: ['clientSecret', 'accessToken', 'password', 'refreshToken'],
   ntlm: ['password'],
+  digest: ['password'],
+  awsv4: ['accessKey', 'secretKey', 'sessionToken'],
+  jwt: ['secret', 'privateKey'],
 };
 
 /** Whether `auth` carries a secret the import does not copy. */
@@ -666,12 +671,65 @@ export function mapPostmanAuth(
         ...(workstation !== undefined ? { workstation } : {}),
       };
     }
+    case 'digest': {
+      // The username only: the password, like every secret, is never imported.
+      const username = asText(auth.digest?.find((a) => a.key === 'username')?.value);
+      return { type: 'digest', ...(username !== undefined ? { username } : {}) };
+    }
+    case 'awsv4': {
+      // Region and service only: the keys and the session token are never imported.
+      const attr = (key: string): string => asText(auth.awsv4?.find((a) => a.key === key)?.value) ?? '';
+      return { type: 'aws-sigv4', region: attr('region'), service: attr('service') };
+    }
+    case 'jwt':
+      return mapJwtAuth(auth.jwt ?? [], warnings);
     default:
       if (type !== undefined) {
         warnings?.push(`Authentication type "${type}" is not supported; set to "none"`);
       }
       return { type: 'none' };
   }
+}
+
+/** A JSON attribute (`payload`, `header`) as text: a string as written, anything else as its JSON. */
+function jsonText(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+/**
+ * A v2.1 `jwt` auth as Wirebench's: the algorithm, claims, extra header and where the token goes.
+ * The signing secret or private key is never imported; an algorithm Wirebench cannot sign with is
+ * `none`, named in a warning.
+ */
+function mapJwtAuth(
+  attrs: readonly { readonly key: string; readonly value: unknown }[],
+  warnings?: string[],
+): AuthConfig {
+  const attr = (key: string): unknown => attrs.find((a) => a.key === key)?.value;
+  const algorithm = asText(attr('algorithm')) ?? 'HS256';
+  if (!(JWT_ALGORITHMS as readonly string[]).includes(algorithm)) {
+    warnings?.push(`JWT algorithm "${algorithm}" is not supported; set to "none"`);
+    return { type: 'none' };
+  }
+  const header = jsonText(attr('header'));
+  const toQuery = asText(attr('addTokenTo')) === 'queryParam';
+  const queryKey = asText(attr('queryParamKey'));
+  const prefix = asText(attr('headerPrefix'));
+  return {
+    type: 'jwt',
+    algorithm: algorithm as JwtAlgorithm,
+    claims: jsonText(attr('payload')) ?? '{}',
+    ...(header !== undefined && header !== '{}' ? { header } : {}),
+    issuedAt: false,
+    jwtId: false,
+    in: toQuery ? 'query' : 'header',
+    ...(toQuery
+      ? queryKey !== undefined && queryKey !== ''
+        ? { name: queryKey }
+        : {}
+      : { prefix: prefix ?? 'Bearer' }),
+  };
 }
 
 /** Recursively looks for the first absolute URL to infer a collection base URL. */

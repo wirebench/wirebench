@@ -36,6 +36,9 @@ export interface PostmanAuth {
   readonly apikey?: readonly PostmanAuthAttribute[];
   readonly oauth2?: readonly PostmanAuthAttribute[];
   readonly ntlm?: readonly PostmanAuthAttribute[];
+  readonly digest?: readonly PostmanAuthAttribute[];
+  readonly awsv4?: readonly PostmanAuthAttribute[];
+  readonly jwt?: readonly PostmanAuthAttribute[];
   readonly noauth?: unknown;
 }
 
