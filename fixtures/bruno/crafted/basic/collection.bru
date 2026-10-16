@@ -1,0 +1,20 @@
+headers {
+  X-Client: wirebench-demo
+}
+
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{process.env.TOKEN}}
+}
+
+vars:pre-request {
+  tenant: acme
+  ~legacy: on
+}
+
+script:pre-request {
+  bru.setVar("startedAt", Date.now());
+}

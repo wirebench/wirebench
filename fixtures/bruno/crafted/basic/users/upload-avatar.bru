@@ -1,0 +1,17 @@
+meta {
+  name: Upload avatar
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/users/{{userId}}/avatar
+  body: multipartForm
+  auth: inherit
+}
+
+body:multipart-form {
+  caption: Profile photo @contentType(text/plain)
+  avatar: @file(assets/avatar.png) @contentType(image/png)
+  ~backup: @file(assets/a.png|assets/b.png)
+}

@@ -143,6 +143,14 @@ export class InsomniaError extends WirebenchError {
   }
 }
 
+/** Thrown when a Bruno collection, `.bru` file or JSON export cannot be read. */
+export class BrunoError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'BrunoError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

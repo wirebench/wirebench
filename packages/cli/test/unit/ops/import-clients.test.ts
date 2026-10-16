@@ -86,3 +86,33 @@ describe('op import: an Insomnia export', () => {
     expect(restApisOf(project)).toEqual([]);
   });
 });
+
+const BRUNO = resolve(import.meta.dirname, '..', '..', '..', '..', '..', 'fixtures', 'bruno', 'crafted');
+
+describe('op import: a Bruno collection', () => {
+  it('imports a Bruno folder with environments, secrets and scripts left out and named', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(importOp, { source: join(BRUNO, 'basic') }, fixture.base());
+
+    expect(result.format).toBe('bruno');
+    expect(result.added.map((item) => item.kind)).toEqual(['rest', 'grpc', 'websocket']);
+    const codes = result.problems.map((problem) => problem.code);
+    expect(codes).toContain('environments-not-imported');
+    expect(codes).toContain('scripts-not-saved');
+    expect(JSON.stringify(result)).not.toContain('proxy-pass-123');
+    expect(JSON.stringify(result)).not.toContain('literal-digest-pass');
+    const { project } = await loadProject(fixture.dir);
+    expect(restApisOf(project)[0]?.name).toBe('demo-collection');
+    expect(project.properties).toMatchObject({ tenant: 'acme' });
+    expect(project.disabledProperties).toContain('legacy');
+  });
+
+  it('reads a bruno.json as its folder, and any other file as a JSON export', async () => {
+    const fixture = await emptyProject();
+    const viaJson = await runOp(importOp, { source: join(BRUNO, 'basic', 'bruno.json') }, fixture.base());
+    expect(viaJson.added.map((item) => item.kind)).toEqual(['rest', 'grpc', 'websocket']);
+    const exported = await runOp(importOp, { source: join(BRUNO, 'export.json'), name: 'Exported' }, fixture.base());
+    expect(exported.format).toBe('bruno');
+    expect(exported.added).toEqual([expect.objectContaining({ kind: 'rest', name: 'Exported' })]);
+  });
+});

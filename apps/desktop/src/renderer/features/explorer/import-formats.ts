@@ -170,6 +170,17 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
     dialogTitle: 'Import Insomnia Environments',
   }),
   row({
+    kind: 'bruno',
+    label: 'Bruno collection (folder)',
+    tabs: NO_URL_TABS,
+    fileFirst: true,
+    folder: true,
+    defaultName: 'Imported collection',
+    fileFilters: [{ name: 'Bruno collection (bruno.json) or export', extensions: ['json'] }],
+    pickerTitle: 'Import Bruno Collection',
+    dialogTitle: 'Import Bruno Collection',
+  }),
+  row({
     kind: 'wsdl',
     label: 'WSDL (SOAP)',
     defaultName: 'Imported service',

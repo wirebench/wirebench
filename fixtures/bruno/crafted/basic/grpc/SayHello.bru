@@ -1,0 +1,32 @@
+meta {
+  name: SayHello
+  type: grpc
+  seq: 1
+}
+
+grpc {
+  url: {{grpcHost}}
+  method: /hello.HelloService/SayHello
+  body: grpc
+  auth: inherit
+  methodType: unary
+  protoPath: protos/hello.proto
+}
+
+metadata {
+  x-request-id: 7
+}
+
+body:grpc {
+  name: message 1
+  content: '''
+    { "greeting": "hi" }
+  '''
+}
+
+body:grpc {
+  name: message 2
+  content: '''
+    { "greeting": "again" }
+  '''
+}

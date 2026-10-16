@@ -178,6 +178,7 @@ export {
   HarError,
   HttpFileError,
   OpenCollectionError,
+  BrunoError,
   InsomniaError,
   ExportError,
   LegacyProjectError,
@@ -2369,6 +2370,9 @@ export { LINT_CHECKS, LINT_TARGETS } from './rest/openapi/lint/ruleset.js';
 export { LINT_FOLDER, readProjectLintRulesets } from './rest/openapi/lint/project.js';
 export { lintReportJson, lintReportSarif } from './rest/openapi/lint/report.js';
 export type { LintJsonReport, LintReportOptions, LintTool } from './rest/openapi/lint/report.js';
+export * from './import/bruno/index.js';
 export * from './import/insomnia/index.js';
 export { importInsomnia, readInsomniaFile } from './import/insomnia/import.js';
 export type { InsomniaSource } from './import/insomnia/import.js';
+export { importBruno, readBrunoFolder } from './import/bruno/import.js';
+export type { BrunoSource } from './import/bruno/import.js';
