@@ -46,7 +46,12 @@ export async function placeMappedImport(
   projectId: string,
   mapped: Pick<MappedClientImport, 'collections' | 'variables' | 'report'> &
     Partial<Pick<MappedClientImport, 'scripts'>>,
-  meta: { readonly source: string; readonly declaredVersion: string },
+  meta: {
+    readonly source: string;
+    readonly declaredVersion: string;
+    /** `.proto` files that load together: each gRPC API is placed with them as its definition. */
+    readonly protos?: { readonly roots: readonly string[]; readonly sources: Map<string, string> };
+  },
 ): Promise<PlacedImport> {
   const { router } = deps;
   let project: ProjectWire | undefined;
@@ -67,7 +72,19 @@ export async function placeMappedImport(
         }),
       );
     }
-    if (collection.grpc !== undefined) placed(await router.importGrpcApi(projectId, { api: collection.grpc }));
+    if (collection.grpc !== undefined) {
+      placed(
+        meta.protos === undefined
+          ? await router.importGrpcApi(projectId, { api: collection.grpc })
+          : await router.addGrpcApi(projectId, {
+              api: collection.grpc,
+              roots: meta.protos.roots,
+              source: meta.source,
+              kind: 'proto',
+              sources: meta.protos.sources,
+            }),
+      );
+    }
     if (collection.websocket !== undefined) placed(await router.importWsApi(projectId, { api: collection.websocket }));
   }
   const scripts = await writeScriptsReported(router, projectId, mapped.scripts ?? []);

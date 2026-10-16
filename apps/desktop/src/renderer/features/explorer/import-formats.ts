@@ -131,20 +131,18 @@ export const IMPORT_FORMATS: readonly ImportFormatRow[] = [
     startsOnFile: true,
     fileFilters: [{ name: 'Legacy SOAP project', extensions: ['xml'] }, ALL_FILES],
   }),
-  // Other API clients: the importers land in later tasks, which flip `available`.
+  // Other API clients: each importer's task flips `available` once the dialog can call it.
   row('insomnia', 'Insomnia export', {
     startsOnFile: true,
     tabs: FILE_PASTE,
     defaultName: 'Imported collection',
     fileFilters: JSON_OR_YAML,
-    available: false,
   }),
   row('insomnia-environment', 'Insomnia environments', {
     startsOnFile: true,
     tabs: FILE_PASTE,
     workspaceOnly: true,
     fileFilters: JSON_OR_YAML,
-    available: false,
   }),
   row('bruno', 'Bruno collection', {
     startsOnFile: true,

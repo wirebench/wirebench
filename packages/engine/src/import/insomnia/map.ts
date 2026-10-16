@@ -151,7 +151,13 @@ class Mapper {
         if (!isRec(value)) continue;
         for (const name of Object.keys(value)) {
           this.vault.push(`${name} (${env.name})`);
-          keep(importedVariable({ name, value: '', secret: true }, label, this.variableReport, this.variableDynamic));
+          const named = importedVariable(
+            { name, value: '', secret: true },
+            label,
+            this.variableReport,
+            this.variableDynamic,
+          );
+          keep(named === undefined ? undefined : { ...named, awaitsValue: true });
         }
         continue;
       }

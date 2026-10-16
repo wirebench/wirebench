@@ -438,7 +438,9 @@ describe('mapInsomnia: environments', () => {
       sub('env_2', 'Staging', { __insomnia_vault: { svcPassword: 'c2VhbGVk' } }),
     ]);
     const staging = mapped.variables.environments[0]!;
-    expect(staging.variables).toEqual([{ name: 'svcPassword', value: '', enabled: true, secret: true }]);
+    expect(staging.variables).toEqual([
+      { name: 'svcPassword', value: '', enabled: true, secret: true, awaitsValue: true },
+    ]);
     expect(JSON.stringify(mapped)).not.toContain('c2VhbGVk');
     expect(mapped.variables.report.warnings).toContain(
       'Vault secrets cannot be read from an export: svcPassword (Staging). Each was imported as a secret with no value; set it in Environments.',

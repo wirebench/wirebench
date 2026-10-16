@@ -343,6 +343,7 @@ exports[`mapInsomnia golden > maps the crafted v5 collection 1`] = `
             "value": "https://staging.example.com",
           },
           {
+            "awaitsValue": true,
             "enabled": true,
             "name": "svcPassword",
             "secret": true,

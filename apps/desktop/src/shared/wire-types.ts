@@ -26,6 +26,7 @@ import {
   mockResponsePatchSchema,
   mockWireSchema,
   MAX_IMPORT_LOCATION_CHARS,
+  MAX_IMPORT_TEXT_CHARS,
   projectAddInterfaceTargetSchema,
   projectProblemSchema,
   unsupportedContainerWireSchema,
@@ -968,6 +969,84 @@ export const apiImportPostmanFolderResponseSchema: z.ZodType<ApiImportPostmanFol
 export type ApiImportPostmanFolderResponseInSync = AssertTrue<
   TypesEqual<z.infer<typeof apiImportPostmanFolderResponseObject>, ApiImportPostmanFolderResponse>
 >;
+
+/**
+ * Where another API client's export is read from: a picked file or folder (a path main checks) or
+ * text. Shared by every other-client importer.
+ */
+export const clientSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('file'), path: z.string().min(1).max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('folder'), path: z.string().min(1).max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string().max(MAX_IMPORT_TEXT_CHARS),
+    location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
+]);
+export type ClientSourceWire = z.infer<typeof clientSourceSchema>;
+
+/**
+ * Request payload for the other-client collection importers (`api.importInsomnia` and its
+ * siblings): the source, where the result goes, and the name of the API(s) of a one-collection file.
+ */
+export const apiImportClientRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: clientSourceSchema,
+  name: z.string().max(200).optional(),
+});
+export type ApiImportClientRequest = z.infer<typeof apiImportClientRequestSchema>;
+
+const apiImportClientResponseObject = z.object({
+  projectId: z.string(),
+  /** Absent when the export held only environments, so no API was placed in the project. */
+  project: projectWireSchema.optional(),
+  /** Each collection's REST, gRPC and WebSocket API, in that order, each only when it had requests of its kind. */
+  apiIds: z.array(z.string()).readonly(),
+  counts: z.object({
+    collections: z.number(),
+    requests: z.number(),
+    folders: z.number(),
+    examples: z.number(),
+    assertions: z.number(),
+    scripts: z.number(),
+  }),
+  /** What became of the variables and environments; absent when there were none. Never a value. */
+  variables: importVariablesSummarySchema.optional(),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+/** Spelled out as an interface for the same reason as {@link ApiImportHarResponse}. */
+export interface ApiImportClientResponse {
+  projectId: string;
+  project?: ProjectWire | undefined;
+  apiIds: readonly string[];
+  counts: {
+    collections: number;
+    requests: number;
+    folders: number;
+    examples: number;
+    assertions: number;
+    scripts: number;
+  };
+  variables?: ImportVariablesSummaryWire | undefined;
+  warnings: readonly string[];
+  notes: readonly string[];
+  reportText: string;
+}
+/** Response payload for the other-client collection importers. */
+export const apiImportClientResponseSchema: z.ZodType<ApiImportClientResponse> = apiImportClientResponseObject;
+export type ApiImportClientResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportClientResponseObject>, ApiImportClientResponse>
+>;
+
+/** Request payload for `api.importClientEnvironments`: another client's environment file, applied to the workspace. */
+export const apiImportClientEnvironmentsRequestSchema = z.object({
+  format: z.enum(['insomnia', 'hoppscotch', 'thunder-client']),
+  source: clientSourceSchema,
+});
+export type ApiImportClientEnvironmentsRequest = z.infer<typeof apiImportClientEnvironmentsRequestSchema>;
 
 export const apiImportProtoResponseSchema = z.object({
   projectId: z.string(),

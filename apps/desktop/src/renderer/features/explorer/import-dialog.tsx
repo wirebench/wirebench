@@ -26,6 +26,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
+  ApiImportClientResponse,
   ApiImportHarResponse,
   ApiImportHttpFileResponse,
   ApiImportOpenApiResponse,
@@ -155,7 +156,8 @@ export type UnifiedImportResult =
   | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses }
   | { readonly kind: 'http-file'; readonly value: ApiImportHttpFileResponse }
   | { readonly kind: 'opencollection'; readonly value: ApiImportOpenCollectionResponse }
-  | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse };
+  | { readonly kind: 'postman-v3'; readonly value: ApiImportPostmanFolderResponse }
+  | { readonly kind: 'client'; readonly value: ApiImportClientResponse };
 
 /** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
@@ -550,13 +552,17 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       ? 'Import OpenCollection'
                       : effectiveFormat === 'postman-v3'
                         ? 'Import Collection Definition'
-                        : effectiveFormat === 'proto'
-                          ? 'Import .proto'
-                          : effectiveFormat === 'openapi'
-                            ? 'Import OpenAPI Specification'
-                            : effectiveFormat === 'asyncapi'
-                              ? 'Import AsyncAPI Document'
-                              : 'Import Definition';
+                        : effectiveFormat === 'insomnia'
+                          ? 'Import Insomnia Export'
+                          : effectiveFormat === 'insomnia-environment'
+                            ? 'Import Insomnia Environments'
+                            : effectiveFormat === 'proto'
+                              ? 'Import .proto'
+                              : effectiveFormat === 'openapi'
+                                ? 'Import OpenAPI Specification'
+                                : effectiveFormat === 'asyncapi'
+                                  ? 'Import AsyncAPI Document'
+                                  : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -717,36 +723,38 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
    * to pick and nothing to cancel.
    */
   async function importVariables(
-    kind: 'postman-environment' | 'postman-globals' | 'http-env',
+    kind: 'postman-environment' | 'postman-globals' | 'http-env' | 'insomnia-environment',
     source: ImportSourceWire,
   ): Promise<void> {
     if (source.kind === 'url') {
       setImportError(
-        kind === 'http-env'
-          ? 'Import from a URL is not supported for environment files. Pick the file or paste its JSON.'
+        kind === 'http-env' || kind === 'insomnia-environment'
+          ? 'Import from a URL is not supported for environment files. Pick the file or paste its contents.'
           : 'Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.',
       );
       return;
     }
     setImporting(true);
     try {
-      const call =
-        kind === 'http-env'
-          ? ipc().api.importHttpEnv
-          : kind === 'postman-environment'
-            ? ipc().api.importPostmanEnvironment
-            : ipc().api.importPostmanGlobals;
-      const res = await call({
-        source:
-          source.kind === 'file'
-            ? { kind: 'file', path: source.path }
-            : // A dropped `.http` environment file says which file it was: the private one's values are secrets.
-              {
-                kind: 'text',
-                text: source.text,
-                ...(kind === 'http-env' && source.location !== undefined ? { location: source.location } : {}),
-              },
-      });
+      const wireSource =
+        source.kind === 'file'
+          ? ({ kind: 'file', path: source.path } as const)
+          : // A dropped `.http` environment file says which file it was: the private one's values are secrets.
+            ({
+              kind: 'text',
+              text: source.text,
+              ...(kind === 'http-env' && source.location !== undefined ? { location: source.location } : {}),
+            } as const);
+      const res =
+        kind === 'insomnia-environment'
+          ? await ipc().api.importClientEnvironments({ format: 'insomnia', source: wireSource })
+          : await (
+              kind === 'http-env'
+                ? ipc().api.importHttpEnv
+                : kind === 'postman-environment'
+                  ? ipc().api.importPostmanEnvironment
+                  : ipc().api.importPostmanGlobals
+            )({ source: wireSource });
       if (!res.ok) {
         setImportError(res.error.message);
         return;
@@ -895,6 +903,36 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * An Insomnia export: main reads the picked file (or the pasted text) and places each workspace's
+   * APIs in the chosen project. Like the other collection imports, only a path main can check is read.
+   */
+  async function importInsomnia(source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for Insomnia exports. Pick the file or paste its contents.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importInsomnia({
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'client', value: res.value });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing || !formatRow.available) {
       return;
@@ -922,7 +960,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     ? 'Pick a collection .yml file, or the opencollection.yml of a collection folder'
                     : effectiveFormat === 'postman-v3'
                       ? 'Pick the collection folder with Folder…'
-                      : 'Pick a file to import',
+                      : effectiveFormat === 'insomnia' || effectiveFormat === 'insomnia-environment'
+                        ? 'Pick an Insomnia export file to import'
+                        : 'Pick a file to import',
         );
       } else {
         setImportError(
@@ -940,7 +980,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       ? 'Paste the collection YAML to import'
                       : effectiveFormat === 'postman-v3'
                         ? 'A folder collection is imported from its folder: use the File tab'
-                        : 'Paste a definition to import',
+                        : effectiveFormat === 'insomnia' || effectiveFormat === 'insomnia-environment'
+                          ? 'Paste the Insomnia export (JSON or YAML) to import'
+                          : 'Paste a definition to import',
         );
       }
       return;
@@ -949,9 +991,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     if (
       effectiveFormat === 'postman-environment' ||
       effectiveFormat === 'postman-globals' ||
-      effectiveFormat === 'http-env'
+      effectiveFormat === 'http-env' ||
+      effectiveFormat === 'insomnia-environment'
     ) {
       await importVariables(effectiveFormat, source);
+      return;
+    }
+
+    if (effectiveFormat === 'insomnia') {
+      await importInsomnia(source);
       return;
     }
 
@@ -1269,7 +1317,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                                         ? 'Import OpenCollection'
                                         : format === 'postman-v3'
                                           ? 'Import Postman Collection v3'
-                                          : 'Import API or Service'}
+                                          : format === 'insomnia'
+                                            ? 'Import Insomnia Export'
+                                            : format === 'insomnia-environment'
+                                              ? 'Import Insomnia Environments'
+                                              : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -1938,7 +1990,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                           ? 'import-opencollection-summary'
                           : result.kind === 'postman-v3'
                             ? 'import-postman-v3-summary'
-                            : 'import-summary'
+                            : result.kind === 'client'
+                              ? 'import-client-summary'
+                              : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -2113,6 +2167,7 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
 
       {result.kind === 'opencollection' && <OpenCollectionSummary value={result.value} />}
       {result.kind === 'postman-v3' && <PostmanFolderSummary value={result.value} />}
+      {result.kind === 'client' && <PostmanFolderSummary value={result.value} testId="import-client" />}
 
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
@@ -2380,27 +2435,33 @@ function OpenCollectionSummary({ value }: { readonly value: ApiImportOpenCollect
  * What a folder (v3) collection import made: the APIs, requests and folders (and collections, when
  * a workspace folder held several), the examples kept, then the variables and the report.
  */
-function PostmanFolderSummary({ value }: { readonly value: ApiImportPostmanFolderResponse }) {
+function PostmanFolderSummary({
+  value,
+  testId = 'import-postman-v3',
+}: {
+  readonly value: ApiImportPostmanFolderResponse | ApiImportClientResponse;
+  readonly testId?: string;
+}) {
   const { counts, variables } = value;
   return (
     <>
       <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
-        <p data-testid="import-postman-v3-counts">
+        <p data-testid={`${testId}-counts`}>
           {counts.collections > 1 ? `${plural(counts.collections, 'collection')}: ` : ''}
           {plural(value.apiIds.length, 'API')}, {plural(counts.requests, 'request')}, {plural(counts.folders, 'folder')}
         </p>
         {counts.examples > 0 && (
-          <p data-testid="import-postman-v3-examples" className="mt-1 text-xs text-fg-subtle">
+          <p data-testid={`${testId}-examples`} className="mt-1 text-xs text-fg-subtle">
             {plural(counts.examples, 'example')} kept
           </p>
         )}
-        {variables !== undefined && <VariablesLines summary={variables} testId="import-postman-v3" />}
+        {variables !== undefined && <VariablesLines summary={variables} testId={testId} />}
       </div>
       <ImportReportView
         warnings={value.warnings}
         notes={value.notes}
         reportText={value.reportText}
-        testId="import-postman-v3-report"
+        testId={`${testId}-report`}
       />
     </>
   );

@@ -169,9 +169,10 @@ describe('IMPORT_FORMATS', () => {
     expect(IMPORT_FORMATS.map((row) => row.kind).sort()).toEqual(Object.keys(all).sort());
   });
 
-  it('every client format is unavailable until its importer is wired', () => {
+  it('a client format is available once its importer is wired', () => {
+    const wired = new Set<ImportFormatKind>(['insomnia', 'insomnia-environment']);
     for (const kind of CLIENT_KINDS) {
-      expect(importFormatRow(kind).available, kind).toBe(false);
+      expect(importFormatRow(kind).available, kind).toBe(wired.has(kind));
     }
   });
 

@@ -16,7 +16,12 @@ import { uniqueName } from '@wirebench/engine';
 export interface VariablesApplyPorts {
   readonly workspace: {
     environmentNames(): readonly string[];
-    addEnvironment(name: string, properties: Record<string, string>, disabled: readonly string[]): Promise<void>;
+    addEnvironment(
+      name: string,
+      properties: Record<string, string>,
+      disabled: readonly string[],
+      color?: string,
+    ): Promise<void>;
     removeEnvironment(name: string): Promise<void>;
     propertyNames(): readonly string[];
     mergeProperties(properties: Record<string, string>, disabled: readonly string[]): Promise<void>;
@@ -57,6 +62,7 @@ export async function applyImportedVariables(
   ports: VariablesApplyPorts,
 ): Promise<VariablesApplyResult> {
   const written: string[] = [];
+  let awaiting = 0;
   const addedEnvironments: string[] = [];
   const warnings: string[] = [...plan.report.warnings];
   const notes: string[] = [...plan.report.notes];
@@ -65,7 +71,13 @@ export async function applyImportedVariables(
     if (!v.secret) return v.value;
     if (v.secretValue === undefined || v.secretValue === '') {
       warnings.push(`${owner}: the secret "${v.name}" had no value in the file; set it in Environments.`);
-      return '';
+      if (v.awaitsValue !== true) return '';
+      // A named secret waiting for its value: its own reference, so the property is never a plain ''.
+      // Not counted as stored, and still deleted again if a later save fails.
+      const ref = await ports.secrets.set('', { label: `${owner}/${v.name}` });
+      written.push(ref);
+      awaiting += 1;
+      return `\${secret:${ref}}`;
     }
     const ref = await ports.secrets.set(v.secretValue, { label: `${owner}/${v.name}` });
     written.push(ref);
@@ -109,7 +121,7 @@ export async function applyImportedVariables(
         notes.push(`An environment named "${env.name}" already exists, so this one was imported as "${name}".`);
       }
       const { properties, disabled } = await resolveSet(name, env.variables);
-      await ports.workspace.addEnvironment(name, properties, disabled);
+      await ports.workspace.addEnvironment(name, properties, disabled, env.color);
       addedEnvironments.push(name);
       environments.push({
         name,
@@ -143,7 +155,7 @@ export async function applyImportedVariables(
       ...(globals !== undefined ? { globals } : {}),
       ...(workspaceProperties !== undefined ? { workspaceProperties } : {}),
       ...(projectProperties !== undefined ? { projectProperties } : {}),
-      secretsStored: written.length,
+      secretsStored: written.length - awaiting,
       warnings,
       notes,
     };

@@ -13,6 +13,11 @@ export interface ImportedVariable {
   readonly enabled: boolean;
   readonly secret: boolean;
   readonly secretValue?: string;
+  /**
+   * A secret the source names but cannot carry (an Insomnia vault entry): main stores it under its
+   * own reference with an empty value, so the property is never a plain `''` and the report asks for it.
+   */
+  readonly awaitsValue?: true;
 }
 
 export interface ImportedVariableSet {

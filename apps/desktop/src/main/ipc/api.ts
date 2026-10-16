@@ -18,6 +18,7 @@ import {
   collectionV3Root,
   importHar,
   importHttpFile,
+  importInsomnia,
   importOpenCollection,
   importPostmanCollection,
   importPostmanVariables,
@@ -35,6 +36,7 @@ import {
 import type { ImportedVariables, DefinitionAuth, MappedOpenCollection, OpenApiSource } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { PostmanSourceWire } from '../../shared/kinds/rest/wire.js';
+import type { ClientSourceWire } from '../../shared/wire-types.js';
 import type { DefinitionAuthWire, OpenApiSourceWire } from '../../shared/wire-base.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/kinds/soap/wire.js';
 import type { ReadPicks } from '../dialog-picks.js';
@@ -744,6 +746,87 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  /**
+   * A client export's source with its `file` path checked like any import: picked this session or
+   * inside a project folder. Exports are files or text; a folder is refused for a format that has none.
+   */
+  const checkedClientSource = async (
+    source: ClientSourceWire,
+  ): Promise<{ readonly kind: 'file'; readonly path: string } | { readonly kind: 'text'; readonly text: string }> => {
+    if (source.kind === 'folder') {
+      throw new WirebenchError('invalid-argument', 'This export is a file, not a folder');
+    }
+    return await checkedPostmanSource(source);
+  };
+
+  /**
+   * An Insomnia export (v4 JSON or YAML, v5 YAML): each workspace's REST, gRPC and WebSocket API in
+   * the chosen project, the variables as properties and environments, scripts as text. Everything is
+   * read and mapped before a project is created, so a refusal changes nothing, and a project created
+   * for the import is taken back when anything after it fails.
+   */
+  registerHandler(channels.api.importInsomnia, async (request) => {
+    const checkedSource = await checkedClientSource(request.source);
+    const mapped = await importInsomnia(checkedSource, {
+      ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}),
+    });
+
+    // The `.proto` texts the gRPC requests name load as one set, or the APIs have no definition.
+    let protos: { readonly roots: readonly string[]; readonly sources: Map<string, string> } | undefined;
+    const protoWarnings: string[] = [];
+    if (mapped.protos.length > 0 && mapped.collections.some((collection) => collection.grpc !== undefined)) {
+      const sources = new Map(mapped.protos.map((proto) => [proto.name, proto.text]));
+      const roots = [...sources.keys()];
+      try {
+        loadProtoSet(sources, { roots });
+        protos = { roots, sources };
+      } catch (error) {
+        protoWarnings.push(
+          `The .proto files could not be loaded, so the gRPC APIs have no definition: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const placing = {
+      ...mapped,
+      report: { ...mapped.report, warnings: [...mapped.report.warnings, ...protoWarnings] },
+    };
+
+    const placeIn = async (projectId: string) => {
+      const { scripts, ...placed } = await placeMappedImport(deps, projectId, placing, {
+        source: checkedSource.kind === 'file' ? checkedSource.path : 'inline:insomnia',
+        declaredVersion: 'insomnia',
+        ...(protos !== undefined ? { protos } : {}),
+      });
+      return { ...placed, counts: { ...mapped.counts, scripts } };
+    };
+
+    if ('projectId' in request.target) {
+      return await placeIn(request.target.projectId);
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  /**
+   * Another client's environment file on its own, applied to the open workspace: environments under
+   * a free name (never activated), its base environment into Globals, secrets into the secret store.
+   */
+  registerHandler(channels.api.importClientEnvironments, async (request) => {
+    const checkedSource = await checkedClientSource(request.source);
+    if (request.format !== 'insomnia') {
+      throw new WirebenchError('invalid-argument', `Importing ${request.format} environments is not available yet`);
+    }
+    const plan = (await importInsomnia(checkedSource)).variables;
+    const summary = await applyImportedVariables(plan, deps.variablesPorts(undefined));
+    return { summary, reportText: formatImportReport({ warnings: summary.warnings, notes: summary.notes }) };
   });
 
   /**

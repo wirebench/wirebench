@@ -13,16 +13,16 @@ function fakePorts(
     failRemove?: boolean;
   } = {},
 ) {
-  const added: { name: string; properties: Record<string, string>; disabled: readonly string[] }[] = [];
+  const added: { name: string; properties: Record<string, string>; disabled: readonly string[]; color?: string }[] = [];
   const store = new Map<string, { value: string; label: string }>();
   const globals = { properties: { ...(options.globals ?? {}) } as Record<string, string>, disabled: [] as string[] };
   let counter = 0;
   const ports: VariablesApplyPorts = {
     workspace: {
       environmentNames: () => [...(options.envNames ?? []), ...added.map((a) => a.name)],
-      addEnvironment: (name, properties, disabled) => {
+      addEnvironment: (name, properties, disabled, color) => {
         if (options.failSave === true) return Promise.reject(new Error('disk full'));
-        added.push({ name, properties, disabled });
+        added.push({ name, properties, disabled, ...(color !== undefined ? { color } : {}) });
         return Promise.resolve();
       },
       removeEnvironment: (name) => {
@@ -98,6 +98,45 @@ describe('applyImportedVariables', () => {
     expect(result.warnings).toContain(
       'Staging 2: the secret "empty" had no value in the file; set it in Environments.',
     );
+  });
+
+  it('a vault secret becomes a named secret with no value, never a plain property', async () => {
+    const { ports, added, store } = fakePorts();
+    const result = await applyImportedVariables(
+      plan({
+        environments: [
+          {
+            name: 'Staging',
+            variables: [
+              { name: 'svcPassword', value: '', enabled: true, secret: true, awaitsValue: true },
+              { name: 'host', value: 'h', enabled: true, secret: false },
+            ],
+          },
+        ],
+      }),
+      ports,
+    );
+
+    expect(added[0]?.properties).toEqual({ svcPassword: '${secret:sec_1}', host: 'h' });
+    expect(store.get('sec_1')).toEqual({ value: '', label: 'Staging/svcPassword' });
+    expect(result.secretsStored).toBe(0);
+    expect(result.warnings).toContain(
+      'Staging: the secret "svcPassword" had no value in the file; set it in Environments.',
+    );
+  });
+
+  it('gives a new environment the colour its source carried', async () => {
+    const { ports, added } = fakePorts();
+    await applyImportedVariables(
+      plan({
+        environments: [
+          { name: 'Staging', color: '#ff8800', variables: [] },
+          { name: 'Plain', variables: [] },
+        ],
+      }),
+      ports,
+    );
+    expect(added.map((env) => env.color)).toEqual(['#ff8800', undefined]);
   });
 
   it('keeps existing globals and reports the names it skipped', async () => {

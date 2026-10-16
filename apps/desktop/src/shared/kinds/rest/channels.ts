@@ -4,6 +4,9 @@
  */
 import { defineChannel, defineEvent } from '../../ipc-contract.js';
 import {
+  apiImportClientEnvironmentsRequestSchema,
+  apiImportClientRequestSchema,
+  apiImportClientResponseSchema,
   apiImportHarResponseSchema,
   apiImportHttpFileResponseSchema,
   apiImportOpenApiResponseSchema,
@@ -151,6 +154,12 @@ export const restChannels = {
     importHttpEnv: defineChannel(
       'api.importHttpEnv',
       apiImportHttpEnvRequestSchema,
+      apiImportPostmanVariablesResponseSchema,
+    ),
+    importInsomnia: defineChannel('api.importInsomnia', apiImportClientRequestSchema, apiImportClientResponseSchema),
+    importClientEnvironments: defineChannel(
+      'api.importClientEnvironments',
+      apiImportClientEnvironmentsRequestSchema,
       apiImportPostmanVariablesResponseSchema,
     ),
     importPostmanEnvironment: defineChannel(

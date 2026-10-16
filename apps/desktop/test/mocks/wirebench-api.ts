@@ -93,6 +93,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       definitionText: fail('api.definitionText'),
       exportDefinition: fail('api.exportDefinition'),
       detectImportSource: fail('api.detectImportSource'),
+      importInsomnia: fail('api.importInsomnia'),
+      importClientEnvironments: fail('api.importClientEnvironments'),
     },
     definition: {
       import: fail('definition.import'),

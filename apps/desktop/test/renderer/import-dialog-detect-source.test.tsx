@@ -82,9 +82,9 @@ describe('Import dialog: a format whose importer is not wired yet', () => {
       option.getAttribute('value'),
     );
     expect(values).toContain('openapi');
+    expect(values).toContain('insomnia');
+    expect(values).toContain('insomnia-environment');
     for (const kind of [
-      'insomnia',
-      'insomnia-environment',
       'bruno',
       'hoppscotch',
       'hoppscotch-environment',
@@ -96,12 +96,12 @@ describe('Import dialog: a format whose importer is not wired yet', () => {
   });
 
   it('detecting one says so and keeps Import disabled', async () => {
-    detectImportSource.mockResolvedValue(answer('insomnia', 'Insomnia export'));
+    detectImportSource.mockResolvedValue(answer('bruno', 'Bruno collection'));
     await openFileTab();
     fireEvent.click(screen.getByTestId('import-browse'));
     await waitFor(() =>
       expect(screen.getByTestId('import-format-unavailable').textContent).toBe(
-        'Importing Insomnia export is not available yet.',
+        'Importing Bruno collection is not available yet.',
       ),
     );
     expect(screen.getByTestId('import-submit')).toHaveProperty('disabled', true);
@@ -112,7 +112,7 @@ describe('Import dialog: a format whose importer is not wired yet', () => {
     const importDefinition = vi.spyOn(useProjectStore.getState(), 'importDefinition');
     const importOpenApi = vi.spyOn(useProjectStore.getState(), 'importOpenApi');
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="auto" />);
-    await userEvent.type(screen.getByTestId('import-url-input'), 'https://example.test/insomnia-export.json{Enter}');
+    await userEvent.type(screen.getByTestId('import-url-input'), 'https://example.test/hoppscotch-export.json{Enter}');
     await waitFor(() => expect(screen.getByTestId('import-format-unavailable')).toBeTruthy());
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(importDefinition).not.toHaveBeenCalled();
