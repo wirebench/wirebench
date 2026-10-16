@@ -77,6 +77,7 @@ describe('buildApi', () => {
       'provisioning',
       'request',
       'runner',
+      'schedules',
       'script',
       'search',
       'secretScan',

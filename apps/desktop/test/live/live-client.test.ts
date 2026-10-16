@@ -265,6 +265,24 @@ describe('LiveClient (live-updates §3.4)', () => {
     expect(client.state).toBe('connected');
   });
 
+  it('delivers a finished scheduled run to its workspace (scheduled-runs §3.5)', async () => {
+    const SCHEDULE = '01J8ZC5Q0V7R3T9XK2M4N6P8QG';
+    const RUN = '01J8ZC5Q0V7R3T9XK2M4N6P8QH';
+    const { client } = makeClient();
+    const a = recorder();
+    client.subscribe(WS_A, a.listener);
+    const peer = await accept();
+    await a.inbox.take(isState('connected'));
+    reply(peer, { type: 'schedule-run', workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' });
+    await a.inbox.take(isMessage('schedule-run'));
+    expect(a.events.filter((event) => event.kind === 'message')).toEqual([
+      {
+        kind: 'message',
+        message: { type: 'schedule-run', workspaceId: WS_A, scheduleId: SCHEDULE, runId: RUN, status: 'failed' },
+      },
+    ]);
+  });
+
   it('catches a second listener up with the state and the last presence, without a second subscribe', async () => {
     const { client } = makeClient();
     const first = recorder();

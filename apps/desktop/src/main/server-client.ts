@@ -18,6 +18,21 @@ import {
   catchUrlsResponseSchema,
   invitationLookupResponseSchema,
   licenseStateSchema,
+  alertTestResponseSchema,
+  scheduleCreateSchema,
+  scheduleRunDetailSchema,
+  scheduleRunPageSchema,
+  scheduleRunSchema,
+  scheduleSchema,
+  schedulesResponseSchema,
+  type AlertTestResponse,
+  type Schedule,
+  type ScheduleRun,
+  type ScheduleRunDetail,
+  type ScheduleRunPage,
+  type ScheduleRunStatus,
+  type ScheduleSecrets,
+  type ScheduleUpdate,
   samlInfoResponseSchema,
   samlStartResponseSchema,
   scimGroupSummarySchema,
@@ -120,6 +135,11 @@ const teamPath = (teamId: string): string => `/api/v1/teams/${encodeURIComponent
 const workspacePath = (workspaceId: string): string => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`;
 const hookPath = (workspaceId: string, hookId: string): string =>
   `${workspacePath(workspaceId)}/hooks/${encodeURIComponent(hookId)}`;
+const schedulePath = (workspaceId: string, scheduleId: string): string =>
+  `${workspacePath(workspaceId)}/schedules/${encodeURIComponent(scheduleId)}`;
+
+/** A create body as the client sends it: the server fills the defaults (`z.input`, not the parsed shape). */
+export type ScheduleCreateInput = z.input<typeof scheduleCreateSchema>;
 
 /**
  * `path` plus a query string built from the defined values only. `URLSearchParams` encodes every
@@ -540,6 +560,145 @@ export class ServerClient {
 
   async clearCaptures(url: string, token: string, workspaceId: string, hookId: string): Promise<void> {
     await this.call<unknown>(url, { method: 'DELETE', path: `${hookPath(workspaceId, hookId)}/captures`, token });
+  }
+
+  // ---- scheduled-runs (spec §3.7): one method per route ------------------------------------------
+
+  listSchedules(url: string, token: string, workspaceId: string): Promise<Schedule[]> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${workspacePath(workspaceId)}/schedules`,
+      token,
+      schema: schedulesResponseSchema,
+    });
+  }
+
+  getSchedule(url: string, token: string, workspaceId: string, scheduleId: string): Promise<Schedule> {
+    return this.call(url, {
+      method: 'GET',
+      path: schedulePath(workspaceId, scheduleId),
+      token,
+      schema: scheduleSchema,
+    });
+  }
+
+  createSchedule(url: string, token: string, workspaceId: string, body: ScheduleCreateInput): Promise<Schedule> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/schedules`,
+      token,
+      body,
+      schema: scheduleSchema,
+    });
+  }
+
+  updateSchedule(
+    url: string,
+    token: string,
+    workspaceId: string,
+    scheduleId: string,
+    body: ScheduleUpdate,
+  ): Promise<Schedule> {
+    return this.call(url, {
+      method: 'PATCH',
+      path: schedulePath(workspaceId, scheduleId),
+      token,
+      body,
+      schema: scheduleSchema,
+    });
+  }
+
+  async deleteSchedule(url: string, token: string, workspaceId: string, scheduleId: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: schedulePath(workspaceId, scheduleId), token });
+  }
+
+  /** The whole map at once: a value sets a name, `null` removes it, a name left out stays (§3.3). */
+  setScheduleSecrets(
+    url: string,
+    token: string,
+    workspaceId: string,
+    scheduleId: string,
+    body: ScheduleSecrets,
+  ): Promise<Schedule> {
+    return this.call(url, {
+      method: 'PUT',
+      path: `${schedulePath(workspaceId, scheduleId)}/secrets`,
+      token,
+      body,
+      schema: scheduleSchema,
+    });
+  }
+
+  /** Sends to every target synchronously; touches neither the alert state nor the history (§14). */
+  testScheduleAlerts(url: string, token: string, workspaceId: string, scheduleId: string): Promise<AlertTestResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${schedulePath(workspaceId, scheduleId)}/alerts/test`,
+      token,
+      schema: alertTestResponseSchema,
+    });
+  }
+
+  /** Run now: queues a run, subject to the overlap rule; `next_run_at` does not move (§3.1). */
+  runScheduleNow(url: string, token: string, workspaceId: string, scheduleId: string): Promise<ScheduleRun> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${schedulePath(workspaceId, scheduleId)}/runs`,
+      token,
+      schema: scheduleRunSchema,
+    });
+  }
+
+  /** Newest first, cursor paged: `after` is the previous page's `next`. */
+  listScheduleRuns(
+    url: string,
+    token: string,
+    workspaceId: string,
+    scheduleId: string,
+    page: { readonly after?: string; readonly limit?: number; readonly status?: ScheduleRunStatus },
+  ): Promise<ScheduleRunPage> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${schedulePath(workspaceId, scheduleId)}/runs`, {
+        status: page.status,
+        after: page.after,
+        limit: page.limit,
+      }),
+      token,
+      schema: scheduleRunPageSchema,
+    });
+  }
+
+  /** One run with its results and alert deliveries; failed results carry their exchange, so the transfer timeout. */
+  getScheduleRun(
+    url: string,
+    token: string,
+    workspaceId: string,
+    scheduleId: string,
+    runId: string,
+  ): Promise<ScheduleRunDetail> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${schedulePath(workspaceId, scheduleId)}/runs/${encodeURIComponent(runId)}`,
+      token,
+      schema: scheduleRunDetailSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  /** Cancels a queued or running run; a finished one answers `schedules-run-finished`. */
+  async cancelScheduleRun(
+    url: string,
+    token: string,
+    workspaceId: string,
+    scheduleId: string,
+    runId: string,
+  ): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'DELETE',
+      path: `${schedulePath(workspaceId, scheduleId)}/runs/${encodeURIComponent(runId)}`,
+      token,
+    });
   }
 
   // ---- ci-tokens (callback-assertion spec §3): editors and admins, on their own session -----------
