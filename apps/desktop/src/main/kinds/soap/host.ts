@@ -16,7 +16,6 @@ import {
   applyWsaHeaders,
   attachmentFile,
   attachmentsDir,
-  createDefaultFetchDocument,
   createFileAttachmentResolver,
   createInterface,
   createWssContext,
@@ -1252,7 +1251,7 @@ export class SoapHost implements KindHostHooks {
     // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip
     // that API (`api-slug-conflict`), and the save after it would delete its folder.
     const taken = takenApiSlugs(open.project);
-    const network = createDefaultFetchDocument();
+    const network = this.core.engine.networkFetchDocument();
     const summaries = new Map<string, InterfaceSummary>();
 
     const resolved: ResolvedLegacyInterface[] = [];

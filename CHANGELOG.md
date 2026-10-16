@@ -40,6 +40,14 @@ All notable changes to this project are documented here. The format follows
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
 
+### Fixed
+
+- **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
+  project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
+  proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
+  definition authentication too. On a corporate network, a WSDL reachable only through the proxy, or
+  served with a corporate-CA certificate, now imports.
+
 ## [6.1.0] - 2026-10-16
 
 ### Added
