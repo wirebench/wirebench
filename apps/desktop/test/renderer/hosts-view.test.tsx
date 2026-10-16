@@ -729,6 +729,24 @@ describe('Host details', () => {
     expect(await screen.findByText('SHA256:abc')).toBeDefined();
     expect(screen.getByText('ssh deploy@10.0.0.1')).toBeDefined();
   });
+  it('says how many forwards run through the host, linking to Port forwarding', async () => {
+    useHostsStore.setState({ selectedHostId: 'b' });
+    useForwardsStore.setState({
+      byKey: {
+        'b/db': { hostId: 'b', ruleId: 'db', port: 5432, connections: 0, status: { state: 'starting' } },
+        'a/web': { hostId: 'a', ruleId: 'web', port: 8080, connections: 0, status: { state: 'starting' } },
+      } as never,
+    });
+    render(<HostDetails />);
+    const link = screen.getByTestId('host-details-forwards');
+    expect(link.textContent).toBe('1 forward running');
+    await userEvent.click(link);
+    expect(useHostsStore.getState().homeView).toBe('forwarding');
+    act(() => {
+      useForwardsStore.setState({ byKey: {} });
+    });
+    expect(screen.queryByTestId('host-details-forwards')).toBeNull();
+  });
   it('an incomplete host says what it needs', () => {
     useHostsStore.setState({ selectedHostId: 'a' });
     render(<HostDetails />);
