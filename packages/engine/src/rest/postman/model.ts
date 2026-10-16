@@ -94,8 +94,11 @@ export interface PostmanBody {
   readonly urlencoded?: readonly PostmanUrlEncodedParam[];
   readonly formdata?: readonly PostmanFormDataParam[];
   readonly file?: { readonly src?: string; readonly content?: string };
-  /** A `graphql` body: its query and its variables as JSON text, references already translated. */
-  readonly graphql?: { readonly query: string; readonly variables: string };
+  /**
+   * A `graphql` body: its query and its variables as JSON text, references already translated.
+   * `operationName` is no v2.1 key: the other clients' converters set it when their export names one.
+   */
+  readonly graphql?: { readonly query: string; readonly variables: string; readonly operationName?: string };
 }
 
 export interface PostmanRequest {
@@ -126,10 +129,12 @@ export interface PostmanResponse {
   readonly previewLanguage?: string;
 }
 
-/** The redirect settings of `protocolProfileBehavior` that Wirebench takes. */
+/** The settings of `protocolProfileBehavior` that Wirebench takes. */
 export interface PostmanRequestBehaviour {
   readonly followRedirects?: boolean;
   readonly maxRedirects?: number;
+  /** `false` from `disableUrlEncoding: true`: path and query values are sent as written. */
+  readonly encodeUrl?: boolean;
 }
 
 export interface PostmanItem {

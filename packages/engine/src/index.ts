@@ -2370,3 +2370,5 @@ export { LINT_FOLDER, readProjectLintRulesets } from './rest/openapi/lint/projec
 export { lintReportJson, lintReportSarif } from './rest/openapi/lint/report.js';
 export type { LintJsonReport, LintReportOptions, LintTool } from './rest/openapi/lint/report.js';
 export * from './import/insomnia/index.js';
+export { importInsomnia, readInsomniaFile } from './import/insomnia/import.js';
+export type { InsomniaSource } from './import/insomnia/import.js';

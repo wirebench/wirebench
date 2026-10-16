@@ -513,7 +513,8 @@ function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[
   }
 
   if (body.mode === 'graphql' && body.graphql !== undefined) {
-    return { kind: 'graphql', query: body.graphql.query, variables: body.graphql.variables };
+    const { query, variables, operationName } = body.graphql;
+    return { kind: 'graphql', query, variables, ...(operationName !== undefined ? { operationName } : {}) };
   }
 
   if (body.mode === 'file') {
@@ -614,8 +615,11 @@ export function mapPostmanAuth(
         ...(username !== undefined ? { username } : {}),
       };
     }
-    case 'bearer':
-      return { type: 'bearer' };
+    case 'bearer': {
+      // `scheme` is no v2.1 key: the other clients' converters set it for a token prefix other than Bearer.
+      const scheme = asText(auth.bearer?.find((a) => a.key === 'scheme')?.value);
+      return { type: 'bearer', ...(scheme !== undefined && scheme !== '' ? { scheme } : {}) };
+    }
     case 'apikey': {
       const keyAttr = auth.apikey?.find((a) => a.key === 'key' || a.key === 'name');
       const inAttr = auth.apikey?.find((a) => a.key === 'in');
