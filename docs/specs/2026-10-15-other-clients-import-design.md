@@ -1,7 +1,7 @@
 # Spec: Importers for Insomnia, Bruno `.bru`, Hoppscotch and Thunder Client
 
 **Date:** 2026-10-15
-**Status:** draft (under review)
+**Status:** decisions settled (under review)
 **Scope:** all of [#588](https://github.com/wirebench/wirebench/issues/588). This covers:
 
 - Insomnia exports: v4 (JSON or YAML) and v5 (YAML), collections and environments
@@ -55,11 +55,11 @@ here relaxes them.
 
 ## 2. Decisions
 
-Proposed defaults, for the owner to confirm in review:
+Owner decisions, 2026-10-15 (1–4 chosen in review; 5–8 accepted as proposed):
 
-| # | Question | Proposed decision |
+| # | Question | Decision |
 | --- | --- | --- |
-| 1 | Scripts | Insomnia scripts are attached like Postman ones: `insomnia.` rewritten to `pm.`, run on the Postman layer, imported switched off. Bruno, Hoppscotch and Thunder Client scripts are saved as text under `imported-scripts/` and never run. |
+| 1 | Scripts | Every tool's scripts, Insomnia's included, are saved as text under `imported-scripts/` and never run. |
 | 2 | Declarative checks | Bruno `assert` lines and Thunder Client test rows become assertions where they fit; the rest is reported. |
 | 3 | Request chaining | Insomnia `{% response %}` tags, Thunder Client pre-requests and Bruno post-response variables are reported, not converted. |
 | 4 | Command line | `wirebench import` reads all four formats, with the v3 rule: plain variables become project properties, secrets and environments are reported, not imported. |
@@ -157,11 +157,8 @@ A name a dialect cannot map is never turned into a reference that does not resol
 
 Per decision 1:
 
-- **Insomnia.** Each `preRequestScript` / `afterResponseScript` (request and folder) becomes a v2.1
-  `event`, with each `insomnia.` rewritten to `pm.` outside string literals. The Postman pipeline
-  then attaches it on the Postman layer, switched off, and lists it (#334). A script that still
-  reaches a member the Postman layer does not have fails on its first run with
-  `script-unsupported`, which the Scripts tab already explains.
+- **Insomnia.** Each `preRequestScript` and `afterResponseScript`, on requests and folders, is
+  saved as text. The converter writes no v2.1 `event`, so nothing is attached to a request.
 - **Bruno.** Scripts reach the OpenCollection document as `runtime.scripts`, so they are written to
   `imported-scripts/<api-slug>/<item-slug>.<type>.js` and never run, exactly as OpenCollection's.
   `tests` blocks are saved the same way, with type `tests`.
@@ -567,7 +564,7 @@ Each PR is green on its own, updates its docs and ticks its box on #588.
   - Report every value that did not come across as it was.
   - Describe each format neutrally (CLAUDE.md, `check:banned-terms`).
 - **Never:**
-  - Run an imported script. Insomnia scripts arrive switched off; the others are text.
+  - Run an imported script. Every imported script is saved as text.
   - Activate an imported environment.
   - Read a `.env` file.
   - Write a secret value or a recorded credential into a project, workspace or History file.
@@ -585,7 +582,7 @@ Each PR is green on its own, updates its docs and ticks its box on #588.
 ## 13. Success criteria
 
 - [ ] **Insomnia.** A v4 or v5 export imports with its folders, order, requests, gRPC and WebSocket
-      requests, environments and switched-off scripts.
+      requests, environments and scripts saved as text.
 - [ ] **Bruno.** A `.bru` collection folder, or a Bruno JSON export, imports with its folders,
       `seq` order, auth, assertions, scripts as text and environments.
 - [ ] **Hoppscotch.** Collections and environments of every schema version import, including saved
