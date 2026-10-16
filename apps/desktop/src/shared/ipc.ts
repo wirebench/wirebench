@@ -680,6 +680,11 @@ export const channels = {
     ),
     importInsomnia: defineChannel('api.importInsomnia', apiImportClientRequestSchema, apiImportClientResponseSchema),
     importBruno: defineChannel('api.importBruno', apiImportClientRequestSchema, apiImportClientResponseSchema),
+    importHoppscotch: defineChannel(
+      'api.importHoppscotch',
+      apiImportClientRequestSchema,
+      apiImportClientResponseSchema,
+    ),
     importClientEnvironments: defineChannel(
       'api.importClientEnvironments',
       apiImportClientEnvironmentsRequestSchema,

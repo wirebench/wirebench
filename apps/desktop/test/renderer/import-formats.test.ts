@@ -16,6 +16,8 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
       'bruno',
       'wsdl',
       'proto',
@@ -38,6 +40,8 @@ describe('import formats table', () => {
       opencollection: 'Imported collection',
       insomnia: 'Imported collection',
       'insomnia-environment': 'Imported API',
+      hoppscotch: 'Imported collection',
+      'hoppscotch-environment': 'Imported API',
       bruno: 'Imported collection',
       wsdl: 'Imported service',
       proto: 'Imported gRPC API',
@@ -54,6 +58,7 @@ describe('import formats table', () => {
       'postman-globals',
       'http-env',
       'insomnia-environment',
+      'hoppscotch-environment',
     ]);
     expect(where((row) => row.fileFirst)).toEqual([
       'postman',
@@ -66,6 +71,8 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
       'bruno',
       'legacy-soap-project',
     ]);
@@ -79,6 +86,8 @@ describe('import formats table', () => {
       'opencollection',
       'insomnia',
       'insomnia-environment',
+      'hoppscotch',
+      'hoppscotch-environment',
       'bruno',
     ]);
     expect(where((row) => row.folder)).toEqual(['postman-v3', 'bruno']);

@@ -472,7 +472,7 @@ describe('HttpLog — Export HAR', () => {
     await user.keyboard('{Control>}');
     await user.click(rows()[1]!);
     await user.keyboard('{/Control}');
-    expect(screen.getByTestId('log-compare')).toBeDefined();
+    expect(await screen.findByTestId('log-compare')).toBeDefined();
     expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     expect(screen.queryByRole('tablist', { name: 'Log detail' })).toBeNull();
     screen.getByLabelText('HTTP log').focus();
@@ -498,7 +498,7 @@ describe('HttpLog — Export HAR', () => {
     await user.keyboard('{Meta>}');
     await user.click(rows()[1]!);
     await user.keyboard('{/Meta}');
-    expect(screen.getByTestId('log-compare')).toBeDefined();
+    expect(await screen.findByTestId('log-compare')).toBeDefined();
     screen.getByLabelText('HTTP log').focus();
     await user.keyboard('{ArrowDown}');
     expect(screen.queryByTestId('log-compare')).toBeNull();
@@ -507,7 +507,7 @@ describe('HttpLog — Export HAR', () => {
     await user.keyboard('{Control>}');
     await user.click(rows()[0]!);
     await user.keyboard('{/Control}');
-    expect(screen.getByTestId('log-compare')).toBeDefined();
+    expect(await screen.findByTestId('log-compare')).toBeDefined();
     await user.click(rows()[1]!);
     expect(screen.queryByTestId('log-compare')).toBeNull();
     expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);

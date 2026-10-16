@@ -123,7 +123,7 @@ describe('a level’s Scripts editor', () => {
 });
 
 describe('the folder Scripts… dialog', () => {
-  it('edits the folder’s own scripts', () => {
+  it('edits the folder’s own scripts', async () => {
     useProjectStore.setState({
       folders: {
         f1: {
@@ -142,7 +142,7 @@ describe('the folder Scripts… dialog', () => {
     });
 
     expect(screen.getByTestId('folder-scripts-dialog').textContent).toContain('Scripts for “Orders”');
-    expect(screen.getByTestId('scripts-level-hint').textContent).toContain('every request in this folder');
+    expect((await screen.findByTestId('scripts-level-hint')).textContent).toContain('every request in this folder');
     fireEvent.click(screen.getByTestId('scripts-switch-on'));
     expect(updateRequestScripts).toHaveBeenCalledWith('f1', { enabled: true });
   });

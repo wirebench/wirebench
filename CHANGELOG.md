@@ -24,6 +24,13 @@ All notable changes to this project are documented here. The format follows
   and never run, and a `.env` file is never read. `wirebench import` reads the same sources. The
   OpenCollection import now also maps Digest and AWS Signature v4 auth, `omitHeaders`, descriptions
   and lists of WebSocket messages (#588).
+- **Import Hoppscotch exports.** **Import…** reads Hoppscotch collections and environments files at
+  every schema version, each collection, folder and request at its own. Each top-level collection
+  becomes a REST API in the chosen project, GraphQL requests with a GraphQL body, saved responses as
+  examples; collection and folder variables become project properties, a secret one with no value.
+  An environments file goes to the workspace, never made active, its `Global` environment into
+  Globals. Scripts are saved as text and never run. `wirebench import` reads collections files
+  (#588).
 
 ### Changed
 
@@ -35,6 +42,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
+  project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
+  proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
+  definition authentication too. On a corporate network, a WSDL reachable only through the proxy, or
+  served with a corporate-CA certificate, now imports.
 - **A refused proxy tunnel no longer reads as Cancelled.** When an HTTPS request goes through a proxy
   that refuses the tunnel (a 407 for a wrong or missing proxy password), the send now fails with
   "Proxy connection failed" and the proxy's status, instead of showing as if you had cancelled it.

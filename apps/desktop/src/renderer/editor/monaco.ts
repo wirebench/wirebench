@@ -14,8 +14,7 @@ import { registerDynamicCompletionOnce } from './dynamic-completion.js';
 
 export { MONACO_THEMES } from './themes.js';
 
-/** The Monaco language id every Wirebench editor uses. */
-export const XML_LANGUAGE_ID = 'xml';
+export { XML_LANGUAGE_ID } from './language-ids.js';
 
 let configured = false;
 

@@ -186,12 +186,14 @@ test.describe('performance budgets', () => {
   });
 
   test(`the window is usable within ${BUDGETS.startupMs} ms`, async () => {
-    // Four launches, the first discarded and the median of the rest taken: that first one also
+    // Six launches, the first discarded and the median of the rest taken: that first one also
     // pays for the OS warming the app bundle's pages, which is not what this budget is about.
-    // It used to be counted anyway, which is what made a cold runner skew the median. The clock
-    // starts before `launchApp`, so the Electron process spawn is inside the budget.
+    // It used to be counted anyway, which is what made a cold runner skew the median. Five
+    // measured rather than three: on a hosted macOS runner single launches of the same build
+    // spread over a second or more, and with three samples two slow ones were enough to fail.
+    // The clock starts before `launchApp`, so the Electron process spawn is inside the budget.
     const samples: number[] = [];
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       const started = Date.now();
       const app = await launchApp();
       // `launchApp` already awaits `firstWindow()` and the activity bar, so by the time it
