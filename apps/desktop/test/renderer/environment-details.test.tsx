@@ -148,7 +148,7 @@ describe('the right rail in the Environments area', () => {
     useEditorsStore.setState({
       tabs: [{ id: 'env:e1', kind: 'environment', title: 'prod', environmentId: 'e1' }] as never,
       activeId: 'env:e1',
-      displayedSet: 'environments',
+      displayedSet: 'explorer',
     });
     renderRail();
     const icon = screen.getByTestId('rail-environment-details');
@@ -163,7 +163,7 @@ describe('the right rail in the Environments area', () => {
     useEditorsStore.setState({
       tabs: [{ id: 'env:globals', kind: 'environment', title: 'Globals', environmentId: 'globals' }] as never,
       activeId: 'env:globals',
-      displayedSet: 'environments',
+      displayedSet: 'explorer',
     });
     renderRail();
     expect(screen.getByTestId<HTMLButtonElement>('rail-environment-details').disabled).toBe(true);

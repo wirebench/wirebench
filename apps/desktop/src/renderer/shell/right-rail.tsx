@@ -22,9 +22,9 @@ import { rightPanelFor } from './right-panel.js';
 export function RightRail({ platform }: { readonly platform: Platform }) {
   const open = useUiStore((state) => state.slideOver.open);
   const toggleCode = useUiStore((state) => state.toggleCode);
-  // Only the areas with requests show Code; SSH's icon opens the picked host's details instead,
-  // and Environments' the open environment's details.
-  const panel = useEditorsStore((state) => rightPanelFor(state.displayedSet));
+  // Requests show Code; SSH's icon opens the picked host's details instead, and an environment
+  // tab its details.
+  const panel = useEditorsStore((state) => rightPanelFor(state));
   const hostDetailsShown = useHostDetailsShown();
   const environmentDetailsShown = useEnvironmentDetailsShown();
   const hasEnvironment = useOpenEnvironmentId() !== undefined;
