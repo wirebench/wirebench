@@ -1202,7 +1202,7 @@ Documents a reference pulls in are linted too, and their findings name that file
 
 | Rule | Finds |
 | --- | --- |
-| `owasp-security-defined` | The API defines no security scheme. |
+| `owasp-security-defined` | The API defines no security scheme (warning). |
 | `owasp-operation-security` | An operation no security requirement protects; `security: []` marks one public on purpose (warning). |
 | `owasp-plain-http` | An `http://` server or OAuth endpoint URL. `localhost`, `127.x` and `[::1]` are exempt. |
 | `owasp-plain-http-scheme` | A Swagger 2.0 API whose `schemes` include `http`, unless its `host` is a loopback host. |

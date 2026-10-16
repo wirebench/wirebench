@@ -233,51 +233,60 @@ export function HistoryView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-2 py-2">
+      {/* Search on a row of its own, so a narrow sidebar never squeezes it; the filter and Delete
+          all share the row below. */}
+      <div className="flex shrink-0 flex-col gap-1.5 border-b border-hairline px-2 py-2">
         <input
           type="search"
           aria-label="Search history"
           placeholder="Search history…"
           value={query}
           onChange={(event) => search(event.target.value)}
-          className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
+          className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
         />
-        <select
-          aria-label="Filter history by project"
-          data-testid="history-project-filter"
-          value={projectFilter ?? ''}
-          onChange={(event) => {
-            setProjectFilter(event.target.value.length > 0 ? event.target.value : undefined);
-          }}
-          className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
-        >
-          <option value="">All projects</option>
-          {workspaceProjects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-        {confirmingClear ? (
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setConfirmingClear(false);
-                void clear();
+        <div className="flex min-w-0 items-center gap-2">
+          {/* With one project open there is nothing to filter by. */}
+          {workspaceProjects.length > 1 && (
+            <select
+              aria-label="Filter history by project"
+              data-testid="history-project-filter"
+              value={projectFilter ?? ''}
+              onChange={(event) => {
+                setProjectFilter(event.target.value.length > 0 ? event.target.value : undefined);
               }}
+              className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
             >
-              Confirm
-            </Button>
-            <Button variant="ghost" onClick={() => setConfirmingClear(false)}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button variant="ghost" onClick={() => setConfirmingClear(true)} disabled={total === 0}>
-            Delete all
-          </Button>
-        )}
+              <option value="">All projects</option>
+              {workspaceProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {confirmingClear ? (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setConfirmingClear(false);
+                    void clear();
+                  }}
+                >
+                  Confirm
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmingClear(false)}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" onClick={() => setConfirmingClear(true)} disabled={total === 0}>
+                Delete all
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
 
       {entries.length === 0 ? (
