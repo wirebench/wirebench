@@ -16,13 +16,15 @@ export interface SendErrorLike {
 }
 
 /**
- * The hint under the message. `timeout` and `unresolved` carry what the panel turns into links:
- * the limit that was hit, and each reference nothing resolved.
+ * The hint under the message. `timeout`, `unresolved` and `unclosed` carry what the panel turns into
+ * links: the limit that was hit, each reference nothing resolved, and each `${` never closed (from
+ * the `${` to the end of its text, as the engine reports it).
  */
 export type SendErrorHint =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'timeout'; readonly timeoutMs: number | undefined }
-  | { readonly kind: 'unresolved'; readonly refs: readonly string[] };
+  | { readonly kind: 'unresolved'; readonly refs: readonly string[] }
+  | { readonly kind: 'unclosed'; readonly fragments: readonly string[] };
 
 export interface SendErrorView {
   /** Short, for a status row or a log cell: "Connection refused". */
@@ -122,6 +124,23 @@ export function referenceText(ref: string): string {
 /** A whole `${…}` reference: a malformed one (an unclosed `${`) names nothing a link could find. */
 const WHOLE_REFERENCE = /^\$\{[^}]+\}$/;
 
+/** Whether a reported reference is a `${` its text never closes, the engine's `malformed` ref. */
+function isUnclosed(ref: string): boolean {
+  if (!ref.startsWith('${')) {
+    return false;
+  }
+  let depth = 0;
+  for (let at = 0; at < ref.length; at += 1) {
+    if (ref.startsWith('${', at)) {
+      depth += 1;
+      at += 1;
+    } else if (ref[at] === '}') {
+      depth -= 1;
+    }
+  }
+  return depth > 0;
+}
+
 /** The unresolved references an `…-unresolved-properties` error names, from its details or its message. */
 function unresolvedRefs(error: SendErrorLike): readonly string[] {
   const listed = error.details?.['unresolved'];
@@ -129,26 +148,41 @@ function unresolvedRefs(error: SendErrorLike): readonly string[] {
     const refs = listed
       .filter((ref): ref is string => typeof ref === 'string')
       .map(referenceText)
-      .filter((ref) => WHOLE_REFERENCE.test(ref));
+      .filter((ref) => WHOLE_REFERENCE.test(ref) && !isUnclosed(ref));
     if (refs.length > 0) {
       return [...new Set(refs)];
     }
   }
-  return [...new Set(error.message.match(/\$\{[^}]*\}/g) ?? [])];
+  return [...new Set((error.message.match(/\$\{[^}]*\}/g) ?? []).filter((ref) => !isUnclosed(ref)))];
 }
 
 /** The title, headline, detail, tone and hint for one failed send. */
 export function describeSendError(error: SendErrorLike): SendErrorView {
   const view = describeBare(error);
-  return { ...view, headline: headlineOf(error, view.title), detail: detailOf(error, view.title) };
+  return {
+    ...view,
+    headline: headlineOf(error, view.title),
+    // "references nothing resolves: ${$rand" says less about an unclosed `${` than its hint does.
+    detail: view.hint?.kind === 'unclosed' ? undefined : detailOf(error, view.title),
+  };
 }
 
 function describeBare(error: SendErrorLike): Omit<SendErrorView, 'headline' | 'detail'> {
   if (error.code.endsWith('-unresolved-properties')) {
+    const refs = unresolvedRefs(error);
+    // A `${` never closed is a typing slip, not a variable missing from the environment. Missing
+    // variables are named first when there are both: the list links each to its field.
+    const listed = error.details?.['unresolved'];
+    const fragments = Array.isArray(listed)
+      ? [...new Set(listed.filter((ref): ref is string => typeof ref === 'string' && isUnclosed(ref)))]
+      : [];
+    if (refs.length === 0 && fragments.length > 0) {
+      return { title: 'Unclosed ${', tone: 'danger', hint: { kind: 'unclosed', fragments } };
+    }
     return {
       title: 'Unresolved variables',
       tone: 'danger',
-      hint: { kind: 'unresolved', refs: unresolvedRefs(error) },
+      hint: { kind: 'unresolved', refs },
     };
   }
   if (error.code === 'timeout') {

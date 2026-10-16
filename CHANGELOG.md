@@ -53,8 +53,9 @@ All notable changes to this project are documented here. The format follows
 - **A failed send says what happened once, and where.** The error panel names the host and port a
   refused connection was aimed at ("Couldn't connect to 127.0.0.1:9") and the host that did not
   resolve, and leaves out a message that only repeats its title. The HTTP Log names a failed row the
-  way the panel does ("Connection refused", not `connection-refused`), with the code in its tooltip
-  (#631).
+  way the panel does ("Connection refused", not `connection-refused`), with the code in its tooltip.
+  A `${` that is never closed is reported as such, naming the field it is in with a link to it,
+  instead of as a variable missing from the environment (#631).
 
 ## [6.1.0] - 2026-10-16
 

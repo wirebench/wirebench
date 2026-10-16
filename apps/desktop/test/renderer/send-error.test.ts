@@ -22,6 +22,18 @@ describe('describeSendError', () => {
     expect(view.hint).toEqual({ kind: 'unresolved', refs: ['${petId}', '${#Env#token}'] });
   });
 
+  it('reads an unclosed ${ as a syntax slip, not a missing value', () => {
+    const view = describeSendError({
+      code: 'rest-unresolved-properties',
+      message: '"/x" has property references nothing resolves: ${$rand',
+      details: { path: '/x', unresolved: ['${$rand', '${$rand', '${a${b}'] },
+    });
+    expect(view.title).toBe('Unclosed ${');
+    expect(view.hint).toEqual({ kind: 'unclosed', fragments: ['${$rand', '${a${b}'] });
+    // The engine's message names the fragment oddly; the hint says it better.
+    expect(view.detail).toBeUndefined();
+  });
+
   it('reads the references from the message when the details carry none', () => {
     const view = describeSendError({
       code: 'grpc-unresolved-properties',

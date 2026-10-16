@@ -64,6 +64,8 @@ export interface RestResponsePaneProps {
   readonly onOpenTimeoutSetting?: (() => void) | undefined;
   /** Shows the field an unresolved `${name}` was written in. */
   readonly onRevealReference?: ((ref: string) => void) | undefined;
+  /** Names the field a reference was written in, for an unclosed `${`. */
+  readonly describeReferenceField?: ((ref: string) => string | undefined) | undefined;
 }
 
 /** The response pane. */
@@ -74,6 +76,7 @@ export function RestResponsePane({
   retryDisabledReason,
   onOpenTimeoutSetting,
   onRevealReference,
+  describeReferenceField,
 }: RestResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('body');
   const sending = state?.status === 'sending';
@@ -235,6 +238,7 @@ export function RestResponsePane({
           retryDisabledReason={retryDisabledReason}
           onOpenTimeoutSetting={onOpenTimeoutSetting}
           onRevealReference={onRevealReference}
+          describeReferenceField={describeReferenceField}
         />
       ) : exchange === undefined ? (
         // The bar above already says "Sending…"; the pane says it only once.
