@@ -12,7 +12,7 @@ import { entry } from '../../http/entries.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { slugify, uniqueSlug } from '../../project/paths.js';
+import { slugify, SlugSet, uniqueSlug } from '../../project/paths.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection, hasCredentials, mapPostmanAuth } from '../../rest/postman/map.js';
 import { parsePostmanAuth, parsePostmanCollection } from '../../rest/postman/parse.js';
@@ -318,8 +318,8 @@ class WorkspaceMapper {
   ): { folders: F[]; requests: R[]; count: number } {
     const folders: F[] = [];
     const requests: R[] = [];
-    const folderSlugs = new Set<string>();
-    const requestSlugs = new Set<string>();
+    const folderSlugs = new SlugSet();
+    const requestSlugs = new SlugSet();
     let count = 0;
     for (const node of nodes) {
       if (node.kind !== 'folder') {
