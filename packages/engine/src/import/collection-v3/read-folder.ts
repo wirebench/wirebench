@@ -6,37 +6,32 @@
  * `node_modules` are skipped.
  */
 
-import { constants } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { lstat } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 import { PostmanError } from '../../errors.js';
+import type { ImportFolderErrorCode, ImportFolderLimits } from '../read-folder.js';
+import { IMPORT_FOLDER_LIMITS, readImportFolder } from '../read-folder.js';
 import type { MapCollectionV3Options, MappedCollectionV3 } from './map.js';
 import { mapCollectionV3 } from './map.js';
 import { readCollectionV3 } from './parse.js';
 
 /** The limits of one folder walk. */
-export interface CollectionV3FolderLimits {
-  /** Files read. */
-  readonly files: number;
-  /** Folders deep below the root. */
-  readonly depth: number;
-  /** Bytes of the files read, together. */
-  readonly bytes: number;
-  /** Folder entries looked at, of any kind. */
-  readonly entries: number;
-}
+export type CollectionV3FolderLimits = ImportFolderLimits;
 
-export const COLLECTION_V3_FOLDER_LIMITS: CollectionV3FolderLimits = {
-  files: 5000,
-  depth: 64,
-  bytes: 50 * 1024 * 1024,
-  entries: 50_000,
-};
+export const COLLECTION_V3_FOLDER_LIMITS: CollectionV3FolderLimits = IMPORT_FOLDER_LIMITS;
 
 const READ_FILE = /\.(?:ya?ml|js)$/i;
-const SKIPPED_FOLDERS = new Set(['node_modules', '.git']);
 const DEFINITION_FILE = /^definition\.ya?ml$/i;
 const REQUEST_FILE = /\.request\.ya?ml$/i;
+
+/** The Postman error codes of the shared walk's refusals. */
+const WALK_CODES: Readonly<Record<ImportFolderErrorCode, string>> = {
+  'not-a-folder': 'postman-v3-not-a-folder',
+  'too-many-files': 'postman-v3-too-many-files',
+  'too-deep': 'postman-v3-too-deep',
+  'too-large': 'postman-too-large',
+  'read-failed': 'postman-read-failed',
+};
 
 function readFailed(path: string, error: unknown): PostmanError {
   return new PostmanError(
@@ -44,10 +39,6 @@ function readFailed(path: string, error: unknown): PostmanError {
     `Failed to read the collection at "${path}": ${error instanceof Error ? error.message : String(error)}`,
     { cause: error },
   );
-}
-
-function inside(base: string, path: string): boolean {
-  return path === base || path.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
 }
 
 /**
@@ -80,22 +71,6 @@ export async function collectionV3Root(path: string): Promise<string> {
   );
 }
 
-/** One file's text, opened without following a link, refused past the bytes left. */
-async function readNoFollow(path: string, budget: number, limit: number): Promise<string | undefined> {
-  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch(() => undefined);
-  if (handle === undefined) return undefined;
-  try {
-    const info = await handle.stat();
-    if (!info.isFile()) return undefined;
-    if (info.size > budget) {
-      throw new PostmanError('postman-too-large', `The collection is larger than ${String(limit / (1024 * 1024))} MB`);
-    }
-    return await handle.readFile({ encoding: 'utf8' });
-  } finally {
-    await handle.close();
-  }
-}
-
 /**
  * Every `*.yaml`, `*.yml` and `*.js` under `root`, keyed by POSIX path relative to it. `root` must be
  * a folder and not a link. `limits` exists for tests.
@@ -107,64 +82,12 @@ export async function readCollectionV3Folder(
   root: string,
   limits: CollectionV3FolderLimits = COLLECTION_V3_FOLDER_LIMITS,
 ): Promise<Map<string, string>> {
-  let info;
-  try {
-    info = await lstat(root);
-  } catch (error) {
-    throw readFailed(root, error);
-  }
-  if (info.isSymbolicLink() || !info.isDirectory()) {
-    throw new PostmanError('postman-v3-not-a-folder', `"${root}" is not a folder (a linked folder is not followed)`);
-  }
-  try {
-    return await walk(root, limits);
-  } catch (error) {
-    if (error instanceof PostmanError) throw error;
-    throw readFailed(root, error);
-  }
-}
-
-async function walk(base: string, limits: CollectionV3FolderLimits): Promise<Map<string, string>> {
-  const realBase = await realpath(base);
-  const files = new Map<string, string>();
-  let bytes = 0;
-  let entriesSeen = 0;
-  const tooMany = (): PostmanError =>
-    new PostmanError('postman-v3-too-many-files', `The collection holds more than ${String(limits.files)} files`);
-  const queue: { dir: string; depth: number }[] = [{ dir: base, depth: 0 }];
-  for (let at = 0; at < queue.length; at += 1) {
-    const { dir, depth } = queue[at]!;
-    if (depth > limits.depth) {
-      throw new PostmanError(
-        'postman-v3-too-deep',
-        `The collection is nested more than ${String(limits.depth)} folders deep`,
-      );
-    }
-    const entries = await readdir(dir, { withFileTypes: true });
-    entriesSeen += entries.length;
-    if (entriesSeen > limits.entries) throw tooMany();
-    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    for (const dirent of entries) {
-      if (dirent.isSymbolicLink()) continue;
-      const path = join(dir, dirent.name);
-      const isFile = dirent.isFile() && READ_FILE.test(dirent.name);
-      const isFolder = dirent.isDirectory() && !SKIPPED_FOLDERS.has(dirent.name);
-      if (!isFile && !isFolder) continue;
-      if (isFile && files.size >= limits.files) throw tooMany();
-      // A folder mounted or swapped in under the root would leave it without being a link.
-      const real = await realpath(path).catch(() => undefined);
-      if (real === undefined || !inside(realBase, real)) continue;
-      if (isFolder) {
-        queue.push({ dir: path, depth: depth + 1 });
-        continue;
-      }
-      const text = await readNoFollow(path, limits.bytes - bytes, limits.bytes);
-      if (text === undefined) continue;
-      bytes += Buffer.byteLength(text, 'utf8');
-      files.set(relative(base, path).split(sep).join('/'), text);
-    }
-  }
-  return files;
+  return readImportFolder(root, {
+    readFile: (name) => READ_FILE.test(name),
+    limits,
+    error: (code, message, cause) =>
+      new PostmanError(WALK_CODES[code], message, cause !== undefined ? { cause } : undefined),
+  });
 }
 
 /**

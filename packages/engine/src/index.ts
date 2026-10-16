@@ -991,6 +991,8 @@ export {
   readCollectionV3Folder,
 } from './import/collection-v3/read-folder.js';
 export type { CollectionV3FolderLimits } from './import/collection-v3/read-folder.js';
+export { IMPORT_FOLDER_LIMITS, readImportFolder } from './import/read-folder.js';
+export type { ImportFolderErrorCode, ImportFolderLimits, ImportFolderOptions } from './import/read-folder.js';
 export type { V3Collection, V3File, V3Folder, V3Request, V3Script, V3Workspace } from './import/collection-v3/index.js';
 // Exporters: a project, an API or an interface as a Postman Collection v2.1 or an OpenCollection.
 export { COLLECTION_EXPORT_FORMATS, exportCollection } from './export/index.js';
