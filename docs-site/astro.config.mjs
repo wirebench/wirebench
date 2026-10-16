@@ -79,6 +79,7 @@ export default defineConfig({
             { label: 'WS-Security signature failure', slug: 'solutions/ws-security-signature-failure' },
             { label: 'Kerberos from a Mac to Windows', slug: 'solutions/kerberos-spnego-mac-to-windows' },
             { label: 'SAML token from a WS-Trust STS', slug: 'solutions/ws-trust-saml-token-from-sts' },
+            { label: 'Mutual TLS with a corporate CA', slug: 'solutions/mutual-tls-corporate-ca' },
           ],
         },
         {
