@@ -1,3 +1,4 @@
+import { REST_ACCEPT_ENCODING, SOAP_ACCEPT_ENCODING } from '@wirebench/engine/rest';
 import {
   BooleanSetting,
   EnumSetting,
@@ -24,7 +25,7 @@ export function HttpSection({ preferences, update }: SectionProps) {
           trim
           validate={headerValueProblem}
           onCommit={(userAgent) => update({ http: { userAgent } })}
-          hint="Sent unless the request sets its own User-Agent header."
+          hint="Sent unless the request sets its own User-Agent header. The default, Wirebench/<version>, follows the app's version."
         />
       </SettingsGroup>
 
@@ -44,7 +45,7 @@ export function HttpSection({ preferences, update }: SectionProps) {
           setting="http.responseCompression"
           value={http.responseCompression}
           onChange={(responseCompression) => update({ http: { responseCompression } })}
-          hint="Adds Accept-Encoding: gzip, deflate."
+          hint={`Adds Accept-Encoding: ${REST_ACCEPT_ENCODING} to REST requests and ${SOAP_ACCEPT_ENCODING} to SOAP requests.`}
         />
       </SettingsGroup>
 

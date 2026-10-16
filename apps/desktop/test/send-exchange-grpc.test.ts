@@ -267,7 +267,7 @@ describe('request.sendGrpc through the engine', () => {
         rawRequestBase64:
           ':method: POST\r\n:scheme: http\r\n:authority: ' +
           server.target +
-          '\r\n:path: /wirebench.greet.Greeter/SayHello\r\ncontent-type: application/grpc+proto\r\nte: trailers\r\ngrpc-accept-encoding: identity,gzip,deflate\r\ngrpc-timeout: 60000m\r\nuser-agent: Wirebench/0.1\r\nauthorization: <redacted>\r\nx-tenant: acme\r\nx-trace: abc\r\n\r\n\u0000\u0000\u0000\u0000\u0005\n\u0003Ada',
+          '\r\n:path: /wirebench.greet.Greeter/SayHello\r\ncontent-type: application/grpc+proto\r\nte: trailers\r\ngrpc-accept-encoding: identity,gzip,deflate\r\ngrpc-timeout: 60000m\r\nuser-agent: Wirebench\r\nauthorization: <redacted>\r\nx-tenant: acme\r\nx-trace: abc\r\n\r\n\u0000\u0000\u0000\u0000\u0005\n\u0003Ada',
         rawResponseBase64:
           'HTTP/2 200\r\ncontent-type: application/grpc+proto\r\nx-served-by: test-grpc-server\r\ndate: -\r\n\r\n\u0000\u0000\u0000\u00005\n\nHello, Ada\u0012\u0005\n\u0003Ada\u001a\u0010\n\bx-tenant\u0012\u0004acme\u001a\u000e\n\u0007x-trace\u0012\u0003abc\r\ngrpc-status: 0\r\n\r\n',
         truncated: false,
@@ -281,7 +281,7 @@ describe('request.sendGrpc through the engine', () => {
             te: 'trailers',
             'grpc-accept-encoding': 'identity,gzip,deflate',
             'grpc-timeout': '60000m',
-            'user-agent': 'Wirebench/0.1',
+            'user-agent': 'Wirebench',
             authorization: '<redacted>',
             'x-tenant': 'acme',
             'x-trace': 'abc',

@@ -62,6 +62,11 @@ All notable changes to this project are documented here. The format follows
 - **Key/value checkboxes use the accent colour.** The checkboxes in Params, Headers and the other
   key/value tables, and in an environment's variables, are tinted like the ones in Settings instead
   of the system blue (#632).
+- **The default User-Agent names the real version.** Requests sent from the app now carry
+  `User-Agent: Wirebench/<version>` (for example `Wirebench/6.1.0`) instead of the stale
+  `Wirebench/0.1`, and it follows each update; a User-Agent you set yourself is kept. The CLI, which
+  sends without the app's preferences, sends `Wirebench`. The **Accept compressed responses** hint now
+  names what is sent: `gzip, deflate, br` on REST requests, `gzip, deflate` on SOAP ones (#632).
 
 ## [6.1.0] - 2026-10-16
 
