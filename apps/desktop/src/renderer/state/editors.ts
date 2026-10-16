@@ -75,6 +75,7 @@ export interface EditorTab {
     | 'mcp-api'
     | 'env-compare'
     | 'catch-url'
+    | 'schedule'
     | 'sequence'
     | 'mock'
     | 'runner'
@@ -111,6 +112,11 @@ export interface EditorTab {
    * only: captures are never cached, so the tab is not persisted.
    */
   readonly hookId?: string;
+  /**
+   * Set when `kind` is `'schedule'`: the server schedule this tab shows (#517). Session only, like a
+   * catch URL's tab: its runs live on the server.
+   */
+  readonly scheduleId?: string;
   /**
    * Set when `kind` is `'ssh-terminal'`: the tab's panes, each its own session to a host. Session only:
    * a session is a moment, so the tab is never persisted.

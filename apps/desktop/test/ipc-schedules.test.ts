@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { WirebenchError } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, WirebenchError } from '@wirebench/engine';
+import type { Project } from '@wirebench/engine';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 vi.mock('electron', () => ({
@@ -63,11 +64,10 @@ const DETAIL = {
   results: [
     {
       path: 'CountryInfo/a.yaml',
-      group: 'Countries',
       name: 'List',
       protocol: 'rest',
       outcome: 'failed',
-      assertions: [{ type: 'status', outcome: 'failed', message: 'expected 200, got 500' }],
+      assertions: [{ type: 'status', label: 'Status', outcome: 'failed', message: 'expected 200, got 500' }],
     },
   ],
   alerts: [{ kind: 'failure', target: 0, state: 'dead', attempts: 8, lastError: 'ops.example.com: 503' }],
@@ -92,13 +92,32 @@ function fakeService() {
   };
 }
 
+function deps(schedules = fakeService(), model: Project | null = shop()) {
+  return {
+    schedules,
+    modelOf: () => model ?? undefined,
+    registryOf: () => undefined,
+    environmentsOf: () => [
+      { id: 'E1', name: 'Dev' },
+      { id: 'E2', name: 'Prod', protected: true },
+    ],
+  };
+}
+
+function shop(): Project {
+  return {
+    ...createProject('Shop', { id: 'P1' }),
+    containers: { rest: [createApi('Shop', { id: 'A1', requests: [createRestRequest('top', { id: 'top' })] })] },
+  };
+}
+
 describe('schedules.* channels (#517)', () => {
   beforeEach(() => {
     handlers.clear();
   });
 
   it('registers every channel the contract declares', () => {
-    registerSchedulesChannels({ schedules: fakeService() });
+    registerSchedulesChannels(deps());
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(channels.schedules)
         .map((c) => c.name)
@@ -108,7 +127,7 @@ describe('schedules.* channels (#517)', () => {
 
   it('passes each request to the service and answers in wire shapes', async () => {
     const schedules = fakeService();
-    registerSchedulesChannels({ schedules });
+    registerSchedulesChannels(deps(schedules));
     expect(await invoke('schedules.available', { url: SERVER })).toEqual({ ok: true, value: { available: true } });
     expect(await invoke('schedules.list', { url: SERVER, workspaceId: WS })).toEqual({
       ok: true,
@@ -151,10 +170,45 @@ describe('schedules.* channels (#517)', () => {
   });
 
   it('answers a service refusal with its code', async () => {
-    registerSchedulesChannels({ schedules: fakeService() });
+    registerSchedulesChannels(deps());
     expect(await invoke('schedules.cancelRun', { ...REF, runId: RUN_ID })).toMatchObject({
       ok: false,
       error: { code: 'schedules-run-finished' },
     });
+  });
+
+  it('lists what a project can schedule, with its environments', async () => {
+    registerSchedulesChannels(deps());
+    expect(await invoke('schedules.choices', { projectId: 'P1' })).toEqual({
+      ok: true,
+      value: {
+        items: [
+          { id: 'A1', kind: 'api', label: 'Shop', depth: 0, selectors: ['Shop'] },
+          { id: 'top', kind: 'request', label: 'top', depth: 1, selectors: ['Shop/top'] },
+        ],
+        sequences: [],
+        environments: [
+          { id: 'E1', name: 'Dev' },
+          { id: 'E2', name: 'Prod', protected: true },
+        ],
+      },
+    });
+  });
+
+  it('lists nothing for a project that is not open', async () => {
+    registerSchedulesChannels(deps(fakeService(), null));
+    expect(await invoke('schedules.choices', { projectId: 'P9' })).toEqual({
+      ok: true,
+      value: { items: [], sequences: [], environments: [] },
+    });
+  });
+
+  it('fills in the target of an explorer row, or none', async () => {
+    registerSchedulesChannels(deps());
+    expect(await invoke('schedules.targetFor', { entityId: 'top' })).toEqual({
+      ok: true,
+      value: { target: { project: 'P1', select: ['Shop/top'] } },
+    });
+    expect(await invoke('schedules.targetFor', { entityId: 'nope' })).toEqual({ ok: true, value: { target: null } });
   });
 });
