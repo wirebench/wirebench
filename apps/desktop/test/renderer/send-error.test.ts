@@ -7,6 +7,8 @@ import {
   describeSendError,
   formatLimit,
   isChosenOutcome,
+  isProblemOutcome,
+  sendProblemText,
   referenceText,
 } from '../../src/renderer/features/request-editor/send-error.js';
 
@@ -74,6 +76,45 @@ describe('isChosenOutcome', () => {
     expect(isChosenOutcome('aborted')).toBe(true);
     expect(isChosenOutcome('send-declined')).toBe(true);
     expect(isChosenOutcome('timeout')).toBe(false);
+  });
+});
+
+describe('isProblemOutcome', () => {
+  it('leaves out a choice and a transport failure, and keeps what the project can fix (#635)', () => {
+    for (const code of [
+      'aborted',
+      'send-declined',
+      'connection-refused',
+      'dns',
+      'timeout',
+      'tls',
+      'proxy',
+      'network',
+    ]) {
+      expect(isProblemOutcome(code), code).toBe(false);
+    }
+    for (const code of [
+      'rest-unresolved-properties',
+      'rest-url-incomplete',
+      'invalid-url',
+      'script-type-error',
+      'tls-untrusted',
+    ]) {
+      expect(isProblemOutcome(code), code).toBe(true);
+    }
+  });
+});
+
+describe('sendProblemText', () => {
+  it('leads with the plain title, not the code', () => {
+    expect(sendProblemText({ code: 'rest-url-incomplete', message: 'The URL still needs a value for {id}' })).toBe(
+      'Incomplete URL: The URL still needs a value for {id}',
+    );
+  });
+
+  it('says the title once when the message only repeats it', () => {
+    expect(sendProblemText({ code: 'invalid-url', message: 'Invalid URL.' })).toBe('Invalid URL');
+    expect(sendProblemText({ code: 'invalid-url', message: '' })).toBe('Invalid URL');
   });
 });
 

@@ -121,7 +121,7 @@ describe('sendGrpc', () => {
     ).toBe('2');
   });
 
-  it('records a transport failure as an error state and a Problems entry', async () => {
+  it('records a transport failure as an error state, and not as a Problem (#635)', async () => {
     sendGrpc.mockResolvedValue({ ok: false, error: { code: 'connection-refused', message: 'ECONNREFUSED' } });
 
     await useExchangesStore.getState().sendGrpc('grpc-1');
@@ -131,7 +131,7 @@ describe('sendGrpc', () => {
       error: { code: 'connection-refused' },
     });
     expect(useExchangesStore.getState().log).toEqual([]);
-    expect(useProblemsStore.getState().items).toHaveLength(1);
+    expect(useProblemsStore.getState().items).toEqual([]);
   });
 
   it('cancels by the send id it started, and does nothing with no send in flight', async () => {

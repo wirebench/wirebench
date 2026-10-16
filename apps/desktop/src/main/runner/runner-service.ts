@@ -56,6 +56,7 @@ import type {
   RunnerRunResult,
   RunnerSettings,
   RunnerState,
+  RunnerSummary,
 } from '../../shared/runner-wire.js';
 import { asRunSender, createDesktopRunSend, type DesktopRunSend, type DesktopSendDeps } from './desktop-send.js';
 import type { RunnerHistoryStore, RunnerSettingsStore } from './stores.js';
@@ -116,6 +117,12 @@ function stepAsRequest(sequence: SequenceDef, step: SequenceStepResult): Request
     unasserted: step.outcome !== 'skipped' && step.assertions.length === 0,
     ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog } : {}),
   };
+}
+
+/** The summary, with how many of its passes had nothing checked, as each row's neutral mark shows them. */
+export function withUnchecked(summary: RunResult['summary'], requests: readonly RunnerRequestResult[]): RunnerSummary {
+  const unchecked = requests.filter((r) => r.outcome === 'passed' && r.assertions.length === 0).length;
+  return unchecked === 0 ? summary : { ...summary, unchecked };
 }
 
 function summaryOf(requests: readonly RequestResult[], durationMs: number): RunResult['summary'] {
@@ -324,6 +331,7 @@ export class RunnerService {
     try {
       const result = await runIterations(plan, once, { bail: settings.bail, signal });
       const environment = located !== undefined ? environmentNameOf(located) : null;
+      const results = result.requests.map(toRunnerResult);
       const run: RunnerRunResult = {
         runId: request.runId,
         targetId: request.targetId,
@@ -332,8 +340,8 @@ export class RunnerService {
         ...(environment !== null ? { environment: mask(environment) } : {}),
         ...(stored.dataPath !== undefined ? { dataFile: basename(stored.dataPath) } : {}),
         cancelled: signal.aborted,
-        summary: result.summary,
-        requests: result.requests.map(toRunnerResult),
+        summary: withUnchecked(result.summary, results),
+        requests: results,
       };
       try {
         await this.deps.history.add(run);

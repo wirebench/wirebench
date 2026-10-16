@@ -59,9 +59,9 @@ test.describe('request properties and preferences', () => {
       timeout: 20_000,
     });
 
-    // …and the failure is a Problems entry, not just a transient status line.
+    // …and it is not a Problem: the network failed, nothing in the project is wrong (#635).
     await page.getByRole('tab', { name: /Problems/ }).click();
-    await expect(page.getByRole('grid', { name: 'Problems' })).toContainText('timeout', { ignoreCase: true });
+    await expect(page.getByTestId('problem-row').filter({ hasText: /timed? ?out/i })).toHaveCount(0);
   });
 
   test('the Appearance tab size drives a recreated envelope, and its theme drives the shell', async () => {
