@@ -7,6 +7,7 @@
  */
 
 import { PostmanError } from '../../errors.js';
+import { headersAndAuth } from '../../import/credential-values.js';
 import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../../import/examples.js';
 import { ReportBuilder } from '../../import/report.js';
 import type { ImportedVariableSet } from '../../import/variables.js';
@@ -361,19 +362,34 @@ function mapRequest(
     );
   }
 
-  // Headers
+  // Headers, under the credential rule every request importer applies: a literal Authorization
+  // header becomes the request's auth (its credential left out) and is dropped, and any other
+  // credential-looking header with a literal value is dropped. A value made only of references stays.
   const headers: KeyValueEntry[] = [];
   const rawHeaders: readonly PostmanHeader[] = Array.isArray(req.header) ? req.header : [];
+  const credentialReport = new ReportBuilder();
+  const blanked = new Set<string>();
+  let headerAuth: AuthConfig = { type: 'inherit' };
   for (const h of rawHeaders) {
     if (h.key.trim().length > 0) {
-      headers.push(
-        entry(h.key, h.value, {
-          enabled: h.disabled !== true,
-          ...(h.description !== undefined ? { description: h.description } : {}),
-        }),
+      const mapped = headersAndAuth(
+        [{ name: h.key, value: h.value, enabled: h.disabled !== true }],
+        name,
+        credentialReport,
+        blanked,
       );
+      if (mapped.auth.type !== 'inherit' && headerAuth.type === 'inherit') headerAuth = mapped.auth;
+      for (const kept of mapped.headers) {
+        headers.push(h.description !== undefined ? { ...kept, description: h.description } : kept);
+      }
     }
   }
+  if (blanked.size > 0) {
+    credentialReport.warn(
+      `${name}: the recorded value of ${[...blanked].join(', ')} was not imported; set it on the request.`,
+    );
+  }
+  warnings?.push(...credentialReport.build().warnings);
 
   // Body
   const body = mapBody(
@@ -382,7 +398,12 @@ function mapRequest(
   );
 
   // Auth: request-level auth, or item-level auth, or inherit
-  const auth = mapPostmanAuth(req.auth ?? item.auth, true, warnings) ?? { type: 'inherit' };
+  // A literal Authorization header stands for the auth only where the request sets none of its own.
+  const own = req.auth ?? item.auth;
+  const auth =
+    own === undefined || own.type?.toLowerCase() === 'inherit'
+      ? headerAuth
+      : (mapPostmanAuth(own, true, warnings) ?? { type: 'inherit' });
 
   const description = item.description ?? req.description;
 

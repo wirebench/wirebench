@@ -40,6 +40,15 @@ All notable changes to this project are documented here. The format follows
   SSH keeps its own strip. The right rail shows an environment's details while its tab is in front
   (#607).
 
+### Fixed
+
+- **Credential headers stay out of imported Postman requests.** A literal `Authorization` header in a
+  Postman collection becomes the request's bearer or basic auth (the user name only) and is dropped;
+  any other credential-looking header with a literal value, such as `X-Api-Key` or `Cookie`, is
+  dropped and named in the import report. A value made only of variables stays. The Insomnia,
+  Hoppscotch and Thunder Client imports, which share this mapper, follow the same rule, as the
+  `.http`, OpenCollection and HAR imports already did (#588).
+
 ## [6.1.0] - 2026-10-16
 
 ### Added
