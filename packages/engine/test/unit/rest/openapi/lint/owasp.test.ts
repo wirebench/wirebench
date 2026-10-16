@@ -34,6 +34,8 @@ describe('owasp rules', () => {
   it('finds no security scheme at all, and Swagger 2.0 served over http', async () => {
     const report = await owasp('noisy-2.0.yaml');
     expect(brief(report.findings)).toEqual(['owasp-security-defined ', 'owasp-plain-http-scheme /schemes/0']);
+    // Most specs define no scheme by design: a warning, so an import does not read as broken (N05).
+    expect(report.findings.find((finding) => finding.rule === 'owasp-security-defined')?.severity).toBe('warning');
   });
 
   it('does not flag a Swagger 2.0 API on localhost', async () => {

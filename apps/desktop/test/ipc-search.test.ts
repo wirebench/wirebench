@@ -5,6 +5,7 @@ import {
   PROJECT_SETTINGS,
   REQUEST_PROPERTIES,
   restApiWire,
+  restFolderWire,
   restRequestWire,
   wsApiWire,
   wsRequestWire,
@@ -183,7 +184,9 @@ describe('searchCorpus', () => {
 
     const [body, header] = corpus.filter((document) => document.protocol === 'rest');
     expect(body).toMatchObject({ kind: 'request-body', requestName: 'List orders', interfaceName: 'Orders' });
-    expect(body?.text).toBe(['POST /orders/{orderId}', 'orderId=42', 'status=open', '{ "note": "rush" }'].join('\n'));
+    expect(body?.text).toBe(
+      ['List orders', 'POST /orders/{orderId}', 'orderId=42', 'status=open', '{ "note": "rush" }'].join('\n'),
+    );
     expect(header).toMatchObject({ kind: 'request-header', text: 'X-Tenant: acme' });
   });
 
@@ -261,6 +264,33 @@ describe('search.query', () => {
       protocol: 'rest',
       requestId: 'rest-9',
       snippet: 'POST /orders/{orderId}',
+    });
+  });
+
+  it('finds a REST request by its name, after the folders it sits in (N06)', async () => {
+    const withFolder = projectWithRest();
+    registerSearchChannels(
+      engineWith(undefined),
+      projectsWith({
+        ...withFolder,
+        folders: [
+          restFolderWire({ id: 'f-1', apiId: 'api-9', name: 'Sales' }),
+          restFolderWire({ id: 'f-2', apiId: 'api-9', parentId: 'f-1', name: 'Orders' }),
+        ],
+        restRequests: withFolder.restRequests.map((request) => ({ ...request, folderId: 'f-2' })),
+      }),
+    );
+
+    const result = (await invoke({ query: 'list', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string; snippet: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({
+      protocol: 'rest',
+      requestId: 'rest-9',
+      snippet: 'Sales › Orders › List orders',
     });
   });
 
