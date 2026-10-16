@@ -56,7 +56,19 @@ const xterm = vi.hoisted(() => {
     }
     dataListeners: ((data: string) => void)[] = [];
     parsedListeners: (() => void)[] = [];
-    buffer = { active: { type: 'normal' as 'normal' | 'alternate', cursorX: 0 } };
+    /** The cursor's row as the shell has written it; the cursor sits at its end. */
+    row = '';
+    buffer = {
+      active: {
+        type: 'normal' as 'normal' | 'alternate',
+        cursorX: 0,
+        cursorY: 0,
+        baseY: 0,
+        getLine: () => ({
+          translateToString: (_trim: boolean, start = 0, end?: number) => this.row.slice(start, end),
+        }),
+      },
+    };
     modes = { bracketedPasteMode: false };
     decorations: { options: Record<string, unknown>; element: HTMLElement; disposed: boolean }[] = [];
     onData(listener: (data: string) => void) {
@@ -73,6 +85,7 @@ const xterm = vi.hoisted(() => {
     }
     /** The shell echoes what was typed: the cursor moves on and xterm reports the write parsed. */
     echo(text: string): void {
+      this.row += text;
       this.buffer.active.cursorX += text.length;
       for (const listener of this.parsedListeners) listener();
     }
@@ -1514,6 +1527,30 @@ describe('snippet suggestions', () => {
     expect(term.decorations.at(-1)?.options['x']).toBe(4);
 
     typeIn(term, 'x');
+    expect(ghost()).toBeNull();
+  });
+
+  it('waits for the echo of the last key: an earlier echo does not place it early (#594)', async () => {
+    const term = await mount();
+    act(() => {
+      term.type('j');
+      term.type('o');
+      term.type('u');
+    });
+    // The shell has echoed only the first two keys: the ghost would cover the third.
+    act(() => {
+      term.echo('jo');
+    });
+    expect(ghost()).toBeNull();
+    act(() => {
+      term.echo('u');
+    });
+    expect(ghost()?.textContent).toContain('rnalctl');
+    expect(term.decorations.at(-1)?.options['x']).toBe(3);
+    // Output that moves the cursor away hides it.
+    act(() => {
+      term.echo('\u0007 other output');
+    });
     expect(ghost()).toBeNull();
   });
 

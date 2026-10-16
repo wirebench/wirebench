@@ -24,6 +24,8 @@ export interface SnippetSuggestions {
 interface Shown {
   readonly item: SnippetListItemWire;
   readonly skip: number;
+  /** The column it was drawn at: a write that leaves the cursor there keeps it. */
+  readonly x: number;
   readonly decoration: IDecoration | undefined;
 }
 
@@ -46,7 +48,8 @@ function render(element: HTMLElement, term: Terminal, rest: string, name: string
 export function attachSnippetSuggestions(term: Terminal, opts: { connected: () => boolean }): SnippetSuggestions {
   const tracker = createLineTracker();
   let pasting = false;
-  let pending: SnippetListItemWire | undefined;
+  // The snippet the typed line matches, drawn once the shell has echoed that line (and again on each write).
+  let wanted: SnippetListItemWire | undefined;
   let shown: Shown | undefined;
   if (!useSnippetsStore.getState().loaded) {
     useSnippetsStore
@@ -64,13 +67,27 @@ export function attachSnippetSuggestions(term: Terminal, opts: { connected: () =
     term.buffer.active.type !== 'alternate' &&
     usePreferencesStore.getState().preferences.terminal.snippetSuggestions;
 
-  // The ghost goes after the echo of what was typed, where the cursor is once the shell has written it.
+  // The ghost goes after the echo of what was typed, where the cursor is once the shell has written it. A
+  // write can be the echo of an earlier key while the last one is still on its way (fast typing, a slow link),
+  // so every write checks again: the ghost shows only while the text before the cursor ends with the typed
+  // line, and moves when the cursor does (#594).
   const parsed: IDisposable = term.onWriteParsed(() => {
-    const item = pending;
+    const item = wanted;
     const line = tracker.line;
-    pending = undefined;
-    if (item === undefined || line === undefined || !offered()) return;
-    const { cursorX } = term.buffer.active;
+    if (item === undefined || line === undefined || !offered()) {
+      hide();
+      return;
+    }
+    const buffer = term.buffer.active;
+    const { cursorX } = buffer;
+    const before = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(false, 0, cursorX) ?? '';
+    // A line longer than the row wrapped: only its tail is on the cursor's row.
+    if (!before.endsWith(line.slice(Math.max(0, line.length - cursorX)))) {
+      hide();
+      return;
+    }
+    if (shown?.item === item && shown.x === cursorX && shown.skip === line.length) return;
+    hide();
     const marker = term.registerMarker(0);
     const decoration = term.registerDecoration({
       marker,
@@ -85,7 +102,7 @@ export function attachSnippetSuggestions(term: Terminal, opts: { connected: () =
     decoration?.onDispose(() => {
       marker.dispose();
     });
-    shown = { item, skip: line.length, decoration };
+    shown = { item, skip: line.length, x: cursorX, decoration };
   });
 
   return {
@@ -93,7 +110,7 @@ export function attachSnippetSuggestions(term: Terminal, opts: { connected: () =
       hide();
       tracker.input(data, { paste: pasting });
       pasting = false;
-      pending = offered()
+      wanted = offered()
         ? matchSnippet(tracker.line, useSnippetsStore.getState().snippets, recentSnippetIds())
         : undefined;
     },
@@ -116,6 +133,7 @@ export function attachSnippetSuggestions(term: Terminal, opts: { connected: () =
         event.preventDefault();
         const { item, skip } = shown;
         hide();
+        wanted = undefined;
         // Main types the rest; what the line holds then is out of the tracker's sight.
         tracker.input('', { paste: true });
         startRun(item, { enter: false, skip });
