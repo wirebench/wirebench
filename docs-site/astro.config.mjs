@@ -84,6 +84,7 @@ export default defineConfig({
             { label: 'SOAP through a corporate proxy', slug: 'solutions/soap-through-corporate-proxy' },
             { label: 'gRPC with server reflection', slug: 'solutions/grpc-server-reflection' },
             { label: 'Coding agent runs the regression suite', slug: 'solutions/agent-runs-api-regression-suite' },
+            { label: 'Snapshot baselines for a changing API', slug: 'solutions/snapshot-baselines-changing-api' },
           ],
         },
         {

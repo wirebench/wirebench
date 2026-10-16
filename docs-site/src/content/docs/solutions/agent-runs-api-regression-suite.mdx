@@ -243,8 +243,8 @@ written:
       baseline not written — The response holds a secret value, so its baseline was not written.
   ```
 
-The comparison and that secret check are explained in
-[Snapshot regression](/wirebench/docs/guides/snapshot-regression/#in-ci).
+[Snapshot baselines for an API an agent keeps changing](/wirebench/docs/solutions/snapshot-baselines-changing-api/)
+explains how the comparison and that secret check work.
 
 <Aside type="tip">
 Run `wirebench run --baseline` in CI as well. A golden the agent rewrote without review still fails
@@ -298,6 +298,8 @@ commit that changed it names its author.
 ## Related
 
 - [Agents (MCP)](/wirebench/docs/guides/agents-mcp/): every tool, gate and redaction rule.
+- [Snapshot baselines for an API an agent keeps changing](/wirebench/docs/solutions/snapshot-baselines-changing-api/):
+  what a baseline compares, ignores and masks.
 - [Snapshot regression](/wirebench/docs/guides/snapshot-regression/): saving a golden and writing
   ignore rules.
 - [Run in CI](/wirebench/docs/guides/run-in-ci/): the same commands in a pipeline.
