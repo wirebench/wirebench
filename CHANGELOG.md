@@ -59,6 +59,9 @@ All notable changes to this project are documented here. The format follows
 - **HTML Pretty reads like the page.** Inline elements such as `<b>`, `<a>`, `<span>`, `<code>` and
   `<title>` stay on one line with their text instead of taking three, and the content of `<pre>`,
   `<textarea>`, `<script>` and `<style>` is shown exactly as it arrived (#632).
+- **Key/value checkboxes use the accent colour.** The checkboxes in Params, Headers and the other
+  key/value tables, and in an environment's variables, are tinted like the ones in Settings instead
+  of the system blue (#632).
 
 ## [6.1.0] - 2026-10-16
 
