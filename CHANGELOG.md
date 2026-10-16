@@ -42,6 +42,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **API tabs read cleanly.** The REST, gRPC and WebSocket API tabs no longer show an issue number or
+  repeat when an API's scripts run, and their authentication fields line up with Name and Description
+  (#634).
 - **WSDL import goes through your proxy and CA bundle.** Importing a WSDL by URL, re-fetching it when a
   project reopens, and fetching a definition a legacy SOAP project file holds no copy of now use the
   proxy and CA bundle from Settings, as sends and OpenAPI imports already did, with Basic or Kerberos
