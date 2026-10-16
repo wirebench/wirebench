@@ -151,6 +151,14 @@ export class BrunoError extends WirebenchError {
   }
 }
 
+/** Thrown when a Hoppscotch collections or environments export cannot be read. */
+export class HoppscotchError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'HoppscotchError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

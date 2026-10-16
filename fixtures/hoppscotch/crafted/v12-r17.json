@@ -1,0 +1,213 @@
+[
+  {
+    "v": 12,
+    "name": "Shop API",
+    "description": "Root collection",
+    "auth": { "authType": "bearer", "authActive": true, "token": "<<token>>" },
+    "headers": [{ "key": "X-Team", "value": "web", "active": true, "description": "" }],
+    "variables": [
+      { "key": "baseUrl", "initialValue": "https://api.example.test", "currentValue": "", "secret": false },
+      { "key": "apiKey", "initialValue": "", "currentValue": "", "secret": true }
+    ],
+    "preRequestScript": "hopp.env.set('ts', String(Date.now()))",
+    "testScript": "",
+    "folders": [
+      {
+        "v": 12,
+        "name": "Orders",
+        "description": null,
+        "auth": { "authType": "inherit", "authActive": true },
+        "headers": [{ "key": "X-Area", "value": "orders", "active": true, "description": "" }],
+        "variables": [{ "key": "region", "initialValue": "eu", "currentValue": "", "secret": false }],
+        "preRequestScript": "",
+        "testScript": "",
+        "folders": [],
+        "requests": [
+          {
+            "v": "17",
+            "name": "Create order",
+            "method": "POST",
+            "endpoint": "<<baseUrl>>/orders?dry_run=true",
+            "params": [
+              { "key": "dry_run", "value": "true", "active": true, "description": "Validate only" },
+              { "key": "trace", "value": "1", "active": false, "description": "" }
+            ],
+            "headers": [
+              { "key": "Content-Type", "value": "application/json", "active": true, "description": "" },
+              { "key": "X-Debug", "value": "1", "active": false, "description": "disabled" }
+            ],
+            "preRequestScript": "hopp.env.set('orderRef', 'A-1')",
+            "testScript": "hopp.test('created', () => { hopp.expect(hopp.response.statusCode).toBe(201) })",
+            "auth": { "authType": "inherit", "authActive": true },
+            "body": { "contentType": "application/json", "body": "{\n  \"sku\": \"X-1\",\n  \"qty\": 2\n}" },
+            "requestVariables": [{ "key": "sku", "value": "X-1", "active": true }],
+            "description": "Creates an order",
+            "responses": {
+              "Created": {
+                "name": "Created",
+                "originalRequest": { "v": "6", "name": "Create order", "method": "POST", "endpoint": "<<baseUrl>>/orders" },
+                "status": "Created",
+                "code": 201,
+                "headers": [{ "key": "content-type", "value": "application/json" }],
+                "body": "{\"id\":42}"
+              }
+            }
+          },
+          {
+            "v": "17",
+            "name": "Login form",
+            "method": "POST",
+            "endpoint": "<<baseUrl>>/login",
+            "params": [],
+            "headers": [],
+            "preRequestScript": "",
+            "testScript": "",
+            "auth": { "authType": "none", "authActive": true, "addTo": "HEADERS", "grantTypeInfo": { "grantType": "PASSWORD" } },
+            "body": { "contentType": "application/x-www-form-urlencoded", "body": "user: alice\n#debug: 1\npass: <<password>>" },
+            "requestVariables": [],
+            "description": null,
+            "responses": {}
+          }
+        ]
+      }
+    ],
+    "requests": [
+      {
+        "v": "17",
+        "name": "Upload avatar",
+        "method": "POST",
+        "endpoint": "<<baseUrl>>/avatar",
+        "params": [],
+        "headers": [],
+        "preRequestScript": "",
+        "testScript": "",
+        "auth": { "authType": "api-key", "authActive": true, "key": "X-API-Key", "value": "<<apiKey>>", "addTo": "HEADERS" },
+        "body": {
+          "contentType": "multipart/form-data",
+          "body": [
+            { "key": "caption", "value": "me", "active": true, "isFile": false },
+            { "key": "file", "value": [{}], "active": true, "isFile": true }
+          ]
+        },
+        "requestVariables": [],
+        "description": null,
+        "responses": {}
+      },
+      {
+        "v": "17",
+        "name": "Token via client credentials",
+        "method": "GET",
+        "endpoint": "<<baseUrl>>/me",
+        "params": [],
+        "headers": [],
+        "preRequestScript": "",
+        "testScript": "",
+        "auth": {
+          "authType": "oauth-2",
+          "authActive": true,
+          "addTo": "HEADERS",
+          "grantTypeInfo": {
+            "grantType": "CLIENT_CREDENTIALS",
+            "authEndpoint": "https://auth.example.test/oauth/token",
+            "clientID": "client-1",
+            "clientSecret": "oauth-secret-123",
+            "scopes": "read write",
+            "token": "",
+            "clientAuthentication": "IN_BODY",
+            "tokenRequestParams": [{ "id": 1, "key": "audience", "value": "api", "active": true, "sendIn": "body" }],
+            "refreshRequestParams": []
+          }
+        },
+        "body": { "contentType": null, "body": null },
+        "requestVariables": [],
+        "description": null,
+        "responses": {}
+      },
+      {
+        "v": "17",
+        "name": "Digest",
+        "method": "GET",
+        "endpoint": "<<baseUrl>>/digest",
+        "params": [],
+        "headers": [],
+        "preRequestScript": "",
+        "testScript": "",
+        "auth": { "authType": "digest", "authActive": true, "username": "admin", "password": "digest-pass-123", "realm": "", "algorithm": "MD5" },
+        "body": { "contentType": "application/xml", "body": "<a><%= x %></a>" },
+        "requestVariables": [],
+        "description": null,
+        "responses": {}
+      },
+      {
+        "v": "17",
+        "name": "Signed",
+        "method": "GET",
+        "endpoint": "<<baseUrl>>/signed",
+        "params": [],
+        "headers": [],
+        "preRequestScript": "",
+        "testScript": "",
+        "auth": {
+          "authType": "jwt",
+          "authActive": true,
+          "secret": "jwt-secret-123",
+          "privateKey": "",
+          "algorithm": "HS256",
+          "payload": "{\"sub\":\"me\"}",
+          "addTo": "HEADERS",
+          "isSecretBase64Encoded": false,
+          "headerPrefix": "Bearer ",
+          "paramName": "token",
+          "jwtHeaders": "{}"
+        },
+        "body": { "contentType": "application/octet-stream", "body": {} },
+        "requestVariables": [],
+        "description": null,
+        "responses": {}
+      },
+      {
+        "v": "17",
+        "name": "Hawk",
+        "method": "GET",
+        "endpoint": "<<baseUrl>>/hawk",
+        "params": [],
+        "headers": [],
+        "preRequestScript": "",
+        "testScript": "",
+        "auth": { "authType": "hawk", "authActive": true, "authId": "id", "authKey": "hawk-key-123", "algorithm": "sha256" },
+        "body": { "contentType": null, "body": null },
+        "requestVariables": [],
+        "description": null,
+        "responses": {}
+      },
+      {
+        "v": "17",
+        "name": "AWS off",
+        "method": "GET",
+        "endpoint": "<<baseUrl>>/aws",
+        "params": [],
+        "headers": [],
+        "preRequestScript": "",
+        "testScript": "",
+        "auth": { "authType": "aws-signature", "authActive": false, "accessKey": "AKIA", "secretKey": "aws-secret-123", "region": "eu-west-1", "serviceName": "s3", "addTo": "HEADERS" },
+        "body": { "contentType": null, "body": null },
+        "requestVariables": [],
+        "description": null,
+        "responses": {}
+      },
+      {
+        "v": 10,
+        "name": "Get user (GraphQL)",
+        "url": "<<baseUrl>>/graphql",
+        "headers": [],
+        "query": "query User($id: ID!) { user(id: $id) { id name } }",
+        "variables": "{\n  \"id\": \"1\"\n}",
+        "auth": { "authType": "inherit", "authActive": true },
+        "description": null,
+        "responses": {},
+        "preRequestScript": "",
+        "testScript": "pw.test('ok', () => {})"
+      }
+    ]
+  }
+]
