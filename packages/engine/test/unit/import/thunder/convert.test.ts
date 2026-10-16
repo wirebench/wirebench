@@ -55,6 +55,66 @@ describe('mapThunderClient: tree', () => {
   });
 });
 
+describe('mapThunderClient: broken trees', () => {
+  type Row = { _id: string; name: string; containerId: string };
+  const req = (id: string, folder: string) => ({
+    _id: id,
+    name: id,
+    url: `https://a.test/${id}`,
+    method: 'GET',
+    containerId: folder,
+  });
+  const exported = (folders: Row[], requests: ReturnType<typeof req>[]) =>
+    mapThunderClient(
+      parseThunderExport(JSON.stringify({ clientName: 'Thunder Client', collectionName: 'Tree', folders, requests })),
+    );
+
+  it('writes a folder once when two share an id, with a warning, instead of recursing', () => {
+    const result = exported(
+      [
+        { _id: 'a', name: 'A', containerId: 'b' },
+        { _id: 'b', name: 'B1', containerId: '' },
+        { _id: 'b', name: 'B2', containerId: 'a' },
+      ],
+      [req('r1', 'a')],
+    );
+    expect(result.counts).toMatchObject({ requests: 1, folders: 2 });
+    expect(result.report.warnings).toContain(
+      'B1 / A / B2: it shares its id with another folder, so it was not imported again.',
+    );
+  });
+
+  it('places folders whose parents point at each other, or at themselves, at the top level', () => {
+    const result = exported(
+      [
+        { _id: 'a', name: 'A', containerId: 'b' },
+        { _id: 'b', name: 'B', containerId: 'a' },
+        { _id: 's', name: 'Self', containerId: 's' },
+      ],
+      [req('r1', 'a'), req('r2', 's'), req('r3', '')],
+    );
+    const api = result.collections[0]?.rest;
+    expect(api?.folders.map((f) => f.name)).toEqual(['A', 'Self']);
+    expect(api?.folders[0]?.folders.map((f) => f.name)).toEqual(['B']);
+    expect(result.counts.requests).toBe(3);
+    expect(result.report.warnings).toEqual([
+      'A: its parent folders point at each other, so it was placed at the top level.',
+      'Self: its parent folders point at each other, so it was placed at the top level.',
+    ]);
+  });
+
+  it('cuts folders nested too deep, with a warning, instead of overflowing the stack', () => {
+    const folders = Array.from({ length: 20_000 }, (_, i) => ({
+      _id: `f${String(i)}`,
+      name: `F${String(i)}`,
+      containerId: i === 0 ? '' : `f${String(i - 1)}`,
+    }));
+    const result = exported(folders, [req('top', ''), req('deep', 'f19999')]);
+    expect(result.counts).toMatchObject({ requests: 1, folders: 63 });
+    expect(result.report.warnings.filter((line) => line.includes('levels deep'))).toHaveLength(1);
+  });
+});
+
 describe('mapThunderClient: requests', () => {
   it('maps path and query params, disabled rows switched off', () => {
     const create = request('Create order');

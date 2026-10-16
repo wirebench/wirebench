@@ -14,7 +14,7 @@ import { slugify } from '../../project/paths.js';
 import type { RestApi, RestFolder, RestRequestDef } from '../../rest/model.js';
 import { folderRequests } from '../../rest/model.js';
 import { apiFromPostmanCollection } from '../../rest/postman/map.js';
-import { parsePostmanCollection } from '../../rest/postman/parse.js';
+import { MAX_POSTMAN_DEPTH, parsePostmanCollection } from '../../rest/postman/parse.js';
 import type { MappedClientEntry, MappedClientImport } from '../client-import.js';
 import { ScriptCollector } from '../client-import.js';
 import { V21_SCHEMA } from '../collection-v3/convert.js';
@@ -39,6 +39,8 @@ export interface MapThunderOptions {
   readonly name?: string;
 }
 
+/** How deep folders nest before the rest is cut: the v2.1 parser counts the top-level items as one level. */
+const MAX_DEPTH = MAX_POSTMAN_DEPTH - 1;
 /** `reqType` values that are plain HTTP: the lower-case methods older files wrote, and SSE. */
 const HTTP_REQ_TYPES = new Set(['get', 'post', 'put', 'patch', 'del', 'delete', 'head', 'options', 'sse']);
 /** A URL that names its own origin: a scheme, or a leading variable that stands for one. */
@@ -306,6 +308,11 @@ class Mapper {
 /** One collection's tree and its mapping: folders first, then requests, each by `sortNum`. */
 class CollectionMapper {
   private readonly folderIds: ReadonlySet<string>;
+  private readonly childFolders = new Map<string, TcFolder[]>();
+  private readonly childRequests = new Map<string, TcRequest[]>();
+  /** The folder ids already written: a folder is written once, so a parent cycle or a shared id cannot recurse. */
+  private readonly written = new Set<string>();
+  private readonly writtenFolders = new Set<TcFolder>();
   /** Each request's assertions, in the order its v2.1 item is written. */
   readonly order: Assertion[][] = [];
 
@@ -317,6 +324,36 @@ class CollectionMapper {
     private readonly scripts: ScriptCollector,
   ) {
     this.folderIds = new Set(collection.folders.map((folder) => folder.id));
+    for (const folder of collection.folders) push(this.childFolders, this.parentOf(folder.parentId), folder);
+    for (const request of collection.requests) push(this.childRequests, this.parentOf(request.folderId), request);
+  }
+
+  /**
+   * The root's items, then each folder a parent cycle kept out of reach, at the root too: nothing
+   * is dropped without a warning.
+   */
+  rootItems(inherited: ReadonlyMap<string, TcRow>, tests: readonly Assertion[]): Json[] {
+    const out = this.items('', [], inherited, tests);
+    for (const folder of this.collection.folders) {
+      if (this.written.has(folder.id)) continue;
+      this.mapper.report.warn(
+        `${this.prefix}${folder.name}: its parent folders point at each other, so it was placed at the top level.`,
+      );
+      const item = this.folderItem(folder, [], inherited, tests);
+      if (item !== undefined) out.push(item);
+    }
+    return out;
+  }
+
+  /** `folder` and every folder below it as written, without a walk that could recurse. */
+  private markWritten(folder: TcFolder): void {
+    const stack = [folder];
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      if (this.written.has(next.id)) continue;
+      this.written.add(next.id);
+      this.writtenFolders.add(next);
+      stack.push(...(this.childFolders.get(next.id) ?? []));
+    }
   }
 
   /** A parent id that names no folder of the collection is the root. */
@@ -343,11 +380,11 @@ class CollectionMapper {
     tests: readonly Assertion[],
   ): Json[] {
     const out: Json[] = [];
-    const folders = bySortNum(
-      this.collection.folders.filter((f) => f.id !== parentId && this.parentOf(f.parentId) === parentId),
-    );
-    for (const folder of folders) out.push(this.folderItem(folder, trail, inherited, tests));
-    const requests = bySortNum(this.collection.requests.filter((r) => this.parentOf(r.folderId) === parentId));
+    for (const folder of bySortNum(this.childFolders.get(parentId) ?? [])) {
+      const item = this.folderItem(folder, trail, inherited, tests);
+      if (item !== undefined) out.push(item);
+    }
+    const requests = bySortNum(this.childRequests.get(parentId) ?? []);
     for (const request of requests) {
       const item = this.requestItem(request, trail, inherited, tests);
       if (item !== undefined) out.push(item);
@@ -360,9 +397,24 @@ class CollectionMapper {
     trail: readonly string[],
     inherited: ReadonlyMap<string, TcRow>,
     tests: readonly Assertion[],
-  ): Json {
+  ): Json | undefined {
     const path = [...trail, folder.name];
     const label = `${this.prefix}${path.join(' / ')}`;
+    if (this.written.has(folder.id)) {
+      // A parent cycle leads back to a folder already written: nothing to say. Another folder with its
+      // id is a different matter: the requests went with the first one.
+      if (!this.writtenFolders.has(folder)) {
+        this.mapper.report.warn(`${label}: it shares its id with another folder, so it was not imported again.`);
+      }
+      return undefined;
+    }
+    if (trail.length >= MAX_DEPTH) {
+      this.mapper.report.warn(`${label}: folders nested more than ${String(MAX_DEPTH)} levels deep were not imported.`);
+      this.markWritten(folder);
+      return undefined;
+    }
+    this.written.add(folder.id);
+    this.writtenFolders.add(folder);
     const headers = rowsOf(folder.settings['headers']);
     if (headers.some((row) => !row.disabled)) {
       this.mapper.report.note(`${label}: its headers were copied onto the requests below it that do not set them.`);
@@ -430,6 +482,12 @@ class CollectionMapper {
       },
     };
   }
+}
+
+function push<T>(map: Map<string, T[]>, key: string, value: T): void {
+  const list = map.get(key);
+  if (list !== undefined) list.push(value);
+  else map.set(key, [value]);
 }
 
 function handDown(inherited: ReadonlyMap<string, TcRow>, headers: readonly TcRow[]): ReadonlyMap<string, TcRow> {
@@ -516,9 +574,7 @@ export function mapThunderClient(
     collectionMapper.reportSettings(settings, label);
     const docs = lines(settings['docs']);
     collector.add(slugify(collection.name).toLowerCase(), 'pre', inlineScripts(settings['preReq']), label);
-    const items = collectionMapper.items(
-      '',
-      [],
+    const items = collectionMapper.rootItems(
       handDown(new Map(), headers),
       mapper.assertions(readTests(settings['tests']), label),
     );
