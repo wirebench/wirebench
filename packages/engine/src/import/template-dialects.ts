@@ -8,25 +8,43 @@
 
 /**
  * `text` with each `open … close` span passed to `rewrite` (given the span's inner text); a span it
- * returns `undefined` for stays as written. An open with no close ends the scan: nothing later closes.
+ * returns `undefined` for stays as written, and scanning resumes just past its open. `findClose`
+ * returns the close index, -1 for none after this open, or -2 when nothing later can close either.
  */
 function rewriteSpans(
   text: string,
   open: string,
   close: string,
   rewrite: (inner: string) => string | undefined,
+  findClose: (from: number) => number = (from) => {
+    const at = text.indexOf(close, from);
+    return at < 0 ? -2 : at;
+  },
 ): string {
   let out = '';
   let from = 0;
-  for (;;) {
-    const start = text.indexOf(open, from);
-    if (start < 0) break;
-    const end = text.indexOf(close, start + open.length);
-    if (end < 0) break;
-    const replacement = rewrite(text.slice(start + open.length, end));
-    out += text.slice(from, start);
-    out += replacement ?? text.slice(start, end + close.length);
-    from = end + close.length;
+  let start = text.indexOf(open, 0);
+  while (start >= 0) {
+    const innerStart = start + open.length;
+    const end = findClose(innerStart);
+    if (end === -2) break;
+    if (end >= 0) {
+      // An open inside the span is a later, real start: the earlier one never closed.
+      const later = text.lastIndexOf(open, end - open.length);
+      if (later >= innerStart) {
+        start = later;
+        continue;
+      }
+      const replacement = rewrite(text.slice(innerStart, end));
+      if (replacement !== undefined) {
+        out += text.slice(from, start) + replacement;
+        from = end + close.length;
+        start = text.indexOf(open, from);
+        continue;
+      }
+    }
+    // Rejected, or this open has no close: keep it as written and look past it.
+    start = text.indexOf(open, innerStart);
   }
   return out + text.slice(from);
 }
@@ -61,7 +79,7 @@ function insomniaPath(expr: string): string | undefined {
       const quote = body[0];
       const key =
         (quote === "'" || quote === '"') && body.length >= 2 && body.endsWith(quote) ? body.slice(1, -1) : body;
-      if (key.length === 0 || key.includes('{') || key.includes('}')) return undefined;
+      if (key.length === 0 || /[\s{}]/.test(key)) return undefined;
       segments.push(key);
       i = close + 1;
     } else {
@@ -85,7 +103,7 @@ export function insomniaTemplates(text: string, kept: Set<string>): string {
     const space = body.search(/\s/);
     const name = space < 0 ? body : body.slice(0, space);
     const arg = space < 0 ? undefined : firstQuoted(body.slice(space));
-    if (name === 'uuid' && (arg === 'v4' || arg === 'v1')) return '{{$guid}}';
+    if (name === 'uuid' && (arg === undefined || arg === 'v4' || arg === 'v1')) return '{{$guid}}';
     if (name === 'now' && arg === 'iso-8601') return '{{$isoTimestamp}}';
     if (name === 'now' && arg === 'unix') return '{{$timestamp}}';
     kept.add(name);
@@ -103,10 +121,14 @@ export function insomniaTemplates(text: string, kept: Set<string>): string {
   });
 }
 
-export function hoppscotchTemplates(text: string): string {
+export function hoppscotchTemplates(text: string, kept: Set<string>): string {
   return rewriteSpans(text, '<<', '>>', (inner) => {
     const name = inner.trim();
     if (name.length === 0 || /[<>\n]/.test(name)) return undefined;
+    if (/\s/.test(name)) {
+      kept.add(name);
+      return undefined;
+    }
     return `{{${name}}}`;
   });
 }
@@ -114,22 +136,52 @@ export function hoppscotchTemplates(text: string): string {
 const THUNDER_GENERATORS: ReadonlyMap<string, string> = new Map([
   ['guid', '{{$guid}}'],
   ['timestamp', '{{$timestamp}}'],
+  ['dateISO', '{{$isoTimestamp}}'],
 ]);
 
+/**
+ * Where a Thunder Client `{{#call, {arg: 1}}}` ends: its braces balance, so `}}` closes the call
+ * only at depth zero. -1 when the call does not close before the next `{{` or the end.
+ */
+function thunderClose(text: string, from: number): number {
+  if (text[from] !== '#') {
+    const at = text.indexOf('}}', from);
+    return at < 0 ? -2 : at;
+  }
+  let depth = 0;
+  for (let i = from; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{') {
+      if (text[i + 1] === '{') return -1;
+      depth += 1;
+    } else if (ch === '}') {
+      if (depth === 0 && text[i + 1] === '}') return i;
+      if (depth > 0) depth -= 1;
+    }
+  }
+  return -1;
+}
+
 export function thunderTemplates(text: string, kept: Set<string>): string {
-  return rewriteSpans(text, '{{', '}}', (inner) => {
-    const expr = inner.trim();
-    if (expr.includes('|')) {
-      kept.add(expr);
+  return rewriteSpans(
+    text,
+    '{{',
+    '}}',
+    (inner) => {
+      const expr = inner.trim();
+      if (expr.includes('|')) {
+        kept.add(expr);
+        return undefined;
+      }
+      if (expr.startsWith('#')) {
+        const mapped = THUNDER_GENERATORS.get(expr.slice(1));
+        if (mapped === undefined) kept.add(expr);
+        return mapped;
+      }
       return undefined;
-    }
-    if (expr.startsWith('#')) {
-      const mapped = THUNDER_GENERATORS.get(expr.slice(1));
-      if (mapped === undefined) kept.add(expr);
-      return mapped;
-    }
-    return undefined;
-  });
+    },
+    (from) => thunderClose(text, from),
+  );
 }
 
 const ENV_PREFIX = 'process.env.';

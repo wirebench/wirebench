@@ -24,18 +24,31 @@ describe('insomniaTemplates', () => {
     expect(insomniaTemplates("{% uuid 'v4' %}", kept)).toBe('{{$guid}}');
     expect(insomniaTemplates("{% now 'iso-8601' %}", kept)).toBe('{{$isoTimestamp}}');
     expect(insomniaTemplates("{% now 'unix' %}", kept)).toBe('{{$timestamp}}');
-    expect(kept.size).toBe(0);
+    expect(insomniaTemplates('{% uuid %}', kept)).toBe('{{$guid}}');
+    expect([...kept]).toEqual([]);
     expect(insomniaTemplates("{% now 'millis' %}", kept)).toBe("{% now 'millis' %}");
     expect(kept).toContain('now');
     const tag = "{% response 'body', 'req_1', 'b64::JC5h::46b', 'never', 60 %}";
-    expect(insomniaTemplates(tag, kept)).toContain('{% response');
-    expect(kept).toContain('response');
+    expect(insomniaTemplates(tag, kept)).toBe(tag);
+    expect([...kept]).toEqual(['now', 'response']);
   });
 
   it('keeps a filter as written', () => {
     const kept = new Set<string>();
     expect(insomniaTemplates('{{ _.base | upcase }}', kept)).toBe('{{ _.base | upcase }}');
-    expect(kept.size).toBe(1);
+    expect([...kept]).toEqual(['filter']);
+  });
+
+  it('keeps scanning after a rejected span', () => {
+    const kept = new Set<string>();
+    expect(insomniaTemplates('{{ x {{ _.base }}', kept)).toBe('{{ x {{base}}');
+    expect(insomniaTemplates('{{ {{ _.base }}', kept)).toBe('{{ {{base}}');
+  });
+
+  it('keeps a key with whitespace', () => {
+    const kept = new Set<string>();
+    expect(insomniaTemplates("{{ _['my key'] }}", kept)).toBe("{{ _['my key'] }}");
+    expect([...kept]).toEqual(["_['my key']"]);
   });
 
   it('feeds rewriteMustache', () => {
@@ -53,17 +66,27 @@ describe('insomniaTemplates', () => {
 
 describe('hoppscotchTemplates', () => {
   it('rewrites angle references', () => {
-    expect(hoppscotchTemplates('<<base>>/a/<<$guid>>')).toBe('{{base}}/a/{{$guid}}');
-    expect(hoppscotchTemplates('a << b')).toBe('a << b');
+    expect(hoppscotchTemplates('<<base>>/a/<<$guid>>', new Set())).toBe('{{base}}/a/{{$guid}}');
+    expect(hoppscotchTemplates('a << b', new Set())).toBe('a << b');
+  });
+
+  it('keeps scanning after a rejected span', () => {
+    expect(hoppscotchTemplates('1 << 2 and <<base>>', new Set())).toBe('1 << 2 and {{base}}');
+  });
+
+  it('keeps a name with whitespace', () => {
+    const kept = new Set<string>();
+    expect(hoppscotchTemplates('<<a b>>', kept)).toBe('<<a b>>');
+    expect([...kept]).toEqual(['a b']);
   });
 
   it('feeds rewriteMustache', () => {
-    expect(rewriteMustache(hoppscotchTemplates('<<base>>/<<$guid>>'))).toBe('${base}/${$guid}');
+    expect(rewriteMustache(hoppscotchTemplates('<<base>>/<<$guid>>', new Set()))).toBe('${base}/${$guid}');
   });
 
   it('returns promptly on a long run of angles', () => {
     const start = performance.now();
-    hoppscotchTemplates('<'.repeat(1_000_000));
+    hoppscotchTemplates('<'.repeat(1_000_000), new Set());
     expect(performance.now() - start).toBeLessThan(50);
   });
 });
@@ -74,10 +97,23 @@ describe('thunderTemplates', () => {
     expect(thunderTemplates('{{#guid}}', kept)).toBe('{{$guid}}');
     expect(thunderTemplates('{{#timestamp}}', kept)).toBe('{{$timestamp}}');
     expect(thunderTemplates('{{base}}', kept)).toBe('{{base}}');
-    expect(kept.size).toBe(0);
+    expect(thunderTemplates('{{#dateISO}}', kept)).toBe('{{$isoTimestamp}}');
+    expect([...kept]).toEqual([]);
     expect(thunderTemplates('{{tok | upper}}', kept)).toBe('{{tok | upper}}');
     expect(thunderTemplates('{{#random}}', kept)).toBe('{{#random}}');
-    expect(kept.size).toBe(2);
+    expect([...kept]).toEqual(['tok | upper', '#random']);
+  });
+
+  it('keeps a generator call with arguments whole', () => {
+    const kept = new Set<string>();
+    expect(thunderTemplates('{{#number, 1, 5}}', kept)).toBe('{{#number, 1, 5}}');
+    expect(thunderTemplates('a{{#date, {year: -1}}}b{{base}}', kept)).toBe('a{{#date, {year: -1}}}b{{base}}');
+    expect([...kept]).toEqual(['#number, 1, 5', '#date, {year: -1}']);
+  });
+
+  it('keeps scanning after an unclosed open', () => {
+    expect(thunderTemplates('{{ x {{#guid}}', new Set())).toBe('{{ x {{$guid}}');
+    expect(thunderTemplates('{{#date, {{#guid}}', new Set())).toBe('{{#date, {{$guid}}');
   });
 
   it('feeds rewriteMustache', () => {
@@ -96,9 +132,13 @@ describe('brunoTemplates', () => {
     const kept = new Set<string>();
     expect(brunoTemplates('{{process.env.TOKEN}}', kept)).toBe('{{#System#TOKEN}}');
     expect(brunoTemplates('{{base}}', kept)).toBe('{{base}}');
-    expect(kept.size).toBe(0);
+    expect([...kept]).toEqual([]);
     expect(brunoTemplates('{{?Ask me}}', kept)).toBe('{{?Ask me}}');
-    expect(kept.size).toBe(1);
+    expect([...kept]).toEqual(['?Ask me']);
+  });
+
+  it('keeps scanning after an unclosed open', () => {
+    expect(brunoTemplates('{{ x {{process.env.T}}', new Set())).toBe('{{ x {{#System#T}}');
   });
 
   it('feeds rewriteMustache', () => {
