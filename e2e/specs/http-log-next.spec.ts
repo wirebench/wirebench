@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { copyAndRead } from '../helpers/clipboard.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
 import { addHeader, createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
@@ -59,12 +60,11 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
 
     const row = logRows(page).last();
     await row.click({ button: 'right', position: { x: 8, y: 8 } });
-    await page.getByRole('menuitem', { name: 'Copy as cURL (POSIX)' }).click();
-    const app = launched.app;
-    await expect
-      .poll(async () => app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 10_000 })
-      .toContain(`${server.url}/echo`);
-    const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
+    const copied = await copyAndRead(
+      launched.app,
+      () => page.getByRole('menuitem', { name: 'Copy as cURL (POSIX)' }).click(),
+      `${server.url}/echo`,
+    );
     expect(copied).toContain('Authorization: <redacted>');
     expect(copied).not.toContain('e2e-placeholder');
   });
