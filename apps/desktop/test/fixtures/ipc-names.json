@@ -39,6 +39,7 @@
     "api.importPostmanFolder",
     "api.importPostmanGlobals",
     "api.importProto",
+    "api.importThunderClient",
     "api.importWebhooks",
     "api.inspectHttpFile",
     "api.refreshMcpCatalogue",

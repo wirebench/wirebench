@@ -91,7 +91,7 @@ describe('Import dialog — Bruno', () => {
     render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="auto" />);
     await userEvent.click(screen.getByRole('tab', { name: 'File' }));
     fireEvent.click(screen.getByTestId('import-browse-folder'));
-    expect((await screen.findByTestId('detected-format-badge')).textContent).toBe('Bruno collection');
+    await waitFor(() => expect(screen.getByTestId('detected-format-badge').textContent).toBe('Bruno collection'));
     fireEvent.click(screen.getByTestId('import-submit'));
     await waitFor(() =>
       expect(importBruno).toHaveBeenCalledWith(

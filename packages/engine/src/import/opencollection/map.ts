@@ -22,7 +22,7 @@ import type { KeyValueEntry } from '../../http/entries.js';
 import { entry } from '../../http/entries.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
-import { uniqueSlug } from '../../project/paths.js';
+import { SlugSet, uniqueSlug } from '../../project/paths.js';
 import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../../grpc/model.js';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor } from '../../grpc/model.js';
 import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
@@ -252,8 +252,8 @@ class Mapper {
   walk(items: readonly OcItem[], scope: Scope): { folders: RestFolder[]; requests: RestRequestDef[] } {
     const folders: RestFolder[] = [];
     const requests: RestRequestDef[] = [];
-    const folderSlugs = new Set<string>();
-    const requestSlugs = new Set<string>();
+    const folderSlugs = new SlugSet();
+    const requestSlugs = new SlugSet();
     for (const item of items) {
       const name = item.info.name;
       if (item.items !== undefined) {
@@ -311,8 +311,8 @@ class Mapper {
   ): { folders: F[]; requests: R[] } {
     const folders: F[] = [];
     const requests: R[] = [];
-    const folderSlugs = new Set<string>();
-    const requestSlugs = new Set<string>();
+    const folderSlugs = new SlugSet();
+    const requestSlugs = new SlugSet();
     for (const item of items) {
       const name = item.info.name;
       if (item.items !== undefined) {

@@ -5,11 +5,11 @@
  * that no longer exists. A failed forward of it is cleared; one still running stays, stoppable.
  */
 import { useEffect, useState } from 'react';
-import { create } from 'zustand';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { showToast } from '../../components/toast.js';
 import type { HostsFileWire, SshAuthWire } from '../../../shared/ssh-wire.js';
 import { useEditorsStore } from '../../state/editors.js';
+import { useHostDelete } from './host-delete-store.js';
 import { findHost, flattenGroups, removeHost, useHostsStore } from './hosts-store.js';
 import { filesTabId } from './files/open-files.js';
 import { stopForward } from './forwarding/forward-actions.js';
@@ -106,23 +106,6 @@ export async function deleteHost(hostId: string, secret?: string): Promise<void>
     if (!deleted.ok) showToast(`The secret ${secret} was not deleted: ${deleted.error.message}`);
   }
 }
-
-interface HostDeleteState {
-  /** The host the confirm asks about, or `null` while it is closed. */
-  readonly hostId: string | null;
-  readonly ask: (hostId: string) => void;
-  readonly cancel: () => void;
-}
-
-export const useHostDelete = create<HostDeleteState>((set) => ({
-  hostId: null,
-  ask: (hostId) => {
-    set({ hostId });
-  },
-  cancel: () => {
-    set({ hostId: null });
-  },
-}));
 
 /** The confirm a host's Delete opens; mounted once by the shell, since the menu that asks closes first. */
 export function HostDeleteDialog() {

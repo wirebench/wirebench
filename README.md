@@ -2,75 +2,94 @@
 
 # Wirebench
 
-**A contract-first desktop workbench for SOAP, REST, gRPC and WebSocket APIs.**
-
-Import a WSDL, OpenAPI, AsyncAPI or `.proto` contract, get correct requests generated from it, send them,
-and keep everything as plain files in git.
+**A local-first API client and SSH workbench: SOAP, REST, gRPC, GraphQL, WebSocket and MCP in one desktop app.**
 
 [![CI](https://github.com/wirebench/wirebench/actions/workflows/ci.yml/badge.svg)](https://github.com/wirebench/wirebench/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/wirebench/wirebench?sort=semver)](https://github.com/wirebench/wirebench/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[Website](https://wirebench.github.io/wirebench/) ·
-[Download](https://github.com/wirebench/wirebench/releases/latest) ·
+[Download](https://wirebench.github.io/wirebench/download/) ·
 [User guide](https://wirebench.github.io/wirebench/docs/) ·
+[Features](https://wirebench.github.io/wirebench/features/) ·
 [Changelog](CHANGELOG.md)
 
-![The Wirebench shell with a request and its response](docs/images/response.png)
+![A SOAP request and its response in the Wirebench shell](docs/images/response.png)
 
 </div>
 
-## Why Wirebench
-
-- **It reads the contract.** Requests are generated from the schema — the right elements, in the right order,
-  in the right namespaces — and responses are validated against it.
-- **One tool for a mixed estate.** SOAP, REST, gRPC and WebSocket share one project, one set of environments,
-  one history and one HTTP stack.
-- **Projects are files.** A project is a folder of small YAML and XML files, made to be reviewed and versioned
-  in git. Credentials never go in them.
-- **Local-first, no account.** The app is fully usable on its own. Teams can share over git, a synced folder,
-  or a self-hosted server.
-- **Built for automation.** The same saved requests run in CI from the command line, and coding agents can
-  drive the engine over MCP — with no AI inside the app.
-
-## Features
-
-| Area                       | What you get                                                                                                                                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **SOAP**                   | WSDL import with every import and include cached byte for byte; generated envelopes and a form editor; WS-Security, WS-Addressing, MTOM/SwA attachments; schema and WS-I validation                           |
-| **REST**                   | OpenAPI 3.x, Swagger 1.x/2.0 and Postman Collection import; folders of requests; every body kind; cookies and redirects; response validation against the contract; Server-Sent Events rendered event by event |
-| **gRPC**                   | `.proto` import and server reflection; unary and every streaming shape over HTTP/2, including interactive bidirectional streams; a JSON message editor with completion                                        |
-| **WebSocket**              | AsyncAPI 2.x/3.0 import; a request per channel; a live frame timeline and a composer for text and binary messages                                                                                             |
-| **Auth**                   | Basic, NTLM, Bearer, API key and OAuth2 across protocols; client certificates and custom CA bundles                                                                                                           |
-| **Inspect**                | HTTP Log with a timing waterfall, search, compare and HAR export; XPath 3.1, XQuery 3.1 and JSONPath queries; History with re-send and diff; copy as `curl`                                                   |
-| **Test**                   | Declarative assertions on every request; sequences with property transfer; sandboxed TypeScript pre-request scripts typed from the contract; snapshot regression against golden responses                     |
-| **Environments & secrets** | Workspace-wide environments and endpoint overrides; `${…}` property expansion; secrets kept outside project files                                                                                             |
-| **Webhooks**               | Outbound webhooks with signatures; catch URLs and callback assertions on a server-shared workspace                                                                                                            |
-| **Collaboration**          | Shared workspaces over git or a synced folder, with in-app Sync and a conflict resolver; encrypted team secrets                                                                                               |
-| **Migration**              | Import of legacy single-file SOAP projects — interfaces, endpoints, saved requests, properties and environments — with a report of everything not carried over                                                |
-
-All of the above is in 6.1.0; the [changelog](CHANGELOG.md) says which release brought each.
-
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/rest-response.png" alt="A REST request and its response"></td>
-    <td width="50%"><img src="docs/images/sync-panel.png" alt="The Sync panel of a shared workspace"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>A REST request and its response</sub></td>
-    <td align="center"><sub>Syncing a shared workspace</sub></td>
-  </tr>
-</table>
+- **Nothing leaves your machine.** No account, no telemetry, no update check unless you ask for one. A project is a
+  folder of small YAML and XML files you commit to git; secrets are encrypted with the operating system's keychain and
+  never written into them.
+- **The protocols the enterprise still runs.** SOAP with WS-Security, WS-Trust and Kerberos sits next to REST, gRPC,
+  GraphQL, WebSocket and MCP servers, in one project with one set of environments, one history and one HTTP stack.
+- **Agent-ready, not AI-washed.** The `wirebench` CLI runs saved requests in CI, and `wirebench mcp` lets a coding agent
+  import, generate, send, validate and query over the Model Context Protocol. No model runs inside the app.
+- **One window for the whole wire.** SSH hosts, terminals, SFTP, port forwarding and snippets live beside the API
+  requests, so the service you call and the machine it runs on are in the same window.
 
 ## Install
 
-Download the installer for macOS, Windows or Linux from the
-[latest release](https://github.com/wirebench/wirebench/releases/latest). macOS builds are signed and notarised;
-Windows signing is in progress ([#114](https://github.com/wirebench/wirebench/issues/114)). The
-[installation guide](https://wirebench.github.io/wirebench/docs/getting-started/installation/) has per-platform
-notes and silent installs.
+Every release carries the version, the system and the processor in its file name. Get it from the
+[download page](https://wirebench.github.io/wirebench/download/) or straight from the
+[latest release](https://github.com/wirebench/wirebench/releases/latest); the
+[installation guide](https://wirebench.github.io/wirebench/docs/getting-started/installation/) covers first-launch
+prompts, silent installs and where your data lives.
 
-To build from source you need [Node 24](https://nodejs.org) and pnpm 9 (`corepack enable`):
+- **macOS.** Open `Wirebench-<version>-mac-universal.dmg` and drag Wirebench into Applications. Builds are signed and
+  notarised.
+- **Windows.** Run `Wirebench-<version>-windows-x64-setup.exe` (per-user, no administrator rights), or deploy the
+  `.msi` to a fleet with `msiexec /i Wirebench-<version>-windows-x64.msi /qn`. A portable `.zip` runs without
+  installing. Windows builds are not code-signed yet, so SmartScreen asks once.
+- **Linux.** An AppImage, `.deb`, `.rpm` and `.snap` are published for x86-64, the AppImage and `.deb` for arm64 too:
+
+  ```bash
+  sudo apt install ./wirebench_<version>_amd64.deb
+  ```
+
+There is no Homebrew tap or winget package yet.
+
+The command line runs the same project files in a pipeline, as a GitHub Action, a GitLab template, a container image
+or plain `npx`:
+
+```bash
+npx --yes @wirebench/cli run ./project --env staging --reporter junit=reports/wirebench.xml
+```
+
+## Run a team server
+
+Wirebench Server adds sign-in with local accounts, OpenID Connect or SAML, teams and roles, shared workspaces with live
+updates, team secrets, webhook catch URLs, an audit log and scheduled runs. One process and one PostgreSQL database,
+self-hosted behind your own TLS. The Community edition is free for five seats; Team and Enterprise licenses add more.
+
+```bash
+docker compose -f packages/server/compose.yaml up
+```
+
+The [server guide](https://wirebench.github.io/wirebench/docs/guides/wirebench-server/) and the
+[server README](packages/server/README.md) cover the image, configuration and operations;
+[editions and licenses](https://wirebench.github.io/wirebench/docs/guides/server-licensing/) explains the seats. The
+desktop app never requires a server.
+
+## Documentation
+
+- [User guide](https://wirebench.github.io/wirebench/docs/): installation, a ten-minute walkthrough, a guide per
+  feature, reference and troubleshooting.
+- [Run in CI](https://wirebench.github.io/wirebench/docs/guides/run-in-ci/),
+  [Agents over MCP](https://wirebench.github.io/wirebench/docs/guides/agents-mcp/) and the [CLI reference](docs/cli.md).
+- [Hosts and terminals](https://wirebench.github.io/wirebench/docs/guides/hosts-and-terminals/) for the SSH workbench.
+- [Architecture overview](docs/architecture/overview.md), [decision records](docs/adr/) and the
+  [security model](docs/security.md) for how it is built.
+
+## Roadmap
+
+Open work is tracked as issues in [milestones](https://github.com/wirebench/wirebench/milestones). The
+[roadmap](docs/roadmap.md) argues the order and records what each release carried.
+
+## Contributing
+
+Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. It covers the pnpm monorepo
+(`packages/engine`, `packages/cli`, `packages/server`, `apps/desktop`), the `pnpm check` gate, testing conventions and
+how to add a protocol. To build from source you need [Node 24](https://nodejs.org) and pnpm 9 (`corepack enable`):
 
 ```bash
 git clone https://github.com/wirebench/wirebench.git
@@ -79,122 +98,11 @@ pnpm install
 pnpm dev
 ```
 
-## Quick start
-
-From nothing to a real SOAP response in five minutes:
-
-1. **Create a workspace.** On first launch, type a name in the workspace picker and choose **Create workspace**.
-   Wirebench keeps it in app data; there is no folder to manage.
-2. **Add a project.** Choose **New project**. _Export project…_ and _Link existing project folder…_ are how a
-   project meets git when you want it to.
-3. **Import a contract.** **Import…** (`Mod+I`) takes a URL, a file or a paste and detects the
-   format — WSDL, OpenAPI, Postman, HAR, `.proto` and the rest. No contract? **New API** takes a base URL and
-   **New Request** a method and a path.
-4. **Open a request.** The explorer fills with the operations, each with a request generated from the schema.
-5. **Send.** Fill in the values — in the raw editor or the **Form** tab — and press **Send**. The response opens
-   beside the request, the HTTP Log shows the timing breakdown, and the run lands in History.
-
-No service to hand? Try `http://www.dneonline.com/calculator.asmx?WSDL`.
-
-`Mod` is `⌘` on macOS and `Ctrl` elsewhere. Every action is a command: `Mod+K` opens the palette, and the
-[command reference](https://wirebench.github.io/wirebench/docs/reference/commands/) lists every shortcut. The
-[walkthrough](https://wirebench.github.io/wirebench/docs/getting-started/walkthrough/) goes further.
-
-## Command line and CI
-
-[`@wirebench/cli`](packages/cli) (binary `wirebench`) runs the requests saved in a project — with assertions,
-exit codes, and JUnit or JSON reports — as a GitHub Action, a GitLab template, a container image or plain `npx`:
-
-```yaml
-- uses: wirebench/wirebench/action@v6.1.0
-  with:
-    project: ./api-tests
-    env: staging
-    junit: reports/wirebench.xml
-  env:
-    WIREBENCH_SECRET_BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
-```
-
-`wirebench mcp` serves a project to a coding agent over stdio or local HTTP: import, generate, send, validate,
-query and diff History, each tool also a CLI verb, with sends and writes behind explicit flags.
-
-See [Run in CI](https://wirebench.github.io/wirebench/docs/guides/run-in-ci/),
-[Agents over MCP](https://wirebench.github.io/wirebench/docs/guides/agents-mcp/) and the full
-[CLI reference](docs/cli.md).
-
-## Wirebench Server
-
-A self-hosted server for teams: sign-in with local accounts or OpenID Connect, team roles, server-backed shared
-workspaces with live updates, team secrets and webhook capture. One process, one PostgreSQL database:
-
-```bash
-docker compose -f packages/server/compose.yaml up
-```
-
-Configuration and operations are in the [server README](packages/server/README.md) and the
-[server guide](https://wirebench.github.io/wirebench/docs/guides/wirebench-server/). The desktop app never
-requires it.
-
-## Documentation
-
-| For                | Read                                                                                                                                     |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Using Wirebench    | [User guide](https://wirebench.github.io/wirebench/docs/) — installation, walkthrough, a guide per feature, reference, troubleshooting   |
-| Working as a team  | [Collaborate on a shared workspace](docs/collaborate.md)                                                                                 |
-| Automation         | [CLI reference](docs/cli.md)                                                                                                             |
-| How it is built    | [Architecture overview](docs/architecture/overview.md) · [Architecture decision records](docs/adr/) · [Security model](docs/security.md) |
-| What it guarantees | [Success criteria and their evidence](docs/success-criteria.md) · [WS-I assertions implemented](docs/ws-i-assertions.md)                 |
-| What comes next    | [Roadmap](docs/roadmap.md) · [Project board](https://github.com/orgs/wirebench/projects/1)                                               |
-| Releasing          | [Release process](docs/release.md) — signing, Electron fuses and the opt-in update check                                                 |
-
-## Roadmap
-
-Open work is tracked as issues in [milestones](https://github.com/wirebench/wirebench/milestones) and on the
-[project board](https://github.com/orgs/wirebench/projects/1); the [full roadmap](docs/roadmap.md) argues the order.
-
-| Milestone                                                                                | Still open                                                                                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [4.0 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build |
-| [5.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                      |
-| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6)              | GraphQL, test suites and data-driven runs, JKS keystores, WS-ReliableMessaging, a plugin API, localisation                                                                                                                     |
-
-Server editions shipped on `main`: Community, Team and Enterprise, decided by a signed offline license file
-([ADR-0018](docs/adr/0018-licensing-is-a-product-boundary.md)).
-
-## Development
-
-The repository is a pnpm monorepo:
-
-| Path                | Contents                                                            |
-| ------------------- | ------------------------------------------------------------------- |
-| `packages/engine`   | `@wirebench/engine` — the protocol library, one module per protocol |
-| `packages/cli`      | `@wirebench/cli` — the `wirebench` binary and its MCP server        |
-| `packages/server`   | Wirebench Server                                                    |
-| `apps/desktop`      | The Electron app                                                    |
-| `action`            | The GitHub Action                                                   |
-| `e2e`               | Playwright against the built app                                    |
-| `site`, `docs-site` | The website and the user guide                                      |
-
-```bash
-pnpm dev          # the desktop app with hot reload
-pnpm check        # lint, typecheck and tests: the pre-commit and CI gate
-pnpm build        # every package and app
-pnpm test:e2e     # Playwright against the built app (build first)
-pnpm package      # an installable app in apps/desktop/release/
-```
-
-[CONTRIBUTING.md](CONTRIBUTING.md) covers the full workflow: the gate, testing conventions, performance budgets,
-live interop tests, screenshots, and adding a protocol.
-
-## Contributing and security
-
-Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. To report a vulnerability,
-follow the reporting note in the [security model](docs/security.md) rather than opening a public issue.
+To report a vulnerability, follow the reporting note in the [security model](docs/security.md) rather than opening a
+public issue.
 
 ## License
 
 [Apache-2.0](LICENSE), every line in the repository. Wirebench is a clean-room implementation built from public
-specifications and published, user-facing documentation; no code from other SOAP tools is copied into it.
-
-Bundled third-party packages and their notices are listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md),
-generated by `pnpm licenses:third-party`, verified by `pnpm check`, and shipped in every installer.
+specifications; no code from other SOAP tools is copied into it. Bundled third-party packages and their notices are
+listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and shipped in every installer.
