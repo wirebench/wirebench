@@ -72,8 +72,9 @@ dialog when detection cannot tell.
 
 What arrives: the service's bindings and operations, each with a generated `Request 1` envelope.
 Anything the WSDL imports or includes is fetched and cached beside the project, so the interface
-works offline afterwards. If the import finds problems, they are listed with a link to **Show in
-Problems**.
+works offline afterwards. The fetch, and the re-fetch when a project reopens without its cached
+copy, uses the proxy and CA bundle from your preferences, as a send does, with or without definition
+authentication. If the import finds problems, they are listed with a link to **Show in Problems**.
 
 ## OpenAPI (and Swagger)
 
@@ -441,7 +442,8 @@ what reflection version.
 Many SOAP testers keep their work in a legacy SOAP project file (one XML file from an older desktop
 SOAP workbench). Importing it reads that file and adds its interfaces, endpoints, saved requests,
 properties and environments to a Wirebench project. Definitions are read from the copy the file
-carries. Only a definition the file holds no copy of is fetched over HTTP(S), and the report notes it.
+carries. Only a definition the file holds no copy of is fetched over HTTP(S), through the proxy and
+CA bundle from your preferences, and the report notes it.
 See [From a legacy SOAP project](/wirebench/docs/switching/legacy-soap-project/) for every mapping.
 
 <Steps>

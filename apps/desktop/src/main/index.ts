@@ -263,7 +263,9 @@ const sshSecrets = new SshSecretsService({
 });
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
-const engineService = new EngineService(secretsFor(undefined));
+// WSDL reads share the definition fetcher's CA bundle and proxy: a WSDL reachable only through the
+// corporate proxy, or served with a corporate-CA certificate, imports where a send would reach it.
+const engineService = new EngineService(secretsFor(undefined), (url) => mainHttpOptions(url, mainHttpDeps));
 /** The sends in flight through the engine's `openExchange`, which `request.cancel` and a close reach. */
 const exchanges = new ExchangeRegistry();
 /** The request scripts' host (#63), created with the request channels once the app is ready. */
