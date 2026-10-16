@@ -208,6 +208,7 @@ function GroupSection({
   filtered,
   onShowFailed,
   onRename,
+  onNewRule,
   onNewGroup,
   onDragChange,
 }: {
@@ -217,6 +218,8 @@ function GroupSection({
   filtered: boolean;
   onShowFailed: () => void;
   onRename: () => void;
+  /** New rule… with this group picked in its Forwarding group select. */
+  onNewRule: () => void;
   onNewGroup: (hostId: string, ruleId: string) => void;
   onDragChange: (key: string | undefined) => void;
 }) {
@@ -292,6 +295,9 @@ function GroupSection({
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content align="end" className={CONTENT_CLASS}>
+                <DropdownMenu.Item className={ITEM_CLASS} onSelect={onNewRule}>
+                  New rule…
+                </DropdownMenu.Item>
                 <DropdownMenu.Item className={ITEM_CLASS} onSelect={onRename}>
                   Rename…
                 </DropdownMenu.Item>
@@ -406,7 +412,8 @@ export function ForwardingPanel() {
   const byKey = useShownForwards();
   const [filter, setFilter] = useState('');
   const [chip, setChip] = useState<Chip>('all');
-  const [adding, setAdding] = useState(false);
+  // New rule…: closed, or open with the forwarding group it was opened from (none from the header).
+  const [adding, setAdding] = useState<{ readonly groupId?: string } | undefined>();
   const [naming, setNaming] = useState<Naming>();
   // The row being dragged onto another group, if any.
   const [dragging, setDragging] = useState<string>();
@@ -428,7 +435,7 @@ export function ForwardingPanel() {
     <Button
       variant="primary"
       onClick={() => {
-        setAdding(true);
+        setAdding({});
       }}
     >
       <Plus size={13} aria-hidden /> New rule…
@@ -520,6 +527,9 @@ export function ForwardingPanel() {
                 onRename={() => {
                   setNaming({ mode: 'rename', id: group.id, name: group.name });
                 }}
+                onNewRule={() => {
+                  setAdding({ groupId: group.id });
+                }}
                 onNewGroup={newGroupFor}
                 onDragChange={setDragging}
               />
@@ -533,7 +543,13 @@ export function ForwardingPanel() {
           />
         </div>
       )}
-      <NewRuleDialog open={adding} onOpenChange={setAdding} />
+      <NewRuleDialog
+        open={adding !== undefined}
+        {...(adding?.groupId === undefined ? {} : { groupId: adding.groupId })}
+        onOpenChange={(open) => {
+          if (!open) setAdding(undefined);
+        }}
+      />
       <GroupNameDialog
         open={naming !== undefined}
         title={naming?.mode === 'rename' ? 'Rename forwarding group' : 'New forwarding group'}

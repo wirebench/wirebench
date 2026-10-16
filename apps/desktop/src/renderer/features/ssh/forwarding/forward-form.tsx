@@ -20,13 +20,15 @@ export function defaultBind(type: ForwardFullEntry['type']): string {
   return type === 'remote' ? 'localhost' : '127.0.0.1';
 }
 
+const PORT_PROBLEM = 'A port is 1–65535';
+
 /**
  * What stops a rule being saved, if anything; main checks the rest (a bind that is no address, an id used
  * twice on one level) and its refusal shows as for any host edit.
  */
 export function forwardProblem(entry: ForwardFullEntry): string | undefined {
   if (!RULE_ID.test(entry.id)) return 'A name is lower-case letters, digits and dashes';
-  if (!Number.isInteger(entry.port) || entry.port < 1 || entry.port > 65535) return 'A port is 1–65535';
+  if (!Number.isInteger(entry.port) || entry.port < 1 || entry.port > 65535) return PORT_PROBLEM;
   if (entry.type !== 'dynamic' && !TARGET.test(entry.target ?? '')) return 'A target is host:port';
   return undefined;
 }
@@ -45,17 +47,21 @@ export interface ForwardFormProps {
   readonly onRemove?: () => void;
   /** "overrides Production" for a rule copied from a group above. */
   readonly note?: string;
+  /** The form's heading in place of the rule's name: New rule… says "Rule" (#594). */
+  readonly heading?: string;
 }
 
 /**
  * One rule's fields: id, type, port, bind (its default shown; a network address warns inline), target
  * (none for dynamic) and whether it starts with the host's terminals.
  */
-export function ForwardForm({ entry, onChange, onRemove, note }: ForwardFormProps) {
+export function ForwardForm({ entry, onChange, onRemove, note, heading }: ForwardFormProps) {
   const id = useId();
   const bind = entry.bind ?? '';
   const network = bind !== '' && isNetworkBind(bind);
   const problem = forwardProblem(entry);
+  // A port not typed yet is no error to point out; Save stays off until it is there (#594).
+  const shownProblem = problem === PORT_PROBLEM && Number.isNaN(entry.port) ? undefined : problem;
   const field = (label: string, input: ReactNode) => (
     <label className="flex flex-col gap-1 text-xs">
       <span className="text-fg-subtle">{label}</span>
@@ -69,7 +75,9 @@ export function ForwardForm({ entry, onChange, onRemove, note }: ForwardFormProp
       className="flex flex-col gap-2 rounded-md border border-hairline p-2"
     >
       <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-fg-default">{entry.id === '' ? 'New rule' : entry.id}</span>
+        <span className="text-xs font-medium text-fg-default">
+          {heading ?? (entry.id === '' ? 'New rule' : entry.id)}
+        </span>
         {note !== undefined && <span className="text-xs text-fg-subtle">{note}</span>}
         {onRemove !== undefined && (
           <button
@@ -160,7 +168,7 @@ export function ForwardForm({ entry, onChange, onRemove, note }: ForwardFormProp
         />
         Start with the host&apos;s terminals
       </label>
-      {problem !== undefined && entry.id !== '' && <p className="text-xs text-fg-subtle">{problem}</p>}
+      {shownProblem !== undefined && entry.id !== '' && <p className="text-xs text-fg-subtle">{shownProblem}</p>}
     </fieldset>
   );
 }

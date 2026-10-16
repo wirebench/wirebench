@@ -318,6 +318,31 @@ describe('the Port forwarding view with groups', () => {
     });
   });
 
+  it("a group's New rule… heads the form Rule and adds the rule to that group in the same save (#594)", async () => {
+    render(<ForwardingPanel />);
+    await userEvent.click(within(section('dev')).getByRole('button', { name: 'More actions for group Dev' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'New rule…' }));
+    const dialog = screen.getByTestId('new-rule-dialog');
+    expect(within(dialog).getByLabelText<HTMLSelectElement>('Forwarding group').value).toBe('dev');
+    expect(within(dialog).getByTestId('forward-form').textContent).toContain('Rule');
+    // No port typed yet is no error: the hint shows only for a wrong one.
+    expect(dialog.textContent).not.toContain('A port is 1–65535');
+    fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '0' } });
+    expect(dialog.textContent).toContain('A port is 1–65535');
+    fireEvent.change(within(dialog).getByLabelText('Port'), { target: { value: '6000' } });
+    fireEvent.change(within(dialog).getByLabelText('Target (as the host sees it)'), {
+      target: { value: 'localhost:6000' },
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add rule' }));
+    await waitFor(() => {
+      expect(saveHosts).toHaveBeenCalledOnce();
+    });
+    expect(saved().hosts.find((h) => h.id === 'db-1')?.forwards).toEqual([
+      { id: 'forward', type: 'local', port: 6000, target: 'localhost:6000' },
+    ]);
+    expect(saved().forwardGroups?.[0]?.rules.at(-1)).toEqual({ host: 'db-1', rule: 'forward' });
+  });
+
   it('Delete group offers Undo, which brings the group back (#594)', async () => {
     render(
       <>
