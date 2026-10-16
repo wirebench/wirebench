@@ -1,0 +1,236 @@
+---
+title: Sign in to SSH with a security key
+description: Your organisation wants SSH keys that live on a FIDO2 security key. Make one, install it on a host, and get through the touch and PIN prompts and each way they fail.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A key file on a laptop can be copied. A key made on a FIDO2 security key cannot: its private half
+never leaves the device, and every signature needs a finger on it. That is why more and more teams
+ask for `sk-` keys on their servers. The price is a sign-in with more moving parts: a device that has
+to be plugged in, a touch within a few seconds, sometimes a PIN, and errors that come from the
+hardware rather than from the server.
+
+This guide makes a security key in Wirebench, installs it on a host, and walks through the touch and
+PIN prompts on the connection screen, keys held by your SSH agent, and the platform where none of this
+works yet. The log lines come from Wirebench's tests against OpenSSH's server, with a software
+authenticator standing in for the device.
+
+## What you need
+
+- **A FIDO2 security key.** A key that speaks only the older U2F protocol cannot sign in; Wirebench
+  says so with "This security key speaks only U2F. Signing in needs a FIDO2 key."
+- **macOS or Linux.** Windows is not supported yet; see [On Windows](#on-windows).
+- **A server that accepts security keys.** OpenSSH added them in version 8.2.
+- **On Linux, access to the device.** Your account needs to open the key's `/dev/hidraw` device. If
+  OpenSSH's own `ssh` already uses the key on this machine, that is in place.
+
+Wirebench supports the two key types OpenSSH makes:
+
+| Type in the Generate dialog | OpenSSH key type                     | Shown in the keychain as |
+| --------------------------- | ------------------------------------ | ------------------------ |
+| Security key (Ed25519)      | `sk-ssh-ed25519@openssh.com`         | `ed25519-sk`             |
+| Security key (ECDSA)        | `sk-ecdsa-sha2-nistp256@openssh.com` | `ecdsa-sk`               |
+
+Prefer Ed25519. Some older keys cannot make Ed25519 keys; the dialog then says "This security key
+cannot make Ed25519 keys; choose ECDSA".
+
+## Step 1: generate the key
+
+<Steps>
+
+1. Plug in the security key. Only that one: with several plugged in, Wirebench refuses rather than
+   guess, with "Several security keys are plugged in: leave only the one to use".
+2. Open the **Keychain** view in the SSH area and press **Generate key…**.
+3. Give it a **Secret name**, such as `id_ed25519_sk`. That is the name hosts sign in with.
+4. Under **Type**, choose **Security key (Ed25519)**.
+5. If the security key has a PIN, type it in **Security key PIN (if it has one)**. It is used to make
+   the key and is never stored.
+6. Tick **Ask for the PIN at every sign-in** if every sign-in should need the PIN as well as a touch.
+   The dialog only lets you generate such a key with the PIN filled in.
+7. Optionally set a **Comment** and a **Passphrase**, as for any key.
+8. Press **Generate**. When the dialog says "Touch your security key when it blinks.", touch it.
+
+</Steps>
+
+{/* TODO(screenshot): The Generate SSH key dialog with Security key (Ed25519) chosen, showing the PIN field, the "Ask for the PIN at every sign-in" checkbox and the "Touch your security key when it blinks." line. Save as docs-site/public/images/solutions/generate-security-key.png and cite it here. */}
+
+As the dialog says, the key is "Made on the security key plugged in, which keeps the private half".
+The secret holds an OpenSSH private key file, but what it holds is the handle the device needs to find
+its own key. A copy of the secret without the device signs nothing.
+
+Wirebench makes the same kind of key as `ssh-keygen -t ed25519-sk`: a non-resident key for the
+application `ssh:`. A key file you already made with `ssh-keygen -t ed25519-sk` or `-t ecdsa-sk`
+works too. Store the file's contents as a secret with **New secret**, and its passphrase, if it has
+one, as a second secret.
+
+**Touch only**, the default, means each sign-in needs the device and a touch: someone holding your
+laptop with the key in it can still sign in. **Ask for the PIN at every sign-in** adds the security
+key's own PIN, checked by the device. The choice is fixed when the key is made; to change it, generate
+a new key.
+
+## Step 2: install it on a host
+
+The keychain row of the new key has **Install on host…**.
+
+<Steps>
+
+1. Press **Install on host…** and pick the **Host**. Under it, the dialog says how it will sign in,
+   such as "Signs in with key deploy_key": the host's current sign-in, which must still work.
+2. Press **Install**. Wirebench signs in, adds the public key to `~/.ssh/authorized_keys`, creating
+   `~/.ssh` when it is missing, and disconnects.
+3. It reports "Added to ~/.ssh/authorized_keys on web-1.", or "web-1 already has this key.", then
+   offers to switch the host to the new key. Press **Switch**.
+
+</Steps>
+
+**Switch** sets the host's own **Authentication** to **Key** with the new secret. To give a whole
+group the key, set **Authentication** on the group instead.
+
+If you cannot sign in to the host yet, use **Copy public key** from the row's **⋯** menu and send the
+line to whoever manages the server. It starts with the key type and ends with the comment:
+
+```text
+sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAI… test@sk
+```
+
+<Aside>
+A server checks the PIN only if the key's line in `authorized_keys` starts with the
+`verify-required` option. Wirebench asks for the PIN whenever a key was made with **Ask for the PIN at
+every sign-in**, but **Install on host…** adds the plain line. For the server to insist on it too,
+put `verify-required ` in front of the line on the server.
+</Aside>
+
+## Step 3: connect, and touch the key
+
+Open a terminal on the host. The connection screen goes through its steps as for any key. At
+**Authenticating**, the step's detail changes to "touch your security key", and the security key
+starts to blink. Touch it. The handshake log under **Show log** records the wait and the signature:
+
+```text
+Waiting for you to touch the security key
+Signing with security key id_ed25519_sk
+```
+
+A connection that signs with a security key gets 60 extra seconds on top of the host's connect
+timeout, so finding the key does not time it out. The device itself stops waiting after about 30
+seconds.
+
+{/* TODO(screenshot): The connection screen with Authenticating running and its detail reading "touch your security key", the log unfolded. Save as docs-site/public/images/solutions/security-key-touch.png and cite it here. */}
+
+With several security keys plugged in, Wirebench finds the one that made this key without asking for
+a touch on the others, then asks only that one.
+
+### When the key asks for its PIN
+
+A key made with **Ask for the PIN at every sign-in** stops at **Authenticating** on the first try:
+Wirebench never stores the PIN, so it has none yet. The screen asks for it in place:
+
+<Steps>
+
+1. Type the PIN in **Security key PIN**, under "Used for this connection only and never stored. Touch
+   the key when it blinks."
+2. Press **Unlock and connect**. It needs at least four characters, the shortest PIN a FIDO2 key
+   allows.
+3. Touch the key when it blinks. The log reads `Signing with security key id_ed25519_sk and its PIN`.
+
+</Steps>
+
+Each new connection asks again. A wrong PIN brings the field back as **Try the security key PIN
+again**, with the count the device reports, such as:
+
+```text
+Wrong PIN for the security key: 7 attempts left before it locks.
+```
+
+The count is the device's own. After three wrong PINs in a row, unplugging the key and plugging it
+back in lets you try again; once the total runs out, only a reset helps, and a reset deletes every key
+on the device. The PIN prompt belongs to terminals: a **Files** tab on such a host says "The security
+key needs its PIN. Connect from a terminal tab, where you can type it."
+
+## What each failure looks like
+
+Each failure stops the connect at **Authenticating** with one sentence on the connection screen.
+**Retry** tries again once you have done what it says.
+
+| What the screen says                                                                                                     | What happened                                                                |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| The security key was not touched in time. Retry, and touch the key when it blinks.                                       | No touch before the device gave up, or the touch was refused.                |
+| The security key this host signs in with is not plugged in. Plug it in and retry.                                        | No security key is plugged in, or none of those plugged in made this key.    |
+| The security key is locked after too many wrong PINs. Unplug it and plug it back in, or reset it with its maker’s tool. | Too many wrong PINs, in a row or in total.                                   |
+| This key asks for a PIN, but the security key has none set. Set one with its maker’s tool.                               | The key needs a PIN and the device has none.                                 |
+| This security key speaks only U2F. Signing in needs a FIDO2 key.                                                         | The device is too old for SSH security keys.                                 |
+| The security key did not sign. Unplug it, plug it back in and retry.                                                     | The device answered with an error of its own.                                |
+
+A refusal after a good touch is the server's, as for any key: check that the public key is in that
+user's `authorized_keys` on that host.
+
+## Keys held by your SSH agent
+
+If you already use security keys with OpenSSH, your agent may hold them: `ssh-add` loads an
+`id_ed25519_sk` file like any other. Wirebench signs with those too. Set the host's
+**Authentication** to **Agent**, and Wirebench lists the agent's security keys alongside its other
+keys. The log says how many it found, then which one signs, named by the key's comment in the
+agent (here, the test agent's `agent sk`):
+
+```text
+The agent holds 1 security key
+Signing with the agent’s security key agent sk: touch it if it blinks
+```
+
+The agent's other keys are tried first, then its security keys. The agent talks to the device itself:
+if a key needs a PIN, the agent asks for it in its own way, and Wirebench's PIN field never appears.
+Wirebench never sees the PIN. Forwarding that agent to a host passes its security keys on as well, and
+each use on the far side still needs your touch; see
+[SSH agent forwarding that actually works](/wirebench/docs/solutions/ssh-agent-forwarding/).
+
+## On Windows
+
+Wirebench cannot use security keys on Windows yet. Windows lets only its own security key service, or
+programs running as administrator, talk to a FIDO2 device directly, and Wirebench does not use that
+service yet. It refuses security keys on Windows even when run as administrator. A host that signs in
+with a security key stops with:
+
+```text
+Wirebench cannot reach security keys on Windows yet. Choose another sign-in method for this host.
+```
+
+**Generate key…** with a security key type is refused too, with:
+
+```text
+Security keys cannot be used here: on Windows only the system’s own security key service may talk to the key, and Wirebench does not use it yet
+```
+
+The agent path does not help either: on Windows Wirebench's agent is Pageant, which has no security
+key support. The practical answer is one key per machine: give the Windows machine an ordinary Ed25519
+key and add its public key to `authorized_keys` next to the security key.
+
+## What is not supported yet
+
+- **Certificates for security keys.** A host whose key is a security key and also names a
+  certificate is refused before it connects: Wirebench signs in with `sk-` keys, but not with an
+  OpenSSH certificate for one. Ordinary keys can carry certificates; see
+  [Hosts and terminals](/wirebench/docs/guides/hosts-and-terminals/#certificates).
+- **Resident keys.** Wirebench makes non-resident keys only, and does not read keys stored on the
+  device.
+
+## Checklist
+
+- [ ] The device speaks FIDO2, and you are on macOS or Linux.
+- [ ] Exactly one security key is plugged in while you press **Generate**.
+- [ ] **Ask for the PIN at every sign-in** is ticked only if you want a PIN on every sign-in; it
+      cannot be changed later.
+- [ ] **Install on host…** reported the key added, and **Switch** made it the host's sign-in.
+- [ ] For a PIN the server enforces, the `authorized_keys` line starts with `verify-required`.
+- [ ] At **Authenticating**, "touch your security key" means: touch it now.
+- [ ] Agent-held keys: the host's **Authentication** is **Agent**, and the log says how many security
+      keys the agent holds.
+- [ ] On Windows: an ordinary key for that machine, next to the security key in `authorized_keys`.
+
+## Related
+
+- [Hosts and terminals](/wirebench/docs/guides/hosts-and-terminals/#the-connection-screen): the
+  connection screen, its steps and its log.
+- [SSH agent forwarding that actually works](/wirebench/docs/solutions/ssh-agent-forwarding/):
+  forwarding your agent, security keys included.
+- [Secrets](/wirebench/docs/guides/secrets/): where the key's secret is kept.
