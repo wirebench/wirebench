@@ -23,6 +23,13 @@ export type ImportFormatKind =
   | 'http-file'
   | 'http-env'
   | 'opencollection'
+  | 'insomnia'
+  | 'insomnia-environment'
+  | 'bruno'
+  | 'hoppscotch'
+  | 'hoppscotch-environment'
+  | 'thunder-client'
+  | 'thunder-client-environment'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project'
@@ -143,6 +150,138 @@ function looksLikeHttpEnv(parsed: Record<string, unknown>): boolean {
   );
 }
 
+const INSOMNIA_FORMAT: DetectedImportFormat = { kind: 'insomnia', label: 'Insomnia export', confidence: 'definite' };
+const INSOMNIA_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'insomnia-environment',
+  label: 'Insomnia environments',
+  confidence: 'definite',
+};
+const BRUNO_FORMAT: DetectedImportFormat = { kind: 'bruno', label: 'Bruno collection', confidence: 'definite' };
+const HOPPSCOTCH_FORMAT: DetectedImportFormat = {
+  kind: 'hoppscotch',
+  label: 'Hoppscotch collection',
+  confidence: 'definite',
+};
+const HOPPSCOTCH_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'hoppscotch-environment',
+  label: 'Hoppscotch environments',
+  confidence: 'definite',
+};
+const THUNDER_FORMAT: DetectedImportFormat = {
+  kind: 'thunder-client',
+  label: 'Thunder Client collection',
+  confidence: 'definite',
+};
+const THUNDER_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'thunder-client-environment',
+  label: 'Thunder Client environment',
+  confidence: 'definite',
+};
+const INSOMNIA_V5_TYPE = /^(collection|spec)\.insomnia\.rest\/5\.0$/;
+const INSOMNIA_V5_ENV_TYPE = 'environment.insomnia.rest/5.0';
+
+/** The file names a Thunder Client workspace folder keeps its data in. */
+const THUNDER_FOLDER_FILES = new Set([
+  'thunderclient.json',
+  'thundercollection.json',
+  'thunderenvironment.json',
+  'thunderactivity.json',
+]);
+
+function isThunderClient(parsed: Record<string, unknown>): boolean {
+  return (parsed['clientName'] ?? parsed['client']) === 'Thunder Client';
+}
+
+/** Whether `request` reads as a Hoppscotch REST (`endpoint` + `method`) or GraphQL (`url` + `query`) request. */
+function isHoppscotchRequest(request: unknown): boolean {
+  if (!isRecord(request)) return false;
+  if (typeof request['endpoint'] === 'string' && typeof request['method'] === 'string') return true;
+  return (
+    typeof request['url'] === 'string' && typeof request['query'] === 'string' && request['endpoint'] === undefined
+  );
+}
+
+function isHoppscotchCollection(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    typeof value['name'] === 'string' &&
+    Array.isArray(value['folders']) &&
+    Array.isArray(value['requests']) &&
+    value['info'] === undefined &&
+    value['item'] === undefined
+  );
+}
+
+/** A Hoppscotch collection holds a request, itself or in a nested folder. */
+function holdsHoppscotchRequest(collection: Record<string, unknown>): boolean {
+  const requests = collection['requests'] as unknown[];
+  if (requests.some(isHoppscotchRequest)) return true;
+  return (collection['folders'] as unknown[]).some(
+    (folder) => isHoppscotchCollection(folder) && holdsHoppscotchRequest(folder),
+  );
+}
+
+function isHoppscotchEnvironment(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value['name'] === 'string' &&
+    Array.isArray(value['variables']) &&
+    value['values'] === undefined &&
+    value['folders'] === undefined
+  );
+}
+
+/** The client format a parsed JSON/YAML document shows, or `undefined`. Thunder Client, Hoppscotch, Insomnia, Bruno. */
+function detectClientFormat(parsed: unknown): DetectedImportFormat | undefined {
+  if (Array.isArray(parsed)) {
+    const first: unknown = parsed[0];
+    if (parsed.length === 0) return undefined;
+    // Thunder Client's legacy `thunderclient.json`: requests that name their collection and folder
+    if (parsed.every((item) => isRecord(item) && 'colId' in item && 'containerId' in item && 'url' in item)) {
+      return THUNDER_FORMAT;
+    }
+    if (parsed.every(isHoppscotchCollection)) {
+      return parsed.some((c) => holdsHoppscotchRequest(c))
+        ? HOPPSCOTCH_FORMAT
+        : { ...HOPPSCOTCH_FORMAT, confidence: 'probable' };
+    }
+    if (isHoppscotchEnvironment(first) && parsed.every(isHoppscotchEnvironment)) return HOPPSCOTCH_ENV_FORMAT;
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+
+  if (isThunderClient(parsed)) {
+    if (Array.isArray(parsed['variables']) && typeof parsed['environmentName'] === 'string') return THUNDER_ENV_FORMAT;
+    if (
+      typeof parsed['collectionName'] === 'string' &&
+      (Array.isArray(parsed['requests']) || Array.isArray(parsed['folders']))
+    ) {
+      return THUNDER_FORMAT;
+    }
+  }
+  if (isHoppscotchCollection(parsed)) {
+    return holdsHoppscotchRequest(parsed) ? HOPPSCOTCH_FORMAT : { ...HOPPSCOTCH_FORMAT, confidence: 'probable' };
+  }
+  if (isHoppscotchEnvironment(parsed)) return HOPPSCOTCH_ENV_FORMAT;
+
+  const type = parsed['type'];
+  if (typeof type === 'string') {
+    if (INSOMNIA_V5_TYPE.test(type)) return INSOMNIA_FORMAT;
+    if (type === INSOMNIA_V5_ENV_TYPE) return INSOMNIA_ENV_FORMAT;
+  }
+  if (parsed['__export_format'] === 4 && Array.isArray(parsed['resources'])) return INSOMNIA_FORMAT;
+
+  if (
+    typeof parsed['version'] === 'string' &&
+    parsed['version'] !== '' &&
+    typeof parsed['name'] === 'string' &&
+    Array.isArray(parsed['items'])
+  ) {
+    return BRUNO_FORMAT;
+  }
+  return undefined;
+}
+
 /** The format `text` shows by its content, or `undefined` when it shows none. */
 function detectFromText(text: string): DetectedImportFormat | undefined {
   // 0. A .proto file: a syntax statement, or the keywords nothing else opens with
@@ -193,6 +332,12 @@ function detectFromText(text: string): DetectedImportFormat | undefined {
     } catch {
       // Fall through to pattern matching
     }
+  }
+
+  // Other API clients first: Thunder Client, Hoppscotch, Insomnia, Bruno
+  if (didParse) {
+    const client = detectClientFormat(parsed);
+    if (client !== undefined) return client;
   }
 
   if (didParse && isRecord(parsed)) {
@@ -299,6 +444,36 @@ function definiteByName(target: string): DetectedImportFormat | undefined {
   return undefined;
 }
 
+/** The other clients' export file names, which each client writes with a recognisable stem. */
+function clientFormatByName(target: string): DetectedImportFormat | undefined {
+  const base = target.slice(Math.max(target.lastIndexOf('/'), target.lastIndexOf('\\')) + 1);
+  const probable = (format: DetectedImportFormat): DetectedImportFormat => ({ ...format, confidence: 'probable' });
+  if (base.startsWith('insomnia') || base.includes('.insomnia.')) return probable(INSOMNIA_FORMAT);
+  if (base.startsWith('hoppscotch')) {
+    return probable(base.includes('environment') ? HOPPSCOTCH_ENV_FORMAT : HOPPSCOTCH_FORMAT);
+  }
+  if (base.startsWith('thunder-environment')) return probable(THUNDER_ENV_FORMAT);
+  if (base.startsWith('thunder-collection')) return probable(THUNDER_FORMAT);
+  return undefined;
+}
+
+/**
+ * A picked folder's format from the names of its direct children (a folder's name ends in `/`). Pure:
+ * nothing is read. OpenCollection wins over Bruno when both markers are there, as in Bruno itself;
+ * a folder with none of the markers is read as a probable Postman v3 folder, the format a folder
+ * picker offered first.
+ */
+export function detectImportFolder(children: readonly string[]): DetectedImportFormat {
+  const names = new Set(children.map((name) => name.toLowerCase()));
+  if (names.has('opencollection.yml') || names.has('opencollection.yaml')) {
+    return { kind: 'opencollection', label: 'OpenCollection', confidence: 'definite' };
+  }
+  if (names.has('bruno.json')) return BRUNO_FORMAT;
+  if ([...names].some((name) => THUNDER_FOLDER_FILES.has(name))) return THUNDER_FORMAT;
+  if (names.has('.resources/') || [...names].some((name) => POSTMAN_V3_REQUEST.test(name))) return POSTMAN_V3_FORMAT;
+  return { ...POSTMAN_V3_FORMAT, confidence: 'probable' };
+}
+
 /**
  * Detects the API definition format from text content, filename, or URL. What the content shows
  * comes first, except that a file name settling the format (`.http`, `.rest`, an HTTP client
@@ -347,6 +522,8 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     if (target.includes('asyncapi')) {
       return { kind: 'asyncapi', label: 'AsyncAPI', confidence: 'probable' };
     }
+    const clientByName = clientFormatByName(target);
+    if (clientByName !== undefined) return clientByName;
     if (POSTMAN_V3_DEFINITION.test(target) || POSTMAN_V3_REQUEST.test(target)) {
       return { ...POSTMAN_V3_FORMAT, confidence: 'probable' };
     }
