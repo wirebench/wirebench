@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { MockTab } from '../../src/renderer/features/mock/mock-tab.js';
+import { MockTab, operationTitle } from '../../src/renderer/features/mock/mock-tab.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useMockRunsStore } from '../../src/renderer/state/mock-runs.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
@@ -142,6 +142,32 @@ describe('MockTab', () => {
     expect(updateMock).toHaveBeenLastCalledWith('m1', { validation: 'report' });
   });
 
+  it('shows the operation with its method uppercase', () => {
+    mount();
+    expect(screen.getByTestId('mock-operation-title').textContent).toBe('POST /orders');
+  });
+
+  it('reads port 0 as any free port, and clearing the port asks for one', () => {
+    mount();
+    const port = screen.getByTestId<HTMLInputElement>('mock-port');
+    expect(port.value).toBe('8089');
+    commit(port, '');
+    expect(updateMock).toHaveBeenLastCalledWith('m1', { port: 0 });
+    cleanup();
+
+    useProjectStore.getState().reset();
+    useProjectStore.getState().applySnapshot('p1', { ...project(), mocks: [{ ...MOCK, port: 0 }] });
+    useProjectStore.setState({ updateMock, updateMockOperation, updateMockResponse });
+    render(
+      <TooltipPrimitive.Provider>
+        <MockTab mockId="m1" />
+      </TooltipPrimitive.Provider>,
+    );
+    const free = screen.getByTestId<HTMLInputElement>('mock-port');
+    expect(free.value).toBe('');
+    expect(free.placeholder).toBe('any free port');
+  });
+
   it('edits the operation and the selected response', () => {
     mount();
     fireEvent.change(screen.getByTestId('mock-dispatch'), { target: { value: 'random' } });
@@ -247,5 +273,18 @@ describe('MockTab', () => {
     useProjectStore.getState().reset();
     render(<MockTab mockId="missing" />);
     expect(screen.getByText('This mock is no longer in the project.')).toBeTruthy();
+  });
+});
+
+describe('operationTitle', () => {
+  it('uppercases the method of a REST operation key', () => {
+    expect(operationTitle('get /json')).toBe('GET /json');
+    expect(operationTitle('Delete /orders/{id}')).toBe('DELETE /orders/{id}');
+  });
+
+  it('leaves a SOAP operation name, and a name that only starts like a method, alone', () => {
+    expect(operationTitle('Add')).toBe('Add');
+    expect(operationTitle('getQuote')).toBe('getQuote');
+    expect(operationTitle('GET /json')).toBe('GET /json');
   });
 });

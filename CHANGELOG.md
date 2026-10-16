@@ -42,6 +42,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The mock tab explains port 0 and shows methods uppercase.** A mock on port 0 now shows an empty
+  Port field reading *any free port*, and clearing the field asks for one. An operation's header reads
+  `GET /json` rather than `get /json` (#634).
 - **The environment switcher names your only project.** In a workspace of one project the title
   bar's switcher now names that project and can be used straight away, instead of reading "No
   project" until a request is opened. With several projects it still waits for a request tab to say
