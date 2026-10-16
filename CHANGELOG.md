@@ -6,79 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- **Forwarding groups.** Name a set of port forwarding rules, from any hosts, and start or stop them
-  together. The Port forwarding view shows each group as a section with its rules and a count such as
-  "2 of 3 running · 1 failed", then the rules in no group under **Ungrouped**. **Start group** connects to
-  each host as needed, and a rule that fails doesn't stop the others. Each rule still starts and stops on
-  its own. Groups are kept in `hosts.yaml` (`forwardGroups`, file version 2 while there is one), so a
-  team shares them; version 1 files load unchanged. The palette has **Start Forwarding Group…** and
-  **Stop Forwarding Group…**, and `wirebench ssh forward --group <id>` opens a group from the command
-  line (#583).
-
-### Changed
-
-- **Host details opens and closes only when asked.** Clicking a host selects it without opening or
-  closing the Host details panel; an open panel shows the selected host. The right rail's icon (and
-  Edit) opens it; its close icon, Escape and the rail's icon close it. Whether it is open is remembered
-  on this machine and restored after a restart, where it asks for a host until one is picked (#582).
-- **One calm state for a lost connection.** While a dropped terminal reconnects it stays in view, dimmed,
-  under one bar with the countdown, **Reconnect now**, **Stop** and **Show log**; the connection screen
-  comes back only once the attempts give up, with its log folded. A Files pane whose connection ends
-  says so ("Connection to box lost · 21:31") with **Reconnect** as the main button, over its last
-  listing, dimmed. The connection log pins its one-sentence summary above the lines and shows them in
-  time order (#590).
-- **Host groups and forwarding groups are told apart.** A forwarding rule says where it is defined:
-  "defined on this host" or "defined on host group Production". The palette's **Hosts: New Host
-  Group…**, the Hosts menu's **New host group** and the New rule dialog say "host group" too, so "group"
-  alone means a forwarding group. A rule that **Start group** started says "Started with group Dev" in
-  Forward details, which now shows one list: the rule's values, with the live one only where it differs
-  (#592).
-- **SSH polish, round 2.** The first host picked says once where Host details are, and Host details say
-  "1 forward running" (opening Port forwarding) when a forward runs through the host. Grid cards show up to
-  two tags. New host and New identity name a missing field only after **Save** or once a required field is
-  left empty. In Advanced, Keep-alive and Connect timeout keep their labels on one line, with the source
-  under the input. known_hosts rows say which saved hosts use the key, and **Forget**, a layout's
-  **Delete** and **Delete group** end in a toast with **Undo**. Deleting a host can also delete its own
-  password secret. **New rule…** is headed "Rule", hints at the port only when it is wrong, and has a
-  **Forwarding group** select; each group's menu has **New rule…** too. Quick connect lists the saved hosts
-  a typed server matches above the one-off entry. A running session log says "running" without a size,
-  Files gives names more room with a short Modified column, the snippet picker's **New snippet** stays on
-  one line, and a Settings search for "ssh" lists the SSH page first. A snippet suggestion typed fast no
-  longer starts over the last typed character: it waits for the shell's echo of the last key (#594).
-
-### Fixed
-
-- **SSH small fixes.** Typing "ssh" in the command palette lists every SSH-area command (hosts,
-  terminals, files, forwarding, snippets) above anything that only matches the letters. The SSH menu's
-  Keychain count updates as soon as a key is generated or a secret stored, wherever that happens.
-  **Generate key** starts with a real, selected name (`id_ed25519`, or the next free `id_ed25519_2`) that
-  follows the key type until you type your own, and says "Name is required" beside Generate when the
-  field is empty. The menu entry is now **Forwarding**, so it fits with its running count at the default
-  sidebar width. A view's search hides its <kbd>Ctrl+F</kbd> hint while it holds text, so the field's
-  clear button no longer draws over it (#593).
-- **Nothing in an SSH side panel is cut off at the right.** In the Snippet panel, a variable's row puts
-  its name and remove button on one line and Label and Default below them when the panel is under 360px,
-  so every field can be reached at 1024×700. Edit host's password field says "•••• stored · type to
-  replace", with the secret's name on its own line under it, and key sign-in's three secret pickers wrap
-  onto more lines in a narrow panel. Host details, Edit host, Snippet and Forward details all fit a panel
-  from 280 to 400px wide (#591).
-- **Deleting a host cleans up its forwarding groups.** The delete confirm names the rules that leave
-  each group ("Its rule redis leaves forwarding group Backend."), and the delete takes them out of their
-  groups. A group member whose rule or host has gone offers **Remove from group** rather than **Stop**,
-  and is no longer counted as failed in its group's header or the status bar (#592).
-
-### Fixed
-
-- **Start group asks every prompt.** When a group's rules need hosts trusted or network binds confirmed,
-  each question is asked in turn instead of the second replacing the first, and every rule then starts.
-  Rules on the same new host share one trust prompt. A rule isn't shown as failed while its prompt waits,
-  and cancelling a prompt leaves that rule stopped. The group header follows the group: an empty group
-  says "No rules" with no Start, a partly running one offers **Start N more** beside **Stop group**, and
-  the failed count shows the Failed rows (#589).
-
-## [6.1.0] - 2026-10-15
+## [6.1.0] - 2026-10-16
 
 ### Added
 
@@ -455,6 +383,22 @@ All notable changes to this project are documented here. The format follows
   `WIREBENCH_SECRET_<refreshTokenEnv>`. OpenAPI, Postman and OpenCollection imports map the password
   flow, OpenAPI 3.2's device flow maps to device code, and exports write the password grant (#338).
 
+- **Forwarding groups.** Name a set of port forwarding rules, from any hosts, and start or stop them
+  together. The Port forwarding view shows each group as a section with its rules and a count such as
+  "2 of 3 running · 1 failed", then the rules in no group under **Ungrouped**. **Start group** connects to
+  each host as needed, and a rule that fails doesn't stop the others. Each rule still starts and stops on
+  its own. Groups are kept in `hosts.yaml` (`forwardGroups`, file version 2 while there is one), so a
+  team shares them; version 1 files load unchanged. The palette has **Start Forwarding Group…** and
+  **Stop Forwarding Group…**, and `wirebench ssh forward --group <id>` opens a group from the command
+  line (#583).
+
+- **Install files for Homebrew, winget and the team server.** Each release's draft carries
+  `wirebench-package-manifests-<version>.zip`: a Homebrew cask that picks the Apple silicon or Intel
+  `.dmg`, and a winget manifest set for the per-user setup files, both hashed from the signed installers.
+  The repository keeps the files for the latest published release under `packaging/`. A root
+  `docker-compose.yml` runs the published Wirebench Server image beside PostgreSQL 16, and a new Getting
+  started page walks a team through it (#601).
+
 ### Breaking
 
 - **Project format 10.** Auth can be a client-signed JWT (`type: jwt`), Digest (`type: digest`) or
@@ -559,6 +503,40 @@ All notable changes to this project are documented here. The format follows
   turned HTTP/2 off. Turn the preference off for a server that asks for a client certificate
   mid-connection (#80, ADR-0024).
 
+- **Host details opens and closes only when asked.** Clicking a host selects it without opening or
+  closing the Host details panel; an open panel shows the selected host. The right rail's icon (and
+  Edit) opens it; its close icon, Escape and the rail's icon close it. Whether it is open is remembered
+  on this machine and restored after a restart, where it asks for a host until one is picked (#582).
+- **One calm state for a lost connection.** While a dropped terminal reconnects it stays in view, dimmed,
+  under one bar with the countdown, **Reconnect now**, **Stop** and **Show log**; the connection screen
+  comes back only once the attempts give up, with its log folded. A Files pane whose connection ends
+  says so ("Connection to box lost · 21:31") with **Reconnect** as the main button, over its last
+  listing, dimmed. The connection log pins its one-sentence summary above the lines and shows them in
+  time order (#590).
+- **Host groups and forwarding groups are told apart.** A forwarding rule says where it is defined:
+  "defined on this host" or "defined on host group Production". The palette's **Hosts: New Host
+  Group…**, the Hosts menu's **New host group** and the New rule dialog say "host group" too, so "group"
+  alone means a forwarding group. A rule that **Start group** started says "Started with group Dev" in
+  Forward details, which now shows one list: the rule's values, with the live one only where it differs
+  (#592).
+- **SSH polish, round 2.** The first host picked says once where Host details are, and Host details say
+  "1 forward running" (opening Port forwarding) when a forward runs through the host. Grid cards show up to
+  two tags. New host and New identity name a missing field only after **Save** or once a required field is
+  left empty. In Advanced, Keep-alive and Connect timeout keep their labels on one line, with the source
+  under the input. known_hosts rows say which saved hosts use the key, and **Forget**, a layout's
+  **Delete** and **Delete group** end in a toast with **Undo**. Deleting a host can also delete its own
+  password secret. **New rule…** is headed "Rule", hints at the port only when it is wrong, and has a
+  **Forwarding group** select; each group's menu has **New rule…** too. Quick connect lists the saved hosts
+  a typed server matches above the one-off entry. A running session log says "running" without a size,
+  Files gives names more room with a short Modified column, the snippet picker's **New snippet** stays on
+  one line, and a Settings search for "ssh" lists the SSH page first. A snippet suggestion typed fast no
+  longer starts over the last typed character: it waits for the shell's echo of the last key (#594).
+
+- **Environment details in the right panel.** With an environment open, the right slide-over shows its
+  name, scope and variable count, and holds **Protected**, **Colour** and **Applies to**, which move there
+  from the page. The right rail offers no Code panel in Environments, as in SSH. Escape in a text field of
+  a slide-over cancels the edit instead of closing the panel (#585).
+
 ### Fixed
 
 - **Cancelling Import cURL in an empty project leaves no empty API.** The API made to hold the
@@ -605,6 +583,33 @@ All notable changes to this project are documented here. The format follows
 - **NTLM and Kerberos could negotiate HTTP/2** on a direct HTTPS connection, and fail against a
   server that answers `HTTP_1_1_REQUIRED`. Both now always use HTTP/1.1. **Offer HTTP/2** switched
   off now does keep a direct send on HTTP/1.1 (#80).
+
+- **SSH small fixes.** Typing "ssh" in the command palette lists every SSH-area command (hosts,
+  terminals, files, forwarding, snippets) above anything that only matches the letters. The SSH menu's
+  Keychain count updates as soon as a key is generated or a secret stored, wherever that happens.
+  **Generate key** starts with a real, selected name (`id_ed25519`, or the next free `id_ed25519_2`) that
+  follows the key type until you type your own, and says "Name is required" beside Generate when the
+  field is empty. The menu entry is now **Forwarding**, so it fits with its running count at the default
+  sidebar width. A view's search hides its <kbd>Ctrl+F</kbd> hint while it holds text, so the field's
+  clear button no longer draws over it (#593).
+- **Nothing in an SSH side panel is cut off at the right.** In the Snippet panel, a variable's row puts
+  its name and remove button on one line and Label and Default below them when the panel is under 360px,
+  so every field can be reached at 1024×700. Edit host's password field says "•••• stored · type to
+  replace", with the secret's name on its own line under it, and key sign-in's three secret pickers wrap
+  onto more lines in a narrow panel. Host details, Edit host, Snippet and Forward details all fit a panel
+  from 280 to 400px wide (#591).
+
+- **Deleting a host cleans up its forwarding groups.** The delete confirm names the rules that leave
+  each group ("Its rule redis leaves forwarding group Backend."), and the delete takes them out of their
+  groups. A group member whose rule or host has gone offers **Remove from group** rather than **Stop**,
+  and is no longer counted as failed in its group's header or the status bar (#592).
+
+- **Start group asks every prompt.** When a group's rules need hosts trusted or network binds confirmed,
+  each question is asked in turn instead of the second replacing the first, and every rule then starts.
+  Rules on the same new host share one trust prompt. A rule isn't shown as failed while its prompt waits,
+  and cancelling a prompt leaves that rule stopped. The group header follows the group: an empty group
+  says "No rules" with no Start, a partly running one offers **Start N more** beside **Stop group**, and
+  the failed count shows the Failed rows (#589).
 
 ## [6.0.0] - 2026-10-12
 
@@ -1974,8 +1979,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.1...HEAD
-[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.1
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v6.1.0-rc.3...HEAD
+[6.1.0]: https://github.com/wirebench/wirebench/compare/v6.0.0-rc.1...v6.1.0-rc.3
 [6.0.0]: https://github.com/wirebench/wirebench/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/wirebench/wirebench/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/wirebench/wirebench/compare/v3.1.0...v4.0.0
