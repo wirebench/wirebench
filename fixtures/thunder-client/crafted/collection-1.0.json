@@ -1,0 +1,22 @@
+{
+  "client": "Thunder Client",
+  "collectionName": "Legacy",
+  "dateExported": "2021-04-02T10:15:30.000Z",
+  "version": "1.0",
+  "folders": [],
+  "requests": [
+    {
+      "_id": "a1",
+      "colId": "c1",
+      "containerId": "",
+      "name": "Ping",
+      "url": "https://api.example.com/ping",
+      "method": "GET",
+      "reqType": "get",
+      "sortNum": 10000,
+      "headers": [],
+      "body": { "type": "text", "raw": "hello", "form": [] },
+      "docs": "Pings."
+    }
+  ]
+}

@@ -685,6 +685,11 @@ export const channels = {
       apiImportClientRequestSchema,
       apiImportClientResponseSchema,
     ),
+    importThunderClient: defineChannel(
+      'api.importThunderClient',
+      apiImportClientRequestSchema,
+      apiImportClientResponseSchema,
+    ),
     importClientEnvironments: defineChannel(
       'api.importClientEnvironments',
       apiImportClientEnvironmentsRequestSchema,

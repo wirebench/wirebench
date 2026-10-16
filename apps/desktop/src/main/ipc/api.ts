@@ -26,6 +26,7 @@ import {
   importHttpFile,
   importInsomnia,
   importOpenCollection,
+  importThunderClient,
   importPostmanCollection,
   importPostmanVariables,
   loadProtoSet,
@@ -905,6 +906,28 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   });
 
   /**
+   * A Thunder Client collection export, or a `thunder-tests` folder picked with Folder… (spec
+   * 2026-10-15 §7): each collection's REST API in the chosen project, its tests as assertions where
+   * they fit, its scripts as text (never run), and a folder's environments in the workspace, never
+   * activated.
+   */
+  registerHandler(channels.api.importThunderClient, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const isFolder =
+      checkedSource.kind === 'file' &&
+      (await stat(checkedSource.path).then(
+        (info) => info.isDirectory(),
+        () => false,
+      ));
+    const mapped = await importThunderClient(
+      isFolder && checkedSource.kind === 'file' ? { kind: 'folder', path: checkedSource.path } : checkedSource,
+      { ...(request.name !== undefined && request.name.trim() !== '' ? { name: request.name } : {}) },
+    );
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:thunder-client';
+    return await placeClientImport(request.target, mapped, { source, declaredVersion: 'thunder-client' });
+  });
+
+  /**
    * Another request client's environments file, applied to the open workspace: its base merged into
    * Globals, each sub-environment a workspace environment under a free name (never activated). An
    * export holding requests is refused rather than half imported.
@@ -915,11 +938,15 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     const mapped =
       request.format === 'hoppscotch'
         ? await importHoppscotchEnvironments(checkedSource)
-        : await importInsomnia(checkedSource);
+        : request.format === 'thunder-client'
+          ? await importThunderClient(checkedSource)
+          : await importInsomnia(checkedSource);
     if (mapped.collections.length > 0 || mapped.variables.projectProperties !== undefined) {
       throw new WirebenchError(
         'insomnia-not-environments',
-        'This Insomnia export holds a collection: import it as an Insomnia export.',
+        request.format === 'thunder-client'
+          ? 'This Thunder Client export holds a collection: import it as a Thunder Client collection.'
+          : 'This Insomnia export holds a collection: import it as an Insomnia export.',
       );
     }
     const summary = await applyImportedVariables(mapped.variables, deps.variablesPorts(undefined));
