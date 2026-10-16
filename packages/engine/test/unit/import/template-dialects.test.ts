@@ -182,11 +182,13 @@ describe('hostile input', () => {
   ];
   for (const [name, dialect] of cases) {
     it(`a 1 MB run of '{' returns quickly (${name})`, () => {
+      // A quadratic scan of 1 MB takes minutes; a linear one takes milliseconds on a laptop and
+      // several hundred under the coverage run's instrumentation, so the bound leaves it room.
       const started = performance.now();
       dialect(run);
       dialect(`${run}}}`);
       dialect('<'.repeat(1024 * 1024) + '>>');
-      expect(performance.now() - started).toBeLessThan(500);
+      expect(performance.now() - started).toBeLessThan(2000);
     });
   }
 });
